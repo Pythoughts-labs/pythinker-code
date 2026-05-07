@@ -127,6 +127,20 @@ Swap providers and models per-session: `--model openai/gpt-5.5`, hosted Pythinke
 
 ## ⚡ Quick Start
 
+### ✨ Recommended install (clean, with logo)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install.ps1 | iex
+```
+
+The installer fetches `uv` if missing, installs `pythinker-code` quietly, and prints a single-line confirmation instead of the full dependency wall.
+
 ### 🚀 One-off run with `uvx`
 
 ```sh
