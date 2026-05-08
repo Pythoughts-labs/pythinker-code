@@ -801,6 +801,44 @@ def tui(app: Shell, args: str):
 
 
 @registry.command
+@shell_mode_registry.command
+def settings(app: Shell, args: str):
+    """Show common Pythinker settings (theme, TUI style, model)"""
+    from rich.console import Group, RenderableType
+    from rich.table import Table
+    from rich.text import Text
+
+    from pythinker_code.ui.theme import get_active_theme
+    from pythinker_code.ui.tui_config import get_active_tui_style
+
+    soul = ensure_pythinker_soul(app)
+    if soul is None:
+        return
+
+    config = soul.runtime.config
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_column(style="cyan", no_wrap=True)
+    table.add_column()
+
+    table.add_row("Theme", get_active_theme())
+    table.add_row("TUI style", get_active_tui_style())
+    table.add_row("Default model", config.default_model or "(none)")
+    table.add_row("Auto-update", "on" if config.auto_update else "off")
+    table.add_row("Telemetry", "on" if config.telemetry else "off")
+    table.add_row("Default thinking", "on" if config.default_thinking else "off")
+    if config.source_file is not None:
+        table.add_row("Config file", str(config.source_file))
+    else:
+        table.add_row("Config file", "(none — runtime overrides only)")
+
+    blocks: list[RenderableType] = [Text.from_markup("[bold]Settings[/bold]"), table]
+    console.print(Group(*blocks))
+    console.print(
+        "[grey50]Tip: /theme, /tui, /model, /keys for related controls.[/grey50]"
+    )
+
+
+@registry.command
 def web(app: Shell, args: str):
     """Open Pythinker Web UI in browser"""
     from pythinker_code.telemetry import track

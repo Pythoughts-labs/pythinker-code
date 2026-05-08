@@ -12,6 +12,10 @@ from pythinker_code.ui.shell.components.bash_execution import (
     BashExecutionState,
     render_bash_execution,
 )
+from pythinker_code.ui.shell.components.bordered_loader import (
+    BorderedLoaderState,
+    render_bordered_loader,
+)
 from pythinker_code.ui.shell.components.diff import (
     EditDiffResult,
     compute_edit_diff_string,
@@ -56,6 +60,7 @@ from pythinker_code.ui.shell.components.tool_execution import (
 __all__ = [
     "AssistantContent",
     "BashExecutionState",
+    "BorderedLoaderState",
     "BranchSummaryInput",
     "CompactionSummaryInput",
     "CustomMessageInput",
@@ -75,6 +80,7 @@ __all__ = [
     "raw_key_hint",
     "render_assistant_message",
     "render_bash_execution",
+    "render_bordered_loader",
     "render_branch_summary",
     "render_compaction_summary",
     "render_custom_message",
