@@ -1,4 +1,4 @@
-"""Width-aware rendering helpers for Pi-style components."""
+"""Width-aware rendering helpers for Pythinker components."""
 
 from __future__ import annotations
 

@@ -246,9 +246,9 @@ def get_mcp_prompt_colors() -> MCPPromptColors:
 
 
 # ---------------------------------------------------------------------------
-# Pi-style semantic TUI tokens (used by ui/shell/components/* and the tool
-# renderer registry). Color values mirror the @earendil-works/pi-tui dark
-# and light themes so the Pi-style code path renders with the reference
+# Pythinker semantic TUI tokens (used by ui/shell/components/* and the tool
+# renderer registry). Default semantic token palette
+# and light themes so the Pythinker code path renders with the reference
 # palette. Existing pythinker styles continue to work — these tokens add a
 # parallel naming layer keyed by *semantic role* rather than concrete color.
 # ---------------------------------------------------------------------------
@@ -256,7 +256,7 @@ def get_mcp_prompt_colors() -> MCPPromptColors:
 
 @dataclass(frozen=True, slots=True)
 class TuiTokens:
-    """Pi-style semantic theme tokens.
+    """Pythinker semantic theme tokens.
 
     Values are hex strings (``"#rrggbb"``) or the empty string for "use
     terminal default". Background tokens (``*_bg``) are intended for
@@ -356,7 +356,7 @@ _TUI_TOKENS_LIGHT = TuiTokens(
 
 
 def get_tui_tokens(theme: ThemeName | None = None) -> TuiTokens:
-    """Return Pi-style semantic tokens for *theme* (defaults to active)."""
+    """Return Pythinker semantic tokens for *theme* (defaults to active)."""
     name = theme if theme is not None else _active_theme
     return _TUI_TOKENS_LIGHT if name == "light" else _TUI_TOKENS_DARK
 

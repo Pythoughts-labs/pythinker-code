@@ -90,7 +90,7 @@ def test_pending_card_uses_tool_pending_bg():
     assert "src/foo.py" in text
 
     coloured = _ansi(comp.render(), width=60)
-    # Pi dark theme tool_pending_bg = #282832 -> rgb(40,40,50).
+    # Default dark theme tool_pending_bg = #282832 -> rgb(40,40,50).
     assert "48;2;40;40;50" in coloured
 
 
@@ -106,7 +106,7 @@ def test_success_card_uses_tool_success_bg():
 
     assert comp.status == ToolExecutionStatus.SUCCESS
     coloured = _ansi(comp.render(), width=60)
-    # Pi dark theme tool_success_bg = #283228 -> rgb(40,50,40).
+    # Default dark theme tool_success_bg = #283228 -> rgb(40,50,40).
     assert "48;2;40;50;40" in coloured
 
     text = render_plain(comp.render(), width=60)
@@ -124,7 +124,7 @@ def test_error_card_uses_tool_error_bg():
 
     assert comp.status == ToolExecutionStatus.ERROR
     coloured = _ansi(comp.render(), width=60)
-    # Pi dark theme tool_error_bg = #3c2828 -> rgb(60,40,40).
+    # Default dark theme tool_error_bg = #3c2828 -> rgb(60,40,40).
     assert "48;2;60;40;40" in coloured
 
 
@@ -146,7 +146,7 @@ def test_denied_card_uses_error_bg():
 
 
 def test_no_content_renders_blank_text():
-    """Renderer produces nothing → Pi's hideComponent equivalent."""
+    """Renderer produces nothing → Pythinker's hidden-component equivalent."""
 
     def render_call(_ctx: ToolRenderContext) -> RenderableType | None:
         return None

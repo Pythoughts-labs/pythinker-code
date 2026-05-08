@@ -1,10 +1,10 @@
-"""Pi-style renderer for Pythinker's ``Grep`` tool.
+"""Pythinker renderer for Pythinker's ``Grep`` tool.
 
-Mirrors ``packages/coding-agent/src/core/tools/grep.ts`` (Pi reference).
+ .
 
-Param differences vs Pi:
+Param differences:
 
-* ``limit`` → ``head_limit`` (Pythinker default 250 vs Pi's 100).
+* ``limit`` → ``head_limit`` (Pythinker default 250 vs Pythinker's 100).
 * Pythinker has ``output_mode`` (files_with_matches | content | count_matches).
 * Pythinker uses ``-i`` alias for ``ignore_case``.
 """

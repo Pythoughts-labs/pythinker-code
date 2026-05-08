@@ -1,4 +1,4 @@
-"""Pi-style renderers for Pythinker's background-task tools.
+"""Pythinker renderers for Pythinker's background-task tools.
 
 Covers ``TaskList``, ``TaskOutput``, and ``TaskStop``.
 """

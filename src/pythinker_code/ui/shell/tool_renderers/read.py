@@ -1,8 +1,8 @@
-"""Pi-style renderer for Pythinker's ``ReadFile`` tool.
+"""Pythinker renderer for Pythinker's ``ReadFile`` tool.
 
-Mirrors ``packages/coding-agent/src/core/tools/read.ts`` (Pi reference).
+ .
 
-Pi tool name → Pythinker tool name: ``read`` → ``ReadFile``.
+Source tool name → Pythinker tool name: ``read`` → ``ReadFile``.
 Param mapping: ``offset/limit`` → ``line_offset/n_lines``.
 """
 

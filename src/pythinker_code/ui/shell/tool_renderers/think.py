@@ -1,6 +1,6 @@
-"""Pi-style renderer for Pythinker's ``Think`` tool.
+"""Pythinker renderer for Pythinker's ``Think`` tool.
 
-Pi has no direct ``think`` core tool; we model the call preview after
+Pythinker has no direct ``think`` core tool; we model the call preview after
 the ``hidden-thinking-label`` extension — a muted custom-message style
 that shows the thought without making the output box loud.
 """

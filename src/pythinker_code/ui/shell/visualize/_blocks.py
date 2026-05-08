@@ -37,7 +37,7 @@ from pythinker_code.ui.shell.visualize._worklog import (
     render_worklog_entry,
     tool_style,
 )
-from pythinker_code.ui.tui_config import is_pi_style
+from pythinker_code.ui.tui_config import is_card_style
 from pythinker_code.utils.datetime import format_elapsed
 from pythinker_code.utils.rich.columns import BulletColumns
 from pythinker_code.utils.rich.markdown import Markdown
@@ -381,7 +381,7 @@ class _ToolCallBlock:
             maxlen=MAX_SUBAGENT_TOOL_CALLS_TO_SHOW
         )
         self._spinning_dots = Spinner("dots", text="")
-        # Pi-style card: lazily built when the tui style is "pi" AND a
+        # Pythinker card: lazily built when the tui style is "pi" AND a
         # renderer is registered for this tool. Stays None on the
         # default ``pythinker`` path so the legacy worklog rendering is
         # bit-for-bit unchanged.
@@ -447,10 +447,10 @@ class _ToolCallBlock:
             self._renderable = self._compose()
 
     def _compose(self) -> RenderableType:
-        if is_pi_style():
-            pi_rendered = self._compose_pi()
-            if pi_rendered is not None:
-                return pi_rendered
+        if is_card_style():
+            card_rendered = self._compose_card()
+            if card_rendered is not None:
+                return card_rendered
         children: list[RenderableType] = []
         if self._subagent_id is not None and self._subagent_type is not None:
             children.append(
@@ -546,12 +546,12 @@ class _ToolCallBlock:
             children=children,
         )
 
-    def _compose_pi(self) -> RenderableType | None:
-        """Build/update the Pi-style card. Returns None to fall through.
+    def _compose_card(self) -> RenderableType | None:
+        """Build/update the Pythinker card. Returns None to fall through.
 
         Renderer resolution: prefer a tool-specific renderer registered
         under ``tool_name``; fall back to the generic renderer so any
-        tool gets a Pi-style card under the flag. Returns None only if
+        tool gets a Pythinker card under the flag. Returns None only if
         the generic renderer itself is missing (i.e. the built-ins were
         never registered).
         """
@@ -579,17 +579,17 @@ class _ToolCallBlock:
             self._tui_card.set_args_complete()
             self._tui_card.set_result(
                 ToolResultPayload(
-                    text=self._pi_result_text(self._result),
+                    text=self._card_result_text(self._result),
                     is_error=self._result.is_error,
                 ),
             )
         return self._tui_card.render()
 
     @staticmethod
-    def _pi_result_text(result: ToolReturnValue) -> str:
-        """Flatten a ToolReturnValue to a single text payload for Pi cards.
+    def _card_result_text(result: ToolReturnValue) -> str:
+        """Flatten a ToolReturnValue to a single text payload for cards.
 
-        Pi tool renderers expect the *primary content* (file body, command
+        Tool renderers expect the *primary content* (file body, command
         output, grep matches) — that lives in ``output`` for Pythinker.
         Fall back to ``message`` (e.g. "Successfully wrote N bytes" from
         WriteFile, where ``output`` is empty) and finally ``brief`` for

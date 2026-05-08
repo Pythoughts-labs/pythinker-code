@@ -1,4 +1,4 @@
-"""Pi-style renderers for Pythinker's ``FetchURL`` and ``SearchWeb`` tools."""
+"""Pythinker renderers for Pythinker's ``FetchURL`` and ``SearchWeb`` tools."""
 
 from __future__ import annotations
 

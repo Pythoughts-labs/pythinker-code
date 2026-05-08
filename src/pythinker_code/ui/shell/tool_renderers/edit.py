@@ -1,12 +1,12 @@
-"""Pi-style renderer for Pythinker's ``StrReplaceFile`` tool.
+"""Pythinker renderer for Pythinker's ``StrReplaceFile`` tool.
 
-Mirrors ``packages/coding-agent/src/core/tools/edit.ts`` (Pi reference).
+ .
 
-Pi tool name → Pythinker tool name: ``edit`` → ``StrReplaceFile``.
+Source tool name → Pythinker tool name: ``edit`` → ``StrReplaceFile``.
 Param shape: Pythinker uses ``edit: Edit | list[Edit]`` where each ``Edit``
-has ``{old, new, replace_all}``. Pi uses ``edits: [{oldText, newText}]``.
+has ``{old, new, replace_all}``.
 
-Unlike Pi, Pythinker's tool produces the diff out-of-band (via display
+Pythinker's tool produces the diff out-of-band (via display
 blocks), so the renderer reconstructs it from the call args at render time.
 That means the diff appears as soon as the streaming args are complete and
 remains visible after execution.
@@ -52,7 +52,7 @@ def _normalize_edits(edit_arg: Any) -> list[dict[str, Any]]:
 
 
 def _build_combined_diff(edits: list[dict[str, Any]]) -> str:
-    """Render each edit's (old → new) as a Pi-format diff block, joined.
+    """Render each edit's (old → new) as a Pythinker-format diff block, joined.
 
     For multi-edit calls we render them sequentially with a blank separator.
     Each block is line-numbered relative to its own ``old`` text — we don't

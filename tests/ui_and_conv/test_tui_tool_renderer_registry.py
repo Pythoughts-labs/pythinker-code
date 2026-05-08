@@ -1,4 +1,4 @@
-"""Tests for the Pi-style tool renderer registry."""
+"""Tests for the Pythinker tool renderer registry."""
 
 from __future__ import annotations
 

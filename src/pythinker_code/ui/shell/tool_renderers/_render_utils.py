@@ -1,8 +1,4 @@
-"""Shared helpers for Pi-style tool renderers.
-
-Mirrors a subset of
-``packages/coding-agent/src/core/tools/render-utils.ts`` from Pi.
-"""
+"""Shared helpers for Pythinker tool renderers."""
 
 from __future__ import annotations
 
@@ -28,7 +24,7 @@ __all__ = [
 
 
 def as_str(value: Any) -> str | None:
-    """Pi's ``str(...)`` helper: keep strings, return ``None`` for anything else.
+    """the ``str(...)`` helper: keep strings, return ``None`` for anything else.
 
     The renderer treats ``None`` as "missing" (placeholder) and a non-string
     value as "invalid".
@@ -43,7 +39,7 @@ def as_str(value: Any) -> str | None:
 def fg(token: str, content: str | Text) -> Text:
     """Wrap *content* in a Rich Text styled by a TUI theme *token*.
 
-    Mirrors Pi's ``theme.fg(token, text)``. ``content`` may already be a
+    Mirrors the ``theme.fg(token, text)``. ``content`` may already be a
     ``Text`` (style is applied non-destructively).
     """
     style = tui_rich_style(token)
@@ -55,18 +51,18 @@ def fg(token: str, content: str | Text) -> Text:
 
 
 def tool_title(label: str) -> Text:
-    """Bold tool-name title (Pi: ``theme.fg("toolTitle", theme.bold(label))``)."""
+    """Bold tool-name title ."""
     base = tui_rich_style("tool_title")
     return Text(label, style=base + RichStyle(bold=True))
 
 
 def invalid_arg() -> Text:
-    """Pi's ``invalidArgText`` placeholder for non-string args."""
+    """Placeholder rendered when an arg is not a valid string."""
     return fg("error", "<invalid>")
 
 
 def shorten_path(path: str, *, cwd: str | None = None) -> str:
-    """Display-shorten an absolute path the way Pi does.
+    """Display-shorten an absolute path in the standard way.
 
     * paths inside ``cwd`` are made relative;
     * paths inside ``$HOME`` are prefixed with ``~``;

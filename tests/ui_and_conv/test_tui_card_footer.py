@@ -1,4 +1,4 @@
-"""Smoke tests for the Pi-style footer component."""
+"""Smoke tests for the Pythinker footer component."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Smoke tests for the Pi-style ported tool renderers.
+"""Smoke tests for the Pythinker ported tool renderers.
 
 These tests render each builtin through ``ToolExecutionComponent`` and assert
 the human-readable output contains the expected fragments. They are not

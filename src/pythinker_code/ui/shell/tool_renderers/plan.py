@@ -1,4 +1,4 @@
-"""Pi-style renderers for Pythinker's plan-mode tools.
+"""Pythinker renderers for Pythinker's plan-mode tools.
 
 Covers ``EnterPlanMode`` (no args) and ``ExitPlanMode`` (optional alternatives
 list). Both produce single-line headers; ExitPlanMode also lists the options

@@ -1,4 +1,4 @@
-"""Pi-style renderer for Pythinker's ``SetTodoList`` tool.
+"""Pythinker renderer for Pythinker's ``SetTodoList`` tool.
 
 Renders the todo list with status icons:
 

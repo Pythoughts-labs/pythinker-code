@@ -1,9 +1,7 @@
-"""Pi-style renderer for Pythinker's ``Agent`` (subagent) tool.
+"""Pythinker renderer for the ``Agent`` (subagent) tool.
 
-Mirrors the rendering shape of Pi's subagent extension at
-``examples/extensions/subagent/index.ts`` (Pi reference). Pythinker's
-Agent tool is single-spawn — Pi's chain/parallel modes don't apply, so
-we render only the "single" variant.
+The Agent tool is single-spawn; this renderer covers the single variant
+only (spawn, run, surface the final result).
 """
 
 from __future__ import annotations

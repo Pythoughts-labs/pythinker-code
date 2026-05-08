@@ -1,8 +1,8 @@
-"""Pi-style renderer for Pythinker's ``Glob`` tool.
+"""Pythinker renderer for Pythinker's ``Glob`` tool.
 
-Mirrors ``packages/coding-agent/src/core/tools/find.ts`` (Pi reference).
+ .
 
-Pi tool name → Pythinker tool name: ``find`` → ``Glob``.
+Source tool name → Pythinker tool name: ``find`` → ``Glob``.
 Param mapping: ``path`` → ``directory``; ``limit`` is not exposed in Pythinker.
 """
 

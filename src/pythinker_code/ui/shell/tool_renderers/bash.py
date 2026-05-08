@@ -1,13 +1,13 @@
-"""Pi-style renderer for Pythinker's ``Shell`` tool.
+"""Pythinker renderer for Pythinker's ``Shell`` tool.
 
-Mirrors ``packages/coding-agent/src/core/tools/bash.ts`` (Pi reference) but
+  but
 delegates the actual visual treatment to the bordered
 :func:`render_bash_execution` component for completed results, giving the
-shell tool the same look as Pi's interactive shell mode.
+shell tool the same look as Pythinker's interactive shell mode.
 
-Pi tool name → Pythinker tool name: ``bash`` → ``Shell``.
+Source tool name → Pythinker tool name: ``bash`` → ``Shell``.
 Param mapping: Pythinker has ``command``, ``timeout``, ``run_in_background``,
-``description``; Pi has ``command``, ``timeout`` only.
+``description``; Pythinker has ``command``, ``timeout`` only.
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType | None:
 
 
 def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> RenderableType | None:
-    """Render a Pi-style bordered shell card with output, status, exit code."""
+    """Render a Pythinker bordered shell card with output, status, exit code."""
     args = ctx.args or {}
     command = as_str(args.get("command")) or ""
     if not command:

@@ -1,8 +1,8 @@
-"""Pi-style renderer for Pythinker's ``WriteFile`` tool.
+"""Pythinker renderer for Pythinker's ``WriteFile`` tool.
 
-Mirrors ``packages/coding-agent/src/core/tools/write.ts`` (Pi reference).
+ .
 
-The Pi renderer also incrementally syntax-highlights streaming content via a
+This renderer could incrementally syntax-highlights streaming content via a
 lookahead cache. We skip the cache for now and rely on plain text plus a
 trailing truncation hint — highlighting can be layered on later via
 ``rich.syntax.Syntax``.
@@ -77,7 +77,7 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
 
 
 def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> RenderableType | None:
-    # Pi only renders the result when it's an error. On success, the call
+    # Render the result when it's an error. On success, the call
     # preview already shows the full payload.
     if not result.is_error or not result.text:
         return None

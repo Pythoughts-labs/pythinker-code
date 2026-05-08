@@ -1,6 +1,6 @@
-"""Integration tests for the Pi-style _ToolCallBlock wiring.
+"""Integration tests for the Pythinker _ToolCallBlock wiring.
 
-Exercises the flag fallback contract: when ``style != "pi"`` OR no renderer
+Exercises the flag fallback contract: when ``style != "card"`` OR no renderer
 is registered for the tool, the legacy worklog rendering must be used
 unchanged.
 """
@@ -37,8 +37,8 @@ def _force_pythinker_style(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture
-def _force_pi_style(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("PYTHINKER_TUI_STYLE", "pi")
+def _force_card_style(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PYTHINKER_TUI_STYLE", "card")
 
 
 def _make_tool_call(name: str = "ReadFile", args: str | None = '{"path":"src/x.py"}') -> ToolCall:
@@ -100,26 +100,26 @@ def test_default_style_uses_legacy_rendering(_force_pythinker_style):
     rendered = render_plain(block.compose(), width=80)
     # Legacy path includes the worklog state token "completed" in plain text.
     assert "completed" in rendered
-    # Pi card uses "read " (lowercase) as the call header. Legacy uses "Read".
+    # card uses "read " (lowercase) as the call header. Legacy uses "Read".
     assert "Read" in rendered
 
 
-def test_pi_style_with_registered_renderer_uses_card(_force_pi_style):
+def test_card_style_with_registered_renderer_uses_card(_force_card_style):
     _register_read_renderer()
     block = _ToolCallBlock(_make_tool_call())
     block.finish(_ok_result("✓ 12 lines"))
     rendered = render_plain(block.compose(), width=80)
-    # Pi card output: lowercase "read" header from the registered renderer.
+    # card output: lowercase "read" header from the registered renderer.
     assert "read src/x.py" in rendered
     # And the brief shows up as the result text.
     assert "12 lines" in rendered
-    # Legacy worklog "completed" token must NOT appear on the Pi path.
+    # Legacy worklog "completed" token must NOT appear on the card path.
     assert "completed" not in rendered
 
 
-def test_pi_style_without_specific_renderer_uses_generic(_force_pi_style):
+def test_card_style_without_specific_renderer_uses_generic(_force_card_style):
     """Under flag=pi, tools without a specific renderer fall back to the
-    generic Pi card (not to the legacy worklog rendering)."""
+    generic card (not to the legacy worklog rendering)."""
     block = _ToolCallBlock(_make_tool_call(name="UnregisteredTool"))
     block.finish(_ok_result("done"))
     rendered = render_plain(block.compose(), width=80)
@@ -130,7 +130,7 @@ def test_pi_style_without_specific_renderer_uses_generic(_force_pi_style):
     assert "completed" not in rendered
 
 
-def test_pi_style_streaming_args_then_result(_force_pi_style):
+def test_card_style_streaming_args_then_result(_force_card_style):
     _register_read_renderer()
     # Start with no args.
     tc = ToolCall(id="t1", function=ToolCall.FunctionBody(name="ReadFile", arguments=None))
@@ -146,7 +146,7 @@ def test_pi_style_streaming_args_then_result(_force_pi_style):
     assert "5 lines" in rendered
 
 
-def test_pi_style_error_result(_force_pi_style):
+def test_card_style_error_result(_force_card_style):
     _register_read_renderer()
     block = _ToolCallBlock(_make_tool_call())
     block.finish(_err_result("permission denied"))
@@ -154,7 +154,7 @@ def test_pi_style_error_result(_force_pi_style):
     assert "permission denied" in rendered
 
 
-def test_pi_style_lifecycle_marks_execution_started(_force_pi_style):
+def test_card_style_lifecycle_marks_execution_started(_force_card_style):
     """_ToolCallBlock should call mark_execution_started on the card so
     renderers see ctx.execution_started == True from the first compose."""
     seen = {"execution_started": False, "args_complete": False}
@@ -182,7 +182,7 @@ def test_pi_style_lifecycle_marks_execution_started(_force_pi_style):
     assert seen["args_complete"] is True
 
 
-def test_pi_style_renderer_crash_does_not_break_block(_force_pi_style):
+def test_card_style_renderer_crash_does_not_break_block(_force_card_style):
     def render_call(_ctx: ToolRenderContext) -> RenderableType:
         raise RuntimeError("boom")
 

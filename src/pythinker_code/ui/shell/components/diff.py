@@ -1,14 +1,14 @@
-"""Pi-style diff component.
+"""Pythinker diff component.
 
-Mirrors ``packages/coding-agent/src/modes/interactive/components/diff.ts``
+
 plus the diff-string generator from ``edit-diff.ts``.
 
 Two entry points:
 
 * :func:`compute_edit_diff_string` — given ``old_text`` / ``new_text``,
-  produce Pi's per-line diff format (``+123 content``, ``-123 content``,
+  produce Pythinker's per-line diff format (``+123 content``, ``-123 content``,
   `` 123 content``, with `` ... `` skip markers).
-* :func:`render_diff` — colorize a Pi-format diff string into a Rich
+* :func:`render_diff` — colorize a Pythinker-format diff string into a Rich
   ``Text`` (red removed, green added, dim context, with intra-line word
   highlighting on single-line edits).
 """
@@ -53,7 +53,7 @@ def compute_edit_diff_string(
     *,
     context_lines: int = _DEFAULT_CONTEXT_LINES,
 ) -> EditDiffResult:
-    """Build Pi's custom diff format from ``old_text``/``new_text``.
+    """Build Pythinker's custom diff format from ``old_text``/``new_text``.
 
     Format per line:
 
@@ -163,7 +163,7 @@ def _parse_diff_line(line: str) -> tuple[str, str, str] | None:
 
 
 def _intra_line_diff(old_content: str, new_content: str) -> tuple[Text, Text]:
-    """Word-level inverse highlighting on changed tokens (Pi behavior).
+    """Word-level inverse highlighting on changed tokens (the same behavior).
 
     Returns ``(removed_text, added_text)`` already styled (with the inverse
     bit set on tokens that differ), but *not* yet wrapped in red/green —
@@ -221,7 +221,7 @@ def _intra_line_diff(old_content: str, new_content: str) -> tuple[Text, Text]:
 
 
 def render_diff(diff_text: str) -> Text:
-    """Colorize a Pi-format diff string.
+    """Colorize a Pythinker-format diff string.
 
     ``diff_text`` is whatever :func:`compute_edit_diff_string` produced (or
     any string in the same format). Lines that don't match the prefix

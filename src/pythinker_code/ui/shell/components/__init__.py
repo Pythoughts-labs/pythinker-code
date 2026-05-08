@@ -1,7 +1,7 @@
-"""Pi-style TUI component foundation.
+"""Pythinker TUI component foundation.
 
 This package provides reusable rendering primitives modeled after the
-``@earendil-works/pi-tui`` component system. Components are pure
+internal component system. Components are pure
 data-to-Rich-renderable adapters with no event-loop knowledge.
 """
 

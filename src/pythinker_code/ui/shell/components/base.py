@@ -1,4 +1,4 @@
-"""Component protocol shared by Pi-style TUI components."""
+"""Component protocol shared by Pythinker TUI components."""
 
 from __future__ import annotations
 

@@ -1,9 +1,9 @@
-"""Pi-style tool execution card.
+"""Pythinker tool execution card.
 
 Wraps a registered :class:`ToolRenderDefinition` and renders it as a card
 with a status-tinted background. Mirrors
-``packages/coding-agent/src/modes/interactive/components/tool-execution.ts``
-in the Pi reference codebase.
+
+in the  codebase.
 
 The card lifecycle:
 
@@ -14,7 +14,7 @@ The card lifecycle:
 * user cancels / denies      → status = ``CANCELLED`` / ``DENIED``
 
 If the renderer produces no visible output for the current state, the
-component renders an empty string (Pi's ``hideComponent`` behavior).
+component renders an empty string (the ``hidden-component`` behavior).
 """
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ class _CallState:
 
 
 class ToolExecutionComponent:
-    """Single tool invocation rendered as a Pi-style card."""
+    """Single tool invocation rendered as a Pythinker card."""
 
     def __init__(
         self,
@@ -179,7 +179,7 @@ class ToolExecutionComponent:
 
         bg_style = self._background_style()
         # Padding with style fills the padded area with the tint, giving the
-        # Pi "content box" feel without an extra border character.
+        # "content box" feel without an extra border character.
         return Padding(body, (0, 1), style=bg_style)
 
     # -- Internals -----------------------------------------------------------

@@ -1,7 +1,7 @@
-"""Minimal Pi-style keybinding registry.
+"""Minimal Pythinker keybinding registry.
 
-Mirrors a subset of ``packages/coding-agent/src/core/keybindings.ts`` plus
-``modes/interactive/components/keybinding-hints.ts`` (Pi reference). Pi's
+Built-in keybinding registry
+``modes/interactive/components/keybinding-hints.ts`` . the
 full registry lists ~50 identifiers wired across model/session/tree
 selectors, most of which Pythinker doesn't expose yet — we ship only the
 semantic ids we currently use, with a `register_keybinding` hatch so
@@ -29,7 +29,7 @@ __all__ = [
 ]
 
 
-# Default registry. Keys are Pi-style semantic ids ("app.tools.expand");
+# Default registry. Keys are Pythinker semantic ids ("app.tools.expand");
 # values are the key chord(s) the host will dispatch.
 _REGISTRY: dict[str, tuple[str, ...]] = {
     "app.interrupt": ("esc", "ctrl+c"),

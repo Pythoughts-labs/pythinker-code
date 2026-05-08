@@ -735,7 +735,7 @@ def keys(app: Shell, args: str):
 @registry.command
 @shell_mode_registry.command
 def tui(app: Shell, args: str):
-    """Show or set the TUI style: pi or pythinker"""
+    """Show or set the TUI style: card or pythinker"""
     from pythinker_code.ui.tui_config import get_active_tui_style, set_active_tui_style
 
     soul = ensure_pythinker_soul(app)
@@ -745,19 +745,23 @@ def tui(app: Shell, args: str):
     current = get_active_tui_style()
     arg = args.strip().lower()
 
-    # Accept "/tui pi", "/tui style pi", "/tui set pi" — all the natural shapes.
+    # Accept "/tui card", "/tui style card", "/tui set card" — all natural shapes.
     parts = arg.split()
     if parts and parts[0] in ("style", "set"):
         parts = parts[1:]
     target = parts[0] if parts else ""
 
+    # Accept legacy "pi" silently as an alias for "card".
+    if target == "pi":
+        target = "card"
+
     if not target:
         console.print(f"Current TUI style: [bold]{current}[/bold]")
-        console.print("[grey50]Usage: /tui pi | /tui pythinker[/grey50]")
+        console.print("[grey50]Usage: /tui card | /tui pythinker[/grey50]")
         return
 
-    if target not in ("pi", "pythinker"):
-        console.print(f"[red]Unknown style: {target}. Use 'pi' or 'pythinker'.[/red]")
+    if target not in ("card", "pythinker"):
+        console.print(f"[red]Unknown style: {target}. Use 'card' or 'pythinker'.[/red]")
         return
 
     if target == current:
@@ -783,7 +787,7 @@ def tui(app: Shell, args: str):
         return
 
     set_active_tui_style(target)
-    if target == "pi":
+    if target == "card":
         # Make sure renderers are present immediately for current session.
         from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
 

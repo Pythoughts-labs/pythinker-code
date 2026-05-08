@@ -2133,13 +2133,13 @@ class CustomPromptSession:
         assert app is not None
         columns = app.output.get_size().columns
 
-        # Pi-style footer dispatch. Mirrors components/footer.ts layout while
+        # Pythinker footer dispatch. Mirrors components/footer.ts layout while
         # reusing the existing data sources so we never lose information vs
         # the legacy toolbar.
-        from pythinker_code.ui.tui_config import is_pi_style
+        from pythinker_code.ui.tui_config import is_card_style
 
-        if is_pi_style():
-            return self._render_pi_bottom_toolbar(columns)
+        if is_card_style():
+            return self._render_card_bottom_toolbar(columns)
 
         fragments: list[tuple[str, str]] = []
         tc = get_toolbar_colors()
@@ -2263,8 +2263,8 @@ class CustomPromptSession:
 
         return FormattedText(fragments)
 
-    def _render_pi_bottom_toolbar(self, columns: int) -> FormattedText:
-        """Pi-style two-line footer.
+    def _render_card_bottom_toolbar(self, columns: int) -> FormattedText:
+        """Pythinker two-line footer.
 
         Line 1: cwd (home-shortened) + ``(branch)`` + mode/flag chips.
         Line 2: context% + model on the right; toast/extension statuses left.
@@ -2321,8 +2321,7 @@ class CustomPromptSession:
         # Compact ``17k/200k`` glyph next to the percentage when both sides are known.
         if status.max_context_tokens:
             ctx_compact = (
-                f"{format_tokens(status.context_tokens)}/"
-                f"{format_tokens(status.max_context_tokens)}"
+                f"{format_tokens(status.context_tokens)}/{format_tokens(status.max_context_tokens)}"
             )
             right_parts.append(ctx_compact)
         if self._model_name:

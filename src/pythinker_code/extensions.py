@@ -1,9 +1,7 @@
 """In-process extension API.
 
-Pi exposes a large set of registration hooks
-(``examples/extensions/*.ts`` + ``core/extensions/types.ts``). This module
-provides the equivalent Python surface for the extension points that
-already exist in Pythinker:
+This module exposes Pythinker's extension hooks for the registries that
+already exist in the codebase:
 
 * tool renderers           — :func:`register_tool_renderer`
 * keybindings              — :func:`register_keybinding`
@@ -11,11 +9,11 @@ already exist in Pythinker:
 * event handlers           — :func:`register_event_handler`
 * lifecycle hooks          — :func:`register_extension`
 
-The footer status registry is a thin placeholder for the day a Pi-style
+The footer status registry is a thin placeholder for the day the card-style
 :class:`FooterState` is wired into the live prompt; until then it just
 stores entries that callers can read out.
 
-Pi's ``register_command`` overlaps with Pythinker's existing
+the ``register_command`` overlaps with Pythinker's existing
 ``SlashCommandRegistry`` — extensions should use that registry directly.
 
 Extensions are registered with::
@@ -82,7 +80,7 @@ class ExtensionContext:
     """Handle passed into an extension's setup function.
 
     Each method delegates to the appropriate global registry. Method names
-    mirror Pi's ``register*`` API surface so porting an extension between
+    mirror the ``register*`` API surface so porting an extension between
     runtimes is mostly mechanical.
     """
 
@@ -132,7 +130,7 @@ def register_extension(*, name: str, setup: ExtensionSetup) -> None:
 def run_pending_extensions() -> list[str]:
     """Execute every pending extension's setup. Returns the names that ran.
 
-    Errors are logged and the rest of the queue continues — Pi's behavior.
+    Errors are logged and the rest of the queue continues — the same behavior.
     """
     started: list[str] = []
     while _PENDING:

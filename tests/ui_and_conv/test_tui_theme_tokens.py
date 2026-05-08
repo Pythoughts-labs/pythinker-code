@@ -1,4 +1,4 @@
-"""Tests for the Pi-style semantic theme tokens added to ui/theme.py."""
+"""Tests for the Pythinker semantic theme tokens added to ui/theme.py."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def _restore_active_theme():
 def test_dark_tokens_have_pi_reference_values():
     set_active_theme("dark")
     t = get_tui_tokens()
-    # Pi reference values (packages/.../theme/dark.json).
+    #  values (packages/.../theme/dark.json).
     assert t.tool_pending_bg == "#282832"
     assert t.tool_success_bg == "#283228"
     assert t.tool_error_bg == "#3c2828"
@@ -52,7 +52,7 @@ def test_get_tui_tokens_with_explicit_theme_arg():
 
 
 def test_text_token_is_empty_string_for_terminal_default():
-    # Pi convention: empty string = use terminal's default fg color.
+    # Theme convention: empty string = use terminal's default fg color.
     assert get_tui_tokens("dark").text == ""
     assert get_tui_tokens("light").text == ""
 

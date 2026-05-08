@@ -1,4 +1,4 @@
-"""Helpers for formatting keybinding hints in Pi-style status lines."""
+"""Helpers for formatting keybinding hints in Pythinker status lines."""
 
 from __future__ import annotations
 

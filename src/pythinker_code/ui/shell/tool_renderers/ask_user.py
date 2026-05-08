@@ -1,4 +1,4 @@
-"""Pi-style renderer for Pythinker's ``AskUserQuestion`` tool.
+"""Pythinker renderer for Pythinker's ``AskUserQuestion`` tool.
 
 Shows the first question + its option labels in the call preview, plus
 a count badge when there are multiple questions. The result preview is

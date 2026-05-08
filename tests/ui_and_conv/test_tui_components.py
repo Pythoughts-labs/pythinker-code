@@ -1,4 +1,4 @@
-"""Unit tests for Pi-style TUI component foundation."""
+"""Unit tests for Pythinker TUI component foundation."""
 
 from __future__ import annotations
 

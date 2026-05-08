@@ -1,4 +1,4 @@
-"""Pi-style tool renderer registry.
+"""Pythinker tool renderer registry.
 
 Each registered tool can supply two callables:
 
@@ -60,7 +60,7 @@ class ToolRenderContext:
 class ToolResultPayload:
     """Normalized tool result passed to ``render_result``.
 
-    Mirrors the Pi shape (``content`` blocks + ``details``) so renderers can
+    Mirrors the canonical shape (``content`` blocks + ``details``) so renderers can
     be ported directly. Pythinker callers convert their ``ToolReturnValue``
     into this payload at the registry boundary.
     """
@@ -139,7 +139,7 @@ def register_builtin_renderers() -> None:
 
     Imports happen lazily inside the function so the registry module itself
     has no side effects at import time — the host wiring layer is the one
-    that calls this once at startup when the Pi style is active.
+    that calls this once at startup when the Pythinker style is active.
     """
     from pythinker_code.ui.shell.tool_renderers import (
         agent,

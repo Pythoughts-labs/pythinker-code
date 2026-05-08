@@ -1,4 +1,4 @@
-"""Pi-style assistant/user/custom message components.
+"""Pythinker assistant/user/custom message components.
 
 Mirrors:
 
@@ -9,7 +9,7 @@ Mirrors:
 Each function takes a tagged content payload and returns a Rich renderable
 (no event-loop dependency). Callers render whatever shape they have —
 Pythinker's ``_blocks.py`` already classifies content; it can hand off to
-these for the Pi visual treatment when ``tui.style == "pi"``.
+these for the card-style visual treatment when ``tui.style == "pi"``.
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ class CustomMessageInput:
 
 
 def render_user_message(text: str) -> RenderableType:
-    """Pi user message: text with a tinted background block."""
+    """User message — text with a tinted background block."""
     md = Markdown(text)
     bg = tui_rich_style("user_message_bg")
     fg = tui_rich_style("user_message_text")
@@ -73,11 +73,11 @@ def render_assistant_message(
     stop_reason: str | None = None,
     error_message: str | None = None,
 ) -> RenderableType | None:
-    """Pi assistant message: markdown segments separated by spacer lines.
+    """Assistant message — markdown segments separated by spacer lines.
 
     Returns ``None`` when the message has no visible body and no error.
     Tool-call blocks are *not* rendered here — the host is expected to
-    interleave tool execution cards itself (matching Pi's behavior).
+    interleave tool execution cards itself (matching the same behavior).
     """
     blocks: list[RenderableType] = []
     items = [
@@ -124,7 +124,7 @@ def render_assistant_message(
 
 
 def render_custom_message(message: CustomMessageInput) -> RenderableType:
-    """Pi custom message block — purple-tinted background with type label.
+    """Custom message block — purple-tinted background with type label.
 
     Used by extensions to surface non-conversation messages (skill
     invocations, branch summaries, compaction notes) without making them

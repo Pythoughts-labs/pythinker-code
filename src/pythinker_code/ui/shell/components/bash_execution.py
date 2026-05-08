@@ -1,8 +1,8 @@
-"""Pi-style bash execution component.
+"""Pythinker bash execution component.
 
-Mirrors ``packages/coding-agent/src/modes/interactive/components/bash-execution.ts``.
 
-Pi renders bash as a self-contained card with a dynamic top/bottom border,
+
+Render bash as a self-contained card with a dynamic top/bottom border,
 a ``$ <command>`` header, streaming output, and a footer with status.
 We model the same shape as a stateless Rich renderable factory so callers
 (the bash tool renderer or future ``Shell`` history) can drive it.

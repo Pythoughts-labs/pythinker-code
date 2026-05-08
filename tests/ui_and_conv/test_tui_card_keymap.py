@@ -1,4 +1,4 @@
-"""Tests for the Pi-style keybinding registry."""
+"""Tests for the Pythinker keybinding registry."""
 
 from __future__ import annotations
 

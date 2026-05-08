@@ -1,6 +1,6 @@
-"""Pi-style footer component.
+"""Pythinker footer component.
 
-Mirrors ``packages/coding-agent/src/modes/interactive/components/footer.ts``
+
 plus its data provider: a two- or three-line status block with cwd/git/session
 on top, usage stats + context%/model on the right, and optional extension
 status lines.
@@ -41,8 +41,8 @@ _MULTI_SPACE_RE = re.compile(r" +")
 class FooterUsage:
     """Cumulative usage stats over the session.
 
-    Mirrors Pi's ``message.usage`` aggregate. All counts are token totals.
-    ``cost_total`` is in dollars (Pi sums ``cost.total``).
+    Mirrors the ``message.usage`` aggregate. All counts are token totals.
+    ``cost_total`` is in dollars (equivalent to summing message-level cost.total).
     """
 
     input_tokens: int = 0
@@ -94,7 +94,7 @@ class FooterState:
 
 
 def format_tokens(count: int) -> str:
-    """Pi's compact token formatter: ``1234`` → ``1.2k``."""
+    """Pythinker's compact token formatter: ``1234`` → ``1.2k``."""
     if count < 1_000:
         return str(count)
     if count < 10_000:

@@ -178,13 +178,14 @@ class MCPClientConfig(BaseModel):
 class TUIConfig(BaseModel):
     """TUI rendering style configuration."""
 
-    style: Literal["pythinker", "pi"] = Field(
+    style: Literal["pythinker", "card"] = Field(
         default="pythinker",
         description=(
             "TUI rendering style. 'pythinker' (default) is the existing "
-            "worklog-based rendering. 'pi' opts into Pi-style tool cards "
-            "(in-progress migration). Override at runtime with the env var "
-            "PYTHINKER_TUI_STYLE=pi."
+            "worklog-based rendering. 'card' opts into the new bordered "
+            "tool cards. Override at runtime with the env var "
+            "PYTHINKER_TUI_STYLE=card. The legacy value 'pi' is still "
+            "accepted as an alias for 'card' so older configs keep working."
         ),
     )
 

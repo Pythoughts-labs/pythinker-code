@@ -1,6 +1,6 @@
 """In-process event bus.
 
-Mirrors ``packages/coding-agent/src/core/event-bus.ts`` (Pi reference). A
+ . A
 minimal pub/sub primitive that extension/plugin code can use to broadcast
 state changes (assistant message, tool call started/ended, model changed,
 etc.) without holding direct references to listeners.
@@ -34,7 +34,7 @@ class EventBus:
     """Channel-keyed pub/sub.
 
     Use :func:`create_event_bus` rather than constructing directly — that
-    keeps the constructor signature private and matches Pi's factory.
+    keeps the constructor signature private and matches Pythinker's factory.
     """
 
     def __init__(self) -> None:
@@ -98,5 +98,5 @@ class EventBus:
 
 
 def create_event_bus() -> EventBus:
-    """Factory mirroring Pi's ``createEventBus()``."""
+    """Factory mirroring the ``createEventBus()``."""
     return EventBus()

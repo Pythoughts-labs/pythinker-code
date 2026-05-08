@@ -1,6 +1,6 @@
 """Generic fallback renderer used when no tool-specific renderer is registered.
 
-Mirrors Pi's ``formatToolExecution`` shape: tool name in the header, args
+Mirrors the ``formatToolExecution`` shape: tool name in the header, args
 as a JSON blob, and the textual result below.
 """
 
