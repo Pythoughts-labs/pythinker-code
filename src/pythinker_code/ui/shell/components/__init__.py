@@ -17,6 +17,19 @@ from pythinker_code.ui.shell.components.diff import (
     compute_edit_diff_string,
     render_diff,
 )
+from pythinker_code.ui.shell.components.footer import (
+    FooterState,
+    FooterUsage,
+    format_tokens,
+    render_footer,
+)
+from pythinker_code.ui.shell.components.messages import (
+    AssistantContent,
+    CustomMessageInput,
+    render_assistant_message,
+    render_custom_message,
+    render_user_message,
+)
 from pythinker_code.ui.shell.components.key_hints import key_hint, raw_key_hint
 from pythinker_code.ui.shell.components.render_utils import (
     cell_width,
@@ -31,19 +44,28 @@ from pythinker_code.ui.shell.components.tool_execution import (
 )
 
 __all__ = [
+    "AssistantContent",
     "BashExecutionState",
+    "CustomMessageInput",
     "EditDiffResult",
+    "FooterState",
+    "FooterUsage",
     "ToolExecutionComponent",
     "ToolExecutionStatus",
     "TuiComponent",
     "cell_width",
     "compute_edit_diff_string",
     "dim",
+    "format_tokens",
     "key_hint",
     "raw_key_hint",
+    "render_assistant_message",
     "render_bash_execution",
+    "render_custom_message",
     "render_diff",
+    "render_footer",
     "render_plain",
+    "render_user_message",
     "sanitize_ansi",
     "truncate_to_width",
 ]
