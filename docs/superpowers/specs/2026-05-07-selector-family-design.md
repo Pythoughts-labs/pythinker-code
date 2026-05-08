@@ -32,6 +32,7 @@ src/pythinker_code/ui/shell/
     oauth.py                  ← run_oauth_selector()
     model.py                  ← run_model_selector()  (replaces model_picker.py)
     session.py                ← run_session_selector() (replaces session_picker.py)
+    session_search.py         ← pure search/sort functions (port of session-selector-search.ts)
     settings.py               ← run_settings_selector()
     scoped_models.py          ← run_scoped_models_selector()
     config.py                 ← run_config_selector()
@@ -202,6 +203,11 @@ Additional Pi features to port:
 - Model name displayed below the list for the selected item.
 - Fuzzy filter (type-to-search, same as current `model_picker.py`).
 
+The caller passes a flat `list[ModelEntry]` — not `list[ProviderGroup]`. The
+existing `ProviderGroup` grouping in `model_picker.py` is a Pythinker-specific
+concept not present in Pi; the new selector does not use it. `ModelEntry` already
+exists in `model_picker.py` (`name`, `display`, `model_id`).
+
 ```python
 @dataclass(frozen=True, slots=True)
 class ScopedModelItem:
@@ -209,16 +215,16 @@ class ScopedModelItem:
     thinking_level: str | None = None
 
 run_model_selector(
-    groups: list[ProviderGroup],
+    models: list[ModelEntry],
     *,
     current_model_name: str | None = None,
     scoped_models: list[ScopedModelItem] | None = None,
-) -> str | None  # returns model config key
+) -> str | None  # returns model config key (ModelEntry.name)
 ```
 
 Custom `Application` (preserves `model_picker.py` pattern; scope-toggle requires
 state that doesn't fit `run_selector()`). `model_picker.py` becomes a one-line
-wrapper.
+wrapper that flattens its `ProviderGroup` list into `ModelEntry` items and delegates.
 
 ### `selectors/session.py` — migrates `session_picker.py`
 
@@ -256,7 +262,44 @@ list to port:
 run_session_selector(
     work_dir: HostPath,
     current_session: Session,
-) -> str | None  # returns session file path
+) -> str | None  # returns session ID (not file path)
+```
+
+**Return value is session ID, not file path.** Both existing callers compare the
+result to `current_session.id` (`slash.py:622`) and pass it to
+`Reload(session_id=...)` (`slash.py:635`) or treat it as `session_id`
+(`cli/__init__.py:979`). File paths are used *internally* only (tree rendering,
+delete/rename operations). The session list is loaded with `Session` objects that
+carry both `id` and `path`; the selector resolves path → id before returning.
+
+`session_search.py` — pure functions ported from Pi's `session-selector-search.ts`:
+
+```python
+# session_search.py
+class SortMode(Enum):
+    THREADED = "threaded"
+    RECENT = "recent"
+    FUZZY = "fuzzy"
+
+class NameFilter(Enum):
+    ALL = "all"
+    NAMED_ONLY = "named"
+
+@dataclass(frozen=True, slots=True)
+class ParsedSearchQuery:
+    raw: str
+    mode: Literal["fuzzy", "regex", "phrase"]
+    pattern: str  # normalized (stripped quotes for phrase, stripped "re:" for regex)
+
+def parse_search_query(raw: str) -> ParsedSearchQuery: ...
+def filter_and_sort_sessions(
+    sessions: list[Session],
+    query: ParsedSearchQuery,
+    sort_mode: SortMode,
+    name_filter: NameFilter,
+    work_dir: HostPath,
+) -> list[Session]: ...
+def has_session_name(session: Session) -> bool: ...
 ```
 
 Custom `Application` — scope/sort/name toggles with async reload don't fit
@@ -376,8 +419,9 @@ logic, no TTY.
 | `test_selector_groups.py` | `SelectorHeader` rows appear in correct positions; cursor nav skips them; wraps correctly |
 | `test_settings_selector.py` | Cycling values; multi-item changes accumulate; cancel returns `None` |
 | `test_scoped_models_selector.py` | Toggle, reorder (Alt+↑↓), enable-all, clear-all, cancel returns `ScopedResult(kind="unchanged")` |
+| `test_session_search.py` | `parse_search_query` handles fuzzy/regex/phrase; `filter_and_sort_sessions` correct results per sort mode and name filter |
 
-Session selector tests are integration/manual — state machine is async and TTY-bound.
+Session selector UI tests are integration/manual — state machine is async and TTY-bound.
 
 ---
 
@@ -394,3 +438,6 @@ Session selector tests are integration/manual — state machine is async and TTY
 | `tree_selector` deferred, no stub file | No stub — a file that always raises `NotImplementedError` is dead code that creates a false import surface. |
 | Three implementation plans | Plan B (session) and Plan C (settings/config) are each substantial; splitting avoids one giant plan that can't be reviewed or shipped incrementally. |
 | Timeout in `extension.py`, not `selector.py` | `asyncio.wait_for` in the callee keeps `selector.py` clean; timeout is only needed for the extension use case. |
+| Session selector returns ID, not path | Pi's session selector returns a file path; Pythinker's callers at `slash.py:622/635` and `cli/__init__.py:979` all treat the return value as a session ID. Translating path → ID inside `run_session_selector` avoids touching all callers in Plan B scope. |
+| `session_search.py` as a separate module | Pi separates `session-selector-search.ts` as pure, testable functions. Same split here makes the search/sort logic independently unit-testable without spinning up a full `Application`. |
+| Model selector takes `list[ModelEntry]`, not `list[ProviderGroup]` | Pi renders a flat list; `ProviderGroup` is a Pythinker-only concept from the old `model_picker.py`. The one-line delegation wrapper flattens groups → entries so existing callers of `model_picker.py` need no changes in Plan B. |
