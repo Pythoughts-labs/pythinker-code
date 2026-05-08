@@ -62,7 +62,7 @@ def render_user_message(text: str) -> RenderableType:
     bg = tui_rich_style("user_message_bg")
     fg = tui_rich_style("user_message_text")
     style = bg + fg if fg else bg
-    return Padding(md, (0, 1), style=style)
+    return Padding(md, (1, 1), style=style)
 
 
 def render_assistant_message(

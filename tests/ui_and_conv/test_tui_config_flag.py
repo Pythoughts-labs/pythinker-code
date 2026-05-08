@@ -14,9 +14,9 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch):
     yield monkeypatch
 
 
-def test_default_is_pythinker(_clear_env: pytest.MonkeyPatch):
-    assert get_tui_style() == "pythinker"
-    assert is_card_style() is False
+def test_default_is_card(_clear_env: pytest.MonkeyPatch):
+    assert get_tui_style() == "card"
+    assert is_card_style() is True
 
 
 def test_configured_card(_clear_env: pytest.MonkeyPatch):
@@ -43,12 +43,12 @@ def test_env_pythinker_overrides_config_card(_clear_env: pytest.MonkeyPatch):
 def test_invalid_env_falls_through(_clear_env: pytest.MonkeyPatch):
     _clear_env.setenv("PYTHINKER_TUI_STYLE", "garbage")
     # Falls through to configured, then to default.
-    assert get_tui_style() == "pythinker"
-    assert get_tui_style("card") == "card"
+    assert get_tui_style() == "card"
+    assert get_tui_style("pythinker") == "pythinker"
 
 
 def test_invalid_configured_falls_through_to_default(_clear_env: pytest.MonkeyPatch):
-    assert get_tui_style("not-a-style") == "pythinker"
+    assert get_tui_style("not-a-style") == "card"
 
 
 def test_env_is_case_insensitive(_clear_env: pytest.MonkeyPatch):
@@ -59,7 +59,7 @@ def test_env_is_case_insensitive(_clear_env: pytest.MonkeyPatch):
 def test_config_has_tui_section_with_default():
     cfg = Config()
     assert isinstance(cfg.tui, TUIConfig)
-    assert cfg.tui.style == "pythinker"
+    assert cfg.tui.style == "card"
 
 
 def test_config_accepts_card_style():
@@ -99,6 +99,6 @@ def test_active_style_invalid_value_falls_back_to_pythinker(
     original = get_active_tui_style()
     try:
         set_active_tui_style("garbage")
-        assert get_active_tui_style() == "pythinker"
+        assert get_active_tui_style() == "card"
     finally:
         set_active_tui_style(original)

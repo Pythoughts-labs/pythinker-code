@@ -179,12 +179,12 @@ class TUIConfig(BaseModel):
     """TUI rendering style configuration."""
 
     style: Literal["pythinker", "card"] = Field(
-        default="pythinker",
+        default="card",
         description=(
-            "TUI rendering style. 'pythinker' (default) is the existing "
-            "worklog-based rendering. 'card' opts into the new bordered "
-            "tool cards. Override at runtime with the env var "
-            "PYTHINKER_TUI_STYLE=card. The legacy value 'pi' is still "
+            "TUI rendering style. 'card' (default) uses highlighted user "
+            "messages and bordered tool cards. 'pythinker' keeps the legacy "
+            "worklog-based rendering. Override at runtime with the env var "
+            "PYTHINKER_TUI_STYLE=pythinker. The legacy value 'pi' is still "
             "accepted as an alias for 'card' so older configs keep working."
         ),
     )

@@ -7,7 +7,9 @@ removed cleanly once the card style stabilizes.
 
 The legacy ``"pi"`` value is still accepted on input as an alias for
 ``"card"`` so older configs and ``PYTHINKER_TUI_STYLE`` env vars don't
-break — they're transparently mapped on read.
+break — they're transparently mapped on read. Card style is now the default;
+set ``PYTHINKER_TUI_STYLE=pythinker`` or ``tui.style = "pythinker"`` to use
+legacy rendering.
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ _ENV_VAR = "PYTHINKER_TUI_STYLE"
 _VALID: frozenset[str] = frozenset(("pythinker", "card"))
 _LEGACY_ALIASES: dict[str, TUIStyle] = {"pi": "card"}
 
-_active_tui_style: TUIStyle = "pythinker"
+_active_tui_style: TUIStyle = "card"
 """Process-level active style. Set at shell startup from ``Config.tui.style``;
 used as the fallback when neither env var nor a per-call ``configured`` value
 is provided."""
@@ -47,12 +49,12 @@ def set_active_tui_style(style: TUIStyle | str | None) -> None:
     """Set the process-level active style.
 
     Called once at shell startup from the loaded config. Invalid or None
-    values fall back to ``"pythinker"`` so a stale config can't break the
-    shell. Legacy ``"pi"`` is silently mapped to ``"card"``.
+    values fall back to ``"card"`` so a stale config can't break the shell.
+    Legacy ``"pi"`` is silently mapped to ``"card"``.
     """
     global _active_tui_style
     normalized = _normalize(style if isinstance(style, str) else None)
-    _active_tui_style = normalized if normalized is not None else "pythinker"
+    _active_tui_style = normalized if normalized is not None else "card"
 
 
 def get_active_tui_style() -> TUIStyle:
@@ -67,7 +69,7 @@ def get_tui_style(configured: TUIStyle | str | None = None) -> TUIStyle:
       1. ``PYTHINKER_TUI_STYLE`` env var, if set to a valid value
       2. *configured* argument (when provided and valid)
       3. Process-level active style set via :func:`set_active_tui_style`
-      4. ``"pythinker"`` (initial default)
+      4. ``"card"`` (initial default)
 
     Unrecognized values fall through to the next layer rather than raising,
     so a stale env var or older config can't break the shell.

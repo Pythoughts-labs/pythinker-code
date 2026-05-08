@@ -1,16 +1,29 @@
 from types import SimpleNamespace
 from typing import cast
 
+import pytest
 from pythinker_core.message import Message
 from rich.text import Text
 
 import pythinker_code.ui.shell as shell_module
 from pythinker_code.soul import Soul
 from pythinker_code.ui.shell import Shell
-from pythinker_code.ui.shell.echo import render_user_echo
+from pythinker_code.ui.shell.components import render_plain
+from pythinker_code.ui.shell.echo import render_user_echo, render_user_echo_text
 from pythinker_code.ui.shell.prompt import PromptMode, UserInput
+from pythinker_code.ui.tui_config import get_active_tui_style, set_active_tui_style
 from pythinker_code.utils.slashcmd import SlashCommand, SlashCommandCall
 from pythinker_code.wire.types import AudioURLPart, ImageURLPart, TextPart, VideoURLPart
+
+
+@pytest.fixture(autouse=True)
+def _legacy_echo_style():
+    original = get_active_tui_style()
+    set_active_tui_style("pythinker")
+    try:
+        yield
+    finally:
+        set_active_tui_style(original)
 
 
 def _make_user_input(command: str, *, mode: PromptMode = PromptMode.AGENT) -> UserInput:
@@ -67,6 +80,7 @@ def test_echo_agent_input_uses_display_command_for_placeholders(monkeypatch) -> 
 def test_render_user_echo_preserves_literal_brackets() -> None:
     rendered = render_user_echo(Message(role="user", content=[TextPart(text="[brackets]")]))
 
+    assert isinstance(rendered, Text)
     assert rendered.plain == "✨ [brackets]"
 
 
@@ -78,8 +92,8 @@ def test_render_user_echo_preserves_image_placeholder_literal() -> None:
         )
     )
 
+    assert isinstance(rendered, Text)
     assert rendered.plain == "✨ [image]"
-
 
 def test_render_user_echo_preserves_audio_placeholder_literal() -> None:
     rendered = render_user_echo(
@@ -93,8 +107,8 @@ def test_render_user_echo_preserves_audio_placeholder_literal() -> None:
         )
     )
 
+    assert isinstance(rendered, Text)
     assert rendered.plain == "✨ [audio:clip]"
-
 
 def test_render_user_echo_preserves_video_placeholder_literal() -> None:
     rendered = render_user_echo(
@@ -106,8 +120,8 @@ def test_render_user_echo_preserves_video_placeholder_literal() -> None:
         )
     )
 
+    assert isinstance(rendered, Text)
     assert rendered.plain == "✨ [video]"
-
 
 def test_render_user_echo_preserves_mixed_content_order() -> None:
     rendered = render_user_echo(
@@ -122,7 +136,20 @@ def test_render_user_echo_preserves_mixed_content_order() -> None:
         )
     )
 
+    assert isinstance(rendered, Text)
     assert rendered.plain == "✨ look [image][audio][video]"
+
+def test_card_style_user_echo_renders_message_block_without_prompt_symbol() -> None:
+    original = get_active_tui_style()
+    try:
+        set_active_tui_style("card")
+        rendered = render_user_echo_text("apply")
+        plain = render_plain(rendered, width=80)
+    finally:
+        set_active_tui_style(original)
+
+    assert "apply" in plain
+    assert "✨" not in plain
 
 
 def test_should_echo_agent_input_for_plain_agent_message() -> None:
