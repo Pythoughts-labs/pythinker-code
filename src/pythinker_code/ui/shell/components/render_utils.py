@@ -134,12 +134,16 @@ def render_plain(renderable: RenderableType, *, width: int = 80) -> str:
     Snapshot helper for tests — color codes are stripped so the output is
     a stable, comparable plain-text representation.
     """
+    # Override TERM via _environ so Rich's `is_dumb_terminal` detection
+    # doesn't kick in and force size to 80x25 (which silently ignores the
+    # explicit `width=` argument). This matters in CI where TERM=dumb is set.
     console = Console(
         width=width,
         record=True,
         force_terminal=True,
         color_system=None,
         legacy_windows=False,
+        _environ={"TERM": "xterm-256color"},
     )
     console.print(renderable)
     return console.export_text()

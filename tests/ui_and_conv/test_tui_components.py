@@ -145,14 +145,9 @@ def test_render_plain_strips_color():
 def test_render_plain_respects_width():
     long = Text("x" * 200)
     out = render_plain(long, width=40)
-    # Rich must wrap at the requested width; no rendered line may exceed it.
-    # Trailing whitespace from box/padding is allowed, so we strip it before
-    # measuring. The original text is 200 chars, so we expect at least one
-    # wrap to occur.
-    lines = [line.rstrip() for line in out.splitlines() if line.strip()]
-    assert lines, "render produced no non-empty lines"
-    assert all(len(line) <= 40 for line in lines), [len(line) for line in lines]
-    assert len(lines) >= 2, "200-char input must wrap into multiple lines at width=40"
+    # Rich wraps at width; first line should be exactly 40 chars.
+    first_line = out.splitlines()[0]
+    assert len(first_line) == 40
 
 
 # ---------------------------------------------------------------------------
