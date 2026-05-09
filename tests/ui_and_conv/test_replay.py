@@ -17,6 +17,11 @@ from pythinker_code.wire.file import WireFile
 from pythinker_code.wire.types import SteerInput, StepBegin, TextPart, TurnBegin
 
 
+@pytest.fixture(autouse=True)
+def _legacy_tui_style(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PYTHINKER_TUI_STYLE", "pythinker")
+
+
 def _make_notification_message(notification_id: str = "n1") -> Message:
     return Message(
         role="user",

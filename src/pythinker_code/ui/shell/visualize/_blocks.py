@@ -23,7 +23,13 @@ from rich.text import Text
 
 from pythinker_code.soul import format_context_status, format_token_count
 from pythinker_code.tools import extract_key_argument
+from pythinker_code.ui.shell.components import ToolExecutionComponent
 from pythinker_code.ui.shell.console import console
+from pythinker_code.ui.shell.tool_renderers import (
+    ToolResultPayload,
+    get_tool_renderer,
+)
+from pythinker_code.ui.shell.tool_renderers.generic import generic_renderer
 from pythinker_code.ui.shell.visualize._worklog import (
     WorkLogState,
     denied_error,
@@ -31,6 +37,7 @@ from pythinker_code.ui.shell.visualize._worklog import (
     render_worklog_entry,
     tool_style,
 )
+from pythinker_code.ui.tui_config import is_card_style
 from pythinker_code.utils.datetime import format_elapsed
 from pythinker_code.utils.rich.columns import BulletColumns
 from pythinker_code.utils.rich.markdown import Markdown
@@ -355,6 +362,7 @@ class _ToolCallBlock:
 
     def __init__(self, tool_call: ToolCall):
         self._tool_name = tool_call.function.name
+        self._tool_call_id = tool_call.id
         self._lexer = streamingjson.Lexer()
         if tool_call.function.arguments is not None:
             self._lexer.append_string(tool_call.function.arguments)
@@ -373,6 +381,11 @@ class _ToolCallBlock:
             maxlen=MAX_SUBAGENT_TOOL_CALLS_TO_SHOW
         )
         self._spinning_dots = Spinner("dots", text="")
+        # Pythinker card: lazily built when the tui style is "card" AND a
+        # renderer is registered for this tool. Stays None on the legacy
+        # ``pythinker`` worklog path so that rendering is bit-for-bit
+        # unchanged.
+        self._tui_card: ToolExecutionComponent | None = None
 
         self._renderable: RenderableType = self._compose()
 
@@ -434,6 +447,10 @@ class _ToolCallBlock:
             self._renderable = self._compose()
 
     def _compose(self) -> RenderableType:
+        if is_card_style():
+            card_rendered = self._compose_card()
+            if card_rendered is not None:
+                return card_rendered
         children: list[RenderableType] = []
         if self._subagent_id is not None and self._subagent_type is not None:
             children.append(
@@ -528,6 +545,63 @@ class _ToolCallBlock:
             icon_style=style.style,
             children=children,
         )
+
+    def _compose_card(self) -> RenderableType | None:
+        """Build/update the Pythinker card. Returns None to fall through.
+
+        Renderer resolution: prefer a tool-specific renderer registered
+        under ``tool_name``; fall back to the generic renderer so any
+        tool gets a Pythinker card under the flag. Returns None only if
+        the generic renderer itself is missing (i.e. the built-ins were
+        never registered).
+        """
+        definition = get_tool_renderer(self._tool_name)
+        if definition is None:
+            definition = generic_renderer()
+        if self._tui_card is None:
+            self._tui_card = ToolExecutionComponent(
+                self._tool_name,
+                self._tool_call_id,
+                definition=definition,
+            )
+            # We see the tool call event, so the model has begun work.
+            self._tui_card.mark_execution_started()
+        raw_args = self._lexer.complete_json() or "{}"
+        try:
+            parsed = json.loads(raw_args, strict=False)
+        except json.JSONDecodeError:
+            parsed = {}
+        if isinstance(parsed, dict):
+            self._tui_card.update_args(cast(dict[str, Any], parsed))
+        # Args are complete once a result lands; before that we treat
+        # complete_json output as best-effort.
+        if self._result is not None:
+            self._tui_card.set_args_complete()
+            self._tui_card.set_result(
+                ToolResultPayload(
+                    text=self._card_result_text(self._result),
+                    is_error=self._result.is_error,
+                ),
+            )
+        return self._tui_card.render()
+
+    @staticmethod
+    def _card_result_text(result: ToolReturnValue) -> str:
+        """Flatten a ToolReturnValue to a single text payload for cards.
+
+        Tool renderers expect the *primary content* (file body, command
+        output, grep matches) — that lives in ``output`` for Pythinker.
+        Fall back to ``message`` (e.g. "Successfully wrote N bytes" from
+        WriteFile, where ``output`` is empty) and finally ``brief`` for
+        tools that only emit a summary block. Non-string outputs are
+        skipped here; specialized renderers should pull richer detail
+        from ``ctx.args``.
+        """
+        if isinstance(result.output, str) and result.output:
+            return result.output
+        if result.message:
+            return result.message
+        return getattr(result, "brief", "") or ""
 
     @staticmethod
     def _extract_worklog_argument(arguments: str | None, tool_name: str) -> str | None:

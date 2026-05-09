@@ -36,6 +36,7 @@ from pythinker_code.notifications import (
     build_notification_message,
     extract_notification_ids,
 )
+from pythinker_code.prompt_templates import PromptTemplate, expand_prompt_template
 from pythinker_code.skill import Skill, read_skill_text
 from pythinker_code.skill.flow import Flow, FlowEdge, FlowNode, parse_choice
 from pythinker_code.soul import (
@@ -703,6 +704,7 @@ class PythinkerSoul:
                 reset_current_approval_source(approval_source_token)
 
     async def _turn(self, user_message: Message) -> TurnOutcome:
+        from pythinker_code.extensions import shared_event_bus
         from pythinker_code.telemetry import metrics as _m
         from pythinker_code.telemetry import otel as _otel
 
@@ -711,6 +713,15 @@ class PythinkerSoul:
 
         if missing_caps := check_message(user_message, self._runtime.llm.capabilities):
             raise LLMNotSupported(self._runtime.llm, list(missing_caps))
+
+        bus = shared_event_bus()
+        bus.emit(
+            "user.message",
+            {
+                "session_id": self._runtime.session.id,
+                "message": user_message,
+            },
+        )
 
         with _otel.start_span(
             "pythinker.turn",
@@ -733,11 +744,36 @@ class PythinkerSoul:
                 step_count=outcome.step_count,
                 stop_reason=outcome.stop_reason,
             )
+            bus.emit(
+                "turn.end",
+                {
+                    "session_id": self._runtime.session.id,
+                    "stop_reason": outcome.stop_reason,
+                    "step_count": outcome.step_count,
+                },
+            )
             return outcome
 
     def _build_slash_commands(self) -> list[SlashCommand[Any]]:
         commands: list[SlashCommand[Any]] = list(soul_slash_registry.list_commands())
         seen_names = {cmd.name for cmd in commands}
+
+        for template in self._runtime.prompt_templates.values():
+            if template.name in seen_names:
+                logger.warning(
+                    "Skipping prompt template /{name}: name already registered",
+                    name=template.name,
+                )
+                continue
+            commands.append(
+                SlashCommand(
+                    name=template.name,
+                    func=self._make_prompt_template_runner(template),
+                    description=template.description or "",
+                    aliases=[],
+                )
+            )
+            seen_names.add(template.name)
 
         for skill in self._runtime.skills.values():
             if skill.type not in ("standard", "flow"):
@@ -798,6 +834,24 @@ class PythinkerSoul:
 
     def _find_slash_command(self, name: str) -> SlashCommand[Any] | None:
         return self._slash_command_map.get(name)
+
+    def _make_prompt_template_runner(
+        self, template: PromptTemplate
+    ) -> Callable[[PythinkerSoul, str], None | Awaitable[None]]:
+        async def _run_template(
+            soul: PythinkerSoul,
+            args: str,
+            *,
+            _template: PromptTemplate = template,
+        ) -> None:
+            from pythinker_code.telemetry import track
+
+            track("prompt_template_invoked", template_name=_template.name)
+            expanded = expand_prompt_template(_template, args)
+            await soul._turn(Message(role="user", content=expanded))
+
+        _run_template.__doc__ = template.description
+        return _run_template
 
     def _make_skill_runner(
         self, skill: Skill
@@ -1169,6 +1223,8 @@ class PythinkerSoul:
         return StepOutcome(stop_reason="no_tool_calls", assistant_message=result.message)
 
     async def _grow_context(self, result: StepResult, tool_results: list[ToolResult]):
+        from pythinker_code.extensions import shared_event_bus
+
         logger.debug("Growing context with result: {result}", result=result)
 
         assert self._runtime.llm is not None
@@ -1180,6 +1236,25 @@ class PythinkerSoul:
                     caps=missing_caps,
                 )
                 raise LLMNotSupported(self._runtime.llm, list(missing_caps))
+
+        bus = shared_event_bus()
+        bus.emit(
+            "assistant.message",
+            {
+                "session_id": self._runtime.session.id,
+                "message": result.message,
+                "usage": result.usage,
+            },
+        )
+        for tr in tool_results:
+            bus.emit(
+                "tool.call.end",
+                {
+                    "session_id": self._runtime.session.id,
+                    "tool_call_id": getattr(tr, "tool_call_id", None),
+                    "is_error": getattr(tr, "is_error", False),
+                },
+            )
 
         await self._context.append_message(result.message)
         if result.usage is not None:

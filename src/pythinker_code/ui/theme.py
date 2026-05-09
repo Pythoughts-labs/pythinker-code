@@ -103,34 +103,42 @@ def _task_browser_style_light() -> PTKStyle:
 
 _PROMPT_STYLE_DARK = {
     "bottom-toolbar": "noreverse",
-    "compact-input": "bg:#2f2f2f #d4d4d4",
-    "compact-input.prompt": "bg:#2f2f2f #d4d4d4 bold",
+    # Input area — minimal: no background bar, only the prompt glyph is
+    # colored. Lets the terminal background show through so the input row
+    # reads as a single line of text rather than a chrome panel.
+    "compact-input": "",
+    "compact-input.prompt": "fg:#8abeb7 bold",
+    "compact-input.frame": "fg:#5f87ff",
     "running-prompt-placeholder": "fg:#7c8594 italic",
     "running-prompt-separator": "fg:#4a5568",
+    # Slash completion menu — selected row gets the same selected-bg as cards.
     "slash-completion-menu": "",
     "slash-completion-menu.separator": "fg:#4a5568",
     "slash-completion-menu.marker": "fg:#4a5568",
-    "slash-completion-menu.marker.current": "fg:#4f9fff",
+    "slash-completion-menu.marker.current": "fg:#8abeb7 bold",
     "slash-completion-menu.command": "fg:#a6adba",
     "slash-completion-menu.meta": "fg:#7c8594",
-    "slash-completion-menu.command.current": "fg:#6fb7ff bold",
-    "slash-completion-menu.meta.current": "fg:#56a4ff",
+    "slash-completion-menu.command.current": "bg:#3a3a4a fg:#8abeb7 bold",
+    "slash-completion-menu.meta.current": "bg:#3a3a4a fg:#a6adba",
+    "slash-completion-menu.row.current": "bg:#3a3a4a",
 }
 
 _PROMPT_STYLE_LIGHT = {
     "bottom-toolbar": "noreverse",
-    "compact-input": "bg:#e5e7eb #111827",
-    "compact-input.prompt": "bg:#e5e7eb #111827 bold",
+    "compact-input": "",
+    "compact-input.prompt": "fg:#5a8080 bold",
+    "compact-input.frame": "fg:#547da7",
     "running-prompt-placeholder": "fg:#6b7280 italic",
     "running-prompt-separator": "fg:#d1d5db",
     "slash-completion-menu": "",
     "slash-completion-menu.separator": "fg:#d1d5db",
     "slash-completion-menu.marker": "fg:#9ca3af",
-    "slash-completion-menu.marker.current": "fg:#2563eb",
+    "slash-completion-menu.marker.current": "fg:#5a8080 bold",
     "slash-completion-menu.command": "fg:#4b5563",
     "slash-completion-menu.meta": "fg:#6b7280",
-    "slash-completion-menu.command.current": "fg:#1d4ed8 bold",
-    "slash-completion-menu.meta.current": "fg:#2563eb",
+    "slash-completion-menu.command.current": "bg:#d0d0e0 fg:#5a8080 bold",
+    "slash-completion-menu.meta.current": "bg:#d0d0e0 fg:#4b5563",
+    "slash-completion-menu.row.current": "bg:#d0d0e0",
 }
 
 
@@ -243,3 +251,138 @@ def get_toolbar_colors() -> ToolbarColors:
 
 def get_mcp_prompt_colors() -> MCPPromptColors:
     return _MCP_PROMPT_LIGHT if _active_theme == "light" else _MCP_PROMPT_DARK
+
+
+# ---------------------------------------------------------------------------
+# Pythinker semantic TUI tokens (used by ui/shell/components/* and the tool
+# renderer registry). Default semantic token palette
+# and light themes so the Pythinker code path renders with the reference
+# palette. Existing pythinker styles continue to work — these tokens add a
+# parallel naming layer keyed by *semantic role* rather than concrete color.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class TuiTokens:
+    """Pythinker semantic theme tokens.
+
+    Values are hex strings (``"#rrggbb"``) or the empty string for "use
+    terminal default". Background tokens (``*_bg``) are intended for
+    Rich ``bgcolor=`` arguments; foreground tokens for ``color=``.
+    """
+
+    # Core
+    accent: str
+    border: str
+    border_accent: str
+    border_muted: str
+    success: str
+    error: str
+    warning: str
+    muted: str
+    dim: str
+    text: str
+    thinking_text: str
+    # Backgrounds
+    selected_bg: str
+    user_message_bg: str
+    user_message_text: str
+    custom_message_bg: str
+    custom_message_text: str
+    custom_message_label: str
+    tool_pending_bg: str
+    tool_success_bg: str
+    tool_error_bg: str
+    tool_title: str
+    tool_output: str
+    # Diffs
+    tool_diff_added: str
+    tool_diff_removed: str
+    tool_diff_context: str
+    # Bash mode accent
+    bash_mode: str
+
+
+_TUI_TOKENS_DARK = TuiTokens(
+    accent="#8abeb7",
+    border="#5f87ff",
+    border_accent="#00d7ff",
+    border_muted="#505050",
+    success="#b5bd68",
+    error="#cc6666",
+    warning="#ffff00",
+    muted="#808080",
+    dim="#666666",
+    text="",
+    thinking_text="#808080",
+    selected_bg="#3a3a4a",
+    user_message_bg="#343541",
+    user_message_text="",
+    custom_message_bg="#2d2838",
+    custom_message_text="",
+    custom_message_label="#9575cd",
+    tool_pending_bg="#282832",
+    tool_success_bg="#283228",
+    tool_error_bg="#3c2828",
+    tool_title="",
+    tool_output="#808080",
+    tool_diff_added="#b5bd68",
+    tool_diff_removed="#cc6666",
+    tool_diff_context="#808080",
+    bash_mode="#b5bd68",
+)
+
+
+_TUI_TOKENS_LIGHT = TuiTokens(
+    accent="#5a8080",
+    border="#547da7",
+    border_accent="#5a8080",
+    border_muted="#b0b0b0",
+    success="#588458",
+    error="#aa5555",
+    warning="#9a7326",
+    muted="#6c6c6c",
+    dim="#767676",
+    text="",
+    thinking_text="#6c6c6c",
+    selected_bg="#d0d0e0",
+    user_message_bg="#e8e8e8",
+    user_message_text="",
+    custom_message_bg="#ede7f6",
+    custom_message_text="",
+    custom_message_label="#7e57c2",
+    tool_pending_bg="#e8e8f0",
+    tool_success_bg="#e8f0e8",
+    tool_error_bg="#f0e8e8",
+    tool_title="",
+    tool_output="#6c6c6c",
+    tool_diff_added="#588458",
+    tool_diff_removed="#aa5555",
+    tool_diff_context="#6c6c6c",
+    bash_mode="#588458",
+)
+
+
+def get_tui_tokens(theme: ThemeName | None = None) -> TuiTokens:
+    """Return Pythinker semantic tokens for *theme* (defaults to active)."""
+    name = theme if theme is not None else _active_theme
+    return _TUI_TOKENS_LIGHT if name == "light" else _TUI_TOKENS_DARK
+
+
+def tui_rich_style(token: str, *, theme: ThemeName | None = None) -> RichStyle:
+    """Resolve a TuiTokens field name to a Rich Style.
+
+    Background tokens (suffix ``_bg``) produce a style with ``bgcolor``;
+    everything else produces a style with ``color``. Empty hex values
+    (``""``) yield an empty style — Rich falls back to terminal defaults.
+
+    Raises:
+        AttributeError: If *token* is not a known TuiTokens field.
+    """
+    tokens = get_tui_tokens(theme)
+    value = getattr(tokens, token)
+    if not value:
+        return RichStyle()
+    if token.endswith("_bg"):
+        return RichStyle(bgcolor=value)
+    return RichStyle(color=value)

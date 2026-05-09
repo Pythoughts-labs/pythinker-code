@@ -60,6 +60,7 @@ def test_default_config_dump():
             "extra_skill_dirs": [],
             "telemetry": False,
             "skip_auto_prompt_injection": False,
+            "tui": {"style": "card"},
         }
     )
 

@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from pythinker_core.message import ToolCall
 from pythinker_core.tooling import ToolError, ToolOk
 from rich.console import Console
 
 from pythinker_code.ui.shell.visualize import _ToolCallBlock
 from pythinker_code.wire.types import ToolResult
+
+
+@pytest.fixture(autouse=True)
+def _legacy_tui_style(monkeypatch):
+    monkeypatch.setenv("PYTHINKER_TUI_STYLE", "pythinker")
 
 
 def _plain(renderable) -> str:

@@ -1,0 +1,246 @@
+"""Integration tests for the Pythinker _ToolCallBlock wiring.
+
+Exercises the flag fallback contract: when ``style != "card"`` OR no renderer
+is registered for the tool, the legacy worklog rendering must be used
+unchanged.
+"""
+
+from __future__ import annotations
+
+import pytest
+from pythinker_core.message import ToolCall
+from pythinker_core.tooling import BriefDisplayBlock, ToolReturnValue
+from rich.console import RenderableType
+from rich.text import Text
+
+from pythinker_code.ui.shell.components import render_plain
+from pythinker_code.ui.shell.tool_renderers import (
+    ToolRenderContext,
+    ToolRenderDefinition,
+    ToolResultPayload,
+    clear_tool_renderers,
+    register_tool_renderer,
+)
+from pythinker_code.ui.shell.visualize._blocks import _ToolCallBlock
+
+
+@pytest.fixture(autouse=True)
+def _clean_registry():
+    clear_tool_renderers()
+    yield
+    clear_tool_renderers()
+
+
+@pytest.fixture
+def _force_pythinker_style(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PYTHINKER_TUI_STYLE", "pythinker")
+
+
+@pytest.fixture
+def _force_card_style(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PYTHINKER_TUI_STYLE", "card")
+
+
+def _make_tool_call(name: str = "ReadFile", args: str | None = '{"path":"src/x.py"}') -> ToolCall:
+    return ToolCall(
+        id="t1",
+        function=ToolCall.FunctionBody(name=name, arguments=args),
+    )
+
+
+def _ok_result(brief: str = "✓ 12 lines") -> ToolReturnValue:
+    return ToolReturnValue(
+        is_error=False,
+        output="",
+        message="",
+        display=[BriefDisplayBlock(text=brief)],
+    )
+
+
+def _err_result(brief: str = "ENOENT") -> ToolReturnValue:
+    return ToolReturnValue(
+        is_error=True,
+        output="",
+        message=brief,
+        display=[BriefDisplayBlock(text=brief)],
+    )
+
+
+def _register_read_renderer():
+    def render_call(ctx: ToolRenderContext) -> RenderableType:
+        path = ctx.args.get("path", "?")
+        line = Text("read ", style="bold")
+        line.append(str(path), style="grey70")
+        return line
+
+    def render_result(_ctx: ToolRenderContext, r: ToolResultPayload) -> RenderableType | None:
+        if not r.text:
+            return None
+        return Text(r.text, style="grey50")
+
+    register_tool_renderer(
+        ToolRenderDefinition(
+            name="ReadFile",
+            label="Read",
+            render_call=render_call,
+            render_result=render_result,
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# Default style: legacy worklog rendering unchanged
+# ---------------------------------------------------------------------------
+
+
+def test_default_style_uses_legacy_rendering(_force_pythinker_style):
+    _register_read_renderer()
+    block = _ToolCallBlock(_make_tool_call())
+    block.finish(_ok_result("✓ 12 lines"))
+    rendered = render_plain(block.compose(), width=80)
+    # Legacy path includes the worklog state token "completed" in plain text.
+    assert "completed" in rendered
+    # card uses "read " (lowercase) as the call header. Legacy uses "Read".
+    assert "Read" in rendered
+
+
+def test_card_style_with_registered_renderer_uses_card(_force_card_style):
+    _register_read_renderer()
+    block = _ToolCallBlock(_make_tool_call())
+    block.finish(_ok_result("✓ 12 lines"))
+    rendered = render_plain(block.compose(), width=80)
+    # card output: lowercase "read" header from the registered renderer.
+    assert "read src/x.py" in rendered
+    # And the brief shows up as the result text.
+    assert "12 lines" in rendered
+    # Legacy worklog "completed" token must NOT appear on the card path.
+    assert "completed" not in rendered
+
+
+def test_card_style_without_specific_renderer_uses_generic(_force_card_style):
+    """Under card style, tools without a specific renderer fall back to the
+    generic card (not to the legacy worklog rendering)."""
+    block = _ToolCallBlock(_make_tool_call(name="UnregisteredTool"))
+    block.finish(_ok_result("done"))
+    rendered = render_plain(block.compose(), width=80)
+    # Generic renderer header includes the tool name + the brief result.
+    assert "UnregisteredTool" in rendered
+    assert "done" in rendered
+    # And the legacy worklog "completed" token must not appear.
+    assert "completed" not in rendered
+
+
+def test_card_style_streaming_args_then_result(_force_card_style):
+    _register_read_renderer()
+    # Start with no args.
+    tc = ToolCall(id="t1", function=ToolCall.FunctionBody(name="ReadFile", arguments=None))
+    block = _ToolCallBlock(tc)
+
+    # Stream the JSON in pieces.
+    block.append_args_part('{"path":')
+    block.append_args_part('"src/streamed.py"}')
+    block.finish(_ok_result("✓ 5 lines"))
+
+    rendered = render_plain(block.compose(), width=80)
+    assert "read src/streamed.py" in rendered
+    assert "5 lines" in rendered
+
+
+def test_card_style_error_result(_force_card_style):
+    _register_read_renderer()
+    block = _ToolCallBlock(_make_tool_call())
+    block.finish(_err_result("permission denied"))
+    rendered = render_plain(block.compose(), width=80)
+    assert "permission denied" in rendered
+
+
+def test_card_style_running_subagent_uses_dots_spinner(_force_card_style):
+    from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
+
+    register_builtin_renderers()
+    block = _ToolCallBlock(
+        _make_tool_call(name="Agent", args='{"description":"Audit UI","prompt":"check"}')
+    )
+    rendered = render_plain(block.compose(), width=80)
+    dots_frames = set("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+
+    assert "subagent" in rendered
+    assert "Audit UI" in rendered
+    assert any(frame in rendered for frame in dots_frames)
+
+    block.finish(_ok_result("done"))
+    finished = render_plain(block.compose(), width=80)
+    assert not any(frame in finished for frame in dots_frames)
+
+
+def test_card_style_background_subagent_result_keeps_dots_spinner(_force_card_style):
+    from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
+
+    register_builtin_renderers()
+    block = _ToolCallBlock(
+        _make_tool_call(
+            name="Agent",
+            args=('{"description":"background audit","prompt":"check","run_in_background":true}'),
+        )
+    )
+    block.finish(
+        _ok_result(
+            "task_id: agent-123\n"
+            "kind: agent\n"
+            "status: running\n"
+            "description: background audit\n"
+            "agent_id: a123\n"
+        )
+    )
+    rendered = render_plain(block.compose(), width=80)
+    dots_frames = set("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+
+    assert "background subagent working" in rendered
+    assert "background audit" in rendered
+    assert "status: running" in rendered
+    assert any(frame in rendered for frame in dots_frames)
+
+
+def test_card_style_lifecycle_marks_execution_started(_force_card_style):
+    """_ToolCallBlock should call mark_execution_started on the card so
+    renderers see ctx.execution_started == True from the first compose."""
+    seen = {"execution_started": False, "args_complete": False}
+
+    def render_call(ctx: ToolRenderContext):
+        seen["execution_started"] = ctx.execution_started
+        seen["args_complete"] = ctx.args_complete
+        return Text("ok")
+
+    register_tool_renderer(
+        ToolRenderDefinition(
+            name="ReadFile",
+            label="Read",
+            render_call=render_call,
+        )
+    )
+    block = _ToolCallBlock(_make_tool_call())
+    # Initial compose runs from __init__ — execution_started should be set.
+    render_plain(block.compose(), width=40)
+    assert seen["execution_started"] is True
+    assert seen["args_complete"] is False
+    # After the result lands, args_complete should be set too.
+    block.finish(_ok_result("done"))
+    render_plain(block.compose(), width=40)
+    assert seen["args_complete"] is True
+
+
+def test_card_style_renderer_crash_does_not_break_block(_force_card_style):
+    def render_call(_ctx: ToolRenderContext) -> RenderableType:
+        raise RuntimeError("boom")
+
+    register_tool_renderer(
+        ToolRenderDefinition(
+            name="ReadFile",
+            label="ReadFile",
+            render_call=render_call,
+        )
+    )
+    block = _ToolCallBlock(_make_tool_call())
+    # Should not raise — the component falls back to a plain label.
+    rendered = render_plain(block.compose(), width=80)
+    assert "ReadFile" in rendered

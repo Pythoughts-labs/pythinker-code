@@ -201,23 +201,17 @@ async def model(app: Shell, args: str):
     if "always_thinking" in capabilities:
         new_thinking = True
     elif "thinking" in capabilities:
-        thinking_choices: list[tuple[str, str]] = [
-            ("off", "off" + (" (current)" if not curr_thinking else "")),
-            ("on", "on" + (" (current)" if curr_thinking else "")),
-        ]
-        try:
-            thinking_selection = await ChoiceInput(
-                message="Enable thinking mode? (↑↓ navigate, Enter select, Ctrl+C cancel):",
-                options=thinking_choices,
-                default="on" if curr_thinking else "off",
-            ).prompt_async()
-        except (EOFError, KeyboardInterrupt):
+        from pythinker_code.ui.shell.selectors.thinking import ThinkingLevel, run_thinking_selector
+
+        _curr_level: ThinkingLevel = "high" if curr_thinking else "off"
+        _level = await run_thinking_selector(
+            current_level=_curr_level,
+            available_levels=["off", "minimal", "low", "medium", "high", "xhigh"],
+        )
+        if _level is None:
             return
 
-        if not thinking_selection:
-            return
-
-        new_thinking = thinking_selection == "on"
+        new_thinking = _level != "off"
     else:
         new_thinking = False
 
@@ -654,8 +648,8 @@ async def task(app: Shell, args: str):
 
 @registry.command
 @shell_mode_registry.command
-def theme(app: Shell, args: str):
-    """Switch terminal color theme (dark/light)"""
+async def theme(app: Shell, args: str) -> None:
+    """Switch terminal color theme — interactive picker when no args given"""
     from pythinker_code.ui.theme import get_active_theme
 
     soul = ensure_pythinker_soul(app)
@@ -666,9 +660,15 @@ def theme(app: Shell, args: str):
     arg = args.strip().lower()
 
     if not arg:
-        console.print(f"Current theme: [bold]{current}[/bold]")
-        console.print("[grey50]Usage: /theme dark | /theme light[/grey50]")
-        return
+        from pythinker_code.ui.shell.selectors.theme import run_theme_selector
+
+        chosen = await run_theme_selector(
+            current_theme=current,
+            available_themes=["dark", "light"],
+        )
+        if chosen is None or chosen == current:
+            return
+        arg = chosen
 
     if arg not in ("dark", "light"):
         console.print(f"[red]Unknown theme: {arg}. Use 'dark' or 'light'.[/red]")
@@ -686,7 +686,6 @@ def theme(app: Shell, args: str):
         )
         return
 
-    # Persist to disk first — only update in-memory state after success
     try:
         config_for_save = load_config(config_file)
         config_for_save.theme = arg  # type: ignore[assignment]
@@ -699,6 +698,240 @@ def theme(app: Shell, args: str):
 
     track("theme_switch", theme=arg)
     console.print(f"[green]Switched to {arg} theme. Reloading...[/green]")
+    raise Reload(session_id=soul.runtime.session.id)
+
+
+@registry.command
+@shell_mode_registry.command
+async def thinking(app: Shell, args: str) -> None:
+    """Switch thinking level — interactive picker"""
+    soul = ensure_pythinker_soul(app)
+    if soul is None:
+        return
+
+    from pythinker_code.ui.shell.selectors.thinking import ThinkingLevel, run_thinking_selector
+
+    curr_level: ThinkingLevel = "high" if soul.thinking else "off"
+    level = await run_thinking_selector(
+        current_level=curr_level,
+        available_levels=["off", "minimal", "low", "medium", "high", "xhigh"],
+    )
+    if level is None:
+        return
+
+    new_thinking = level != "off"
+    if new_thinking == soul.thinking:
+        console.print("[yellow]Thinking setting unchanged.[/yellow]")
+        return
+
+    config_file = soul.runtime.config.source_file
+    if config_file is None:
+        console.print(
+            "[yellow]Thinking requires a config file; "
+            "restart without --config to persist this setting.[/yellow]"
+        )
+        return
+
+    try:
+        config_for_save = load_config(config_file)
+        config_for_save.default_thinking = new_thinking
+        save_config(config_for_save, config_file)
+    except (ConfigError, OSError) as exc:
+        console.print(f"[red]Failed to save config: {exc}[/red]")
+        return
+
+    from pythinker_code.telemetry import track
+
+    track("thinking_toggle", enabled=new_thinking)
+    console.print(
+        f"[green]Thinking {'enabled' if new_thinking else 'disabled'}. Reloading...[/green]"
+    )
+    raise Reload(session_id=soul.runtime.session.id)
+
+
+@registry.command
+@shell_mode_registry.command
+def keys(app: Shell, args: str):
+    """List keyboard shortcuts (semantic keymap)"""
+    from rich.console import Group, RenderableType
+    from rich.table import Table
+    from rich.text import Text
+
+    from pythinker_code.ui.shell.keymap import all_keybindings
+
+    bindings = all_keybindings()
+    if not bindings:
+        console.print("[yellow]No keybindings registered.[/yellow]")
+        return
+
+    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Keys", style="bold")
+
+    for name in sorted(bindings):
+        keys_text = "/".join(bindings[name])
+        table.add_row(name, keys_text)
+
+    blocks: list[RenderableType] = [
+        Text.from_markup("[bold]Keyboard shortcuts[/bold]"),
+        table,
+    ]
+    console.print(Group(*blocks))
+
+
+@registry.command
+@shell_mode_registry.command
+def tui(app: Shell, args: str):
+    """Show or set the TUI style: card or pythinker"""
+    from pythinker_code.ui.tui_config import get_active_tui_style, set_active_tui_style
+
+    soul = ensure_pythinker_soul(app)
+    if soul is None:
+        return
+
+    current = get_active_tui_style()
+    arg = args.strip().lower()
+
+    # Accept "/tui card", "/tui style card", "/tui set card" — all natural shapes.
+    parts = arg.split()
+    if parts and parts[0] in ("style", "set"):
+        parts = parts[1:]
+    target = parts[0] if parts else ""
+
+    if not target:
+        console.print(f"Current TUI style: [bold]{current}[/bold]")
+        console.print("[grey50]Usage: /tui card | /tui pythinker[/grey50]")
+        return
+
+    if target not in ("card", "pythinker"):
+        console.print(f"[red]Unknown style: {target}. Use 'card' or 'pythinker'.[/red]")
+        return
+
+    if target == current:
+        console.print(f"[yellow]Already using {target} style.[/yellow]")
+        return
+
+    config_file = soul.runtime.config.source_file
+    if config_file is None:
+        # Apply in-memory only — useful for one-off testing without a persisted config.
+        set_active_tui_style(target)
+        console.print(
+            f"[green]Switched to {target} style for this session "
+            "(no config file to persist).[/green]"
+        )
+        return
+
+    try:
+        config_for_save = load_config(config_file)
+        config_for_save.tui.style = target  # type: ignore[assignment]
+        save_config(config_for_save, config_file)
+    except (ConfigError, OSError) as exc:
+        console.print(f"[red]Failed to save config: {exc}[/red]")
+        return
+
+    set_active_tui_style(target)
+    if target == "card":
+        # Make sure renderers are present immediately for current session.
+        from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
+
+        register_builtin_renderers()
+
+    from pythinker_code.telemetry import track
+
+    track("tui_style_switch", style=target)
+    console.print(f"[green]Switched to {target} style. Reloading...[/green]")
+    raise Reload(session_id=soul.runtime.session.id)
+
+
+@registry.command
+@shell_mode_registry.command
+async def settings(app: Shell, args: str):
+    """Open the interactive settings panel; use `/settings show` for read-only view"""
+    from rich.console import Group, RenderableType
+    from rich.table import Table
+    from rich.text import Text
+
+    from pythinker_code.ui.theme import get_active_theme
+    from pythinker_code.ui.tui_config import get_active_tui_style
+
+    soul = ensure_pythinker_soul(app)
+    if soul is None:
+        return
+
+    config = soul.runtime.config
+    mode = args.strip().lower()
+
+    def print_settings_table() -> None:
+        table = Table(show_header=False, box=None, padding=(0, 2))
+        table.add_column(style="cyan", no_wrap=True)
+        table.add_column()
+
+        table.add_row("Theme", get_active_theme())
+        table.add_row("TUI style", get_active_tui_style())
+        table.add_row("Default model", config.default_model or "(none)")
+        table.add_row("Telemetry", "on" if config.telemetry else "off")
+        table.add_row("Default thinking", "on" if config.default_thinking else "off")
+        table.add_row("Show thinking stream", "on" if config.show_thinking_stream else "off")
+        table.add_row("Default yolo", "on" if config.default_yolo else "off")
+        table.add_row("Default plan mode", "on" if config.default_plan_mode else "off")
+        if config.source_file is not None:
+            table.add_row("Config file", str(config.source_file))
+        else:
+            table.add_row("Config file", "(none — runtime overrides only)")
+
+        blocks: list[RenderableType] = [Text.from_markup("[bold]Settings[/bold]"), table]
+        console.print(Group(*blocks))
+        console.print(
+            "[grey50]Tip: /settings opens the interactive panel; "
+            "/theme, /tui, /model, /keys for related controls.[/grey50]"
+        )
+
+    if mode in {"show", "list", "view"}:
+        print_settings_table()
+        return
+    if mode:
+        console.print("[yellow]Usage: /settings [show|list][/yellow]")
+        return
+
+    config_file = config.source_file
+    if config_file is None:
+        print_settings_table()
+        console.print(
+            "[yellow]Interactive settings require a config file; "
+            "restart without --config text to persist settings.[/yellow]"
+        )
+        return
+
+    from pythinker_code.ui.shell.selectors.settings import (
+        apply_settings_changes,
+        run_settings_selector,
+    )
+
+    try:
+        config_for_save = load_config(config_file)
+    except (ConfigError, OSError) as exc:
+        console.print(f"[red]Failed to load config: {exc}[/red]")
+        return
+
+    changes = await run_settings_selector(config_for_save)
+    if changes is None:
+        return
+
+    changed_ids = apply_settings_changes(config_for_save, changes)
+    if not changed_ids:
+        console.print("[yellow]Settings unchanged.[/yellow]")
+        return
+
+    try:
+        save_config(config_for_save, config_file)
+    except (ConfigError, OSError) as exc:
+        console.print(f"[red]Failed to save config: {exc}[/red]")
+        return
+
+    from pythinker_code.telemetry import track
+
+    track("settings_update", changed=",".join(changed_ids), count=len(changed_ids))
+    console.print(f"[green]Updated {len(changed_ids)} setting(s). Reloading...[/green]")
     raise Reload(session_id=soul.runtime.session.id)
 
 

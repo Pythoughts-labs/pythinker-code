@@ -173,6 +173,7 @@ def test_running_prompt_keeps_accepting_submission_for_active_approval_after_tur
 
 
 def test_live_view_renders_steer_input_as_user_echo(monkeypatch) -> None:
+    monkeypatch.setenv("PYTHINKER_TUI_STYLE", "pythinker")
     view = _LiveView(StatusUpdate())
     cleaned: list[bool] = []
     printed: list[str] = []
@@ -191,6 +192,7 @@ def test_live_view_renders_steer_input_as_user_echo(monkeypatch) -> None:
 
 
 def test_live_view_flushes_current_output_before_printing_steer_input(monkeypatch) -> None:
+    monkeypatch.setenv("PYTHINKER_TUI_STYLE", "pythinker")
     view = _LiveView(StatusUpdate())
     order: list[object] = []
 
