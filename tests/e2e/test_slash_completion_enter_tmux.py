@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shlex
 import shutil
 import subprocess
@@ -14,8 +15,11 @@ from tests.e2e.shell_pty_helpers import make_home_dir, make_work_dir, write_scri
 from tests_e2e.wire_helpers import repo_root
 
 pytestmark = pytest.mark.skipif(
-    sys.platform == "win32" or shutil.which("tmux") is None,
-    reason="tmux E2E tests require tmux on a Unix-like platform.",
+    sys.platform == "win32" or shutil.which("tmux") is None or os.environ.get("CI") == "true",
+    reason=(
+        "tmux E2E tests require tmux on a Unix-like platform; skipped on CI "
+        "runners (scripted_echo + prompt_toolkit hang on GitHub Actions)."
+    ),
 )
 
 

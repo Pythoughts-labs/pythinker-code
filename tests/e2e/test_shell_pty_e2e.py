@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import textwrap
 import time
@@ -23,8 +24,11 @@ from tests.e2e.shell_pty_helpers import (
 from tests_e2e.wire_helpers import build_ask_user_tool_call, build_shell_tool_call
 
 pytestmark = pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="Shell PTY E2E tests require a Unix-like PTY.",
+    sys.platform == "win32" or os.environ.get("CI") == "true",
+    reason=(
+        "Shell PTY E2E tests require a Unix-like PTY; skipped on CI runners "
+        "(scripted_echo + prompt_toolkit hang on GitHub Actions)."
+    ),
 )
 
 

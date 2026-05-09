@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -20,8 +21,12 @@ from pathlib import Path
 import pytest
 
 pytestmark = pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="Shell PTY E2E tests require a Unix-like PTY.",
+    sys.platform == "win32" or os.environ.get("CI") == "true",
+    reason=(
+        "Shell PTY E2E tests require a Unix-like PTY; skipped on CI runners "
+        "(scripted_echo + prompt_toolkit hang on GitHub Actions). TODO: "
+        "investigate the runner-specific PTY interaction."
+    ),
 )
 
 from tests.e2e.shell_pty_helpers import (  # noqa: E402
