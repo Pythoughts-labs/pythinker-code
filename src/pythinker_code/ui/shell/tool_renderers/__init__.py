@@ -9,9 +9,9 @@ Renderers return Rich renderables and are pure functions of their inputs —
 the host ``ToolExecutionComponent`` (Phase 4) assembles them into a card with
 status-tinted background.
 
-This module is consumed only when the TUI ``style`` flag is ``"pi"``; under
-``"pythinker"`` (the default), the existing ``_ToolCallBlock._compose()``
-worklog rendering path is used unchanged.
+This module is consumed only when the TUI ``style`` flag is ``"card"``; under
+``"pythinker"``, the existing ``_ToolCallBlock._compose()`` worklog rendering
+path is used unchanged.
 """
 
 from __future__ import annotations
@@ -39,6 +39,7 @@ class ToolRenderContext:
             (vs still streaming arguments).
         args_complete: True when the streaming JSON parser closed the args.
         is_partial: True when *result* is still streaming.
+        has_result: True after the final/partial result payload is attached.
         expanded: True when the user has expanded the card.
         is_error: True when the tool result was an error.
         state: Per-renderer scratch dict — renderers can stash transient
@@ -51,6 +52,7 @@ class ToolRenderContext:
     execution_started: bool = False
     args_complete: bool = False
     is_partial: bool = False
+    has_result: bool = False
     expanded: bool = False
     is_error: bool = False
     state: dict[str, Any] = field(default_factory=dict[str, Any])

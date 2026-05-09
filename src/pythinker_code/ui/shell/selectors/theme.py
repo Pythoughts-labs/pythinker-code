@@ -25,6 +25,4 @@ async def run_theme_selector(
     available_themes: list[str],
     on_preview: Callable[[str], None] | None = None,
 ) -> str | None:
-    return await run_selector(
-        _build_theme_config(current_theme, available_themes, on_preview)
-    )
+    return await run_selector(_build_theme_config(current_theme, available_themes, on_preview))

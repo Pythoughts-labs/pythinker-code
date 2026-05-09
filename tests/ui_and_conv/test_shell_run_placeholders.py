@@ -14,6 +14,11 @@ from pythinker_code.utils.slashcmd import SlashCommand
 from pythinker_code.wire.types import TextPart
 
 
+@pytest.fixture(autouse=True)
+def _legacy_tui_style(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PYTHINKER_TUI_STYLE", "pythinker")
+
+
 class _FakePromptSession:
     instances: list[_FakePromptSession] = []
     responses: deque[UserInput | BaseException] = deque()

@@ -118,7 +118,7 @@ def test_card_style_with_registered_renderer_uses_card(_force_card_style):
 
 
 def test_card_style_without_specific_renderer_uses_generic(_force_card_style):
-    """Under flag=pi, tools without a specific renderer fall back to the
+    """Under card style, tools without a specific renderer fall back to the
     generic card (not to the legacy worklog rendering)."""
     block = _ToolCallBlock(_make_tool_call(name="UnregisteredTool"))
     block.finish(_ok_result("done"))
@@ -152,6 +152,53 @@ def test_card_style_error_result(_force_card_style):
     block.finish(_err_result("permission denied"))
     rendered = render_plain(block.compose(), width=80)
     assert "permission denied" in rendered
+
+
+def test_card_style_running_subagent_uses_dots_spinner(_force_card_style):
+    from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
+
+    register_builtin_renderers()
+    block = _ToolCallBlock(
+        _make_tool_call(name="Agent", args='{"description":"Audit UI","prompt":"check"}')
+    )
+    rendered = render_plain(block.compose(), width=80)
+    dots_frames = set("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+
+    assert "subagent" in rendered
+    assert "Audit UI" in rendered
+    assert any(frame in rendered for frame in dots_frames)
+
+    block.finish(_ok_result("done"))
+    finished = render_plain(block.compose(), width=80)
+    assert not any(frame in finished for frame in dots_frames)
+
+
+def test_card_style_background_subagent_result_keeps_dots_spinner(_force_card_style):
+    from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
+
+    register_builtin_renderers()
+    block = _ToolCallBlock(
+        _make_tool_call(
+            name="Agent",
+            args=('{"description":"background audit","prompt":"check","run_in_background":true}'),
+        )
+    )
+    block.finish(
+        _ok_result(
+            "task_id: agent-123\n"
+            "kind: agent\n"
+            "status: running\n"
+            "description: background audit\n"
+            "agent_id: a123\n"
+        )
+    )
+    rendered = render_plain(block.compose(), width=80)
+    dots_frames = set("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+
+    assert "background subagent working" in rendered
+    assert "background audit" in rendered
+    assert "status: running" in rendered
+    assert any(frame in rendered for frame in dots_frames)
 
 
 def test_card_style_lifecycle_marks_execution_started(_force_card_style):

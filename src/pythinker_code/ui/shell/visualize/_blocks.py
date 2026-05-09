@@ -381,10 +381,10 @@ class _ToolCallBlock:
             maxlen=MAX_SUBAGENT_TOOL_CALLS_TO_SHOW
         )
         self._spinning_dots = Spinner("dots", text="")
-        # Pythinker card: lazily built when the tui style is "pi" AND a
-        # renderer is registered for this tool. Stays None on the
-        # default ``pythinker`` path so the legacy worklog rendering is
-        # bit-for-bit unchanged.
+        # Pythinker card: lazily built when the tui style is "card" AND a
+        # renderer is registered for this tool. Stays None on the legacy
+        # ``pythinker`` worklog path so that rendering is bit-for-bit
+        # unchanged.
         self._tui_card: ToolExecutionComponent | None = None
 
         self._renderable: RenderableType = self._compose()

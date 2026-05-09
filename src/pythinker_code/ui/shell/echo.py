@@ -13,9 +13,9 @@ from pythinker_code.utils.message import message_stringify
 def render_user_echo(message: Message) -> RenderableType:
     """Render a user message as transcript output.
 
-    Legacy style keeps the compact sparkle-prefixed echo. Card style matches
-    Pi's user-message block: the text appears in a tinted full-width block
-    without the prompt sparkle, as if the submitted buffer became a message.
+    Legacy style keeps the compact sparkle-prefixed echo. Card style renders
+    the text in a tinted full-width block without the prompt sparkle, as if
+    the submitted buffer became a message.
     """
     text = message_stringify(message)
     if is_card_style():

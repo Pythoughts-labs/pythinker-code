@@ -7,9 +7,17 @@ def _build_show_images_config(current: bool) -> SelectorConfig[bool]:
     return SelectorConfig(
         title="Show images in responses?",
         items=[
-            SelectorItem(value=True, label="Yes", description="Show images inline in terminal", is_current=current),
             SelectorItem(
-                value=False, label="No", description="Show text placeholder instead", is_current=not current
+                value=True,
+                label="Yes",
+                description="Show images inline in terminal",
+                is_current=current,
+            ),
+            SelectorItem(
+                value=False,
+                label="No",
+                description="Show text placeholder instead",
+                is_current=not current,
             ),
         ],
         enable_filter=False,

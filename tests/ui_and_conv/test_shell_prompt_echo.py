@@ -95,6 +95,7 @@ def test_render_user_echo_preserves_image_placeholder_literal() -> None:
     assert isinstance(rendered, Text)
     assert rendered.plain == "✨ [image]"
 
+
 def test_render_user_echo_preserves_audio_placeholder_literal() -> None:
     rendered = render_user_echo(
         Message(
@@ -110,6 +111,7 @@ def test_render_user_echo_preserves_audio_placeholder_literal() -> None:
     assert isinstance(rendered, Text)
     assert rendered.plain == "✨ [audio:clip]"
 
+
 def test_render_user_echo_preserves_video_placeholder_literal() -> None:
     rendered = render_user_echo(
         Message(
@@ -122,6 +124,7 @@ def test_render_user_echo_preserves_video_placeholder_literal() -> None:
 
     assert isinstance(rendered, Text)
     assert rendered.plain == "✨ [video]"
+
 
 def test_render_user_echo_preserves_mixed_content_order() -> None:
     rendered = render_user_echo(
@@ -138,6 +141,7 @@ def test_render_user_echo_preserves_mixed_content_order() -> None:
 
     assert isinstance(rendered, Text)
     assert rendered.plain == "✨ look [image][audio][video]"
+
 
 def test_card_style_user_echo_renders_message_block_without_prompt_symbol() -> None:
     original = get_active_tui_style()

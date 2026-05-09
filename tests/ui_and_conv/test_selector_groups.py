@@ -1,4 +1,5 @@
 """Tests for SelectorHeader sentinel in the selector framework."""
+
 from __future__ import annotations
 
 from pythinker_code.ui.shell.selector import (
@@ -17,9 +18,7 @@ def _make_grouped_state(*, enable_filter: bool = False) -> _SelectorState[str]:
         SelectorHeader(label="Group B"),
         SelectorItem(value="b1", label="b1"),
     ]
-    return _SelectorState(
-        SelectorConfig(title="test", items=items, enable_filter=enable_filter)
-    )
+    return _SelectorState(SelectorConfig(title="test", items=items, enable_filter=enable_filter))
 
 
 def test_headers_appear_in_visible_when_no_filter():
@@ -52,7 +51,7 @@ def test_move_up_wraps_from_first_to_last_item():
 def test_move_wraps_from_last_to_first_item():
     state = _make_grouped_state()
     state.move(-1)  # a1 -> b1 (wrap)
-    state.move(1)   # b1 -> a1 (wrap)
+    state.move(1)  # b1 -> a1 (wrap)
     assert state.visible[state.selected_idx].value == "a1"
 
 

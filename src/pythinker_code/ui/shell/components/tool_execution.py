@@ -192,6 +192,7 @@ class ToolExecutionComponent:
             execution_started=self._state.execution_started,
             args_complete=self._state.args_complete,
             is_partial=self._state.is_partial,
+            has_result=self._state.result is not None,
             expanded=self._state.expanded,
             is_error=self._state.result.is_error if self._state.result else False,
             state=self._renderer_state,

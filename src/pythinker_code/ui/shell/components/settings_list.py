@@ -1,7 +1,7 @@
-"""Pi-style settings list component for prompt_toolkit selectors.
+"""Settings list component for prompt_toolkit selectors.
 
-This module ports the state-machine shape of Pi's ``SettingsList`` to the
-Pythinker prompt_toolkit shell. It is intentionally split into a pure
+This module exposes a state-machine ``SettingsList`` for the Pythinker
+prompt_toolkit shell. It is intentionally split into a pure
 ``_SettingsListState`` (unit-testable without a TTY) plus a small
 ``run_settings_list`` application wrapper.
 """

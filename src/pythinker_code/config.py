@@ -184,8 +184,7 @@ class TUIConfig(BaseModel):
             "TUI rendering style. 'card' (default) uses highlighted user "
             "messages and bordered tool cards. 'pythinker' keeps the legacy "
             "worklog-based rendering. Override at runtime with the env var "
-            "PYTHINKER_TUI_STYLE=pythinker. The legacy value 'pi' is still "
-            "accepted as an alias for 'card' so older configs keep working."
+            "PYTHINKER_TUI_STYLE=pythinker."
         ),
     )
 

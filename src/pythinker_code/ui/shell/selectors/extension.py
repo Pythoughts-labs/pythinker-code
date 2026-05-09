@@ -13,10 +13,7 @@ def _build_extension_config(
 ) -> SelectorConfig[str]:
     return SelectorConfig(
         title=title,
-        items=[
-            SelectorItem(value=opt, label=opt, is_current=(opt == current))
-            for opt in options
-        ],
+        items=[SelectorItem(value=opt, label=opt, is_current=(opt == current)) for opt in options],
     )
 
 
@@ -31,6 +28,10 @@ async def run_extension_selector(
     if timeout is not None:
         try:
             return await asyncio.wait_for(coro, timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
+            # Real ``asyncio.wait_for`` cancels/awaits the coroutine on timeout;
+            # tests may monkeypatch it to raise directly, so close the coroutine
+            # here to avoid an un-awaited-coroutine warning.
+            coro.close()
             return None
     return await coro

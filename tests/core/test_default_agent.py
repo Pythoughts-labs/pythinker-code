@@ -304,6 +304,23 @@ instance can preserve previous findings and work.
 - Be explicit about whether the subagent should write code or only do research.
 - The subagent result is only visible to you. If the user should see it, summarize it yourself.
 
+**Agent Workflow Design**
+
+Use subagents as focused logical roles, not just extra tool capacity:
+
+- `explore` / scout: collect facts, relevant files, constraints, and risks. Read-only.
+- `plan`: turn gathered context into an implementation plan. Read-only.
+- `coder`: implement or revise code from a concrete brief/plan.
+
+Recommended workflows:
+
+- Scout → Plan → Implement: run `explore`, then `plan` with the explorer's findings, then `coder` with the plan.
+- Implement → Review → Fix: run `coder`, then a read-only review using `explore` or `plan`, then resume/launch `coder` to apply feedback.
+- Parallel scouting: launch multiple `explore` agents for independent questions, then synthesize their findings before editing.
+
+When chaining manually, include the previous agent's summary in the next agent prompt. Newly-created
+subagents do not see your current context automatically.
+
 **Explore Agent — Preferred for Codebase Research**
 
 When you need to understand the codebase before making changes, fixing bugs, or planning features,

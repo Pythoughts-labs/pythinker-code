@@ -3,19 +3,18 @@
 All tests exercise config construction and _SelectorState behavior directly
 — no TTY, no Application instantiation.
 """
-from __future__ import annotations
 
-import asyncio
+from __future__ import annotations
 
 from pythinker_code.ui.shell.selector import (
     SelectorItem,
     _SelectorState,  # type: ignore[reportPrivateUsage]
 )
 
-
 # ---------------------------------------------------------------------------
 # theme
 # ---------------------------------------------------------------------------
+
 
 def test_theme_selector_marks_current():
     from pythinker_code.ui.shell.selectors.theme import _build_theme_config
@@ -47,7 +46,9 @@ def test_theme_selector_on_preview_wired_as_on_change():
     from pythinker_code.ui.shell.selectors.theme import _build_theme_config
 
     previews: list[str] = []
-    callback = previews.append  # capture once — bound methods are not `is`-identical across accesses
+    callback = (
+        previews.append
+    )  # capture once — bound methods are not `is`-identical across accesses
     config = _build_theme_config(
         current_theme="dark",
         available_themes=["dark", "light"],
@@ -59,6 +60,7 @@ def test_theme_selector_on_preview_wired_as_on_change():
 # ---------------------------------------------------------------------------
 # thinking
 # ---------------------------------------------------------------------------
+
 
 def test_thinking_selector_all_six_levels_have_descriptions():
     from pythinker_code.ui.shell.selectors.thinking import LEVEL_DESCRIPTIONS
@@ -99,6 +101,7 @@ def test_thinking_selector_description_populated():
 # show_images
 # ---------------------------------------------------------------------------
 
+
 def test_show_images_has_exactly_two_items():
     from pythinker_code.ui.shell.selectors.show_images import _build_show_images_config
 
@@ -129,6 +132,7 @@ def test_show_images_marks_false_when_current_false():
 # extension
 # ---------------------------------------------------------------------------
 
+
 def test_extension_selector_items_match_options():
     from pythinker_code.ui.shell.selectors.extension import _build_extension_config
 
@@ -158,7 +162,7 @@ def test_extension_selector_timeout_returns_none(monkeypatch):
     from pythinker_code.ui.shell.selectors.extension import run_extension_selector
 
     async def _raise_timeout(*args, **kwargs):
-        raise _asyncio.TimeoutError
+        raise TimeoutError
 
     monkeypatch.setattr(_asyncio, "wait_for", _raise_timeout)
     result = _asyncio.run(run_extension_selector("t", ["a"], timeout=0.001))
@@ -168,6 +172,7 @@ def test_extension_selector_timeout_returns_none(monkeypatch):
 # ---------------------------------------------------------------------------
 # oauth
 # ---------------------------------------------------------------------------
+
 
 def test_oauth_selector_items_use_provider_name_as_label():
     from pythinker_code.ui.shell.selectors.oauth import (
@@ -213,9 +218,7 @@ def test_oauth_selector_status_environment():
         _format_status_indicator,
     )
 
-    indicator = _format_status_indicator(
-        OAuthProviderStatus(source="environment", label="API key")
-    )
+    indicator = _format_status_indicator(OAuthProviderStatus(source="environment", label="API key"))
     assert "✓" in indicator
     assert "env" in indicator
 

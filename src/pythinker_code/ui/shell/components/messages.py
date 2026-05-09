@@ -9,7 +9,7 @@ Mirrors:
 Each function takes a tagged content payload and returns a Rich renderable
 (no event-loop dependency). Callers render whatever shape they have —
 Pythinker's ``_blocks.py`` already classifies content; it can hand off to
-these for the card-style visual treatment when ``tui.style == "pi"``.
+these for the card-style visual treatment when ``tui.style == "card"``.
 """
 
 from __future__ import annotations

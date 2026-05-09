@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -20,6 +20,7 @@ from pythinker_code.config import Config
 from pythinker_code.exception import MCPConfigError, SystemPromptTemplateError
 from pythinker_code.llm import LLM
 from pythinker_code.notifications import NotificationManager
+from pythinker_code.prompt_templates import PromptTemplate, discover_prompt_templates
 from pythinker_code.session import Session
 from pythinker_code.skill import (
     Skill,
@@ -186,6 +187,7 @@ class Runtime:
     skills: dict[str, Skill]
     additional_dirs: list[HostPath]
     skills_dirs: list[HostPath]
+    prompt_templates: dict[str, PromptTemplate] = field(default_factory=dict[str, PromptTemplate])
     subagent_store: SubagentStore | None = None
     approval_runtime: ApprovalRuntime | None = None
     root_wire_hub: RootWireHub | None = None
@@ -238,6 +240,9 @@ class Runtime:
         skills_by_name = index_skills(skills)
         logger.info("Discovered {count} skill(s)", count=len(skills))
         skills_formatted = format_skills_for_prompt(skills)
+
+        prompt_templates = await discover_prompt_templates(session.work_dir)
+        logger.info("Discovered {count} prompt template(s)", count=len(prompt_templates))
 
         # Restore additional directories from session state, pruning stale entries
         additional_dirs: list[HostPath] = []
@@ -324,6 +329,7 @@ class Runtime:
                 notifications=notifications,
             ),
             skills=skills_by_name,
+            prompt_templates=prompt_templates,
             additional_dirs=additional_dirs,
             # Only expose skills roots outside the workspace for Glob access;
             # project-level roots are already within work_dir.
@@ -357,6 +363,7 @@ class Runtime:
             notifications=self.notifications,
             background_tasks=self.background_tasks.copy_for_role("subagent"),
             skills=self.skills,
+            prompt_templates=self.prompt_templates,
             # Share the same list reference so /add-dir mutations propagate to all agents
             additional_dirs=self.additional_dirs,
             skills_dirs=self.skills_dirs,

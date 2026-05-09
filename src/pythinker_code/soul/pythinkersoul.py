@@ -36,6 +36,7 @@ from pythinker_code.notifications import (
     build_notification_message,
     extract_notification_ids,
 )
+from pythinker_code.prompt_templates import PromptTemplate, expand_prompt_template
 from pythinker_code.skill import Skill, read_skill_text
 from pythinker_code.skill.flow import Flow, FlowEdge, FlowNode, parse_choice
 from pythinker_code.soul import (
@@ -757,6 +758,23 @@ class PythinkerSoul:
         commands: list[SlashCommand[Any]] = list(soul_slash_registry.list_commands())
         seen_names = {cmd.name for cmd in commands}
 
+        for template in self._runtime.prompt_templates.values():
+            if template.name in seen_names:
+                logger.warning(
+                    "Skipping prompt template /{name}: name already registered",
+                    name=template.name,
+                )
+                continue
+            commands.append(
+                SlashCommand(
+                    name=template.name,
+                    func=self._make_prompt_template_runner(template),
+                    description=template.description or "",
+                    aliases=[],
+                )
+            )
+            seen_names.add(template.name)
+
         for skill in self._runtime.skills.values():
             if skill.type not in ("standard", "flow"):
                 continue
@@ -816,6 +834,24 @@ class PythinkerSoul:
 
     def _find_slash_command(self, name: str) -> SlashCommand[Any] | None:
         return self._slash_command_map.get(name)
+
+    def _make_prompt_template_runner(
+        self, template: PromptTemplate
+    ) -> Callable[[PythinkerSoul, str], None | Awaitable[None]]:
+        async def _run_template(
+            soul: PythinkerSoul,
+            args: str,
+            *,
+            _template: PromptTemplate = template,
+        ) -> None:
+            from pythinker_code.telemetry import track
+
+            track("prompt_template_invoked", template_name=_template.name)
+            expanded = expand_prompt_template(_template, args)
+            await soul._turn(Message(role="user", content=expanded))
+
+        _run_template.__doc__ = template.description
+        return _run_template
 
     def _make_skill_runner(
         self, skill: Skill

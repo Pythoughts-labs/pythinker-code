@@ -259,10 +259,12 @@ def _build_application[T](state: _SelectorState[T]) -> Application[None]:
         rows: StyleAndTextTuples = []
         for i, item in enumerate(state.visible):
             if isinstance(item, SelectorHeader):
-                rows.extend([
-                    ("class:slash-completion-menu.meta", f"  {item.label}"),
-                    ("", "\n"),
-                ])
+                rows.extend(
+                    [
+                        ("class:slash-completion-menu.meta", f"  {item.label}"),
+                        ("", "\n"),
+                    ]
+                )
             else:
                 rows.extend(
                     _format_item_line(item, is_selected=i == state.selected_idx, width=width)

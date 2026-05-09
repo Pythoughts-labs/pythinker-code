@@ -7,6 +7,7 @@ only (spawn, run, surface the final result).
 from __future__ import annotations
 
 from rich.console import Group, RenderableType
+from rich.spinner import Spinner
 from rich.style import Style as RichStyle
 from rich.text import Text
 
@@ -27,6 +28,7 @@ from pythinker_code.ui.theme import tui_rich_style
 _TOOL_NAME = "Agent"
 _DEFAULT_COLLAPSED_LINES = 6
 _PROMPT_PREVIEW_CHARS = 80
+_BACKGROUND_ACTIVE_STATUSES = frozenset({"created", "starting", "running", "awaiting_approval"})
 
 
 def _truncate(text: str, max_chars: int) -> str:
@@ -57,18 +59,52 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
     if resume:
         header.append_text(fg("muted", f" (resume {resume[:8]})"))
 
+    head: RenderableType = header
+    if ctx.execution_started and not ctx.has_result:
+        # Active subagent affordance: a running subagent gets a dots spinner
+        # so it reads as running, not just a static tool card.
+        head = Spinner("dots", text=header, style=tui_rich_style("accent"))
+
     if prompt is None:
         if "prompt" in args:
-            return Group(header, invalid_arg())
-        return header
+            return Group(head, invalid_arg())
+        return head
     preview_line = _truncate(prompt.split("\n", 1)[0], _PROMPT_PREVIEW_CHARS)
     body = fg("dim", f"  {preview_line}")
-    return Group(header, body)
+    return Group(head, body)
+
+
+def _line_value(text: str, key: str) -> str | None:
+    prefix = f"{key}:"
+    for line in text.splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix) :].strip()
+    return None
+
+
+def _background_status(text: str) -> str | None:
+    kind = _line_value(text, "kind")
+    status = _line_value(text, "status")
+    if kind == "agent" and status in _BACKGROUND_ACTIVE_STATUSES:
+        return status
+    return None
 
 
 def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> RenderableType | None:
     if not result.text:
         return None
+    background_status = None if result.is_error else _background_status(result.text)
+    if background_status is not None:
+        description = as_str(ctx.args.get("description"))
+        label = "background subagent working"
+        if description:
+            label = f"{label}: {description}"
+        spinner = Spinner(
+            "dots",
+            text=Text(label, style=tui_rich_style("muted")),
+            style=tui_rich_style("accent"),
+        )
+        return Group(spinner, fg("dim", f"  status: {background_status}"))
     # Distinct success symbol so the eye doesn't mistake a finished subagent
     # for a generic tool tick — heavy check on success, heavy ballot on error.
     icon = fg("error", "✘") if result.is_error else fg("success", "✔")

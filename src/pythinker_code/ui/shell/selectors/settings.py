@@ -1,9 +1,8 @@
 """Interactive `/settings` selector.
 
-This module maps Pi's settings-list interaction pattern onto Pythinker's
-current configuration model. It exposes only settings with real backing
-``Config`` fields; Pi settings that require additional runtime plumbing are
-intentionally deferred rather than shown as no-op toggles.
+Exposes only settings with real backing ``Config`` fields; settings that
+require additional runtime plumbing are intentionally deferred rather than
+shown as no-op toggles.
 """
 
 from __future__ import annotations
@@ -57,9 +56,7 @@ def _build_settings_config(config: Config) -> SettingsListConfig:
         SettingItem(
             id="tui.style",
             label="TUI style",
-            description=(
-                "card uses Pi-style message/tool cards; pythinker is the legacy worklog UI."
-            ),
+            description=("card uses message/tool cards; pythinker is the legacy worklog UI."),
             current_value=config.tui.style,
             values=("card", "pythinker"),
         ),

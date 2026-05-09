@@ -24,12 +24,6 @@ def test_configured_card(_clear_env: pytest.MonkeyPatch):
     assert is_card_style("card") is True
 
 
-def test_legacy_pi_value_aliases_to_card(_clear_env: pytest.MonkeyPatch):
-    """Older configs / env vars set to 'pi' transparently map to 'card'."""
-    assert get_tui_style("pi") == "card"
-    assert is_card_style("pi") is True
-
-
 def test_env_overrides_config(_clear_env: pytest.MonkeyPatch):
     _clear_env.setenv("PYTHINKER_TUI_STYLE", "card")
     assert get_tui_style("pythinker") == "card"

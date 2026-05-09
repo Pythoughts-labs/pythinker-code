@@ -798,10 +798,6 @@ def tui(app: Shell, args: str):
         parts = parts[1:]
     target = parts[0] if parts else ""
 
-    # Accept legacy "pi" silently as an alias for "card".
-    if target == "pi":
-        target = "card"
-
     if not target:
         console.print(f"Current TUI style: [bold]{current}[/bold]")
         console.print("[grey50]Usage: /tui card | /tui pythinker[/grey50]")

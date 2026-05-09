@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Awaitable
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -39,6 +41,10 @@ def _reset_theme():
     set_active_theme("dark")
     yield
     set_active_theme("dark")
+
+
+async def _run_theme(app: Shell, args: str) -> None:
+    await cast(Awaitable[None], shell_slash.theme(app, args))
 
 
 def _make_shell_app(runtime: Runtime, tmp_path: Path) -> SimpleNamespace:
@@ -112,38 +118,55 @@ def test_theme_command_registered_in_both_registries():
     assert "theme" in shell_cmds
 
 
-def test_theme_no_args_shows_current(runtime: Runtime, tmp_path: Path, monkeypatch):
+@pytest.mark.asyncio
+async def test_theme_no_args_opens_selector_and_cancels(
+    runtime: Runtime, tmp_path: Path, monkeypatch
+):
+    from pythinker_code.ui.shell.selectors import theme as theme_selector
+
     app = _make_shell_app(runtime, tmp_path)
     print_mock = Mock()
     monkeypatch.setattr(shell_slash.console, "print", print_mock)
 
-    shell_slash.theme(cast(Shell, app), "")
+    called: dict[str, object] = {}
 
-    assert print_mock.call_count == 2
-    assert "dark" in str(print_mock.call_args_list[0].args[0])
+    async def fake_run_theme_selector(**kwargs):
+        called.update(kwargs)
+        return None
+
+    monkeypatch.setattr(theme_selector, "run_theme_selector", fake_run_theme_selector)
+
+    await _run_theme(cast(Shell, app), "")
+
+    assert called["current_theme"] == "dark"
+    assert called["available_themes"] == ["dark", "light"]
+    print_mock.assert_not_called()
 
 
-def test_theme_invalid_arg(runtime: Runtime, tmp_path: Path, monkeypatch):
+@pytest.mark.asyncio
+async def test_theme_invalid_arg(runtime: Runtime, tmp_path: Path, monkeypatch):
     app = _make_shell_app(runtime, tmp_path)
     print_mock = Mock()
     monkeypatch.setattr(shell_slash.console, "print", print_mock)
 
-    shell_slash.theme(cast(Shell, app), "neon")
+    await _run_theme(cast(Shell, app), "neon")
 
     assert "Unknown theme" in str(print_mock.call_args.args[0])
 
 
-def test_theme_same_as_current(runtime: Runtime, tmp_path: Path, monkeypatch):
+@pytest.mark.asyncio
+async def test_theme_same_as_current(runtime: Runtime, tmp_path: Path, monkeypatch):
     app = _make_shell_app(runtime, tmp_path)
     print_mock = Mock()
     monkeypatch.setattr(shell_slash.console, "print", print_mock)
 
-    shell_slash.theme(cast(Shell, app), "dark")
+    await _run_theme(cast(Shell, app), "dark")
 
     assert "Already using" in str(print_mock.call_args.args[0])
 
 
-def test_theme_switch_persists_and_reloads(runtime: Runtime, tmp_path: Path, monkeypatch):
+@pytest.mark.asyncio
+async def test_theme_switch_persists_and_reloads(runtime: Runtime, tmp_path: Path, monkeypatch):
     config_path = (tmp_path / "config.toml").resolve()
     runtime.config.source_file = config_path
     app = _make_shell_app(runtime, tmp_path)
@@ -156,7 +179,7 @@ def test_theme_switch_persists_and_reloads(runtime: Runtime, tmp_path: Path, mon
     monkeypatch.setattr(shell_slash.console, "print", Mock())
 
     with pytest.raises(Reload) as exc_info:
-        shell_slash.theme(cast(Shell, app), "light")
+        await _run_theme(cast(Shell, app), "light")
 
     load_mock.assert_called_once_with(config_path)
     save_mock.assert_called_once()
@@ -164,7 +187,8 @@ def test_theme_switch_persists_and_reloads(runtime: Runtime, tmp_path: Path, mon
     assert exc_info.value.session_id == runtime.session.id
 
 
-def test_theme_switch_light_to_dark(runtime: Runtime, tmp_path: Path, monkeypatch):
+@pytest.mark.asyncio
+async def test_theme_switch_light_to_dark(runtime: Runtime, tmp_path: Path, monkeypatch):
     """Reverse direction: light → dark also works."""
     set_active_theme("light")
     config_path = (tmp_path / "config.toml").resolve()
@@ -180,12 +204,13 @@ def test_theme_switch_light_to_dark(runtime: Runtime, tmp_path: Path, monkeypatc
     monkeypatch.setattr(shell_slash.console, "print", Mock())
 
     with pytest.raises(Reload):
-        shell_slash.theme(cast(Shell, app), "dark")
+        await _run_theme(cast(Shell, app), "dark")
 
     assert config_for_save.theme == "dark"
 
 
-def test_theme_arg_case_and_whitespace(runtime: Runtime, tmp_path: Path, monkeypatch):
+@pytest.mark.asyncio
+async def test_theme_arg_case_and_whitespace(runtime: Runtime, tmp_path: Path, monkeypatch):
     """Args are stripped and lowercased: ' LIGHT ' should work."""
     config_path = (tmp_path / "config.toml").resolve()
     runtime.config.source_file = config_path
@@ -197,12 +222,13 @@ def test_theme_arg_case_and_whitespace(runtime: Runtime, tmp_path: Path, monkeyp
     monkeypatch.setattr(shell_slash.console, "print", Mock())
 
     with pytest.raises(Reload):
-        shell_slash.theme(cast(Shell, app), "  LIGHT  ")
+        await _run_theme(cast(Shell, app), "  LIGHT  ")
 
     assert config_for_save.theme == "light"
 
 
-def test_theme_rejects_inline_config(runtime: Runtime, tmp_path: Path, monkeypatch):
+@pytest.mark.asyncio
+async def test_theme_rejects_inline_config(runtime: Runtime, tmp_path: Path, monkeypatch):
     runtime.config.source_file = None
     app = _make_shell_app(runtime, tmp_path)
 
@@ -213,14 +239,15 @@ def test_theme_rejects_inline_config(runtime: Runtime, tmp_path: Path, monkeypat
     monkeypatch.setattr(shell_slash, "save_config", save_mock)
     monkeypatch.setattr(shell_slash.console, "print", print_mock)
 
-    shell_slash.theme(cast(Shell, app), "light")
+    await _run_theme(cast(Shell, app), "light")
 
     load_mock.assert_not_called()
     save_mock.assert_not_called()
     assert "config file" in str(print_mock.call_args.args[0]).lower()
 
 
-def test_theme_save_failure_no_reload_no_state_change(
+@pytest.mark.asyncio
+async def test_theme_save_failure_no_reload_no_state_change(
     runtime: Runtime, tmp_path: Path, monkeypatch
 ):
     """When save fails: no Reload raised, global theme and config unchanged."""
@@ -234,7 +261,7 @@ def test_theme_save_failure_no_reload_no_state_change(
     monkeypatch.setattr(shell_slash.console, "print", print_mock)
 
     # Should NOT raise Reload
-    shell_slash.theme(cast(Shell, app), "light")
+    await _run_theme(cast(Shell, app), "light")
 
     assert "Failed to save" in str(print_mock.call_args.args[0])
     assert get_active_theme() == "dark"
@@ -275,6 +302,7 @@ async def test_shell_startup_initializes_theme_from_config(
 
     from pythinker_code.ui import theme as theme_mod
     from pythinker_code.ui.shell import Shell as RealShell
+    from pythinker_code.ui.shell.visualize import _live_view as live_view_mod
 
     agent = Agent(
         name="Test Agent",
@@ -287,6 +315,12 @@ async def test_shell_startup_initializes_theme_from_config(
 
     set_theme_mock = Mock(side_effect=set_active_theme)
     monkeypatch.setattr(theme_mod, "set_active_theme", set_theme_mock)
+
+    @asynccontextmanager
+    async def _no_keyboard_listener(_handler) -> AsyncIterator[None]:
+        yield None
+
+    monkeypatch.setattr(live_view_mod, "_keyboard_listener", _no_keyboard_listener)
 
     # Shell.run(command=...) initializes theme then runs the command.
     # The command will fail (no LLM), but theme init happens first.

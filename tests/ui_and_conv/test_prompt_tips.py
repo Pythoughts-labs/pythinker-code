@@ -118,6 +118,7 @@ def _render_toolbar_lines(
         def get_size() -> Any:
             return SimpleNamespace(columns=width)
 
+    monkeypatch.setenv("PYTHINKER_TUI_STYLE", "pythinker")
     monkeypatch.setattr(
         shell_prompt, "get_app_or_none", lambda: SimpleNamespace(output=_DummyOutput())
     )
@@ -578,6 +579,7 @@ def test_running_prompt_uses_shared_toolbar_and_separator_layout(monkeypatch: An
         def get_size() -> Any:
             return SimpleNamespace(columns=width)
 
+    monkeypatch.setenv("PYTHINKER_TUI_STYLE", "pythinker")
     monkeypatch.setattr(
         shell_prompt, "get_app_or_none", lambda: SimpleNamespace(output=_DummyOutput())
     )

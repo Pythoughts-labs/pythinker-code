@@ -70,7 +70,7 @@ def test_build_settings_config_exposes_backed_settings_only():
     assert "tui.style" in ids
     assert "default_thinking" in ids
     assert "telemetry" in ids
-    # Pi has image settings, but Pythinker does not expose no-op controls yet.
+    # No-op image controls are intentionally not exposed yet.
     assert "show-images" not in ids
     assert "image-width-cells" not in ids
 
