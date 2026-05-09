@@ -48,7 +48,15 @@ It speaks the [**Agent Client Protocol (ACP)**](https://github.com/agentclientpr
 
 ---
 
-## 🆕 What's New in 2.1.1
+## 🆕 What's New in 2.1.2
+
+Windows installer fix on top of 2.1.1.
+
+- **Windows installer runs in the current shell** — `scripts/install.ps1` is now invoked via `& $installer` instead of a `powershell -File` subprocess, and the bundled `uv` bootstrap is dot-sourced inside an anonymous scope. PATH updates from `uv` now land in the calling PowerShell session, so `uv`, `uvx`, and `pythinker` are immediately runnable after the installer finishes — no "Open a new shell" dance.
+- **Diagnostic fallback** — if `pythinker` is somehow still not on PATH (e.g., the script was deliberately run as a subprocess), the installer now prints the absolute path to the shim and tells you what to do.
+- **Regression tests** — `tests/test_installation_docs.py` locks in the current-session invocation and the dot-sourced `uv` bootstrap.
+
+### Carried forward from 2.1.1
 
 Documentation refresh + CI hardening on top of 2.1.0.
 
@@ -70,7 +78,7 @@ A focused refresh of the TUI and slash-command UX.
 - **Prompt templates** — discovery is now `~/.pythinker/prompts` and `<project>/.pythinker/prompts`. The legacy directory lookup has been retired.
 - **TUI style flag** — only `card` (default) and `pythinker` are accepted; the legacy alias has been dropped.
 
-Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==2.1.1`.
+Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==2.1.2`.
 
 ---
 
@@ -157,16 +165,19 @@ Swap providers and models per-session: `--model openai/gpt-5.5`, hosted Pythinke
 ### ✨ Recommended install (clean, with logo)
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install.sh | bash
 ```
 
 Windows PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install.ps1 | iex
+$installer = Join-Path $env:TEMP "pythinker-install.ps1"
+iwr -UseBasicParsing https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install.ps1 -OutFile $installer
+& $installer
+Remove-Item $installer
 ```
 
-The installer fetches `uv` if missing, installs `pythinker-code` quietly, and prints a single-line confirmation instead of the full dependency wall.
+The installer fetches `uv` if missing, installs `pythinker-code` quietly, and prints a single-line confirmation instead of the full dependency wall. Windows downloads the script to a file (instead of `irm ... | iex`) so PowerShell antivirus scanning is less likely to block it, but it is invoked with `&` in the current session so PATH updates from `uv` are immediately visible — `pythinker` works without opening a new shell.
 
 ### 🚀 One-off run with `uvx`
 

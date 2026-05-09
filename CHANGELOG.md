@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 2.1.2 (2026-05-09)
+
+Windows installer fix.
+
+- `scripts/install.ps1`: dot-source Astral's `uv` bootstrap inside `& { ... }` instead of spawning `powershell -File`, so `$env:PATH` updates land in the running process.
+- `scripts/install.ps1`: refresh PATH after `uv tool install` and verify `pythinker` resolves before printing success; otherwise emit the absolute shim path.
+- README: invoke the downloaded `install.ps1` with `& $installer` (current shell) instead of a `powershell -NoProfile -File $installer` subprocess. `uv`, `uvx`, and `pythinker` are now usable in the calling shell as soon as the installer exits.
+- `tests/test_installation_docs.py`: lock in current-session invocation in the README and a dot-sourced `uv` bootstrap in `install.ps1`.
+
 ## 2.1.1 (2026-05-08)
 
 Documentation refresh.
