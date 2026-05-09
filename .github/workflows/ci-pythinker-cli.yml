@@ -244,27 +244,12 @@ jobs:
 
       - name: Check pythinker-code version alignment
         if: steps.version.outputs.bump == 'true'
+        env:
+          EXPECTED_VERSION: ${{ steps.version.outputs.head_version }}
         run: |
           python scripts/check_version_tag.py \
-            --pyproject packages/pythinker-code/pyproject.toml \
-            --expected-version "${{ steps.version.outputs.head_version }}"
-
-      - name: Check pythinker-code dependency pin
-        if: steps.version.outputs.bump == 'true'
-        shell: python
-        run: |
-          import tomllib
-          from pathlib import Path
-
-          expected_version = "${{ steps.version.outputs.head_version }}"
-          data = tomllib.loads(Path("packages/pythinker-code/pyproject.toml").read_text())
-          deps = data["project"]["dependencies"]
-          expected = f"pythinker-code=={expected_version}"
-          if expected not in deps:
-              raise SystemExit(
-                  "pythinker-code must depend on "
-                  f"{expected}, got: {deps}"
-              )
+            --pyproject pyproject.toml \
+            --expected-version "$EXPECTED_VERSION"
 
   nix-test:
     strategy:

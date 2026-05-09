@@ -684,8 +684,9 @@ def test_prompt_buffer_window_can_grow_to_five_visible_rows() -> None:
     assert isinstance(buffer_window, shell_prompt.Window)
 
     assert buffer_window.dont_extend_height() is True
-    assert buffer_window.height.min == 1
-    assert buffer_window.height.max == 5
+    height = cast(shell_prompt.Dimension, buffer_window.height)
+    assert height.min == 1
+    assert height.max == 5
     assert buffer_window.style == "class:compact-input"
 
 
@@ -768,7 +769,7 @@ def test_bottom_toolbar_hides_status_while_slash_menu_is_active(monkeypatch: Any
         complete_state=complete_state,
     )
     prompt_session = object.__new__(CustomPromptSession)
-    prompt_session._session = SimpleNamespace(default_buffer=default_buffer)
+    prompt_session._session = cast(Any, SimpleNamespace(default_buffer=default_buffer))
 
     monkeypatch.setattr(shell_prompt, "get_app_or_none", lambda: object())
 

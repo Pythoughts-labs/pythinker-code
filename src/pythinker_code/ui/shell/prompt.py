@@ -349,12 +349,14 @@ def _container_contains(root: object, target: object) -> bool:
         for attr in ("children", "content", "floats", "container", "alternative_content"):
             if not hasattr(node, attr):
                 continue
-            value = getattr(node, attr)
+            value: object = getattr(node, attr)
             if attr == "children" and isinstance(value, Sequence):
-                if any(_walk(child) for child in value):
+                children = cast(Sequence[object], value)
+                if any(_walk(child) for child in children):
                     return True
             elif attr == "floats" and isinstance(value, Sequence):
-                if any(_walk(getattr(float_, "content", None)) for float_ in value):
+                floats = cast(Sequence[object], value)
+                if any(_walk(cast(object, getattr(float_, "content", None))) for float_ in floats):
                     return True
             elif value is not None and _walk(value):
                 return True

@@ -1,6 +1,6 @@
 [project]
 name = "pythinker-code"
-version = "2.1.0"
+version = "2.1.1"
 description = "Pythinker Code is your next CLI agent."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -151,3 +151,5 @@ datas = "datas"
 Seeked = "Seeked"
 seeked = "seeked"
 iterm = "iterm"
+# Verbatim pyright CLI output ("0 informations") quoted in docs.
+informations = "informations"

@@ -28,6 +28,16 @@ def _make_state(items: list[SelectorItem[str]], *, enable_filter: bool = True):
     )
 
 
+def _selected(state: _SelectorState[str]) -> SelectorItem[str]:
+    item = state.visible[state.selected_idx]
+    assert isinstance(item, SelectorItem)
+    return item
+
+
+def _values(state: _SelectorState[str]) -> list[str]:
+    return [item.value for item in state.visible if isinstance(item, SelectorItem)]
+
+
 def test_initial_state_picks_current_item():
     state = _make_state(
         [
@@ -37,7 +47,7 @@ def test_initial_state_picks_current_item():
         ]
     )
     assert state.selected_idx == 1
-    assert state.visible[state.selected_idx].value == "b"
+    assert _selected(state).value == "b"
 
 
 def test_initial_state_falls_back_to_first_when_no_current():
@@ -75,10 +85,10 @@ def test_filter_narrows_visible_items():
     )
     state.append_filter("a")
     # alpha + beta + gamma all contain 'a'
-    assert {item.value for item in state.visible} == {"a", "b", "c"}
+    assert set(_values(state)) == {"a", "b", "c"}
     state.append_filter("l")
     # only alpha contains 'al'
-    assert [item.value for item in state.visible] == ["a"]
+    assert _values(state) == ["a"]
 
 
 def test_filter_matches_description_too():
@@ -89,7 +99,7 @@ def test_filter_matches_description_too():
         ]
     )
     state.append_filter("batch")
-    assert [item.value for item in state.visible] == ["b"]
+    assert _values(state) == ["b"]
 
 
 def test_backspace_widens_filter():
@@ -101,10 +111,10 @@ def test_backspace_widens_filter():
     )
     state.append_filter("a")
     state.append_filter("l")
-    assert [item.value for item in state.visible] == ["a"]
+    assert _values(state) == ["a"]
     state.backspace_filter()
     # Both back in view.
-    assert {item.value for item in state.visible} == {"a", "b"}
+    assert set(_values(state)) == {"a", "b"}
 
 
 def test_clear_filter_resets_to_all():
@@ -129,10 +139,10 @@ def test_filter_preserves_selected_value_across_edits():
         ]
     )
     state.move(1)  # select beta
-    assert state.visible[state.selected_idx].value == "b"
+    assert _selected(state).value == "b"
     state.append_filter("a")  # all three still match
     # beta still selected.
-    assert state.visible[state.selected_idx].value == "b"
+    assert _selected(state).value == "b"
 
 
 def test_commit_returns_false_for_empty_visible():

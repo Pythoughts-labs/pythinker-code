@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 2.1.1 (2026-05-08)
+
+Documentation refresh.
+
+- README: image and key file links converted to absolute GitHub URLs so the project page on PyPI renders the logo, demo GIFs, and architecture diagram correctly.
+- README: added a "What's New in 2.1.0" section summarising the TUI CLI and slash-command enhancements.
+- README: corrected the License section to Apache-2.0 (matches `pyproject.toml` and the `LICENSE` badge).
+
 ## 2.1.0 (2026-05-08)
 
 TUI CLI design and slash command enhancements.

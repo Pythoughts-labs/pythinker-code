@@ -11,6 +11,13 @@ from pythinker_code.ui.shell.selector import (
     _SelectorState,  # type: ignore[reportPrivateUsage]
 )
 
+
+def _selected[T](state: _SelectorState[T]) -> SelectorItem[T]:
+    item = state.visible[state.selected_idx]
+    assert isinstance(item, SelectorItem)
+    return item
+
+
 # ---------------------------------------------------------------------------
 # theme
 # ---------------------------------------------------------------------------
@@ -24,8 +31,9 @@ def test_theme_selector_marks_current():
         available_themes=["dark", "light", "auto"],
     )
     state = _SelectorState(config)
-    assert state.visible[state.selected_idx].value == "light"
-    assert state.visible[state.selected_idx].is_current is True
+    selected = _selected(state)
+    assert selected.value == "light"
+    assert selected.is_current is True
 
 
 def test_theme_selector_non_current_items_not_marked():
@@ -78,8 +86,9 @@ def test_thinking_selector_marks_current_level():
         available_levels=["off", "low", "medium", "high"],
     )
     state = _SelectorState(config)
-    assert state.visible[state.selected_idx].value == "medium"
-    assert state.visible[state.selected_idx].is_current is True
+    selected = _selected(state)
+    assert selected.value == "medium"
+    assert selected.is_current is True
 
 
 def test_thinking_selector_description_populated():
@@ -118,14 +127,14 @@ def test_show_images_marks_true_when_current_true():
     from pythinker_code.ui.shell.selectors.show_images import _build_show_images_config
 
     state = _SelectorState(_build_show_images_config(current=True))
-    assert state.visible[state.selected_idx].value is True
+    assert _selected(state).value is True
 
 
 def test_show_images_marks_false_when_current_false():
     from pythinker_code.ui.shell.selectors.show_images import _build_show_images_config
 
     state = _SelectorState(_build_show_images_config(current=False))
-    assert state.visible[state.selected_idx].value is False
+    assert _selected(state).value is False
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +146,11 @@ def test_extension_selector_items_match_options():
     from pythinker_code.ui.shell.selectors.extension import _build_extension_config
 
     config = _build_extension_config(title="Pick", options=["alpha", "beta", "gamma"])
-    assert [item.value for item in config.items] == ["alpha", "beta", "gamma"]
+    assert [item.value for item in config.items if isinstance(item, SelectorItem)] == [
+        "alpha",
+        "beta",
+        "gamma",
+    ]
 
 
 def test_extension_selector_marks_current():
@@ -146,14 +159,14 @@ def test_extension_selector_marks_current():
     state = _SelectorState(
         _build_extension_config(title="Pick", options=["a", "b", "c"], current="b")
     )
-    assert state.visible[state.selected_idx].value == "b"
+    assert _selected(state).value == "b"
 
 
 def test_extension_selector_no_current_starts_at_first():
     from pythinker_code.ui.shell.selectors.extension import _build_extension_config
 
     state = _SelectorState(_build_extension_config(title="Pick", options=["x", "y"]))
-    assert state.visible[state.selected_idx].value == "x"
+    assert _selected(state).value == "x"
 
 
 def test_extension_selector_timeout_returns_none(monkeypatch):

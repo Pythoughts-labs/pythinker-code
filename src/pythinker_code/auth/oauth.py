@@ -11,7 +11,7 @@ import tempfile
 import time
 import uuid
 import webbrowser
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -921,7 +921,7 @@ class OAuthManager:
             await self._refresh_tokens(ref, token, runtime, force=force)
 
     @asynccontextmanager
-    async def refreshing(self, runtime: Runtime) -> AsyncIterator[None]:
+    async def refreshing(self, runtime: Runtime) -> AsyncGenerator[None]:
         stop_event = asyncio.Event()
 
         async def _runner() -> None:

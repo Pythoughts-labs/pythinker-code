@@ -10,6 +10,12 @@ from pythinker_code.ui.shell.selector import (
 )
 
 
+def _selected(state: _SelectorState[str]) -> SelectorItem[str]:
+    item = state.visible[state.selected_idx]
+    assert isinstance(item, SelectorItem)
+    return item
+
+
 def _make_grouped_state(*, enable_filter: bool = False) -> _SelectorState[str]:
     items = [
         SelectorHeader(label="Group A"),
@@ -30,36 +36,36 @@ def test_headers_appear_in_visible_when_no_filter():
 
 def test_initial_selection_is_first_selector_item_not_header():
     state = _make_grouped_state()
-    assert isinstance(state.visible[state.selected_idx], SelectorItem)
-    assert state.visible[state.selected_idx].value == "a1"
+    assert _selected(state).value == "a1"
 
 
 def test_move_down_skips_header():
     state = _make_grouped_state()
     state.move(1)
-    assert state.visible[state.selected_idx].value == "a2"
+    assert _selected(state).value == "a2"
     state.move(1)
-    assert state.visible[state.selected_idx].value == "b1"
+    assert _selected(state).value == "b1"
 
 
 def test_move_up_wraps_from_first_to_last_item():
     state = _make_grouped_state()
     state.move(-1)
-    assert state.visible[state.selected_idx].value == "b1"
+    assert _selected(state).value == "b1"
 
 
 def test_move_wraps_from_last_to_first_item():
     state = _make_grouped_state()
     state.move(-1)  # a1 -> b1 (wrap)
     state.move(1)  # b1 -> a1 (wrap)
-    assert state.visible[state.selected_idx].value == "a1"
+    assert _selected(state).value == "a1"
 
 
 def test_headers_hidden_during_filtering():
     state = _make_grouped_state(enable_filter=True)
     state.append_filter("a")
-    assert all(isinstance(item, SelectorItem) for item in state.visible)
-    assert {item.value for item in state.visible} == {"a1", "a2"}
+    items = [item for item in state.visible if isinstance(item, SelectorItem)]
+    assert len(items) == len(state.visible)
+    assert {item.value for item in items} == {"a1", "a2"}
 
 
 def test_commit_returns_selected_item_value():

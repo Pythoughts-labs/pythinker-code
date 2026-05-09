@@ -1,6 +1,6 @@
 <div align="center">
 
-# <img src="./docs/media/logo.png" alt="Pythinker logo" width="42" align="top"> Pythinker Code
+# <img src="https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/docs/media/logo.png" alt="Pythinker logo" width="42" align="top"> Pythinker Code
 
 ### *Your terminal-native AI engineering agent.*
 
@@ -10,7 +10,7 @@
 <br />
 
 [![PyPI](https://img.shields.io/pypi/v/pythinker-code?style=for-the-badge&logo=pypi&logoColor=white&color=2563eb&label=pythinker-code)](https://pypi.org/project/pythinker-code/)
-[![Python](https://img.shields.io/badge/Python-3.12%2B-3776ab?style=for-the-badge&logo=python&logoColor=white)](pyproject.toml)
+[![Python](https://img.shields.io/badge/Python-3.12%2B-3776ab?style=for-the-badge&logo=python&logoColor=white)](https://github.com/mohamed-elkholy95/Pythinker-Code/blob/main/pyproject.toml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-16a34a.svg?style=for-the-badge)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/mohamed-elkholy95/Pythinker-Code/ci-pythinker-cli.yml?label=CI&color=22c55e&style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/mohamed-elkholy95/Pythinker-Code/actions/workflows/ci-pythinker-cli.yml)
 
@@ -31,7 +31,7 @@
 
 <br /><br />
 
-<img src="./docs/media/pythinker-code.gif" alt="Pythinker Code terminal demo" width="860">
+<img src="https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/docs/media/pythinker-code.gif" alt="Pythinker Code terminal demo" width="860">
 
 </div>
 
@@ -44,6 +44,22 @@
 It speaks the [**Agent Client Protocol (ACP)**](https://github.com/agentclientprotocol/agent-client-protocol), so it slots cleanly into ACP-aware editors like Zed and JetBrains. It loads [**Model Context Protocol (MCP)**](https://modelcontextprotocol.io/) servers, so the same tools your other agents use just work. And it's hackable: subagents, skills, hooks, and plugins are all first-class extension points.
 
 > 🎯 **One agent, one shell, one workflow.** No tab-switching. No context loss. No magic.
+
+---
+
+## 🆕 What's New in 2.1.0
+
+A focused refresh of the TUI and slash-command UX.
+
+- **Selectors package** — interactive `/theme`, `/thinking`, `/model`, `/login`, `/settings`, `/extension`, and `/show-images` panels replace the old numeric/text prompts.
+- **`/thinking` slash command** — toggle reasoning effort live, mid-session.
+- **`/settings` panel** — a real `SettingsList` over your `Config` (theme, default model, TUI style, default thinking, telemetry, loop limits, background tasks).
+- **Card-style TUI polish** — bordered shell card, footer/toolbar, and a full set of tool renderers (read / write / edit / grep / find / bash / agent), plus a diff component. Subagent cards show a running-dots spinner while they work.
+- **Selector framework** — `SelectorHeader` sentinel and per-row `on_change` callback for richer custom selectors.
+- **Prompt templates** — discovery is now `~/.pythinker/prompts` and `<project>/.pythinker/prompts`. The legacy directory lookup has been retired.
+- **TUI style flag** — only `card` (default) and `pythinker` are accepted; the legacy alias has been dropped.
+
+Upgrade with `pythinker update` or `pip install --upgrade pythinker-code`.
 
 ---
 
@@ -120,7 +136,7 @@ Swap providers and models per-session: `--model openai/gpt-5.5`, hosted Pythinke
 > Built-in shell commands such as `cd` are not yet supported in shell command mode.
 
 <div align="center">
-<img src="./docs/media/shell-mode.gif" alt="Shell command mode demo" width="860">
+<img src="https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/docs/media/shell-mode.gif" alt="Shell command mode demo" width="860">
 </div>
 
 ---
@@ -353,7 +369,7 @@ The ACP server provides:
 | 🔄 **Hot model swap** | Change models for a running ACP session |
 
 <div align="center">
-<img src="./docs/media/acp-integration.gif" alt="ACP IDE integration demo" width="860">
+<img src="https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/docs/media/acp-integration.gif" alt="ACP IDE integration demo" width="860">
 </div>
 
 ---
@@ -424,7 +440,7 @@ Pythinker is a small, extensible runtime — not a monolith. Build on it.
 ## 🏗️ Architecture
 
 <div align="center">
-<img src="./docs/media/Architecture.webp" alt="Pythinker Code architecture diagram" width="860">
+<img src="https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/docs/media/Architecture.webp" alt="Pythinker Code architecture diagram" width="860">
 </div>
 
 ---
@@ -585,9 +601,9 @@ pythinker-code/
 
 Contributions are warmly welcome — bug reports, PRs, plugins, skills, and docs all help.
 
-- 📖 Start with [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- 🔐 See [`SECURITY.md`](SECURITY.md) for responsible disclosure
-- 📜 Skim [`AGENTS.md`](AGENTS.md) for the agent design notes
+- 📖 Start with [`CONTRIBUTING.md`](https://github.com/mohamed-elkholy95/Pythinker-Code/blob/main/CONTRIBUTING.md)
+- 🔐 See [`SECURITY.md`](https://github.com/mohamed-elkholy95/Pythinker-Code/blob/main/SECURITY.md) for responsible disclosure
+- 📜 Skim [`AGENTS.md`](https://github.com/mohamed-elkholy95/Pythinker-Code/blob/main/AGENTS.md) for the agent design notes
 
 If Pythinker helps you, **a ⭐ on GitHub goes a long way.**
 
@@ -595,7 +611,7 @@ If Pythinker helps you, **a ⭐ on GitHub goes a long way.**
 
 ## 📜 License
 
-Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for the full text and [`NOTICE`](NOTICE) for attributions.
+Distributed under the **Apache-2.0 License**. See [`LICENSE`](https://github.com/mohamed-elkholy95/Pythinker-Code/blob/main/LICENSE) for the full text and [`NOTICE`](https://github.com/mohamed-elkholy95/Pythinker-Code/blob/main/NOTICE) for attributions.
 
 <br />
 
