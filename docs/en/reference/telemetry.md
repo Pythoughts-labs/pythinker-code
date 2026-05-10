@@ -132,6 +132,31 @@ Distinct from automatic telemetry. The user types feedback explicitly; it is
 POSTed to the hosted feedback endpoint along with `session_id`, version, OS,
 and current model. No code or file context is attached.
 
+### `/report-error` slash command
+
+A user-invoked complement to automatic Sentry/OTel capture, designed for the
+case where the user *knows* something is wrong but the code path didn't
+raise — or where they want to attach a comment to a recently-seen failure.
+
+The runtime keeps a **process-local ring buffer** of the last 10 errors that
+were forwarded through `report_handled_error` (`pythinker_code/telemetry/errors.py`).
+Each entry stores: `timestamp`, `site`, `exc_class`, a 200-char-truncated
+`message`, and the optional `tool` name. The buffer is in-memory only — it
+does not persist across processes and does not back the OTel/Sentry pipeline
+(those already received the full event when it occurred).
+
+When the user runs `/report-error`:
+
+1. The TUI prints the buffer's contents (site + class + tool).
+2. The user types a free-form description and hits enter.
+3. The runtime POSTs to `<platform>/feedback` with `type=error`, the comment,
+   the same context as `/feedback` (version, OS, model, session_id), and a
+   `recent_errors[]` array constructed from the ring buffer.
+4. On success, the buffer is cleared.
+
+If managed-platform OAuth is unavailable, the slash falls back to opening
+the GitHub issue tracker in a browser.
+
 ## Opting out
 
 Set either of the following before launching `pythinker`:

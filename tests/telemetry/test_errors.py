@@ -111,3 +111,62 @@ def test_no_tool_argument_is_optional():
     assert "tool" not in record["properties"]
     assert record["properties"]["site"] == "auth.oauth.refresh"
     assert record["properties"]["exc_class"] == "KeyError"
+
+
+# ---------------------------------------------------------------------------
+# Ring-buffer tests for /report-error
+# ---------------------------------------------------------------------------
+
+from pythinker_code.telemetry.errors import (  # noqa: E402
+    _RECENT_BUFFER_SIZE,
+    clear_recent_errors,
+    recent_errors,
+)
+
+
+@pytest.fixture(autouse=True)
+def _reset_recent_buffer():
+    clear_recent_errors()
+    yield
+    clear_recent_errors()
+
+
+def test_recent_errors_records_each_call():
+    with patch("pythinker_code.telemetry.errors._sentry.capture_exception"):
+        report_handled_error(ValueError("a"), site="tool.read", tool="ReadFile")
+        report_handled_error(RuntimeError("b"), site="auth.oauth.refresh")
+    errs = recent_errors()
+    assert len(errs) == 2
+    assert errs[0].site == "tool.read"
+    assert errs[0].exc_class == "ValueError"
+    assert errs[0].tool == "ReadFile"
+    assert errs[1].site == "auth.oauth.refresh"
+    assert errs[1].tool is None
+
+
+def test_recent_errors_truncates_long_messages():
+    long_msg = "x" * 1000
+    with patch("pythinker_code.telemetry.errors._sentry.capture_exception"):
+        report_handled_error(ValueError(long_msg), site="tool.read")
+    err = recent_errors()[0]
+    assert len(err.message) == 200
+    assert err.message == "x" * 200
+
+
+def test_recent_errors_buffer_caps_at_max():
+    with patch("pythinker_code.telemetry.errors._sentry.capture_exception"):
+        for i in range(_RECENT_BUFFER_SIZE + 3):
+            report_handled_error(ValueError(f"e{i}"), site=f"tool.s{i}")
+    errs = recent_errors()
+    assert len(errs) == _RECENT_BUFFER_SIZE
+    # Oldest entries dropped: first remaining is e3 (3 + buffer = total entries).
+    assert errs[0].message == "e3"
+    assert errs[-1].message == f"e{_RECENT_BUFFER_SIZE + 2}"
+
+
+def test_clear_recent_errors():
+    with patch("pythinker_code.telemetry.errors._sentry.capture_exception"):
+        report_handled_error(ValueError("x"), site="tool.read")
+    assert len(recent_errors()) == 1
+    clear_recent_errors()
+    assert recent_errors() == []

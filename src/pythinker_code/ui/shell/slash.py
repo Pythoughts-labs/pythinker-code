@@ -533,6 +533,127 @@ async def feedback(app: Shell, args: str):
             _fallback_to_issues()
 
 
+@registry.command(aliases=["report-error", "report"])
+@shell_mode_registry.command(aliases=["report-error", "report"])
+async def report_error(app: Shell, args: str):
+    """Submit a report about an error you hit, with a snapshot of recent failures."""
+    import platform
+    import webbrowser
+
+    import aiohttp
+
+    from pythinker_code.auth import PYTHINKER_CODE_PLATFORM_ID
+    from pythinker_code.auth.platforms import get_platform_by_id, managed_provider_key
+    from pythinker_code.constant import VERSION
+    from pythinker_code.telemetry.errors import clear_recent_errors, recent_errors
+    from pythinker_code.ui.shell.oauth import current_model_key
+    from pythinker_code.utils.aiohttp import new_client_session
+
+    ISSUE_URL = "https://github.com/mohamed-elkholy95/Pythinker-Code/issues"
+
+    def _fallback_to_issues():
+        if not webbrowser.open(ISSUE_URL):
+            console.print(f"Please file the report at [underline]{ISSUE_URL}[/underline].")
+
+    soul = ensure_pythinker_soul(app)
+    if soul is None:
+        _fallback_to_issues()
+        return
+
+    pythinker_platform = get_platform_by_id(PYTHINKER_CODE_PLATFORM_ID)
+    if pythinker_platform is None:
+        _fallback_to_issues()
+        return
+
+    provider = soul.runtime.config.providers.get(managed_provider_key(PYTHINKER_CODE_PLATFORM_ID))
+    if provider is None or provider.oauth is None:
+        _fallback_to_issues()
+        return
+
+    errors = recent_errors()
+    if errors:
+        console.print("[bold]Recent errors this session (most recent last):[/bold]")
+        for i, err in enumerate(errors, start=1):
+            tool_part = f" (tool={err.tool})" if err.tool else ""
+            console.print(f"  [dim]{i}.[/dim] [cyan]{err.site}[/cyan]{tool_part}: {err.exc_class}")
+    else:
+        console.print(
+            "[grey50]No errors recorded this session. "
+            "You can still attach a comment describing what went wrong.[/grey50]"
+        )
+
+    from prompt_toolkit import PromptSession
+
+    prompt_session: PromptSession[str] = PromptSession()
+    try:
+        comment = await prompt_session.prompt_async("Describe what went wrong (Ctrl-C to cancel): ")
+    except (EOFError, KeyboardInterrupt):
+        console.print("[grey50]Report cancelled.[/grey50]")
+        return
+
+    comment = comment.strip()
+    if not comment and not errors:
+        console.print("[yellow]Nothing to report. Cancelled.[/yellow]")
+        return
+
+    api_key = soul.runtime.oauth.resolve_api_key(provider.api_key, provider.oauth)
+    feedback_url = f"{pythinker_platform.base_url.rstrip('/')}/feedback"
+
+    payload = {
+        "session_id": soul.runtime.session.id,
+        "type": "error",
+        "content": comment,
+        "version": VERSION,
+        "os": f"{platform.system()} {platform.release()}",
+        "model": current_model_key(soul),
+        "recent_errors": [
+            {
+                "timestamp": err.timestamp,
+                "site": err.site,
+                "exc_class": err.exc_class,
+                "message": err.message,
+                "tool": err.tool,
+            }
+            for err in errors
+        ],
+    }
+
+    with console.status("[cyan]Submitting error report...[/cyan]"):
+        try:
+            async with (
+                new_client_session() as session,
+                session.post(
+                    feedback_url,
+                    json=payload,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        **(provider.custom_headers or {}),
+                    },
+                    raise_for_status=True,
+                ),
+            ):
+                pass
+            from pythinker_code.telemetry import track
+
+            track("error_report_submitted", error_count=len(errors), has_comment=bool(comment))
+            clear_recent_errors()
+            console.print(
+                f"[green]Error report submitted. Session ID: {soul.runtime.session.id}[/green]"
+            )
+        except TimeoutError:
+            console.print("[red]Submission timed out.[/red]")
+            _fallback_to_issues()
+        except aiohttp.ClientError as e:
+            status = getattr(e, "status", None)
+            msg = (
+                f"Failed to submit error report (HTTP {status})."
+                if status
+                else "Network error, failed to submit error report."
+            )
+            console.print(f"[red]{msg}[/red]")
+            _fallback_to_issues()
+
+
 @registry.command(aliases=["reset"])
 async def clear(app: Shell, args: str):
     """Clear the context"""

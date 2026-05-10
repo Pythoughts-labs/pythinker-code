@@ -21,10 +21,46 @@ telemetry must never break the host program.
 from __future__ import annotations
 
 import contextlib
+import time
+from collections import deque
+from dataclasses import dataclass
 from typing import Any
 
 from pythinker_code.telemetry import sentry as _sentry
 from pythinker_code.telemetry import track
+
+# ---------------------------------------------------------------------------
+# Process-local ring buffer of recent errors
+# ---------------------------------------------------------------------------
+# Keeps just enough metadata to populate the ``/report-error`` slash command
+# without retaining the full exception object (which can hold large frames
+# and references). Class name + a short, redacted message is what shows in
+# the buffer; the *full* scrubbed stack is already in Sentry/Bugsink.
+
+_RECENT_BUFFER_SIZE = 10
+
+
+@dataclass(frozen=True, slots=True)
+class RecentError:
+    timestamp: float
+    site: str
+    exc_class: str
+    message: str  # truncated to 200 chars
+    tool: str | None
+
+
+_recent: deque[RecentError] = deque(maxlen=_RECENT_BUFFER_SIZE)
+
+
+def recent_errors() -> list[RecentError]:
+    """Snapshot of the most-recent reported errors (oldest first)."""
+    return list(_recent)
+
+
+def clear_recent_errors() -> None:
+    """Drop the recent-errors buffer. Used by tests and by ``/report-error``
+    after a successful submission."""
+    _recent.clear()
 
 
 def report_handled_error(
@@ -59,3 +95,13 @@ def report_handled_error(
         track("error", **properties)
     with contextlib.suppress(Exception):
         _sentry.capture_exception(exc)
+    with contextlib.suppress(Exception):
+        _recent.append(
+            RecentError(
+                timestamp=time.time(),
+                site=site,
+                exc_class=type(exc).__name__,
+                message=str(exc)[:200],
+                tool=tool,
+            )
+        )
