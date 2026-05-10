@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 2.3.0 (2026-05-09)
+
+Telemetry & observability audit.
+
+- New `pythinker_code/telemetry/errors.py` helper `report_handled_error(exc, *, site, tool=None, **attrs)` forwards caught-and-rendered exceptions to both Sentry/Bugsink and the OTel `error` event stream. Both forwarding paths are `contextlib.suppress`-wrapped so monitoring can never break the host program.
+- 38 silent-catch sites instrumented across `tools/`, `auth/`, `soul/`, `acp/`, `hooks/`, `subagents/`. Tool failures, OAuth errors, MCP server hiccups, hook callback failures, and subagent crashes now reach Bugsink and SigNoz.
+- `pythinker_code/telemetry/otel.py`: TracerProvider now uses `ParentBased(TraceIdRatioBased(rate))` driven by `PYTHINKER_OTEL_TRACE_SAMPLE_RATE` (default 1.0).
+- New `pythinker.mcp.call` span around every MCPTool RPC.
+- New `/report-error` slash command (aliases `/report`, `/report-error`).
+- `docs/en/reference/telemetry.md` documents the full telemetry contract.
+- `chore(test)`: updated google-genai snapshot for pydantic 2.13.4 + google-genai 2.0.0.
+
+
 ## 2.2.1 (2026-05-09)
 
 CI hardening: macOS binary build is now optional-codesign.

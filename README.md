@@ -48,6 +48,20 @@ It speaks the [**Agent Client Protocol (ACP)**](https://github.com/agentclientpr
 
 ---
 
+## 🆕 What's New in 2.3.0
+
+Telemetry & observability audit on top of 2.2.1.
+
+- **38 silent-catch sites instrumented** — tool failures, OAuth errors, MCP hiccups, hook callbacks, subagent crashes now surface in Bugsink + SigNoz.
+- **`/report-error` slash command** — user-invoked complement to automatic capture.
+- **OTel trace sampling tunable** — `PYTHINKER_OTEL_TRACE_SAMPLE_RATE` for operators running their own collector.
+- **`pythinker.mcp.call` span** with `mcp.server` attribute.
+- **`docs/en/reference/telemetry.md`** documents the full contract.
+
+Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==2.3.0`.
+
+### What was new in 2.2.1
+
 ## 🆕 What's New in 2.2.1
 
 CI hardening on top of 2.2.0.
@@ -55,7 +69,7 @@ CI hardening on top of 2.2.0.
 - **macOS binary build is now optional-codesign** — the release workflow detects whether `APPLE_CERTIFICATE_P12` / `APPLE_NOTARIZATION_KEY_P8` repo secrets are set. When they aren't (the v2.2.0 case), it ships an ad-hoc-signed PyInstaller binary instead of failing the whole release. PyPI install (`pip install pythinker-code`) is unaffected.
 - **PyPI publish is idempotent** — `pypa/gh-action-pypi-publish` now runs with `skip-existing: true`, so re-running the release workflow against an already-published version is a no-op.
 
-Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==2.2.1`.
+Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==2.3.0`.
 
 ### What was new in 2.2.0
 
