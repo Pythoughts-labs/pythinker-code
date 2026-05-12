@@ -339,6 +339,14 @@ class Anthropic:
                         last_block["cache_control"] = CacheControlEphemeralParam(type="ephemeral")
                     case "thinking" | "redacted_thinking":
                         pass
+                    case _:
+                        # Anthropic SDK 0.101+ adds new tool-result block types
+                        # (web_fetch_tool_result, code_execution_tool_result,
+                        # bash_code_execution_tool_result,
+                        # text_editor_code_execution_tool_result,
+                        # tool_search_tool_result, container_upload). They are
+                        # not cache anchors — leave the block untouched.
+                        pass
         generation_kwargs: dict[str, Any] = {}
         generation_kwargs.update(self._generation_kwargs)
         betas = generation_kwargs.pop("beta_features", [])
@@ -598,6 +606,14 @@ class AnthropicStreamedMessage:
                                 )
                             case "server_tool_use" | "web_search_tool_result":
                                 # ignore
+                                continue
+                            case _:
+                                # Anthropic SDK 0.101+ added new server-side
+                                # tool-result block types we don't surface:
+                                # web_fetch_tool_result, code_execution_tool_result,
+                                # bash_code_execution_tool_result,
+                                # text_editor_code_execution_tool_result,
+                                # tool_search_tool_result, container_upload.
                                 continue
                     elif isinstance(event, RawContentBlockDeltaEvent):
                         delta = event.delta
