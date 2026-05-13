@@ -478,6 +478,47 @@ def _feedback_destination(soul: PythinkerSoul) -> tuple[str, dict[str, str]] | N
     return f"{pythinker_platform.base_url.rstrip('/')}/feedback", headers
 
 
+def _feedback_github_config(soul: PythinkerSoul) -> tuple[str, str] | None:
+    """Return GitHub OAuth client_id and repo when direct user-owned issues are enabled."""
+    import os
+
+    feedback_config = soul.runtime.config.feedback
+    client_id = os.getenv("PYTHINKER_FEEDBACK_GITHUB_CLIENT_ID", "").strip()
+    if not client_id:
+        client_id = feedback_config.github_client_id.strip()
+    repo = os.getenv("PYTHINKER_FEEDBACK_GITHUB_REPO", "").strip()
+    if not repo:
+        repo = feedback_config.github_repo.strip()
+    if not client_id or not repo:
+        return None
+    return client_id, repo
+
+
+def _feedback_issue_title(payload: dict[str, str | None]) -> str:
+    version = f" {payload['version']}" if payload.get("version") else ""
+    session = payload.get("session_id") or ""
+    suffix = f" ({session[:8]})" if session else ""
+    return f"[Pythinker CLI] Feedback{version}{suffix}"
+
+
+def _feedback_issue_body(payload: dict[str, str | None]) -> str:
+    return "\n".join(
+        [
+            "## User submission",
+            "",
+            payload.get("content") or "_(no comment)_",
+            "",
+            "## Context",
+            "",
+            "- Type: feedback",
+            f"- Session: {payload.get('session_id') or 'unknown'}",
+            f"- Version: {payload.get('version') or 'unknown'}",
+            f"- OS: {payload.get('os') or 'unknown'}",
+            f"- Model: {payload.get('model') or 'unknown'}",
+        ]
+    )
+
+
 @registry.command
 @shell_mode_registry.command
 async def feedback(app: Shell, args: str):
@@ -502,11 +543,11 @@ async def feedback(app: Shell, args: str):
         _fallback_to_issues()
         return
 
-    destination = _feedback_destination(soul)
-    if destination is None:
+    github_config = _feedback_github_config(soul)
+    destination = None if github_config is not None else _feedback_destination(soul)
+    if github_config is None and destination is None:
         _fallback_to_issues()
         return
-    feedback_url, headers = destination
 
     from prompt_toolkit import PromptSession
 
@@ -529,6 +570,71 @@ async def feedback(app: Shell, args: str):
         "os": f"{platform.system()} {platform.release()}",
         "model": current_model_key(soul),
     }
+
+    if github_config is not None:
+        client_id, repo = github_config
+        from pythinker_code.auth.github_feedback import (
+            GitHubFeedbackError,
+            create_github_issue,
+            load_github_feedback_token,
+            login_github_feedback,
+            star_github_repo,
+        )
+
+        try:
+            token = load_github_feedback_token()
+            if token is None:
+                console.print("[cyan]GitHub login required to create the issue as you.[/cyan]")
+                async for event in login_github_feedback(client_id):
+                    if event.type == "waiting":
+                        console.print(event.message, markup=False)
+                    elif event.type in {"verification_url", "success", "error"}:
+                        style = None
+                        if event.type == "success":
+                            style = "green"
+                        elif event.type == "error":
+                            style = "red"
+                        console.print(event.message, markup=False, style=style)
+                token = load_github_feedback_token()
+            if token is None:
+                console.print("[red]GitHub login did not produce a usable token.[/red]")
+                return
+            with console.status("[cyan]Creating GitHub issue...[/cyan]"):
+                issue = await create_github_issue(
+                    repo,
+                    token,
+                    title=_feedback_issue_title(payload),
+                    body=_feedback_issue_body(payload),
+                )
+            from pythinker_code.telemetry import track
+
+            track("feedback_submitted", destination="github")
+            if issue.html_url:
+                console.print(f"[green]GitHub issue created:[/green] {issue.html_url}")
+            else:
+                console.print("[green]GitHub issue created.[/green]")
+
+            try:
+                star_answer = await prompt_session.prompt_async(
+                    "Do you like Pythinker CLI? Star the GitHub repo? [y/N]: "
+                )
+            except (EOFError, KeyboardInterrupt):
+                star_answer = ""
+            if star_answer.strip().lower() in {"y", "yes"}:
+                try:
+                    with console.status("[cyan]Starring GitHub repo...[/cyan]"):
+                        await star_github_repo(repo, token)
+                    track("github_repo_starred")
+                    console.print("[green]Thanks for starring the repo![/green]")
+                except (GitHubFeedbackError, TimeoutError, aiohttp.ClientError) as e:
+                    console.print(f"[yellow]Could not star the repo: {e}[/yellow]")
+        except (GitHubFeedbackError, TimeoutError, aiohttp.ClientError) as e:
+            console.print(f"[red]Failed to create GitHub issue: {e}[/red]")
+            _fallback_to_issues()
+        return
+
+    assert destination is not None
+    feedback_url, headers = destination
 
     with console.status("[cyan]Submitting feedback...[/cyan]"):
         try:

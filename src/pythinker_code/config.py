@@ -186,6 +186,17 @@ class FeedbackConfig(BaseModel):
         default=None,
         description="Optional extra headers for feedback endpoint requests.",
     )
+    github_client_id: str = Field(
+        default="",
+        description=(
+            "Optional GitHub OAuth App client ID. When set, /feedback uses GitHub "
+            "device login and creates issues as the signed-in GitHub user."
+        ),
+    )
+    github_repo: str = Field(
+        default="mohamed-elkholy95/Pythinker-Code",
+        description="GitHub owner/repo used by /feedback GitHub OAuth submissions.",
+    )
 
     @field_serializer("api_key", when_used="json")
     def dump_secret(self, v: SecretStr | None):

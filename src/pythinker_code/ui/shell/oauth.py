@@ -247,12 +247,19 @@ async def logout(app: Shell, args: str) -> None:
         ok = await _render_oauth_events(logout_lm_studio(config))
     elif mode == "ollama":
         ok = await _render_oauth_events(logout_ollama(config))
+    elif mode in ("github-feedback", "github"):
+        from pythinker_code.auth.github_feedback import delete_github_feedback_token
+
+        delete_github_feedback_token()
+        console.print("[green]Logged out of GitHub feedback.[/green]")
+        ok = True
     elif mode == "":
         ok = await _render_oauth_events(logout_openai(config))
     else:
         console.print(
             "[red]Usage: /logout "
-            "[opencode-go|minimax|deepseek|anthropic|openrouter|lm-studio|ollama][/red]"
+            "[opencode-go|minimax|deepseek|anthropic|openrouter|lm-studio|ollama|"
+            "github-feedback][/red]"
         )
         return
     if not ok:

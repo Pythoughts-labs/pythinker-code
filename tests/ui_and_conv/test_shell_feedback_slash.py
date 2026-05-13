@@ -14,6 +14,7 @@ import pytest
 from pydantic import SecretStr
 from pythinker_core.tooling.empty import EmptyToolset
 
+from pythinker_code.auth.github_feedback import GitHubIssue
 from pythinker_code.config import FeedbackConfig, LLMProvider, OAuthRef
 from pythinker_code.soul.agent import Agent, Runtime
 from pythinker_code.soul.context import Context
@@ -280,6 +281,74 @@ class TestFeedbackSubmission:
         headers = post_call.kwargs["headers"]
         assert headers["Authorization"] == "Bearer feedback-secret"
         assert headers["x-feedback-source"] == "cli"
+
+    async def test_github_oauth_submission_creates_issue_as_user(
+        self, runtime: Runtime, tmp_path: Path, monkeypatch
+    ) -> None:
+        runtime.config.feedback = FeedbackConfig(
+            github_client_id="github-client-id",
+            github_repo="owner/repo",
+        )
+        app = _make_shell_app(runtime, tmp_path)
+
+        print_mock, open_mock = _setup_submission_mocks(
+            monkeypatch,
+            feedback_text="GitHub feedback",
+        )
+        load_token = Mock(return_value="github-user-token")
+        create_issue = AsyncMock(return_value=GitHubIssue(number=37, html_url="https://issue/37"))
+        login = Mock()
+        monkeypatch.setattr(
+            "pythinker_code.auth.github_feedback.load_github_feedback_token",
+            load_token,
+        )
+        monkeypatch.setattr("pythinker_code.auth.github_feedback.create_github_issue", create_issue)
+        monkeypatch.setattr("pythinker_code.auth.github_feedback.login_github_feedback", login)
+
+        ret = shell_slash.feedback(cast(Shell, app), "")
+        if isinstance(ret, Awaitable):
+            await ret
+
+        create_issue.assert_awaited_once()
+        await_args = create_issue.await_args
+        assert await_args is not None
+        assert await_args.kwargs["title"].startswith("[Pythinker CLI] Feedback")
+        assert "GitHub feedback" in await_args.kwargs["body"]
+        assert await_args.args == ("owner/repo", "github-user-token")
+        login.assert_not_called()
+        open_mock.assert_not_called()
+        assert any("GitHub issue created" in str(call) for call in print_mock.call_args_list)
+
+    async def test_github_oauth_submission_can_star_repo_with_consent(
+        self, runtime: Runtime, tmp_path: Path, monkeypatch
+    ) -> None:
+        runtime.config.feedback = FeedbackConfig(
+            github_client_id="github-client-id",
+            github_repo="owner/repo",
+        )
+        app = _make_shell_app(runtime, tmp_path)
+
+        _setup_submission_mocks(monkeypatch)
+        monkeypatch.setattr(
+            "prompt_toolkit.PromptSession.prompt_async",
+            AsyncMock(side_effect=["GitHub feedback", "y"]),
+        )
+        monkeypatch.setattr(
+            "pythinker_code.auth.github_feedback.load_github_feedback_token",
+            Mock(return_value="github-user-token"),
+        )
+        monkeypatch.setattr(
+            "pythinker_code.auth.github_feedback.create_github_issue",
+            AsyncMock(return_value=GitHubIssue(number=37, html_url="https://issue/37")),
+        )
+        star_repo = AsyncMock()
+        monkeypatch.setattr("pythinker_code.auth.github_feedback.star_github_repo", star_repo)
+
+        ret = shell_slash.feedback(cast(Shell, app), "")
+        if isinstance(ret, Awaitable):
+            await ret
+
+        star_repo.assert_awaited_once_with("owner/repo", "github-user-token")
 
     async def test_timeout_fallback(self, runtime: Runtime, tmp_path: Path, monkeypatch) -> None:
         _setup_feedback_provider(runtime)
