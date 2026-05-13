@@ -83,8 +83,10 @@ def test_approval_reject_via_key3(tmp_path: Path) -> None:
         shell.read_until_contains("requesting approval to run command", after=turn_mark)
         time.sleep(0.3)
         shell.send_key("3")
-        # Rejection shows "Rejected by user" and returns to prompt
-        shell.read_until_contains("Rejected by user", after=turn_mark, timeout=15.0)
+        # Rejection: rendered tool result body contains the rejection message.
+        shell.read_until_contains(
+            "The tool call is rejected by the user", after=turn_mark, timeout=15.0
+        )
         prompt_mark = shell.mark()
         _read_until_prompt(shell, after=prompt_mark)
 
@@ -122,7 +124,9 @@ def test_approval_escape_rejects(tmp_path: Path) -> None:
         shell.read_until_contains("requesting approval to run command", after=turn_mark)
         time.sleep(0.3)
         shell.send_key("escape")
-        shell.read_until_contains("Rejected by user", after=turn_mark, timeout=15.0)
+        shell.read_until_contains(
+            "The tool call is rejected by the user", after=turn_mark, timeout=15.0
+        )
         prompt_mark = shell.mark()
         _read_until_prompt(shell, after=prompt_mark)
 
@@ -623,7 +627,9 @@ def test_ctrl_c_during_approval_rejects(tmp_path: Path) -> None:
         time.sleep(0.3)
         shell.send_key("ctrl_c")
         # Ctrl-C on approval modal maps to reject
-        shell.read_until_contains("Rejected by user", after=turn_mark, timeout=10.0)
+        shell.read_until_contains(
+            "The tool call is rejected by the user", after=turn_mark, timeout=10.0
+        )
         prompt_mark = shell.mark()
         _read_until_prompt(shell, after=prompt_mark)
 
@@ -805,7 +811,8 @@ def test_ctrl_c_during_running_turn_interrupts(tmp_path: Path) -> None:
 
         turn_mark = shell.mark()
         shell.send_line("run slow command")
-        shell.read_until_contains("Shell sleep 30 running", after=turn_mark, timeout=15.0)
+        # Bash tool call-renderer prints `$ <command>` as the running marker.
+        shell.read_until_contains("$ sleep 30", after=turn_mark, timeout=15.0)
         time.sleep(0.5)
         shell.send_key("ctrl_c")
         shell.read_until_contains("Interrupted by user", after=turn_mark, timeout=10.0)

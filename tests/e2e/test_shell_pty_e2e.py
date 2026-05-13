@@ -168,7 +168,7 @@ def test_shell_running_prompt_preserves_unsubmitted_draft(tmp_path: Path) -> Non
 
         first_turn_mark = shell.mark()
         shell.send_line("start long turn")
-        shell.read_until_contains("Shell sleep 1.5 running", after=first_turn_mark, timeout=15.0)
+        shell.read_until_contains("$ sleep 1.5", after=first_turn_mark, timeout=15.0)
         time.sleep(0.3)
         shell.send_text("follow-up draft")
         shell.read_until_contains("First turn finished.", after=first_turn_mark, timeout=15.0)
@@ -215,7 +215,7 @@ def test_shell_running_prompt_ignores_shift_tab_plan_toggle(tmp_path: Path) -> N
 
         turn_mark = shell.mark()
         shell.send_line("start long turn")
-        shell.read_until_contains("Shell sleep 1.5 running", after=turn_mark, timeout=15.0)
+        shell.read_until_contains("$ sleep 1.5", after=turn_mark, timeout=15.0)
         shift_tab_mark = shell.mark()
         shell.send_key("s_tab")
         shell.read_until_contains("First turn finished.", after=turn_mark, timeout=15.0)
@@ -747,8 +747,9 @@ def test_shell_approval_reject_and_recover(tmp_path: Path) -> None:
         shell.send_key("3")
         # Wait for the tool call to be fully processed (confirmed by failed marker)
         # before looking for the prompt, to avoid matching ✨ from a mid-turn redraw.
+        # Bordered Shell card shows (exit 1) when the rejected tool returns.
         shell.read_until_contains(
-            "should_not_exist.txt failed",
+            "(exit 1)",
             after=reject_mark,
             timeout=15.0,
         )
@@ -911,7 +912,7 @@ def test_shell_clear_reloads_without_replaying_old_turns(tmp_path: Path) -> None
 
 def test_shell_cancel_running_command_kills_process_and_recovers(tmp_path: Path) -> None:
     scripts = [
-        build_shell_tool_call("tc-c1", "sleep 2 && printf should-not-exist > cancel_output.txt"),
+        build_shell_tool_call("tc-c1", "sleep 5 && printf should-not-exist > cancel_output.txt"),
         "text: Cancel recovery completed.",
     ]
     config_path = write_scripted_config(tmp_path, scripts)
@@ -930,13 +931,13 @@ def test_shell_cancel_running_command_kills_process_and_recovers(tmp_path: Path)
 
         cancel_mark = shell.mark()
         shell.send_line("start cancellable command")
-        shell.read_until_contains("cancel_output.txt running", after=cancel_mark)
+        shell.read_until_contains("$ sleep 5", after=cancel_mark)
         shell.send_key("escape")
         shell.read_until_contains("Interrupted by user", after=cancel_mark)
         cancel_prompt_mark = shell.mark()
         _read_until_prompt(shell, after=cancel_prompt_mark)
 
-        time.sleep(2.3)
+        time.sleep(5.3)
         assert not (work_dir / "cancel_output.txt").exists()
 
         recovery_mark = shell.mark()
