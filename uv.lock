@@ -2417,8 +2417,8 @@ requires-dist = [
     { name = "prompt-toolkit", specifier = "==3.0.52" },
     { name = "pydantic", specifier = "==2.13.4" },
     { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'", specifier = ">=12.1" },
-    { name = "pythinker-core", extras = ["contrib"], specifier = "==1.1.0" },
-    { name = "pythinker-host", specifier = "==1.0.0" },
+    { name = "pythinker-core", extras = ["contrib"], editable = "packages/pythinker-core" },
+    { name = "pythinker-host", editable = "packages/pythinker-host" },
     { name = "pyyaml", specifier = "==6.0.3" },
     { name = "rich", specifier = "==14.2.0" },
     { name = "ripgrepy", specifier = "==2.2.0" },
@@ -2566,7 +2566,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "mcp", specifier = ">=1,<1.17" },
-    { name = "pythinker-core", specifier = "==1.1.0" },
+    { name = "pythinker-core", editable = "packages/pythinker-core" },
 ]
 
 [package.metadata.requires-dev]
