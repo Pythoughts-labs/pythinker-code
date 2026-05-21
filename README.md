@@ -2,10 +2,10 @@
 
 # <img src="https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/docs/media/logo.png" alt="Pythinker logo" width="42" align="top"> Pythinker Code
 
-### *Your terminal-native AI engineering agent.*
+### *Think first, then code. Your terminal-native review-first AI engineering agent.*
 
-**Read code. Edit files. Run commands. Search the web. Plug into your IDE.**
-**All from the shell you already live in.**
+**Code reviewer · Security & vulnerability scanner · Root-cause debugger — then code creator.**
+**Pythinker reads your repo, audits it, and only writes code after the analysis. All from the shell you already live in.**
 
 <br />
 
@@ -40,11 +40,13 @@
 
 ## 💡 What is Pythinker?
 
-**Pythinker Code** is an open-source AI coding agent that lives in your terminal. Unlike chat-based assistants stuck behind a browser tab, Pythinker can **read your repo, edit files, run shell commands, browse the web, and call MCP tools** — all in a single iterative loop driven by the model of your choice.
+**Pythinker Code** is an open-source, **review-first** AI engineering agent that lives in your terminal. Before it writes a single line, it reads yours — auditing diffs, scanning for vulnerabilities, and root-causing failures. Unlike chat assistants that jump straight to code, Pythinker leads with **code review, security scanning, and root-cause diagnosis**, and only edits files once the analysis points at a fix.
+
+It ships with first-class subagents for each role — `code-reviewer` for severity-scored diff critique, `security-reviewer` for validated vulnerability findings, `debugger` for failure root-causing, and `coder`/`implementer` for the scoped edits that follow. All running in a single iterative loop, driven by the model of your choice, with full access to **your repo, the shell, the web, and MCP tools**.
 
 It speaks the [**Agent Client Protocol (ACP)**](https://github.com/agentclientprotocol/agent-client-protocol), so it slots cleanly into ACP-aware editors like Zed and JetBrains. It loads [**Model Context Protocol (MCP)**](https://modelcontextprotocol.io/) servers, so the same tools your other agents use just work. And it's hackable: subagents, skills, hooks, and plugins are all first-class extension points.
 
-> 🎯 **One agent, one shell, one workflow.** No tab-switching. No context loss. No magic.
+> 🎯 **Review · Secure · Diagnose · then Create.** One agent, one shell, one workflow. No tab-switching. No context loss. No magic.
 
 ---
 
