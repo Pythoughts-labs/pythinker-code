@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import bisect
 import fnmatch
 import re
 from dataclasses import dataclass, field
@@ -28,7 +29,9 @@ class RegexPattern:
     compiled: re.Pattern[str] | None = field(init=False, default=None)
 
     def __post_init__(self) -> None:
-        py_flags = 0
+        # Matchers were authored against line-oriented source scans. Run whole-file regexes with
+        # MULTILINE by default so ^/$-anchored rules still match Dockerfiles, workflows, etc.
+        py_flags = re.MULTILINE
         if "i" in self.flags:
             py_flags |= re.IGNORECASE
         if "m" in self.flags:
@@ -59,33 +62,44 @@ class MatcherSpec:
     def match(self, content: str, file_path: str) -> list[CandidateMatch]:
         matches: list[CandidateMatch] = []
         normalized = content.replace("\r\n", "\n")
+        lines = normalized.split("\n")
+        line_offsets = _line_offsets(normalized)
         for pattern in self.patterns:
             if pattern.compiled is None:
                 continue
             hit_lines: list[int] = []
-            snippets: list[str] = []
-            lines = normalized.split("\n")
-            for idx, line in enumerate(lines):
-                if pattern.compiled.search(line):
-                    line_no = idx + 1
+            snippet = ""
+            for match in pattern.compiled.finditer(normalized):
+                start_line = _line_number_for_offset(line_offsets, match.start())
+                end_offset = max(match.start(), match.end() - 1)
+                end_line = _line_number_for_offset(line_offsets, end_offset)
+                for line_no in range(start_line, end_line + 1):
                     if line_no not in hit_lines:
                         hit_lines.append(line_no)
-                    if not snippets:
-                        start = max(0, idx - 2)
-                        end = min(len(lines), idx + 3)
-                        snippets.append("\n".join(lines[start:end]))
+                if not snippet:
+                    start = max(0, start_line - 3)
+                    end = min(len(lines), end_line + 2)
+                    snippet = "\n".join(lines[start:end])
             if hit_lines:
                 matches.append(
                     CandidateMatch.model_validate(
                         {
                             "vulnSlug": self.slug,
                             "lineNumbers": hit_lines,
-                            "snippet": snippets[0] if snippets else "",
+                            "snippet": snippet,
                             "matchedPattern": pattern.label,
                         }
                     )
                 )
         return matches
+
+
+def _line_offsets(content: str) -> list[int]:
+    return [0, *(match.end() for match in re.finditer("\n", content))]
+
+
+def _line_number_for_offset(line_offsets: list[int], offset: int) -> int:
+    return bisect.bisect_right(line_offsets, offset)
 
 
 class MatcherRegistry:
@@ -172,6 +186,26 @@ _CURATED_PATTERNS: dict[str, tuple[PatternTriple, ...]] = {
         (r"^\s*USER\s+root\b", "i", "explicit root user"),
         (r"^\s*FROM\s+", "i", "base image defaults to root unless USER is set later"),
     ),
+    "drizzle-mass-assignment": (
+        (
+            r"\.(?:values|set)\s*\(\s*(?:req\.body|request\.body|ctx\.request\.body|body|payload|input|data)\b",
+            "i",
+            "request object passed directly into Drizzle insert/update",
+        ),
+        (
+            r"\.(?:values|set)\s*\(\s*\{[^}]*\.\.\.(?:req\.body|request\.body|body|payload|input|data)",
+            "is",
+            "request object spread into Drizzle insert/update",
+        ),
+    ),
+    "drizzle-raw-sql": (
+        (r"\bsql\.(?:raw|unsafe)\s*\(", "i", "Drizzle raw/unsafe SQL helper"),
+        (
+            r"\bsql`[^`]*\$\{[^}]*\b(?:req|request|params|query|body|input|payload|searchParams)\b[^}]*\}",
+            "is",
+            "request-controlled interpolation inside Drizzle SQL template",
+        ),
+    ),
     "env-exposure": (
         (
             r"\b(?:NEXT_PUBLIC_|VITE_|PUBLIC_)\w*(?:SECRET|TOKEN|KEY|PASSWORD|CREDENTIAL)\w*",
@@ -226,7 +260,7 @@ _CURATED_PATTERNS: dict[str, tuple[PatternTriple, ...]] = {
     ),
     "non-atomic-operation": (
         (
-            r"\b(?:find|get|select|read).*\n.{0,120}\b(?:update|delete|insert|write|save)\b",
+            r"\b(?:find|get|select|read)\w*.*\n.{0,120}\b(?:update|delete|insert|write|save)\w*\b",
             "is",
             "read-then-write sequence",
         ),
@@ -299,6 +333,13 @@ _CURATED_PATTERNS: dict[str, tuple[PatternTriple, ...]] = {
             "SameSite=None without Secure",
         ),
     ),
+    "security-behind-flag": (
+        (
+            r"\b(?:if|when|unless)\s*\([^)]*(?:feature|flag|isEnabled|launchdarkly|statsig|growthbook)[^)]*\)[\s\S]{0,400}\b(?:auth|authorize|permission|guard|admin|verify|secret|encrypt|decrypt)\b",
+            "i",
+            "security-sensitive control gated by feature flag",
+        ),
+    ),
     "slack-signing-verification": (
         (
             r"\b(?:X-Slack-Signature|x-slack-signature|signing_secret|slack_signature)\b",
@@ -320,6 +361,20 @@ _CURATED_PATTERNS: dict[str, tuple[PatternTriple, ...]] = {
             "secret literal in Terraform",
         ),
     ),
+    "tf-module-unpinned": (
+        (
+            r"\bsource\s*=\s*['\"](?:git::|github\.com/)(?![^'\"]*(?:[?&]ref=|//[^'\"]*\?ref=))[^'\"]+['\"]",
+            "i",
+            "Terraform module source without immutable ref",
+        ),
+    ),
+    "trpc-public-procedure": (
+        (
+            r"\bpublicProcedure\b\s*(?:\.\s*(?:input|query|mutation|subscription|use)\s*\()+",
+            "i",
+            "tRPC publicProcedure handler",
+        ),
+    ),
     "unsafe-redirect": (
         (
             r"\b(?:redirect|RedirectResponse|res\.redirect|router\.push)\s*\([^\n]*(?:next|url|redirect|returnTo|req|request)",
@@ -327,11 +382,220 @@ _CURATED_PATTERNS: dict[str, tuple[PatternTriple, ...]] = {
             "user-controlled redirect target",
         ),
     ),
+    "url-regex-validation": (
+        (
+            r"(?:/|new\s+RegExp\s*\()[^\n]*(?:https?|url)[^\n]*(?:\.\*|\[\^/\]\*)",
+            "i",
+            "URL validation regex with broad wildcard",
+        ),
+        (
+            r"\bnew\s+URL\s*\([^\n)]*\b(?:req|request|params|query|body|input|payload|target|redirect|url)\b[^\n)]*\)(?![^\n]*(?:hostname|host|origin))",
+            "i",
+            "request-derived URL parsed without host validation on same line",
+        ),
+    ),
     "webhook-handler": (
         (
             r"\b(?:webhook|stripe|github|shopify|slack)\b",
             "i",
             "webhook handler; verify signature before processing",
+        ),
+    ),
+    "all-route-handlers": (
+        (
+            r"\bexport\s+(?:async\s+)?function\s+(?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s*\(",
+            "",
+            "Next.js route handler exported HTTP method",
+        ),
+        (
+            r"\bexport\s+const\s+(?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s*=",
+            "",
+            "Next.js route handler exported HTTP method const",
+        ),
+    ),
+    "server-action": (
+        (
+            r"['\"]use server['\"][;\s]*\n[\s\S]{0,800}\bexport\s+(?:async\s+)?function\s+\w+\s*\(",
+            "i",
+            "use server file exporting server action function",
+        ),
+        (
+            r"['\"]use server['\"][;\s]*\n[\s\S]{0,800}\bexport\s+const\s+\w+\s*=\s*(?:async\s*)?\(",
+            "i",
+            "use server file exporting server action const",
+        ),
+    ),
+    "all-server-actions": (
+        (
+            r"['\"]use server['\"][;\s]*\n[\s\S]{0,800}\bexport\s+(?:async\s+)?(?:function|const)\b",
+            "i",
+            "exported server action in use server file",
+        ),
+    ),
+    "use-server-export": (
+        (
+            r"['\"]use server['\"][;\s]*\n[\s\S]{0,800}\bexport\s+(?:async\s+)?(?:function|const)\b",
+            "i",
+            "use server module export",
+        ),
+    ),
+    "connectrpc-handler-impl": (
+        (
+            r"\b(?:ConnectRouter|HandlerContext|createConnectRouter|router\.service|connect\.createHandler)\b",
+            "i",
+            "ConnectRPC handler implementation surface",
+        ),
+    ),
+    "cron-secret-check": (
+        (
+            r"\b(?:cron|schedule|crontab|setInterval)\b[^\n]*(?:secret|token|password|api[_-]?key|credential)",
+            "i",
+            "scheduled job reads secret-shaped value",
+        ),
+    ),
+    "go-embed-asset": ((r"^\s*//go:embed\s+.+", "m", "go:embed bundled asset"),),
+    "catch-all-route-auth": (
+        (
+            r"\bexport\s+(?:async\s+)?function\s+(?:GET|POST|PUT|PATCH|DELETE)\s*\(",
+            "",
+            "catch-all route handler exported HTTP method",
+        ),
+    ),
+    "framework-edge-sandbox": (
+        (r"\bexport\s+const\s+runtime\s*=\s*['\"]edge['\"]", "i", "Next.js edge runtime"),
+    ),
+    "framework-server-action": (
+        (
+            r"['\"]use server['\"][;\s]*\n[\s\S]{0,800}\bexport\s+(?:async\s+)?(?:function|const)\b",
+            "i",
+            "framework server action export",
+        ),
+    ),
+    "framework-image-optimizer": (
+        (
+            r"\b(?:remotePatterns|domains)\s*[:=]\s*\[[\s\S]{0,400}(?:\*\*|['\"]\*['\"])",
+            "i",
+            "broad Next.js image optimizer remote pattern",
+        ),
+    ),
+    "framework-internal-header": (
+        (
+            r"\b(?:x-middleware-subrequest|x-invoke-path|x-forwarded-host|x-vercel-id)\b",
+            "i",
+            "framework internal or forwarded header trust boundary",
+        ),
+    ),
+    "nextjs-middleware-only-auth": (
+        (
+            r"\bexport\s+(?:async\s+)?function\s+(?:GET|POST|PUT|PATCH|DELETE)\s*\(",
+            "",
+            "route handler that may rely on middleware-only auth",
+        ),
+    ),
+    "nextjs-middleware": (
+        (r"\bexport\s+(?:async\s+)?function\s+middleware\s*\(", "", "Next.js middleware"),
+        (r"\bNextResponse\.(?:next|redirect|rewrite)\s*\(", "", "NextResponse middleware action"),
+    ),
+    "page-data-fetch": (
+        (
+            r"\bfetch\s*\([^\n]*(?:cookies\(|headers\(|searchParams|params\.)",
+            "i",
+            "page data fetch influenced by request/page parameters",
+        ),
+    ),
+    "page-without-auth-fetch": (
+        (
+            r"\bfetch\s*\([^\n]*(?:/api/|process\.env|cookies\(|headers\()",
+            "i",
+            "page fetch requiring auth review",
+        ),
+    ),
+    "server-action-no-auth": (
+        (
+            r"['\"]use server['\"][;\s]*\n[\s\S]{0,800}\bexport\s+(?:async\s+)?(?:function|const)\b(?![\s\S]{0,400}\b(?:auth|session|user|permission|authorize)\b)",
+            "i",
+            "server action without nearby auth marker",
+        ),
+    ),
+    "framework-untrusted-fetch": (
+        (
+            r"\bfetch\s*\([^\n]*(?:req|request|params|query|searchParams|url|input)",
+            "i",
+            "framework fetch using request-derived URL/input",
+        ),
+    ),
+    "unsafe-json-in-html": (
+        (
+            r"\bJSON\.stringify\s*\([^\n)]*\)\s*</script",
+            "i",
+            "JSON serialized directly into script HTML",
+        ),
+        (r"\bdangerouslySetInnerHTML\b[^\n]*JSON\.stringify", "i", "JSON inserted into raw HTML"),
+    ),
+    "lua-regex-bypass": (
+        (
+            r"\bngx\.re\.(?:match|find)\s*\([^\n]*(?:\.\*|\[\^/\]\*)",
+            "i",
+            "Lua nginx regex with broad wildcard",
+        ),
+    ),
+    "non-atomic-read-delete": (
+        (
+            r"\b(?:find|get|select|read)\w*.*\n.{0,160}\b(?:delete|remove|destroy)\w*\b",
+            "is",
+            "read-then-delete sequence",
+        ),
+    ),
+    "snowflake-bigquery-sql": (
+        (
+            r"\b(?:BigQuery|Snowflake|createQueryJob|execute)\b[^\n]*(?:\+|\$\{|format\(|f['\"])",
+            "i",
+            "warehouse SQL built with interpolation/concatenation",
+        ),
+    ),
+    "soql-injection": (
+        (
+            r"\bSELECT\b[\s\S]{0,200}\bFROM\b[\s\S]{0,200}(?:\+|\$\{|format\(|f['\"])",
+            "i",
+            "SOQL query built with interpolation/concatenation",
+        ),
+    ),
+    "tf-encryption-missing": (
+        (
+            r"\bresource\s+['\"](?:aws_s3_bucket|aws_db_instance|aws_ebs_volume|aws_rds_cluster)['\"]",
+            "i",
+            "Terraform storage resource requiring encryption review",
+        ),
+    ),
+    "untrusted-redirect-following": (
+        (
+            r"\b(?:fetch|axios|requests\.(?:get|post)|http\.(?:Get|Post))\s*\([^\n]*(?:req|request|url|target|redirect|input)",
+            "i",
+            "HTTP client follows request-derived URL",
+        ),
+        (
+            r"\b(?:maxRedirects|allow_redirects|followRedirects)\s*[:=]\s*(?:true|[1-9])",
+            "i",
+            "redirect following enabled",
+        ),
+    ),
+    "unverified-lookup": (
+        (
+            r"\b(?:dns\.lookup|net\.LookupHost|InetAddress\.getByName|socket\.gethostbyname)\s*\(",
+            "i",
+            "DNS/host lookup requiring verification",
+        ),
+    ),
+    "zod-passthrough-mass-assignment": (
+        (
+            r"\bz\.object\s*\([\s\S]{0,400}\)\.passthrough\s*\(",
+            "i",
+            "Zod passthrough object schema",
+        ),
+        (
+            r"\.(?:create|update|insert|assign)\s*\([^\n]*(?:req\.body|body|input|payload|data)",
+            "i",
+            "validated object passed into mass-assignment sink",
         ),
     ),
 }
@@ -346,7 +610,7 @@ def create_default_registry() -> MatcherRegistry:
             slug=str(raw["slug"]),
             description=str(raw.get("description") or raw["slug"]),
             noise_tier=_noise(str(raw.get("noise_tier") or "normal")),
-            file_patterns=tuple(str(p) for p in raw.get("file_patterns", ("**/*",))),
+            file_patterns=tuple(str(p) for p in (raw.get("file_patterns") or ("**/*",))),
             requires=MatcherGate(tech=tuple(str(t) for t in raw.get("requires_tech") or ()))
             if raw.get("requires_tech")
             else None,

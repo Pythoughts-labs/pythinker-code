@@ -12,7 +12,6 @@ from pythinker_review.security_scan.matchers import (
     create_default_registry,
     evaluate_gate,
     files_for_matcher,
-    path_matches_any,
 )
 from pythinker_review.security_scan.models import CandidateMatch, FileRecord, now_iso
 from pythinker_review.security_scan.store import (
@@ -81,6 +80,7 @@ class ScanResult:
     run_id: str
     candidate_count: int
     files_with_candidates: int
+    files_scanned: int
     active_matchers: list[str]
     skipped_matchers: list[str]
     language_stats: list[LanguageStats]
@@ -128,7 +128,8 @@ def scan_project(
 
     ignore = [*IGNORE_DIRS, *(settings.ignore_paths if ignore_paths is None else ignore_paths)]
     content_cache: dict[str, str | None] = {}
-    records: dict[str, FileRecord] = {}
+    matches_by_path: dict[str, list[CandidateMatch]] = {}
+    scanned_paths: set[str] = set()
 
     for index, matcher in enumerate(active, start=1):
         _emit(
@@ -148,31 +149,16 @@ def scan_project(
             if content is None and rel not in content_cache:
                 content = _read_source(root / rel)
                 content_cache[rel] = content
+            if content is None:
+                continue
+            scanned_paths.add(rel)
             if not content:
                 continue
             matches = matcher.match(content, rel)
             if not matches:
                 continue
             match_count += len(matches)
-            record = records.get(rel) or read_file_record(project_id, rel, data_root=data_root)
-            if record is None:
-                record = FileRecord.model_validate(
-                    {
-                        "filePath": rel,
-                        "projectId": project_id,
-                        "candidates": [],
-                        "findings": [],
-                        "analysisHistory": [],
-                        "status": "pending",
-                    }
-                )
-            _merge_candidates(record, matches)
-            record.last_scanned_at = now_iso()
-            record.last_scanned_run_id = run.run_id
-            record.file_hash = hashlib.sha256(content.encode("utf-8", errors="ignore")).hexdigest()
-            if record.status == "error":
-                record.status = "pending"
-            records[rel] = record
+            matches_by_path.setdefault(rel, []).extend(matches)
             _emit(
                 on_progress,
                 ScanProgress(
@@ -195,22 +181,61 @@ def scan_project(
             ),
         )
 
-    for record in records.values():
+    active_slugs = {matcher.slug for matcher in active}
+    records: dict[str, FileRecord] = {}
+    for rel in sorted(scanned_paths):
+        content = content_cache.get(rel)
+        if content is None:
+            continue
+        record = read_file_record(project_id, rel, data_root=data_root)
+        if record is None and rel not in matches_by_path:
+            continue
+        if record is None:
+            record = FileRecord.model_validate(
+                {
+                    "filePath": rel,
+                    "projectId": project_id,
+                    "candidates": [],
+                    "findings": [],
+                    "analysisHistory": [],
+                    "status": "pending",
+                }
+            )
+        previous_hash = record.file_hash
+        previous_candidates = _candidate_keys(record.candidates)
+        preserved = [
+            candidate for candidate in record.candidates if candidate.vuln_slug not in active_slugs
+        ]
+        record.candidates = preserved + _dedupe_candidates(matches_by_path.get(rel, []))
+        record.last_scanned_at = now_iso()
+        record.last_scanned_run_id = run.run_id
+        record.file_hash = hashlib.sha256(content.encode("utf-8", errors="ignore")).hexdigest()
+        candidates_changed = _candidate_keys(record.candidates) != previous_candidates
+        content_changed = record.file_hash != previous_hash
+        if record.status == "error" or content_changed or candidates_changed:
+            record.status = "pending"
+            record.locked_by_run_id = None
+            record.locked_at = None
+            if content_changed or candidates_changed:
+                record.findings = []
+        records[rel] = record
         write_file_record(record, data_root=data_root)
 
-    language_stats = _language_stats(root, ignore, list(records.values()))
-    candidate_count = sum(len(record.candidates) for record in records.values())
+    records_with_candidates = [record for record in records.values() if record.candidates]
+    language_stats = _language_stats(scanned_paths, records_with_candidates)
+    candidate_count = sum(len(record.candidates) for record in records_with_candidates)
     complete_run(
         project_id,
         run.run_id,
         "done",
         data_root=data_root,
-        stats={"filesScanned": len(records), "candidatesFound": candidate_count},
+        stats={"filesScanned": len(scanned_paths), "candidatesFound": candidate_count},
     )
     return ScanResult(
         run_id=run.run_id,
         candidate_count=candidate_count,
-        files_with_candidates=len(records),
+        files_with_candidates=len(records_with_candidates),
+        files_scanned=len(scanned_paths),
         active_matchers=[matcher.slug for matcher in active],
         skipped_matchers=skipped,
         language_stats=language_stats,
@@ -230,39 +255,40 @@ def _read_source(path: Path) -> str | None:
         return None
 
 
-def _merge_candidates(record: FileRecord, matches: list[CandidateMatch]) -> None:
-    seen = {
-        (candidate.vuln_slug, candidate.matched_pattern, tuple(candidate.line_numbers))
-        for candidate in record.candidates
+def _candidate_keys(matches: list[CandidateMatch]) -> set[tuple[str, str, tuple[int, ...], str]]:
+    return {
+        (match.vuln_slug, match.matched_pattern, tuple(match.line_numbers), match.snippet)
+        for match in matches
     }
+
+
+def _dedupe_candidates(matches: list[CandidateMatch]) -> list[CandidateMatch]:
+    seen: set[tuple[str, str, tuple[int, ...]]] = set()
+    out: list[CandidateMatch] = []
     for match in matches:
         key = (match.vuln_slug, match.matched_pattern, tuple(match.line_numbers))
         if key not in seen:
-            record.candidates.append(match)
+            out.append(match)
             seen.add(key)
+    return out
 
 
-def _language_stats(
-    root: Path, ignore: list[str], records: list[FileRecord]
-) -> list[LanguageStats]:
-    records_by_lang: dict[str, int] = {}
+def _language_stats(scanned_paths: set[str], records: list[FileRecord]) -> list[LanguageStats]:
+    scanned_by_lang: dict[str, int] = {}
+    candidates_by_lang: dict[str, int] = {}
+    for rel in scanned_paths:
+        lang = language_for_path(rel)
+        if lang:
+            scanned_by_lang[lang] = scanned_by_lang.get(lang, 0) + 1
     for record in records:
         lang = language_for_path(record.file_path)
         if lang:
-            records_by_lang[lang] = records_by_lang.get(lang, 0) + 1
+            candidates_by_lang[lang] = candidates_by_lang.get(lang, 0) + len(record.candidates)
     stats: list[LanguageStats] = []
-    for language, extensions in LANGUAGE_EXTENSIONS.items():
-        scanned = 0
-        for ext in extensions:
-            for path in root.glob(f"**/*{ext}"):
-                if not path.is_file():
-                    continue
-                rel = path.relative_to(root).as_posix()
-                if path_matches_any(rel, ignore):
-                    continue
-                scanned += 1
+    for language in LANGUAGE_EXTENSIONS:
+        scanned = scanned_by_lang.get(language, 0)
         if scanned:
-            candidates = records_by_lang.get(language, 0)
+            candidates = candidates_by_lang.get(language, 0)
             stats.append(
                 LanguageStats(
                     language=language,

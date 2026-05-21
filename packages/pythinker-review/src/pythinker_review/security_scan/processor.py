@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from pythinker_review.diagnostics.parser import redact_secrets
+from pythinker_review.engine.token_budget import clip_text
 from pythinker_review.llm.protocol import ReviewLLM
 from pythinker_review.security_scan.models import (
     AnalysisEntry,
@@ -125,6 +127,7 @@ async def process_project(
     batches = batch_candidates(records, batch_size)
     semaphore = asyncio.Semaphore(max(1, jobs))
     counters = {"analysis": 0, "findings": 0, "errors": 0}
+    error_messages: list[str] = []
 
     async def worker(batch: list[FileRecord]) -> None:
         async with semaphore:
@@ -142,8 +145,9 @@ async def process_project(
                 )
                 counters["analysis"] += analysis_count
                 counters["findings"] += finding_count
-            except Exception:
+            except Exception as exc:
                 counters["errors"] += 1
+                error_messages.append(_safe_error_message(exc))
                 for record in batch:
                     record.status = "error"
                     record.locked_by_run_id = None
@@ -160,6 +164,8 @@ async def process_project(
         stats={
             "filesProcessed": counters["analysis"],
             "findingsCount": counters["findings"],
+            "errorCount": counters["errors"],
+            "errorMessages": error_messages[:20],
         },
     )
     return ProcessResult(
@@ -168,6 +174,10 @@ async def process_project(
         finding_count=counters["findings"],
         error_batch_count=counters["errors"],
     )
+
+
+def _safe_error_message(exc: Exception) -> str:
+    return clip_text(redact_secrets(f"{type(exc).__name__}: {exc}"), 500)
 
 
 async def _process_batch(
@@ -376,25 +386,63 @@ async def triage_project(
         items = items[:limit]
     if not items:
         return TriageResult(triaged=0, p0=0, p1=0, p2=0, skip=0)
-    prompt = _triage_prompt(items)
-    raw = await llm.complete_json(
-        system="You are a strict security triage classifier. Output JSON only.",
-        user=prompt,
-        timeout_s=timeout_s,
+    run = create_run_meta(
+        project_id=project_id,
+        root_path=Path(read_project_config(project_id, data_root=data_root).root_path),
+        run_type="triage",
+        processor_config={
+            "agentType": "pythinker-review-llm",
+            "model": llm.model_display_name,
+            "modelConfig": {},
+        },
     )
-    parsed = _parse_json_payload(raw)
-    if not isinstance(parsed, list):
-        raise ValueError("triage output must be a JSON array")
-    by_title = {finding.title: (record, finding) for record, finding in items}
+    write_run_meta(run, data_root=data_root)
+    prompt = _triage_prompt(items)
+    try:
+        raw = await llm.complete_json(
+            system="You are a strict security triage classifier. Output JSON only.",
+            user=prompt,
+            timeout_s=timeout_s,
+        )
+        parsed = _parse_json_payload(raw)
+        if not isinstance(parsed, list):
+            raise ValueError("triage output must be a JSON array")
+    except Exception as exc:
+        complete_run(
+            project_id,
+            run.run_id,
+            "error",
+            data_root=data_root,
+            stats={"errorCount": 1, "errorMessages": [_safe_error_message(exc)]},
+        )
+        raise
+    by_key = {(record.file_path, finding.title): (record, finding) for record, finding in items}
+    title_counts: dict[str, int] = {}
+    by_title: dict[str, tuple[FileRecord, Finding]] = {}
+    for record, finding in items:
+        title_counts[finding.title] = title_counts.get(finding.title, 0) + 1
+        by_title[finding.title] = (record, finding)
     counts = {"P0": 0, "P1": 0, "P2": 0, "skip": 0}
+    seen_keys: set[tuple[str, str]] = set()
+    invalid_verdicts: list[str] = []
     for verdict in parsed:
         if not isinstance(verdict, dict):
+            invalid_verdicts.append("non-object verdict")
             continue
-        item = by_title.get(str(verdict.get("title")))
+        title = str(verdict.get("title"))
+        item = by_key.get((str(verdict.get("filePath")), title))
+        if item is None and "filePath" not in verdict and title_counts.get(title) == 1:
+            item = by_title.get(title)
         priority = verdict.get("priority")
         if item is None or priority not in counts:
+            invalid_verdicts.append(json.dumps(verdict, sort_keys=True)[:200])
             continue
         record, finding = item
+        key = (record.file_path, finding.title)
+        if key in seen_keys:
+            invalid_verdicts.append(f"duplicate verdict for {record.file_path}:{finding.title}")
+            continue
+        seen_keys.add(key)
         finding.triage = Triage.model_validate(
             {
                 "priority": priority,
@@ -405,9 +453,39 @@ async def triage_project(
                 "model": llm.model_display_name,
             }
         )
+        record.analysis_history.append(
+            AnalysisEntry.model_validate(
+                {
+                    "runId": run.run_id,
+                    "investigatedAt": now_iso(),
+                    "durationMs": 0,
+                    "agentType": "pythinker-review-llm",
+                    "model": llm.model_display_name,
+                    "modelConfig": {},
+                    "findingCount": 0,
+                    "phase": "triage",
+                }
+            )
+        )
         counts[priority] += 1
         write_file_record(record, data_root=data_root)
+    if invalid_verdicts:
+        complete_run(
+            project_id,
+            run.run_id,
+            "error",
+            data_root=data_root,
+            stats={"errorCount": len(invalid_verdicts), "errorMessages": invalid_verdicts[:20]},
+        )
+        raise ValueError("triage output contained invalid verdicts")
     total = sum(counts.values())
+    complete_run(
+        project_id,
+        run.run_id,
+        "done",
+        data_root=data_root,
+        stats={"findingsCount": total},
+    )
     return TriageResult(
         triaged=total, p0=counts["P0"], p1=counts["P1"], p2=counts["P2"], skip=counts["skip"]
     )
@@ -486,7 +564,7 @@ def _triage_prompt(items: list[tuple[FileRecord, Finding]]) -> str:
         "P2: low impact, difficult exploit, or defense-in-depth.\n"
         "skip: false positive or not actionable.\n\n"
         + "\n\n".join(lines)
-        + '\n\nReturn JSON: [{"title":"exact title","priority":"P0|P1|P2|skip",'
+        + '\n\nReturn JSON: [{"filePath":"path","title":"exact title","priority":"P0|P1|P2|skip",'
         + '"exploitability":"trivial|moderate|difficult","impact":"critical|high|medium|low",'
         + '"reasoning":"1-2 sentences"}]'
     )

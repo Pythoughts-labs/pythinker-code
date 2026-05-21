@@ -149,23 +149,47 @@ _TECH_HIGHLIGHTS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
 }
 
 _SLUG_NOTES: dict[str, str] = {
-    "missing-auth": "Only report if handler-local auth/permission checks are absent and sensitive behavior is reachable.",
-    "auth-bypass": "Look for inverted checks, dev/test bypasses, spoofable headers, and session stubs.",
-    "cross-tenant-id": "Verify the authenticated principal, not request teamId/userId alone, gates object access.",
-    "sql-injection": "String concat/template SQL is a finding only when attacker-controlled values reach it; bound parameters mitigate.",
-    "js-sql-raw": "Tagged templates may parameterize safely; unsafe() and raw template interpolation are the risk.",
-    "py-sql-raw": "psycopg/SQLAlchemy safe forms bind values separately; f-strings/%/.format into SQL do not.",
+    "missing-auth": (
+        "Only report if handler-local auth/permission checks are absent"
+        " and sensitive behavior is reachable."
+    ),
+    "auth-bypass": (
+        "Look for inverted checks, dev/test bypasses, spoofable headers, and session stubs."
+    ),
+    "cross-tenant-id": (
+        "Verify the authenticated principal, not request teamId/userId alone, gates object access."
+    ),
+    "sql-injection": (
+        "String concat/template SQL is a finding only when attacker-controlled values reach it;"
+        " bound parameters mitigate."
+    ),
+    "js-sql-raw": (
+        "Tagged templates may parameterize safely;"
+        " unsafe() and raw template interpolation are the risk."
+    ),
+    "py-sql-raw": (
+        "psycopg/SQLAlchemy safe forms bind values separately; f-strings/%/.format into SQL do not."
+    ),
     "ssrf": "Look for scheme/host allowlists and private-network blocking.",
     "path-traversal": "path.join(root, userInput) needs resolve+startsWith containment.",
     "xss": "Trace escaping state; DB-stored content is still user-controlled.",
     "dangerous-html": "A sanitizer must sit between untrusted data and raw HTML rendering.",
-    "open-redirect": "Relative URLs starting with // are external; allowlist/origin validation mitigates.",
-    "secrets-exposure": "Distinguish real credentials from examples, dummy test values, and redacted placeholders.",
+    "open-redirect": (
+        "Relative URLs starting with // are external; allowlist/origin validation mitigates."
+    ),
+    "secrets-exposure": (
+        "Distinguish real credentials from examples, dummy test values, and redacted placeholders."
+    ),
     "secret-in-log": "Durable logs or user-facing errors containing tokens/secrets are high signal.",
     "webhook-handler": "Signature verification must happen before body processing or side effects.",
     "jwt-handling": "Pin algorithms and verify signature/issuer/audience/expiration.",
-    "github-workflow-security": "PR-triggered workflows with secrets, mutable actions, or shell interpolation are supply-chain risks.",
-    "agentic-untrusted-prompt-input": "Separate trusted instructions from untrusted retrieved/user content.",
+    "github-workflow-security": (
+        "PR-triggered workflows with secrets, mutable actions, or shell interpolation"
+        " are supply-chain risks."
+    ),
+    "agentic-untrusted-prompt-input": (
+        "Separate trusted instructions from untrusted retrieved/user content."
+    ),
     "mcp-tool-handler": "Review tool schema, capability allowlist, and side-effect boundaries.",
 }
 
@@ -221,8 +245,10 @@ def build_user_prompt(
     file_sections: list[str] = []
     for record in records:
         candidates = "\n".join(
-            f"  - [{candidate.vuln_slug}] L{', '.join(map(str, candidate.line_numbers))}: "
-            f"{candidate.matched_pattern}\n    snippet: {candidate.snippet[:500]}"
+            f"  - [{candidate.vuln_slug}] "
+            f"L{', '.join(map(str, candidate.line_numbers))}: "
+            f"{candidate.matched_pattern}\n"
+            f"    snippet: {candidate.snippet[:500]}"
             for candidate in record.candidates
         )
         if not candidates:

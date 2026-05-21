@@ -109,7 +109,7 @@ class AnalysisEntry(SecurityScanModel):
     agent_session_id: str | None = Field(default=None, alias="agentSessionId")
     finding_count: int = Field(alias="findingCount")
     num_turns: int | None = Field(default=None, alias="numTurns")
-    phase: Literal["process", "revalidate"] | None = None
+    phase: Literal["process", "revalidate", "triage"] | None = None
     cost_usd: float | None = Field(default=None, alias="costUsd")
     usage: AnalysisUsage | None = None
     refusal: RefusalReport | None = None
@@ -166,6 +166,8 @@ class RunStats(SecurityScanModel):
     false_positives: int | None = Field(default=None, alias="falsePositives")
     fixed: int | None = None
     uncertain: int | None = None
+    error_count: int | None = Field(default=None, alias="errorCount")
+    error_messages: list[str] = Field(default_factory=list, alias="errorMessages")
 
 
 class ScannerConfig(SecurityScanModel):

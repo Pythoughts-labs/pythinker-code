@@ -122,6 +122,7 @@ def scan(
     payload = {
         "projectId": pid,
         "runId": result.run_id,
+        "filesScanned": result.files_scanned,
         "filesWithCandidates": result.files_with_candidates,
         "candidateCount": result.candidate_count,
         "activeMatchers": result.active_matchers,
@@ -278,7 +279,7 @@ def export_cmd(
 
 @app.command()
 def matchers(json_output: bool = typer.Option(False, "--json")) -> None:
-    """List migrated matcher slugs."""
+    """List security matcher slugs."""
     registry = create_default_registry()
     payload = [
         {
@@ -330,10 +331,10 @@ def _default_info(project_id: str, tags: list[str]) -> str:
     return f"""# {project_id} security context
 
 - Detected tech: {", ".join(tags) if tags else "unknown"}
-- Auth primitives: TODO summarize project-specific auth/permission helpers.
-- Trust boundaries: TODO summarize public endpoints, queues, webhooks, jobs, agent tools,
+- Auth primitives: Fill in project-specific auth/permission helpers.
+- Trust boundaries: Fill in public endpoints, queues, webhooks, jobs, agent tools,
   and external integrations.
-- Sensitive data: TODO summarize user, tenant, secret, payment, and privileged resources.
-- Project-specific false-positive notes: TODO add framework wrappers or generated paths
+- Sensitive data: Fill in user, tenant, secret, payment, and privileged resources.
+- Project-specific false-positive notes: Add framework wrappers or generated paths
   Pythinker Security Scan should ignore.
 """
