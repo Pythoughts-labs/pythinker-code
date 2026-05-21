@@ -356,7 +356,20 @@ class _LiveView:
             if self._current_content_block is not None:
                 blocks.append(self._current_content_block.compose())
                 has_main_content = True
+            # When an approval panel is on-screen for a specific tool call, the
+            # panel already previews the same command/diff that the pending tool
+            # card would show. Suppress the matching card to avoid the duplicate.
+            suppressed_tool_call_id: str | None = None
+            if self._current_approval_request_panel is not None:
+                suppressed_tool_call_id = (
+                    self._current_approval_request_panel.request.tool_call_id
+                )
             for tool_call in list(self._tool_call_blocks.values()):
+                if (
+                    suppressed_tool_call_id is not None
+                    and tool_call.tool_call_id == suppressed_tool_call_id
+                ):
+                    continue
                 blocks.append(tool_call.compose())
                 has_main_content = True
             if not has_main_content and self._active_turn_depth > 0:
