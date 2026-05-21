@@ -431,6 +431,14 @@ class PythinkerCLI:
         if self._bg_refresh_task is not None and not self._bg_refresh_task.done():
             self._bg_refresh_task.cancel()
 
+        # Cleanup MCP connections held by the toolset
+        from pythinker_code.soul.toolset import PythinkerToolset
+
+        toolset = self._soul._agent.toolset
+        if isinstance(toolset, PythinkerToolset):
+            with contextlib.suppress(Exception):
+                await toolset.cleanup()
+
         bg_config = self._runtime.config.background
         if bg_config.keep_alive_on_exit:
             return
