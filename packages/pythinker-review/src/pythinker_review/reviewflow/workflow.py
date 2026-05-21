@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
+import shlex
+import shutil
 import socket
 import subprocess
 from dataclasses import dataclass
@@ -96,25 +99,77 @@ class ReviewflowWorkflowError(RuntimeError):
         self.code = code
 
 
+_DEFAULT_STATE_DIR = ".pythinker-review-flow"
+_LEGACY_STATE_DIR = ".clawpatch"
+
+
+def _migrate_legacy_state_dir(*, root: Path, paths: StatePaths) -> None:
+    legacy = root / _LEGACY_STATE_DIR
+    if (
+        paths.state_dir.exists()
+        or not legacy.exists()
+        or not legacy.is_dir()
+        or legacy.is_symlink()
+    ):
+        return
+    if any(path.is_symlink() for path in legacy.rglob("*")):
+        raise ReviewflowWorkflowError(
+            "legacy Reviewflow state contains symlinks; refusing automatic migration",
+            "state-migration-failed",
+        )
+    try:
+        shutil.copytree(legacy, paths.state_dir, symlinks=True)
+    except OSError as exc:
+        raise ReviewflowWorkflowError(
+            f"failed to migrate legacy Reviewflow state to {_DEFAULT_STATE_DIR}: {exc}",
+            "state-migration-failed",
+        ) from exc
+    stored = read_config(paths)
+    if stored is not None:
+        stored.state_dir = _DEFAULT_STATE_DIR
+        stored.exclude = _merged_default_excludes(stored.exclude)
+        write_config(paths, stored)
+
+
+def _merged_default_excludes(existing: list[str]) -> list[str]:
+    merged = list(dict.fromkeys(existing))
+    for pattern in ReviewflowConfig().exclude:
+        if pattern not in merged:
+            merged.append(pattern)
+    return merged
+
+
 def resolve_paths(
     *, root: Path, state_dir: str | None = None, config_path: Path | None = None
 ) -> tuple[ReviewflowConfig, StatePaths]:
     base = ReviewflowConfig()
     if config_path and config_path.exists():
         base = ReviewflowConfig.model_validate_json(config_path.read_text(encoding="utf-8"))
-    configured_state = state_dir or os.environ.get("CLAWPATCH_STATE_DIR") or base.state_dir
+    env_state = os.environ.get("PYTHINKER_REVIEWFLOW_STATE_DIR") or os.environ.get(
+        "CLAWPATCH_STATE_DIR"
+    )
+    configured_state = state_dir or env_state or base.state_dir
     paths = state_paths((root / configured_state).resolve())
+    if state_dir is None and env_state is None and config_path is None:
+        _migrate_legacy_state_dir(root=root, paths=paths)
     stored = read_config(paths)
     if stored is not None and config_path is None:
         base = stored
     config = base.model_copy(deep=True)
     config.state_dir = configured_state
-    if os.environ.get("CLAWPATCH_PROVIDER"):
-        config.provider.name = os.environ["CLAWPATCH_PROVIDER"]
-    if os.environ.get("CLAWPATCH_MODEL"):
-        config.provider.model = os.environ["CLAWPATCH_MODEL"]
-    if os.environ.get("CLAWPATCH_REASONING_EFFORT"):
-        value = os.environ["CLAWPATCH_REASONING_EFFORT"]
+    provider = os.environ.get("PYTHINKER_REVIEWFLOW_PROVIDER") or os.environ.get(
+        "CLAWPATCH_PROVIDER"
+    )
+    model = os.environ.get("PYTHINKER_REVIEWFLOW_MODEL") or os.environ.get("CLAWPATCH_MODEL")
+    reasoning_effort = os.environ.get("PYTHINKER_REVIEWFLOW_REASONING_EFFORT") or os.environ.get(
+        "CLAWPATCH_REASONING_EFFORT"
+    )
+    if provider:
+        config.provider.name = provider
+    if model:
+        config.provider.model = model
+    if reasoning_effort:
+        value = reasoning_effort
         if value not in {"none", "minimal", "low", "medium", "high", "xhigh"}:
             raise ReviewflowWorkflowError(f"invalid reasoning effort: {value}", "invalid-usage")
         config.provider.reasoning_effort = value  # type: ignore[assignment]
@@ -597,7 +652,11 @@ async def fix_project(
             config=loaded.config,
             timeout_s=timeout_s,
         )
-        _apply_fix_plan(loaded.root, output)
+        _apply_fix_plan(
+            loaded.root,
+            output,
+            allowed_paths=_fix_allowed_paths(feature=feature, finding=finding),
+        )
     except Exception as exc:  # noqa: BLE001 - provider boundary
         initial.status = "failed"
         initial.plan = f"{initial.plan}\n\nProvider/apply failed: {exc}"
@@ -708,17 +767,23 @@ def open_pr_project(
     git_root, _remote, default_branch, current_branch, _head, _dirty = discover_git(loaded.root)
     if git_root is None:
         raise ReviewflowWorkflowError("open-pr requires a git repository", "not-git-repository")
-    base_branch = base or default_branch or "main"
-    pr_branch = branch or patch.git.branch_name or f"pythinker/{patch.patch_attempt_id}"
-    pr_title = title or patch.plan.splitlines()[0][:72] or f"Fix {patch.patch_attempt_id}"
+    base_branch = _validate_git_ref(base or default_branch or "main", field="base")
+    pr_branch = _validate_git_ref(
+        branch or patch.git.branch_name or f"pythinker/{patch.patch_attempt_id}", field="branch"
+    )
+    pr_title = _validate_single_line(
+        title or patch.plan.splitlines()[0][:72] or f"Fix {patch.patch_attempt_id}",
+        field="title",
+    )
+    files_to_add = _validate_repo_paths(patch.files_changed, field="filesChanged")
+    add_args = ["git", "add", "--", *files_to_add] if files_to_add else ["git", "add", "-A"]
+    pr_args_preview = _pr_create_args(base_branch, pr_branch, pr_title, draft, body=_pr_body(patch))
     commands = [
-        f"git checkout -B {pr_branch}",
-        "git add " + " ".join(patch.files_changed or ["-A"]),
-        f"git commit -m {json.dumps(pr_title)}",
-        f"git push -u origin {pr_branch}",
-        "gh pr create "
-        f"--base {base_branch} --head {pr_branch} --title {json.dumps(pr_title)}"
-        + (" --draft" if draft else ""),
+        shlex.join(["git", "checkout", "-B", pr_branch]),
+        shlex.join(add_args),
+        shlex.join(["git", "commit", "-m", pr_title]),
+        shlex.join(["git", "push", "-u", "origin", pr_branch]),
+        shlex.join(pr_args_preview),
     ]
     if dry_run:
         return {
@@ -731,7 +796,6 @@ def open_pr_project(
         }
     if current_branch != pr_branch:
         _check(run_process(["git", "checkout", "-B", pr_branch], cwd=loaded.root), "git checkout")
-    add_args = ["git", "add", *patch.files_changed] if patch.files_changed else ["git", "add", "-A"]
     _check(run_process(add_args, cwd=loaded.root), "git add")
     commit = run_process(["git", "commit", "-m", pr_title], cwd=loaded.root, timeout_s=120.0)
     _check(commit, "git commit")
@@ -740,21 +804,7 @@ def open_pr_project(
         run_process(["git", "push", "-u", "origin", pr_branch], cwd=loaded.root, timeout_s=300.0),
         "git push",
     )
-    pr_args = [
-        "gh",
-        "pr",
-        "create",
-        "--base",
-        base_branch,
-        "--head",
-        pr_branch,
-        "--title",
-        pr_title,
-        "--body",
-        _pr_body(patch),
-    ]
-    if draft:
-        pr_args.append("--draft")
+    pr_args = _pr_create_args(base_branch, pr_branch, pr_title, draft, body=_pr_body(patch))
     pr = run_process(pr_args, cwd=loaded.root, timeout_s=120.0)
     _check(pr, "gh pr create")
     patch.git.commit_sha = commit_sha
@@ -1069,6 +1119,156 @@ def _changed_source_files(root: Path, state_dir: Path) -> list[str]:
     )
 
 
+def _fix_allowed_paths(*, feature: FeatureRecord, finding: FindingRecord) -> set[str]:
+    paths = {ref.path for ref in feature.owned_files}
+    paths.update(test.path for test in feature.tests)
+    paths.update(evidence.path for evidence in finding.evidence)
+    normalized: set[str] = set()
+    for path in paths:
+        value = _normalize_repo_path(path)
+        if value is not None:
+            normalized.add(value)
+    return normalized
+
+
+def _normalize_repo_path(path: str) -> str | None:
+    normalized = path.replace("\\", "/").removeprefix("./")
+    if (
+        not normalized
+        or normalized == "/dev/null"
+        or normalized.startswith("/")
+        or normalized == ".."
+        or normalized.startswith("../")
+        or "/../" in f"/{normalized}/"
+        or "\0" in normalized
+        or normalized.startswith(".git/")
+        or normalized.startswith(".pythinker-review-flow/")
+        or normalized.startswith(".pythinker-review/")
+        or normalized.startswith(".clawpatch/")
+    ):
+        return None
+    return normalized
+
+
+_DIFF_GIT_RE = re.compile(r"^diff --git[ \t]+a/(?P<old>.+?)[ \t]+b/(?P<new>.+)$")
+
+
+def _diff_paths(diff: str) -> set[str]:
+    paths: set[str] = set()
+    in_hunk = False
+    for raw_line in diff.splitlines():
+        line = raw_line.rstrip("\n")
+        if line.startswith("diff --git "):
+            in_hunk = False
+            match = _DIFF_GIT_RE.match(line)
+            if match:
+                for value in (match.group("old"), match.group("new")):
+                    normalized = _normalize_diff_path(value)
+                    if normalized is not None:
+                        paths.add(normalized)
+            continue
+        if line.startswith("@@"):
+            in_hunk = True
+            continue
+        if not in_hunk and line.startswith(("--- ", "+++ ")):
+            value = line[4:].split("\t", 1)[0].strip()
+            normalized = _normalize_diff_path(value)
+            if normalized is not None:
+                paths.add(normalized)
+    return paths
+
+
+def _normalize_diff_path(value: str) -> str | None:
+    if value.startswith('"') and value.endswith('"'):
+        value = value[1:-1]
+    if value == "/dev/null":
+        return None
+    if value.startswith(("a/", "b/")):
+        value = value[2:]
+    return _normalize_repo_path(value)
+
+
+def _validate_fix_diff_scope(diff: str, *, allowed_paths: set[str]) -> None:
+    changed = _diff_paths(diff)
+    if not changed:
+        raise ReviewflowWorkflowError(
+            "fix provider returned a diff with no file paths", "empty-patch"
+        )
+    disallowed = sorted(path for path in changed if path not in allowed_paths)
+    if disallowed:
+        raise ReviewflowWorkflowError(
+            "fix provider diff touches files outside the selected finding/feature scope: "
+            + ", ".join(disallowed),
+            "patch-scope-violation",
+        )
+
+
+_GIT_REF_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
+
+
+def _validate_git_ref(value: str, *, field: str) -> str:
+    if (
+        not value
+        or value == "@"
+        or value.startswith("-")
+        or value.startswith("/")
+        or value.endswith("/")
+        or value.endswith(".")
+        or ".." in value
+        or "@{" in value
+        or "//" in value
+        or not _GIT_REF_RE.fullmatch(value)
+    ):
+        raise ReviewflowWorkflowError(f"unsafe git {field}: {value!r}", "invalid-usage")
+    components = value.split("/")
+    for component in components:
+        if component.startswith(".") or component.endswith(".lock"):
+            raise ReviewflowWorkflowError(f"unsafe git {field}: {value!r}", "invalid-usage")
+    return value
+
+
+def _validate_single_line(value: str, *, field: str) -> str:
+    if any(ch in value for ch in "\r\n\0"):
+        raise ReviewflowWorkflowError(f"unsafe {field}: must be a single line", "invalid-usage")
+    stripped = value.strip()
+    if not stripped:
+        raise ReviewflowWorkflowError(f"unsafe {field}: must not be empty", "invalid-usage")
+    return stripped
+
+
+def _validate_repo_paths(paths: list[str], *, field: str) -> list[str]:
+    normalized_paths: list[str] = []
+    for path in paths:
+        if any(ch in path for ch in "\r\n\0"):
+            raise ReviewflowWorkflowError(f"unsafe {field}: {path!r}", "invalid-usage")
+        normalized = _normalize_repo_path(path)
+        if normalized is None:
+            raise ReviewflowWorkflowError(f"unsafe {field}: {path!r}", "invalid-usage")
+        normalized_paths.append(normalized)
+    return normalized_paths
+
+
+def _pr_create_args(
+    base_branch: str, pr_branch: str, pr_title: str, draft: bool, *, body: str
+) -> list[str]:
+    args = [
+        "gh",
+        "pr",
+        "create",
+        "--base",
+        base_branch,
+        "--head",
+        pr_branch,
+        "--title",
+        pr_title,
+        "--body",
+        body,
+    ]
+    if draft:
+        args.append("--draft")
+    return args
+
+
 def _refresh_feature_status(paths: StatePaths, feature_id: str) -> None:
     feature = read_feature(paths, feature_id)
     if feature is None:
@@ -1086,10 +1286,11 @@ def _refresh_feature_status(paths: StatePaths, feature_id: str) -> None:
     write_feature(paths, feature)
 
 
-def _apply_fix_plan(root: Path, output: FixPlanOutput) -> None:
+def _apply_fix_plan(root: Path, output: FixPlanOutput, *, allowed_paths: set[str]) -> None:
     diff = output.unified_diff
     if not diff or not diff.strip():
         raise ReviewflowWorkflowError("fix provider returned no unifiedDiff", "empty-patch")
+    _validate_fix_diff_scope(diff, allowed_paths=allowed_paths)
     proc = subprocess.run(
         ["git", "apply", "--whitespace=nowarn", "-"],
         cwd=root,

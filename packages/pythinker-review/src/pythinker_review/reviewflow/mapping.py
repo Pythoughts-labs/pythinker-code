@@ -9,8 +9,11 @@ AST parsing so the workflow remains pure Python and dependency-free.
 from __future__ import annotations
 
 import json
+import re
+import tomllib
 from collections import defaultdict
 from pathlib import Path
+from typing import cast
 
 from pythinker_review.reviewflow.models import (
     DetectedProject,
@@ -77,6 +80,20 @@ CONFIG_NAMES = {
     "Dockerfile",
 }
 TEST_MARKERS = ("test", "tests", "spec", "specs", "__tests__")
+_UNHELPFUL_FAMILIES = {
+    "index",
+    "main",
+    "shared",
+    "helper",
+    "helpers",
+    "util",
+    "utils",
+    "type",
+    "types",
+    "spec",
+    "test",
+    "tests",
+}
 
 
 def detect_project(root: Path, config: ReviewflowConfig | None = None) -> ProjectRecord:
@@ -201,6 +218,8 @@ def map_features(
     config_files: list[str] = []
     groups: dict[str, list[str]] = defaultdict(list)
     tests_by_group: dict[str, list[str]] = defaultdict(list)
+    all_tests: list[str] = []
+    all_sources: list[str] = []
 
     for file_path in iter_repo_files(root, config):
         rel = file_path.relative_to(root).as_posix()
@@ -216,8 +235,10 @@ def map_features(
         key = _group_key(rel)
         if _is_test_path(rel):
             tests_by_group[key].append(rel)
+            all_tests.append(rel)
         else:
             groups[key].append(rel)
+            all_sources.append(rel)
 
     if config_files:
         feature_id = stable_id("feat", ["config", *sorted(config_files)])
@@ -231,23 +252,34 @@ def map_features(
             "tags": ["config"],
         }
 
+    for feature_id, seed in _python_console_script_seeds(root, all_tests, project).items():
+        seeds[feature_id] = seed
+    for feature_id, seed in _python_route_seeds(root, all_sources, all_tests).items():
+        seeds[feature_id] = seed
+    for feature_id, seed in _node_package_seeds(root, config_files, all_tests, project).items():
+        seeds[feature_id] = seed
+
     for key, files in groups.items():
-        sorted_files = sorted(files)
-        tests = sorted(tests_by_group.get(key, []))
-        title = _title_for_group(key, sorted_files)
-        kind = _kind_for_group(key, sorted_files, tests)
-        feature_id = stable_id("feat", [key, *sorted_files[:20]])
-        seeds[feature_id] = {
-            "title": title,
-            "summary": f"Source slice for {title}.",
-            "kind": kind,
-            "owned": sorted_files[: config.review.max_owned_files],
-            "context": sorted_files[
-                config.review.max_owned_files : config.review.max_owned_files + 6
-            ],
-            "tests": tests[:8],
-            "tags": sorted(_tags_for_files(sorted_files)),
-        }
+        for label, grouped_files in _partition_feature_files(
+            key, sorted(files), config.review.max_owned_files
+        ):
+            tests = _associated_tests(grouped_files, all_tests)
+            if not tests:
+                tests = sorted(tests_by_group.get(key, []))
+            title = _title_for_group(label, grouped_files)
+            kind = _kind_for_group(label, grouped_files, tests)
+            feature_id = stable_id("feat", [label, *grouped_files[:20]])
+            seeds[feature_id] = {
+                "title": title,
+                "summary": f"Source slice for {title}.",
+                "kind": kind,
+                "owned": grouped_files[: config.review.max_owned_files],
+                "context": grouped_files[
+                    config.review.max_owned_files : config.review.max_owned_files + 6
+                ],
+                "tests": tests[:8],
+                "tags": sorted(_tags_for_files(grouped_files)),
+            }
 
     features: list[FeatureRecord] = []
     created = 0
@@ -266,10 +298,7 @@ def map_features(
             kind=seed["kind"],  # type: ignore[arg-type]
             source="heuristic",
             confidence="medium",
-            entrypoints=[
-                FeatureEntrypoint(path=path)
-                for path in list(seed["owned"])[:3]  # type: ignore[arg-type]
-            ],
+            entrypoints=_seed_entrypoints(seed),
             owned_files=[
                 FeatureFileRef(path=path, reason="owned by heuristic feature slice")
                 for path in seed["owned"]  # type: ignore[union-attr]
@@ -301,6 +330,302 @@ def map_features(
     return features, {"created": created, "changed": changed, "stale": stale}
 
 
+def _seed_entrypoints(seed: dict[str, object]) -> list[FeatureEntrypoint]:
+    raw = seed.get("entrypoints")
+    if isinstance(raw, list):
+        entrypoints: list[FeatureEntrypoint] = []
+        for index, item in enumerate(raw):
+            if index >= 3:
+                break
+            if not isinstance(item, dict):
+                continue
+            data = cast("dict[str, object]", item)
+            path = data.get("path")
+            symbol = data.get("symbol")
+            route = data.get("route")
+            command = data.get("command")
+            if not isinstance(path, str):
+                continue
+            entrypoints.append(
+                FeatureEntrypoint(
+                    path=path,
+                    symbol=symbol if isinstance(symbol, str) else None,
+                    route=route if isinstance(route, str) else None,
+                    command=command if isinstance(command, str) else None,
+                )
+            )
+        if entrypoints:
+            return entrypoints
+    owned = seed.get("owned")
+    if not isinstance(owned, list):
+        return []
+    entrypoints = []
+    for index, path in enumerate(owned):
+        if index >= 3:
+            break
+        if isinstance(path, str):
+            entrypoints.append(FeatureEntrypoint(path=path))
+    return entrypoints
+
+
+def _python_console_script_seeds(
+    root: Path, all_tests: list[str], project: ProjectRecord
+) -> dict[str, dict[str, object]]:
+    pyproject = root / "pyproject.toml"
+    if not pyproject.exists():
+        return {}
+    try:
+        parsed = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
+        return {}
+    scripts: dict[str, str] = {}
+    project_table = parsed.get("project")
+    tool_table = parsed.get("tool")
+    poetry_table = tool_table.get("poetry") if isinstance(tool_table, dict) else None
+    project_scripts = project_table.get("scripts", {}) if isinstance(project_table, dict) else {}
+    poetry_scripts = poetry_table.get("scripts", {}) if isinstance(poetry_table, dict) else {}
+    for table in (project_scripts, poetry_scripts):
+        if not isinstance(table, dict):
+            continue
+        for name, target in table.items():
+            if isinstance(name, str) and isinstance(target, str):
+                scripts[name] = target
+
+    seeds: dict[str, dict[str, object]] = {}
+    for name, target in sorted(scripts.items()):
+        source_path, symbol = _resolve_python_entrypoint(root, target)
+        owned = [source_path or "pyproject.toml"]
+        context = [] if source_path is None else ["pyproject.toml"]
+        tests = _associated_tests(owned, all_tests)
+        feature_id = stable_id("feat", ["python-script", name, target, owned[0]])
+        seeds[feature_id] = {
+            "title": f"Python CLI command {name}",
+            "summary": f"Python console script '{name}' targets {target}.",
+            "kind": "cli-command",
+            "owned": owned,
+            "context": context,
+            "tests": tests[:8],
+            "tags": ["python", "cli"],
+            "entrypoints": [
+                {"path": owned[0], "symbol": symbol, "command": name},
+            ],
+        }
+        if project.detected.commands.test and tests:
+            seeds[feature_id]["testCommand"] = project.detected.commands.test
+    return seeds
+
+
+def _resolve_python_entrypoint(root: Path, target: str) -> tuple[str | None, str | None]:
+    module, _sep, symbol = target.partition(":")
+    module = module.split("[", 1)[0].strip()
+    symbol = symbol.split("[", 1)[0].strip() or None
+    if not module:
+        return None, symbol
+    rel = module.replace(".", "/")
+    candidates = [
+        f"{rel}.py",
+        f"src/{rel}.py",
+        f"{rel}/__init__.py",
+        f"src/{rel}/__init__.py",
+    ]
+    for candidate in candidates:
+        if (root / candidate).exists():
+            return candidate, symbol
+    return None, symbol
+
+
+_FASTAPI_ROUTE_RE = re.compile(
+    r"^\s*@(?:(?:app|api|router|[A-Za-z_][A-Za-z0-9_]*(?:app|api|router))\.)"
+    r"(?P<method>api_route|get|post|put|patch|delete|options|head|trace)\((?P<args>.*)\)",
+    re.IGNORECASE,
+)
+_FLASK_ROUTE_RE = re.compile(
+    r"^\s*@(?:[A-Za-z_][A-Za-z0-9_]*\.)?route\((?P<args>.*)\)", re.IGNORECASE
+)
+_DEF_RE = re.compile(r"^\s*(?:async\s+def|def)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(")
+_ROUTE_PATH_RE = re.compile(r"[\"']([^\"']*)[\"']")
+_ROUTE_METHODS_RE = re.compile(r"methods\s*=\s*\[(?P<methods>[^\]]+)\]", re.IGNORECASE)
+
+
+def _python_route_seeds(
+    root: Path, source_files: list[str], all_tests: list[str]
+) -> dict[str, dict[str, object]]:
+    seeds: dict[str, dict[str, object]] = {}
+    for rel in sorted(path for path in source_files if path.endswith(".py")):
+        text = read_text_bounded(root / rel, limit_chars=80_000)
+        lines = text.splitlines()
+        for index, line in enumerate(lines):
+            route = _parse_python_route_decorator(line)
+            if route is None:
+                continue
+            route_path, methods = route
+            symbol = _next_python_def(lines, index + 1)
+            title = f"Python route {'/'.join(methods)} {route_path}"
+            feature_id = stable_id("feat", ["python-route", rel, route_path, *methods])
+            seeds[feature_id] = {
+                "title": title,
+                "summary": f"Python web route {', '.join(methods)} {route_path} in {rel}.",
+                "kind": "route",
+                "owned": [rel],
+                "context": [],
+                "tests": _associated_tests([rel, symbol or route_path], all_tests)[:8],
+                "tags": ["python", "route"],
+                "entrypoints": [
+                    {"path": rel, "symbol": symbol, "route": route_path},
+                ],
+            }
+    return seeds
+
+
+def _parse_python_route_decorator(line: str) -> tuple[str, list[str]] | None:
+    fastapi = _FASTAPI_ROUTE_RE.match(line)
+    if fastapi:
+        args = fastapi.group("args")
+        route_path = _first_string_arg(args) or "/"
+        method = fastapi.group("method").upper()
+        methods = ["ANY"] if method == "API_ROUTE" else [method]
+        return route_path, methods
+    flask = _FLASK_ROUTE_RE.match(line)
+    if flask:
+        args = flask.group("args")
+        route_path = _first_string_arg(args) or "/"
+        methods = _decorator_methods(args) or ["GET"]
+        return route_path, methods
+    return None
+
+
+def _first_string_arg(args: str) -> str | None:
+    match = _ROUTE_PATH_RE.search(args)
+    return match.group(1) if match else None
+
+
+def _decorator_methods(args: str) -> list[str]:
+    match = _ROUTE_METHODS_RE.search(args)
+    if not match:
+        return []
+    return [
+        method.upper() for method in re.findall(r"[\"']([A-Za-z]+)[\"']", match.group("methods"))
+    ]
+
+
+def _next_python_def(lines: list[str], start: int) -> str | None:
+    for line in lines[start : start + 8]:
+        match = _DEF_RE.match(line)
+        if match:
+            return match.group("name")
+    return None
+
+
+def _node_package_seeds(
+    root: Path, config_files: list[str], all_tests: list[str], project: ProjectRecord
+) -> dict[str, dict[str, object]]:
+    seeds: dict[str, dict[str, object]] = {}
+    for package_json_rel in sorted(path for path in config_files if path.endswith("package.json")):
+        package_json = root / package_json_rel
+        parsed = _read_json_object(package_json)
+        if parsed is None:
+            continue
+        package_root = Path(package_json_rel).parent.as_posix()
+        package_name = parsed.get("name") if isinstance(parsed.get("name"), str) else package_root
+        scripts = _scripts_from_object(parsed)
+        bins = _bins_from_object(parsed)
+        package_files = _node_package_metadata_files(root, package_root, package_json_rel)
+        feature_id = stable_id("feat", ["node-package", package_json_rel, str(package_name)])
+        seeds[feature_id] = {
+            "title": f"Node package {package_name}",
+            "summary": f"Node package metadata and review context rooted at {package_root}.",
+            "kind": "library",
+            "owned": package_files[:1] or [package_json_rel],
+            "context": package_files[1:8],
+            "tests": [],
+            "tags": ["node", "package"],
+            "entrypoints": [{"path": package_json_rel, "symbol": str(package_name)}],
+        }
+        for command, target in sorted(bins.items()):
+            entry = _package_relative(package_root, target)
+            owned = [entry if (root / entry).exists() else package_json_rel]
+            feature_id = stable_id("feat", ["node-bin", package_json_rel, command, target])
+            seeds[feature_id] = {
+                "title": f"CLI command {command}",
+                "summary": f"Package bin '{command}' targets {target}.",
+                "kind": "cli-command",
+                "owned": owned,
+                "context": [package_json_rel] if owned[0] != package_json_rel else [],
+                "tests": _associated_tests(owned, all_tests)[:8],
+                "tags": ["node", "cli"],
+                "entrypoints": [{"path": owned[0], "command": command}],
+            }
+        for script, command in sorted(scripts.items()):
+            if script not in {"start", "build", "test", "lint", "typecheck", "format"}:
+                continue
+            feature_id = stable_id("feat", ["node-script", package_json_rel, script, command])
+            seeds[feature_id] = {
+                "title": f"Package script {script}",
+                "summary": f"Package script '{script}' in {package_json_rel}: {command}",
+                "kind": "test-suite" if script == "test" else "release",
+                "owned": [package_json_rel],
+                "context": [],
+                "tests": [],
+                "tags": ["node", "package-script"],
+                "entrypoints": [{"path": package_json_rel, "symbol": script, "command": script}],
+            }
+            if script == "test" and project.detected.commands.test:
+                seeds[feature_id]["tests"] = [package_json_rel]
+    return seeds
+
+
+def _read_json_object(path: Path) -> dict[str, object] | None:
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _scripts_from_object(parsed: dict[str, object]) -> dict[str, str]:
+    scripts = parsed.get("scripts")
+    if not isinstance(scripts, dict):
+        return {}
+    return {str(key): value for key, value in scripts.items() if isinstance(value, str)}
+
+
+def _bins_from_object(parsed: dict[str, object]) -> dict[str, str]:
+    bin_value = parsed.get("bin")
+    if isinstance(bin_value, str):
+        raw_name = parsed.get("name")
+        name = raw_name if isinstance(raw_name, str) else "bin"
+        return {name: bin_value}
+    if isinstance(bin_value, dict):
+        return {str(key): value for key, value in bin_value.items() if isinstance(value, str)}
+    return {}
+
+
+def _node_package_metadata_files(root: Path, package_root: str, package_json_rel: str) -> list[str]:
+    candidates = [
+        package_json_rel,
+        _package_relative(package_root, "README.md"),
+        _package_relative(package_root, "AGENTS.md"),
+        _package_relative(package_root, "tsconfig.json"),
+        _package_relative(package_root, "vite.config.ts"),
+        _package_relative(package_root, "next.config.js"),
+        _package_relative(package_root, "next.config.mjs"),
+        _package_relative(package_root, "next.config.ts"),
+    ]
+    seen: set[str] = set()
+    out: list[str] = []
+    for rel in candidates:
+        if rel not in seen and (root / rel).exists():
+            seen.add(rel)
+            out.append(rel)
+    return out
+
+
+def _package_relative(package_root: str, rel: str) -> str:
+    if package_root in {"", "."}:
+        return rel.replace("\\", "/").removeprefix("./")
+    return f"{package_root.rstrip('/')}/{rel}".replace("\\", "/").removeprefix("./")
+
+
 def iter_repo_files(root: Path, config: ReviewflowConfig) -> list[Path]:
     files: list[Path] = []
     for path in root.rglob("*"):
@@ -315,6 +640,103 @@ def iter_repo_files(root: Path, config: ReviewflowConfig) -> list[Path]:
             continue
         files.append(path)
     return files
+
+
+def _partition_feature_files(
+    key: str, files: list[str], max_files: int
+) -> list[tuple[str, list[str]]]:
+    if len(files) <= max_files:
+        return [(key, files)]
+    direct_files: list[str] = []
+    buckets: dict[str, list[str]] = defaultdict(list)
+    for file in files:
+        relative = _relative_to_group(key, file)
+        parts = relative.split("/")
+        if len(parts) <= 1:
+            direct_files.append(file)
+        else:
+            buckets[parts[0]].append(file)
+
+    groups = _partition_direct_files(key, sorted(direct_files), max_files)
+    for segment, bucket_files in sorted(buckets.items()):
+        label = f"{key}/{segment}" if key != "root" else segment
+        sorted_bucket = sorted(bucket_files)
+        if len(sorted_bucket) <= max_files:
+            groups.append((label, sorted_bucket))
+        else:
+            groups.extend(_partition_feature_files(label, sorted_bucket, max_files))
+    return groups or _chunk_files(key, files, max_files)
+
+
+def _partition_direct_files(
+    label: str, files: list[str], max_files: int
+) -> list[tuple[str, list[str]]]:
+    if not files:
+        return []
+    if len(files) <= max_files:
+        return [(label, files)]
+    buckets: dict[str, list[str]] = defaultdict(list)
+    fallback: list[str] = []
+    for file in files:
+        family = _direct_file_family(file)
+        if family is None:
+            fallback.append(file)
+        else:
+            buckets[family].append(file)
+
+    groups: list[tuple[str, list[str]]] = []
+    for family, bucket_files in sorted(buckets.items()):
+        if len(bucket_files) < 2:
+            fallback.extend(bucket_files)
+        else:
+            groups.extend(_chunk_files(f"{label}/:{family}", sorted(bucket_files), max_files))
+    groups.extend(_chunk_files(label, sorted(fallback), max_files))
+    return groups
+
+
+def _chunk_files(label: str, files: list[str], max_files: int) -> list[tuple[str, list[str]]]:
+    if not files:
+        return []
+    if len(files) <= max_files:
+        return [(label, files)]
+    return [
+        (f"{label}#{index // max_files + 1}", files[index : index + max_files])
+        for index in range(0, len(files), max_files)
+    ]
+
+
+def _relative_to_group(key: str, file: str) -> str:
+    if key != "root" and file.startswith(f"{key}/"):
+        return file[len(key) + 1 :]
+    return file
+
+
+def _direct_file_family(file: str) -> str | None:
+    stem = Path(file).name
+    while "." in stem:
+        stem = stem.rsplit(".", 1)[0]
+    prefix = stem.split(".", 1)[0].split("-", 1)[0].split("_", 1)[0].lower()
+    if len(prefix) < 3 or prefix.isdigit() or prefix in _UNHELPFUL_FAMILIES:
+        return None
+    return prefix
+
+
+def _associated_tests(source_files: list[str], tests: list[str]) -> list[str]:
+    tokens = {
+        _test_name_token(Path(file).stem)
+        for file in source_files
+        if _test_name_token(Path(file).stem)
+    }
+    matched: list[str] = []
+    for test in sorted(tests):
+        normalized = _test_name_token(test)
+        if any(token and token in normalized for token in tokens):
+            matched.append(test)
+    return matched
+
+
+def _test_name_token(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
 
 
 def _node_package_manager(root: Path) -> str:

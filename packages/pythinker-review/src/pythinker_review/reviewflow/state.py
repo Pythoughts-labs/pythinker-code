@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from pythinker_review.reviewflow.models import (
     FeatureLock,
@@ -61,7 +61,14 @@ def ensure_state_dirs(paths: StatePaths) -> None:
 
 
 def read_json[T: BaseModel](path: Path, model: type[T]) -> T:
-    return model.model_validate_json(path.read_text(encoding="utf-8"))
+    try:
+        return model.model_validate_json(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"missing Reviewflow state file: {path}") from exc
+    except UnicodeDecodeError as exc:
+        raise RuntimeError(f"Reviewflow state file is not valid UTF-8: {path}") from exc
+    except ValidationError as exc:
+        raise RuntimeError(f"invalid Reviewflow state file {path}: {exc}") from exc
 
 
 def write_json(path: Path, record: BaseModel | dict[str, object]) -> None:

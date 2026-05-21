@@ -68,7 +68,13 @@ Return JSON matching this shape:
       "category": "bug|security|performance|concurrency|api-contract|data-loss|test-gap|docs-gap|build-release|maintainability",
       "severity": "critical|high|medium|low",
       "confidence": "high|medium|low",
-      "evidence": [{{"path": "relative/path", "startLine": 1, "endLine": 1, "symbol": null, "quote": "exact snippet"}}],
+      "evidence": [{{
+        "path": "relative/path",
+        "startLine": 1,
+        "endLine": 1,
+        "symbol": null,
+        "quote": "exact snippet"
+      }}],
 
       "reasoning": "why this is a real issue",
       "reproduction": "optional concrete trigger or null",

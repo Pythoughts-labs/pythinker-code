@@ -121,6 +121,7 @@ class ReviewflowConfig(ReviewflowBaseModel):
             ".git/**",
             ".pythinker-review-flow/**",
             ".pythinker-review/**",
+            ".clawpatch/**",
         ]
     )
     provider: ProviderConfig = Field(default_factory=ProviderConfig)
