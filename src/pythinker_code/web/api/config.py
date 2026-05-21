@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re as _re
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
@@ -9,6 +11,11 @@ from pythinker_code.config import LLMModel, get_config_file, load_config, save_c
 from pythinker_code.llm import ProviderType, derive_model_capabilities
 from pythinker_code.utils.logging import logger
 from pythinker_code.web.runner.process import PythinkerCLIRunner
+
+
+def _redact_api_keys(content: str) -> str:
+    """Replace api_key = "..." values with *** in TOML/JSON config content."""
+    return _re.sub(r'(api_key\s*=\s*)"[^"]*"', r'\1"***"', content)
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
@@ -181,7 +188,8 @@ async def get_config_toml(http_request: Request) -> ConfigToml:
     config_file = get_config_file()
     if not config_file.exists():
         return ConfigToml(content="", path=str(config_file))
-    return ConfigToml(content=config_file.read_text(encoding="utf-8"), path=str(config_file))
+    content = _redact_api_keys(config_file.read_text(encoding="utf-8"))
+    return ConfigToml(content=content, path=str(config_file))
 
 
 @router.put("/toml", summary="Update pythinker-code config.toml")

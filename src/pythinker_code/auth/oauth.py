@@ -183,11 +183,12 @@ class DeviceAuthorization:
 
 
 def _oauth_host() -> str:
-    return (
-        os.getenv("PYTHINKER_CODE_OAUTH_HOST")
-        or os.getenv("PYTHINKER_OAUTH_HOST")
-        or DEFAULT_OAUTH_HOST
-    )
+    host = os.getenv("PYTHINKER_CODE_OAUTH_HOST") or os.getenv("PYTHINKER_OAUTH_HOST")
+    if host is not None and not host.startswith("https://"):
+        raise ValueError(
+            f"PYTHINKER_CODE_OAUTH_HOST must use HTTPS, got: {host!r}"
+        )
+    return host or DEFAULT_OAUTH_HOST
 
 
 def _device_id_path() -> Path:
@@ -195,8 +196,10 @@ def _device_id_path() -> Path:
 
 
 def _ensure_private_file(path: Path) -> None:
-    with suppress(OSError):
+    try:
         os.chmod(path, 0o600)
+    except OSError as exc:
+        logger.warning("Failed to restrict private file permissions: {error}", error=exc)
 
 
 def _device_model() -> str:
@@ -407,8 +410,12 @@ def _save_to_file(key: str, token: OAuthToken) -> None:
         os.fsync(fd)
         os.close(fd)
         fd = -1
-        with suppress(OSError):
+        try:
             os.chmod(tmp_path, 0o600)
+        except OSError as exc:
+            logger.warning(
+                "Failed to restrict OAuth credential file permissions: {error}", error=exc
+            )
         os.replace(tmp_path, path)
     except BaseException:
         if fd >= 0:
