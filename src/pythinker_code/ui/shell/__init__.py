@@ -243,6 +243,48 @@ def _is_lm_studio_jinja_template_error(exc: BaseException) -> bool:
     return _LM_STUDIO_JINJA_ERROR_RE.search(str(exc)) is not None
 
 
+def _extract_429_detail(exc: BaseException) -> dict[str, str]:
+    """Pull a human-readable summary + hint out of a 429 APIStatusError body.
+
+    Providers vary widely in their 429 payload shape. We try the well-known
+    `{"error": {"type": ..., "message": ...}}` envelope first (OpenAI /
+    OpenCode / Anthropic / etc.), then fall back to scraping a URL hint and
+    finally to the stringified exception.
+    """
+    body: dict[str, object] | None = None
+    payload = getattr(exc, "body", None)
+    if isinstance(payload, dict):
+        body = payload
+    if body is None:
+        for attr in ("response_json", "response_data"):
+            value = getattr(exc, attr, None)
+            if isinstance(value, dict):
+                body = value
+                break
+
+    summary = ""
+    err_type = ""
+    if body is not None:
+        err = body.get("error")
+        if isinstance(err, dict):
+            err_type = str(err.get("type") or "")
+            summary = str(err.get("message") or "")
+
+    if not summary:
+        text = str(exc)
+        summary = text if len(text) <= 280 else text[:277] + "..."
+
+    hint = "Wait until the limit window resets, or upgrade / top up your plan."
+    if "GoUsageLimitError" in err_type:
+        hint = "OpenCode-Go monthly limit. Resets in the window the server stated above."
+    elif "Anthropic" in str(type(exc).__module__) or "anthropic" in err_type.lower():
+        hint = "Anthropic rate limit. Slow request rate, or check your plan tier."
+    elif "openai" in str(type(exc).__module__).lower():
+        hint = "OpenAI rate or usage limit. Check usage dashboard or wait for the reset window."
+
+    return {"summary": summary, "hint": hint}
+
+
 class Shell:
     def __init__(
         self,
@@ -1043,6 +1085,12 @@ class Shell:
                 console.print(
                     "[red]Quota exceeded, please upgrade your plan or retry later[/red]\n"
                     f"[dim]Server: {e}[/dim]"
+                )
+            elif isinstance(e, APIStatusError) and e.status_code == 429:
+                detail = _extract_429_detail(e)
+                console.print(
+                    f"[red]Rate / usage limit hit: {detail['summary']}[/red]\n"
+                    f"[dim]{detail['hint']}[/dim]"
                 )
             elif isinstance(e, APIConnectionError):
                 console.print(

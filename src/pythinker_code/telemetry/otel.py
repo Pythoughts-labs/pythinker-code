@@ -101,6 +101,22 @@ def init(
     if not endpoint:
         return False
 
+    # Telemetry is best-effort and opt-out. The OTel SDK logs export failures
+    # (network timeouts, 5xx, connection refused) at ERROR level on its own
+    # loggers, which leaks to the user's terminal — they did not ask to be
+    # alerted that telemetry shipping failed. Demote those loggers to CRITICAL
+    # so only genuine programmer errors surface. This does not affect spans,
+    # metrics, or logs that successfully reach the collector.
+    for noisy in (
+        "opentelemetry.exporter.otlp.proto.http._log_exporter",
+        "opentelemetry.exporter.otlp.proto.http.metric_exporter",
+        "opentelemetry.exporter.otlp.proto.http.trace_exporter",
+        "opentelemetry.sdk._logs._internal.export.batch_log_record_processor",
+        "opentelemetry.sdk.metrics._internal.export",
+        "opentelemetry.sdk.trace.export",
+    ):
+        logging.getLogger(noisy).setLevel(logging.CRITICAL)
+
     resource = _resource(version=version, ui_mode=ui_mode, device_id=device_id)
     headers = _bearer_headers()
 

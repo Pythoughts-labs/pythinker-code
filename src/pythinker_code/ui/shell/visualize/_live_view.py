@@ -209,48 +209,52 @@ class _LiveView:
             async with _keyboard_listener(keyboard_handler):
                 wire_task = asyncio.create_task(wire.receive())
                 external_task = asyncio.create_task(self._external_messages.get())
-                while True:
-                    try:
-                        done, _ = await asyncio.wait(
-                            [wire_task, external_task],
-                            return_when=asyncio.FIRST_COMPLETED,
-                        )
-                        if wire_task in done:
-                            msg = wire_task.result()
-                            wire_task = asyncio.create_task(wire.receive())
-                        else:
-                            msg = external_task.result()
-                            external_task = asyncio.create_task(self._external_messages.get())
-                    except QueueShutDown:
-                        msg, external_task = await self._drain_external_message_after_wire_shutdown(
-                            external_task
-                        )
-                        if msg is not None:
-                            self.dispatch_wire_message(msg)
-                            if self._need_recompose:
-                                live.update(self.compose(), refresh=True)
-                                self._need_recompose = False
-                            continue
-                        self.cleanup(is_interrupt=False)
-                        live.update(self.compose(), refresh=True)
-                        break
+                try:
+                    while True:
+                        try:
+                            done, _ = await asyncio.wait(
+                                [wire_task, external_task],
+                                return_when=asyncio.FIRST_COMPLETED,
+                            )
+                            if wire_task in done:
+                                msg = wire_task.result()
+                                wire_task = asyncio.create_task(wire.receive())
+                            else:
+                                msg = external_task.result()
+                                external_task = asyncio.create_task(self._external_messages.get())
+                        except QueueShutDown:
+                            msg, external_task = (
+                                await self._drain_external_message_after_wire_shutdown(
+                                    external_task
+                                )
+                            )
+                            if msg is not None:
+                                self.dispatch_wire_message(msg)
+                                if self._need_recompose:
+                                    live.update(self.compose(), refresh=True)
+                                    self._need_recompose = False
+                                continue
+                            self.cleanup(is_interrupt=False)
+                            live.update(self.compose(), refresh=True)
+                            break
 
-                    if isinstance(msg, StepInterrupted):
-                        self.cleanup(is_interrupt=True)
-                        live.update(self.compose(), refresh=True)
-                        break
+                        if isinstance(msg, StepInterrupted):
+                            self.cleanup(is_interrupt=True)
+                            live.update(self.compose(), refresh=True)
+                            break
 
-                    self.dispatch_wire_message(msg)
-                    if self._need_recompose:
-                        live.update(self.compose(), refresh=True)
-                        self._need_recompose = False
-                wire_task.cancel()
-                external_task.cancel()
-                self._external_messages.shutdown(immediate=True)
-                with suppress(asyncio.CancelledError, QueueShutDown):
-                    await wire_task
-                with suppress(asyncio.CancelledError, QueueShutDown):
-                    await external_task
+                        self.dispatch_wire_message(msg)
+                        if self._need_recompose:
+                            live.update(self.compose(), refresh=True)
+                            self._need_recompose = False
+                finally:
+                    wire_task.cancel()
+                    external_task.cancel()
+                    self._external_messages.shutdown(immediate=True)
+                    with suppress(asyncio.CancelledError, QueueShutDown):
+                        await wire_task
+                    with suppress(asyncio.CancelledError, QueueShutDown):
+                        await external_task
 
     def refresh_soon(self) -> None:
         self._need_recompose = True
