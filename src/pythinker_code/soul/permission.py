@@ -230,6 +230,16 @@ def check_external_tool_allowed(runtime: Runtime, tool_name: str) -> ToolError |
     )
 
 
+def is_read_only_subagent_shell(runtime: Runtime, command: str) -> bool:
+    """True when a subagent is executing a read-only shell command.
+
+    Read-only subagent commands don't mutate files, git, or package state,
+    so they don't need an approval prompt — the permission profile already
+    gates any genuinely mutating commands.
+    """
+    return runtime.role == "subagent" and shell_mutation_reason(command) is None
+
+
 def check_tool_call_allowed(
     runtime: Runtime, tool_name: str, arguments: dict[str, Any], *, tool: object | None = None
 ) -> ToolError | None:
