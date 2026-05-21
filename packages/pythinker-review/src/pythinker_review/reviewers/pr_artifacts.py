@@ -10,6 +10,8 @@ from pythinker_review.reviewers.artifacts import (
     CodeSuggestionsOutput,
     ComplianceOutput,
     DocsOutput,
+    HelpDocsOutput,
+    LineQuestionAnswerOutput,
     PRDescriptionOutput,
     PRLabelsOutput,
     PRQuestionAnswerOutput,
@@ -21,7 +23,7 @@ _META_TEMPLATE = """Repository metadata:
 - Base: {base_ref}
 - Source: {source_label}
 - Changed files: {changed_files}
-"""
+{commit_messages_block}"""
 
 
 def build_artifact_user(
@@ -33,11 +35,16 @@ def build_artifact_user(
 ) -> str:
     """Build the user prompt shared by code-reviewr-derived artifact tools."""
     changed_files = metadata.get("changed_files", "")
+    commit_messages = (metadata.get("commit_messages") or "").strip()
+    commit_messages_block = (
+        f"- Commit messages:\n======\n{commit_messages}\n======\n" if commit_messages else ""
+    )
     meta = _META_TEMPLATE.format(
         branch=metadata.get("branch") or "unknown",
         base_ref=metadata.get("base_ref") or "unknown",
         source_label=metadata.get("source_label") or "unknown",
         changed_files=changed_files or "unknown",
+        commit_messages_block=commit_messages_block,
     )
     if question is not None:
         meta += f"\nUser question:\n{question.strip()}\n"
@@ -46,8 +53,25 @@ def build_artifact_user(
     return f"{meta}\nStructured diff:\n======\n{diff.strip()}\n======\n"
 
 
+def build_help_docs_user(*, question: str, docs_context: str, metadata: dict[str, str]) -> str:
+    """Build the user prompt for local documentation Q&A."""
+    source = metadata.get("source_label") or "local-docs"
+    files = metadata.get("docs_files") or "unknown"
+    return (
+        f"Documentation source: {source}\n"
+        f"Documentation files loaded: {files}\n\n"
+        f"User question:\n======\n{question.strip()}\n======\n\n"
+        f"Documentation content:\n======\n{docs_context.strip()}\n======\n"
+    )
+
+
 async def run_pr_description_artifact(
-    *, diff: str, metadata: dict[str, str], llm: ReviewLLM, timeout_s: float
+    *,
+    diff: str,
+    metadata: dict[str, str],
+    llm: ReviewLLM,
+    timeout_s: float,
+    artifact_context: str = "",
 ) -> TypedReviewerResult[PRDescriptionOutput]:
     return await _complete_artifact(
         prompt="pr_description.system.md",
@@ -56,11 +80,17 @@ async def run_pr_description_artifact(
         metadata=metadata,
         llm=llm,
         timeout_s=timeout_s,
+        artifact_context=artifact_context or None,
     )
 
 
 async def run_code_suggestions_artifact(
-    *, diff: str, metadata: dict[str, str], llm: ReviewLLM, timeout_s: float
+    *,
+    diff: str,
+    metadata: dict[str, str],
+    llm: ReviewLLM,
+    timeout_s: float,
+    artifact_context: str = "",
 ) -> TypedReviewerResult[CodeSuggestionsOutput]:
     return await _complete_artifact(
         prompt="code_suggestions.system.md",
@@ -69,6 +99,7 @@ async def run_code_suggestions_artifact(
         metadata=metadata,
         llm=llm,
         timeout_s=timeout_s,
+        artifact_context=artifact_context or None,
     )
 
 
@@ -86,8 +117,34 @@ async def run_pr_question_artifact(
     )
 
 
+async def run_line_question_artifact(
+    *,
+    question: str,
+    diff: str,
+    metadata: dict[str, str],
+    line_context: str,
+    llm: ReviewLLM,
+    timeout_s: float,
+) -> TypedReviewerResult[LineQuestionAnswerOutput]:
+    return await _complete_artifact(
+        prompt="line_questions.system.md",
+        output_type=LineQuestionAnswerOutput,
+        diff=diff,
+        metadata=metadata,
+        question=question,
+        artifact_context=line_context,
+        llm=llm,
+        timeout_s=timeout_s,
+    )
+
+
 async def run_labels_artifact(
-    *, diff: str, metadata: dict[str, str], llm: ReviewLLM, timeout_s: float
+    *,
+    diff: str,
+    metadata: dict[str, str],
+    llm: ReviewLLM,
+    timeout_s: float,
+    artifact_context: str = "",
 ) -> TypedReviewerResult[PRLabelsOutput]:
     return await _complete_artifact(
         prompt="labels.system.md",
@@ -96,11 +153,17 @@ async def run_labels_artifact(
         metadata=metadata,
         llm=llm,
         timeout_s=timeout_s,
+        artifact_context=artifact_context or None,
     )
 
 
 async def run_changelog_artifact(
-    *, diff: str, metadata: dict[str, str], llm: ReviewLLM, timeout_s: float
+    *,
+    diff: str,
+    metadata: dict[str, str],
+    llm: ReviewLLM,
+    timeout_s: float,
+    artifact_context: str = "",
 ) -> TypedReviewerResult[ChangelogOutput]:
     return await _complete_artifact(
         prompt="changelog.system.md",
@@ -109,11 +172,17 @@ async def run_changelog_artifact(
         metadata=metadata,
         llm=llm,
         timeout_s=timeout_s,
+        artifact_context=artifact_context or None,
     )
 
 
 async def run_docs_artifact(
-    *, diff: str, metadata: dict[str, str], llm: ReviewLLM, timeout_s: float
+    *,
+    diff: str,
+    metadata: dict[str, str],
+    llm: ReviewLLM,
+    timeout_s: float,
+    artifact_context: str = "",
 ) -> TypedReviewerResult[DocsOutput]:
     return await _complete_artifact(
         prompt="docs.system.md",
@@ -122,6 +191,7 @@ async def run_docs_artifact(
         metadata=metadata,
         llm=llm,
         timeout_s=timeout_s,
+        artifact_context=artifact_context or None,
     )
 
 
@@ -141,6 +211,23 @@ async def run_compliance_artifact(
         artifact_context=compliance_context,
         llm=llm,
         timeout_s=timeout_s,
+    )
+
+
+async def run_help_docs_artifact(
+    *,
+    question: str,
+    docs_context: str,
+    metadata: dict[str, str],
+    llm: ReviewLLM,
+    timeout_s: float,
+) -> TypedReviewerResult[HelpDocsOutput]:
+    return await complete_typed_json(
+        llm=llm,
+        system=load_prompt("help_docs.system.md"),
+        user=build_help_docs_user(question=question, docs_context=docs_context, metadata=metadata),
+        timeout_s=timeout_s,
+        output_type=HelpDocsOutput,
     )
 
 
@@ -171,11 +258,14 @@ async def _complete_artifact(
 
 __all__ = [
     "build_artifact_user",
+    "build_help_docs_user",
     "run_changelog_artifact",
     "run_code_suggestions_artifact",
     "run_compliance_artifact",
     "run_docs_artifact",
+    "run_help_docs_artifact",
     "run_labels_artifact",
+    "run_line_question_artifact",
     "run_pr_description_artifact",
     "run_pr_question_artifact",
 ]

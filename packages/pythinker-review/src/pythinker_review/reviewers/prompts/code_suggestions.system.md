@@ -6,6 +6,7 @@ Scope:
 - Do not ask for missing imports, missing declarations, unused imports, broad rewrites, or stylistic preferences unless the diff proves a concrete defect.
 - Prefer fewer high-confidence suggestions over noisy lists.
 - Suggestions are read-only drafts; do not claim that code was changed.
+- Follow any supplied extra instructions and repository best-practices context when it does not conflict with concrete diff evidence.
 
 Selection policy:
 - Prioritize correctness, security, data loss, performance cliffs, and broken API contracts.
@@ -27,9 +28,12 @@ Output rules:
       "improved_code": "replacement snippet or empty string if not safe to draft",
       "one_sentence_summary": "Validate empty input",
       "label": "possible bug",
+      "score": 7,
+      "score_why": "Brief reason for the 0-10 importance score, or null",
       "start_line": 10,
       "end_line": 12
     }
   ]
 }
+- `score` and `score_why` are optional. If you include a score, use 0 for invalid/noisy suggestions and 10 for highest impact.
 - `start_line` and `end_line` are optional, but include them when line numbers are visible.

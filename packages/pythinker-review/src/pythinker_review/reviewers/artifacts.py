@@ -22,6 +22,7 @@ class PRDescriptionOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     types: list[str] = Field(default_factory=list, alias="type")
+    labels: list[str] = Field(default_factory=list)
     description: str
     title: str
     pr_files: list[PRFileSummary] = Field(default_factory=list)
@@ -46,6 +47,8 @@ class CodeSuggestion(BaseModel):
     improved_code: str
     one_sentence_summary: str
     label: str
+    score: int | None = Field(default=None, ge=0, le=10)
+    score_why: str | None = None
     start_line: int | None = Field(default=None, ge=1)
     end_line: int | None = Field(default=None, ge=1)
 
@@ -80,6 +83,27 @@ class PRQuestionAnswerOutput(BaseModel):
     limitations: str | None = None
 
 
+class LineQuestionAnswerOutput(BaseModel):
+    """Answer to a user question about selected changed lines."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    question: str
+    file: str
+    start_line: int = Field(ge=1)
+    end_line: int = Field(ge=1)
+    side: Literal["RIGHT", "LEFT"] = "RIGHT"
+    answer: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    limitations: str | None = None
+
+    @model_validator(mode="after")
+    def validate_range(self) -> LineQuestionAnswerOutput:
+        if self.end_line < self.start_line:
+            raise ValueError("end_line must be greater than or equal to start_line")
+        return self
+
+
 class PRLabelsOutput(BaseModel):
     """Read-only replacement for code-reviewr's /generate_labels payload."""
 
@@ -105,6 +129,8 @@ class DocsSuggestion(BaseModel):
 
     relevant_file: str
     target_symbol: str | None = None
+    relevant_line: int | None = Field(default=None, ge=1)
+    doc_placement: Literal["before", "after"] | None = None
     docs_gap: str
     suggested_doc: str
 
@@ -142,6 +168,43 @@ class ComplianceOutput(BaseModel):
     risks: list[str] = Field(default_factory=list)
 
 
+class SimilarIssueMatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    issue_id: str
+    title: str
+    path: str
+    score: float = Field(ge=0.0)
+    snippet: str = ""
+
+
+class SimilarIssuesOutput(BaseModel):
+    """Read-only local replacement for code-reviewr's /similar_issue workflow."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str
+    matches: list[SimilarIssueMatch] = Field(default_factory=list)
+
+
+class HelpDocsReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    file_name: str
+    relevant_section_header_string: str = ""
+
+
+class HelpDocsOutput(BaseModel):
+    """Read-only answer to a question over local repository documentation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_question: str
+    response: str
+    relevant_sections: list[HelpDocsReference] = Field(default_factory=list)
+    question_is_relevant: bool = True
+
+
 __all__ = [
     "ChangelogOutput",
     "CodeSuggestion",
@@ -150,8 +213,13 @@ __all__ = [
     "ComplianceOutput",
     "DocsOutput",
     "DocsSuggestion",
+    "HelpDocsOutput",
+    "HelpDocsReference",
+    "LineQuestionAnswerOutput",
     "PRDescriptionOutput",
     "PRFileSummary",
     "PRLabelsOutput",
     "PRQuestionAnswerOutput",
+    "SimilarIssueMatch",
+    "SimilarIssuesOutput",
 ]

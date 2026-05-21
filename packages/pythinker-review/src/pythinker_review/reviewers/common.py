@@ -105,21 +105,19 @@ def _json_candidates(raw: str) -> tuple[str, ...]:
         fenced = "\n".join(lines).strip()
         if fenced and fenced not in candidates:
             candidates.append(fenced)
-    extracted = _extract_first_json_object(stripped)
-    if extracted and extracted not in candidates:
-        candidates.append(extracted)
+    for extracted in _extract_json_objects(stripped):
+        if extracted not in candidates:
+            candidates.append(extracted)
     return tuple(candidates)
 
 
-def _extract_first_json_object(text: str) -> str | None:
-    start = text.find("{")
-    if start < 0:
-        return None
+def _extract_json_objects(text: str) -> tuple[str, ...]:
+    objects: list[str] = []
+    start: int | None = None
     depth = 0
     in_string = False
     escape = False
-    for idx in range(start, len(text)):
-        ch = text[idx]
+    for idx, ch in enumerate(text):
         if in_string:
             if escape:
                 escape = False
@@ -131,9 +129,12 @@ def _extract_first_json_object(text: str) -> str | None:
         if ch == '"':
             in_string = True
         elif ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
             if depth == 0:
-                return text[start : idx + 1]
-    return None
+                start = idx
+            depth += 1
+        elif ch == "}" and depth > 0:
+            depth -= 1
+            if depth == 0 and start is not None:
+                objects.append(text[start : idx + 1])
+                start = None
+    return tuple(objects)

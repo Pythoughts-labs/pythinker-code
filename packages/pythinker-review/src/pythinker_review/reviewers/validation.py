@@ -113,11 +113,10 @@ def _snippet_matches(
     except (FileNotFoundError, UnicodeDecodeError, OSError):
         return False
     lines = content.splitlines()
-    if end_line <= len(lines):
-        slice_text = "\n".join(lines[start_line - 1 : end_line])
-        if _contains(slice_text, target):
-            return True
-    return _contains(content, target)
+    if start_line < 1 or end_line > len(lines):
+        return _contains(content, target)
+    slice_text = "\n".join(lines[start_line - 1 : end_line])
+    return _contains(slice_text, target)
 
 
 def _contains(haystack: str, needle: str) -> bool:
