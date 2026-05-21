@@ -71,6 +71,9 @@ _SUBAGENT_PROFILES: dict[str, PermissionProfileName] = {
     "verifier": "verify",
     "coder": "implement",
     "implementer": "implement",
+    "code-reviewer": "review",
+    "security-reviewer": "review",
+    "debugger": "verify",
 }
 
 _STEP_PERMISSION_PROFILE: ContextVar[PermissionProfile | None] = ContextVar(

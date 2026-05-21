@@ -453,12 +453,12 @@ async def load_agent(
         available_models=set(runtime.config.models),
     ):
         if runtime.labor_market.get_builtin_type(type_def.name) is not None:
-            logger.info(
-                "External markdown agent overrides subagent type: {name}",
+            logger.warning(
+                "Skipping external markdown agent {name}: would override a built-in subagent type",
                 name=type_def.name,
             )
-        else:
-            logger.debug("Registering external markdown agent type: {name}", name=type_def.name)
+            continue
+        logger.debug("Registering external markdown agent type: {name}", name=type_def.name)
         runtime.labor_market.add_builtin_type(type_def)
 
     toolset = PythinkerToolset(runtime)

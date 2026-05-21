@@ -12,8 +12,6 @@ Param mapping: Pythinker has ``command``, ``timeout``, ``run_in_background``,
 
 from __future__ import annotations
 
-from typing import cast
-
 from rich.console import RenderableType
 from rich.style import Style as RichStyle
 from rich.text import Text
@@ -47,11 +45,10 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType | None:
     :func:`_render_result` already contains the ``$ <command>`` line and
     a free-floating header above it would look like a duplicate.
     """
-    if ctx.state.get("__bash_use_bordered__"):
-        return None
-
     args = ctx.args or {}
     command = as_str(args.get("command"))
+    if ctx.has_result and command:
+        return None
     timeout = args.get("timeout")
     run_in_background = bool(args.get("run_in_background"))
 
@@ -80,9 +77,14 @@ def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> Rendera
     command = as_str(args.get("command")) or ""
     if not command:
         return None
-    # Mark for the call renderer so it skips the duplicate header.
-    state = cast("dict[str, object]", ctx.state)
-    state["__bash_use_bordered__"] = True
+
+    suffix_parts: list[str] = []
+    timeout = args.get("timeout")
+    if isinstance(timeout, int) and timeout != 60:
+        suffix_parts.append(f" (timeout {timeout}s)")
+    if bool(args.get("run_in_background")):
+        description = as_str(args.get("description"))
+        suffix_parts.append(f" (background: {description})" if description else " (background)")
 
     status: BashStatus = "error" if result.is_error else "complete"
     bash_state = BashExecutionState(
@@ -91,6 +93,7 @@ def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> Rendera
         status=status,
         exit_code=None if not result.is_error else 1,
         expanded=ctx.expanded,
+        header_suffix="".join(suffix_parts),
     )
     return render_bash_execution(bash_state)
 

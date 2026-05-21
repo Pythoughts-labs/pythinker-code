@@ -108,7 +108,7 @@ def test_shell_smoke_multiturn_scripted_echo(tmp_path: Path) -> None:
     )
 
     try:
-        shell.read_until_contains("Welcome to Pythinker Code!")
+        shell.read_until_contains("Welcome to Pythinker — think first, then code.")
         prompt_mark = shell.mark()
         _read_until_prompt(shell, after=prompt_mark)
 
@@ -163,7 +163,7 @@ def test_shell_running_prompt_preserves_unsubmitted_draft(tmp_path: Path) -> Non
     )
 
     try:
-        shell.read_until_contains("Welcome to Pythinker Code!")
+        shell.read_until_contains("Welcome to Pythinker — think first, then code.")
         _read_until_prompt(shell, after=shell.mark())
 
         first_turn_mark = shell.mark()
@@ -210,7 +210,7 @@ def test_shell_running_prompt_ignores_shift_tab_plan_toggle(tmp_path: Path) -> N
     )
 
     try:
-        shell.read_until_contains("Welcome to Pythinker Code!")
+        shell.read_until_contains("Welcome to Pythinker — think first, then code.")
         _read_until_prompt(shell, after=shell.mark())
 
         turn_mark = shell.mark()
@@ -241,7 +241,7 @@ def test_shell_exit_command_from_idle_prompt(tmp_path: Path) -> None:
     )
 
     try:
-        shell.read_until_contains("Welcome to Pythinker Code!")
+        shell.read_until_contains("Welcome to Pythinker — think first, then code.")
         _read_until_prompt(shell, after=shell.mark())
         _exit_shell(shell)
     finally:
@@ -296,7 +296,7 @@ def test_shell_shows_mcp_loading_without_blocking_input(tmp_path: Path) -> None:
     )
 
     try:
-        shell.read_until_contains("Welcome to Pythinker Code!")
+        shell.read_until_contains("Welcome to Pythinker — think first, then code.")
         prompt_mark = shell.mark()
         _read_until_prompt(shell, after=prompt_mark)
         shell.read_until_contains("MCP Servers:", after=prompt_mark, timeout=15.0)
@@ -322,7 +322,7 @@ def test_shell_ctrl_d_from_idle_prompt_after_completed_turn_exits_cleanly(tmp_pa
     )
 
     try:
-        shell.read_until_contains("Welcome to Pythinker Code!")
+        shell.read_until_contains("Welcome to Pythinker — think first, then code.")
         _read_until_prompt(shell, after=shell.mark())
 
         turn_mark = shell.mark()
@@ -351,7 +351,7 @@ def test_shell_ctrl_c_from_idle_prompt_after_completed_turn_shows_tip(tmp_path: 
     )
 
     try:
-        shell.read_until_contains("Welcome to Pythinker Code!")
+        shell.read_until_contains("Welcome to Pythinker — think first, then code.")
         _read_until_prompt(shell, after=shell.mark())
 
         turn_mark = shell.mark()
@@ -413,7 +413,7 @@ def test_shell_question_roundtrip_with_other_answer(tmp_path: Path) -> None:
     )
 
     try:
-        shell.read_until_contains("Welcome to Pythinker Code!")
+        shell.read_until_contains("Welcome to Pythinker — think first, then code.")
         _read_until_prompt(shell, after=shell.mark())
 
         turn_mark = shell.mark()
@@ -492,7 +492,7 @@ def test_shell_approval_roundtrip_and_session_auto_approve(tmp_path: Path) -> No
     )
 
     try:
-        shell.read_until_contains("Welcome to Pythinker Code!")
+        shell.read_until_contains("Welcome to Pythinker — think first, then code.")
         _read_until_prompt(shell, after=shell.mark())
 
         first_mark = shell.mark()
@@ -659,7 +659,7 @@ def test_shell_background_agent_approval_preserves_running_draft(tmp_path: Path)
     )
 
     try:
-        shell.read_until_contains("Welcome to Pythinker Code!")
+        shell.read_until_contains("Welcome to Pythinker — think first, then code.")
         _read_until_prompt(shell, after=shell.mark())
 
         turn_mark = shell.mark()
@@ -736,7 +736,7 @@ def test_shell_approval_reject_and_recover(tmp_path: Path) -> None:
     )
 
     try:
-        shell.read_until_contains("Welcome to Pythinker Code!")
+        shell.read_until_contains("Welcome to Pythinker — think first, then code.")
         _read_until_prompt(shell, after=shell.mark())
 
         reject_mark = shell.mark()
@@ -778,7 +778,7 @@ def test_shell_mode_toggle_roundtrip(tmp_path: Path) -> None:
     )
 
     try:
-        shell.read_until_contains("Welcome to Pythinker Code!")
+        shell.read_until_contains("Welcome to Pythinker — think first, then code.")
         _read_until_prompt(shell, after=shell.mark())
 
         toggle_mark = shell.mark()
@@ -817,7 +817,7 @@ def test_shell_session_resume_and_replay(tmp_path: Path) -> None:
     )
 
     try:
-        first_shell.read_until_contains("Welcome to Pythinker Code!")
+        first_shell.read_until_contains("Welcome to Pythinker — think first, then code.")
         _read_until_prompt(first_shell, after=first_shell.mark())
 
         first_turn_mark = first_shell.mark()
@@ -843,7 +843,7 @@ def test_shell_session_resume_and_replay(tmp_path: Path) -> None:
     )
 
     try:
-        second_shell.read_until_contains("Welcome to Pythinker Code!")
+        second_shell.read_until_contains("Welcome to Pythinker — think first, then code.")
         second_shell.read_until_contains("remember-session-replay")
         second_shell.read_until_contains("Replay first assistant line.")
         _read_until_prompt(second_shell, after=second_shell.mark())
@@ -876,7 +876,7 @@ def test_shell_clear_reloads_without_replaying_old_turns(tmp_path: Path) -> None
     )
 
     try:
-        shell.read_until_contains("Welcome to Pythinker Code!")
+        shell.read_until_contains("Welcome to Pythinker — think first, then code.")
         _read_until_prompt(shell, after=shell.mark())
 
         before_mark = shell.mark()
@@ -887,7 +887,7 @@ def test_shell_clear_reloads_without_replaying_old_turns(tmp_path: Path) -> None
         clear_mark = shell.mark()
         shell.send_line("/clear")
         shell.read_until_contains("The context has been cleared.", after=clear_mark)
-        shell.read_until_contains("Welcome to Pythinker Code!", after=clear_mark)
+        shell.read_until_contains("Welcome to Pythinker — think first, then code.", after=clear_mark)
         clear_prompt_mark = shell.mark()
         _read_until_prompt(shell, after=clear_prompt_mark)
 
@@ -926,7 +926,7 @@ def test_shell_cancel_running_command_kills_process_and_recovers(tmp_path: Path)
     )
 
     try:
-        shell.read_until_contains("Welcome to Pythinker Code!")
+        shell.read_until_contains("Welcome to Pythinker — think first, then code.")
         _read_until_prompt(shell, after=shell.mark())
 
         cancel_mark = shell.mark()

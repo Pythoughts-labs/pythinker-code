@@ -61,6 +61,8 @@ class BashExecutionState:
     truncated: bool = False
     full_output_path: str | None = None
     exclude_from_context: bool = False
+    header_suffix: str = ""
+    """Muted metadata appended after the command (e.g. ``" (timeout 600s)"``)."""
 
 
 def _accent_style(state: BashExecutionState) -> RichStyle:
@@ -78,6 +80,8 @@ def render_bash_execution(state: BashExecutionState) -> RenderableType:
     """Build the bash card renderable for *state*."""
     accent = _accent_style(state)
     header = Text(f"$ {state.command}", style=accent + RichStyle(bold=True))
+    if state.header_suffix:
+        header.append(state.header_suffix, style=tui_rich_style("muted"))
 
     lines = _output_lines(state.output)
     if state.expanded or len(lines) <= PREVIEW_LINES:

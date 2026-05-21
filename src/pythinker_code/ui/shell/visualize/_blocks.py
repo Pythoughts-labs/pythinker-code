@@ -8,6 +8,7 @@ They have no knowledge of the event loop or prompt_toolkit.
 from __future__ import annotations
 
 import json
+import random
 import time
 from collections import deque
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
@@ -16,7 +17,7 @@ if TYPE_CHECKING:
     from markdown_it import MarkdownIt
 
 import streamingjson  # type: ignore[reportMissingTypeStubs]
-from rich.console import Group, RenderableType
+from rich.console import Console, ConsoleOptions, Group, RenderableType, RenderResult
 from rich.spinner import Spinner
 from rich.style import Style
 from rich.text import Text
@@ -37,6 +38,7 @@ from pythinker_code.ui.shell.visualize._worklog import (
     render_worklog_entry,
     tool_style,
 )
+from pythinker_code.ui.theme import tui_rich_style
 from pythinker_code.ui.tui_config import is_card_style
 from pythinker_code.utils.datetime import format_elapsed
 from pythinker_code.utils.rich.columns import BulletColumns
@@ -415,6 +417,10 @@ class _ToolCallBlock:
         return self._renderable
 
     @property
+    def tool_call_id(self) -> str:
+        return self._tool_call_id
+
+    @property
     def finished(self) -> bool:
         return self._result is not None
 
@@ -726,3 +732,65 @@ class _StatusBlock:
                     f"{self._mcp_status.tools} tools"
                 )
             self.text.plain = "  ".join(parts)
+
+
+class _CompactionBlock:
+    """Animated compaction progress with a time-based estimate.
+
+    The bar fills toward 95% over ``EXPECTED_DURATION_S`` (compaction has no
+    real progress signal), then disappears once ``CompactionEnd`` arrives.
+    """
+
+    BAR_WIDTH = 40
+    EXPECTED_DURATION_S = 60.0
+    SPINNER_FRAMES = ("✻", "✶", "✷", "✸", "✹", "✺")
+    SPINNER_PERIOD_S = 0.15
+    MAX_ESTIMATED_PROGRESS = 0.95
+
+    TIPS: tuple[str, ...] = (
+        "Shift+Tab toggles plan mode for multi-step work",
+        "Subagents keep your main context clean",
+        "/verify before declaring work done",
+        "/learn captures a lesson after a correction",
+        "@-mention files to attach them to the next message",
+        "/feedback sends a note to the Pythinker team",
+        "/theme switches between dark and light",
+        "Ctrl+O opens your $EDITOR for long messages",
+        "Use /resume to pick up a previous session",
+    )
+
+    def __init__(self) -> None:
+        self._start = time.monotonic()
+        self._tip = random.choice(self.TIPS)
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        yield from console.render(self._render(), options)
+
+    def _render(self) -> RenderableType:
+        elapsed = max(0.0, time.monotonic() - self._start)
+        progress = min(elapsed / self.EXPECTED_DURATION_S, self.MAX_ESTIMATED_PROGRESS)
+        filled = int(round(progress * self.BAR_WIDTH))
+        empty = self.BAR_WIDTH - filled
+        pct = int(progress * 100)
+        frame = self.SPINNER_FRAMES[
+            int(elapsed / self.SPINNER_PERIOD_S) % len(self.SPINNER_FRAMES)
+        ]
+
+        accent = tui_rich_style("accent")
+        muted = tui_rich_style("muted")
+        subtle = tui_rich_style("dim")
+
+        title = Text()
+        title.append(frame + " ", style=accent + Style(bold=True))
+        title.append("Compacting conversation…")
+        title.append(f" ({format_elapsed(elapsed)})", style=subtle)
+
+        bar = Text("  ")
+        bar.append("▰" * filled, style=accent)
+        bar.append("▱" * empty, style=muted)
+        bar.append(f" {pct}%", style=accent + Style(bold=True))
+
+        tip = Text("  ⎿  ", style=muted)
+        tip.append(f"Tip: {self._tip}", style=subtle)
+
+        return Group(title, bar, tip)

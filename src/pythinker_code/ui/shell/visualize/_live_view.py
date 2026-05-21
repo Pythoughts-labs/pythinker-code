@@ -31,6 +31,7 @@ from pythinker_code.ui.shell.visualize._approval_panel import (
 )
 from pythinker_code.ui.shell.visualize._blocks import (
     Markdown,
+    _CompactionBlock,
     _ContentBlock,
     _NotificationBlock,
     _StatusBlock,
@@ -42,6 +43,7 @@ from pythinker_code.ui.shell.visualize._question_panel import (
     show_question_body_in_pager,
 )
 from pythinker_code.ui.shell.visualize._worklog import render_worklog_card
+from pythinker_code.ui.tui_config import is_card_style
 from pythinker_code.utils.aioqueue import Queue, QueueShutDown
 from pythinker_code.utils.logging import logger
 from pythinker_code.wire import WireUISide
@@ -113,7 +115,7 @@ class _LiveView:
 
         self._mooning_spinner = Spinner("weather", "")
         self._active_turn_depth = 0
-        self._compacting_spinner: Spinner | None = None
+        self._compaction_block: _CompactionBlock | None = None
         self._mcp_loading_spinner: Spinner | None = None
         self._btw_spinner: Spinner | None = None
         self._btw_question: str | None = None
@@ -349,8 +351,8 @@ class _LiveView:
             blocks.append(self._btw_spinner)
         if self._mcp_loading_spinner is not None:
             blocks.append(self._mcp_loading_spinner)
-        elif self._compacting_spinner is not None:
-            blocks.append(self._compacting_spinner)
+        elif self._compaction_block is not None:
+            blocks.append(self._compaction_block)
         else:
             has_main_content = False
             if self._current_content_block is not None:
@@ -364,14 +366,20 @@ class _LiveView:
                 suppressed_tool_call_id = (
                     self._current_approval_request_panel.request.tool_call_id
                 )
+            first_tool_block = True
             for tool_call in list(self._tool_call_blocks.values()):
                 if (
                     suppressed_tool_call_id is not None
                     and tool_call.tool_call_id == suppressed_tool_call_id
                 ):
                     continue
+                # Blank-line spacer between consecutive tool cards so adjacent
+                # tinted backgrounds don't visually merge into one block.
+                if not first_tool_block and is_card_style():
+                    blocks.append(Text(""))
                 blocks.append(tool_call.compose())
                 has_main_content = True
+                first_tool_block = False
             if not has_main_content and self._active_turn_depth > 0:
                 blocks.append(self._mooning_spinner)
         for notification in list(self._live_notification_blocks):
@@ -427,10 +435,10 @@ class _LiveView:
             case TurnEnd():
                 self._active_turn_depth = max(0, self._active_turn_depth - 1)
             case CompactionBegin():
-                self._compacting_spinner = Spinner("dots", "Compacting context...")
+                self._compaction_block = _CompactionBlock()
                 self.refresh_soon()
             case CompactionEnd():
-                self._compacting_spinner = None
+                self._compaction_block = None
                 self.refresh_soon()
             case MCPLoadingBegin():
                 self._mcp_loading_spinner = Spinner("dots", "Connecting MCP servers...")
@@ -641,7 +649,7 @@ class _LiveView:
         self.flush_notifications()
 
         # Clear transient spinners to prevent visual residuals after interrupts
-        self._compacting_spinner = None
+        self._compaction_block = None
         self._mcp_loading_spinner = None
         self._btw_spinner = None
 

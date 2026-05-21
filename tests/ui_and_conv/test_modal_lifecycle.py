@@ -860,7 +860,7 @@ async def test_render_agent_status_excludes_panels_in_interactive() -> None:
     view._mcp_loading_spinner = None
     view._mooning_spinner = Spinner("moon", "")
     view._active_turn_depth = 0
-    view._compacting_spinner = None
+    view._compaction_block = None
     view._current_content_block = None
     view._tool_call_blocks = {}
     view._live_notification_blocks = cast(
@@ -868,8 +868,14 @@ async def test_render_agent_status_excludes_panels_in_interactive() -> None:
     )
 
     # Add approval panel to the view (as if wire event arrived)
+    fake_request = type("_FakeReq", (), {"tool_call_id": "fake-tc"})()
     view._current_approval_request_panel = cast(
-        Any, type("_FakePanel", (), {"render": lambda self, **kw: "APPROVAL_PANEL"})()
+        Any,
+        type(
+            "_FakePanel",
+            (),
+            {"render": lambda self, **kw: "APPROVAL_PANEL", "request": fake_request},
+        )(),
     )
 
     rendered = view.render_agent_status(80)

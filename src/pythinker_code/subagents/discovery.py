@@ -204,7 +204,7 @@ def _map_tools(value: Any, *, source: HostPath) -> tuple[str, ...] | None:
     for item in cast(list[Any], value):
         if not isinstance(item, str):
             continue
-        tool = CLAUDE_TOOL_MAP.get(item, item if ":" in item else None)
+        tool = CLAUDE_TOOL_MAP.get(item)
         if tool is None:
             logger.warning(
                 "Ignoring unknown markdown-agent tool {tool} in {path}",
