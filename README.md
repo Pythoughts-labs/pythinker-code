@@ -48,6 +48,23 @@ It speaks the [**Agent Client Protocol (ACP)**](https://github.com/agentclientpr
 
 ---
 
+## 🆕 What's New in 2.7.0
+
+First-class agent-first code review, security review, and root-cause debugging, via the new
+`pythinker-review` workspace package.
+
+- **`pythinker review diff`** — runs a code-review pass on the current branch's diff against `origin/main` (or `--base <ref>`, `--staged`, `--working-tree`, `--range A..B`). Outputs pretty / JSON / SARIF. `--fail-on <severity>` makes it a CI gate.
+- **`pythinker review diff --with-security`** — runs the code-review and security-review passes in parallel.
+- **`pythinker secscan diff`** — security-only pass with deterministic prompt anchors for secrets, command/SQL injection, deserialization, SSRF, weak crypto.
+- **`pythinker debug failure <log-file>`** — root-cause debugger pass over failing test output, stack traces, logs, and correlated diff context.
+- **Findings store** at `.pythinker-review/runs/<id>/` for inspection via `pythinker review list` / `pythinker review show <id>`.
+- **Three new subagent roles** — `code-reviewer`, `security-reviewer`, and `debugger` — usable from any interactive Pythinker session, producing the standard SUMMARY/EVIDENCE/CHANGES/RISKS/BLOCKERS block.
+- **Fail-closed by default** — any chunk timeout, malformed model output, or worker exception exits non-zero. `--allow-partial` is the explicit escape hatch and surfaces failures in output.
+
+No new third-party runtime dependencies. Reuses the active Pythinker model when invoked via `pythinker review` / `pythinker secscan` / `pythinker debug`; the standalone `pythinker-review` / `pythinker-secscan` / `pythinker-debug` console scripts accept explicit/env configuration.
+
+Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==2.7.0`.
+
 ## 🆕 What's New in 2.6.0
 
 > **Hotfix release for Kimi K2.x and DeepSeek users on PyPI.**

@@ -1,76 +1,108 @@
-# Pythinker Review — Phase 1: Foundation + Diff-Only Gate
+# Pythinker Review — Phase 1: Review/Debug/Security Foundation + Diff Gate
 
 **Date:** 2026-05-20
-**Status:** Spec — revised after blackbox design review
-**Scope:** Phase 1 of a multi-phase project to add code-review and security-review
-capabilities to Pythinker, porting selected concepts from `blackbox/clawpatch-main`,
-`blackbox/code-review`, and `blackbox/deepsec-main`.
+**Status:** Spec — revised after product-direction review and blackbox design review
+**Scope:** Phase 1 of the shift toward Pythinker as a professional security
+reviewer, debugger, and code-reviewer agent. Coding/editing remains available,
+but the default product posture is evidence-first diagnosis and review. This
+phase ports the three repositories mounted in this workspace's `blackbox/`
+folder into Pythinker architecture: `blackbox/clawpatch-main`,
+`blackbox/code-review`, and `blackbox/deepsec-main`. Any module, prompt, rule,
+or workflow not ported must be documented as an explicit compatibility
+exception.
 
 ## 1. Goal
 
-Ship the substrate and one immediately useful capability: a diff-only review gate.
+Ship the substrate and first useful capabilities for an agent-first review,
+debugging, and security-analysis product.
 
+- Product direction: Pythinker's primary workflow becomes read-only professional
+  analysis first: inspect diffs, logs, stack traces, tests, and code paths;
+  produce severity-scored findings; explain root cause; and recommend fixes.
+  It must not apply code changes unless the user explicitly asks for remediation
+  after reviewing findings.
+- Blackbox port: implement a direct Pythinker port of the three repos in
+  `blackbox/`: review behavior from `blackbox/code-review`, security behavior
+  from `blackbox/deepsec-main`, and diagnosis/context/fix-plan behavior from
+  `blackbox/clawpatch-main`. Do not replace blackbox behavior with a weaker
+  "inspired by" design unless the exception is recorded in the blackbox parity
+  map with rationale and tests.
 - Substrate: a new `packages/pythinker-review` workspace package containing the
-  reusable review engine, findings data model, JSON-on-disk store, structured
-  diff renderer, deterministic security-signal scanner, output formatters, and
-  standalone Typer CLIs.
+  reusable review/debug/security engine, findings data model, JSON-on-disk
+  store, structured diff renderer, deterministic security-signal scanner,
+  debugger input normalizers, output formatters, and standalone Typer CLIs.
 - Pythinker integration: `pythinker-code` owns the root CLI wrappers and built-in
-  subagent YAML roles (`code-reviewer`, `security-reviewer`). The package does
-  not auto-register subagents because the current Pythinker subagent registry is
-  populated from agent YAML at runtime.
-- Capability: `pythinker review diff` and `pythinker secscan diff` review only
-  issues introduced by the current diff against a base ref, emit findings in
-  pretty / JSON / SARIF, and optionally fail the build on a configurable severity
-  threshold.
+  subagent YAML roles (`code-reviewer`, `security-reviewer`, `debugger`). The
+  package does not auto-register subagents because the current Pythinker
+  subagent registry is populated from agent YAML at runtime.
+- First capabilities: `pythinker review diff`, `pythinker secscan diff`, and
+  `pythinker debug failure` review only the relevant diff/log/failure evidence,
+  emit findings in pretty / JSON / SARIF where applicable, and optionally fail
+  the build on a configurable severity threshold.
 
 Out of scope for Phase 1 (each gets its own future spec):
 
-- Phase 2: clawpatch-style whole-repo semantic slicing + local audit.
-- Phase 3: deepsec-style extensible matcher plugins, INFO.md authoring workflow,
-  revalidation, and multi-machine worker fan-out. Phase 1 includes only a small
-  built-in security signal scanner as prompt anchors.
-- Phase 4: PR-provider integrations (GitHub / GitLab / Bitbucket / Azure DevOps).
-- Phase 5: clawpatch-style fix loop (`fix --finding <id>`, patch attempts).
+- Full whole-repo audit as the default path. Phase 1 may include bounded related
+  context, but clawpatch-style full local audit remains a later product surface.
+- Full deepsec matcher plugin marketplace and multi-machine worker fan-out.
+  Phase 1 still carries Deepsec-like rule metadata, validation, and fail-loud
+  behavior, but keeps the implementation in-process and dependency-light.
+- PR-provider write integrations (GitHub / GitLab / Bitbucket / Azure DevOps).
+- Auto-fix loops that write source files. Findings may include suggested patches,
+  but applying them requires an explicit user remediation request.
 
 ## 2. Success criteria
 
 A change is done when:
 
 1. `make check-pythinker-review && make test-pythinker-review` pass.
-2. From any git repo on `main`, after creating a branch with a planted bug and
+2. A blackbox parity map exists in the spec or package docs covering all three
+   source repositories, mapping source modules/prompts/rules/workflows to
+   Pythinker targets, with every intentional deviation called out and covered by
+   tests where practical.
+3. From any git repo on `main`, after creating a branch with a planted bug and
    a planted security issue, `pythinker review diff --with-security` produces
    at least one finding for each, in pretty / JSON / SARIF format.
-3. `pythinker review diff --fail-on high` exits non-zero when a high-or-above
+4. Given a failing test log or stack trace tied to a changed file,
+   `pythinker debug failure <log-file>` produces a root-cause finding with
+   reproduction evidence, changed-file correlation, and recommended next action
+   without modifying files.
+5. `pythinker review diff --fail-on high` exits non-zero when a high-or-above
    finding is produced and exits zero otherwise.
-4. Any chunk timeout, malformed model output after retry, LLM error, or worker
+6. Any chunk timeout, malformed model output after retry, LLM error, or worker
    exception makes the run fail non-green by default. A partial run can complete
    only when the user passes `--allow-partial`, and the output must make partial
    coverage obvious.
-5. `--save` writes a complete `runs/<id>/` directory; `pythinker review list`
+7. `--save` writes a complete `runs/<id>/` directory; `pythinker review list`
    and `pythinker review show <id>` reproduce the run's findings without another
    LLM call.
-6. `pythinker review diff` defaults `--model` to the active Pythinker model by
+8. `pythinker review diff` defaults `--model` to the active Pythinker model by
    having `pythinker-code` inject a model adapter into `pythinker-review`; the
    standalone `pythinker-review` CLI never imports `pythinker-code` to discover
    config/auth.
-7. Inside an interactive Pythinker session, dispatching to `code-reviewer` or
-   `security-reviewer` uses YAML-defined built-in roles and returns output in the
-   existing `SUMMARY / EVIDENCE / CHANGES / RISKS / BLOCKERS` shape.
-8. No regression in existing `pythinker` commands; existing `review` and
-   `verifier` subagent roles continue to work.
-9. Phase 1 adds no unapproved third-party runtime dependencies. Use stdlib
-   `subprocess` for git and a stdlib timestamp-random run ID instead of GitPython
-   or `ulid-py`.
+9. Inside an interactive Pythinker session, dispatching to `code-reviewer`,
+   `security-reviewer`, or `debugger` uses YAML-defined built-in roles and
+   returns output in the existing `SUMMARY / EVIDENCE / CHANGES / RISKS /
+   BLOCKERS` shape.
+10. The default Pythinker agent prompt and role guidance make review/diagnosis
+    the first step for ambiguous engineering requests; coding/editing remains
+    opt-in or delegated after findings are accepted.
+11. No regression in existing `pythinker` commands; existing `review` and
+    `verifier` subagent roles continue to work.
+12. Phase 1 adds no unapproved third-party runtime dependencies. Use stdlib
+    `subprocess` for git and a stdlib timestamp-random run ID instead of
+    GitPython or `ulid-py`.
 
 ## 3. Non-goals
 
 - Auto-applying fixes. Findings may carry a `suggestion.patch` string for the
   user to review, but Phase 1 never writes to source files.
+- Rebranding Pythinker as a generic coding CLI. The review/debug/security agent
+  posture is the primary product direction; coding is a controlled remediation
+  workflow.
 - Posting comments to GitHub / GitLab / etc. Pretty / JSON / SARIF only.
-- Whole-repo scanning. Diff-only, plus bounded current-file / related-file
-  context when needed to judge the diff.
-- Full deepsec matcher plugin architecture. Phase 1 has a minimal built-in signal
-  scanner only.
+- Whole-repo scanning by default. Diff/log/failure scoped analysis plus bounded
+  current-file / related-file context is the Phase 1 default.
 - Package-based subagent discovery. Phase 1 registers subagents through the
   existing agent YAML mechanism.
 - Parallel worker machines. In-process asyncio fan-out only.
@@ -83,15 +115,16 @@ A change is done when:
 
 ```
 packages/pythinker-review/
-├── pyproject.toml                 # console_scripts: pythinker-review, pythinker-secscan
+├── pyproject.toml                 # console_scripts: pythinker-review/secscan/debug
 ├── README.md
 ├── src/pythinker_review/
 │   ├── __init__.py
-│   ├── cli/                       # standalone Typer apps
-│   ├── engine/                    # diff_source, structured_diff, chunker, runner, dedupe
+│   ├── cli/                       # standalone Typer apps, automation surfaces only
+│   ├── engine/                    # diff_source, structured_diff, context, runner, dedupe
+│   ├── diagnostics/               # failure-log parsing, stack traces, repro evidence
 │   ├── llm/                       # tiny ReviewLLM protocol + adapters used by tests/standalone CLI
-│   ├── reviewers/                 # code_review, security_review, schema, prompt assets
-│   ├── signals/                   # built-in deterministic security signal scanner
+│   ├── reviewers/                 # code/security/debug passes, schema, prompt assets
+│   ├── signals/                   # Deepsec-like deterministic signal/rule registry
 │   ├── store/                     # findings_store, run, models, gitignore
 │   └── output/                    # pretty, json, sarif
 └── tests/
@@ -102,12 +135,14 @@ packages/pythinker-review/
 Pythinker integration edits live in `pythinker-code`:
 
 ```
-src/pythinker_code/cli/review.py              # delegates to pythinker_review CLI/app
-src/pythinker_code/cli/secscan.py             # delegates to pythinker_review CLI/app
-src/pythinker_code/cli/_lazy_group.py         # adds review/secscan lazy commands
+src/pythinker_code/cli/review.py              # delegates to pythinker_review app
+src/pythinker_code/cli/secscan.py             # delegates to pythinker_review app
+src/pythinker_code/cli/debug.py               # delegates to diagnostics app
+src/pythinker_code/cli/_lazy_group.py         # adds review/secscan/debug lazy commands
 src/pythinker_code/agents/default/agent.yaml  # registers new built-in subagents
 src/pythinker_code/agents/default/code_reviewer.yaml
 src/pythinker_code/agents/default/security_reviewer.yaml
+src/pythinker_code/agents/default/debugger.yaml
 ```
 
 `make` targets follow the existing package pattern:
@@ -145,16 +180,38 @@ class ReviewLLM(Protocol):
 
 ### 4.3 Root CLI and standalone CLI
 
-The shared engine powers four surfaces:
+The shared engine powers agent-first surfaces plus automation wrappers:
 
 - `pythinker review diff` → Pythinker-integrated code review.
 - `pythinker review diff --with-security` → code + security passes in parallel.
 - `pythinker secscan diff` → Pythinker-integrated security pass.
-- `pythinker-review diff` / `pythinker-secscan diff` → standalone package CLIs
-  with explicit/env model configuration.
+- `pythinker debug failure <log-file>` → debugger/root-cause pass over logs,
+  stack traces, failing test output, and the relevant diff/context.
+- `pythinker-review diff` / `pythinker-secscan diff` / `pythinker-debug failure`
+  → standalone package CLIs with explicit/env model configuration.
 
-The two root commands are added through `_lazy_group.py` so `pythinker --help`
+The three root commands are added through `_lazy_group.py` so `pythinker --help`
 shows them without importing heavy review code during normal startup.
+
+### 4.4 Blackbox parity gate
+
+Implementation must start with an intake of the three mounted repos under
+`blackbox/`: `blackbox/clawpatch-main`, `blackbox/code-review`, and
+`blackbox/deepsec-main`. Engine implementation must not begin until those repos
+have been audited and mapped into `packages/pythinker-review/docs/blackbox-parity.md`.
+
+Initial source-to-target map:
+
+| Blackbox source | Behavior to preserve | Pythinker target | Phase 1 status |
+|---|---|---|---|
+| `blackbox/code-review` | Diff-scoped reviewer rubric, strict evidence, no vague findings, line-anchored output | `reviewers/code_review.py`, `reviewers/prompts/code_review.system.md`, `engine/structured_diff.py` | Source mounted; audit and map before implementation |
+| `blackbox/deepsec-main` | Direct-mode fail-loud semantics, signal/rule metadata, validation before emitting findings | `signals/models.py`, `signals/scanner.py`, `reviewers/security_review.py`, `engine/runner.py` | Source mounted; audit and map before implementation |
+| `blackbox/clawpatch-main` | Structured diff/context shape, local diagnosis, root-cause/fix-plan separation | `engine/context.py`, `diagnostics/`, `reviewers/debug_review.py` | Source mounted; audit and map before implementation |
+| `blackbox/code-review` provider concepts | PR provider abstractions and comment formatting | Deferred PR-provider phase | Explicitly out of Phase 1 write integrations |
+
+Every implementation task that touches these behaviors must update this map (or
+`packages/pythinker-review/docs/blackbox-parity.md` after package creation) with
+actual source references and test coverage.
 
 ## 5. Components
 
@@ -221,6 +278,16 @@ Rules:
   discoverable from imports or obvious local call targets. This is bounded,
   best-effort context, not whole-repo scanning.
 
+**`diagnostics.py` / `diagnostics/`** — normalizes debugger inputs.
+
+- Accept failing test logs, stack traces, command output, exit codes, and optional
+  reproduction commands.
+- Extract file paths, line numbers, exception names, assertion text, subprocess
+  commands, and changed-file correlations.
+- Keep logs redacted and bounded; never persist secrets from logs verbatim.
+- Produce `DiagnosticInput` records consumed by `debug_review.py` and stored with
+  run metadata for reproducibility.
+
 **`chunker.py`** — splits review work.
 
 - Default: one chunk per changed file.
@@ -259,24 +326,28 @@ findings collide, keep higher `severity`, then higher `confidence`, then earlier
 
 ### 5.2 `signals/`
 
-Phase 1 includes a small deterministic security signal scanner inspired by
-Deepsec's direct mode. Signals are prompt anchors only; they are not emitted as
-findings unless the reviewer validates them.
+Phase 1 ports the Deepsec direct-mode shape into a lightweight in-process
+scanner. Signals are prompt anchors only; they are not emitted as findings unless
+the reviewer validates them against code and bounded context.
 
-Built-in signal families:
+Built-in signal families must carry rule metadata, source/sink vocabulary,
+confidence reason, exploitability hint, and mitigation expectation where known:
 
-- secrets/credentials added in the diff;
+- secrets/credentials added in the diff, with redaction-safe evidence handling;
 - command/process execution fed by changed variables;
 - SQL/template/query construction from user-controlled-looking values;
 - SSRF-like fetch/request/proxy patterns;
 - deserialization/archive extraction of untrusted-looking data;
 - crypto misuse and insecure random/token generation;
 - authn/authz/permission bypass hints;
-- dependency or workflow changes that introduce supply-chain risk.
+- dependency, CI, workflow, or package-manager changes that introduce
+  supply-chain risk.
 
-`Signal` fields: `rule_id`, `file`, `line`, `snippet`, `reason`, `confidence`.
-The security prompt receives signals grouped by file with an explicit reminder:
-"Signals are starting points; verify in code before emitting a finding."
+`Signal` fields: `rule_id`, `file`, `line`, `snippet`, `reason`, `confidence`,
+`source_kind`, `sink_kind`, `exploitability`, and `mitigation_hint` where
+available. The security prompt receives signals grouped by file with an explicit
+reminder: "Signals are starting points; verify in code before emitting a
+finding. Prefer no finding over unvalidated speculation."
 
 ### 5.3 `reviewers/`
 
@@ -307,7 +378,7 @@ changed post-change file where possible.
 
 **`code_review.py`** — prompt + caller for the code-review pass. Covers
 correctness, design, performance, readability, missing tests, and API breakage.
-Prompt rules are adapted from `blackbox/code-review` and must include:
+Prompt rules are ported from `blackbox/code-review` and must include:
 
 - focus on issues introduced by this diff;
 - prefer no finding over vague speculation;
@@ -322,7 +393,13 @@ supply-chain risk, unsafe defaults, and project-specific mitigations found in
 bounded context. The prompt receives deterministic `signals` and project context
 but must verify findings against code before output.
 
-Both reviewers:
+**`debug_review.py`** — prompt + caller for the debugger/root-cause pass. It
+receives normalized failing test output, stack traces, command logs, exit codes,
+structured diff/context, and related files. It must identify likely root cause,
+changed-line correlation, reproduction command/evidence, and next action without
+patching code.
+
+All reviewer/debugger passes:
 
 - Use strict pydantic validation at the model boundary.
 - Retry once on malformed JSON with a stricter prompt suffix.
@@ -393,6 +470,7 @@ pythinker-review list [--limit N]
 pythinker-review show <run-id> [--format pretty|json|sarif]
 
 pythinker-secscan diff [shared flags]
+pythinker-debug failure <log-file> [--command <cmd>] [shared flags]
 ```
 
 `pythinker-code` exposes root commands by adding lazy wrappers:
@@ -403,6 +481,7 @@ pythinker review list [--limit N]
 pythinker review show <run-id> [--format pretty|json|sarif]
 
 pythinker secscan diff [shared flags]
+pythinker debug failure <log-file> [--command <cmd>] [shared flags]
 ```
 
 The wrappers import `pythinker_review`, build a Pythinker-backed `ReviewLLM`
@@ -411,10 +490,11 @@ They do not shell out to `pythinker-review`.
 
 ### 5.7 `pythinker-code` subagent roles
 
-Phase 1 adds two YAML agent specs, not package auto-registration:
+Phase 1 adds three YAML agent specs, not package auto-registration:
 
 - `src/pythinker_code/agents/default/code_reviewer.yaml`
 - `src/pythinker_code/agents/default/security_reviewer.yaml`
+- `src/pythinker_code/agents/default/debugger.yaml`
 
 `src/pythinker_code/agents/default/agent.yaml` registers them under:
 
@@ -426,11 +506,14 @@ subagents:
   security-reviewer:
     path: ./security_reviewer.yaml
     description: "Diff-focused security review with validated findings."
+  debugger:
+    path: ./debugger.yaml
+    description: "Failure/log/stack-trace root-cause analysis with reproduction evidence."
 ```
 
 Each role is read-only by convention and uses existing shell/read/grep tools to
-run `pythinker review diff` or `pythinker secscan diff`, then reformats output
-into the structured response block below.
+run `pythinker review diff`, `pythinker secscan diff`, or `pythinker debug
+failure`, then reformats output into the structured response block below.
 
 This shell-out path is intentional for Phase 1: it keeps the YAML role free of
 new Python wiring, lets the subagent reuse the exact CLI users hit, and lines
@@ -449,7 +532,7 @@ None.
 ### BLOCKERS
 ```
 
-The existing `review` subagent role is left untouched.
+The existing `review` subagent role is left untouched; the new debugger role is additive and must not weaken `review` or `verifier`.
 
 ## 6. Data model
 
@@ -464,6 +547,7 @@ class Severity(str, Enum):
 class Category(str, Enum):
     correctness   = "correctness"
     security      = "security"
+    debugging     = "debugging"
     performance   = "performance"
     readability   = "readability"
     test_coverage = "test_coverage"
@@ -489,10 +573,13 @@ class Finding(BaseModel):
     category: Category
     severity: Severity
     location: Location
-    pass_: Literal["code_review", "security_review"] = Field(alias="pass")
+    pass_: Literal["code_review", "security_review", "debug_review"] = Field(alias="pass")
     suggestion: Suggestion | None = None
     evidence_snippet: str | None = None
     confidence: float          # 0.0–1.0
+    confidence_reason: str | None = None
+    exploitability: str | None = None       # security/debug impact narrative
+    reproduction: str | None = None         # debugger reproduction command/evidence
     triage: Literal["open", "false_positive", "accepted", "wont_fix"] = "open"
     triage_note: str | None = None
     created_at: datetime
@@ -500,7 +587,7 @@ class Finding(BaseModel):
 
 class ChunkFailure(BaseModel):
     file: str
-    pass_: Literal["code_review", "security_review"] = Field(alias="pass")
+    pass_: Literal["code_review", "security_review", "debug_review"] = Field(alias="pass")
     reason: Literal["timeout", "llm_error", "malformed_output", "worker_error"]
     message: str
 
@@ -515,7 +602,7 @@ class RunMeta(BaseModel):
     base_ref: str
     base_sha: str
     source_label: str          # e.g. git-diff:origin/main, staged, working-tree
-    passes: list[Literal["code_review", "security_review"]]
+    passes: list[Literal["code_review", "security_review", "debug_review"]]
     model: str                 # provider:model-id or standalone model id
     chunks_total: int
     chunks_done: int
@@ -636,9 +723,9 @@ Three layers matching existing Pythinker convention:
 
 **`tests/e2e/`** — real CLI invocations against fixture git repos with planted
 bugs/vulns. Still fake LLM (model selection injected via env var). Verifies exit
-codes, file outputs, `--save` persistence, root `pythinker review/secscan`
-wrappers, standalone `pythinker-review/pythinker-secscan`, and lazy CLI command
-registration.
+codes, file outputs, `--save` persistence, root `pythinker review` / `pythinker secscan` /
+`pythinker debug` wrappers, standalone `pythinker-review` / `pythinker-secscan` /
+`pythinker-debug`, debugger root-cause output, and lazy CLI command registration.
 
 **`tests_ai/`** — small set of real-model runs on a curated diff fixture,
 asserting recall on planted issues. Gated behind `PYTHINKER_AI_TESTS=1` so
@@ -646,8 +733,8 @@ default CI doesn't burn tokens.
 
 Pythinker integration tests additionally cover:
 
-- `src/pythinker_code/agents/default/agent.yaml` registers `code-reviewer` and
-  `security-reviewer` without changing `review` / `verifier`.
+- `src/pythinker_code/agents/default/agent.yaml` registers `code-reviewer`,
+  `security-reviewer`, and `debugger` without changing `review` / `verifier`.
 - The new YAML files are included in PyInstaller/package data tests.
 - `pythinker review diff` uses the active model adapter path, while standalone
   package tests do not import `pythinker_code`.
@@ -664,14 +751,14 @@ Phase 1 is additive:
 - Add Make targets: `format/check/test/build-pythinker-review`, and include check
   / test / build in aggregate targets.
 - Update `uv.lock` with `uv sync`; no unapproved new third-party runtime deps.
-- Add root CLI wrappers and `_lazy_group.py` entries for `review` and `secscan`.
-- Add `code_reviewer.yaml` / `security_reviewer.yaml` and register them in
-  default `agent.yaml`.
+- Add root CLI wrappers and `_lazy_group.py` entries for `review`, `secscan`, and `debug`.
+- Add `code_reviewer.yaml` / `security_reviewer.yaml` / `debugger.yaml` and
+  register them in default `agent.yaml`.
 - Update package/PyInstaller data inclusion tests for the new YAML files and any
   prompt/rule assets inside `pythinker-review`.
 - AGENTS.md verification matrix gains one row for `packages/pythinker-review`.
 - Existing `review` subagent role stays untouched. New roles use distinct
-  identifiers (`code-reviewer`, `security-reviewer`).
+  identifiers (`code-reviewer`, `security-reviewer`, `debugger`).
 - README's "What's New" gets a Phase 1 entry once shipped.
 
 Allowed dependencies for Phase 1 are stdlib plus dependencies already present in
@@ -684,11 +771,13 @@ This spec only covers Phase 1. Subsequent phases each get their own spec:
 
 - **Phase 2 — Local audit (clawpatch-style)**: semantic slicer for the whole
   repo, per-slice review, triage CLI (`pythinker review triage <id>`),
-  regression diffing between runs.
-- **Phase 3 — Deep security (deepsec-style)**: matcher plugin system, INFO.md
-  project context authoring, FP-cutting revalidation pass, multi-machine worker
-  fan-out.
-- **Phase 4 — PR provider integrations**: vendor/adapt `blackbox/code-review`'s
+  regression diffing between runs, and deeper blackbox parity where full-repo
+  context is required.
+- **Phase 3 — Deep security (deepsec-style)**: external matcher plugin system,
+  INFO.md project context authoring workflow, FP-cutting revalidation pass, and
+  multi-machine worker fan-out. Phase 1 already carries the direct-mode rule
+  metadata shape and fail-loud behavior.
+- **Phase 4 — PR provider integrations**: port `blackbox/code-review`'s
   `git_providers/` concepts for GitHub / GitLab / Bitbucket / Azure DevOps; add
   `pythinker review pr <url|number>`; ship a GitHub Action.
 - **Phase 5 — Fix loop**: `pythinker review fix --finding <id>` runs an isolated

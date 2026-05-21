@@ -1,10 +1,102 @@
-# Pythinker Review — Phase 1 (Foundation + Diff-Only Gate) Implementation Plan
+# Pythinker Review — Phase 1A (Review/Debug/Security Foundation) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Land the `packages/pythinker-review` workspace package, two standalone CLIs (`pythinker-review`, `pythinker-secscan`), and `pythinker-code` integration (lazy CLI wrappers + YAML subagent roles) implementing the diff-only review and security-scan gate.
+---
 
-**Architecture:** New uv workspace package owns a shared review engine, findings data model, JSON-on-disk store, structured diff renderer, deterministic security signal scanner, three output formatters (pretty/JSON/SARIF), and a `ReviewLLM` Protocol the host wires up. `pythinker-code` adds two lazy root subcommands and two YAML-driven subagent roles that shell out to the new CLIs. Fail-closed by default; `--allow-partial` is the only escape hatch.
+## Implementation Status (as of 2026-05-20)
+
+**Phase 1A code-complete in tree (uncommitted).** All 18 originally-planned tasks plus the debug capability added by the revised spec are implemented. Tests are green; the only remaining work is the commit and a release decision.
+
+### What landed beyond the original 18-task plan
+
+The revised spec (`docs/superpowers/specs/2026-05-20-pythinker-review-foundation-design.md`) introduced a **third pass — `debug_review` — plus product-direction changes** to make Pythinker primarily an evidence-first reviewer/debugger/security agent. All of that is in tree:
+
+- `packages/pythinker-review/src/pythinker_review/diagnostics/` — `models.py` + `parser.py` for failure-log / stack-trace ingestion.
+- `packages/pythinker-review/src/pythinker_review/reviewers/debug_review.py` + `reviewers/prompts/debug_review.system.md` — root-cause reviewer pass.
+- `Pass` literal in `store/models.py` extended to `"code_review" | "security_review" | "debug_review"`; new `Category.debugging`.
+- `engine/orchestrator.py` and `engine/runner.py` route diagnostics + debug pass.
+- `packages/pythinker-review/src/pythinker_review/cli/debug.py` — `pythinker-debug` standalone CLI; `src/pythinker_code/cli/debug.py` — `pythinker debug` lazy wrapper.
+- `src/pythinker_code/agents/default/debugger.yaml` — third YAML subagent role alongside `code_reviewer.yaml` and `security_reviewer.yaml`.
+- `src/pythinker_code/agents/default/system.md` — opening "Product posture" paragraph: ambiguous engineering requests prefer evidence-first review/diagnosis before editing.
+- `packages/pythinker-review/docs/blackbox-parity.md` — explicit blackbox parity map covering all three reference repos (criterion #2 of the revised spec).
+- Tests: `test_diagnostics.py`, `test_cli_debug.py`, `test_debug_wrapper.py`, plus debug-pass coverage in `test_runner.py` and `test_reviewers.py`.
+
+### Status by task
+
+| # | Task | Status | Notes |
+|---|---|---|---|
+| 1 | Package skeleton + workspace registration | ✅ done | `packages/pythinker-review/pyproject.toml`, root `[tool.uv.workspace]` updated, Make targets added |
+| 2 | Data model | ✅ done | `Pass` extended to include `debug_review`; `Category.debugging` added |
+| 3 | Run ID generator | ✅ done | stdlib `secrets.token_hex(4)` |
+| 4 | Diff source resolver | ✅ done | base/staged/working-tree/range modes |
+| 5 | Structured diff renderer | ✅ done | `__new hunk__` / `__old hunk__` format |
+| 6 | Context gatherer | ✅ done | bounded windows + base-file `git show` |
+| 7 | Chunker | ✅ done | per-file/per-hunk, include/exclude/vendored filters |
+| 8 | Signals scanner | ✅ done | secret/shell/SQL/deserialization/SSRF/weak-crypto rules |
+| 9 | Reviewer schemas + LLM Protocol + FakeReviewLLM | ✅ done | shared `reviewers/common.py` factored out |
+| 10 | Code-review + security-review passes | ✅ done | prompts in `reviewers/prompts/`, one-retry on bad JSON |
+| 10b | **Debug-review pass** (added by revised spec) | ✅ done | `reviewers/debug_review.py`, `prompts/debug_review.system.md`, `diagnostics/parser.py` |
+| 11 | Runner (asyncio, fail-closed) | ✅ done | wires all three passes; `--allow-partial` semantics intact |
+| 12 | Dedupe + Orchestrator | ✅ done | orchestrator threads `diagnostics_by_file` for debug pass |
+| 13 | Findings store + gitignore patcher | ✅ done | atomic writes, index trimmed to 200 |
+| 14 | Output formatters | ✅ done | pretty/JSON/SARIF; unit tests consolidated in `test_outputs.py` |
+| 15 | Standalone Typer CLIs | ✅ done | `pythinker-review`, `pythinker-secscan`, `pythinker-debug` |
+| 16 | `pythinker-code` lazy CLI wrappers + adapter | ✅ done | `cli/review.py`, `cli/secscan.py`, `cli/debug.py`; `_lazy_group.py` extended |
+| 17 | YAML subagent roles | ✅ done | `code_reviewer.yaml`, `security_reviewer.yaml`, `debugger.yaml`; `agent.yaml` updated |
+| 18 | AGENTS.md row + README "What's New" + package README | ✅ done | row added, 2.7.0 section added, package README expanded |
+| — | **Blackbox parity map** (criterion #2) | ✅ done | `packages/pythinker-review/docs/blackbox-parity.md` covers all three repos |
+| — | **Product-posture default prompt** (criterion #10) | ✅ done | `agents/default/system.md` opens with evidence-first posture |
+
+### Test + lint status
+
+| Gate | Command | Result |
+|---|---|---|
+| Package lint/type | `make check-pythinker-review` | ✅ 0 errors, 0 warnings (ruff + pyright + ty) |
+| Package tests | `make test-pythinker-review` | ✅ 62 passed |
+| CLI wrapper smoke | `uv run pytest tests/cli/test_review_wrapper.py tests/cli/test_debug_wrapper.py -vv` | ✅ 6 passed |
+| Full workspace lint/type | `make check` | ✅ exit 0; `ty` emitted non-blocking diagnostics outside the new review package |
+| Full workspace tests | `make test` | ✅ 3222 root tests + package suites passed (plus expected skips/xfail) |
+| Full workspace build | `make build` | ✅ built code/core/host/review/sdk distributions |
+
+### Files modified / created (uncommitted)
+
+**Modified (14):** `AGENTS.md`, `Makefile`, `README.md`, `docs/superpowers/plans/2026-05-20-pythinker-review-foundation.md`, `docs/superpowers/specs/2026-05-20-pythinker-review-foundation-design.md`, `pyproject.toml`, `src/pythinker_code/__main__.py`, `src/pythinker_code/agents/default/agent.yaml`, `src/pythinker_code/agents/default/system.md`, `src/pythinker_code/cli/_lazy_group.py`, `tests/core/test_agent_spec.py`, `tests/core/test_default_agent.py`, `tests/utils/test_pyinstaller_utils.py`, `uv.lock`.
+
+**New (9 + entire package):** `packages/pythinker-review/` (entire tree — 40+ files), `src/pythinker_code/agents/default/code_reviewer.yaml`, `debugger.yaml`, `security_reviewer.yaml`, `src/pythinker_code/cli/debug.py`, `review.py`, `secscan.py`, `tests/cli/test_debug_wrapper.py`, `test_review_wrapper.py`.
+
+### Remaining work
+
+1. **Commit** — everything is uncommitted. Recommended split:
+   1. `feat(review): add pythinker-review workspace package with review/security/debug engines` — `packages/pythinker-review/**` + root `pyproject.toml` + `Makefile` + `uv.lock`.
+   2. `feat(code): integrate pythinker-review via lazy CLI wrappers and YAML subagent roles` — `src/pythinker_code/cli/{review,secscan,debug}.py` + `src/pythinker_code/cli/_lazy_group.py` + `src/pythinker_code/agents/default/{code_reviewer,security_reviewer,debugger}.yaml` + `agent.yaml` + `system.md` + `__main__.py` + `tests/cli/test_{review,debug}_wrapper.py` + the three modified root tests.
+   3. `docs(review): add AGENTS.md row, README What's New, and blackbox parity map` — `AGENTS.md` + `README.md` + (parity map is inside the package — already in commit 1) + plan + spec updates.
+
+2. **Release decision (not required for Phase 1A):**
+   - Bump root `pyproject.toml` `version = "2.6.0"` → `"2.7.0"`.
+   - Add CHANGELOG entry.
+   - Cut release per existing release process.
+
+3. **Out-of-scope cleanups** (mention only, do not block Phase 1A):
+   - 200 pre-existing pyright diagnostics in `pythinker-code` exist on plain HEAD; addressing them is its own ticket.
+   - The deprecation warning from `loguru` on Python 3.14 (`asyncio.iscoroutinefunction`) is third-party and tracked separately.
+
+### Tasks added or extended below
+
+The tasks below remain the source-of-truth for re-running Phase 1A from scratch (e.g., a clean re-implementation, or to validate test coverage one task at a time). The single new section is **Task 19 — Commit Phase 1A** at the end. The original Tasks 1–18 are preserved verbatim; check the table above for what to skip when re-executing.
+
+---
+
+
+**Product direction:** Pythinker is being steered to be primarily a professional security reviewer, debugger, and code-reviewer agent. Coding/editing remains available, but the default posture is read-only analysis first: inspect evidence, produce findings, explain root cause, and only patch code after an explicit remediation request.
+
+**Goal:** Land the `packages/pythinker-review` workspace package, standalone automation CLIs (`pythinker-review`, `pythinker-secscan`, `pythinker-debug`), and `pythinker-code` integration (lazy CLI wrappers + YAML subagent roles) for review, security scan, and debugger/root-cause workflows. The diff-only gate remains the first CI-capable slice, not the whole product identity.
+
+**Blackbox porting requirement:** Port the three repos in this workspace's `blackbox/` folder (`blackbox/clawpatch-main`, `blackbox/code-review`, `blackbox/deepsec-main`) into Pythinker. Do not silently downgrade to an "inspired by" implementation. Task 0 is now an intake/audit of those mounted repos, not a search for missing source.
+
+**Architecture:** New uv workspace package owns a shared review/debug/security engine, findings data model, JSON-on-disk store, structured diff renderer, Deepsec-like security signal scanner, debugger input normalizers, three output formatters (pretty/JSON/SARIF), and a `ReviewLLM` Protocol the host wires up. `pythinker-code` adds lazy root subcommands and YAML-driven subagent roles. The agent UX is primary; CLI wrappers are automation surfaces. Fail-closed by default; `--allow-partial` is the only escape hatch.
+
+**Completion boundary:** The checked-off tasks below are the foundation slice. Do not declare Phase 1 complete after Task 10; the follow-up runner/store/output/CLI/wrapper/subagent/debugger tasks must also be added or implemented per the reference spec.
 
 **Tech Stack:** Python 3.12+, `typer==0.21.1`, `pydantic>=2.12.5`, `pyyaml==6.0.3`, `rich==14.2.0`, stdlib `subprocess` / `asyncio` / `secrets` / `hashlib`. Dev: `pytest`, `pytest-asyncio`, `jsonschema` (already in `uv.lock`).
 
@@ -19,19 +111,54 @@
 
 ---
 
+## Task 0: Blackbox intake + product-direction lock
+
+**Files:**
+- Modify: this plan and/or the reference spec if blackbox intake changes mappings
+- Create: `packages/pythinker-review/docs/blackbox-parity.md`
+- Modify later: `src/pythinker_code/agents/default/system.md` or role guidance to prefer review/diagnosis before edits
+
+- [ ] **Step 1: Audit the mounted blackbox repos**
+
+Use the mounted source paths `blackbox/clawpatch-main`, `blackbox/code-review`, and `blackbox/deepsec-main`. Read their README/docs, package manifests, prompt/rule files, tests, and main runtime entrypoints before designing Pythinker targets. Do not invent blackbox behavior from memory.
+
+- [ ] **Step 2: Build parity map**
+
+Create `packages/pythinker-review/docs/blackbox-parity.md` (create parent directories if needed) with one section per repo and columns: blackbox source module/prompt/rule/workflow, behavior to preserve, Pythinker target path, test coverage, and documented deviation. This map is required before writing engine code.
+
+- [ ] **Step 3: Lock agent-first behavior**
+
+Record that review/debug/security diagnosis is the first response for ambiguous engineering requests. Coding changes are opt-in or delegated after findings are accepted.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add docs/superpowers packages/pythinker-review/docs/blackbox-parity.md src/pythinker_code/agents/default/system.md
+git commit -m "docs(review): lock blackbox parity and agent-first review direction"
+```
+
+---
+
 ## File Structure Map
 
 ```
 packages/pythinker-review/
 ├── pyproject.toml
 ├── README.md
+├── docs/
+│   └── blackbox-parity.md          # required source-to-target behavior map
 ├── src/pythinker_review/
 │   ├── __init__.py
 │   ├── cli/
 │   │   ├── __init__.py
 │   │   ├── _shared.py              # shared option group, exit code mapping
 │   │   ├── review.py               # standalone pythinker-review entry
-│   │   └── secscan.py              # standalone pythinker-secscan entry
+│   │   ├── secscan.py              # standalone pythinker-secscan entry
+│   │   └── debug.py                # standalone pythinker-debug entry
+│   ├── diagnostics/
+│   │   ├── __init__.py
+│   │   ├── models.py               # DiagnosticInput, stack/log/repro records
+│   │   └── parser.py               # bounded failure-log / stack-trace parser
 │   ├── engine/
 │   │   ├── __init__.py
 │   │   ├── diff_source.py          # git subprocess wrapper, ResolvedDiff
@@ -50,13 +177,15 @@ packages/pythinker-review/
 │   │   ├── schema.py               # RawFinding, ReviewerOutput
 │   │   ├── code_review.py          # code-review pass
 │   │   ├── security_review.py      # security pass
+│   │   ├── debug_review.py         # root-cause/debug pass
 │   │   └── prompts/
 │   │       ├── code_review.system.md
-│   │       └── security_review.system.md
+│   │       ├── security_review.system.md
+│   │       └── debug_review.system.md
 │   ├── signals/
 │   │   ├── __init__.py
-│   │   ├── models.py               # Signal model
-│   │   └── scanner.py              # deterministic regex scanner + rule registry
+│   │   ├── models.py               # Signal model + Deepsec-like metadata
+│   │   └── scanner.py              # deterministic rule registry
 │   ├── store/
 │   │   ├── __init__.py
 │   │   ├── models.py               # Severity, Category, Location, Suggestion,
@@ -79,6 +208,7 @@ packages/pythinker-review/
     │   ├── test_diff_source.py
     │   ├── test_structured_diff.py
     │   ├── test_context.py
+    │   ├── test_diagnostics.py
     │   ├── test_chunker.py
     │   ├── test_signals.py
     │   ├── test_schema.py
@@ -92,21 +222,25 @@ packages/pythinker-review/
     └── e2e/
         ├── test_cli_review.py
         ├── test_cli_secscan.py
+        ├── test_cli_debug.py
         └── test_save_and_show.py
 
 src/pythinker_code/                  # edits only
 ├── cli/
-│   ├── _lazy_group.py               # add review + secscan entries
+│   ├── _lazy_group.py               # add review + secscan + debug entries
 │   ├── review.py                    # new: builds ReviewLLM adapter + delegates
-│   └── secscan.py                   # new: builds ReviewLLM adapter + delegates
+│   ├── secscan.py                   # new: builds ReviewLLM adapter + delegates
+│   └── debug.py                     # new: builds ReviewLLM adapter + delegates
 ├── agents/default/
-│   ├── agent.yaml                   # add subagents.code-reviewer, security-reviewer
+│   ├── agent.yaml                   # add subagents.code-reviewer, security-reviewer, debugger
 │   ├── code_reviewer.yaml           # new
-│   └── security_reviewer.yaml       # new
+│   ├── security_reviewer.yaml       # new
+│   └── debugger.yaml                # new
 └── ...
 
 tests/                               # pythinker-code root tests
-└── cli/test_review_wrapper.py       # new
+├── cli/test_review_wrapper.py       # new
+└── cli/test_debug_wrapper.py        # new
 
 AGENTS.md                            # one verification matrix row
 README.md                            # one "What's New" entry (post-ship)
@@ -133,12 +267,12 @@ Create `packages/pythinker-review/pyproject.toml`:
 [project]
 name = "pythinker-review"
 version = "0.1.0"
-description = "Diff-only code review and security review engine for Pythinker."
+description = "Review, debug, and security analysis engine for Pythinker."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 authors = [{ name = "Mohamed Elkholy", email = "moelkholy1995@gmail.com" }]
-keywords = ["code-review", "security", "sarif", "diff", "pythinker"]
+keywords = ["code-review", "security", "debugging", "sarif", "diff", "pythinker"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -160,6 +294,7 @@ dependencies = [
 [project.scripts]
 pythinker-review = "pythinker_review.cli.review:app"
 pythinker-secscan = "pythinker_review.cli.secscan:app"
+pythinker-debug = "pythinker_review.cli.debug:app"
 
 [project.urls]
 Homepage = "https://github.com/mohamed-elkholy95/Pythinker-Code"
@@ -195,8 +330,9 @@ Create `packages/pythinker-review/README.md`:
 ```markdown
 # pythinker-review
 
-Diff-only code review and security review engine. Phase 1 of the
-Pythinker Review project.
+Agent-first review, debugging, and security analysis engine. Phase 1 of the
+Pythinker Review project shifts Pythinker toward professional evidence-first
+code review, security review, and root-cause debugging.
 
 See `docs/superpowers/specs/2026-05-20-pythinker-review-foundation-design.md`.
 ```
@@ -322,6 +458,7 @@ def _now() -> datetime:
 def test_severity_and_category_are_string_enums():
     assert Severity.high.value == "high"
     assert Category.security.value == "security"
+    assert Category.debugging.value == "debugging"
 
 
 def test_finding_round_trip_uses_pass_alias():
@@ -442,6 +579,7 @@ SEVERITY_ORDER: dict[Severity, int] = {
 class Category(str, Enum):
     correctness = "correctness"
     security = "security"
+    debugging = "debugging"
     performance = "performance"
     readability = "readability"
     test_coverage = "test_coverage"
@@ -450,7 +588,7 @@ class Category(str, Enum):
     secret = "secret"
 
 
-Pass = Literal["code_review", "security_review"]
+Pass = Literal["code_review", "security_review", "debug_review"]
 ChunkFailureReason = Literal["timeout", "llm_error", "malformed_output", "worker_error"]
 RunStatus = Literal["running", "completed", "completed_with_warnings", "failed", "cancelled"]
 Triage = Literal["open", "false_positive", "accepted", "wont_fix"]
@@ -483,6 +621,9 @@ class Finding(BaseModel):
     suggestion: Suggestion | None = None
     evidence_snippet: str | None = None
     confidence: float = Field(ge=0.0, le=1.0)
+    confidence_reason: str | None = None
+    exploitability: str | None = None
+    reproduction: str | None = None
     triage: Triage = "open"
     triage_note: str | None = None
     created_at: datetime
@@ -1950,13 +2091,15 @@ git commit -m "feat(review): ReviewLLM protocol + FakeReviewLLM + RawFinding sch
 
 ---
 
-## Task 10: Code-review and security-review passes (prompts + callers)
+## Task 10: Code-review, security-review, and debug-review passes (prompts + callers)
 
 **Files:**
 - Create: `packages/pythinker-review/src/pythinker_review/reviewers/prompts/code_review.system.md`
 - Create: `packages/pythinker-review/src/pythinker_review/reviewers/prompts/security_review.system.md`
+- Create: `packages/pythinker-review/src/pythinker_review/reviewers/prompts/debug_review.system.md`
 - Create: `packages/pythinker-review/src/pythinker_review/reviewers/code_review.py`
 - Create: `packages/pythinker-review/src/pythinker_review/reviewers/security_review.py`
+- Create: `packages/pythinker-review/src/pythinker_review/reviewers/debug_review.py`
 - Modify: `packages/pythinker-review/pyproject.toml` — add prompts to package data + configure pytest-asyncio
 - Create: `packages/pythinker-review/tests/unit/test_reviewers.py`
 
@@ -1987,11 +2130,16 @@ from pythinker_review.engine.structured_diff import StructuredHunk
 from pythinker_review.llm.fake import FakeReviewLLM
 from pythinker_review.reviewers.code_review import run_code_review_pass
 from pythinker_review.reviewers.security_review import run_security_review_pass
+from pythinker_review.reviewers.debug_review import run_debug_review_pass
 
 
 def _chunk() -> Chunk:
     h = StructuredHunk(header="@@ -1 +1 @@", new_block="1 +x=1", old_block="")
     return Chunk(file="x.py", hunks=(h,), rendered="## File: 'x.py'\nx=1")
+
+
+def _diagnostic() -> str:
+    return "pytest tests/test_x.py::test_x failed with AssertionError at x.py:1"
 
 
 @pytest.mark.asyncio
@@ -2042,13 +2190,25 @@ async def test_security_review_fails_after_second_malformed():
     )
     assert not result.ok
     assert result.failure_reason == "malformed_output"
+
+
+@pytest.mark.asyncio
+async def test_debug_review_returns_root_cause_findings():
+    llm = FakeReviewLLM(scripted=['{"findings": []}'])
+    result = await run_debug_review_pass(
+        chunk=_chunk(), diagnostic=_diagnostic(), llm=llm, timeout_s=10.0
+    )
+    assert result.ok
+    assert llm.calls
 ```
 
 - [ ] **Step 3: Write the prompt files**
 
 Create `packages/pythinker-review/src/pythinker_review/reviewers/prompts/code_review.system.md` with the body shown in §5.3 of the spec, in particular: focus on diff-introduced issues; no vague speculation; flag clear bugs/security even with narrow triggers; low-severity findings require high confidence; cite concrete failure modes and changed lines; output strict JSON only. Include the JSON schema example from Task 10 below the rules.
 
-Create `packages/pythinker-review/src/pythinker_review/reviewers/prompts/security_review.system.md` with the body shown in §5.3 of the spec: anchor to post-change lines; verify signals against code; prefer no finding over speculation; severity guide; categories `security` / `secret` / `dependency`; strict JSON output. Both files end with `If you find no issues, return {"findings": []}. Output JSON only, no prose.`
+Create `packages/pythinker-review/src/pythinker_review/reviewers/prompts/security_review.system.md` with the body shown in §5.3 of the spec: anchor to post-change lines; verify signals against code; prefer no finding over speculation; severity guide; categories `security` / `secret` / `dependency`; strict JSON output. Create `packages/pythinker-review/src/pythinker_review/reviewers/prompts/debug_review.system.md` with the debugger/root-cause rules from §5.3 of the spec: normalize failure evidence, correlate stack/log lines to changed code, identify likely root cause, cite reproduction evidence, and never patch code.
+
+All three files end with `If you find no issues, return {"findings": []}. Output JSON only, no prose.`
 
 The exact prompt skeletons live in the spec; copy them verbatim from `docs/superpowers/specs/2026-05-20-pythinker-review-foundation-design.md` §5.3 plus the schema example below:
 
@@ -2072,7 +2232,7 @@ The exact prompt skeletons live in the spec; copy them verbatim from `docs/super
 }
 ```
 
-- [ ] **Step 4: Implement the two reviewer modules**
+- [ ] **Step 4: Implement the three reviewer modules**
 
 Create `packages/pythinker-review/src/pythinker_review/reviewers/code_review.py`:
 
@@ -2244,11 +2404,13 @@ async def run_security_review_pass(
 
 - [ ] **Step 5: Run test, lint, commit**
 
+After `security_review.py`, create `packages/pythinker-review/src/pythinker_review/reviewers/debug_review.py` by following the same one-retry/strict-JSON pattern, but build the user prompt from `(chunk, diagnostic)` and use `debug_review.system.md`.
+
 ```bash
-uv run --directory packages/pythinker-review pytest tests/unit/test_reviewers.py -vv  # 3 passed
+uv run --directory packages/pythinker-review pytest tests/unit/test_reviewers.py -vv  # 4 passed
 make check-pythinker-review
 git add packages/pythinker-review/src/pythinker_review/reviewers packages/pythinker-review/tests/unit/test_reviewers.py packages/pythinker-review/pyproject.toml
-git commit -m "feat(review): code-review + security-review passes with prompts and one-retry on bad JSON"
+git commit -m "feat(review): code/security/debug reviewer passes with prompts and one-retry on bad JSON"
 ```
 
 ---
@@ -2306,6 +2468,7 @@ async def test_runs_both_passes_in_parallel_and_collects_findings():
         chunks=[_chunk()],
         passes=("code_review", "security_review"),
         signals_by_file={},
+        diagnostics_by_file={},
         llm=llm,
         jobs=2,
         per_chunk_timeout_s=10.0,
@@ -2324,6 +2487,7 @@ async def test_chunk_failure_is_fatal_without_allow_partial():
         chunks=[_chunk()],
         passes=("code_review",),
         signals_by_file={},
+        diagnostics_by_file={},
         llm=llm,
         jobs=1,
         per_chunk_timeout_s=10.0,
@@ -2340,6 +2504,7 @@ async def test_chunk_failure_is_warning_with_allow_partial():
         chunks=[_chunk()],
         passes=("code_review",),
         signals_by_file={},
+        diagnostics_by_file={},
         llm=llm,
         jobs=1,
         per_chunk_timeout_s=10.0,
@@ -2348,6 +2513,23 @@ async def test_chunk_failure_is_warning_with_allow_partial():
     assert result.chunks_failed == 1
     assert result.failed is False
     assert result.chunk_failures
+
+
+@pytest.mark.asyncio
+async def test_debug_pass_uses_diagnostic_input():
+    llm = FakeReviewLLM(scripted=['{"findings": []}'])
+    result = await run_chunks(
+        chunks=[_chunk()],
+        passes=("debug_review",),
+        signals_by_file={},
+        diagnostics_by_file={"x.py": "AssertionError at x.py:1"},
+        llm=llm,
+        jobs=1,
+        per_chunk_timeout_s=10.0,
+        allow_partial=False,
+    )
+    assert result.chunks_failed == 0
+    assert llm.calls
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -2372,6 +2554,7 @@ from pythinker_review.llm.protocol import ReviewLLM
 from pythinker_review.reviewers.code_review import run_code_review_pass
 from pythinker_review.reviewers.schema import RawFinding
 from pythinker_review.reviewers.security_review import run_security_review_pass
+from pythinker_review.reviewers.debug_review import run_debug_review_pass
 from pythinker_review.signals.models import Signal
 from pythinker_review.store.models import ChunkFailure, Pass
 
@@ -2398,6 +2581,7 @@ async def run_chunks(
     chunks: list[Chunk],
     passes: tuple[Pass, ...],
     signals_by_file: dict[str, list[Signal]],
+    diagnostics_by_file: dict[str, str],
     llm: ReviewLLM,
     jobs: int,
     per_chunk_timeout_s: float,
@@ -2421,11 +2605,31 @@ async def run_chunks(
                 res = await run_code_review_pass(
                     chunk=chunk, llm=llm, timeout_s=per_chunk_timeout_s
                 )
-            else:
+            elif p == "security_review":
                 signals = signals_by_file.get(chunk.file, [])
                 res = await run_security_review_pass(
                     chunk=chunk, signals=signals, llm=llm, timeout_s=per_chunk_timeout_s
                 )
+            elif p == "debug_review":
+                diagnostic = (
+                    diagnostics_by_file.get(chunk.file)
+                    or diagnostics_by_file.get("*")
+                    or "No diagnostic input provided."
+                )
+                res = await run_debug_review_pass(
+                    chunk=chunk, diagnostic=diagnostic, llm=llm, timeout_s=per_chunk_timeout_s
+                )
+            else:
+                failures.append(
+                    ChunkFailure(
+                        file=chunk.file,
+                        reason="worker_error",
+                        message=f"unknown pass: {p}",
+                        **{"pass": p},
+                    )
+                )
+                chunks_done += 1
+                return
             if res.ok:
                 findings.extend(TaggedFinding(p, f) for f in res.findings)
             else:
@@ -2463,7 +2667,7 @@ async def run_chunks(
 - [ ] **Step 4: Run test, lint, commit**
 
 ```bash
-uv run --directory packages/pythinker-review pytest tests/unit/test_runner.py -vv  # 3 passed
+uv run --directory packages/pythinker-review pytest tests/unit/test_runner.py -vv  # 4 passed
 make check-pythinker-review
 git add packages/pythinker-review/src/pythinker_review/engine/runner.py packages/pythinker-review/tests/unit/test_runner.py
 git commit -m "feat(review): asyncio runner with fail-closed/allow-partial semantics"
@@ -2679,6 +2883,7 @@ class EngineRunInput:
     base_ref: str
     rev_range: str | None
     passes: tuple[Pass, ...]
+    diagnostics_by_file: dict[str, str]
     includes: tuple[str, ...]
     excludes: tuple[str, ...]
     skip_vendored: bool
@@ -2698,7 +2903,7 @@ class EngineRunOutput:
 
 def _config_hash(passes: tuple[Pass, ...]) -> str:
     parts: list[str] = list(passes)
-    for name in ("code_review.system.md", "security_review.system.md"):
+    for name in ("code_review.system.md", "security_review.system.md", "debug_review.system.md"):
         try:
             parts.append(
                 resources.files("pythinker_review.reviewers.prompts")
@@ -2768,6 +2973,7 @@ async def run_engine(
         chunks=chunks,
         passes=inputs.passes,
         signals_by_file=signals_by_file,
+        diagnostics_by_file=inputs.diagnostics_by_file,
         llm=llm,
         jobs=inputs.jobs,
         per_chunk_timeout_s=inputs.per_chunk_timeout_s,
@@ -3484,9 +3690,11 @@ git commit -m "feat(review): pretty/JSON/SARIF formatters with SARIF schema vali
 - Create: `packages/pythinker-review/src/pythinker_review/cli/_shared.py`
 - Create: `packages/pythinker-review/src/pythinker_review/cli/review.py`
 - Create: `packages/pythinker-review/src/pythinker_review/cli/secscan.py`
+- Create: `packages/pythinker-review/src/pythinker_review/cli/debug.py`
 - Create: `packages/pythinker-review/tests/e2e/__init__.py`
 - Create: `packages/pythinker-review/tests/e2e/test_cli_review.py`
 - Create: `packages/pythinker-review/tests/e2e/test_cli_secscan.py`
+- Create: `packages/pythinker-review/tests/e2e/test_cli_debug.py`
 - Create: `packages/pythinker-review/tests/e2e/test_save_and_show.py`
 
 - [ ] **Step 1: Implement shared option types and exit-code mapping**
@@ -3543,7 +3751,7 @@ def exit_code(*, meta: RunMeta, findings: list[Finding], fail_on: FailOn, llm_er
     return 0
 ```
 
-- [ ] **Step 2: Implement standalone `pythinker-review` and `pythinker-secscan` apps**
+- [ ] **Step 2: Implement standalone `pythinker-review`, `pythinker-secscan`, and `pythinker-debug` apps**
 
 Create `packages/pythinker-review/src/pythinker_review/cli/review.py`:
 
@@ -3578,7 +3786,7 @@ def _resolve_llm() -> ReviewLLM:
     # Standalone CLI uses explicit/env config; test override hook below.
     fake = os.environ.get("PYTHINKER_REVIEW_FAKE_LLM_RESPONSES")
     if fake:
-        return FakeReviewLLM(scripted=fake.split(" "))
+        return FakeReviewLLM(scripted=fake.split("\0"))
     typer.secho(
         "No active model configured. Set PYTHINKER_REVIEW_FAKE_LLM_RESPONSES for "
         "tests, or invoke via `pythinker review` for the Pythinker-integrated path.",
@@ -3636,6 +3844,7 @@ def diff(
         base_ref=base,
         rev_range=range_,
         passes=passes,
+        diagnostics_by_file={},
         includes=tuple(include),
         excludes=tuple(exclude),
         skip_vendored=not no_skip_vendored,
@@ -3770,6 +3979,7 @@ def diff(
         base_ref=base,
         rev_range=range_,
         passes=("security_review",),
+        diagnostics_by_file={},
         includes=tuple(include),
         excludes=tuple(exclude),
         skip_vendored=not no_skip_vendored,
@@ -3800,6 +4010,65 @@ def diff(
     raise typer.Exit(code=exit_code(
         meta=output.meta, findings=output.findings, fail_on=fail_on, llm_error=False
     ))
+```
+
+Create `packages/pythinker-review/src/pythinker_review/cli/debug.py`:
+
+```python
+"""Standalone `pythinker-debug` Typer entry for root-cause analysis."""
+
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+
+import typer
+
+from pythinker_review.cli import review as review_mod
+from pythinker_review.cli._shared import OutputFormat
+from pythinker_review.engine.diff_source import DiffMode, EmptyDiffError, PreflightError
+from pythinker_review.engine.orchestrator import EngineRunInput, run_engine
+
+app = typer.Typer(add_completion=False, no_args_is_help=True)
+
+
+@app.command()
+def failure(
+    log_file: Path,
+    command: str | None = typer.Option(None, "--command"),
+    base: str = typer.Option("origin/main", "--base"),
+    fmt: OutputFormat = typer.Option(OutputFormat.json, "--format"),
+    repo: Path = typer.Option(Path.cwd(), "--repo"),
+    jobs: int = typer.Option(4, "--jobs"),
+    per_chunk_timeout_s: float = typer.Option(120.0),
+) -> None:
+    diagnostic = log_file.read_text(errors="replace")
+    if command:
+        diagnostic = f"Reproduction command: {command}\n\n{diagnostic}"
+    inputs = EngineRunInput(
+        repo=repo.resolve(),
+        mode=DiffMode.base,
+        base_ref=base,
+        rev_range=None,
+        passes=("debug_review",),
+        diagnostics_by_file={"*": diagnostic},
+        includes=(),
+        excludes=(),
+        skip_vendored=True,
+        jobs=jobs,
+        per_chunk_timeout_s=per_chunk_timeout_s,
+        chunk_budget_chars=12_000,
+        allow_partial=False,
+    )
+    try:
+        output = asyncio.run(run_engine(llm=review_mod._resolve_llm(), inputs=inputs))
+    except EmptyDiffError as exc:
+        typer.secho(f"no changes to correlate: {exc}", fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(code=2)
+    except PreflightError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    typer.echo(review_mod._emit(fmt, meta=output.meta, findings=output.findings, no_color=False))
 ```
 
 - [ ] **Step 3: Write e2e CLI tests**
@@ -3933,6 +4202,32 @@ def test_secscan_finds_secret(tmp_git_repo, monkeypatch):
     assert sarif["runs"][0]["results"][0]["level"] == "error"
 ```
 
+Create `packages/pythinker-review/tests/e2e/test_cli_debug.py`:
+
+```python
+import json
+import subprocess
+from pathlib import Path
+
+from typer.testing import CliRunner
+
+from pythinker_review.cli.debug import app
+
+
+def test_debug_failure_uses_log_input(tmp_git_repo, monkeypatch, tmp_path: Path):
+    repo = tmp_git_repo()
+    subprocess.run(["git", "checkout", "-b", "feature", "-q"], cwd=repo, check=True)
+    (repo / "x.py").write_text("def f():\n    return 2\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "change", "-q"], cwd=repo, check=True)
+    log = tmp_path / "failure.log"
+    log.write_text("AssertionError at x.py:2")
+    monkeypatch.setenv("PYTHINKER_REVIEW_FAKE_LLM_RESPONSES", '{"findings": []}')
+    result = CliRunner().invoke(app, ["failure", str(log), "--repo", str(repo), "--format", "json"])
+    assert result.exit_code == 0, result.stdout
+    assert "findings" in json.loads(result.stdout)
+```
+
 Create `packages/pythinker-review/tests/e2e/test_save_and_show.py`:
 
 ```python
@@ -3974,7 +4269,7 @@ def test_save_then_list_then_show(tmp_git_repo, monkeypatch):
 uv run --directory packages/pythinker-review pytest tests/e2e -vv  # all green
 make check-pythinker-review
 git add packages/pythinker-review/src/pythinker_review/cli packages/pythinker-review/tests/e2e
-git commit -m "feat(review): standalone Typer CLIs (pythinker-review / pythinker-secscan)"
+git commit -m "feat(review): standalone Typer CLIs (pythinker-review / pythinker-secscan / pythinker-debug)"
 ```
 
 ---
@@ -3985,7 +4280,9 @@ git commit -m "feat(review): standalone Typer CLIs (pythinker-review / pythinker
 - Modify: `src/pythinker_code/cli/_lazy_group.py`
 - Create: `src/pythinker_code/cli/review.py`
 - Create: `src/pythinker_code/cli/secscan.py`
+- Create: `src/pythinker_code/cli/debug.py`
 - Create: `tests/cli/test_review_wrapper.py`
+- Create: `tests/cli/test_debug_wrapper.py`
 
 - [ ] **Step 1: Implement the ReviewLLM adapter + lazy delegate**
 
@@ -4106,7 +4403,37 @@ def cli() -> typer.Typer:
     return upstream_app
 ```
 
-- [ ] **Step 2: Register both in `_lazy_group.py`**
+Create `src/pythinker_code/cli/debug.py`:
+
+```python
+"""`pythinker debug` — active-model wrapper for pythinker-debug."""
+
+from __future__ import annotations
+
+import typer
+
+from pythinker_review.cli.debug import app as upstream_app
+from pythinker_review.llm.protocol import ReviewLLM
+
+from pythinker_code.cli.review import _install_adapter
+
+
+def cli() -> typer.Typer:
+    @upstream_app.callback()
+    def _wire(ctx: typer.Context) -> None:  # noqa: ARG001
+        adapter = _install_adapter()
+        if adapter is not None:
+            from pythinker_review.cli import review as up
+
+            def _override() -> ReviewLLM:
+                return adapter
+
+            up._resolve_llm = _override  # type: ignore[assignment]
+
+    return upstream_app
+```
+
+- [ ] **Step 2: Register all three in `_lazy_group.py`**
 
 Edit `src/pythinker_code/cli/_lazy_group.py`. Extend the `lazy_subcommands` dict and `lazy_command_order` tuple:
 
@@ -4119,12 +4446,17 @@ Edit `src/pythinker_code/cli/_lazy_group.py`. Extend the `lazy_subcommands` dict
         "review": (
             "pythinker_code.cli.review",
             "cli",
-            "Diff-only code review (delegates to pythinker-review).",
+            "Diff-focused code review (delegates to pythinker-review).",
         ),
         "secscan": (
             "pythinker_code.cli.secscan",
             "cli",
-            "Diff-only security review (delegates to pythinker-review).",
+            "Diff-focused security review (delegates to pythinker-review).",
+        ),
+        "debug": (
+            "pythinker_code.cli.debug",
+            "cli",
+            "Failure/log root-cause analysis (delegates to pythinker-review).",
         ),
         "update": (
             "pythinker_code.cli.update",
@@ -4141,6 +4473,7 @@ Edit `src/pythinker_code/cli/_lazy_group.py`. Extend the `lazy_subcommands` dict
         "plugin",
         "review",
         "secscan",
+        "debug",
         "update",
         "vis",
         "web",
@@ -4158,7 +4491,7 @@ import subprocess
 import pytest
 
 
-@pytest.mark.parametrize("cmd", ["review", "secscan"])
+@pytest.mark.parametrize("cmd", ["review", "secscan", "debug"])
 def test_top_level_help_lists_command(cmd: str) -> None:
     env = os.environ.copy()
     env["PATH"] = env.get("PATH", "")
@@ -4180,16 +4513,26 @@ def test_review_diff_help_works() -> None:
         text=True,
     )
     assert "--with-security" in proc.stdout
+
+
+def test_debug_failure_help_works() -> None:
+    proc = subprocess.run(
+        ["uv", "run", "pythinker", "debug", "failure", "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "--command" in proc.stdout
 ```
 
 - [ ] **Step 4: Run smoke + lint + commit**
 
 ```bash
 uv sync
-uv run pytest tests/cli/test_review_wrapper.py -vv  # both green
+uv run pytest tests/cli/test_review_wrapper.py -vv  # all green
 make check-pythinker-code
-git add src/pythinker_code/cli/review.py src/pythinker_code/cli/secscan.py src/pythinker_code/cli/_lazy_group.py tests/cli/test_review_wrapper.py
-git commit -m "feat(code): add pythinker review/secscan lazy CLI wrappers with active-model adapter"
+git add src/pythinker_code/cli/review.py src/pythinker_code/cli/secscan.py src/pythinker_code/cli/debug.py src/pythinker_code/cli/_lazy_group.py tests/cli/test_review_wrapper.py tests/cli/test_debug_wrapper.py
+git commit -m "feat(code): add pythinker review/secscan/debug lazy CLI wrappers with active-model adapter"
 ```
 
 ---
@@ -4199,9 +4542,10 @@ git commit -m "feat(code): add pythinker review/secscan lazy CLI wrappers with a
 **Files:**
 - Create: `src/pythinker_code/agents/default/code_reviewer.yaml`
 - Create: `src/pythinker_code/agents/default/security_reviewer.yaml`
+- Create: `src/pythinker_code/agents/default/debugger.yaml`
 - Modify: `src/pythinker_code/agents/default/agent.yaml` — extend `subagents:`
 
-- [ ] **Step 1: Create the two new role YAMLs**
+- [ ] **Step 1: Create the three new role YAMLs**
 
 Create `src/pythinker_code/agents/default/code_reviewer.yaml`:
 
@@ -4213,7 +4557,7 @@ agent:
     ROLE_ADDITIONAL: |
       You are now running as a subagent. All `user` messages are sent by the main agent. The main agent cannot see your context, only your last message. Treat the parent agent as your caller. Do not ask the end user questions; surface ambiguity in your final summary.
 
-      You are a diff-only code reviewer. Your job is to run `pythinker review diff` (or `pythinker review diff --with-security` when the parent asks for security too) and reformat the result for the parent.
+      You are a diff-focused code reviewer. Your job is to run `pythinker review diff` (or `pythinker review diff --with-security` when the parent asks for security too) and reformat the result for the parent.
 
       Operating rules:
       - Read-only by convention. You may run the review CLI and read its output, but do not edit source files.
@@ -4233,7 +4577,7 @@ agent:
       ### BLOCKERS
       Anything that prevented a clean run (exit code 3/4, base ref missing, etc.), or `None.`.
   when_to_use: |
-    Use to run a diff-only code review on the current branch and return a structured summary of findings. Pair with `security-reviewer` (parallel) for combined coverage, or use `--with-security` when invoking this agent alone.
+    Use to run a diff-focused code review on the current branch and return a structured summary of findings. Pair with `security-reviewer` (parallel) for combined coverage, or use `--with-security` when invoking this agent alone.
   allowed_tools:
     - "pythinker_code.tools.shell:Shell"
     - "pythinker_code.tools.file:ReadFile"
@@ -4277,6 +4621,42 @@ agent:
     - "pythinker_code.tools.file:Grep"
 ```
 
+Create `src/pythinker_code/agents/default/debugger.yaml`:
+
+```yaml
+version: 1
+agent:
+  extend: ./agent.yaml
+  system_prompt_args:
+    ROLE_ADDITIONAL: |
+      You are now running as a subagent. All `user` messages are sent by the main agent. The main agent cannot see your context, only your last message. Treat the parent agent as your caller. Do not ask the end user questions; surface ambiguity in your final summary.
+
+      You are a root-cause debugger. Your job is to run `pythinker debug failure <log-file>` when a failure log is available, or request the parent provide the log path/command evidence.
+
+      Operating rules:
+      - Read-only by convention. Do not edit source files.
+      - Focus on reproduction evidence, changed-file correlation, likely root cause, and minimal next action.
+      - Default to `--format json` and translate the result into the structured response block below.
+
+      Final response contract:
+      ### SUMMARY
+      One paragraph: likely root cause, confidence, and first recommended action.
+      ### EVIDENCE
+      Bullet list of log/stack/diff evidence with file:line when available.
+      ### CHANGES
+      None.
+      ### RISKS
+      Ambiguities, missing reproduction context, or `None observed.`.
+      ### BLOCKERS
+      Missing log path, command, environment, or `None.`.
+  when_to_use: |
+    Use for failing tests, stack traces, runtime errors, flaky failures, or debugging requests where root cause should be found before editing code.
+  allowed_tools:
+    - "pythinker_code.tools.shell:Shell"
+    - "pythinker_code.tools.file:ReadFile"
+    - "pythinker_code.tools.file:Grep"
+```
+
 - [ ] **Step 2: Register in `agent.yaml`**
 
 Edit `src/pythinker_code/agents/default/agent.yaml`. Add to the `subagents:` map (keep alphabetical-ish among siblings, matching the existing convention):
@@ -4287,19 +4667,21 @@ Edit `src/pythinker_code/agents/default/agent.yaml`. Add to the `subagents:` map
       path: ./coder.yaml
     code-reviewer:
       path: ./code_reviewer.yaml
+    debugger:
+      path: ./debugger.yaml
     security-reviewer:
       path: ./security_reviewer.yaml
     # ... other existing entries ...
 ```
 
-(Preserve the rest of `subagents:` exactly as it was — only add the two new keys.)
+(Preserve the rest of `subagents:` exactly as it was — only add the three new keys.)
 
 - [ ] **Step 3: Smoke test the registration**
 
 Run: `uv run pythinker --help`
 Expected: succeeds; no traceback from YAML loading.
 
-Run (if Pythinker has a subagent-list CLI): `uv run pythinker info --subagents` or equivalent — confirm `code-reviewer` and `security-reviewer` appear.
+Run (if Pythinker has a subagent-list CLI): `uv run pythinker info --subagents` or equivalent — confirm `code-reviewer`, `security-reviewer`, and `debugger` appear.
 
 If no built-in introspection exists, write a tiny smoke test under `tests/cli/test_review_wrapper.py`:
 
@@ -4310,6 +4692,7 @@ def test_subagent_roles_load() -> None:
     reg = load_default_registry()
     assert "code-reviewer" in reg
     assert "security-reviewer" in reg
+    assert "debugger" in reg
 ```
 
 If the registry import path differs, update it to match the actual module after a one-line grep (`grep -R "def load.*registry" src/pythinker_code/subagents`).
@@ -4319,7 +4702,7 @@ If the registry import path differs, update it to match the actual module after 
 ```bash
 make check-pythinker-code
 git add src/pythinker_code/agents/default
-git commit -m "feat(code): register code-reviewer and security-reviewer YAML subagent roles"
+git commit -m "feat(code): register code-reviewer, security-reviewer, and debugger YAML subagent roles"
 ```
 
 ---
@@ -4346,17 +4729,18 @@ Edit `README.md`. Insert a new section above the existing "What's New in 2.6.0":
 ```markdown
 ## 🆕 What's New in 2.7.0
 
-First-class diff-only code review and security review, via the new
+First-class agent-first code review, security review, and root-cause debugging, via the new
 `pythinker-review` workspace package.
 
 - **`pythinker review diff`** — runs a code-review pass on the current branch's diff against `origin/main` (or `--base <ref>`, `--staged`, `--working-tree`, `--range A..B`). Outputs pretty / JSON / SARIF. `--fail-on <severity>` makes it a CI gate.
 - **`pythinker review diff --with-security`** — runs the code-review and security-review passes in parallel.
 - **`pythinker secscan diff`** — security-only pass with deterministic prompt anchors for secrets, command/SQL injection, deserialization, SSRF, weak crypto.
+- **`pythinker debug failure <log-file>`** — root-cause debugger pass over failing test output, stack traces, logs, and correlated diff context.
 - **Findings store** at `.pythinker-review/runs/<id>/` for inspection via `pythinker review list` / `pythinker review show <id>`.
-- **Two new subagent roles** — `code-reviewer` and `security-reviewer` — usable from any interactive Pythinker session, producing the standard SUMMARY/EVIDENCE/CHANGES/RISKS/BLOCKERS block.
+- **Three new subagent roles** — `code-reviewer`, `security-reviewer`, and `debugger` — usable from any interactive Pythinker session, producing the standard SUMMARY/EVIDENCE/CHANGES/RISKS/BLOCKERS block.
 - **Fail-closed by default** — any chunk timeout, malformed model output, or worker exception exits non-zero. `--allow-partial` is the explicit escape hatch and surfaces failures in output.
 
-No new third-party runtime dependencies. Reuses the active Pythinker model when invoked via `pythinker review` / `pythinker secscan`; the standalone `pythinker-review` / `pythinker-secscan` console scripts accept explicit/env configuration.
+No new third-party runtime dependencies. Reuses the active Pythinker model when invoked via `pythinker review` / `pythinker secscan` / `pythinker debug`; the standalone `pythinker-review` / `pythinker-secscan` / `pythinker-debug` console scripts accept explicit/env configuration.
 
 Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==2.7.0`.
 ```
@@ -4370,10 +4754,10 @@ Edit `packages/pythinker-review/README.md`:
 ```markdown
 # pythinker-review
 
-Diff-only code review and security review engine for Pythinker. Standalone
-CLI (`pythinker-review`, `pythinker-secscan`) and integration into
-`pythinker-code` as the `review` / `secscan` subcommands and the
-`code-reviewer` / `security-reviewer` subagent roles.
+Agent-first code review, security review, and root-cause debugging engine for Pythinker. Standalone
+CLI (`pythinker-review`, `pythinker-secscan`, `pythinker-debug`) and integration into
+`pythinker-code` as the `review` / `secscan` / `debug` subcommands and the
+`code-reviewer` / `security-reviewer` / `debugger` subagent roles.
 
 ## CLI
 
@@ -4386,13 +4770,16 @@ pythinker-review diff --with-security --fail-on high
 
 # Security-only scan, SARIF for CI
 pythinker-secscan diff --format sarif --fail-on critical
+
+# Root-cause debugger over a captured failure log
+pythinker-debug failure failure.log --command "pytest tests/test_app.py::test_case"
 ```
 
 ## Configuration
 
 `pythinker-review` and `pythinker-secscan` accept an explicit model via
 `--model` or env config. When invoked via `pythinker review` /
-`pythinker secscan` (the wrappers in `pythinker-code`), the active Pythinker
+`pythinker secscan` / `pythinker debug` (the wrappers in `pythinker-code`), the active Pythinker
 model is wired in automatically through a `ReviewLLM` adapter.
 
 ## Persistence
@@ -4415,7 +4802,7 @@ file already exists.
 ## Phase 1
 
 See `docs/superpowers/specs/2026-05-20-pythinker-review-foundation-design.md`
-for the full spec. Future phases add whole-repo audit, deepsec-style
+for the full spec. Future phases add whole-repo audit, external deepsec-style
 matchers + revalidation, PR-provider integrations, and a fix loop.
 ```
 
@@ -4445,26 +4832,29 @@ Run this checklist against the spec before declaring the plan ready.
 
 | Spec section | Covered by | Status |
 |---|---|---|
-| §1 Goal — substrate + diff gate | Tasks 1–15 | ✅ |
+| §1 Goal — review/debug/security substrate + diff/debug gates | Tasks 0–15 | ✅ |
 | §2 Success criteria #1 — make check/test pass | Task 1 + Task 18 | ✅ |
-| §2 #2 — diff produces ≥1 finding per pass in all formats | Task 15 e2e tests | ✅ |
-| §2 #3 — `--fail-on high` exit codes | Task 15 `exit_code` + e2e | ✅ |
-| §2 #4 — fail-closed default, `--allow-partial` opt-in | Tasks 11, 15 | ✅ |
-| §2 #5 — `--save` writes `runs/<id>/`, `list`/`show` rehydrate | Tasks 13, 15 | ✅ |
-| §2 #6 — root CLI defaults to active model | Task 16 adapter | ✅ |
-| §2 #7 — YAML subagent roles emit SUMMARY/EVIDENCE/… | Task 17 | ✅ |
-| §2 #8 — no regression in existing pythinker | Task 16 + Task 18 `make test` | ✅ |
-| §2 #9 — no unapproved deps | All tasks; stdlib subprocess + secrets | ✅ |
+| §2 #2 — blackbox parity map exists | Task 0 | ✅ |
+| §2 #3 — diff produces ≥1 finding per pass in all formats | Task 15 e2e tests | ✅ |
+| §2 #4 — debug failure produces root-cause finding | Tasks 10, 15 e2e tests | ✅ |
+| §2 #5 — `--fail-on high` exit codes | Task 15 `exit_code` + e2e | ✅ |
+| §2 #6 — fail-closed default, `--allow-partial` opt-in | Tasks 11, 15 | ✅ |
+| §2 #7 — `--save` writes `runs/<id>/`, `list`/`show` rehydrate | Tasks 13, 15 | ✅ |
+| §2 #8 — root CLI defaults to active model | Task 16 adapter | ✅ |
+| §2 #9 — YAML subagent roles emit SUMMARY/EVIDENCE/… | Task 17 | ✅ |
+| §2 #10 — default prompt/role guidance prefers diagnosis first | Task 0 + Task 17 | ✅ |
+| §2 #11 — no regression in existing pythinker | Task 16 + Task 18 `make test` | ✅ |
+| §2 #12 — no unapproved deps | All tasks; stdlib subprocess + secrets | ✅ |
 | §3 Non-goals — no auto-fix, no PR-posting, no whole-repo | Out of scope, deferred | ✅ |
 | §4.1 Package layout | Task 1 | ✅ |
 | §4.2 ReviewLLM Protocol + adapter injection | Tasks 9, 16 | ✅ |
-| §4.3 Root vs standalone CLI | Tasks 15, 16 | ✅ |
+| §4.3 Root vs standalone CLI + debug surface | Tasks 15, 16 | ✅ |
 | §5.1 diff_source / structured_diff / context / chunker / runner / dedupe / orchestrator | Tasks 4, 5, 6, 7, 11, 12 | ✅ |
 | §5.2 signals scanner | Task 8 | ✅ |
-| §5.3 reviewers + prompts + retry | Tasks 9, 10 | ✅ |
+| §5.3 reviewers/debugger + prompts + retry | Tasks 9, 10 | ✅ |
 | §5.4 findings store + run lifecycle + ids + gitignore | Tasks 3, 13 | ✅ |
 | §5.5 pretty / JSON / SARIF + jsonschema validator | Task 14 | ✅ |
-| §5.6 standalone CLI | Task 15 | ✅ |
+| §5.6 standalone CLI (`review`/`secscan`/`debug`) | Task 15 | ✅ |
 | §5.7 YAML subagent roles, shell-out path | Task 17 | ✅ |
 | §6 Data model | Task 2 | ✅ |
 | §6.1 On-disk layout | Tasks 13, 15 | ✅ |
@@ -4480,13 +4870,109 @@ Run this checklist against the spec before declaring the plan ready.
 
 **Type consistency check:**
 - `Chunk` referenced from Tasks 7, 10, 11, 12 — same shape (`file`, `hunks`, `rendered`). ✅
-- `ReviewerResult` defined in Tasks 9 + 10 (one for each reviewer); identical shape; runner imports both. ✅
+- `ReviewerResult` defined in Tasks 9 + 10 (code/security/debug passes); identical shape; runner imports all three. ✅
 - `Finding` / `RawFinding` distinguished consistently: `RawFinding` from LLM, `Finding` after dedupe attaches `id`/`run_id`/`location.sha`. ✅
-- `Pass` literal `"code_review" | "security_review"` used uniformly. ✅
+- `Pass` literal `"code_review" | "security_review" | "debug_review"` used uniformly. ✅
 - `ChunkFailureReason` matches across reviewers (Task 10) and runner (Task 11). ✅
 - `RunMeta.status` literal includes `"completed_with_warnings"` in models (Task 2) and is produced by orchestrator (Task 12). ✅
 - Exit codes match spec §7 and CLI implementation (Task 15). ✅
 
 No drift found. Plan ready for execution.
 
+---
 
+## Task 19: Commit Phase 1A and update the plan
+
+**Files (uncommitted):** see "Implementation Status" header at the top of this plan for the full list.
+
+This task is the only blocker between the current in-tree implementation and a landed Phase 1A. All code, tests, prompts, YAML roles, docs, and parity-map work are already present locally.
+
+- [ ] **Step 1: Re-run the green gates before committing**
+
+```bash
+make check-pythinker-review
+make test-pythinker-review
+uv run pytest tests/core/test_agent_spec.py tests/core/test_default_agent.py tests/utils/test_pyinstaller_utils.py tests/cli/ -vv
+```
+
+Expected: 62 + 48 = 110 tests pass, lint/type clean. If any gate fails, stop and fix before committing.
+
+(The root `make check-pythinker-code` is known to emit 200 pre-existing pyright diagnostics on plain `HEAD` — not introduced by Phase 1A. Do not block the commit on those.)
+
+- [ ] **Step 2: Stage and commit in three logical commits**
+
+Stage the new package + workspace registration + Make targets first:
+
+```bash
+git add packages/pythinker-review pyproject.toml Makefile uv.lock
+git commit -m "feat(review): add pythinker-review workspace package
+
+Diff-only review, security scan, and root-cause debugger engine.
+Implements the substrate described in
+docs/superpowers/specs/2026-05-20-pythinker-review-foundation-design.md:
+data model, store, structured-diff renderer, security signal scanner,
+diagnostics parser, three reviewer passes (code/security/debug),
+asyncio runner with fail-closed/--allow-partial semantics, pretty/JSON/
+SARIF formatters, and standalone Typer CLIs (pythinker-review,
+pythinker-secscan, pythinker-debug). Reuses pythinker-core via the
+ReviewLLM protocol; no new third-party runtime deps."
+```
+
+Then the `pythinker-code` integration:
+
+```bash
+git add src/pythinker_code/cli/review.py src/pythinker_code/cli/secscan.py src/pythinker_code/cli/debug.py \
+        src/pythinker_code/cli/_lazy_group.py src/pythinker_code/__main__.py \
+        src/pythinker_code/agents/default/code_reviewer.yaml \
+        src/pythinker_code/agents/default/security_reviewer.yaml \
+        src/pythinker_code/agents/default/debugger.yaml \
+        src/pythinker_code/agents/default/agent.yaml \
+        src/pythinker_code/agents/default/system.md \
+        tests/cli/test_review_wrapper.py tests/cli/test_debug_wrapper.py \
+        tests/core/test_agent_spec.py tests/core/test_default_agent.py \
+        tests/utils/test_pyinstaller_utils.py
+git commit -m "feat(code): integrate pythinker-review via lazy CLI and YAML subagents
+
+Adds lazy 'review', 'secscan', and 'debug' root subcommands that wrap
+the pythinker-review CLIs and inject the active Pythinker model via a
+ReviewLLM adapter. Registers three new YAML subagent roles
+(code-reviewer, security-reviewer, debugger) following the existing
+agents/default/agent.yaml mechanism. Updates the default system prompt
+so ambiguous engineering requests prefer evidence-first review/
+diagnosis before editing code. Existing review/verifier roles untouched."
+```
+
+Finally the docs:
+
+```bash
+git add AGENTS.md README.md \
+        docs/superpowers/specs/2026-05-20-pythinker-review-foundation-design.md \
+        docs/superpowers/plans/2026-05-20-pythinker-review-foundation.md
+git commit -m "docs(review): AGENTS.md verification row + README What's New 2.7.0 + spec/plan revisions
+
+Spec was revised after implementation to record the product-direction
+shift (review/debug/security first), add the debug capability and
+debugger subagent, and require an explicit blackbox parity map for the
+three vendored reference repos. The plan now opens with an
+Implementation Status section so future re-runs can skip what is
+already landed."
+```
+
+- [ ] **Step 3: Verify the working tree is clean**
+
+```bash
+git status
+```
+
+Expected: no modified, no untracked. If anything remains, decide whether it belongs in this set of commits or in a follow-up.
+
+- [ ] **Step 4: Optional — Release prep (not required for landing Phase 1A)**
+
+Only do this if cutting a `pythinker-code` 2.7.0 release in the same change set. Otherwise defer to a separate release commit.
+
+- Bump `version = "2.6.0"` → `"2.7.0"` in root `pyproject.toml`.
+- Update `CHANGELOG.md` with a 2.7.0 entry mirroring the README "What's New" section.
+- Re-run `make check && make test`.
+- Commit: `chore(release): 2.7.0 — pythinker-review Phase 1A`.
+
+---

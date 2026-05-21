@@ -77,6 +77,7 @@ Pick the smallest reliable gate for the change, then run broader gates before re
 | Auth, providers, usage, rate limits | Provider-specific tests plus `make check-pythinker-code`; never require real secrets in tests |
 | `packages/pythinker-core` | `make check-pythinker-core && make test-pythinker-core` |
 | `packages/pythinker-host` | `make check-pythinker-host && make test-pythinker-host` |
+| `packages/pythinker-review` | `make check-pythinker-review && make test-pythinker-review` |
 | `sdks/pythinker-sdk` | `make check-pythinker-sdk && make test-pythinker-sdk` |
 | Web / vis frontends | `make check-web`; build affected frontend when packaging assets changed |
 | Release / packaging / PyInstaller | `make build` or `make build-bin` as appropriate |
@@ -138,6 +139,7 @@ instead of claiming success.
 - `web/`, `vis/`: frontend apps bundled into the CLI package.
 - `packages/pythinker-core/`: LLM abstraction layer for messages, providers, streaming, and tools.
 - `packages/pythinker-host/`: host abstraction for local/remote file and shell operations.
+- `packages/pythinker-review/`: review/debug/security engine, findings store, CLIs, and output formatters.
 - `packages/pythinker-code/`: thin distribution package exposing the `pythinker-code` script.
 - `sdks/pythinker-sdk/`: Python SDK package.
 - `tests/`, `tests_e2e/`, `tests_ai/`: unit/integration, wire/CLI e2e, and AI-driven tests.
