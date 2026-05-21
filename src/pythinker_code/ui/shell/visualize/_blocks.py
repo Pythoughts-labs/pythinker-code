@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 
 import streamingjson  # type: ignore[reportMissingTypeStubs]
 from rich.console import Console, ConsoleOptions, Group, RenderableType, RenderResult
-from rich.spinner import Spinner
 from rich.style import Style
 from rich.text import Text
 
@@ -223,7 +222,6 @@ class _ContentBlock:
     def __init__(self, is_think: bool, *, show_thinking_stream: bool = False):
         self.is_think = is_think
         self._show_thinking_stream = show_thinking_stream
-        self._spinner = Spinner("dots", "")
         self.raw_text = ""
         # Accumulated float estimate — avoids per-chunk int truncation.
         self._token_count: float = 0.0
@@ -310,17 +308,17 @@ class _ContentBlock:
         console.print(self._wrap_bullet(Markdown(committed_text)))
         self._committed_len += boundary
 
-    def _compose_spinner(self) -> Spinner:
+    def _compose_spinner(self) -> Text:
         elapsed = time.monotonic() - self._start_time
         elapsed_str = format_elapsed(elapsed)
         count_str = f"{format_token_count(int(self._token_count))} tokens"
 
-        self._spinner.text = Text.assemble(
-            ("Composing...", ""),
-            (f" {elapsed_str}", "grey50"),
-            (f" · {count_str}", "grey50"),
-        )
-        return self._spinner
+        glyph = "●" if int(time.monotonic() / 0.8) % 2 == 0 else " "
+        line = Text(f"{glyph} ", style=Style(color="grey50"))
+        line.append("Composing...")
+        line.append(f" {elapsed_str}", style="grey50")
+        line.append(f" · {count_str}", style="grey50")
+        return line
 
     def _compose_thinking_stream(self) -> RenderableType:
         """Legacy 'Thinking...' spinner stacked over a 6-line scrolling preview."""
@@ -331,17 +329,17 @@ class _ContentBlock:
         preview = self._build_preview(pending)
         return Group(spinner, Text(preview, style="grey50 italic"))
 
-    def _compose_thinking_spinner(self) -> Spinner:
-        """Legacy 'Thinking...' spinner header used by the stream-mode preview."""
+    def _compose_thinking_spinner(self) -> Text:
+        """Legacy 'Thinking...' header used by the stream-mode preview."""
         elapsed = time.monotonic() - self._start_time
         elapsed_str = format_elapsed(elapsed)
         count_str = f"{format_token_count(int(self._token_count))} tokens"
-        self._spinner.text = Text.assemble(
-            ("Thinking...", ""),
-            (f" {elapsed_str}", "grey50"),
-            (f" · {count_str}", "grey50"),
-        )
-        return self._spinner
+        glyph = "●" if int(time.monotonic() / 0.8) % 2 == 0 else " "
+        line = Text(f"{glyph} ", style=Style(color="grey50"))
+        line.append("Thinking...")
+        line.append(f" {elapsed_str}", style="grey50")
+        line.append(f" · {count_str}", style="grey50")
+        return line
 
     def _build_preview(self, text: str) -> str:
         """Tail-trim *text* to the last ``_THINKING_PREVIEW_LINES`` and clamp width."""
@@ -400,7 +398,6 @@ class _ToolCallBlock:
         self._finished_subagent_tool_calls = deque[_ToolCallBlock.FinishedSubCall](
             maxlen=MAX_SUBAGENT_TOOL_CALLS_TO_SHOW
         )
-        self._spinning_dots = Spinner("dots", text="")
         # Pythinker card: lazily built when the tui style is "card" AND a
         # renderer is registered for this tool. Stays None on the legacy
         # ``pythinker`` worklog path so that rendering is bit-for-bit
@@ -415,6 +412,10 @@ class _ToolCallBlock:
         self._renderable: RenderableType = self._compose()
 
     def compose(self) -> RenderableType:
+        # Running tool cards and background-pending Agent cards include live
+        # status markers. Recompose them on each Live/prompt refresh.
+        if self._result is None or self._is_background_pending:
+            return self._compose()
         return self._renderable
 
     @property
@@ -552,7 +553,6 @@ class _ToolCallBlock:
                 state=WorkLogState.RUNNING,
                 icon=style.icon,
                 icon_style=style.style,
-                icon_renderable=self._spinning_dots if style.label == "Subagent" else None,
                 children=children,
             )
 
@@ -744,8 +744,6 @@ class _CompactionBlock:
 
     BAR_WIDTH = 40
     EXPECTED_DURATION_S = 60.0
-    SPINNER_FRAMES = ("✻", "✶", "✷", "✸", "✹", "✺")
-    SPINNER_PERIOD_S = 0.15
     MAX_ESTIMATED_PROGRESS = 0.95
 
     TIPS: tuple[str, ...] = (
@@ -773,14 +771,13 @@ class _CompactionBlock:
         filled = int(round(progress * self.BAR_WIDTH))
         empty = self.BAR_WIDTH - filled
         pct = int(progress * 100)
-        frame = self.SPINNER_FRAMES[int(elapsed / self.SPINNER_PERIOD_S) % len(self.SPINNER_FRAMES)]
-
         accent = tui_rich_style("accent")
         muted = tui_rich_style("muted")
         subtle = tui_rich_style("dim")
 
         title = Text()
-        title.append(frame + " ", style=accent + Style(bold=True))
+        glyph = "●" if int(time.monotonic() / 0.8) % 2 == 0 else " "
+        title.append(f"{glyph} ", style=tui_rich_style("muted"))
         title.append("Compacting conversation…")
         title.append(f" ({format_elapsed(elapsed)})", style=subtle)
 

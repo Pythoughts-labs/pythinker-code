@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import platform
 import sys
+from importlib.metadata import version
 from pathlib import Path
 
 from inline_snapshot import snapshot
@@ -29,38 +30,35 @@ def test_pyinstaller_datas():
 
     datas = [(p, d) for p, d in datas if "web/static" not in d and "vis/static" not in d]
 
+    fastmcp_dist = f"fastmcp-{version('fastmcp')}.dist-info"
     expected_datas = [
         (
-            f"{site_packages}/dateparser/data/dateparser_tz_cache.pkl",
-            "dateparser/data",
+            f"{site_packages}/fastmcp/../{fastmcp_dist}/INSTALLER",
+            f"fastmcp/../{fastmcp_dist}",
         ),
         (
-            f"{site_packages}/fastmcp/../fastmcp-2.12.5.dist-info/INSTALLER",
-            "fastmcp/../fastmcp-2.12.5.dist-info",
+            f"{site_packages}/fastmcp/../{fastmcp_dist}/METADATA",
+            f"fastmcp/../{fastmcp_dist}",
         ),
         (
-            f"{site_packages}/fastmcp/../fastmcp-2.12.5.dist-info/METADATA",
-            "fastmcp/../fastmcp-2.12.5.dist-info",
+            f"{site_packages}/fastmcp/../{fastmcp_dist}/RECORD",
+            f"fastmcp/../{fastmcp_dist}",
         ),
         (
-            f"{site_packages}/fastmcp/../fastmcp-2.12.5.dist-info/RECORD",
-            "fastmcp/../fastmcp-2.12.5.dist-info",
+            f"{site_packages}/fastmcp/../{fastmcp_dist}/REQUESTED",
+            f"fastmcp/../{fastmcp_dist}",
         ),
         (
-            f"{site_packages}/fastmcp/../fastmcp-2.12.5.dist-info/REQUESTED",
-            "fastmcp/../fastmcp-2.12.5.dist-info",
+            f"{site_packages}/fastmcp/../{fastmcp_dist}/WHEEL",
+            f"fastmcp/../{fastmcp_dist}",
         ),
         (
-            f"{site_packages}/fastmcp/../fastmcp-2.12.5.dist-info/WHEEL",
-            "fastmcp/../fastmcp-2.12.5.dist-info",
+            f"{site_packages}/fastmcp/../{fastmcp_dist}/entry_points.txt",
+            f"fastmcp/../{fastmcp_dist}",
         ),
         (
-            f"{site_packages}/fastmcp/../fastmcp-2.12.5.dist-info/entry_points.txt",
-            "fastmcp/../fastmcp-2.12.5.dist-info",
-        ),
-        (
-            f"{site_packages}/fastmcp/../fastmcp-2.12.5.dist-info/licenses/LICENSE",
-            "fastmcp/../fastmcp-2.12.5.dist-info/licenses",
+            f"{site_packages}/fastmcp/../{fastmcp_dist}/licenses/LICENSE",
+            f"fastmcp/../{fastmcp_dist}/licenses",
         ),
         (
             "src/pythinker_code/CHANGELOG.md",

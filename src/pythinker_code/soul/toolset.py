@@ -456,9 +456,14 @@ class PythinkerToolset:
         async def _check_oauth_tokens(server_url: str) -> bool:
             """Check if OAuth tokens exist for the server."""
             try:
-                from fastmcp.client.auth.oauth import FileTokenStorage
+                from fastmcp.client.auth import oauth as fastmcp_oauth
 
-                storage = FileTokenStorage(server_url=server_url)
+                file_token_storage = getattr(fastmcp_oauth, "FileTokenStorage", None)
+                if file_token_storage is not None:
+                    storage: Any = file_token_storage(server_url=server_url)
+                else:
+                    provider = fastmcp_oauth.OAuth(mcp_url=server_url)
+                    storage = provider.token_storage_adapter
                 tokens = await storage.get_tokens()
                 return tokens is not None
             except Exception:

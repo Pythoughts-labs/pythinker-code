@@ -154,26 +154,102 @@ def test_card_style_error_result(_force_card_style):
     assert "permission denied" in rendered
 
 
-def test_card_style_running_subagent_uses_dots_spinner(_force_card_style):
+def test_card_style_running_subagent_uses_solid_circle(_force_card_style, monkeypatch):
+    from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
+
+    register_builtin_renderers()
+    monkeypatch.setattr(
+        "pythinker_code.ui.shell.tool_renderers._render_utils.time.monotonic", lambda: 0.0
+    )
+    block = _ToolCallBlock(
+        _make_tool_call(name="Agent", args='{"description":"Audit UI","prompt":"check"}')
+    )
+    rendered = render_plain(block.compose(), width=80)
+    spinner_frames = set("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+
+    assert "subagent" in rendered
+    assert "Audit UI" in rendered
+    assert "●" in rendered
+    assert not any(frame in rendered for frame in spinner_frames)
+
+    block.finish(_ok_result("done"))
+    finished = render_plain(block.compose(), width=80)
+    assert not any(frame in finished for frame in spinner_frames)
+
+
+def test_card_style_running_task_output_uses_solid_circle(_force_card_style, monkeypatch):
+    from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
+
+    register_builtin_renderers()
+    monkeypatch.setattr(
+        "pythinker_code.ui.shell.tool_renderers._render_utils.time.monotonic", lambda: 0.0
+    )
+    block = _ToolCallBlock(
+        _make_tool_call(
+            name="TaskOutput",
+            args='{"task_id":"agent-123","block":true,"timeout":300}',
+        )
+    )
+    rendered = render_plain(block.compose(), width=80)
+    spinner_frames = set("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+
+    assert "task output" in rendered
+    assert "agent-123" in rendered
+    assert "●" in rendered
+    assert not any(frame in rendered for frame in spinner_frames)
+
+
+def test_card_style_running_subagent_marker_is_stable(_force_card_style, monkeypatch):
     from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
 
     register_builtin_renderers()
     block = _ToolCallBlock(
         _make_tool_call(name="Agent", args='{"description":"Audit UI","prompt":"check"}')
     )
+
+    monkeypatch.setattr("pythinker_code.ui.shell.spinner_words.time.monotonic", lambda: 0.0)
+    first = render_plain(block.compose(), width=80)
+    monkeypatch.setattr("pythinker_code.ui.shell.spinner_words.time.monotonic", lambda: 0.09)
+    second = render_plain(block.compose(), width=80)
+
+    assert first == second
+    assert "subagent" in first
+    assert "●" in first
+
+
+def test_card_style_background_subagent_result_keeps_solid_circle(_force_card_style, monkeypatch):
+    from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
+
+    register_builtin_renderers()
+    monkeypatch.setattr(
+        "pythinker_code.ui.shell.tool_renderers._render_utils.time.monotonic", lambda: 0.0
+    )
+    block = _ToolCallBlock(
+        _make_tool_call(
+            name="Agent",
+            args=('{"description":"background audit","prompt":"check","run_in_background":true}'),
+        )
+    )
+    block.finish(
+        _ok_result(
+            "task_id: agent-123\n"
+            "kind: agent\n"
+            "status: running\n"
+            "description: background audit\n"
+            "agent_id: a123\n"
+        )
+    )
     rendered = render_plain(block.compose(), width=80)
-    dots_frames = set("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+    spinner_frames = set("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
 
-    assert "subagent" in rendered
-    assert "Audit UI" in rendered
-    assert any(frame in rendered for frame in dots_frames)
-
-    block.finish(_ok_result("done"))
-    finished = render_plain(block.compose(), width=80)
-    assert not any(frame in finished for frame in dots_frames)
+    assert "background subagent working" in rendered
+    assert "background audit" in rendered
+    assert "status: running" in rendered
+    assert "●" in rendered
+    assert not any(frame in rendered for frame in spinner_frames)
 
 
-def test_card_style_background_subagent_result_keeps_dots_spinner(_force_card_style):
+def test_card_style_background_subagent_marker_is_stable(_force_card_style, monkeypatch):
     from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
 
     register_builtin_renderers()
@@ -192,13 +268,19 @@ def test_card_style_background_subagent_result_keeps_dots_spinner(_force_card_st
             "agent_id: a123\n"
         )
     )
-    rendered = render_plain(block.compose(), width=80)
-    dots_frames = set("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
 
-    assert "background subagent working" in rendered
-    assert "background audit" in rendered
-    assert "status: running" in rendered
-    assert any(frame in rendered for frame in dots_frames)
+    monkeypatch.setattr(
+        "pythinker_code.ui.shell.tool_renderers._render_utils.time.monotonic", lambda: 0.0
+    )
+    first = render_plain(block.compose(), width=80)
+    monkeypatch.setattr(
+        "pythinker_code.ui.shell.tool_renderers._render_utils.time.monotonic", lambda: 0.9
+    )
+    second = render_plain(block.compose(), width=80)
+
+    assert first == second
+    assert "background subagent working" in first
+    assert "●" in first
 
 
 def test_card_style_lifecycle_marks_execution_started(_force_card_style):

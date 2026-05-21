@@ -98,6 +98,23 @@ async def test_read_only_profile_denies_write_file_even_if_tool_is_present(
     assert not await target.exists()
 
 
+async def test_unknown_subagent_type_defaults_to_read_only_profile(
+    runtime: Runtime,
+    temp_work_dir: HostPath,
+) -> None:
+    runtime.role = "subagent"
+    runtime.subagent_type = "unknown-custom-agent"
+    target = temp_work_dir / "write-denied-unknown.txt"
+
+    with tool_call_context("WriteFile"):
+        tool = WriteFile(runtime, Approval(yolo=True))
+        result = await tool(WriteParams(path=str(target), content="nope"))
+
+    assert result.is_error
+    assert "permission profile blocks file mutations" in result.message
+    assert not await target.exists()
+
+
 async def test_toolset_denies_plugin_tool_in_read_only_profile(
     runtime: Runtime,
     tmp_path,

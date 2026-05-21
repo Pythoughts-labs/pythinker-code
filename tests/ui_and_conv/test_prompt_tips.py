@@ -355,9 +355,9 @@ def test_bottom_toolbar_shows_bash_and_agent_badges_together(monkeypatch: Any) -
 
     lines = _render_toolbar_lines(prompt_session, 120, monkeypatch)
 
-    assert "⚙ bash: 3" in lines[1], f"bash badge missing: {lines[1]!r}"
-    assert "⚙ agent: 1" in lines[1], f"agent badge missing: {lines[1]!r}"
-    assert lines[1].index("⚙ bash: 3") < lines[1].index("⚙ agent: 1"), (
+    assert "◇ bash: 3" in lines[1], f"bash badge missing: {lines[1]!r}"
+    assert "◇ agent: 1" in lines[1], f"agent badge missing: {lines[1]!r}"
+    assert lines[1].index("◇ bash: 3") < lines[1].index("◇ agent: 1"), (
         f"bash badge must come before agent badge: {lines[1]!r}"
     )
 
@@ -368,8 +368,8 @@ def test_bottom_toolbar_shows_agent_badge_alone_when_no_bash(monkeypatch: Any) -
 
     lines = _render_toolbar_lines(prompt_session, 120, monkeypatch)
 
-    assert "⚙ bash" not in lines[1], f"bash badge must not appear when count is 0: {lines[1]!r}"
-    assert "⚙ agent: 2" in lines[1], f"agent badge missing: {lines[1]!r}"
+    assert "◇ bash" not in lines[1], f"bash badge must not appear when count is 0: {lines[1]!r}"
+    assert "◇ agent: 2" in lines[1], f"agent badge missing: {lines[1]!r}"
 
 
 def test_bottom_toolbar_drops_agent_badge_before_bash_when_narrow(monkeypatch: Any) -> None:
@@ -382,9 +382,9 @@ def test_bottom_toolbar_drops_agent_badge_before_bash_when_narrow(monkeypatch: A
 
     # Must never overflow and the bash badge is preferred over the agent badge.
     assert _display_width(lines[1]) <= 40
-    if "⚙ agent" in lines[1]:
+    if "◇ agent" in lines[1]:
         # Only acceptable if bash also fit — otherwise priority is violated.
-        assert "⚙ bash" in lines[1], (
+        assert "◇ bash" in lines[1], (
             f"agent badge appeared without bash badge at narrow width: {lines[1]!r}"
         )
 
@@ -617,6 +617,41 @@ def test_running_prompt_uses_shared_toolbar_and_separator_layout(monkeypatch: An
     plain_toolbar = "".join(fragment[1] for fragment in rendered_toolbar)
     assert "tip" in plain_toolbar
     assert "context: 0.0%" in plain_toolbar
+
+
+def test_running_prompt_preamble_is_clipped_on_short_terminals(monkeypatch: Any) -> None:
+    width = 80
+    rows = 12
+    prompt_session = object.__new__(CustomPromptSession)
+    prompt_session._mode = PromptMode.AGENT
+    prompt_session._model_name = None
+    prompt_session._status_provider = lambda: StatusSnapshot(context_usage=0.0)
+    prompt_session._background_task_count_provider = None
+    prompt_session._thinking = False
+
+    class _TallRunningPrompt(_DummyRunningPrompt):
+        def render_running_prompt_body(self, columns: int) -> str:
+            return "\n".join(f"line {i}" for i in range(20))
+
+    prompt_session._running_prompt_delegate = _TallRunningPrompt()
+    prompt_session._modal_delegates = []
+
+    class _DummyOutput:
+        @staticmethod
+        def get_size() -> Any:
+            return SimpleNamespace(columns=width, rows=rows)
+
+    monkeypatch.setattr(
+        shell_prompt, "get_app_or_none", lambda: SimpleNamespace(output=_DummyOutput())
+    )
+
+    rendered_message = prompt_session._render_agent_prompt_message()
+    plain_message = "".join(fragment[1] for fragment in rendered_message)
+
+    assert "output clipped to fit terminal" in plain_message
+    assert "Ctrl+E expand" in plain_message
+    assert len(plain_message.splitlines()) <= rows - 3
+    assert plain_message.endswith(f"{'─' * width}\n› ")
 
 
 def test_modal_prompt_hides_normal_separator_and_prompt_label(monkeypatch) -> None:

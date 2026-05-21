@@ -9,11 +9,11 @@ each tick.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
 from rich.console import Group, RenderableType
 from rich.rule import Rule
-from rich.spinner import Spinner
 from rich.text import Text
 
 from pythinker_code.ui.shell.keymap import key_text
@@ -32,7 +32,7 @@ class BorderedLoaderState:
     Attributes:
         message: Status text shown next to the spinner.
         cancellable: When ``True``, append a ``<esc> cancel`` hint line.
-        spinner: Spinner style passed to ``rich.spinner.Spinner``.
+        spinner: Deprecated; loading now renders as the shared solid circle.
         accent_token: TUI token name for the border + spinner color.
     """
 
@@ -47,9 +47,11 @@ def render_bordered_loader(state: BorderedLoaderState) -> RenderableType:
     accent = tui_rich_style(state.accent_token)
     muted = tui_rich_style("muted")
 
-    spinner = Spinner(state.spinner, text=Text(state.message, style=muted), style=accent)
+    glyph = "●" if int(time.monotonic() / 0.8) % 2 == 0 else " "
+    loading = Text(f"{glyph} ", style=muted)
+    loading.append(state.message, style=muted)
 
-    children: list[RenderableType] = [Rule(style=accent), spinner]
+    children: list[RenderableType] = [Rule(style=accent), loading]
     if state.cancellable:
         cancel_key = key_text("tui.select.cancel") or "esc"
         hint = Text()

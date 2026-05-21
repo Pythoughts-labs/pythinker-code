@@ -21,6 +21,7 @@ telemetry must never break the host program.
 from __future__ import annotations
 
 import contextlib
+import re
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -38,6 +39,11 @@ from pythinker_code.telemetry import track
 # the buffer; the *full* scrubbed stack is already in Sentry/Bugsink.
 
 _RECENT_BUFFER_SIZE = 10
+_ABSOLUTE_PATH_RE = re.compile(r"(?<!\w)(?:/[\w .~+@%=-]+)+|[A-Za-z]:\\(?:[^\\\r\n]+\\?)+")
+
+
+def _redact_recent_message(message: str) -> str:
+    return _ABSOLUTE_PATH_RE.sub("<path>", message)[:200]
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,7 +107,7 @@ def report_handled_error(
                 timestamp=time.time(),
                 site=site,
                 exc_class=type(exc).__name__,
-                message=str(exc)[:200],
+                message=_redact_recent_message(str(exc)),
                 tool=tool,
             )
         )

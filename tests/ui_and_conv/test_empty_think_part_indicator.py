@@ -139,18 +139,19 @@ def test_moon_fallback_during_active_turn():
     assert len(agent_blocks) > 0
 
 
-def test_moon_hidden_when_content_block_visible():
-    """Content blocks take priority over the moon fallback."""
+def test_working_indicator_stays_visible_when_content_block_visible():
+    """The activity spinner stays visible while content streams."""
     view = _LiveView(StatusUpdate())
     view.dispatch_wire_message(TurnBegin(user_input="test"))
     view.dispatch_wire_message(StepBegin(n=1))
     view.dispatch_wire_message(TextPart(text="Hello"))
 
-    # Content block visible — compose_agent_output should show content, not moon
+    # Content block visible — compose_agent_output should also keep the
+    # persistent Working spinner visible.
     assert view._current_content_block is not None
     agent_blocks = view.compose_agent_output()
-    # Should have exactly one block (the content block), not two (content + moon)
-    assert len(agent_blocks) == 1
+    assert len(agent_blocks) >= 2
+    assert "…" in _render(agent_blocks[-1])
 
 
 def test_moon_fallback_after_all_tools_flushed(monkeypatch):
@@ -177,8 +178,8 @@ def test_moon_fallback_after_all_tools_flushed(monkeypatch):
     assert len(agent_blocks) == 1  # just the moon
 
 
-def test_moon_hidden_while_parallel_tool_still_running(monkeypatch):
-    """Moon fallback does not appear when tool blocks are still visible."""
+def test_working_indicator_stays_visible_while_parallel_tool_still_running(monkeypatch):
+    """The activity spinner stays visible while tool blocks are visible."""
     from pythinker_code.ui.shell.console import console as shell_console
 
     view = _LiveView(StatusUpdate())
@@ -194,9 +195,10 @@ def test_moon_hidden_while_parallel_tool_still_running(monkeypatch):
     view.dispatch_wire_message(_make_tool_result("call_1"))
 
     assert len(view._tool_call_blocks) == 1  # call_2 still there
-    # Tool block visible → moon hidden (tool block takes priority)
+    # Tool block visible → persistent loading-word spinner remains visible.
     agent_blocks = view.compose_agent_output()
-    assert len(agent_blocks) == 1  # just the running tool block
+    assert len(agent_blocks) >= 2
+    assert "…" in _render(agent_blocks[-1])
 
 
 def test_moon_survives_status_update(monkeypatch):

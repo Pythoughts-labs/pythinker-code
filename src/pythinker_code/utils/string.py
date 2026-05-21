@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import random
 import re
+import secrets
 import string
 
 _NEWLINE_RE = re.compile(r"[\r\n]+")
@@ -38,4 +38,4 @@ def shorten_middle(text: str, width: int, remove_newline: bool = True) -> str:
 def random_string(length: int = 8) -> str:
     """Generate a random string of fixed length."""
     letters = string.ascii_lowercase
-    return "".join(random.choice(letters) for _ in range(length))
+    return "".join(secrets.choice(letters) for _ in range(length))

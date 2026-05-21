@@ -19,7 +19,7 @@ from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.key_binding import KeyPressEvent
 from rich.console import Group, RenderableType
 from rich.panel import Panel
-from rich.spinner import Spinner
+from rich.style import Style
 from rich.text import Text
 
 from pythinker_code.ui.shell.console import render_to_ansi
@@ -75,7 +75,6 @@ class _BtwModalDelegate:
         self._response: str | None = None
         self._error: str | None = None
         self._is_loading: bool = True
-        self._spinner: Spinner = Spinner("dots", style="yellow")
         self._streaming_text: str = ""
         self._scroll_offset: int = 0
         self._auto_scroll: bool = True  # tail mode during streaming
@@ -96,6 +95,10 @@ class _BtwModalDelegate:
         self._auto_scroll = False
 
     # -- Title ---------------------------------------------------------------
+
+    def _loading_marker(self) -> Text:
+        glyph = "●" if int(time.monotonic() / 0.8) % 2 == 0 else " "
+        return Text(glyph, style=Style(color="grey50"))
 
     def _build_title(self) -> str:
         if self._is_loading:
@@ -126,9 +129,9 @@ class _BtwModalDelegate:
             if self._streaming_text:
                 parts.append(Markdown(self._streaming_text))
                 parts.append(Text(""))
-                parts.append(self._spinner)
+                parts.append(self._loading_marker())
             else:
-                parts.append(self._spinner)
+                parts.append(self._loading_marker())
         elif self._error:
             parts.append(Text(self._error, style="red"))
             parts.append(Text(""))

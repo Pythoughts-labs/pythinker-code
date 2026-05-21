@@ -17,6 +17,7 @@ def _redact_api_keys(content: str) -> str:
     """Replace api_key = "..." values with *** in TOML/JSON config content."""
     return _re.sub(r'(api_key\s*=\s*)"[^"]*"', r'\1"***"', content)
 
+
 router = APIRouter(prefix="/api/config", tags=["config"])
 
 

@@ -63,6 +63,7 @@ from pythinker_code.ui.shell.placeholders import (
     normalize_pasted_text,
     sanitize_surrogates,
 )
+from pythinker_code.ui.shell.spinner_words import spinner_frame, spinner_message
 from pythinker_code.ui.theme import get_prompt_style, get_toolbar_colors
 from pythinker_code.utils.clipboard import (
     grab_media_from_clipboard,
@@ -197,8 +198,6 @@ class SlashCommandCompleter(Completer):
         token = text[last_space + 1 :]
 
         typed = token[1:]
-        if typed and typed in self._command_lookup:
-            return
         mention_doc = Document(text=typed, cursor_position=len(typed))
         candidates = list(self._fuzzy.get_completions(mention_doc, complete_event))
 
@@ -251,6 +250,89 @@ def _truncate_to_width(text: str, width: int) -> str:
         chars.append(ch)
         total += ch_width
     return "".join(chars) + ellipsis + (" " * max(0, width - total - ellipsis_width))
+
+
+def _fit_formatted_text_to_rows(
+    fragments: FormattedText,
+    columns: int,
+    max_rows: int,
+) -> FormattedText:
+    """Crop prompt preamble text so it cannot cover the input/footer area.
+
+    prompt_toolkit reserves the bottom toolbar separately. If the dynamic
+    prompt message grows taller than the terminal, the rendered tool card can
+    visually run underneath the input row and footer. Count wrapped display rows
+    and leave a compact truncation hint instead of allowing overlap.
+    """
+    if max_rows <= 0:
+        return FormattedText([])
+    if columns <= 0:
+        columns = 80
+
+    line_count = 1
+    col = 0
+    for _, text, *_ in fragments:
+        for ch in text:
+            if ch == "\n":
+                line_count += 1
+                col = 0
+                continue
+            width = max(0, get_cwidth(ch))
+            if width and col + width > columns:
+                line_count += 1
+                col = 0
+            col += width
+    if line_count <= max_rows:
+        return fragments
+
+    content_rows = max(0, max_rows - 1)
+    if content_rows == 0:
+        return FormattedText([("class:dim", _truncate_right("… Ctrl+E expand", columns))])
+
+    out: FormattedText = FormattedText()
+    row = 1
+    col = 0
+    stop = False
+    for style, text, *_ in fragments:
+        if stop:
+            break
+        chunk: list[str] = []
+        for ch in text:
+            if ch == "\n":
+                if row >= content_rows:
+                    stop = True
+                    break
+                chunk.append(ch)
+                row += 1
+                col = 0
+                continue
+            width = max(0, get_cwidth(ch))
+            if width and col + width > columns:
+                if row >= content_rows:
+                    stop = True
+                    break
+                chunk.append("\n")
+                row += 1
+                col = 0
+            chunk.append(ch)
+            col += width
+        if chunk:
+            out.append((style, "".join(chunk)))
+
+    if out and not out[-1][1].endswith("\n"):
+        out.append(("", "\n"))
+    clip_hint = _truncate_right("… output clipped to fit terminal · Ctrl+E expand", columns)
+    out.append(("class:dim", clip_hint))
+    return out
+
+
+def _prompt_preamble_max_rows(terminal_rows: int | None) -> int:
+    if terminal_rows is None or terminal_rows <= 0:
+        return 20
+    # Reserve rows for: spacer, separator, input row, toolbar separator, footer
+    # rows, and one safety row. This prevents large tool cards from painting
+    # underneath the prompt/footer on short terminals.
+    return max(1, terminal_rows - 7)
 
 
 def _wrap_to_width(text: str, width: int, *, max_lines: int | None = None) -> list[str]:
@@ -1730,26 +1812,36 @@ class CustomPromptSession:
 
     def _render_shell_prompt_message(self) -> FormattedText:
         app = get_app_or_none()
-        columns = app.output.get_size().columns if app is not None else 80
+        size = app.output.get_size() if app is not None else None
+        columns = size.columns if size is not None else 80
         fragments: FormattedText = FormattedText()
 
-        # Agent status (always visible)
+        # Dynamic preamble (agent status + modal/interactive body). Keep it
+        # within the visible terminal area so it cannot overlap the input/footer.
+        preamble: FormattedText = FormattedText()
         agent_status = self._render_agent_status(columns)
         if agent_status:
-            fragments.extend(agent_status)
+            preamble.extend(agent_status)
             if not agent_status[-1][1].endswith("\n"):
-                fragments.append(("", "\n"))
+                preamble.append(("", "\n"))
 
-        # Interactive body
         body = self._render_interactive_body(columns)
         if body:
-            fragments.extend(body)
+            preamble.extend(body)
             if not body[-1][1].endswith("\n"):
-                fragments.append(("", "\n"))
+                preamble.append(("", "\n"))
+
+        if preamble:
+            preamble = _fit_formatted_text_to_rows(
+                preamble,
+                columns,
+                _prompt_preamble_max_rows(getattr(size, "rows", None)),
+            )
+            fragments.extend(preamble)
 
         if self._active_modal_delegate() is not None:
             return fragments
-        has_content = bool(agent_status or body)
+        has_content = bool(preamble)
         if has_content:
             fragments.append(("", "\n"))
         # Shell mode: simple separator + $ prefix (no panel border)
@@ -1882,24 +1974,34 @@ class CustomPromptSession:
 
     def _render_agent_prompt_message(self) -> FormattedText:
         app = get_app_or_none()
-        columns = app.output.get_size().columns if app is not None else 80
+        size = app.output.get_size() if app is not None else None
+        columns = size.columns if size is not None else 80
         fragments: FormattedText = FormattedText()
 
-        # 1. Agent status — ALWAYS rendered from running prompt delegate.
-        #    This ensures spinners, content blocks, tool calls etc. stay
-        #    visible even when a modal (btw/approval/question) is active.
+        # 1–2. Dynamic preamble — agent status is always rendered from the
+        # running prompt delegate, and body comes from the active modal/delegate.
+        # Cap the combined preamble to fit short terminals; otherwise large
+        # cards visually overwrite the input line and footer.
+        preamble: FormattedText = FormattedText()
         agent_status = self._render_agent_status(columns)
         if agent_status:
-            fragments.extend(agent_status)
+            preamble.extend(agent_status)
             if not agent_status[-1][1].endswith("\n"):
-                fragments.append(("", "\n"))
+                preamble.append(("", "\n"))
 
-        # 2. Interactive area — from the active delegate (modal overrides).
         body = self._render_interactive_body(columns)
         if body:
-            fragments.extend(body)
+            preamble.extend(body)
             if not body[-1][1].endswith("\n"):
-                fragments.append(("", "\n"))
+                preamble.append(("", "\n"))
+
+        if preamble:
+            preamble = _fit_formatted_text_to_rows(
+                preamble,
+                columns,
+                _prompt_preamble_max_rows(getattr(size, "rows", None)),
+            )
+            fragments.extend(preamble)
 
         # 3. When a modal is active, skip input panel border.
         if self._active_modal_delegate() is not None:
@@ -1915,8 +2017,48 @@ class CustomPromptSession:
         """Render agent streaming output (always visible, independent of modals)."""
         running = self._running_prompt_delegate
         if running is not None and isinstance(running, AgentStatusProvider):
-            return to_formatted_text(running.render_agent_status(columns))
-        return self._render_status_block(columns)
+            rendered = to_formatted_text(running.render_agent_status(columns))
+            if any(fragment for _, fragment, *_ in rendered):
+                return rendered
+
+        fragments = self._render_background_working_status(columns)
+        status = self._render_status_block(columns)
+        if status:
+            if fragments and not fragments[-1][1].endswith("\n"):
+                fragments.append(("", "\n"))
+            fragments.extend(status)
+        return fragments
+
+    def _render_background_working_status(self, columns: int) -> FormattedText:
+        """Render an idle prompt spinner while background work is active."""
+        counts = self._background_task_counts()
+        total = counts.bash + counts.agent
+        if total <= 0:
+            return FormattedText([])
+        now = time.monotonic()
+        frame = spinner_frame(now)
+        noun = "process" if total == 1 else "processes"
+        detail = f"{total} background {noun}"
+        if counts.agent and counts.bash:
+            detail = f"{counts.agent} agent, {counts.bash} bash"
+        elif counts.agent:
+            detail = f"{counts.agent} background agent{'s' if counts.agent != 1 else ''}"
+        elif counts.bash:
+            detail = f"{counts.bash} background bash task{'s' if counts.bash != 1 else ''}"
+        text = f"{frame} {spinner_message(now)} {detail}"
+        if _display_width(text) > columns:
+            text = _truncate_right(text, columns)
+        return FormattedText([("ansicyan", text)])
+
+    def _background_task_counts(self) -> BgTaskCounts:
+        provider = getattr(self, "_background_task_count_provider", None)
+        if provider is None:
+            return BgTaskCounts()
+        return provider()
+
+    def _has_background_tasks(self) -> bool:
+        counts = self._background_task_counts()
+        return counts.bash > 0 or counts.agent > 0
 
     def _render_interactive_body(self, columns: int) -> FormattedText:
         """Render the interactive area from the active delegate (modal or running prompt)."""
@@ -1959,6 +2101,7 @@ class CustomPromptSession:
                     interval = (
                         _RUNNING_REFRESH_INTERVAL
                         if self._active_prompt_delegate() is not None
+                        or self._has_background_tasks()
                         or (
                             self._fast_refresh_provider is not None
                             and self._fast_refresh_provider()
@@ -2289,7 +2432,7 @@ class CustomPromptSession:
         for kind_label, kind_count in (("bash", bg_counts.bash), ("agent", bg_counts.agent)):
             if kind_count <= 0:
                 continue
-            bg_text = f"⚙ {kind_label}: {kind_count}"
+            bg_text = f"◇ {kind_label}: {kind_count}"
             bg_width = _display_width(bg_text)
             if remaining < bg_width + 2:
                 break

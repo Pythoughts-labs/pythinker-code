@@ -185,9 +185,7 @@ class DeviceAuthorization:
 def _oauth_host() -> str:
     host = os.getenv("PYTHINKER_CODE_OAUTH_HOST") or os.getenv("PYTHINKER_OAUTH_HOST")
     if host is not None and not host.startswith("https://"):
-        raise ValueError(
-            f"PYTHINKER_CODE_OAUTH_HOST must use HTTPS, got: {host!r}"
-        )
+        raise ValueError(f"PYTHINKER_CODE_OAUTH_HOST must use HTTPS, got: {host!r}")
     return host or DEFAULT_OAUTH_HOST
 
 

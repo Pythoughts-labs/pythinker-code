@@ -8,7 +8,7 @@ from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.document import Document
 from rich.text import Text
 
-from pythinker_code.ui.shell.prompt import PromptMode, UserInput
+from pythinker_code.ui.shell.prompt import BgTaskCounts, CustomPromptSession, PromptMode, UserInput
 from pythinker_code.wire.types import ApprovalRequest, StatusUpdate, SteerInput, TextPart
 
 shell_visualize = importlib.import_module("pythinker_code.ui.shell.visualize")
@@ -106,6 +106,37 @@ def test_render_agent_status_uses_compose_agent_output_not_compose() -> None:
     assert agent_calls == [True], "compose_agent_output() should be called"
     assert compose_calls == [], "compose() should NOT be called"
     assert "agent-status" in rendered.value
+
+
+def test_prompt_status_shows_working_spinner_for_background_tasks() -> None:
+    session = object.__new__(CustomPromptSession)
+    session._running_prompt_delegate = None
+    session._background_task_count_provider = lambda: BgTaskCounts(agent=2)
+    session._status_block_provider = None
+
+    rendered = CustomPromptSession._render_agent_status(session, 80)
+    text = "".join(item[1] for item in rendered)
+
+    assert "…" in text
+    assert "2 background agents" in text
+
+
+def test_prompt_status_falls_back_to_background_spinner_after_turn_end() -> None:
+    session = object.__new__(CustomPromptSession)
+    session._background_task_count_provider = lambda: BgTaskCounts(agent=1)
+    session._status_block_provider = None
+
+    class _EndedDelegate:
+        def render_agent_status(self, columns: int):  # noqa: ARG002
+            return ""
+
+    session._running_prompt_delegate = cast(Any, _EndedDelegate())
+
+    rendered = CustomPromptSession._render_agent_status(session, 80)
+    text = "".join(item[1] for item in rendered)
+
+    assert "…" in text
+    assert "1 background agent" in text
 
 
 def test_running_prompt_hides_placeholder() -> None:

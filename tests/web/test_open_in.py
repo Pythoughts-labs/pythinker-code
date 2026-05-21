@@ -1,8 +1,19 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+from typing import cast
+
 import pytest
+from fastapi import Request
 
 from pythinker_code.web.api import open_in as open_in_api
+
+
+def _http_request(restrict_sensitive_apis: bool = False, startup_dir: str | None = None) -> Request:
+    state = SimpleNamespace(
+        restrict_sensitive_apis=restrict_sensitive_apis, startup_dir=startup_dir
+    )
+    return cast(Request, SimpleNamespace(app=SimpleNamespace(state=state)))
 
 
 @pytest.mark.anyio
@@ -13,7 +24,7 @@ async def test_open_in_supports_windows_directory(monkeypatch, tmp_path) -> None
     monkeypatch.setattr(open_in_api, "_spawn_process", lambda args: calls.append(args))
 
     response = await open_in_api.open_in(
-        open_in_api.OpenInRequest(app="finder", path=str(tmp_path))
+        open_in_api.OpenInRequest(app="finder", path=str(tmp_path)), _http_request()
     )
 
     assert response.ok is True
@@ -30,7 +41,7 @@ async def test_open_in_supports_windows_file_selection(monkeypatch, tmp_path) ->
     monkeypatch.setattr(open_in_api, "_spawn_process", lambda args: calls.append(args))
 
     response = await open_in_api.open_in(
-        open_in_api.OpenInRequest(app="finder", path=str(file_path))
+        open_in_api.OpenInRequest(app="finder", path=str(file_path)), _http_request()
     )
 
     assert response.ok is True
@@ -55,7 +66,7 @@ async def test_open_in_offloads_sync_work_to_thread(monkeypatch, tmp_path) -> No
     monkeypatch.setattr(open_in_api.asyncio, "to_thread", fake_to_thread)
 
     response = await open_in_api.open_in(
-        open_in_api.OpenInRequest(app="finder", path=str(tmp_path))
+        open_in_api.OpenInRequest(app="finder", path=str(tmp_path)), _http_request()
     )
 
     assert response.ok is True

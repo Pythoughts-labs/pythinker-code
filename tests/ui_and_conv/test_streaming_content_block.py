@@ -300,22 +300,24 @@ class TestShowThinkingStream:
         result = block.compose()
         assert isinstance(result, Group)
 
-    def test_stream_mode_compose_no_pending_returns_spinner_only(self):
-        from rich.spinner import Spinner
+    def test_stream_mode_compose_no_pending_returns_status_text(self):
+        from rich.text import Text
 
         block = _ContentBlock(is_think=True, show_thinking_stream=True)
-        # No content appended yet — should fall back to the bare spinner.
         result = block.compose()
-        assert isinstance(result, Spinner)
+        assert isinstance(result, Text)
+        assert "Thinking" in result.plain
 
-    def test_stream_mode_spinner_uses_thinking_label(self):
-        """Stream mode must restore the legacy 'Thinking...' spinner label."""
+    def test_stream_mode_status_includes_token_count(self):
+        """Stream mode shows the active thinking status line before content arrives."""
+        from rich.text import Text
+
         block = _ContentBlock(is_think=True, show_thinking_stream=True)
         result = block.compose()
-        # Spinner.text is a Text — extract its plain string for assertion
-        text = result.text  # type: ignore[reportAttributeAccessIssue]
-        plain = text.plain if hasattr(text, "plain") else str(text)
+        assert isinstance(result, Text)
+        plain = result.plain
         assert "Thinking" in plain
+        assert "tokens" in plain
 
     def test_compact_mode_compose_final_returns_trace_line(self):
         from rich.text import Text

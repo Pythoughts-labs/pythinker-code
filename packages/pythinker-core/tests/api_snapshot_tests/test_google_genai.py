@@ -325,7 +325,7 @@ async def test_google_genai_vertexai_message_conversion():
                                 {
                                     "description": "Add two integers.",
                                     "name": "add",
-                                    "parametersJsonSchema": {
+                                    "parameters_json_schema": {
                                         "type": "object",
                                         "properties": {
                                             "a": {"type": "integer", "description": "First number"},
@@ -340,7 +340,7 @@ async def test_google_genai_vertexai_message_conversion():
                                 {
                                     "description": "Multiply two integers.",
                                     "name": "multiply",
-                                    "parametersJsonSchema": {
+                                    "parameters_json_schema": {
                                         "type": "object",
                                         "properties": {
                                             "a": {"type": "integer", "description": "First number"},
@@ -423,7 +423,7 @@ async def test_google_genai_vertexai_message_conversion():
                                 {
                                     "description": "Add two integers.",
                                     "name": "add",
-                                    "parametersJsonSchema": {
+                                    "parameters_json_schema": {
                                         "type": "object",
                                         "properties": {
                                             "a": {"type": "integer", "description": "First number"},
@@ -438,7 +438,7 @@ async def test_google_genai_vertexai_message_conversion():
                                 {
                                     "description": "Multiply two integers.",
                                     "name": "multiply",
-                                    "parametersJsonSchema": {
+                                    "parameters_json_schema": {
                                         "type": "object",
                                         "properties": {
                                             "a": {"type": "integer", "description": "First number"},

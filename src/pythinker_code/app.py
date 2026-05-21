@@ -434,7 +434,7 @@ class PythinkerCLI:
         # Cleanup MCP connections held by the toolset
         from pythinker_code.soul.toolset import PythinkerToolset
 
-        toolset = self._soul._agent.toolset
+        toolset = self._soul.agent.toolset
         if isinstance(toolset, PythinkerToolset):
             with contextlib.suppress(Exception):
                 await toolset.cleanup()

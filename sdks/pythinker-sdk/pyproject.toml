@@ -19,7 +19,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-dependencies = ["pythinker-core==1.1.0", "mcp>=1,<1.17"]
+dependencies = ["pythinker-core==1.1.0", "mcp>=1.23,<2", "httpx>=0.28.1"]
 
 [project.urls]
 Homepage      = "https://github.com/mohamed-elkholy95/Pythinker-Code"
@@ -40,7 +40,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.8.5,<0.10.0"]
+requires = ["uv_build>=0.8.5,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]

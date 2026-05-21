@@ -212,6 +212,40 @@ class TestAsyncioHandler:
             loop.set_exception_handler(None)
 
     @pytest.mark.asyncio
+    async def test_exception_none_context_is_suppressed(self):
+        """Prompt-toolkit should not show an overlay for Exception None cleanup noise."""
+        loop = asyncio.get_running_loop()
+        calls: list[dict[str, Any]] = []
+        loop.default_exception_handler = lambda ctx: calls.append(ctx)  # type: ignore[method-assign]
+        install_asyncio_handler(loop)
+
+        try:
+            loop.call_exception_handler({"message": "Task was destroyed but it is pending!"})
+
+            assert calls == []
+            assert len(telemetry_mod._event_queue) == 0
+        finally:
+            loop.set_exception_handler(None)
+
+    @pytest.mark.asyncio
+    async def test_cancelled_error_default_handler_is_suppressed(self):
+        """CancelledError is normal control flow and should not trigger UI overlays."""
+        loop = asyncio.get_running_loop()
+        calls: list[dict[str, Any]] = []
+        loop.default_exception_handler = lambda ctx: calls.append(ctx)  # type: ignore[method-assign]
+        install_asyncio_handler(loop)
+
+        try:
+            loop.call_exception_handler(
+                {"message": "cancelled", "exception": asyncio.CancelledError()}
+            )
+
+            assert calls == []
+            assert len(telemetry_mod._event_queue) == 0
+        finally:
+            loop.set_exception_handler(None)
+
+    @pytest.mark.asyncio
     async def test_original_handler_preserved(self):
         """An existing custom asyncio exception handler is still invoked."""
         captured: list[dict[str, Any]] = []

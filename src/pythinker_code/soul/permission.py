@@ -181,7 +181,7 @@ _WRAPPER_COMMANDS = {"command", "env", "nohup", "sudo", "time"}
 def permission_profile_for_runtime(runtime: Runtime) -> PermissionProfile:
     """Return the hard permission profile currently enforced for a runtime."""
     if runtime.role == "subagent" and runtime.subagent_type:
-        profile_name = _SUBAGENT_PROFILES.get(runtime.subagent_type, "implement")
+        profile_name = _SUBAGENT_PROFILES.get(runtime.subagent_type, "read_only")
     elif runtime.session.state.plan_mode:
         profile_name = "plan"
     else:

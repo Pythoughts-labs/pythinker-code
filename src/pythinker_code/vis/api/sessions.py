@@ -9,7 +9,7 @@ import logging
 import re
 import shutil
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from uuid import uuid4
 
@@ -647,17 +647,41 @@ async def import_session(file: UploadFile) -> dict[str, Any]:
         session_dir = imported_root / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
 
-        # Zip Slip protection: reject entries with path traversal or absolute paths
-        for info in zf.infolist():
-            if info.filename.startswith("/") or ".." in info.filename.split("/"):
-                shutil.rmtree(session_dir, ignore_errors=True)
-                raise HTTPException(
-                    status_code=400,
-                    detail="ZIP contains unsafe path entries",
-                )
+        session_dir_resolved = session_dir.resolve()
+
+        def safe_extract_member(info: zipfile.ZipInfo) -> None:
+            filename = info.filename
+            member_path = PurePosixPath(filename)
+            is_symlink = (info.external_attr >> 16) & 0o170000 == 0o120000
+            if (
+                not filename
+                or filename.startswith(("/", "\\"))
+                or member_path.is_absolute()
+                or any(part in {"", ".", ".."} for part in member_path.parts)
+                or ":" in member_path.parts[0]
+                or is_symlink
+            ):
+                raise HTTPException(status_code=400, detail="ZIP contains unsafe path entries")
+
+            target = (session_dir / Path(*member_path.parts)).resolve()
+            if not target.is_relative_to(session_dir_resolved):
+                raise HTTPException(status_code=400, detail="ZIP contains unsafe path entries")
+
+            if info.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                return
+
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(info) as src, target.open("wb") as dst:
+                shutil.copyfileobj(src, dst)
 
         # Extract - handle both flat ZIPs and ZIPs with a single top-level directory
-        zf.extractall(session_dir)
+        try:
+            for info in zf.infolist():
+                safe_extract_member(info)
+        except HTTPException:
+            shutil.rmtree(session_dir, ignore_errors=True)
+            raise
 
         # If all files are under a single subdirectory, flatten them
         entries = list(session_dir.iterdir())

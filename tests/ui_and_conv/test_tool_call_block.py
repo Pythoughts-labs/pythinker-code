@@ -7,7 +7,7 @@ from pythinker_core.message import ToolCall
 from pythinker_core.tooling import ToolError, ToolOk
 from rich.console import Console
 
-from pythinker_code.ui.shell.visualize import _ToolCallBlock
+from pythinker_code.ui.shell.visualize import _ToolCallBlock, _worklog
 from pythinker_code.wire.types import ToolResult
 
 
@@ -73,11 +73,13 @@ def test_tool_call_block_renders_running_worklog_entry():
     assert "running" in output.lower()
 
 
-def test_tool_call_block_renders_running_subagent_with_dots_particle():
+def test_tool_call_block_renders_running_subagent_with_solid_circle(monkeypatch):
+    monkeypatch.setattr(_worklog.time, "monotonic", lambda: 0.0)
     block = _ToolCallBlock(_tool_call("Agent", '{"description":"Audit UI"}'))
     output = _plain(block.compose())
 
-    assert any(frame in output for frame in "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+    assert "●" in output
+    assert not any(frame in output for frame in "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
     assert "Subagent" in output
     assert "Audit UI" in output
     assert "running" in output.lower()

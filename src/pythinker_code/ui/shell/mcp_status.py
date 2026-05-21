@@ -4,14 +4,12 @@ import time
 
 from prompt_toolkit.formatted_text import FormattedText
 from rich.console import Group, RenderableType
-from rich.spinner import Spinner
+from rich.style import Style
 from rich.text import Text
 
 from pythinker_code.ui.theme import get_mcp_prompt_colors
 from pythinker_code.utils.rich.columns import BulletColumns
 from pythinker_code.wire.types import MCPServerSnapshot, MCPStatusSnapshot
-
-_SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 
 
 def render_mcp_console(snapshot: MCPStatusSnapshot) -> RenderableType:
@@ -19,7 +17,12 @@ def render_mcp_console(snapshot: MCPStatusSnapshot) -> RenderableType:
         ("MCP Servers: ", "bold"),
         f"{snapshot.connected}/{snapshot.total} connected, {snapshot.tools} tools",
     )
-    header: RenderableType = Spinner("dots", header_text) if snapshot.loading else header_text
+    if snapshot.loading:
+        glyph = "●" if int(time.monotonic() / 0.8) % 2 == 0 else " "
+        header = Text(f"{glyph} ", style=Style(color="grey50"))
+        header.append_text(header_text)
+    else:
+        header = header_text
 
     renderables: list[RenderableType] = [BulletColumns(header)]
     for server in snapshot.servers:
@@ -51,7 +54,7 @@ def render_mcp_prompt(snapshot: MCPStatusSnapshot, *, now: float | None = None) 
 
     fragments: list[tuple[str, str]] = []
     colors = get_mcp_prompt_colors()
-    prefix = f"{_spinner_frame(now)} " if snapshot.loading else ""
+    prefix = "● " if snapshot.loading else ""
     fragments.append(
         (
             colors.text,
@@ -71,11 +74,6 @@ def render_mcp_prompt(snapshot: MCPStatusSnapshot, *, now: float | None = None) 
         fragments.append(("", "\n"))
 
     return FormattedText(fragments)
-
-
-def _spinner_frame(now: float | None = None) -> str:
-    timestamp = time.monotonic() if now is None else now
-    return _SPINNER_FRAMES[int(timestamp * 8) % len(_SPINNER_FRAMES)]
 
 
 def _status_color(status: str) -> str:

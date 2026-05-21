@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from enum import Enum
 
 from pythinker_core.tooling import BriefDisplayBlock, DisplayBlock
 from rich.console import Group, RenderableType
 from rich.panel import Panel
+from rich.style import Style
 from rich.text import Text
 
 from pythinker_code.tools.display import (
@@ -68,6 +70,20 @@ _STATE_STYLE = {
     WorkLogState.INTERRUPTED: "yellow",
 }
 
+_STATE_ICON_STYLE = {
+    WorkLogState.COMPLETED: Style(color="green"),
+    WorkLogState.FAILED: Style(color="red"),
+    WorkLogState.DENIED: Style(color="grey50", strike=True),
+    WorkLogState.INTERRUPTED: Style(color="yellow"),
+}
+
+
+def _state_icon(state: WorkLogState) -> tuple[str, Style]:
+    if state == WorkLogState.RUNNING:
+        glyph = "●" if int(time.monotonic() / 0.8) % 2 == 0 else " "
+        return glyph, Style(color="grey50")
+    return "●", _STATE_ICON_STYLE[state]
+
 
 def tool_style(name: str) -> ToolStyle:
     return _TOOL_STYLES.get(name, ToolStyle(name, "⚙", "blue"))
@@ -102,7 +118,8 @@ def render_worklog_entry(
 ) -> RenderableType:
     line = Text()
     if icon_renderable is None:
-        line.append(icon, style=icon_style)
+        glyph, glyph_style = _state_icon(state)
+        line.append(glyph, style=glyph_style)
         line.append(" ")
     line.append(label, style="bold")
     if target:

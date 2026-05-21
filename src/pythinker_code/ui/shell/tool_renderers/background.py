@@ -18,6 +18,7 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     fg,
     format_lines_block,
     invalid_arg,
+    running_spinner,
     tool_title,
 )
 
@@ -39,7 +40,11 @@ def _render_call_with_id(
         line.append_text(fg("accent", task_id))
     for extra in extras:
         line.append_text(fg("muted", f" {extra}"))
-    return line
+    return running_spinner(
+        line,
+        execution_started=ctx.execution_started,
+        has_result=ctx.has_result,
+    )
 
 
 def _render_block_result(

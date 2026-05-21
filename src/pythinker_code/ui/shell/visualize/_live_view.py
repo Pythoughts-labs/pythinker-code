@@ -9,9 +9,11 @@ Rich renderable via ``compose()``.  The Rich ``Live`` context drives refresh.
 from __future__ import annotations
 
 import asyncio
+import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
+from typing import Literal
 
 from pythinker_core.message import Message
 from pythinker_core.tooling import ToolError, ToolOk
@@ -19,12 +21,13 @@ from rich.console import Group, RenderableType
 from rich.live import Live
 from rich.markup import escape as rich_escape
 from rich.panel import Panel
-from rich.spinner import Spinner
+from rich.style import Style
 from rich.text import Text
 
 from pythinker_code.ui.shell.console import console
 from pythinker_code.ui.shell.echo import render_user_echo
 from pythinker_code.ui.shell.keyboard import KeyboardListener, KeyEvent
+from pythinker_code.ui.shell.spinner_words import spinner_frame, spinner_message
 from pythinker_code.ui.shell.visualize._approval_panel import (
     ApprovalRequestPanel,
     show_approval_in_pager,
@@ -78,6 +81,7 @@ from pythinker_code.wire.types import (
 
 MAX_LIVE_NOTIFICATIONS = 4
 EXTERNAL_MESSAGE_GRACE_S = 0.1
+_LIVE_VERTICAL_OVERFLOW: Literal["crop", "ellipsis", "visible"] = "ellipsis"
 
 
 @asynccontextmanager
@@ -113,11 +117,10 @@ class _LiveView:
         self._cancel_event = cancel_event
         self._show_thinking_stream = show_thinking_stream
 
-        self._mooning_spinner = Spinner("weather", "")
         self._active_turn_depth = 0
         self._compaction_block: _CompactionBlock | None = None
-        self._mcp_loading_spinner: Spinner | None = None
-        self._btw_spinner: Spinner | None = None
+        self._mcp_loading_spinner: RenderableType | None = None
+        self._btw_spinner: RenderableType | None = None
         self._btw_question: str | None = None
 
         self._current_content_block: _ContentBlock | None = None
@@ -163,7 +166,11 @@ class _LiveView:
             console=console,
             refresh_per_second=10,
             transient=True,
-            vertical_overflow="visible",
+            # Never let the transient Live region paint beyond the terminal
+            # viewport.  Interactive prompt mode has its own row budget; this
+            # protects non-interactive Rich Live mode from tall tool cards,
+            # approval panels, or streaming output overlapping the screen.
+            vertical_overflow=_LIVE_VERTICAL_OVERFLOW,
         ) as live:
 
             async def keyboard_handler(listener: KeyboardListener, event: KeyEvent) -> None:
@@ -372,17 +379,32 @@ class _LiveView:
                 ):
                     continue
                 # Blank-line spacer between consecutive tool cards so adjacent
-                # tinted backgrounds don't visually merge into one block.
+                # tinted backgrounds don't visually merge into one block. Use a
+                # single space rather than an empty Text so Rich keeps the row.
                 if not first_tool_block and is_card_style():
-                    blocks.append(Text(""))
+                    blocks.append(Text(" "))
                 blocks.append(tool_call.compose())
                 has_main_content = True
                 first_tool_block = False
-            if not has_main_content and self._active_turn_depth > 0:
-                blocks.append(self._mooning_spinner)
+            if self._active_turn_depth > 0:
+                # Keep a stable activity indicator visible even while content or
+                # tool cards are already on-screen. This makes long-running
+                # background waits feel alive instead of frozen.
+                if has_main_content and is_card_style():
+                    blocks.append(Text(" "))
+                blocks.append(self._working_indicator())
         for notification in list(self._live_notification_blocks):
             blocks.append(notification.compose())
         return blocks
+
+    def _working_indicator(self) -> Text:
+        # Use manual frame selection instead of Rich Spinner here. This path is
+        # re-rendered by prompt_toolkit/Rich Live, and constructing a fresh Rich
+        # Spinner each render resets its internal clock, making the glyph look
+        # stuck next to the rotating verb.
+        line = Text(f"{spinner_frame()} ", style="cyan")
+        line.append(spinner_message(), style="grey50")
+        return line
 
     def compose(self, *, include_status: bool = True) -> RenderableType:
         """Compose the full live view display content.
@@ -439,7 +461,10 @@ class _LiveView:
                 self._compaction_block = None
                 self.refresh_soon()
             case MCPLoadingBegin():
-                self._mcp_loading_spinner = Spinner("dots", "Connecting MCP servers...")
+                glyph = "●" if int(time.monotonic() / 0.8) % 2 == 0 else " "
+                line = Text(f"{glyph} ", style=Style(color="grey50"))
+                line.append("Connecting MCP servers...", style="grey50")
+                self._mcp_loading_spinner = line
                 self.refresh_soon()
             case MCPLoadingEnd():
                 self._mcp_loading_spinner = None
@@ -447,7 +472,10 @@ class _LiveView:
             case BtwBegin(question=question):
                 truncated = (question[:40] + "...") if len(question) > 40 else question
                 self._btw_question = question
-                self._btw_spinner = Spinner("dots", f"Side question... {rich_escape(truncated)}")
+                glyph = "●" if int(time.monotonic() / 0.8) % 2 == 0 else " "
+                line = Text(f"{glyph} ", style=Style(color="grey50"))
+                line.append(f"Side question... {truncated}", style="grey50")
+                self._btw_spinner = line
                 self.refresh_soon()
             case BtwEnd(response=response, error=error):
                 self._btw_spinner = None
@@ -641,8 +669,6 @@ class _LiveView:
             block = self._tool_call_blocks.pop(tool_call_id)
             console.print()
             console.print(block.compose())
-            if block.is_background_pending:
-                console.print(Text("  (background agent still running)", style="dim italic"))
             self.refresh_soon()
         self.flush_notifications()
 

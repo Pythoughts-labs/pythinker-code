@@ -43,8 +43,10 @@ _device_id: str | None = None
 _session_id: str | None = None
 _client_info: tuple[str, str | None] | None = None
 """(name, version) tuple, set atomically via set_client_info."""
+_MAX_SESSION_STARTED_CACHE = 1024
 _session_started_sessions: set[str] = set()
-"""Session ids that already emitted the session_started event in this process."""
+_session_started_order: deque[str] = deque()
+"""Bounded session ids that already emitted the session_started event in this process."""
 _sink: EventSink | None = None
 _disabled: bool = False
 
@@ -100,6 +102,10 @@ def track_session_started_once(
         name = ui or "unknown"
 
     _session_started_sessions.add(session_id)
+    _session_started_order.append(session_id)
+    while len(_session_started_order) > _MAX_SESSION_STARTED_CACHE:
+        expired = _session_started_order.popleft()
+        _session_started_sessions.discard(expired)
     track(
         "session_started",
         client_name=name,

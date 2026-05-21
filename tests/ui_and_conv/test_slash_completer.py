@@ -47,8 +47,8 @@ def _completions(completer: SlashCommandCompleter, text: str):
     return list(completer.get_completions(document, event))
 
 
-def test_exact_command_match_hides_completions():
-    """Exact matches should not show completions."""
+def test_exact_command_match_keeps_completions_visible():
+    """Exact matches should still show completions so the slash menu stays open."""
     completer = SlashCommandCompleter(
         [
             _make_command("mcp"),
@@ -59,11 +59,11 @@ def test_exact_command_match_hides_completions():
 
     texts = _completion_texts(completer, "/mcp")
 
-    assert not texts
+    assert "/mcp" in texts
 
 
-def test_exact_alias_match_hides_completions():
-    """Exact alias matches should not show completions."""
+def test_exact_alias_match_keeps_completions_visible():
+    """Exact alias matches should still show the canonical completion."""
     completer = SlashCommandCompleter(
         [
             _make_command("help", aliases=["h"]),
@@ -73,7 +73,7 @@ def test_exact_alias_match_hides_completions():
 
     texts = _completion_texts(completer, "/h")
 
-    assert not texts
+    assert "/help" in texts
 
 
 def test_should_complete_only_for_root_slash_token():
@@ -109,7 +109,7 @@ def test_skill_completion_path_still_returns_registered_skill_command():
     )
 
     assert _completion_texts(completer, "/skill:de") == ["/skill:demo"]
-    assert _completion_texts(completer, "/skill:demo") == []
+    assert _completion_texts(completer, "/skill:demo") == ["/skill:demo"]
 
 
 def test_flow_completion_path_still_returns_registered_flow_command():
@@ -121,7 +121,7 @@ def test_flow_completion_path_still_returns_registered_flow_command():
     )
 
     assert _completion_texts(completer, "/flow:de") == ["/flow:demo"]
-    assert _completion_texts(completer, "/flow:demo") == []
+    assert _completion_texts(completer, "/flow:demo") == ["/flow:demo"]
 
 
 def test_wrap_to_width_respects_width():

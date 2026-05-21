@@ -208,15 +208,23 @@ def mcp_remove(
     typer.echo(f"Removed MCP server '{name}' from {get_global_mcp_config_file()}.")
 
 
+def _oauth_token_storage(server_url: str) -> Any:
+    from fastmcp.client.auth import oauth as fastmcp_oauth
+
+    file_token_storage = getattr(fastmcp_oauth, "FileTokenStorage", None)
+    if file_token_storage is not None:
+        return file_token_storage(server_url=server_url)
+    provider = fastmcp_oauth.OAuth(mcp_url=server_url)
+    return provider.token_storage_adapter
+
+
 def _has_oauth_tokens(server_url: str) -> bool:
     """Check if OAuth tokens exist for the server."""
     import asyncio
 
     async def _check() -> bool:
         try:
-            from fastmcp.client.auth.oauth import FileTokenStorage
-
-            storage = FileTokenStorage(server_url=server_url)
+            storage = _oauth_token_storage(server_url)
             tokens = await storage.get_tokens()
             return tokens is not None
         except Exception:
@@ -299,10 +307,15 @@ def mcp_reset_auth(
     server = _get_mcp_server(name, require_remote=True)
 
     try:
-        from fastmcp.client.auth.oauth import FileTokenStorage
+        import asyncio
 
-        storage = FileTokenStorage(server_url=server["url"])
-        storage.clear()
+        async def _clear() -> None:
+            storage = _oauth_token_storage(server["url"])
+            result = storage.clear()
+            if hasattr(result, "__await__"):
+                await result
+
+        asyncio.run(_clear())
         typer.echo(f"OAuth tokens cleared for '{name}'.")
     except ImportError:
         typer.echo("OAuth support not available.", err=True)

@@ -8,12 +8,13 @@ from collections.abc import Iterable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
+import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp import types as mcp_types
 from mcp.client.stdio import stdio_client
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 from pydantic import PrivateAttr
 from pythinker_core.message import (
     AudioURLPart,
@@ -328,19 +329,21 @@ class MCPToolset:
             read_stream, write_stream = await self._exit_stack.enter_async_context(
                 stdio_client(server_params)
             )
-            return ClientSession(read_stream, write_stream)
+            return cast(_MCPSession, ClientSession(read_stream, write_stream))
 
         if config.url is None:
             raise ValueError(f"MCP server `{config.name}` is missing a streamable HTTP URL")
-        read_stream, write_stream, _get_session_id = await self._exit_stack.enter_async_context(
-            streamablehttp_client(
-                config.url,
-                headers=config.headers,
-                timeout=config.timeout_seconds or 30,
-                sse_read_timeout=config.sse_read_timeout_seconds or 300,
-            )
+        timeout = httpx.Timeout(
+            config.timeout_seconds or 30,
+            read=config.sse_read_timeout_seconds or 300,
         )
-        return ClientSession(read_stream, write_stream)
+        http_client = await self._exit_stack.enter_async_context(
+            httpx.AsyncClient(headers=config.headers, timeout=timeout)
+        )
+        read_stream, write_stream, _get_session_id = await self._exit_stack.enter_async_context(
+            streamable_http_client(config.url, http_client=http_client)
+        )
+        return cast(_MCPSession, ClientSession(read_stream, write_stream))
 
     async def _register_session(
         self,

@@ -149,8 +149,11 @@ def _asyncio_handler(
     loop: asyncio.AbstractEventLoop,
     context: dict[str, Any],
 ) -> None:
+    if _should_suppress_asyncio_context(context):
+        return
+
     exc = context.get("exception")
-    if exc is not None and not _should_ignore_for_asyncio(exc):
+    if exc is not None:
         try:
             from pythinker_code.telemetry import sentry as _sentry
             from pythinker_code.telemetry import track

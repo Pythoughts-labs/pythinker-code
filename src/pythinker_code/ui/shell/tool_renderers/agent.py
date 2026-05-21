@@ -7,7 +7,6 @@ only (spawn, run, surface the final result).
 from __future__ import annotations
 
 from rich.console import Group, RenderableType
-from rich.spinner import Spinner
 from rich.style import Style as RichStyle
 from rich.text import Text
 
@@ -21,6 +20,8 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     fg,
     format_lines_block,
     invalid_arg,
+    loading_marker,
+    running_spinner,
     tool_title,
 )
 from pythinker_code.ui.theme import tui_rich_style
@@ -59,11 +60,13 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
     if resume:
         header.append_text(fg("muted", f" (resume {resume[:8]})"))
 
-    head: RenderableType = header
-    if ctx.execution_started and not ctx.has_result:
-        # Active subagent affordance: a running subagent gets a dots spinner
-        # so it reads as running, not just a static tool card.
-        head = Spinner("dots", text=header, style=tui_rich_style("accent"))
+    # Active subagent affordance: a running subagent gets the shared solid
+    # loading marker. Animated dots are reserved for the bottom thinking words.
+    head = running_spinner(
+        header,
+        execution_started=ctx.execution_started,
+        has_result=ctx.has_result,
+    )
 
     if prompt is None:
         if "prompt" in args:
@@ -99,12 +102,9 @@ def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> Rendera
         label = "background subagent working"
         if description:
             label = f"{label}: {description}"
-        spinner = Spinner(
-            "dots",
-            text=Text(label, style=tui_rich_style("muted")),
-            style=tui_rich_style("accent"),
-        )
-        return Group(spinner, fg("dim", f"  status: {background_status}"))
+        line = loading_marker(pulse=False)
+        line.append(label, style=tui_rich_style("muted"))
+        return Group(line, fg("dim", f"  status: {background_status}"))
     # Distinct success symbol so the eye doesn't mistake a finished subagent
     # for a generic tool tick — heavy check on success, heavy ballot on error.
     icon = fg("error", "✘") if result.is_error else fg("success", "✔")

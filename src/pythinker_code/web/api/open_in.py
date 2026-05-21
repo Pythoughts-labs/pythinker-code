@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 
 from pythinker_code.utils.logging import logger
@@ -184,8 +184,25 @@ def _open_in_sync(request: OpenInRequest, path: Path, *, is_file: bool) -> None:
         _open_in_windows(request, path, is_file=is_file)
 
 
+def _ensure_public_open_allowed(path: Path, http_request: Request) -> None:
+    if not getattr(http_request.app.state, "restrict_sensitive_apis", False):
+        return
+    startup_dir = getattr(http_request.app.state, "startup_dir", None)
+    if not startup_dir:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Open-in is restricted in public mode.",
+        )
+    allowed_root = Path(str(startup_dir)).expanduser().resolve()
+    if not path.is_relative_to(allowed_root):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Open-in path must stay within the public workspace.",
+        )
+
+
 @router.post("", summary="Open a path in a local application")
-async def open_in(request: OpenInRequest) -> OpenInResponse:
+async def open_in(request: OpenInRequest, http_request: Request) -> OpenInResponse:
     if sys.platform not in {"darwin", "win32"}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -193,6 +210,8 @@ async def open_in(request: OpenInRequest) -> OpenInResponse:
         )
 
     path = _resolve_path(request.path)
+    _ensure_public_open_allowed(path, http_request)
+    logger.info("Open-in requested: app={app} path={path}", app=request.app, path=path)
     is_file = path.is_file()
 
     try:

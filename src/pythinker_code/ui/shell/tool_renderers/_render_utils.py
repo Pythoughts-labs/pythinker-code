@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 from typing import Any
 
-from rich.console import RenderableType
-from rich.spinner import Spinner
+from rich.console import Group, RenderableType
 from rich.style import Style as RichStyle
+from rich.table import Table
 from rich.text import Text
 
 from pythinker_code.ui.shell.components import sanitize_ansi
@@ -19,6 +20,7 @@ __all__ = [
     "fg",
     "format_lines_block",
     "invalid_arg",
+    "loading_marker",
     "running_spinner",
     "shorten_path",
     "tab_to_spaces",
@@ -59,20 +61,45 @@ def tool_title(label: str) -> Text:
     return Text(label, style=base + RichStyle(bold=True))
 
 
+def loading_marker(*, done: bool = False, pulse: bool = True, now: float | None = None) -> Text:
+    """Return the app-wide solid-circle task marker.
+
+    Running tasks pulse by disappearing/reappearing; completed tasks use green.
+    The animated braille spinner is reserved for the bottom thinking-word status.
+    """
+    style = tui_rich_style("success" if done else "muted")
+    if done or not pulse:
+        return Text("● ", style=style)
+    t = time.monotonic() if now is None else now
+    glyph = "●" if int(t / 0.8) % 2 == 0 else " "
+    return Text(f"{glyph} ", style=style)
+
+
 def running_spinner(
     renderable: RenderableType,
     *,
     execution_started: bool,
     has_result: bool,
 ) -> RenderableType:
-    """Wrap *renderable* in an animated dots spinner while the tool is executing.
+    """Wrap *renderable* in the solid loading marker while the tool is executing.
 
     Returns *renderable* unchanged once a result has arrived (or if execution
     has not yet been dispatched), so callers need no guard of their own.
     """
-    if execution_started and not has_result:
-        return Spinner("dots", text=renderable, style=tui_rich_style("accent"))
-    return renderable
+    if not (execution_started and not has_result):
+        return renderable
+
+    marker = loading_marker()
+    if isinstance(renderable, Text):
+        out = marker.copy()
+        out.append_text(renderable)
+        return out
+
+    table = Table.grid(padding=0)
+    table.add_column(width=2, no_wrap=True)
+    table.add_column(ratio=1)
+    table.add_row(marker, renderable)
+    return Group(table)
 
 
 def invalid_arg() -> Text:

@@ -375,17 +375,12 @@ def test_exit_plan_mode_renders_options():
 # ---------------------------------------------------------------------------
 
 
-def test_card_has_top_and_bottom_padding():
-    """Padding(body, (1, 1)) must produce a blank line above and below the card."""
+def test_card_renders_compact_without_outer_padding():
+    """Compact tool cards should start at the title and avoid extra outer padding."""
     rendered = _render("Glob", {"pattern": "*.py", "directory": "/repo"}, output="foo.py")
     lines = [line.strip() for line in rendered.splitlines()]
-    # first line is top padding — must be blank
-    assert lines[0] == "", f"expected blank top padding, got {lines[0]!r}"
-    # last blank line is bottom padding — find it after content
-    content_indices = [i for i, line in enumerate(lines) if line]
-    last_content = content_indices[-1]
-    assert last_content < len(lines) - 1, "expected a blank line after the last content line"
-    assert lines[last_content + 1] == "", "expected blank bottom padding after content"
+    assert lines[0] == "find *.py in /repo"
+    assert lines[-1] == "⎿  foo.py"
 
 
 def test_card_has_blank_line_between_header_and_result():

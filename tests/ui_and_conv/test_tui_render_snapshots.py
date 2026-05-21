@@ -94,7 +94,7 @@ def test_pending_card_uses_tool_pending_bg():
     assert "48;2;40;40;50" in coloured
 
 
-def test_success_card_uses_tool_success_bg():
+def test_success_card_renders_compact_without_success_bg():
     comp = ToolExecutionComponent(
         "ReadFile",
         "t1",
@@ -106,8 +106,8 @@ def test_success_card_uses_tool_success_bg():
 
     assert comp.status == ToolExecutionStatus.SUCCESS
     coloured = _ansi(comp.render(), width=60)
-    # Default dark theme tool_success_bg = #283228 -> rgb(40,50,40).
-    assert "48;2;40;50;40" in coloured
+    # Compact cards no longer paint a full success background.
+    assert "48;2;40;50;40" not in coloured
 
     text = render_plain(comp.render(), width=60)
     assert "2 lines" in text

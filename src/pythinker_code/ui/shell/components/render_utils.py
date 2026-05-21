@@ -6,7 +6,8 @@ import re
 from dataclasses import dataclass
 
 from rich.cells import cell_len
-from rich.console import Console, RenderableType
+from rich.console import Console, Group, RenderableType
+from rich.table import Table
 from rich.text import Text
 
 _ELLIPSIS = "…"
@@ -105,6 +106,20 @@ def truncate_to_width(text: str, max_width: int, *, ellipsis: str = _ELLIPSIS) -
         used += w
         cut = i + 1
     return text[:cut] + ellipsis
+
+
+def render_message_response(renderable: RenderableType) -> RenderableType:
+    """Render a Blackbox-style indented response gutter for tool details.
+
+    Mirrors ``blackbox/src/components/MessageResponse.tsx``: result/progress
+    content sits under a dim ``⎿`` marker so the call header and response are
+    visually distinct without a heavy border.
+    """
+    table = Table.grid(padding=0)
+    table.add_column(width=5, no_wrap=True)
+    table.add_column(ratio=1)
+    table.add_row(Text("  ⎿  ", style="grey50"), renderable)
+    return Group(table)
 
 
 def dim(text: str | Text) -> Text:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import zipfile
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -53,3 +55,41 @@ def test_vis_capabilities_report_open_in_support(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"open_in_supported": False}
+
+
+def _zip_bytes(entries: dict[str, str]) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for name, content in entries.items():
+            zf.writestr(name, content)
+    return buf.getvalue()
+
+
+def test_vis_import_rejects_zip_slip_entries(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    payload = _zip_bytes({"wire.jsonl": "{}\n", "../evil.txt": "owned"})
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/api/vis/sessions/import",
+            files={"file": ("session.zip", payload, "application/zip")},
+        )
+
+    assert response.status_code == 400
+    assert "unsafe path" in response.json()["detail"]
+    assert not (tmp_path / "evil.txt").exists()
+
+
+def test_vis_import_accepts_safe_zip(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    payload = _zip_bytes({"session/wire.jsonl": "{}\n"})
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/api/vis/sessions/import",
+            files={"file": ("session.zip", payload, "application/zip")},
+        )
+
+    assert response.status_code == 200
+    imported = tmp_path / "imported_sessions" / response.json()["session_id"]
+    assert (imported / "wire.jsonl").read_text(encoding="utf-8") == "{}\n"

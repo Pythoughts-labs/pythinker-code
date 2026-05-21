@@ -9,7 +9,7 @@ The card lifecycle:
 
 * arguments stream in        → status = ``PENDING``,  bg = ``tool_pending_bg``
 * execution starts           → status = ``RUNNING``,  bg = ``tool_pending_bg``
-* result arrives, no error   → status = ``SUCCESS``,  bg = ``tool_success_bg``
+* result arrives, no error   → status = ``SUCCESS``,  no background tint
 * result arrives, error      → status = ``ERROR``,    bg = ``tool_error_bg``
 * user cancels / denies      → status = ``CANCELLED`` / ``DENIED``
 
@@ -29,6 +29,7 @@ from rich.style import Style
 from rich.text import Text
 
 from pythinker_code.ui.shell.components.key_hints import key_hint
+from pythinker_code.ui.shell.components.render_utils import render_message_response
 from pythinker_code.ui.shell.tool_renderers import (
     ToolRenderContext,
     ToolRenderDefinition,
@@ -175,13 +176,20 @@ class ToolExecutionComponent:
         if len(children) <= 1:
             body: RenderableType = children[0] if children else Text("")
         else:
-            # Insert blank line between call header (children[0]) and result/hints.
-            body = Group(children[0], Text(""), *children[1:])
+            # Insert blank line between call header and Blackbox-style indented
+            # response rows (``⎿`` gutter) for results/hints.
+            body = Group(
+                children[0],
+                Text(""),
+                *(render_message_response(child) for child in children[1:]),
+            )
 
         if self._definition.render_shell == "self":
             return body
 
         bg_style = self._background_style()
+        if bg_style is None:
+            return body
         # Padding with style fills the padded area with the tint, giving the
         # "content box" feel without an extra border character.
         return Padding(body, (1, 1), style=bg_style)
@@ -202,11 +210,11 @@ class ToolExecutionComponent:
             state=self._renderer_state,
         )
 
-    def _background_style(self) -> Style:
+    def _background_style(self) -> Style | None:
+        if self._status == ToolExecutionStatus.SUCCESS:
+            return None
         if self._status == ToolExecutionStatus.ERROR or self._status == ToolExecutionStatus.DENIED:
             token = "tool_error_bg"
-        elif self._status == ToolExecutionStatus.SUCCESS:
-            token = "tool_success_bg"
         elif self._status in _PENDING_LIKE:
             token = "tool_pending_bg"
         else:
