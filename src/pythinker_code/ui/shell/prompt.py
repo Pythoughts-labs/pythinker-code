@@ -8,6 +8,7 @@ import random
 import re
 import shlex
 import subprocess
+import sys
 import time
 import warnings
 from collections import deque
@@ -107,6 +108,33 @@ warnings.filterwarnings(
     message=r"coroutine 'KeyProcessor\._start_timeout\.<locals>\.wait' was never awaited",
     category=RuntimeWarning,
 )
+
+_ORIGINAL_UNRAISABLE_HOOK = sys.unraisablehook
+
+
+def _is_prompt_toolkit_keyprocessor_shutdown_noise(unraisable: Any) -> bool:
+    """Return true for prompt_toolkit's Python 3.14 coroutine-finalizer noise."""
+    exc = getattr(unraisable, "exc_value", None)
+    obj = getattr(unraisable, "object", None)
+    return (
+        isinstance(exc, KeyError)
+        and exc.args == ("__import__",)
+        and "KeyProcessor._start_timeout.<locals>.wait" in repr(obj)
+    )
+
+
+def _pythinker_unraisable_hook(unraisable: Any) -> None:
+    if _is_prompt_toolkit_keyprocessor_shutdown_noise(unraisable):
+        return
+    _ORIGINAL_UNRAISABLE_HOOK(unraisable)
+
+
+# Python 3.14 can report prompt_toolkit's already-cancelled key-timeout coroutine as an
+# unraisable KeyError("__import__") during interpreter/module teardown. The RuntimeWarning filters
+# above catch the normal warning path; this hook catches the shutdown-only unraisable path while
+# delegating every other unraisable exception to Python's original hook.
+if sys.unraisablehook is not _pythinker_unraisable_hook:
+    sys.unraisablehook = _pythinker_unraisable_hook
 
 
 class CwdLostError(OSError):

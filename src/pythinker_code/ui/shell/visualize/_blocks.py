@@ -56,6 +56,23 @@ _THINKING_PREVIEW_LINES = 6
 _SELF_CLOSING_BLOCKS = frozenset(("fence", "code_block", "hr", "html_block"))
 MAX_SUBAGENT_TOOL_CALLS_TO_SHOW = 4
 
+# Background-agent statuses that mean "still running" — the tool call result
+# has arrived but the spawned agent has not yet finished.  Blocks with this
+# status must stay in the Live area so their spinner keeps animating.
+_AGENT_ACTIVE_STATUSES = frozenset({"created", "starting", "running", "awaiting_approval"})
+
+
+def _is_active_background_agent(tool_name: str, result_text: str) -> bool:
+    """Return True when result_text represents a still-running background Agent."""
+    if tool_name != "Agent":
+        return False
+    values: dict[str, str] = {}
+    for line in result_text.splitlines():
+        if ":" in line:
+            k, _, v = line.partition(":")
+            values[k.strip()] = v.strip()
+    return values.get("kind") == "agent" and values.get("status") in _AGENT_ACTIVE_STATUSES
+
 # Animated bullet frames shown after the "Thinking" label. Dots grow in
 # from the left, reach three, then drain out from the left — a continuous
 # rightward flow that loops every ``_BULLET_FRAME_INTERVAL * len(frames)``.
@@ -386,6 +403,11 @@ class _ToolCallBlock:
         # ``pythinker`` worklog path so that rendering is bit-for-bit
         # unchanged.
         self._tui_card: ToolExecutionComponent | None = None
+        # True while the Agent tool result indicates a still-running background
+        # agent.  The block stays in _tool_call_blocks (and in the Live area)
+        # rather than being flushed to static scrollback, so the spinner keeps
+        # animating at the Live refresh rate.
+        self._is_background_pending: bool = False
 
         self._renderable: RenderableType = self._compose()
 
@@ -395,6 +417,10 @@ class _ToolCallBlock:
     @property
     def finished(self) -> bool:
         return self._result is not None
+
+    @property
+    def is_background_pending(self) -> bool:
+        return self._is_background_pending
 
     def append_args_part(self, args_part: str):
         if self.finished:
@@ -408,6 +434,8 @@ class _ToolCallBlock:
 
     def finish(self, result: ToolReturnValue):
         self._result = result
+        result_text = self._card_result_text(result)
+        self._is_background_pending = _is_active_background_agent(self._tool_name, result_text)
         self._renderable = self._compose()
 
     def append_sub_tool_call(self, tool_call: ToolCall):
@@ -582,6 +610,7 @@ class _ToolCallBlock:
                     text=self._card_result_text(self._result),
                     is_error=self._result.is_error,
                 ),
+                is_partial=self._is_background_pending,
             )
         return self._tui_card.render()
 

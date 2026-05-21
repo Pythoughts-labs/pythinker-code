@@ -616,6 +616,12 @@ class _LiveView:
                 )
         self._last_tool_call_block = None
         self.flush_finished_tool_calls()
+        # Drain background-pending blocks skipped above.  They must be printed
+        # to scrollback here; the transient Live area is about to be erased.
+        for tool_call_id in list(self._tool_call_blocks.keys()):
+            block = self._tool_call_blocks.pop(tool_call_id)
+            console.print(block.compose())
+            self.refresh_soon()
         self.flush_notifications()
 
         # Clear transient spinners to prevent visual residuals after interrupts
@@ -644,10 +650,18 @@ class _LiveView:
             self.refresh_soon()
 
     def flush_finished_tool_calls(self) -> None:
-        """Flush all leading finished tool call blocks."""
+        """Flush all leading finished tool call blocks.
+
+        Background-pending blocks (Agent results with still-running status) are
+        skipped with ``continue`` instead of stopping the flush — they stay in
+        the Live area so their spinner keeps animating.  Subsequent finished
+        blocks can still flush past them because background agents are async.
+        """
         tool_call_ids = list(self._tool_call_blocks.keys())
         for tool_call_id in tool_call_ids:
             block = self._tool_call_blocks[tool_call_id]
+            if block.is_background_pending:
+                continue  # stays in Live area; animated each refresh tick
             if not block.finished:
                 break
 
