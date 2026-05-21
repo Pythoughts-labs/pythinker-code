@@ -592,8 +592,11 @@ class PythinkerSoul:
         reaching the steer queue, so it never appears here.
         """
         consumed = False
-        while not self._steer_queue.empty():
-            content = self._steer_queue.get_nowait()
+        while True:
+            try:
+                content = self._steer_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
             await self._inject_steer(content)
             wire_send(SteerInput(user_input=content))
             consumed = True
@@ -924,8 +927,11 @@ class PythinkerSoul:
         assert self._runtime.llm is not None
 
         # Discard any stale steers from a previous turn.
-        while not self._steer_queue.empty():
-            self._steer_queue.get_nowait()
+        while True:
+            try:
+                self._steer_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
 
         if isinstance(self._agent.toolset, PythinkerToolset):
             await self.start_background_mcp_loading()
