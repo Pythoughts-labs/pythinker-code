@@ -2,6 +2,7 @@
 name = "pythinker-psql"
 version = "0.1.0"
 description = "AI-assisted PostgreSQL interactive terminal"
+license = "Apache-2.0"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = ["pythinker-code", "pythinker-core", "typer", "rich", "psycopg[binary]>=3.0"]
