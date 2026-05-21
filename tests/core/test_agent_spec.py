@@ -53,12 +53,24 @@ def test_load_default_agent_spec():
     assert subagents == snapshot(
         {
             "coder": ("coder.yaml", "Good at general software engineering tasks."),
+            "code-reviewer": (
+                "code_reviewer.yaml",
+                "Diff-focused code review with severity-scored findings.",
+            ),
+            "debugger": (
+                "debugger.yaml",
+                "Failure/log/stack-trace root-cause analysis with reproduction evidence.",
+            ),
             "explore": (
                 "explore.yaml",
                 "Fast codebase exploration with prompt-enforced read-only behavior.",
             ),
             "plan": ("plan.yaml", "Read-only implementation planning and architecture design."),
             "review": ("review.yaml", "Read-only code review with severity-scored findings."),
+            "security-reviewer": (
+                "security_reviewer.yaml",
+                "Diff-focused security review with validated findings.",
+            ),
             "implementer": (
                 "implementer.yaml",
                 "Scoped implementation with minimal edits and verification.",

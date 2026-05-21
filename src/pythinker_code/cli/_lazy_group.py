@@ -18,6 +18,21 @@ class LazySubcommandGroup(typer.core.TyperGroup):
         "export": ("pythinker_code.cli.export", "cli", "Export session data."),
         "mcp": ("pythinker_code.cli.mcp", "cli", "Manage MCP server configurations."),
         "plugin": ("pythinker_code.cli.plugin", "cli", "Manage plugins."),
+        "review": (
+            "pythinker_code.cli.review",
+            "cli",
+            "Diff-focused code review (delegates to pythinker-review).",
+        ),
+        "secscan": (
+            "pythinker_code.cli.secscan",
+            "cli",
+            "Diff-focused security review (delegates to pythinker-review).",
+        ),
+        "debug": (
+            "pythinker_code.cli.debug",
+            "cli",
+            "Failure/log root-cause analysis (delegates to pythinker-review).",
+        ),
         "update": (
             "pythinker_code.cli.update",
             "cli",
@@ -31,6 +46,9 @@ class LazySubcommandGroup(typer.core.TyperGroup):
         "export",
         "mcp",
         "plugin",
+        "review",
+        "secscan",
+        "debug",
         "update",
         "vis",
         "web",

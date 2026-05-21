@@ -29,6 +29,12 @@ agent:
     coder:
       path: ./coder.yaml
       description: "Good at general software engineering tasks."
+    code-reviewer:
+      path: ./code_reviewer.yaml
+      description: "Diff-focused code review with severity-scored findings."
+    debugger:
+      path: ./debugger.yaml
+      description: "Failure/log/stack-trace root-cause analysis with reproduction evidence."
     explore:
       path: ./explore.yaml
       description: "Fast codebase exploration with prompt-enforced read-only behavior."
@@ -38,6 +44,9 @@ agent:
     review:
       path: ./review.yaml
       description: "Read-only code review with severity-scored findings."
+    security-reviewer:
+      path: ./security_reviewer.yaml
+      description: "Diff-focused security review with validated findings."
     implementer:
       path: ./implementer.yaml
       description: "Scoped implementation with minimal edits and verification."
