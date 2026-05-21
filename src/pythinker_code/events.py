@@ -29,6 +29,8 @@ __all__ = [
 
 EventHandler = Callable[[Any], Any]
 
+_background_tasks: set[asyncio.Task[None]] = set()
+
 
 class EventBus:
     """Channel-keyed pub/sub.
@@ -94,7 +96,9 @@ class EventBus:
             except Exception:  # noqa: BLE001
                 logger.exception("Failed to run async handler for '{channel}'", channel=channel)
             return
-        loop.create_task(_runner())
+        _task = loop.create_task(_runner())
+        _background_tasks.add(_task)
+        _task.add_done_callback(_background_tasks.discard)
 
 
 def create_event_bus() -> EventBus:

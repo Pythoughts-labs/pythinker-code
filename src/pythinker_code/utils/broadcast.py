@@ -23,15 +23,16 @@ class BroadcastQueue[T]:
 
     async def publish(self, item: T) -> None:
         """Publish an item to all subscription queues."""
-        await asyncio.gather(*(queue.put(item) for queue in self._queues))
+        queues = list(self._queues)
+        await asyncio.gather(*(queue.put(item) for queue in queues))
 
     def publish_nowait(self, item: T) -> None:
         """Publish an item to all subscription queues without waiting."""
-        for queue in self._queues:
+        for queue in list(self._queues):
             queue.put_nowait(item)
 
     def shutdown(self, immediate: bool = False) -> None:
         """Close all subscription queues."""
-        for queue in self._queues:
+        for queue in list(self._queues):
             queue.shutdown(immediate=immediate)
         self._queues.clear()
