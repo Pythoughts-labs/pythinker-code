@@ -180,7 +180,7 @@ class ToolExecutionComponent:
         bg_style = self._background_style()
         # Padding with style fills the padded area with the tint, giving the
         # "content box" feel without an extra border character.
-        return Padding(body, (0, 1), style=bg_style)
+        return Padding(body, (1, 1), style=bg_style)
 
     # -- Internals -----------------------------------------------------------
 
