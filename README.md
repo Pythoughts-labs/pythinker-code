@@ -61,8 +61,8 @@ First-class agent-first code review, security review, and root-cause debugging, 
 - **`pythinker review diff --mode deslopify`** — read-only Reviewflow-style simplification review for accidental complexity, duplicate wrappers, dead branches, and brittle test/type band-aids.
 - **Evidence validation** — findings outside the reviewed chunk, unsafe paths, stale line ranges, or non-matching evidence snippets are rejected and surfaced as validation failures instead of being silently persisted.
 - **Findings store** at `.pythinker-review/runs/<id>/` for inspection via `pythinker review list`, `pythinker review show <id>`, `pythinker review next`, and `pythinker review show-finding <finding-id>`.
-- **Code-reviewr PR assistant parity** — read-only `pythinker review describe`, `improve`/`suggest`, `ask`, `labels`, `changelog`, and `docs` commands produce structured PR artifacts without posting or modifying files.
-- **Reviewflow workflow substrate** — compatible project/feature/run/finding/patch state models and mapping/reporting utilities are available for future whole-repo audit and revalidation flows.
+- **Code-reviewr PR assistant parity** — read-only `pythinker review describe`, `improve`/`suggest`, `ask`, `ask-line`, `labels`, `changelog`, `docs`, `compliance`, `help-docs`, `similar-issues`, `tools`, and `config` commands produce structured PR artifacts/helpers without posting or modifying files.
+- **Reviewflow workflows** — compatible project/feature/run/finding/patch state models power `pythinker review init`, `map`, `review`, `report`, `next`, `show --finding`, `triage`, `revalidate`, `fix`, `open-pr`, `ci`, and `doctor`.
 - **Three new subagent roles** — `code-reviewer`, `security-reviewer`, and `debugger` — usable from any interactive Pythinker session, producing the standard SUMMARY/EVIDENCE/CHANGES/RISKS/BLOCKERS block.
 - **Fail-closed by default** — any chunk timeout, malformed model output, or worker exception exits non-zero. `--allow-partial` is the explicit escape hatch and surfaces failures in output.
 

@@ -54,7 +54,7 @@ Migrated or adapted:
 
 Deferred as provider-specific or lower priority:
 
-- `pr_help_docs_*`, `pr_information_from_user_prompts.toml`, `pr_line_questions_prompts.toml`, `pr_evaluate_prompt_response.toml`, and reflection prompts.
+- `pr_information_from_user_prompts.toml`, `pr_evaluate_prompt_response.toml`, hosted publishing prompts, and full self-reflection dual-publishing prompts.
 
 ### Config/runtime files
 
@@ -67,8 +67,9 @@ Deferred as provider-specific or lower priority:
 
 - Direct provider publishing/commenting is intentionally deferred; code-reviewr-derived artifact commands stay read-only. Reviewflow-derived fix/open-pr commands are separate, explicit stateful remediation commands keyed by saved findings.
 - The original Dynaconf configuration surface is very large; only high-value review/artifact behavior was ported.
-- `similar_issue` vector search and hosted webhook deployments are not migrated.
-- Line-question and interactive ticket workflows are partially represented by `ask`, strict JSON artifacts, and future provider adapter space.
+- Hosted webhook deployments are not migrated.
+- `similar_issue` is migrated as dependency-free local lexical search, with optional ChromaDB vector search using deterministic in-process hash embeddings when ChromaDB is installed separately; provider issue indexing and hosted/vector services remain deferred.
+- Line-question and interactive ticket workflows are locally represented by `ask-line`, strict JSON artifacts, and future provider adapter space.
 
 ## 2. Migration plan
 
@@ -81,9 +82,12 @@ Deferred as provider-specific or lower priority:
 | `tools/pr_description.py` | `reviewers/prompts/pr_description.system.md`, `reviewers/artifacts.py`, `reviewers/pr_artifacts.py`, `cli/review.py describe` | Rewritten read-only. |
 | `tools/pr_code_suggestions.py` | `reviewers/prompts/code_suggestions.system.md`, `reviewers/artifacts.py`, `cli/review.py suggest/improve` | Rewritten read-only. |
 | `tools/pr_questions.py` | `reviewers/prompts/pr_questions.system.md`, `cli/review.py ask` | Rewritten read-only. |
-| `tools/pr_generate_labels.py` + `settings/pr_custom_labels.toml` | `reviewers/prompts/labels.system.md`, `cli/review.py labels` | Rewritten with stable labels. |
-| `tools/pr_update_changelog.py` | `reviewers/prompts/changelog.system.md`, `cli/review.py changelog` | Rewritten as draft generation. |
-| `tools/pr_add_docs.py` | `reviewers/prompts/docs.system.md`, `cli/review.py docs` | Rewritten as docs planning. |
+| `tools/pr_line_questions.py` | `reviewers/prompts/line_questions.system.md`, `cli/review.py ask-line` | Rewritten read-only over explicit local diff line ranges. |
+| `tools/pr_help_docs.py` | `reviewers/help_docs.py`, `reviewers/prompts/help_docs.system.md`, `cli/review.py help-docs` | Rewritten read-only for local docs; remote clone/comment publishing deferred. |
+| `tools/pr_generate_labels.py` + `settings/pr_custom_labels.toml` | `reviewers/prompts/labels.system.md`, `cli/review.py labels` | Rewritten with stable labels and optional local custom-label files. |
+| `tools/pr_update_changelog.py` | `reviewers/prompts/changelog.system.md`, `cli/review.py changelog` | Rewritten as draft generation with optional current changelog and PR-link context. |
+| `tools/pr_add_docs.py` | `reviewers/prompts/docs.system.md`, `cli/review.py docs` | Rewritten as docs planning with local docs-style/file/symbol targeting options. |
+| `tools/pr_similar_issue.py` | `reviewers/similar_issues.py`, `cli/review.py similar-issues` | Rewritten as local lexical search over issue documents, with optional ChromaDB support when installed separately; provider issue indexing deferred. |
 | `tools/ticket_pr_compliance_check.py`, `pr_compliance_checklist.yaml` | `reviewers/default_compliance.yaml`, `reviewers/compliance.py`, `reviewers/prompts/compliance.system.md`, `cli/review.py compliance` | Rewritten read-only; provider issue fetching deferred. |
 | `algo/git_patch_processing.py`, `pr_processing.py` | `engine/diff_source.py`, `engine/structured_diff.py`, `engine/chunker.py`, `engine/artifact_context.py` | Merged into stdlib git + structured diff renderer. |
 | `algo/token_handler.py` | `engine/token_budget.py`, `chunker.py`, `artifact_context.py` | Replaced by deterministic character budgeting. |
@@ -96,7 +100,7 @@ Deferred as provider-specific or lower priority:
 ### Files to keep
 
 - Prompt concepts and structured diff conventions.
-- Review/describe/improve/ask/labels/changelog/docs/compliance tool semantics.
+- Review/describe/improve/ask/ask-line/labels/changelog/docs/compliance/help/help-docs/similar-issues tool semantics.
 - Ignore/generated-file intent, token-bounded prompts, strict output parsing, and fail-closed behavior.
 
 ### Files to merge
@@ -111,7 +115,7 @@ Deferred as provider-specific or lower priority:
 
 ### Files to remove/drop from runtime
 
-- Hosted servers, provider comment publishers, Docker/GitHub Action wrappers, Dynaconf loaders, secret providers, identity providers, and vector-similar-issue implementation.
+- Hosted servers, provider comment publishers, Docker/GitHub Action wrappers, Dynaconf loaders, secret providers, identity providers, and vector-backed similar-issue services.
 
 ## 3. Pythinker implementation
 
@@ -125,14 +129,18 @@ packages/pythinker-review/
 │   ├── output/artifacts.py
 │   └── reviewers/
 │       ├── artifacts.py
+│       ├── help_docs.py
 │       ├── pr_artifacts.py
+│       ├── similar_issues.py
 │       └── prompts/
 │           ├── changelog.system.md
 │           ├── code_review.system.md
 │           ├── code_suggestions.system.md
 │           ├── compliance.system.md
 │           ├── docs.system.md
+│           ├── help_docs.system.md
 │           ├── labels.system.md
+│           ├── line_questions.system.md
 │           ├── pr_description.system.md
 │           └── pr_questions.system.md
 └── tests/
@@ -146,6 +154,7 @@ Important improvements:
 
 - All new artifact workflows use strict Pydantic JSON instead of YAML repair heuristics.
 - The source compliance checklist is bundled as `reviewers/default_compliance.yaml`, and `pythinker-review compliance` accepts optional ticket text/file context.
+- Custom labels, extra instructions, local best practices, score filtering, changelog PR-link context, docs targeting, line-specific Q&A, help-docs, static help/config, and similar-issue search are local/read-only.
 - Pythinker owns model/provider selection; no duplicated LiteLLM/Dynaconf stack.
 - Provider-publishing side effects are removed from the review engine.
 - `improve` is retained as a source-compatible alias for `suggest`.
@@ -177,6 +186,6 @@ uv run --directory packages/pythinker-review ruff check src tests
 
 - Provider adapters for publishing descriptions, labels, comments, and inline suggestions.
 - Provider-side ticket extraction for issue links and acceptance criteria.
-- Line-specific Q&A parity for provider inline comments.
-- Similar-issue retrieval with an explicit local/vector backend.
+- Provider inline-comment thread retrieval/publishing for line-specific Q&A.
+- Hosted/vector-service similar-issue retrieval beyond local lexical and optional ChromaDB backends.
 - Provider-backed revalidation/comment publishing parity beyond the local Reviewflow stateful workflow.

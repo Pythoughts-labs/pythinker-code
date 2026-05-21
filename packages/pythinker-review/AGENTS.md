@@ -6,8 +6,9 @@ These instructions apply to all files under `packages/pythinker-review/`.
 
 `pythinker-review` is the standalone code review, security review, debug review, PR artifact, and
 Reviewflow stateful workflow engine. It is used directly through `pythinker-review`,
-`pythinker-secscan`, and `pythinker-debug`, and indirectly through the root `pythinker review`,
-`pythinker secscan`, and `pythinker debug` wrappers.
+`pythinker-secscan`, `pythinker-security-scan`, and `pythinker-debug`, and indirectly through the
+root `pythinker review`, `pythinker secscan`, `pythinker security-scan`, and `pythinker debug`
+wrappers.
 
 ## Commands
 
@@ -38,7 +39,7 @@ make test-pythinker-review
 - `src/pythinker_review/reviewers/`: reviewer passes, strict schemas, JSON completion helpers,
   finding validation, read-only artifact runners, compliance loading, and prompt files.
 - `src/pythinker_review/signals/`: deterministic security signal models, scanning, technology
-  detection, and DeepSec-style advisor context.
+  detection, and Pythinker Security Scan advisor context.
 - `src/pythinker_review/output/`: pretty, JSON, SARIF, and PR artifact renderers.
 - `src/pythinker_review/store/`: `.pythinker-review/` run metadata, findings, run IDs, and gitignore
   support.
@@ -58,8 +59,8 @@ make test-pythinker-review
   validation strict; reject absolute/traversal/.git paths and findings outside the reviewed chunk or
   feature.
 - Preserve read-only semantics for normal diff review, security review, debug review, deslopify, and
-  PR artifact commands (`describe`, `suggest`/`improve`, `ask`, `labels`, `changelog`, `docs`,
-  `compliance`).
+  PR artifact/helper commands (`describe`, `suggest`/`improve`, `ask`, `ask-line`, `labels`,
+  `changelog`, `docs`, `compliance`, `help-docs`, `similar-issues`, `tools`, `config`).
 - Treat `fix` and `open-pr` as explicit mutating Reviewflow workflow commands only. Do not route normal
   review or artifact requests into them.
 - Never commit runtime state from `.pythinker-review/` or `.pythinker-review-flow/`.

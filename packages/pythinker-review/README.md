@@ -9,7 +9,7 @@ CLI (`pythinker-review`, `pythinker-secscan`, `pythinker-security-scan`, `pythin
 
 ```bash
 # Branch-vs-main code review
-pythinker-review diff --base origin/main --format pretty
+pythinker-review diff --base origin/main --format pretty --extra-instructions "focus on API regressions" --max-findings 5
 
 # Branch-vs-main code + security in one pass
 pythinker-review diff --with-security --fail-on high
@@ -33,13 +33,17 @@ pythinker-review open-pr --patch <patchAttemptId> --dry-run
 pythinker-review revalidate --finding <finding-id>
 
 # Code-reviewr-derived read-only PR assistant artifacts
-pythinker-review describe --base origin/main --format json
-pythinker-review improve --base origin/main --format pretty   # alias: suggest
+pythinker-review describe --base origin/main --format json --labels-file labels.yaml
+pythinker-review improve --base origin/main --format pretty --best-practices-file best_practices.md --min-score 5   # alias: suggest
 pythinker-review ask "what changed and what should I test?" --base origin/main
-pythinker-review labels --base origin/main
-pythinker-review changelog --base origin/main
-pythinker-review docs --base origin/main
+pythinker-review ask-line "why is this safe?" --file src/app.py --start-line 42 --base origin/main
+pythinker-review labels --base origin/main --labels-file labels.yaml
+pythinker-review changelog --base origin/main --pr-url https://example.test/pr/1 --add-pr-link
+pythinker-review docs --base origin/main --docs-style "Google-style docstring" --symbol ExampleConfig
 pythinker-review compliance --base origin/main --ticket-file issue.md
+pythinker-review help-docs "how do I run review?" --docs-path docs
+pythinker-review similar-issues --issue-file issue.md --issues-dir issues       # dependency-free lexical search by default
+pythinker-review tools
 
 # Security-only scan, SARIF for CI
 pythinker-secscan diff --format sarif --fail-on critical
