@@ -36,8 +36,8 @@ vis-back: ## Start vis backend with uvicorn (reload enabled).
 vis-front: ## Start vis frontend (vite dev server).
 	@npm --prefix vis run dev
 
-.PHONY: format format-pythinker-code format-pythinker-core format-pythinker-host format-pythinker-sdk format-web
-format: format-pythinker-code format-pythinker-core format-pythinker-host format-pythinker-sdk format-web ## Auto-format all workspace packages.
+.PHONY: format format-pythinker-code format-pythinker-core format-pythinker-host format-pythinker-review format-pythinker-sdk format-web
+format: format-pythinker-code format-pythinker-core format-pythinker-host format-pythinker-review format-pythinker-sdk format-web ## Auto-format all workspace packages.
 format-pythinker-code: ## Auto-format Pythinker Code sources with ruff.
 	@echo "==> Formatting Pythinker Code sources"
 	@uv run ruff check --fix
@@ -50,6 +50,10 @@ format-pythinker-host: ## Auto-format Pythinker Host sources with ruff.
 	@echo "==> Formatting Pythinker Host sources"
 	@uv run --directory packages/pythinker-host ruff check --fix
 	@uv run --directory packages/pythinker-host ruff format
+format-pythinker-review: ## Auto-format Pythinker Review sources with ruff.
+	@echo "==> Formatting Pythinker Review sources"
+	@uv run --directory packages/pythinker-review ruff check --fix
+	@uv run --directory packages/pythinker-review ruff format
 format-pythinker-sdk: ## Auto-format pythinker-sdk sources with ruff.
 	@echo "==> Formatting pythinker-sdk sources"
 	@uv run --directory sdks/pythinker-sdk ruff check --fix
@@ -62,8 +66,8 @@ format-web: ## Auto-format web sources with npm run format.
 		echo "npm not found. Install Node.js (npm) to run web formatting."; \
 		exit 1; \
 	fi
-.PHONY: check check-pythinker-code check-pythinker-core check-pythinker-host check-pythinker-sdk check-web
-check: check-pythinker-code check-pythinker-core check-pythinker-host check-pythinker-sdk check-web ## Run linting and type checks for all packages.
+.PHONY: check check-pythinker-code check-pythinker-core check-pythinker-host check-pythinker-review check-pythinker-sdk check-web
+check: check-pythinker-code check-pythinker-core check-pythinker-host check-pythinker-review check-pythinker-sdk check-web ## Run linting and type checks for all packages.
 check-pythinker-code: ## Run linting and type checks for Pythinker Code.
 	@echo "==> Checking Pythinker Code (ruff + pyright + ty; ty is non-blocking)"
 	@uv run ruff check
@@ -82,6 +86,12 @@ check-pythinker-host: ## Run linting and type checks for Pythinker Host.
 	@uv run --directory packages/pythinker-host ruff format --check
 	@uv run --directory packages/pythinker-host pyright
 	@uv run --directory packages/pythinker-host ty check || true
+check-pythinker-review: ## Run linting and type checks for pythinker-review.
+	@echo "==> Checking pythinker-review (ruff + pyright + ty; ty is non-blocking)"
+	@uv run --directory packages/pythinker-review ruff check
+	@uv run --directory packages/pythinker-review ruff format --check
+	@uv run --directory packages/pythinker-review pyright
+	@uv run --directory packages/pythinker-review ty check || true
 check-pythinker-sdk: ## Run linting and type checks for pythinker-sdk.
 	@echo "==> Checking pythinker-sdk (ruff + pyright + ty; ty is non-blocking)"
 	@uv run --directory sdks/pythinker-sdk ruff check
@@ -96,8 +106,8 @@ check-web: ## Run linting and type checks for web.
 		echo "npm not found. Install Node.js (npm) to run web checks."; \
 		exit 1; \
 	fi
-.PHONY: test test-pythinker-code test-pythinker-core test-pythinker-host test-pythinker-sdk
-test: test-pythinker-code test-pythinker-core test-pythinker-host test-pythinker-sdk ## Run all test suites.
+.PHONY: test test-pythinker-code test-pythinker-core test-pythinker-host test-pythinker-review test-pythinker-sdk
+test: test-pythinker-code test-pythinker-core test-pythinker-host test-pythinker-review test-pythinker-sdk ## Run all test suites.
 test-pythinker-code: ## Run Pythinker Code tests.
 	@echo "==> Running Pythinker Code tests"
 	@uv run pytest tests -vv
@@ -108,11 +118,14 @@ test-pythinker-core: ## Run Pythinker core tests (including doctests).
 test-pythinker-host: ## Run Pythinker Host tests.
 	@echo "==> Running Pythinker Host tests"
 	@uv run --directory packages/pythinker-host pytest tests -vv
+test-pythinker-review: ## Run pythinker-review tests.
+	@echo "==> Running pythinker-review tests"
+	@uv run --directory packages/pythinker-review pytest tests -vv
 test-pythinker-sdk: ## Run pythinker-sdk tests.
 	@echo "==> Running pythinker-sdk tests"
 	@uv run --directory sdks/pythinker-sdk pytest tests -vv
-.PHONY: build build-pythinker-code build-pythinker-core build-pythinker-host build-pythinker-sdk build-bin build-bin-onedir
-build: build-web build-vis build-pythinker-code build-pythinker-core build-pythinker-host build-pythinker-sdk ## Build Python packages for release.
+.PHONY: build build-pythinker-code build-pythinker-core build-pythinker-host build-pythinker-review build-pythinker-sdk build-bin build-bin-onedir
+build: build-web build-vis build-pythinker-code build-pythinker-core build-pythinker-host build-pythinker-review build-pythinker-sdk ## Build Python packages for release.
 build-pythinker-code: build-web build-vis ## Build the pythinker-code sdist and wheel.
 	@echo "==> Building pythinker-code distributions"
 	@uv build --package pythinker-code --no-sources --out-dir dist
@@ -122,6 +135,9 @@ build-pythinker-core: ## Build the pythinker-core sdist and wheel.
 build-pythinker-host: ## Build the pythinker-host sdist and wheel.
 	@echo "==> Building pythinker-host distributions"
 	@uv build --package pythinker-host --no-sources --out-dir dist/pythinker-host
+build-pythinker-review: ## Build the pythinker-review sdist and wheel.
+	@echo "==> Building pythinker-review distributions"
+	@uv build --package pythinker-review --no-sources --out-dir dist/pythinker-review
 build-pythinker-sdk: ## Build the pythinker-sdk sdist and wheel.
 	@echo "==> Building pythinker-sdk distributions"
 	@uv build --package pythinker-sdk --no-sources --out-dir dist/pythinker-sdk

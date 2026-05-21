@@ -43,6 +43,7 @@ dependencies = [
     "pydantic==2.13.4",
     "httpx[socks]==0.28.1",
     "pythinker-host==1.0.0",
+    "pythinker-review",
     "batrachian-toad==0.5.23; python_version >= \"3.14\"",
     "tomlkit==0.14.0",
     "jinja2==3.1.6",
@@ -84,12 +85,14 @@ source-exclude = ["examples/**/*", "tests/**/*", "src/pythinker_code/deps/**/*"]
 members = [
     "packages/pythinker-core",
     "packages/pythinker-host",
+    "packages/pythinker-review",
     "sdks/pythinker-sdk",
 ]
 
 [tool.uv.sources]
 pythinker-core = { workspace = true }
 pythinker-host = { workspace = true }
+pythinker-review = { workspace = true }
 pythinker-code = { workspace = true }
 
 [project.scripts]

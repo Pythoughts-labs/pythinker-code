@@ -1,0 +1,78 @@
+[project]
+name = "pythinker-review"
+version = "0.1.0"
+description = "Review, debug, and security analysis engine for Pythinker."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Mohamed Elkholy", email = "moelkholy1995@gmail.com" }]
+keywords = ["code-review", "security", "debugging", "sarif", "diff", "pythinker"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Security",
+]
+dependencies = [
+    "typer==0.21.1",
+    "pydantic>=2.12.5",
+    "pyyaml==6.0.3",
+    "rich==14.2.0",
+]
+
+[project.scripts]
+pythinker-review = "pythinker_review.cli.review:app"
+pythinker-secscan = "pythinker_review.cli.secscan:app"
+pythinker-debug = "pythinker_review.cli.debug:app"
+
+[project.urls]
+Homepage = "https://github.com/mohamed-elkholy95/Pythinker-Code"
+Repository = "https://github.com/mohamed-elkholy95/Pythinker-Code"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.407",
+    "ty>=0.0.7",
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.3.0",
+    "ruff>=0.14.10",
+    "jsonschema>=4.26.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.5,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = ["pythinker_review"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "UP", "B", "SIM", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/pythinker_review/cli/*.py" = ["B008"]
+"tests/**/*.py" = ["E501"]
+
+[tool.pyright]
+include = ["src/**/*.py", "tests/**/*.py"]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.src]
+include = ["src/**/*.py", "tests/**/*.py"]

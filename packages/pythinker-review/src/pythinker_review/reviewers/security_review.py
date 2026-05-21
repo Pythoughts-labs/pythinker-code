@@ -1,0 +1,45 @@
+"""Security-review pass: receives deterministic signals and verifies them via the model."""
+
+from __future__ import annotations
+
+from pythinker_review.engine.chunker import Chunk
+from pythinker_review.llm.protocol import ReviewLLM
+from pythinker_review.reviewers.common import ReviewerResult, complete_reviewer_json, load_prompt
+from pythinker_review.signals.models import Signal
+
+
+def _format_signals(signals: list[Signal]) -> str:
+    if not signals:
+        return "_No deterministic signals matched. Review the diff cold._"
+    lines = ["Signals (verify in code before emitting):"]
+    for signal in signals:
+        extra = []
+        if signal.exploitability:
+            extra.append(f"exploitability={signal.exploitability}")
+        if signal.mitigation_hint:
+            extra.append(f"mitigation={signal.mitigation_hint}")
+        suffix = f" ({'; '.join(extra)})" if extra else ""
+        lines.append(
+            f"- [{signal.rule_id}] {signal.file}:{signal.line} "
+            f"(conf={signal.confidence:.2f}) — {signal.reason}{suffix}\n  `{signal.snippet}`"
+        )
+    return "\n".join(lines)
+
+
+def _build_user(chunk: Chunk, signals: list[Signal]) -> str:
+    return (
+        f"{_format_signals(signals)}\n\n"
+        "Review the following diff for security issues introduced by this change.\n\n"
+        f"{chunk.rendered}\n"
+    )
+
+
+async def run_security_review_pass(
+    *, chunk: Chunk, signals: list[Signal], llm: ReviewLLM, timeout_s: float
+) -> ReviewerResult:
+    return await complete_reviewer_json(
+        llm=llm,
+        system=load_prompt("security_review.system.md"),
+        user=_build_user(chunk, signals),
+        timeout_s=timeout_s,
+    )

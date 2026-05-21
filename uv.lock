@@ -11,6 +11,7 @@ members = [
     "pythinker-code",
     "pythinker-core",
     "pythinker-host",
+    "pythinker-review",
     "pythinker-sdk",
 ]
 
@@ -2371,6 +2372,7 @@ dependencies = [
     { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'" },
     { name = "pythinker-core", extra = ["contrib"] },
     { name = "pythinker-host" },
+    { name = "pythinker-review" },
     { name = "pyyaml" },
     { name = "rich" },
     { name = "ripgrepy" },
@@ -2419,6 +2421,7 @@ requires-dist = [
     { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'", specifier = ">=12.1" },
     { name = "pythinker-core", extras = ["contrib"], editable = "packages/pythinker-core" },
     { name = "pythinker-host", editable = "packages/pythinker-host" },
+    { name = "pythinker-review", editable = "packages/pythinker-review" },
     { name = "pyyaml", specifier = "==6.0.3" },
     { name = "rich", specifier = "==14.2.0" },
     { name = "ripgrepy", specifier = "==2.2.0" },
@@ -2539,6 +2542,45 @@ dev = [
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },
     { name = "ruff", specifier = ">=0.14.9" },
+    { name = "ty", specifier = ">=0.0.7" },
+]
+
+[[package]]
+name = "pythinker-review"
+version = "0.1.0"
+source = { editable = "packages/pythinker-review" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "rich" },
+    { name = "typer" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "jsonschema" },
+    { name = "pyright" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+    { name = "ty" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.12.5" },
+    { name = "pyyaml", specifier = "==6.0.3" },
+    { name = "rich", specifier = "==14.2.0" },
+    { name = "typer", specifier = "==0.21.1" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "jsonschema", specifier = ">=4.26.0" },
+    { name = "pyright", specifier = ">=1.1.407" },
+    { name = "pytest", specifier = ">=9.0.3" },
+    { name = "pytest-asyncio", specifier = ">=1.3.0" },
+    { name = "ruff", specifier = ">=0.14.10" },
     { name = "ty", specifier = ">=0.0.7" },
 ]
 
