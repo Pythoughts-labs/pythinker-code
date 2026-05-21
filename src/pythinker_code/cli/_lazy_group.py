@@ -28,6 +28,11 @@ class LazySubcommandGroup(typer.core.TyperGroup):
             "cli",
             "Diff-focused security review (delegates to pythinker-review).",
         ),
+        "security-scan": (
+            "pythinker_code.cli.security_scan",
+            "cli",
+            "Repo-wide Pythinker Security Scan security scanner (Python-native).",
+        ),
         "debug": (
             "pythinker_code.cli.debug",
             "cli",
@@ -48,6 +53,7 @@ class LazySubcommandGroup(typer.core.TyperGroup):
         "plugin",
         "review",
         "secscan",
+        "security-scan",
         "debug",
         "update",
         "vis",

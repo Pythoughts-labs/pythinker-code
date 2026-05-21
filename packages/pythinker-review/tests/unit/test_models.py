@@ -37,6 +37,9 @@ def test_finding_round_trip_uses_pass_alias() -> None:
             "suggestion": Suggestion(summary="Use parameterized query"),
             "evidence_snippet": "cursor.execute('... ' + user_input)",
             "confidence": 0.9,
+            "test_analysis": "No regression covers the SQL path.",
+            "suggested_regression_test": "Add an injection payload test.",
+            "minimum_fix_scope": "Parameterize this query only.",
             "created_at": _now(),
             "run_id": "20260520123045-a1b2c3d4",
             "pass": "security_review",
@@ -45,6 +48,7 @@ def test_finding_round_trip_uses_pass_alias() -> None:
     dumped = finding.model_dump(by_alias=True)
     assert dumped["pass"] == "security_review"
     assert "pass_" not in dumped
+    assert dumped["minimum_fix_scope"] == "Parameterize this query only."
     assert Finding.model_validate(dumped).pass_ == "security_review"
 
 

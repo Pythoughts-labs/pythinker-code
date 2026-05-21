@@ -30,7 +30,23 @@ def failure(
     jobs: int = typer.Option(4, "--jobs", min=1),
     per_chunk_timeout_s: float = typer.Option(120.0, "--per-chunk-timeout-s", min=1.0),
 ) -> None:
-    diagnostic = parse_diagnostic(log_file.read_text(errors="replace"), command=command)
+    try:
+        log_text = log_file.read_text(errors="replace")
+    except FileNotFoundError as exc:
+        typer.secho(f"log file not found: {log_file}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    except OSError as exc:
+        typer.secho(f"cannot read log file {log_file}: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    try:
+        diagnostic = parse_diagnostic(log_text, command=command)
+    except ValueError as exc:
+        typer.secho(
+            f"failed to parse diagnostic from {log_file}: {exc}",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2) from exc
     diagnostic_text = diagnostic.raw
     if diagnostic.command:
         diagnostic_text = f"Reproduction command: {diagnostic.command}\n\n{diagnostic_text}"

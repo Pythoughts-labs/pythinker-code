@@ -139,7 +139,10 @@ instead of claiming success.
 - `web/`, `vis/`: frontend apps bundled into the CLI package.
 - `packages/pythinker-core/`: LLM abstraction layer for messages, providers, streaming, and tools.
 - `packages/pythinker-host/`: host abstraction for local/remote file and shell operations.
-- `packages/pythinker-review/`: review/debug/security engine, findings store, CLIs, and output formatters.
+- `packages/pythinker-review/`: review/debug/security engine, code-reviewr-derived PR
+  artifact workflows, Reviewflow stateful review/fix workflow, findings store, CLIs,
+  deterministic signals, strict reviewer schemas, and output formatters. See
+  `packages/pythinker-review/AGENTS.md` before changing nested review files.
 - `packages/pythinker-code/`: thin distribution package exposing the `pythinker-code` script.
 - `sdks/pythinker-sdk/`: Python SDK package.
 - `tests/`, `tests_e2e/`, `tests_ai/`: unit/integration, wire/CLI e2e, and AI-driven tests.
@@ -209,6 +212,30 @@ from the active model, not from a hard-coded list.
 - **Rate-limit fallback**: HTTP response hooks feed `RateLimitCache` in
   `src/pythinker_code/usage_ratelimit_cache.py`; `/usage` uses it when no adapter data exists.
 
+## Pythinker Review package rules
+
+`packages/pythinker-review` is the standalone review engine and is also surfaced through
+`pythinker review`, `pythinker secscan`, and `pythinker debug` wrappers.
+
+- The diff engine covers `code_review`, `security_review`, `debug_review`, and the read-only
+  Reviewflow-style `deslopify_review` mode.
+- Code-reviewr-derived artifact commands are read-only: `describe`, `suggest`/`improve`, `ask`,
+  `labels`, `changelog`, `docs`, and `compliance`. They must not post provider comments, modify
+  files, or publish labels/descriptions.
+- Reviewflow stateful commands use `.pythinker-review-flow/` state: `init`, `map`, `review`, `ci`,
+  `status`, `report`, `show --finding`, `next`, `triage`, `revalidate`, `fix`, `open-pr`,
+  `doctor`, and `clean-locks`. Treat `fix` and `open-pr` as explicitly mutating commands only.
+- Saved diff review state uses `.pythinker-review/`; do not commit `.pythinker-review/` or
+  `.pythinker-review-flow/` runtime state.
+- Model outputs must remain strict Pydantic-validated JSON. Evidence validation should reject unsafe
+  paths, stale line ranges, snippets that do not match the reviewed/current file, and findings
+  outside the reviewed chunk/feature. Prefer fail-closed behavior over best-effort persistence.
+- Security-review changes should keep deterministic signal scanning, tech/advisor context, and prompt
+  anchors in sync.
+- User-facing command changes must update the standalone CLI, `src/pythinker_code/cli/review.py`
+  wrappers when needed, `src/pythinker_code/agents/default/code_reviewer.yaml`, docs/README, and
+  focused tests.
+
 ## Agent steering and subagent best practices
 
 Pythinker agents should behave like coordinated specialists, not one long-running worker doing
@@ -260,6 +287,19 @@ everything sequentially.
 3. Add config/model wiring.
 4. Add a usage adapter if the provider exposes usage/rate-limit data.
 5. Ensure `/usage` still scopes to the active provider by default.
+
+### Changing Pythinker Review behavior
+
+1. Identify whether the change belongs to the diff engine, PR artifact commands, Reviewflow workflow,
+   deterministic signals, output renderers, or Pythinker wrapper/subagent wiring.
+2. Preserve read-only behavior for artifact commands and normal review passes. Only `fix` and
+   `open-pr` should mutate, and only when explicitly requested.
+3. Update strict schemas, prompt files, validation, renderers, and tests together when output shapes
+   change.
+4. For public CLI syntax changes, update both standalone package tests and wrapper tests under
+   `tests/cli/`.
+5. Verify with `make check-pythinker-review && make test-pythinker-review` or narrower focused
+   `uv run --directory packages/pythinker-review ...` commands for surgical changes.
 
 ### Changing prompts or agent policy
 

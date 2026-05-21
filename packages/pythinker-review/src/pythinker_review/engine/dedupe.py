@@ -18,7 +18,12 @@ def dedupe_findings(
     tagged: list[tuple[Pass, RawFinding]], *, run_id: str, head_sha: str, created_at: datetime
 ) -> list[Finding]:
     bucket: dict[tuple[str, int, int, str], tuple[Pass, RawFinding]] = {}
-    pass_rank: dict[Pass, int] = {"security_review": 2, "code_review": 1, "debug_review": 0}
+    pass_rank: dict[Pass, int] = {
+        "security_review": 3,
+        "code_review": 2,
+        "debug_review": 1,
+        "deslopify_review": 0,
+    }
     for p, finding in tagged:
         key = (finding.file, finding.start_line, finding.end_line, finding.rule_id)
         current = bucket.get(key)
@@ -65,6 +70,9 @@ def dedupe_findings(
                     "confidence_reason": finding.confidence_reason,
                     "exploitability": finding.exploitability,
                     "reproduction": finding.reproduction,
+                    "test_analysis": finding.test_analysis,
+                    "suggested_regression_test": finding.suggested_regression_test,
+                    "minimum_fix_scope": finding.minimum_fix_scope,
                     "created_at": created_at,
                     "run_id": run_id,
                     "pass": p,

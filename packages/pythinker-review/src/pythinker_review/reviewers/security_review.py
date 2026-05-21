@@ -14,6 +14,10 @@ def _format_signals(signals: list[Signal]) -> str:
     lines = ["Signals (verify in code before emitting):"]
     for signal in signals:
         extra = []
+        if signal.severity_hint:
+            extra.append(f"severity_hint={signal.severity_hint}")
+        if signal.cwe:
+            extra.append(f"cwe={signal.cwe}")
         if signal.exploitability:
             extra.append(f"exploitability={signal.exploitability}")
         if signal.mitigation_hint:
@@ -26,20 +30,28 @@ def _format_signals(signals: list[Signal]) -> str:
     return "\n".join(lines)
 
 
-def _build_user(chunk: Chunk, signals: list[Signal]) -> str:
+def _build_user(chunk: Chunk, signals: list[Signal], advisor_context: str) -> str:
     return (
+        f"{advisor_context.strip()}\n\n"
         f"{_format_signals(signals)}\n\n"
-        "Review the following diff for security issues introduced by this change.\n\n"
+        "Review the following diff for security issues introduced by this change. "
+        "Use the advisor context and signals as starting points, but emit only validated, "
+        "exploitable findings with concrete source/sink/mitigation reasoning.\n\n"
         f"{chunk.rendered}\n"
-    )
+    ).lstrip()
 
 
 async def run_security_review_pass(
-    *, chunk: Chunk, signals: list[Signal], llm: ReviewLLM, timeout_s: float
+    *,
+    chunk: Chunk,
+    signals: list[Signal],
+    llm: ReviewLLM,
+    timeout_s: float,
+    advisor_context: str = "",
 ) -> ReviewerResult:
     return await complete_reviewer_json(
         llm=llm,
         system=load_prompt("security_review.system.md"),
-        user=_build_user(chunk, signals),
+        user=_build_user(chunk, signals, advisor_context),
         timeout_s=timeout_s,
     )

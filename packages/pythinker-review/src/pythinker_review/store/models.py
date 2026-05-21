@@ -38,8 +38,10 @@ class Category(str, Enum):
     secret = "secret"
 
 
-Pass = Literal["code_review", "security_review", "debug_review"]
-ChunkFailureReason = Literal["timeout", "llm_error", "malformed_output", "worker_error"]
+Pass = Literal["code_review", "security_review", "debug_review", "deslopify_review"]
+ChunkFailureReason = Literal[
+    "timeout", "llm_error", "malformed_output", "validation_error", "worker_error"
+]
 RunStatus = Literal["running", "completed", "completed_with_warnings", "failed", "cancelled"]
 Triage = Literal["open", "false_positive", "accepted", "wont_fix"]
 
@@ -83,6 +85,9 @@ class Finding(BaseModel):
     confidence_reason: str | None = None
     exploitability: str | None = None
     reproduction: str | None = None
+    test_analysis: str | None = None
+    suggested_regression_test: str | None = None
+    minimum_fix_scope: str | None = None
     triage: Triage = "open"
     triage_note: str | None = None
     created_at: datetime

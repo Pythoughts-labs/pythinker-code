@@ -26,6 +26,9 @@ class RawFinding(BaseModel):
     confidence_reason: str | None = None
     exploitability: str | None = None
     reproduction: str | None = None
+    test_analysis: str | None = None
+    suggested_regression_test: str | None = None
+    minimum_fix_scope: str | None = None
 
     @model_validator(mode="after")
     def validate_range(self) -> Self:

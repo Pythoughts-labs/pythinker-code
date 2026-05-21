@@ -7,6 +7,7 @@ from pythinker_review.engine.structured_diff import StructuredHunk
 from pythinker_review.llm.fake import FakeReviewLLM
 from pythinker_review.reviewers.code_review import run_code_review_pass
 from pythinker_review.reviewers.debug_review import run_debug_review_pass
+from pythinker_review.reviewers.deslopify_review import run_deslopify_review_pass
 from pythinker_review.reviewers.security_review import run_security_review_pass
 
 
@@ -53,6 +54,28 @@ async def test_security_review_retries_once_on_malformed_then_succeeds() -> None
 
 
 @pytest.mark.asyncio
+async def test_reviewer_accepts_json_inside_markdown_fence() -> None:
+    llm = FakeReviewLLM(scripted=['```json\n{"findings": []}\n```'])
+    result = await run_code_review_pass(chunk=_chunk(), llm=llm, timeout_s=10.0)
+    assert result.ok
+    assert result.findings == ()
+
+
+@pytest.mark.asyncio
+async def test_security_review_receives_advisor_context() -> None:
+    llm = FakeReviewLLM(scripted=['{"findings": []}'])
+    result = await run_security_review_pass(
+        chunk=_chunk(),
+        signals=[],
+        llm=llm,
+        timeout_s=10.0,
+        advisor_context="## Security advisor context\nDetected tech tags: fastapi",
+    )
+    assert result.ok
+    assert "Detected tech tags: fastapi" in llm.calls[0][1]
+
+
+@pytest.mark.asyncio
 async def test_security_review_fails_after_second_malformed() -> None:
     result = await run_security_review_pass(
         chunk=_chunk(),
@@ -72,3 +95,11 @@ async def test_debug_review_returns_root_cause_findings() -> None:
     )
     assert result.ok
     assert llm.calls
+
+
+@pytest.mark.asyncio
+async def test_deslopify_review_runs_read_only_simplification_pass() -> None:
+    llm = FakeReviewLLM(scripted=['{"findings": []}'])
+    result = await run_deslopify_review_pass(chunk=_chunk(), llm=llm, timeout_s=10.0)
+    assert result.ok
+    assert "accidental complexity" in llm.calls[0][1]

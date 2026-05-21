@@ -51,6 +51,12 @@ def render_sarif(meta: RunMeta, findings: list[Finding]) -> str:
                     "confidence": finding.confidence,
                     "pass": finding.pass_,
                     "run_id": meta.id,
+                    "confidence_reason": finding.confidence_reason,
+                    "exploitability": finding.exploitability,
+                    "reproduction": finding.reproduction,
+                    "test_analysis": finding.test_analysis,
+                    "suggested_regression_test": finding.suggested_regression_test,
+                    "minimum_fix_scope": finding.minimum_fix_scope,
                 },
             }
         )

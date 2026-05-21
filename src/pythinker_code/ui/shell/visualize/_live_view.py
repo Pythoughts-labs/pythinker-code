@@ -223,10 +223,11 @@ class _LiveView:
                                 msg = external_task.result()
                                 external_task = asyncio.create_task(self._external_messages.get())
                         except QueueShutDown:
-                            msg, external_task = (
-                                await self._drain_external_message_after_wire_shutdown(
-                                    external_task
-                                )
+                            (
+                                msg,
+                                external_task,
+                            ) = await self._drain_external_message_after_wire_shutdown(
+                                external_task
                             )
                             if msg is not None:
                                 self.dispatch_wire_message(msg)

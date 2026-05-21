@@ -33,7 +33,15 @@ def diff(
     allow_partial: bool = typer.Option(False, "--allow-partial"),
     jobs: int = typer.Option(4, "--jobs", min=1),
     save: bool = typer.Option(True, "--save/--no-save"),
-    quiet: bool = typer.Option(False, "--quiet"),
+    no_color: bool = typer.Option(
+        False, "--no-color", help="Disable ANSI colors in pretty output."
+    ),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        help="Deprecated alias for --no-color. Will be removed in a future release.",
+        hidden=True,
+    ),
     include: list[str] = typer.Option([], "--include"),
     exclude: list[str] = typer.Option([], "--exclude"),
     no_skip_vendored: bool = typer.Option(False, "--no-skip-vendored"),
@@ -41,6 +49,13 @@ def diff(
     per_chunk_timeout_s: float = typer.Option(120.0, "--per-chunk-timeout-s", min=1.0),
     repo: Path = typer.Option(Path.cwd(), "--repo"),
 ) -> None:
+    if quiet:
+        typer.secho(
+            "warning: --quiet is deprecated; use --no-color instead.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        no_color = no_color or quiet
     resolved_repo = repo.resolve()
     inputs = EngineRunInput(
         repo=resolved_repo,
@@ -67,7 +82,7 @@ def diff(
         raise typer.Exit(code=2) from exc
     if save:
         review_mod._save_output(output, repo=resolved_repo)
-    typer.echo(review_mod._emit(fmt, meta=output.meta, findings=output.findings, no_color=quiet))
+    typer.echo(review_mod._emit(fmt, meta=output.meta, findings=output.findings, no_color=no_color))
     raise typer.Exit(
         code=exit_code(meta=output.meta, findings=output.findings, fail_on=fail_on, llm_error=False)
     )

@@ -9,7 +9,7 @@ from collections import deque
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from pythinker_core.chat_provider import (
     APIConnectionError,
@@ -254,12 +254,12 @@ def _extract_429_detail(exc: BaseException) -> dict[str, str]:
     body: dict[str, object] | None = None
     payload = getattr(exc, "body", None)
     if isinstance(payload, dict):
-        body = payload
+        body = cast(dict[str, object], payload)
     if body is None:
         for attr in ("response_json", "response_data"):
             value = getattr(exc, attr, None)
             if isinstance(value, dict):
-                body = value
+                body = cast(dict[str, object], value)
                 break
 
     summary = ""
@@ -267,8 +267,9 @@ def _extract_429_detail(exc: BaseException) -> dict[str, str]:
     if body is not None:
         err = body.get("error")
         if isinstance(err, dict):
-            err_type = str(err.get("type") or "")
-            summary = str(err.get("message") or "")
+            typed_err = cast(dict[str, object], err)
+            err_type = str(typed_err.get("type") or "")
+            summary = str(typed_err.get("message") or "")
 
     if not summary:
         text = str(exc)

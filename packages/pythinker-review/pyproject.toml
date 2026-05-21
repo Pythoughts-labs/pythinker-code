@@ -30,6 +30,7 @@ dependencies = [
 pythinker-review = "pythinker_review.cli.review:app"
 pythinker-secscan = "pythinker_review.cli.secscan:app"
 pythinker-debug = "pythinker_review.cli.debug:app"
+pythinker-security-scan = "pythinker_review.cli.security_scan:app"
 
 [project.urls]
 Homepage = "https://github.com/mohamed-elkholy95/Pythinker-Code"
@@ -60,6 +61,12 @@ select = ["E", "F", "UP", "B", "SIM", "I"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/pythinker_review/cli/*.py" = ["B008"]
+"src/pythinker_review/signals/advisor.py" = ["E501"]
+"src/pythinker_review/signals/scanner.py" = ["E501"]
+"src/pythinker_review/reviewflow/provider.py" = ["E501"]
+"src/pythinker_review/reviewflow/reporting.py" = ["E501"]
+"src/pythinker_review/security_scan/*.py" = ["E501"]
+"src/pythinker_review/reviewers/prompts/*.md" = ["E501"]
 "tests/**/*.py" = ["E501"]
 
 [tool.pyright]

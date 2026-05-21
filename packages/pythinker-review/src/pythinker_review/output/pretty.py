@@ -54,6 +54,16 @@ def render_pretty(meta: RunMeta, findings: list[Finding], *, no_color: bool = Fa
             f"[bold]{finding.title}[/bold]  [{finding.rule_id}]"
         )
         console.print(f"    {finding.rationale}")
+        if finding.confidence_reason:
+            console.print(f"    [dim]confidence:[/dim] {finding.confidence_reason}")
+        if finding.exploitability:
+            console.print(f"    [dim]exploitability:[/dim] {finding.exploitability}")
+        if finding.test_analysis:
+            console.print(f"    [dim]tests:[/dim] {finding.test_analysis}")
+        if finding.suggested_regression_test:
+            console.print(f"    [dim]regression test:[/dim] {finding.suggested_regression_test}")
+        if finding.minimum_fix_scope:
+            console.print(f"    [dim]minimum scope:[/dim] {finding.minimum_fix_scope}")
         if finding.suggestion:
             console.print(f"    [dim]suggestion:[/dim] {finding.suggestion.summary}")
     return buf.getvalue()

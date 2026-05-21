@@ -1,7 +1,7 @@
 # Pythinker Review — Phase 1: Review/Debug/Security Foundation + Diff Gate
 
 **Date:** 2026-05-20
-**Status:** Spec — revised after product-direction review and blackbox design review
+**Status:** Implemented in tree — revised after product-direction review, blackbox design review, and blackbox hardening pass
 **Scope:** Phase 1 of the shift toward Pythinker as a professional security
 reviewer, debugger, and code-reviewer agent. Coding/editing remains available,
 but the default product posture is evidence-first diagnosis and review. This
@@ -35,15 +35,18 @@ debugging, and security-analysis product.
   subagent YAML roles (`code-reviewer`, `security-reviewer`, `debugger`). The
   package does not auto-register subagents because the current Pythinker
   subagent registry is populated from agent YAML at runtime.
-- First capabilities: `pythinker review diff`, `pythinker secscan diff`, and
-  `pythinker debug failure` review only the relevant diff/log/failure evidence,
-  emit findings in pretty / JSON / SARIF where applicable, and optionally fail
-  the build on a configurable severity threshold.
+- First capabilities: `pythinker review diff`, `pythinker review diff --mode deslopify`,
+  `pythinker secscan diff`, and `pythinker debug failure` review only the relevant
+  diff/log/failure evidence, emit findings in pretty / JSON / SARIF where applicable,
+  preserve evidence/test/minimum-fix-scope metadata, and optionally fail the build on
+  a configurable severity threshold. Code-reviewr-derived PR assistant commands
+  (`describe`, `improve`/`suggest`, `ask`, `labels`, `changelog`, `docs`) are read-only
+  artifact generators over the same bounded diff context.
 
 Out of scope for Phase 1 (each gets its own future spec):
 
 - Full whole-repo audit as the default path. Phase 1 may include bounded related
-  context, but clawpatch-style full local audit remains a later product surface.
+  context, but Reviewflow-style full local audit remains a later product surface.
 - Full deepsec matcher plugin marketplace and multi-machine worker fan-out.
   Phase 1 still carries Deepsec-like rule metadata, validation, and fail-loud
   behavior, but keeps the implementation in-process and dependency-light.
@@ -73,9 +76,10 @@ A change is done when:
    exception makes the run fail non-green by default. A partial run can complete
    only when the user passes `--allow-partial`, and the output must make partial
    coverage obvious.
-7. `--save` writes a complete `runs/<id>/` directory; `pythinker review list`
-   and `pythinker review show <id>` reproduce the run's findings without another
-   LLM call.
+7. `--save` writes a complete `runs/<id>/` directory; `pythinker review list`,
+   `pythinker review show <id>`, `pythinker review next`, and
+   `pythinker review show-finding <finding-id>` reproduce or inspect findings without
+   another LLM call.
 8. `pythinker review diff` defaults `--model` to the active Pythinker model by
    having `pythinker-code` inject a model adapter into `pythinker-review`; the
    standalone `pythinker-review` CLI never imports `pythinker-code` to discover
@@ -90,8 +94,18 @@ A change is done when:
 11. No regression in existing `pythinker` commands; existing `review` and
     `verifier` subagent roles continue to work.
 12. Phase 1 adds no unapproved third-party runtime dependencies. Use stdlib
-    `subprocess` for git and a stdlib timestamp-random run ID instead of
-    GitPython or `ulid-py`.
+    `subprocess` for git, stdlib timestamp-random run IDs instead of GitPython or
+    `ulid-py`, and char/line budget approximations instead of tokenizer deps.
+13. Reviewflow-style evidence validation rejects unsafe paths, out-of-chunk files,
+    out-of-hunk line ranges, and non-matching evidence snippets before findings are
+    persisted.
+14. DeepSec-style security context includes expanded deterministic signals,
+    CWE/severity hints, tech detection, and batch-scoped advisor highlights/slug notes.
+15. Code-reviewr PR assistant workflows are available as read-only artifact commands
+    with strict JSON schemas and no provider-side posting or source-file mutation.
+16. Reviewflow project/feature/run/finding/patch state models and
+    mapping/reporting utilities exist as the substrate for later whole-repo audit,
+    revalidation, and fix orchestration surfaces.
 
 ## 3. Non-goals
 
@@ -769,7 +783,7 @@ sortable ID instead of `ulid-py`.
 
 This spec only covers Phase 1. Subsequent phases each get their own spec:
 
-- **Phase 2 — Local audit (clawpatch-style)**: semantic slicer for the whole
+- **Phase 2 — Local audit (Reviewflow-style)**: semantic slicer for the whole
   repo, per-slice review, triage CLI (`pythinker review triage <id>`),
   regression diffing between runs, and deeper blackbox parity where full-repo
   context is required.

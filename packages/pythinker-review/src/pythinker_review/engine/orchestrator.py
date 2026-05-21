@@ -14,6 +14,7 @@ from pythinker_review.engine.diff_source import DiffMode, ResolvedDiff, resolve_
 from pythinker_review.engine.runner import RunnerResult, run_chunks
 from pythinker_review.engine.structured_diff import render_structured_diff
 from pythinker_review.llm.protocol import ReviewLLM
+from pythinker_review.signals.advisor import build_advisor_context
 from pythinker_review.signals.models import Signal
 from pythinker_review.signals.scanner import scan_signals
 from pythinker_review.store.ids import generate_run_id
@@ -47,7 +48,12 @@ class EngineRunOutput:
 
 def _config_hash(passes: tuple[Pass, ...]) -> str:
     parts: list[str] = list(passes)
-    for name in ("code_review.system.md", "security_review.system.md", "debug_review.system.md"):
+    for name in (
+        "code_review.system.md",
+        "security_review.system.md",
+        "debug_review.system.md",
+        "deslopify_review.system.md",
+    ):
         try:
             parts.append(
                 resources.files("pythinker_review.reviewers.prompts")
@@ -120,9 +126,11 @@ async def run_engine(*, llm: ReviewLLM, inputs: EngineRunInput) -> EngineRunOutp
         budget_chars=inputs.chunk_budget_chars,
     )
     signals_by_file: dict[str, list[Signal]] = {}
+    security_context = ""
     if "security_review" in inputs.passes:
         for path, lines in _added_lines_by_file(resolved.patch_text).items():
             signals_by_file[path] = scan_signals(file_path=path, added_lines=lines)
+        security_context = build_advisor_context(repo=inputs.repo, signals_by_file=signals_by_file)
 
     started = datetime.now(tz=UTC)
     run_id = generate_run_id(now=started)
@@ -135,6 +143,8 @@ async def run_engine(*, llm: ReviewLLM, inputs: EngineRunInput) -> EngineRunOutp
         jobs=inputs.jobs,
         per_chunk_timeout_s=inputs.per_chunk_timeout_s,
         allow_partial=inputs.allow_partial,
+        repo=inputs.repo,
+        security_context=security_context,
     )
     findings = dedupe_findings(
         [(tagged.pass_, tagged.finding) for tagged in runner.findings],

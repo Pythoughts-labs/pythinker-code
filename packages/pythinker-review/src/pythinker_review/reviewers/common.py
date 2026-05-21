@@ -6,7 +6,7 @@ import asyncio
 from dataclasses import dataclass, field
 from importlib import resources
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from pythinker_review.llm.protocol import ReviewLLM
 from pythinker_review.reviewers.schema import RawFinding, ReviewerOutput
@@ -26,6 +26,14 @@ class ReviewerResult:
     failure_message: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class TypedReviewerResult[T: BaseModel]:
+    ok: bool
+    output: T | None = None
+    failure_reason: ChunkFailureReason | None = None
+    failure_message: str = ""
+
+
 def load_prompt(filename: str) -> str:
     return (
         resources.files("pythinker_review.reviewers.prompts")
@@ -37,7 +45,27 @@ def load_prompt(filename: str) -> str:
 async def complete_reviewer_json(
     *, llm: ReviewLLM, system: str, user: str, timeout_s: float
 ) -> ReviewerResult:
+    parsed = await complete_typed_json(
+        llm=llm,
+        system=system,
+        user=user,
+        timeout_s=timeout_s,
+        output_type=ReviewerOutput,
+    )
+    if not parsed.ok or parsed.output is None:
+        return ReviewerResult(
+            ok=False,
+            failure_reason=parsed.failure_reason,
+            failure_message=parsed.failure_message,
+        )
+    return ReviewerResult(ok=True, findings=tuple(parsed.output.findings))
+
+
+async def complete_typed_json[T: BaseModel](
+    *, llm: ReviewLLM, system: str, user: str, timeout_s: float, output_type: type[T]
+) -> TypedReviewerResult[T]:
     prompt = user
+    last_error = ""
     for attempt in (1, 2):
         try:
             raw = await asyncio.wait_for(
@@ -45,16 +73,67 @@ async def complete_reviewer_json(
                 timeout=timeout_s,
             )
         except TimeoutError:
-            return ReviewerResult(False, failure_reason="timeout", failure_message="LLM timed out")
+            return TypedReviewerResult(
+                False, failure_reason="timeout", failure_message="LLM timed out"
+            )
         except Exception as exc:  # noqa: BLE001 - provider boundary
-            return ReviewerResult(False, failure_reason="llm_error", failure_message=str(exc))
-        try:
-            out = ReviewerOutput.model_validate_json(raw)
-            return ReviewerResult(ok=True, findings=tuple(out.findings))
-        except ValidationError as exc:
-            if attempt == 2:
-                return ReviewerResult(
-                    False, failure_reason="malformed_output", failure_message=str(exc)
+            return TypedReviewerResult(False, failure_reason="llm_error", failure_message=str(exc))
+        for candidate in _json_candidates(raw):
+            try:
+                return TypedReviewerResult(
+                    ok=True, output=output_type.model_validate_json(candidate)
                 )
-            prompt = prompt + _RETRY_SUFFIX
-    return ReviewerResult(False, failure_reason="malformed_output")
+            except ValidationError as exc:
+                last_error = str(exc)
+        if attempt == 2:
+            return TypedReviewerResult(
+                False, failure_reason="malformed_output", failure_message=last_error
+            )
+        prompt = prompt + _RETRY_SUFFIX
+    return TypedReviewerResult(False, failure_reason="malformed_output")
+
+
+def _json_candidates(raw: str) -> tuple[str, ...]:
+    stripped = raw.strip()
+    candidates = [stripped]
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        fenced = "\n".join(lines).strip()
+        if fenced and fenced not in candidates:
+            candidates.append(fenced)
+    extracted = _extract_first_json_object(stripped)
+    if extracted and extracted not in candidates:
+        candidates.append(extracted)
+    return tuple(candidates)
+
+
+def _extract_first_json_object(text: str) -> str | None:
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for idx in range(start, len(text)):
+        ch = text[idx]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : idx + 1]
+    return None

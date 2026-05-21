@@ -6,7 +6,7 @@
 
 ## Implementation Status (as of 2026-05-20)
 
-**Phase 1A code-complete in tree (uncommitted).** All 18 originally-planned tasks plus the debug capability added by the revised spec are implemented. Tests are green; the only remaining work is the commit and a release decision.
+**Phase 1A + blackbox hardening code-complete in tree (uncommitted).** All 18 originally-planned tasks, the debug capability added by the revised spec, and the new read-only blackbox hardening pass are implemented. Tests are green; the only remaining work is commit/release housekeeping.
 
 ### What landed beyond the original 18-task plan
 
@@ -19,8 +19,9 @@ The revised spec (`docs/superpowers/specs/2026-05-20-pythinker-review-foundation
 - `packages/pythinker-review/src/pythinker_review/cli/debug.py` — `pythinker-debug` standalone CLI; `src/pythinker_code/cli/debug.py` — `pythinker debug` lazy wrapper.
 - `src/pythinker_code/agents/default/debugger.yaml` — third YAML subagent role alongside `code_reviewer.yaml` and `security_reviewer.yaml`.
 - `src/pythinker_code/agents/default/system.md` — opening "Product posture" paragraph: ambiguous engineering requests prefer evidence-first review/diagnosis before editing.
-- `packages/pythinker-review/docs/blackbox-parity.md` — explicit blackbox parity map covering all three reference repos (criterion #2 of the revised spec).
-- Tests: `test_diagnostics.py`, `test_cli_debug.py`, `test_debug_wrapper.py`, plus debug-pass coverage in `test_runner.py` and `test_reviewers.py`.
+- `packages/pythinker-review/docs/blackbox-parity.md` — explicit blackbox parity map covering all three reference repos (criterion #2 of the revised spec), updated for the extra hardening work.
+- Additional blackbox ports: Reviewflow-style evidence validation, read-only `--mode deslopify`, saved-finding `next`/`show-finding`, Reviewflow workflow state/mapping/reporting substrate, code-review prompt/test/minimum-fix-scope fields, code-reviewr read-only PR assistant artifacts (`describe`, `improve`/`suggest`, `ask`, `labels`, `changelog`, `docs`), DeepSec-style tech detection/advisor context, expanded deterministic security signals, and diagnostic secret redaction.
+- Tests: `test_diagnostics.py`, `test_cli_debug.py`, `test_review_wrapper.py`, `test_secscan_wrapper.py`, plus debug/security/deslopify/evidence-validation coverage in `test_runner.py`, `test_reviewers.py`, `test_validation.py`, `test_signals.py`, and `test_token_budget.py`.
 
 ### Status by task
 
@@ -47,30 +48,32 @@ The revised spec (`docs/superpowers/specs/2026-05-20-pythinker-review-foundation
 | 18 | AGENTS.md row + README "What's New" + package README | ✅ done | row added, 2.7.0 section added, package README expanded |
 | — | **Blackbox parity map** (criterion #2) | ✅ done | `packages/pythinker-review/docs/blackbox-parity.md` covers all three repos |
 | — | **Product-posture default prompt** (criterion #10) | ✅ done | `agents/default/system.md` opens with evidence-first posture |
+| 20 | **Blackbox hardening: evidence, deslopify, advisor context** | ✅ done | `reviewers/validation.py`, `deslopify_review.py`, `signals/{scanner,tech,advisor}.py`, richer prompts/schema, saved-finding `next`/`show-finding` |
+| 21 | **Blackbox parity artifacts + Reviewflow substrate** | ✅ done | `reviewers/pr_artifacts.py`, `output/artifacts.py`, `engine/artifact_context.py`, `reviewflow/*`, artifact CLI commands/tests |
 
 ### Test + lint status
 
 | Gate | Command | Result |
 |---|---|---|
 | Package lint/type | `make check-pythinker-review` | ✅ 0 errors, 0 warnings (ruff + pyright + ty) |
-| Package tests | `make test-pythinker-review` | ✅ 62 passed |
-| CLI wrapper smoke | `uv run pytest tests/cli/test_review_wrapper.py tests/cli/test_debug_wrapper.py -vv` | ✅ 6 passed |
+| Package tests | `make test-pythinker-review` | ✅ 90 passed after blackbox hardening + Reviewflow/code-reviewr parity ports |
+| CLI wrapper smoke | `uv run pytest tests/utils/test_pyinstaller_utils.py tests/cli/test_review_wrapper.py tests/cli/test_secscan_wrapper.py -q` | ✅ 9 passed |
 | Full workspace lint/type | `make check` | ✅ exit 0; `ty` emitted non-blocking diagnostics outside the new review package |
-| Full workspace tests | `make test` | ✅ 3222 root tests + package suites passed (plus expected skips/xfail) |
-| Full workspace build | `make build` | ✅ built code/core/host/review/sdk distributions |
+| Full workspace tests | `make test` | ✅ 3222 root tests + package suites passed (plus expected skips/xfail); review package now 90 passed |
+| Full workspace build | `make build` | ✅ built code/core/host/review/sdk distributions after hardening |
 
 ### Files modified / created (uncommitted)
 
-**Modified (14):** `AGENTS.md`, `Makefile`, `README.md`, `docs/superpowers/plans/2026-05-20-pythinker-review-foundation.md`, `docs/superpowers/specs/2026-05-20-pythinker-review-foundation-design.md`, `pyproject.toml`, `src/pythinker_code/__main__.py`, `src/pythinker_code/agents/default/agent.yaml`, `src/pythinker_code/agents/default/system.md`, `src/pythinker_code/cli/_lazy_group.py`, `tests/core/test_agent_spec.py`, `tests/core/test_default_agent.py`, `tests/utils/test_pyinstaller_utils.py`, `uv.lock`.
+**Modified (current working tree):** root/user docs, the existing `packages/pythinker-review` package files for review/debug/security hardening, `src/pythinker_code/agents/default/code_reviewer.yaml`, the root active-model `review` wrapper, two root shell typing/formatting fixes required by `make check`, and related tests.
 
-**New (9 + entire package):** `packages/pythinker-review/` (entire tree — 40+ files), `src/pythinker_code/agents/default/code_reviewer.yaml`, `debugger.yaml`, `security_reviewer.yaml`, `src/pythinker_code/cli/debug.py`, `review.py`, `secscan.py`, `tests/cli/test_debug_wrapper.py`, `test_review_wrapper.py`.
+**New (current working tree):** `packages/pythinker-review/docs/code-reviewr-migration.md`; `pythinker_review/reviewflow/*`; artifact context/output/reviewer modules; deslopify, validation, security-advisor/tech modules; artifact/deslopify prompt files; and tests for Reviewflow workflows, artifact commands, token budgeting, and evidence validation.
 
 ### Remaining work
 
-1. **Commit** — everything is uncommitted. Recommended split:
-   1. `feat(review): add pythinker-review workspace package with review/security/debug engines` — `packages/pythinker-review/**` + root `pyproject.toml` + `Makefile` + `uv.lock`.
-   2. `feat(code): integrate pythinker-review via lazy CLI wrappers and YAML subagent roles` — `src/pythinker_code/cli/{review,secscan,debug}.py` + `src/pythinker_code/cli/_lazy_group.py` + `src/pythinker_code/agents/default/{code_reviewer,security_reviewer,debugger}.yaml` + `agent.yaml` + `system.md` + `__main__.py` + `tests/cli/test_{review,debug}_wrapper.py` + the three modified root tests.
-   3. `docs(review): add AGENTS.md row, README What's New, and blackbox parity map` — `AGENTS.md` + `README.md` + (parity map is inside the package — already in commit 1) + plan + spec updates.
+1. **Commit** — everything is uncommitted. Recommended split for the current tree:
+   1. `feat(review): harden pythinker-review blackbox parity` — `packages/pythinker-review/**` including Reviewflow workflow, code-reviewr artifact commands, validation/deslopify/security advisor work, docs, and package tests.
+   2. `feat(code): wire review active-model integration` — `src/pythinker_code/cli/review.py`, `src/pythinker_code/agents/default/code_reviewer.yaml`, and related root tests.
+   3. `docs(review): document review foundation completion` — root README plus plan/spec updates.
 
 2. **Release decision (not required for Phase 1A):**
    - Bump root `pyproject.toml` `version = "2.6.0"` → `"2.7.0"`.
@@ -78,12 +81,12 @@ The revised spec (`docs/superpowers/specs/2026-05-20-pythinker-review-foundation
    - Cut release per existing release process.
 
 3. **Out-of-scope cleanups** (mention only, do not block Phase 1A):
-   - 200 pre-existing pyright diagnostics in `pythinker-code` exist on plain HEAD; addressing them is its own ticket.
+   - `ty` still emits non-blocking diagnostics outside the new review package during `make check`.
    - The deprecation warning from `loguru` on Python 3.14 (`asyncio.iscoroutinefunction`) is third-party and tracked separately.
 
 ### Tasks added or extended below
 
-The tasks below remain the source-of-truth for re-running Phase 1A from scratch (e.g., a clean re-implementation, or to validate test coverage one task at a time). The single new section is **Task 19 — Commit Phase 1A** at the end. The original Tasks 1–18 are preserved verbatim; check the table above for what to skip when re-executing.
+The tasks below remain the source-of-truth for re-running Phase 1A from scratch (e.g., a clean re-implementation, or to validate test coverage one task at a time). Tasks 19–21 cover commit/release and the extra blackbox hardening/parity ports. The original Tasks 1–18 are preserved verbatim; check the table above for what to skip when re-executing.
 
 ---
 
@@ -240,7 +243,7 @@ src/pythinker_code/                  # edits only
 
 tests/                               # pythinker-code root tests
 ├── cli/test_review_wrapper.py       # new
-└── cli/test_debug_wrapper.py        # new
+└── cli/test_secscan_wrapper.py      # new
 
 AGENTS.md                            # one verification matrix row
 README.md                            # one "What's New" entry (post-ship)
@@ -4282,7 +4285,7 @@ git commit -m "feat(review): standalone Typer CLIs (pythinker-review / pythinker
 - Create: `src/pythinker_code/cli/secscan.py`
 - Create: `src/pythinker_code/cli/debug.py`
 - Create: `tests/cli/test_review_wrapper.py`
-- Create: `tests/cli/test_debug_wrapper.py`
+- Create: `tests/cli/test_secscan_wrapper.py`
 
 - [ ] **Step 1: Implement the ReviewLLM adapter + lazy delegate**
 
@@ -4531,7 +4534,7 @@ def test_debug_failure_help_works() -> None:
 uv sync
 uv run pytest tests/cli/test_review_wrapper.py -vv  # all green
 make check-pythinker-code
-git add src/pythinker_code/cli/review.py src/pythinker_code/cli/secscan.py src/pythinker_code/cli/debug.py src/pythinker_code/cli/_lazy_group.py tests/cli/test_review_wrapper.py tests/cli/test_debug_wrapper.py
+git add src/pythinker_code/cli/review.py src/pythinker_code/cli/secscan.py src/pythinker_code/cli/debug.py src/pythinker_code/cli/_lazy_group.py tests/cli/test_review_wrapper.py tests/cli/test_secscan_wrapper.py
 git commit -m "feat(code): add pythinker review/secscan/debug lazy CLI wrappers with active-model adapter"
 ```
 
@@ -4928,7 +4931,7 @@ git add src/pythinker_code/cli/review.py src/pythinker_code/cli/secscan.py src/p
         src/pythinker_code/agents/default/debugger.yaml \
         src/pythinker_code/agents/default/agent.yaml \
         src/pythinker_code/agents/default/system.md \
-        tests/cli/test_review_wrapper.py tests/cli/test_debug_wrapper.py \
+        tests/cli/test_review_wrapper.py tests/cli/test_secscan_wrapper.py \
         tests/core/test_agent_spec.py tests/core/test_default_agent.py \
         tests/utils/test_pyinstaller_utils.py
 git commit -m "feat(code): integrate pythinker-review via lazy CLI and YAML subagents

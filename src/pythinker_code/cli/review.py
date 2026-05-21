@@ -76,4 +76,11 @@ def _resolve_llm_with_active_model() -> ReviewLLM:
     return _ORIGINAL_RESOLVE_LLM()
 
 
+# NOTE: We monkey-patch a private symbol in pythinker_review.cli.review because
+# the upstream package does not yet expose a public resolver-injection hook.
+# This couples pythinker-code's CLI to pythinker-review's internal layout; if
+# the upstream symbol moves or renames, the active-model adapter will silently
+# fall back to the standalone resolver (which requires explicit env config).
+# Follow-up: add `pythinker_review.cli.review.set_resolver(callable)` so this
+# wiring can become public + tested. Tracked separately.
 upstream_review.__dict__["_resolve_llm"] = _resolve_llm_with_active_model

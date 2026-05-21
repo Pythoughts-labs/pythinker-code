@@ -55,9 +55,13 @@ First-class agent-first code review, security review, and root-cause debugging, 
 
 - **`pythinker review diff`** — runs a code-review pass on the current branch's diff against `origin/main` (or `--base <ref>`, `--staged`, `--working-tree`, `--range A..B`). Outputs pretty / JSON / SARIF. `--fail-on <severity>` makes it a CI gate.
 - **`pythinker review diff --with-security`** — runs the code-review and security-review passes in parallel.
-- **`pythinker secscan diff`** — security-only pass with deterministic prompt anchors for secrets, command/SQL injection, deserialization, SSRF, weak crypto.
-- **`pythinker debug failure <log-file>`** — root-cause debugger pass over failing test output, stack traces, logs, and correlated diff context.
-- **Findings store** at `.pythinker-review/runs/<id>/` for inspection via `pythinker review list` / `pythinker review show <id>`.
+- **`pythinker secscan diff`** — security-only pass with Pythinker Security Scan deterministic prompt anchors for secrets, command/SQL/NoSQL injection, deserialization, SSRF, path traversal, XSS, redirects, JWT/CORS issues, prompt-injection surfaces, debug endpoints, weak crypto, and more.
+- **`pythinker debug failure <log-file>`** — root-cause debugger pass over failing test output, stack traces, logs, and correlated diff context, with secret redaction before prompts.
+- **`pythinker review diff --mode deslopify`** — read-only Reviewflow-style simplification review for accidental complexity, duplicate wrappers, dead branches, and brittle test/type band-aids.
+- **Evidence validation** — findings outside the reviewed chunk, unsafe paths, stale line ranges, or non-matching evidence snippets are rejected and surfaced as validation failures instead of being silently persisted.
+- **Findings store** at `.pythinker-review/runs/<id>/` for inspection via `pythinker review list`, `pythinker review show <id>`, `pythinker review next`, and `pythinker review show-finding <finding-id>`.
+- **Code-reviewr PR assistant parity** — read-only `pythinker review describe`, `improve`/`suggest`, `ask`, `labels`, `changelog`, and `docs` commands produce structured PR artifacts without posting or modifying files.
+- **Reviewflow workflow substrate** — compatible project/feature/run/finding/patch state models and mapping/reporting utilities are available for future whole-repo audit and revalidation flows.
 - **Three new subagent roles** — `code-reviewer`, `security-reviewer`, and `debugger` — usable from any interactive Pythinker session, producing the standard SUMMARY/EVIDENCE/CHANGES/RISKS/BLOCKERS block.
 - **Fail-closed by default** — any chunk timeout, malformed model output, or worker exception exits non-zero. `--allow-partial` is the explicit escape hatch and surfaces failures in output.
 

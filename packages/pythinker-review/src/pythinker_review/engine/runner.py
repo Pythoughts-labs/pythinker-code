@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from pythinker_review.engine.chunker import Chunk
 from pythinker_review.llm.protocol import ReviewLLM
 from pythinker_review.reviewers.code_review import run_code_review_pass
 from pythinker_review.reviewers.debug_review import run_debug_review_pass
+from pythinker_review.reviewers.deslopify_review import run_deslopify_review_pass
 from pythinker_review.reviewers.schema import RawFinding
 from pythinker_review.reviewers.security_review import run_security_review_pass
+from pythinker_review.reviewers.validation import validate_findings
 from pythinker_review.signals.models import Signal
 from pythinker_review.store.models import ChunkFailure, Pass
 
@@ -42,6 +45,8 @@ async def run_chunks(
     jobs: int,
     per_chunk_timeout_s: float,
     allow_partial: bool,
+    repo: Path | None = None,
+    security_context: str = "",
 ) -> RunnerResult:
     work: list[tuple[Chunk, Pass]] = [(chunk, p) for chunk in chunks for p in passes]
     if not work:
@@ -67,6 +72,11 @@ async def run_chunks(
                         signals=signals_by_file.get(chunk.file, []),
                         llm=llm,
                         timeout_s=per_chunk_timeout_s,
+                        advisor_context=security_context,
+                    )
+                elif p == "deslopify_review":
+                    res = await run_deslopify_review_pass(
+                        chunk=chunk, llm=llm, timeout_s=per_chunk_timeout_s
                     )
                 else:
                     diagnostic = (
@@ -81,7 +91,21 @@ async def run_chunks(
                         timeout_s=per_chunk_timeout_s,
                     )
                 if res.ok:
-                    findings.extend(TaggedFinding(p, finding) for finding in res.findings)
+                    valid, validation_errors = validate_findings(
+                        repo=repo, chunk=chunk, findings=res.findings
+                    )
+                    findings.extend(TaggedFinding(p, finding) for finding in valid)
+                    for message in validation_errors:
+                        failures.append(
+                            ChunkFailure.model_validate(
+                                {
+                                    "file": chunk.file,
+                                    "reason": "validation_error",
+                                    "message": message,
+                                    "pass": p,
+                                }
+                            )
+                        )
                 else:
                     failures.append(
                         ChunkFailure.model_validate(
@@ -116,12 +140,19 @@ async def run_chunks(
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
+    # Validation errors are model hallucinations (bad file path, out-of-chunk
+    # line range, evidence mismatch). They're visible in chunk_failures so the
+    # user can see what the model tried to claim, but they shouldn't gate the
+    # run the way a real runtime failure (timeout, LLM error, worker exception)
+    # does — otherwise one stray hallucinated path aborts an otherwise green
+    # review. Real failures still gate the run under fail-closed semantics.
+    real_failures = [f for f in failures if f.reason != "validation_error"]
     return RunnerResult(
         chunks_total=len(work),
         chunks_done=chunks_done,
         chunks_failed=len(failures),
         findings=tuple(findings),
         chunk_failures=tuple(failures),
-        failed=(not allow_partial) and bool(failures),
+        failed=(not allow_partial) and bool(real_failures),
         cancelled=cancelled,
     )
