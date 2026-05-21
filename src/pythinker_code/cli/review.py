@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -12,7 +11,6 @@ from pythinker_review.cli import review as upstream_review
 from pythinker_review.llm.protocol import ReviewLLM
 
 cli = upstream_review.app
-_ORIGINAL_RESOLVE_LLM = cast(Callable[[], ReviewLLM], upstream_review.__dict__["_resolve_llm"])
 
 
 @dataclass(slots=True)
@@ -69,18 +67,8 @@ def build_active_llm(*, model_name: str | None = None) -> ReviewLLM | None:
     )
 
 
-def _resolve_llm_with_active_model() -> ReviewLLM:
-    adapter = build_active_llm()
-    if adapter is not None:
-        return adapter
-    return _ORIGINAL_RESOLVE_LLM()
+def _resolve_llm_with_active_model() -> ReviewLLM | None:
+    return build_active_llm()
 
 
-# NOTE: We monkey-patch a private symbol in pythinker_review.cli.review because
-# the upstream package does not yet expose a public resolver-injection hook.
-# This couples pythinker-code's CLI to pythinker-review's internal layout; if
-# the upstream symbol moves or renames, the active-model adapter will silently
-# fall back to the standalone resolver (which requires explicit env config).
-# Follow-up: add `pythinker_review.cli.review.set_resolver(callable)` so this
-# wiring can become public + tested. Tracked separately.
-upstream_review.__dict__["_resolve_llm"] = _resolve_llm_with_active_model
+upstream_review.set_llm_resolver(_resolve_llm_with_active_model)

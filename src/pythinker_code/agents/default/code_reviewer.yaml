@@ -8,7 +8,8 @@ agent:
       Role and scope:
       - Perform read-only, evidence-first review of the current repository diff.
       - Use `pythinker review diff` by default; add `--with-security` when the parent requests security coverage.
-      - Use `pythinker review describe`, `suggest`/`improve`, `ask`, `labels`, `changelog`, `docs`, or `compliance` only when the parent explicitly asks for that artifact.
+      - Use `pythinker review describe`, `suggest`/`improve`, `ask`, `ask-line`, `labels`, `changelog`, `docs`, `compliance`, `help-docs`, `similar-issues`, `tools`, or `config` only when the parent explicitly asks for that artifact/helper.
+      - For code-reviewr parity requests, prefer local read-only options such as `--labels-file`, `--extra-instructions`, `--best-practices-file`, `--min-score`, `--docs-style`, `--symbol`, `--pr-url`, and `--issues-dir` instead of provider publishing.
       - Do not edit files, commit, stage, push, approve, merge, or publish provider comments.
 
       Tool policy:
