@@ -317,7 +317,7 @@ class ApprovalRequest(BaseModel):
 
     def _get_future(self) -> asyncio.Future[ApprovalResponse.Kind]:
         if self._future is None:
-            self._future = asyncio.get_event_loop().create_future()
+            self._future = asyncio.get_running_loop().create_future()
         return self._future
 
     async def wait(self) -> ApprovalResponse.Kind:
@@ -410,7 +410,7 @@ class QuestionRequest(BaseModel):
 
     def _get_future(self) -> asyncio.Future[dict[str, str]]:
         if self._future is None:
-            self._future = asyncio.get_event_loop().create_future()
+            self._future = asyncio.get_running_loop().create_future()
         return self._future
 
     async def wait(self) -> dict[str, str]:
@@ -461,7 +461,7 @@ class ToolCallRequest(BaseModel):
 
     def _get_future(self) -> asyncio.Future[ToolReturnValue]:
         if self._future is None:
-            self._future = asyncio.get_event_loop().create_future()
+            self._future = asyncio.get_running_loop().create_future()
         return self._future
 
     @staticmethod
@@ -561,7 +561,7 @@ class HookRequest(BaseModel):
 
     def _get_future(self) -> asyncio.Future[tuple[HookRequest.Action, str]]:
         if self._future is None:
-            self._future = asyncio.get_event_loop().create_future()
+            self._future = asyncio.get_running_loop().create_future()
         return self._future
 
     async def wait(self) -> tuple[Action, str]:

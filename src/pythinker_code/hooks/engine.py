@@ -47,7 +47,7 @@ class WireHookHandle:
 
     def _get_future(self) -> asyncio.Future[HookResult]:
         if self._future is None:
-            self._future = asyncio.get_event_loop().create_future()
+            self._future = asyncio.get_running_loop().create_future()
         return self._future
 
     async def wait(self) -> HookResult:
