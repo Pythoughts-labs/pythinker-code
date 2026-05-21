@@ -47,6 +47,8 @@ async def run_chunks(
     allow_partial: bool,
     repo: Path | None = None,
     security_context: str = "",
+    review_context: str = "",
+    max_code_review_findings: int = 5,
 ) -> RunnerResult:
     work: list[tuple[Chunk, Pass]] = [(chunk, p) for chunk in chunks for p in passes]
     if not work:
@@ -64,7 +66,11 @@ async def run_chunks(
             try:
                 if p == "code_review":
                     res = await run_code_review_pass(
-                        chunk=chunk, llm=llm, timeout_s=per_chunk_timeout_s
+                        chunk=chunk,
+                        llm=llm,
+                        timeout_s=per_chunk_timeout_s,
+                        review_context=review_context,
+                        max_findings=max_code_review_findings,
                     )
                 elif p == "security_review":
                     res = await run_security_review_pass(

@@ -36,6 +36,8 @@ class EngineRunInput:
     per_chunk_timeout_s: float
     chunk_budget_chars: int
     allow_partial: bool
+    review_context: str = ""
+    max_findings: int = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +147,8 @@ async def run_engine(*, llm: ReviewLLM, inputs: EngineRunInput) -> EngineRunOutp
         allow_partial=inputs.allow_partial,
         repo=inputs.repo,
         security_context=security_context,
+        review_context=inputs.review_context,
+        max_code_review_findings=inputs.max_findings,
     )
     findings = dedupe_findings(
         [(tagged.pass_, tagged.finding) for tagged in runner.findings],

@@ -50,6 +50,7 @@ def build_artifact_context(
         "changed_files": ", ".join(resolved.changed_files),
         "head_sha": resolved.head_sha,
         "base_sha": resolved.base_sha,
+        "commit_messages": _commit_messages(repo, resolved) or "",
     }
     return ArtifactDiffContext(
         resolved=resolved,
@@ -57,6 +58,25 @@ def build_artifact_context(
         chunks_total=len(chunks),
         metadata=metadata,
     )
+
+
+def _commit_messages(repo: Path, resolved: ResolvedDiff) -> str | None:
+    rev_range = f"{resolved.base_sha}..{resolved.head_sha}"
+    try:
+        proc = subprocess.run(
+            ["git", "log", "--format=%s", "--max-count=20", rev_range],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5.0,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    messages = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+    return "\n".join(messages) or None
 
 
 def _branch_name(repo: Path) -> str | None:
