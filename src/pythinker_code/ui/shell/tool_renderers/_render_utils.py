@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from rich.console import RenderableType
+from rich.spinner import Spinner
 from rich.style import Style as RichStyle
 from rich.text import Text
 
@@ -17,6 +19,7 @@ __all__ = [
     "fg",
     "format_lines_block",
     "invalid_arg",
+    "running_spinner",
     "shorten_path",
     "tab_to_spaces",
     "tool_title",
@@ -54,6 +57,22 @@ def tool_title(label: str) -> Text:
     """Bold tool-name title ."""
     base = tui_rich_style("tool_title")
     return Text(label, style=base + RichStyle(bold=True))
+
+
+def running_spinner(
+    renderable: RenderableType,
+    *,
+    execution_started: bool,
+    has_result: bool,
+) -> RenderableType:
+    """Wrap *renderable* in an animated dots spinner while the tool is executing.
+
+    Returns *renderable* unchanged once a result has arrived (or if execution
+    has not yet been dispatched), so callers need no guard of their own.
+    """
+    if execution_started and not has_result:
+        return Spinner("dots", text=renderable, style=tui_rich_style("accent"))
+    return renderable
 
 
 def invalid_arg() -> Text:

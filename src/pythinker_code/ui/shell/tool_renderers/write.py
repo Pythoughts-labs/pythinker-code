@@ -23,6 +23,7 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     fg,
     format_lines_block,
     invalid_arg,
+    running_spinner,
     shorten_path,
     tool_title,
 )
@@ -50,16 +51,18 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
     else:
         line.append_text(fg("accent", shorten_path(raw_path, cwd=ctx.cwd)))
 
+    head = running_spinner(line, execution_started=ctx.execution_started, has_result=ctx.has_result)
+
     if raw_content is None:
         if "content" in args:
             return Group(
-                line,
+                head,
                 fg("error", "[invalid content arg - expected string]"),
             )
-        return line
+        return head
 
     if not raw_content:
-        return line
+        return head
 
     body, remaining = format_lines_block(
         raw_content,
@@ -68,12 +71,12 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
         style_token="tool_output",
     )
     if not body.plain:
-        return line
+        return head
     if remaining > 0:
         total = raw_content.count("\n") + 1
         more = fg("muted", f"... ({remaining} more lines, {total} total, ctrl+e to expand)")
-        return Group(line, Text(""), body, more)
-    return Group(line, Text(""), body)
+        return Group(head, Text(""), body, more)
+    return Group(head, Text(""), body)
 
 
 def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> RenderableType | None:
