@@ -267,7 +267,7 @@ def _common_headers() -> dict[str, str]:
 
 def _credentials_dir() -> Path:
     path = get_share_dir() / "credentials"
-    path.mkdir(parents=True, exist_ok=True)
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
     return path
 
 

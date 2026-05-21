@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 from pathlib import Path
 from typing import Literal, Self
 
@@ -452,6 +454,8 @@ def save_config(config: Config, config_file: Path | None = None):
             f.write(json.dumps(config_data, ensure_ascii=False, indent=2))
         else:
             f.write(tomlkit.dumps(config_data))  # type: ignore[reportUnknownMemberType]
+    with contextlib.suppress(OSError):
+        os.chmod(config_file, 0o600)
 
 
 def _migrate_json_config_to_toml() -> None:
