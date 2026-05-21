@@ -620,6 +620,7 @@ class _LiveView:
         # to scrollback here; the transient Live area is about to be erased.
         for tool_call_id in list(self._tool_call_blocks.keys()):
             block = self._tool_call_blocks.pop(tool_call_id)
+            console.print()
             console.print(block.compose())
             if block.is_background_pending:
                 console.print(Text("  (background agent still running)", style="dim italic"))
@@ -668,6 +669,7 @@ class _LiveView:
                 break
 
             self._tool_call_blocks.pop(tool_call_id)
+            console.print()
             console.print(block.compose())
             if self._last_tool_call_block == block:
                 self._last_tool_call_block = None
