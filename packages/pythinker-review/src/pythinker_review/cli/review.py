@@ -53,7 +53,10 @@ from pythinker_review.reviewers.pr_artifacts import (
     run_pr_description_artifact,
     run_pr_question_artifact,
 )
-from pythinker_review.reviewers.similar_issues import SimilarIssuesError, find_similar_issues
+from pythinker_review.reviewers.similar_issues import (
+    SimilarIssuesError,
+    find_similar_issues,
+)
 from pythinker_review.reviewflow.workflow import (
     ReviewflowWorkflowError,
     ci_project,
@@ -71,6 +74,7 @@ from pythinker_review.reviewflow.workflow import (
     status_project,
     triage_project,
 )
+from pythinker_review.reviewflow.utils import InvalidIdentifierError, validate_identifier
 from pythinker_review.store.findings_store import FindingsStore
 from pythinker_review.store.gitignore import ensure_gitignored
 from pythinker_review.store.models import SEVERITY_ORDER, Finding, Pass, RunMeta
@@ -237,6 +241,14 @@ def _emit_workflow(payload: dict[str, object], *, json_output: bool = False) -> 
 def _workflow_exit(exc: ReviewflowWorkflowError) -> NoReturn:
     typer.secho(str(exc), fg=typer.colors.RED, err=True)
     raise typer.Exit(code=2) from exc
+
+
+def _validate_id_or_exit(value: str, *, label: str) -> None:
+    try:
+        validate_identifier(value, label=label)
+    except InvalidIdentifierError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
 
 
 def _resolve_llm_quiet() -> ReviewLLM | None:
@@ -505,6 +517,7 @@ def triage_stateful(
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Update one persisted finding's lifecycle status with optional note."""
+    _validate_id_or_exit(finding, label="finding id")
     try:
         payload = triage_project(
             root=repo,
@@ -532,6 +545,8 @@ def revalidate_stateful(
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Re-check persisted findings against current code."""
+    if finding is not None:
+        _validate_id_or_exit(finding, label="finding id")
     try:
         payload = asyncio.run(
             revalidate_project(
@@ -562,6 +577,7 @@ def fix_stateful(
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Ask the active model for a unified diff, apply it, and run validation commands."""
+    _validate_id_or_exit(finding, label="finding id")
     try:
         payload = asyncio.run(
             fix_project(
@@ -594,6 +610,7 @@ def open_pr_stateful(
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Commit an applied patch, push a branch, and open a GitHub PR via gh."""
+    _validate_id_or_exit(patch, label="patch id")
     try:
         payload = open_pr_project(
             root=repo,
@@ -669,6 +686,7 @@ def show(
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     if finding is not None:
+        _validate_id_or_exit(finding, label="finding id")
         try:
             payload = show_finding_project(
                 root=repo, finding_id=finding, state_dir=state_dir, config_path=config
@@ -680,6 +698,11 @@ def show(
     if run_id is None:
         typer.secho("missing RUN_ID or --finding", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
+    try:
+        validate_identifier(run_id, label="run id")
+    except InvalidIdentifierError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
     run_dir = repo / ".pythinker-review" / "runs" / run_id
     if not run_dir.exists():
         typer.secho(f"unknown run: {run_id}", fg=typer.colors.RED, err=True)
@@ -1043,6 +1066,8 @@ def _select_diff_lines(
     target = file.replace("\\", "/").removeprefix("./")
     lines = patch_text.splitlines()
     current_paths: set[str] = set()
+    all_selected: list[str] = []
+    all_hunks: list[list[str]] = []
     idx = 0
     while idx < len(lines):
         line = lines[idx]
@@ -1080,10 +1105,13 @@ def _select_diff_lines(
                     new_line += 1
                 idx += 1
             if selected_lines:
-                return "\n".join(selected_lines), "\n".join(hunk_lines)
+                all_selected.extend(selected_lines)
+                all_hunks.append(hunk_lines)
             continue
         idx += 1
-    return "", ""
+    if not all_selected:
+        return "", ""
+    return "\n".join(all_selected), "\n\n".join("\n".join(hunk) for hunk in all_hunks)
 
 
 def _resolve_repo_file(repo: Path, path: Path, *, label: str) -> Path:
@@ -1848,6 +1876,7 @@ def config_command(fmt: ArtifactFormat = typer.Option(ArtifactFormat.pretty, "--
             "issues_dir": "issues",
             "backend": "lexical",
             "optional_backend": "chroma",
+            "chroma_persistence": "disabled unless --persist-index is passed",
             "chroma_path": ".pythinker-review/chroma",
             "embedding": "local deterministic hash vectors when using optional ChromaDB",
         },
@@ -1870,13 +1899,16 @@ def similar_issues(
     backend: SimilarIssuesBackend = typer.Option(SimilarIssuesBackend.lexical, "--backend"),
     chroma_path: Path = typer.Option(Path(".pythinker-review/chroma"), "--chroma-path"),
     rebuild_index: bool = typer.Option(True, "--reindex/--no-reindex"),
+    persist_index: bool = typer.Option(
+        False,
+        "--persist-index",
+        help="Allow creating/updating a local Chroma index under --chroma-path.",
+    ),
     fmt: ArtifactFormat = typer.Option(ArtifactFormat.pretty, "--format"),
     budget_chars: int = typer.Option(12_000, "--budget-chars", min=500),
     repo: Path = typer.Option(Path.cwd(), "--repo", "--root"),
 ) -> None:
     """Find similar local issue documents with lexical or optional ChromaDB search."""
-    if backend is not SimilarIssuesBackend.lexical:
-        ensure_gitignored(repo_root=repo.resolve())
     try:
         output, metadata = find_similar_issues(
             repo=repo,
@@ -1888,10 +1920,13 @@ def similar_issues(
             backend=backend.value,
             chroma_path=chroma_path,
             rebuild_index=rebuild_index,
+            persist_index=persist_index,
         )
     except SimilarIssuesError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc
+    if persist_index and metadata.get("similarity_backend") == "chroma":
+        ensure_gitignored(repo_root=repo.resolve())
     typer.echo(_emit_artifact(fmt, kind="similar-issues", output=output, metadata=metadata))
 
 

@@ -8,7 +8,7 @@ import pytest
 from pythinker_host.path import HostPath
 
 from pythinker_code.soul.agent import Runtime
-from pythinker_code.soul.approval import Approval
+from pythinker_code.soul.approval import Approval, ApprovalResult
 from pythinker_code.tools.file.write import Params as WriteParams
 from pythinker_code.tools.file.write import WriteFile
 from pythinker_code.tools.shell import Params as ShellParams
@@ -168,18 +168,18 @@ async def test_step_permission_profile_snapshot_blocks_same_step_plan_exit_race(
     platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
 )
 @pytest.mark.parametrize("subagent_type", ["review", "verifier", "explore", "coder"])
-async def test_read_only_shell_in_subagent_skips_approval(
+async def test_read_only_shell_in_subagent_requests_approval(
     runtime: Runtime,
     environment: Environment,
     subagent_type: str,
 ) -> None:
-    """Read-only shell commands in subagent context are auto-approved without prompting."""
+    """Subagent shell commands still require approval; mutation parsing is only best-effort."""
     approval_requested: list[str] = []
 
     class TrackingApproval(Approval):
         async def request(self, sender, action, description, display=None):  # type: ignore[override]
             approval_requested.append(action)
-            return await super().request(sender, action, description, display)
+            return ApprovalResult(approved=True)
 
     runtime.role = "subagent"
     runtime.subagent_type = subagent_type
@@ -190,7 +190,45 @@ async def test_read_only_shell_in_subagent_skips_approval(
         result = await shell(ShellParams(command="echo hello"))
 
     assert not result.is_error
-    assert approval_requested == [], "read-only subagent command should not request approval"
+    assert "run command" in approval_requested
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
+)
+async def test_subagent_shell_python_runtime_blocked_by_profile(
+    runtime: Runtime,
+    environment: Environment,
+    temp_work_dir: HostPath,
+) -> None:
+    """Script runtimes (python/node/etc.) are classified as mutating and fail closed
+    in read-only subagent profiles — they never reach the approval prompt."""
+    approval_requested: list[str] = []
+    target = temp_work_dir / "hidden-write.txt"
+
+    class TrackingApproval(Approval):
+        async def request(self, sender, action, description, display=None):  # type: ignore[override]
+            approval_requested.append(action)
+            return ApprovalResult(approved=True)
+
+    runtime.role = "subagent"
+    runtime.subagent_type = "explore"
+
+    with tool_call_context("Shell"):
+        shell = Shell(TrackingApproval(yolo=False), environment, runtime)
+        result = await shell(
+            ShellParams(
+                command=(
+                    f"{sys.executable} -c "
+                    f"'from pathlib import Path; Path({str(target)!r}).write_text(\"x\")'"
+                )
+            )
+        )
+
+    assert result.is_error
+    assert "permission profile blocks" in result.message
+    assert approval_requested == []
+    assert not await target.exists()
 
 
 @pytest.mark.skipif(

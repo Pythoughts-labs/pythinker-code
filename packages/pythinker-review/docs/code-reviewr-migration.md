@@ -68,7 +68,7 @@ Deferred as provider-specific or lower priority:
 - Direct provider publishing/commenting is intentionally deferred; code-reviewr-derived artifact commands stay read-only. Reviewflow-derived fix/open-pr commands are separate, explicit stateful remediation commands keyed by saved findings.
 - The original Dynaconf configuration surface is very large; only high-value review/artifact behavior was ported.
 - Hosted webhook deployments are not migrated.
-- `similar_issue` is migrated as dependency-free local lexical search, with optional ChromaDB vector search using deterministic in-process hash embeddings when ChromaDB is installed separately; provider issue indexing and hosted/vector services remain deferred.
+- `similar_issue` is migrated as dependency-free local lexical search, with optional in-memory ChromaDB vector search using deterministic in-process hash embeddings when ChromaDB is installed separately; `--persist-index` explicitly opts into local index writes. Provider issue indexing and hosted/vector services remain deferred.
 - Line-question and interactive ticket workflows are locally represented by `ask-line`, strict JSON artifacts, and future provider adapter space.
 
 ## 2. Migration plan
@@ -87,7 +87,7 @@ Deferred as provider-specific or lower priority:
 | `tools/pr_generate_labels.py` + `settings/pr_custom_labels.toml` | `reviewers/prompts/labels.system.md`, `cli/review.py labels` | Rewritten with stable labels and optional local custom-label files. |
 | `tools/pr_update_changelog.py` | `reviewers/prompts/changelog.system.md`, `cli/review.py changelog` | Rewritten as draft generation with optional current changelog and PR-link context. |
 | `tools/pr_add_docs.py` | `reviewers/prompts/docs.system.md`, `cli/review.py docs` | Rewritten as docs planning with local docs-style/file/symbol targeting options. |
-| `tools/pr_similar_issue.py` | `reviewers/similar_issues.py`, `cli/review.py similar-issues` | Rewritten as local lexical search over issue documents, with optional ChromaDB support when installed separately; provider issue indexing deferred. |
+| `tools/pr_similar_issue.py` | `reviewers/similar_issues.py`, `cli/review.py similar-issues` | Rewritten as local lexical search over issue documents, with optional in-memory ChromaDB support when installed separately and explicit `--persist-index` for local index writes; provider issue indexing deferred. |
 | `tools/ticket_pr_compliance_check.py`, `pr_compliance_checklist.yaml` | `reviewers/default_compliance.yaml`, `reviewers/compliance.py`, `reviewers/prompts/compliance.system.md`, `cli/review.py compliance` | Rewritten read-only; provider issue fetching deferred. |
 | `algo/git_patch_processing.py`, `pr_processing.py` | `engine/diff_source.py`, `engine/structured_diff.py`, `engine/chunker.py`, `engine/artifact_context.py` | Merged into stdlib git + structured diff renderer. |
 | `algo/token_handler.py` | `engine/token_budget.py`, `chunker.py`, `artifact_context.py` | Replaced by deterministic character budgeting. |
@@ -187,5 +187,5 @@ uv run --directory packages/pythinker-review ruff check src tests
 - Provider adapters for publishing descriptions, labels, comments, and inline suggestions.
 - Provider-side ticket extraction for issue links and acceptance criteria.
 - Provider inline-comment thread retrieval/publishing for line-specific Q&A.
-- Hosted/vector-service similar-issue retrieval beyond local lexical and optional ChromaDB backends.
+- Hosted/vector-service similar-issue retrieval beyond local lexical and optional local ChromaDB backends.
 - Provider-backed revalidation/comment publishing parity beyond the local Reviewflow stateful workflow.

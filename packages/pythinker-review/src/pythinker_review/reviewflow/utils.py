@@ -24,6 +24,26 @@ def stable_id(prefix: str, parts: list[str], *, length: int = 12) -> str:
     return f"{prefix}_{digest}"
 
 
+_SAFE_ID_RE = re.compile(r"\A[A-Za-z0-9._-]+\Z")
+
+
+class InvalidIdentifierError(ValueError):
+    """Raised when a workflow identifier could escape its state directory."""
+
+
+def validate_identifier(value: str, *, label: str) -> str:
+    """Reject identifiers that could be interpolated into paths to escape a state dir.
+
+    Workflow IDs (run, feature, finding, patch) are generated as ``<prefix>_<hex>`` or
+    a timestamp-hex string. CLI invocation lets the caller pass arbitrary strings, so
+    validate before joining onto a directory — ``..`` and path separators are the
+    obvious traversal vectors.
+    """
+    if not value or not _SAFE_ID_RE.fullmatch(value) or value in {".", ".."}:
+        raise InvalidIdentifierError(f"invalid {label}: {value!r}")
+    return value
+
+
 def run_id() -> str:
     stamp = datetime.now(tz=UTC).strftime("%Y%m%d%H%M%S")
     return f"{stamp}-{os.urandom(4).hex()}"
@@ -282,6 +302,7 @@ def source_dirty(root: Path, *, state_dir: Path) -> bool:
 
 
 __all__ = [
+    "InvalidIdentifierError",
     "UntrustedCommandRejected",
     "changed_files_since",
     "dirty_files",
@@ -297,4 +318,5 @@ __all__ = [
     "safe_relative",
     "source_dirty",
     "stable_id",
+    "validate_identifier",
 ]

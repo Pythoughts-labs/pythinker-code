@@ -18,6 +18,7 @@ from pythinker_review.reviewflow.models import (
     ReviewflowConfig,
     RunRecord,
 )
+from pythinker_review.reviewflow.utils import validate_identifier
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +117,7 @@ def read_features(paths: StatePaths) -> list[FeatureRecord]:
 
 
 def read_feature(paths: StatePaths, feature_id: str) -> FeatureRecord | None:
+    validate_identifier(feature_id, label="feature_id")
     path = paths.features / f"{feature_id}.json"
     if not path.exists():
         return None
@@ -131,6 +133,7 @@ def read_findings(paths: StatePaths) -> list[FindingRecord]:
 
 
 def read_finding(paths: StatePaths, finding_id: str) -> FindingRecord | None:
+    validate_identifier(finding_id, label="finding_id")
     path = paths.findings / f"{finding_id}.json"
     if not path.exists():
         return None
@@ -154,6 +157,7 @@ def read_patch_attempts(paths: StatePaths) -> list[PatchAttempt]:
 
 
 def read_patch_attempt(paths: StatePaths, patch_id: str) -> PatchAttempt | None:
+    validate_identifier(patch_id, label="patch_id")
     path = paths.patches / f"{patch_id}.json"
     if not path.exists():
         return None
@@ -165,6 +169,7 @@ def write_patch_attempt(paths: StatePaths, patch: PatchAttempt) -> None:
 
 
 def feature_lock_path(paths: StatePaths, feature_id: str) -> Path:
+    validate_identifier(feature_id, label="feature_id")
     return paths.locks / f"{feature_id}.json"
 
 

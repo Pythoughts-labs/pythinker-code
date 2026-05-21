@@ -71,33 +71,70 @@ def _build_combined_diff(edits: list[dict[str, Any]]) -> str:
     return "\n\n".join(blocks)
 
 
+def _diff_counts(diff_text: str) -> tuple[int, int]:
+    """Return ``(added, removed)`` line counts from rendered diff text."""
+    added = removed = 0
+    for line in diff_text.splitlines():
+        if line.startswith("+++") or line.startswith("---"):
+            continue
+        if line.startswith("+"):
+            added += 1
+        elif line.startswith("-"):
+            removed += 1
+    return added, removed
+
+
+def _change_summary(added: int, removed: int) -> Text:
+    parts: list[str] = []
+    if added:
+        parts.append(f"Added {added} line{'s' if added != 1 else ''}")
+    if removed:
+        parts.append(f"Removed {removed} line{'s' if removed != 1 else ''}")
+    if not parts:
+        parts.append("No line changes")
+    summary = Text("└  ", style="dim")
+    summary.append(" · ".join(parts), style="bold")
+    return fg("tool_output", summary)
+
+
 def _render_call(ctx: ToolRenderContext) -> RenderableType:
     args = ctx.args or {}
     raw_path = as_str(args.get("path"))
 
     header = Text()
-    header.append_text(tool_title("edit"))
-    header.append(" ")
+    header.append_text(fg("success", "● "))
+    header.append_text(tool_title("Update"))
+    header.append("(")
 
     if raw_path is None:
         header.append_text(invalid_arg() if "path" in args else fg("tool_output", "..."))
     else:
         header.append_text(fg("accent", shorten_path(raw_path, cwd=ctx.cwd)))
+    header.append(")")
 
     edits = _normalize_edits(args.get("edit"))
     if not edits:
-        return running_spinner(header, execution_started=ctx.execution_started, has_result=ctx.has_result)
+        return running_spinner(
+            header,
+            execution_started=ctx.execution_started,
+            has_result=ctx.has_result,
+        )
 
     if len(edits) > 1:
         header.append_text(fg("tool_output", f" ({len(edits)} edits)"))
 
-    head = running_spinner(header, execution_started=ctx.execution_started, has_result=ctx.has_result)
+    head = running_spinner(
+        header,
+        execution_started=ctx.execution_started,
+        has_result=ctx.has_result,
+    )
 
     diff_text = _build_combined_diff(edits)
     if not diff_text:
         return head
+    added, removed = _diff_counts(diff_text)
     diff_renderable = render_diff(diff_text)
-    return Group(head, Text(""), diff_renderable)
+    return Group(head, _change_summary(added, removed), Text(""), diff_renderable)
 
 
 def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> RenderableType | None:

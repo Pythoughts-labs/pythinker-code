@@ -112,8 +112,10 @@ def test_edit_renders_inline_diff():
         "StrReplaceFile",
         {"path": "/repo/foo.py", "edit": {"old": "return 1", "new": "return 2"}},
     )
-    assert "edit" in rendered
+    assert "Update" in rendered
     assert "foo.py" in rendered
+    assert "Removed 1 line" in rendered
+    assert "Added 1 line" in rendered
     assert "return 1" in rendered
     assert "return 2" in rendered
 

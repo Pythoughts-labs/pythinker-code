@@ -291,12 +291,38 @@ def test_find_similar_issues_supports_optional_chromadb(tmp_path) -> None:
         budget_chars=2_000,
         backend="chroma",
         chroma_path=Path(".pythinker-review/chroma"),
+        persist_index=True,
     )
     assert isinstance(output, SimilarIssuesOutput)
     assert output.matches
     assert {match.path for match in output.matches} >= {"issues/bug.md"}
     assert metadata["similarity_backend"] == "chroma"
     assert (tmp_path / ".pythinker-review" / "chroma").exists()
+
+
+def test_find_similar_issues_chromadb_without_persistence_does_not_create_state(tmp_path) -> None:
+    if importlib.util.find_spec("chromadb") is None:
+        pytest.skip("optional ChromaDB backend is not installed")
+
+    issues = tmp_path / "issues"
+    issues.mkdir()
+    (issues / "bug.md").write_text("# Empty greeting bug\n\nGreeting fails.", encoding="utf-8")
+
+    output, metadata = find_similar_issues(
+        repo=tmp_path,
+        issues_dir=Path("issues"),
+        issue_text="empty greeting",
+        issue_file=None,
+        top_k=1,
+        budget_chars=2_000,
+        backend="chroma",
+    )
+
+    assert isinstance(output, SimilarIssuesOutput)
+    assert output.matches
+    assert metadata["similarity_backend"] == "chroma"
+    assert "chroma_path" not in metadata
+    assert not (tmp_path / ".pythinker-review").exists()
 
 
 def test_load_compliance_context_uses_bundled_checklist() -> None:

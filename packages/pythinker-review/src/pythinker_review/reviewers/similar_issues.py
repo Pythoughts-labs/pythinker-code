@@ -40,6 +40,7 @@ def find_similar_issues(
     backend: SimilarIssuesBackend = "lexical",
     chroma_path: Path | None = None,
     rebuild_index: bool = True,
+    persist_index: bool = False,
 ) -> tuple[SimilarIssuesOutput, dict[str, str]]:
     """Find likely related local issue documents.
 
@@ -62,6 +63,7 @@ def find_similar_issues(
                 budget_chars=budget_chars,
                 chroma_path=chroma_path,
                 rebuild_index=rebuild_index,
+                persist_index=persist_index,
             )
         except ModuleNotFoundError:
             if backend == "chroma":
@@ -159,17 +161,22 @@ def _find_similar_issues_chroma(
     budget_chars: int,
     chroma_path: Path | None,
     rebuild_index: bool,
+    persist_index: bool,
 ) -> tuple[SimilarIssuesOutput, dict[str, str]]:
     _validate_chromadb_distribution()
     chromadb = importlib.import_module("chromadb")
     config = importlib.import_module("chromadb.config")
     settings_cls = config.Settings
-    store = _resolve_repo_path(root, chroma_path or Path(".pythinker-review/chroma"))
-    store.mkdir(parents=True, exist_ok=True)
-    client = chromadb.PersistentClient(
-        path=str(store),
-        settings=settings_cls(anonymized_telemetry=False),
-    )
+    store: Path | None = None
+    if persist_index:
+        store = _resolve_repo_path(root, chroma_path or Path(".pythinker-review/chroma"))
+        store.mkdir(parents=True, exist_ok=True)
+        client = chromadb.PersistentClient(
+            path=str(store),
+            settings=settings_cls(anonymized_telemetry=False),
+        )
+    else:
+        client = chromadb.EphemeralClient(settings=settings_cls(anonymized_telemetry=False))
     collection = client.get_or_create_collection(
         _COLLECTION_NAME,
         embedding_function=None,
@@ -198,7 +205,8 @@ def _find_similar_issues_chroma(
         budget_chars=budget_chars,
     )
     metadata = _metadata(root=root, docs_root=docs_root, candidates=candidates, backend="chroma")
-    metadata["chroma_path"] = _display_path(store, root)
+    if store is not None:
+        metadata["chroma_path"] = _display_path(store, root)
     return SimilarIssuesOutput(query=clip_text(query, 1_000), matches=matches), metadata
 
 

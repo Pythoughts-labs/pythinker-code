@@ -20,6 +20,35 @@ The default agent, suitable for general use. Enabled tools:
 
 An experimental agent for testing new prompts and tools. Adds `SendDMail` on top of `default`.
 
+## Repository markdown agents
+
+Pythinker Code also auto-discovers project-local markdown subagents compatible with
+Claude-style agent files. Put `*.md` files in one of these directories at the project root
+(the nearest `.git` ancestor of the working directory):
+
+- `.pythinker/agents/`
+- `.claude/agents/`
+- `.agents/agents/`
+- `.codex/agents/`
+
+Each markdown file can define YAML frontmatter followed by the subagent system prompt:
+
+```markdown
+---
+name: local-reviewer
+description: Review this repository's conventions
+tools: ["Read", "Grep", "Glob", "Bash"]
+---
+You are a repository-specific reviewer. Read nearby tests before reporting findings.
+```
+
+Recognized frontmatter fields are `name`, `description`, `tools`, `model`, and
+`when_to_use`. Common Claude tool names are translated to Pythinker tools, for example
+`Read` → `ReadFile`, `Grep` → `Grep`, `Glob` → `Glob`, `Bash` → `Shell`, `Write` →
+`WriteFile`, and `Edit` → `StrReplaceFile`. Unknown tool names are skipped with a log
+warning. Discovered markdown agents appear as `Agent` tool subagent types alongside the
+built-in types.
+
 ## Custom agent files
 
 Agents are defined in YAML format. Load a custom agent with the `--agent-file` flag:

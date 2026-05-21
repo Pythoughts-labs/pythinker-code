@@ -79,6 +79,7 @@ async def run_chunks(
                         llm=llm,
                         timeout_s=per_chunk_timeout_s,
                         advisor_context=security_context,
+                        max_findings=max_code_review_findings,
                     )
                 elif p == "deslopify_review":
                     res = await run_deslopify_review_pass(

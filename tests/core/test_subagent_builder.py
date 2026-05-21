@@ -87,6 +87,39 @@ async def test_builder_builds_plan_without_shell_or_write_tools(runtime):
 
 
 @pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
+async def test_builder_builds_project_markdown_agent(runtime):
+    agent_path = runtime.session.work_dir / ".claude" / "agents" / "local-reviewer.md"
+    await agent_path.parent.mkdir(parents=True, exist_ok=True)
+    await agent_path.write_text(
+        "---\n"
+        "name: local-reviewer\n"
+        "description: Local reviewer\n"
+        "tools: [\"Read\", \"Grep\"]\n"
+        "---\n"
+        "You are the local markdown reviewer.",
+        encoding="utf-8",
+    )
+    await load_agent(DEFAULT_AGENT_FILE, runtime, mcp_configs=[])
+
+    builder = SubagentBuilder(runtime)
+    reviewer = await builder.build_builtin_instance(
+        agent_id="amarkdown",
+        type_def=runtime.labor_market.require_builtin_type("local-reviewer"),
+        launch_spec=AgentLaunchSpec(
+            agent_id="amarkdown",
+            subagent_type="local-reviewer",
+            model_override=None,
+            effective_model=None,
+        ),
+    )
+
+    assert "You are the local markdown reviewer." in reviewer.system_prompt
+    assert "description: Local reviewer" not in reviewer.system_prompt
+    tool_names = [tool.name for tool in reviewer.toolset.tools]
+    assert tool_names == ["ReadFile", "Grep"]
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
 async def test_builder_model_priority_prefers_override_then_type_default_then_inherit(
     runtime, monkeypatch
 ):

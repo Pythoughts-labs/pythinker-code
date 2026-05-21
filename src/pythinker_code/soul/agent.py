@@ -32,6 +32,11 @@ from pythinker_code.skill import (
 from pythinker_code.soul.approval import Approval, ApprovalState
 from pythinker_code.soul.denwarenji import DenwaRenji
 from pythinker_code.soul.toolset import PythinkerToolset
+from pythinker_code.subagents.discovery import (
+    discover_markdown_agents,
+    materialize_markdown_agent_specs,
+    resolve_agent_roots,
+)
 from pythinker_code.subagents.models import AgentTypeDefinition, ToolPolicy
 from pythinker_code.subagents.registry import LaborMarket
 from pythinker_code.subagents.store import SubagentStore
@@ -438,6 +443,23 @@ async def load_agent(
                 tool_policy=tool_policy,
             )
         )
+
+    external_agents = await discover_markdown_agents(
+        await resolve_agent_roots(runtime.session.work_dir)
+    )
+    for type_def in materialize_markdown_agent_specs(
+        external_agents,
+        output_dir=runtime.session.dir / "external_agents",
+        available_models=set(runtime.config.models),
+    ):
+        if runtime.labor_market.get_builtin_type(type_def.name) is not None:
+            logger.info(
+                "External markdown agent overrides subagent type: {name}",
+                name=type_def.name,
+            )
+        else:
+            logger.debug("Registering external markdown agent type: {name}", name=type_def.name)
+        runtime.labor_market.add_builtin_type(type_def)
 
     toolset = PythinkerToolset(runtime)
     tool_deps = {

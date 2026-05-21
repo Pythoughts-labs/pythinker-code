@@ -3,6 +3,7 @@ import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from pythinker_review.cli.review import app
@@ -390,6 +391,8 @@ def test_similar_issues_command_searches_local_issue_docs(
     tmp_git_repo: Callable[..., Path],
 ) -> None:
     repo = tmp_git_repo()
+    gitignore = repo / ".gitignore"
+    gitignore.write_text("*.pyc\n", encoding="utf-8")
     issues = repo / "issues"
     issues.mkdir()
     (issues / "1.md").write_text(
@@ -416,6 +419,82 @@ def test_similar_issues_command_searches_local_issue_docs(
     assert parsed["kind"] == "similar-issues"
     assert {match["path"] for match in parsed["result"]["matches"]} >= {"issues/1.md"}
     assert parsed["metadata"]["similarity_backend"] == "lexical"
+    assert gitignore.read_text(encoding="utf-8") == "*.pyc\n"
+    assert not (repo / ".pythinker-review" / "chroma").exists()
+
+
+def test_similar_issues_auto_backend_without_persistence_stays_read_only(
+    tmp_git_repo: Callable[..., Path],
+) -> None:
+    repo = tmp_git_repo()
+    gitignore = repo / ".gitignore"
+    gitignore.write_text("*.pyc\n", encoding="utf-8")
+    issues = repo / "issues"
+    issues.mkdir()
+    (issues / "1.md").write_text(
+        "# Greeting fails for empty name\n\nThe greeting helper should handle empty input.",
+        encoding="utf-8",
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "similar-issues",
+            "--issue-text",
+            "empty name greeting bug",
+            "--issues-dir",
+            "issues",
+            "--backend",
+            "auto",
+            "--format",
+            "json",
+            "--repo",
+            str(repo),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    parsed = json.loads(result.stdout)
+    assert parsed["metadata"]["similarity_backend"] in {"lexical", "chroma"}
+    if parsed["metadata"]["similarity_backend"] == "chroma":
+        assert "chroma_path" not in parsed["metadata"]
+    assert gitignore.read_text(encoding="utf-8") == "*.pyc\n"
+    assert not (repo / ".pythinker-review" / "chroma").exists()
+
+
+def test_similar_issues_chroma_without_persistence_stays_read_only(
+    tmp_git_repo: Callable[..., Path],
+) -> None:
+    repo = tmp_git_repo()
+    gitignore = repo / ".gitignore"
+    gitignore.write_text("*.pyc\n", encoding="utf-8")
+    issues = repo / "issues"
+    issues.mkdir()
+    (issues / "1.md").write_text(
+        "# Greeting fails for empty name\n\nThe greeting helper should handle empty input.",
+        encoding="utf-8",
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "similar-issues",
+            "--issue-text",
+            "empty name greeting bug",
+            "--issues-dir",
+            "issues",
+            "--backend",
+            "chroma",
+            "--format",
+            "json",
+            "--repo",
+            str(repo),
+        ],
+    )
+    if result.exit_code == 2 and "ChromaDB is not installed" in result.stderr:
+        pytest.skip("optional ChromaDB backend is not installed")
+    assert result.exit_code == 0, result.stderr
+    parsed = json.loads(result.stdout)
+    assert parsed["metadata"]["similarity_backend"] == "chroma"
+    assert "chroma_path" not in parsed["metadata"]
+    assert gitignore.read_text(encoding="utf-8") == "*.pyc\n"
     assert not (repo / ".pythinker-review" / "chroma").exists()
 
 

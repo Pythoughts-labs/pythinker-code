@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from rich.style import Style as RichStyle
 from rich.text import Text
 
-from pythinker_code.ui.theme import tui_rich_style
+from pythinker_code.ui.theme import get_diff_colors, tui_rich_style
 
 __all__ = [
     "EditDiffResult",
@@ -230,8 +230,9 @@ def render_diff(diff_text: str) -> Text:
     if not diff_text:
         return Text("")
 
-    added_style = tui_rich_style("tool_diff_added")
-    removed_style = tui_rich_style("tool_diff_removed")
+    colors = get_diff_colors()
+    added_style = tui_rich_style("tool_diff_added") + colors.add_bg
+    removed_style = tui_rich_style("tool_diff_removed") + colors.del_bg
     context_style = tui_rich_style("tool_diff_context")
 
     out = Text()

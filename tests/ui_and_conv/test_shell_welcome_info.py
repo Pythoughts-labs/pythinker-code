@@ -12,5 +12,5 @@ def test_shell_welcome_uses_pythinker_code_copy(monkeypatch):
 
     output = console.export_text()
     assert "Pythinker Code v9.9.9" in output
-    assert "Welcome to Pythinker Code!" in output
-    assert "Welcome to Pythinker CLI!" not in output
+    assert "Welcome to Pythinker" in output
+    assert "think first" in output

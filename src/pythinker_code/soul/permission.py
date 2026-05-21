@@ -83,6 +83,7 @@ _MUTATING_COMMANDS = {
     "chmod",
     "chown",
     "cp",
+    "dd",
     "install",
     "ln",
     "mkdir",
@@ -96,6 +97,29 @@ _MUTATING_COMMANDS = {
     "touch",
     "truncate",
     "unlink",
+    # Shell interpreters: a wrapped `bash -c "rm -rf X"` would otherwise pass
+    # the gate because only the wrapper name `bash` is checked, not the script.
+    "bash",
+    "csh",
+    "dash",
+    "fish",
+    "ksh",
+    "sh",
+    "tcsh",
+    "zsh",
+    # Script runtimes with `-c`/`-e` execute arbitrary code; treat the runtime
+    # itself as mutating in read-only/review/verify profiles.
+    "lua",
+    "node",
+    "perl",
+    "python",
+    "python3",
+    "ruby",
+    # Container/orchestration commands with side effects on host or cluster.
+    "docker",
+    "helm",
+    "kubectl",
+    "podman",
 }
 _PACKAGE_MANAGER_COMMANDS = {
     "apt",
@@ -228,16 +252,6 @@ def check_external_tool_allowed(runtime: Runtime, tool_name: str) -> ToolError |
         ),
         brief="Permission profile restriction",
     )
-
-
-def is_read_only_subagent_shell(runtime: Runtime, command: str) -> bool:
-    """True when a subagent is executing a read-only shell command.
-
-    Read-only subagent commands don't mutate files, git, or package state,
-    so they don't need an approval prompt — the permission profile already
-    gates any genuinely mutating commands.
-    """
-    return runtime.role == "subagent" and shell_mutation_reason(command) is None
 
 
 def check_tool_call_allowed(

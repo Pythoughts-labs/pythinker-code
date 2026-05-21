@@ -1,8 +1,8 @@
 """Pythinker renderer for Pythinker's ``SetTodoList`` tool.
 
-Renders the todo list with status icons:
+Renders the todo list with aligned status icons:
 
-* ``◯`` pending
+* ``○`` pending
 * ``◐`` in_progress (highlighted)
 * ``●`` done (success)
 """
@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 from rich.console import Group, RenderableType
+from rich.table import Table
 from rich.text import Text
 
 from pythinker_code.ui.shell.tool_renderers import (
@@ -30,7 +31,7 @@ _TOOL_NAME = "SetTodoList"
 _DEFAULT_COLLAPSED_LINES = 12
 
 _ICONS = {
-    "pending": "◯",
+    "pending": "○",
     "in_progress": "◐",
     "done": "●",
 }
@@ -73,23 +74,25 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
     header.append_text(fg("muted", badge))
 
     visible = items if ctx.expanded else items[:_DEFAULT_COLLAPSED_LINES]
-    rows: list[RenderableType] = [header]
+    table = Table.grid(padding=0)
+    table.add_column(width=2, no_wrap=True)
+    table.add_column(ratio=1)
     for item in visible:
         status = as_str(item.get("status")) or "pending"
         title = as_str(item.get("title")) or ""
-        icon = _ICONS.get(status, "◯")
-        line = Text()
-        line.append_text(fg(_icon_token(status), f"  {icon}"))
-        line.append(" ")
+        icon = _ICONS.get(status, "○")
+        icon_text = fg(_icon_token(status), icon)
         if status == "done":
-            line.append_text(fg("muted", title))
+            title_text = fg("muted", title)
         elif status == "in_progress":
-            line.append_text(fg("accent", title))
+            title_text = fg("accent", title)
         else:
-            line.append_text(fg("tool_output", title))
-        rows.append(line)
+            title_text = fg("tool_output", title)
+        table.add_row(icon_text, title_text)
+
+    rows: list[RenderableType] = [header, table]
     if not ctx.expanded and len(items) > len(visible):
-        rows.append(fg("muted", f"  ... +{len(items) - len(visible)} more (ctrl+e to expand)"))
+        rows.append(fg("muted", f"   ... +{len(items) - len(visible)} more (ctrl+e to expand)"))
     return Group(*rows)
 
 

@@ -11,7 +11,7 @@ from pythinker_host import AsyncReadable
 from pythinker_code.background import TaskView, format_task
 from pythinker_code.soul.agent import Runtime
 from pythinker_code.soul.approval import Approval
-from pythinker_code.soul.permission import check_shell_command_allowed, is_read_only_subagent_shell
+from pythinker_code.soul.permission import check_shell_command_allowed
 from pythinker_code.soul.toolset import get_current_tool_call_or_none
 from pythinker_code.tools.display import BackgroundTaskDisplayBlock, ShellDisplayBlock
 from pythinker_code.tools.utils import ToolResultBuilder, load_desc
@@ -87,20 +87,19 @@ class Shell(CallableTool2[Params]):
         if params.run_in_background:
             return await self._run_in_background(params)
 
-        if not is_read_only_subagent_shell(self._runtime, params.command):
-            result = await self._approval.request(
-                self.name,
-                "run command",
-                f"Run command `{params.command}`",
-                display=[
-                    ShellDisplayBlock(
-                        language="powershell" if self._is_powershell else "bash",
-                        command=params.command,
-                    )
-                ],
-            )
-            if not result:
-                return result.rejection_error()
+        result = await self._approval.request(
+            self.name,
+            "run command",
+            f"Run command `{params.command}`",
+            display=[
+                ShellDisplayBlock(
+                    language="powershell" if self._is_powershell else "bash",
+                    command=params.command,
+                )
+            ],
+        )
+        if not result:
+            return result.rejection_error()
 
         def stdout_cb(line: bytes):
             line_str = line.decode(encoding="utf-8", errors="replace")
@@ -149,20 +148,19 @@ class Shell(CallableTool2[Params]):
                 brief="No tool call context",
             )
 
-        if not is_read_only_subagent_shell(self._runtime, params.command):
-            result = await self._approval.request(
-                self.name,
-                "run background command",
-                f"Run background command `{params.command}`",
-                display=[
-                    ShellDisplayBlock(
-                        language="powershell" if self._is_powershell else "bash",
-                        command=params.command,
-                    )
-                ],
-            )
-            if not result:
-                return result.rejection_error()
+        result = await self._approval.request(
+            self.name,
+            "run background command",
+            f"Run background command `{params.command}`",
+            display=[
+                ShellDisplayBlock(
+                    language="powershell" if self._is_powershell else "bash",
+                    command=params.command,
+                )
+            ],
+        )
+        if not result:
+            return result.rejection_error()
 
         try:
             view = self._runtime.background_tasks.create_bash_task(

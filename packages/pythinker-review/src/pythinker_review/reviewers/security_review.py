@@ -30,10 +30,16 @@ def _format_signals(signals: list[Signal]) -> str:
     return "\n".join(lines)
 
 
-def _build_user(chunk: Chunk, signals: list[Signal], advisor_context: str) -> str:
+def _build_user(
+    chunk: Chunk, signals: list[Signal], advisor_context: str, *, max_findings: int = 5
+) -> str:
+    cap = (
+        f"Return at most {max_findings} findings for this chunk.\n\n" if max_findings >= 0 else ""
+    )
     return (
         f"{advisor_context.strip()}\n\n"
         f"{_format_signals(signals)}\n\n"
+        f"{cap}"
         "Review the following diff for security issues introduced by this change. "
         "Use the advisor context and signals as starting points, but emit only validated, "
         "exploitable findings with concrete source/sink/mitigation reasoning.\n\n"
@@ -48,10 +54,14 @@ async def run_security_review_pass(
     llm: ReviewLLM,
     timeout_s: float,
     advisor_context: str = "",
+    max_findings: int = 5,
 ) -> ReviewerResult:
-    return await complete_reviewer_json(
+    result = await complete_reviewer_json(
         llm=llm,
         system=load_prompt("security_review.system.md"),
-        user=_build_user(chunk, signals, advisor_context),
+        user=_build_user(chunk, signals, advisor_context, max_findings=max_findings),
         timeout_s=timeout_s,
     )
+    if result.ok and max_findings >= 0:
+        return ReviewerResult(ok=True, findings=tuple(result.findings[:max_findings]))
+    return result

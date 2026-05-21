@@ -43,6 +43,8 @@ pythinker-review docs --base origin/main --docs-style "Google-style docstring" -
 pythinker-review compliance --base origin/main --ticket-file issue.md
 pythinker-review help-docs "how do I run review?" --docs-path docs
 pythinker-review similar-issues --issue-file issue.md --issues-dir issues       # dependency-free lexical search by default
+pythinker-review similar-issues --issue-file issue.md --issues-dir issues --backend chroma                  # in-memory Chroma search when installed
+pythinker-review similar-issues --issue-file issue.md --issues-dir issues --backend chroma --persist-index  # explicit local Chroma index
 pythinker-review tools
 
 # Security-only scan, SARIF for CI
