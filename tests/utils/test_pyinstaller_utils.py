@@ -169,6 +169,7 @@ def test_pyinstaller_hiddenimports():
             "pythinker_code.cli.plugin",
             "pythinker_code.cli.review",
             "pythinker_code.cli.secscan",
+            "pythinker_code.cli.security_scan",
             "pythinker_code.cli.update",
             "pythinker_code.cli.vis",
             "pythinker_code.cli.web",

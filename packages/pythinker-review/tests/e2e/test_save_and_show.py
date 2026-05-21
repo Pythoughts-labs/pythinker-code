@@ -24,7 +24,9 @@ def test_save_then_list_then_show(tmp_git_repo: Callable[..., Path], monkeypatch
     assert (repo / ".pythinker-review" / "index.json").exists()
     list_res = runner.invoke(app, ["list", "--repo", str(repo)])
     assert list_res.exit_code == 0
-    run_id = list_res.stdout.split()[0]
+    parts = list_res.stdout.split()
+    assert parts, "Expected at least one run id in list output"
+    run_id = parts[0]
     show_res = runner.invoke(app, ["show", run_id, "--repo", str(repo), "--format", "json"])
     assert show_res.exit_code == 0
 
@@ -65,7 +67,9 @@ def test_saved_findings_support_next_and_show_finding(
         ["diff", "--base", "main", "--format", "json", "--repo", str(repo), "--fail-on", "none"],
     )
     assert res.exit_code == 0, res.stdout
-    finding_id = json.loads(res.stdout)["findings"][0]["id"]
+    parsed = json.loads(res.stdout)
+    assert "findings" in parsed and parsed["findings"], "Expected non-empty findings list"
+    finding_id = parsed["findings"][0]["id"]
     next_res = runner.invoke(app, ["next", "--repo", str(repo)])
     assert next_res.exit_code == 0
     assert finding_id in next_res.stdout

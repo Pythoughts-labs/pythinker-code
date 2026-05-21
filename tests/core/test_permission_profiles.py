@@ -162,3 +162,58 @@ async def test_step_permission_profile_snapshot_blocks_same_step_plan_exit_race(
     assert result.is_error
     assert "permission profile blocks" in result.message
     assert not await target.exists()
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
+)
+@pytest.mark.parametrize("subagent_type", ["review", "verifier", "explore", "coder"])
+async def test_read_only_shell_in_subagent_skips_approval(
+    runtime: Runtime,
+    environment: Environment,
+    subagent_type: str,
+) -> None:
+    """Read-only shell commands in subagent context are auto-approved without prompting."""
+    approval_requested: list[str] = []
+
+    class TrackingApproval(Approval):
+        async def request(self, sender, action, description, display=None):  # type: ignore[override]
+            approval_requested.append(action)
+            return await super().request(sender, action, description, display)
+
+    runtime.role = "subagent"
+    runtime.subagent_type = subagent_type
+    tracking = TrackingApproval(yolo=False)
+
+    with tool_call_context("Shell"):
+        shell = Shell(tracking, environment, runtime)
+        result = await shell(ShellParams(command="echo hello"))
+
+    assert not result.is_error
+    assert approval_requested == [], "read-only subagent command should not request approval"
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
+)
+async def test_read_only_shell_in_root_agent_still_requests_approval(
+    runtime: Runtime,
+    environment: Environment,
+) -> None:
+    """In the root (non-subagent) context, even read-only commands still go through approval."""
+    approval_requested: list[str] = []
+
+    class TrackingApproval(Approval):
+        async def request(self, sender, action, description, display=None):  # type: ignore[override]
+            approval_requested.append(action)
+            return await super().request(sender, action, description, display)
+
+    runtime.role = "root"
+    tracking = TrackingApproval(yolo=True)  # yolo so the approval auto-passes
+
+    with tool_call_context("Shell"):
+        shell = Shell(tracking, environment, runtime)
+        result = await shell(ShellParams(command="echo hello"))
+
+    assert not result.is_error
+    assert "run command" in approval_requested, "root agent should still request approval"

@@ -28,6 +28,12 @@ from pythinker_review.reviewflow.state import (
     write_run,
 )
 from pythinker_review.reviewflow.utils import now_iso, stable_id
+from pythinker_review.reviewflow.workflow import (
+    ReviewflowWorkflowError,
+    _validate_fix_diff_scope,
+    init_project,
+    load_project_state,
+)
 
 
 def test_reviewflow_models_preserve_camel_case_aliases() -> None:
@@ -46,7 +52,9 @@ def test_reviewflow_models_preserve_camel_case_aliases() -> None:
 def test_reviewflow_mapping_detects_project_and_features(tmp_path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
-    (root / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+    (root / "pyproject.toml").write_text(
+        "[project]\nname = 'demo'\n[project.scripts]\ndemo = 'app:run'\n", encoding="utf-8"
+    )
     (root / "src").mkdir()
     (root / "src" / "app.py").write_text(
         "import subprocess\n\ndef run(request):\n    return subprocess.run(request.args['cmd'])\n",
@@ -64,11 +72,106 @@ def test_reviewflow_mapping_detects_project_and_features(tmp_path) -> None:
     assert stats["created"] >= 2
     src_feature = next(feature for feature in features if feature.title == "Src")
     assert [ref.path for ref in src_feature.owned_files] == ["src/app.py"]
+    assert [ref.path for ref in src_feature.tests] == ["tests/test_app.py"]
     assert "process-exec" in src_feature.trust_boundaries
     config_feature = next(
         feature for feature in features if feature.title == "Project configuration"
     )
     assert [ref.path for ref in config_feature.owned_files] == ["pyproject.toml"]
+    cli_feature = next(
+        feature for feature in features if feature.title == "Python CLI command demo"
+    )
+    assert [ref.path for ref in cli_feature.owned_files] == ["src/app.py"]
+    assert cli_feature.entrypoints[0].command == "demo"
+    assert cli_feature.entrypoints[0].symbol == "run"
+
+
+def test_reviewflow_mapping_detects_python_routes_and_node_package_scripts(tmp_path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "package.json").write_text(
+        '{"name":"web","scripts":{"test":"vitest","build":"vite build"},'
+        '"bin":{"webctl":"src/cli.ts"}}',
+        encoding="utf-8",
+    )
+    (root / "src").mkdir()
+    (root / "src" / "api.py").write_text(
+        "from fastapi import FastAPI\n"
+        "app = FastAPI()\n\n"
+        "@app.post('/items')\n"
+        "def create_item():\n"
+        "    return {}\n",
+        encoding="utf-8",
+    )
+    (root / "src" / "cli.ts").write_text("console.log('ok')\n", encoding="utf-8")
+    (root / "tests").mkdir()
+    (root / "tests" / "test_api.py").write_text("def test_create_item(): pass\n", encoding="utf-8")
+
+    config = ReviewflowConfig()
+    project = detect_project(root, config)
+    features, _stats = map_features(root, project, config, existing=[])
+
+    route = next(feature for feature in features if feature.title == "Python route POST /items")
+    assert route.kind == "route"
+    assert route.entrypoints[0].route == "/items"
+    assert route.entrypoints[0].symbol == "create_item"
+    node_package = next(feature for feature in features if feature.title == "Node package web")
+    assert [ref.path for ref in node_package.owned_files] == ["package.json"]
+    script = next(feature for feature in features if feature.title == "Package script build")
+    assert script.entrypoints[0].command == "build"
+    cli = next(feature for feature in features if feature.title == "CLI command webctl")
+    assert [ref.path for ref in cli.owned_files] == ["src/cli.ts"]
+
+
+def test_reviewflow_mapping_partitions_large_source_groups(tmp_path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+    (root / "src" / "auth").mkdir(parents=True)
+    (root / "src" / "billing").mkdir(parents=True)
+    for path in [
+        "src/auth/login.py",
+        "src/auth/session.py",
+        "src/auth/token.py",
+        "src/billing/invoice.py",
+    ]:
+        (root / path).write_text("pass\n", encoding="utf-8")
+
+    config = ReviewflowConfig()
+    config.review.max_owned_files = 2
+    project = detect_project(root, config)
+    features, _stats = map_features(root, project, config, existing=[])
+
+    source_features = [feature for feature in features if feature.title.startswith("Src")]
+    assert len(source_features) >= 3
+    assert all(len(feature.owned_files) <= 2 for feature in source_features)
+    assert any(feature.title.startswith("Src / Auth") for feature in source_features)
+    assert any(feature.title == "Src / Billing" for feature in source_features)
+
+
+def test_reviewflow_fix_diff_scope_handles_spaces_and_hunk_marker_content() -> None:
+    diff = """diff --git a/src/file with spaces.py b/src/file with spaces.py
+--- a/src/file with spaces.py
++++ b/src/file with spaces.py
+@@ -1 +1,2 @@
+ value = 1
+++++ not a file header
+"""
+
+    _validate_fix_diff_scope(diff, allowed_paths={"src/file with spaces.py"})
+
+
+def test_reviewflow_fix_diff_scope_rejects_out_of_scope_paths() -> None:
+    diff = """diff --git a/src/app.py b/src/app.py
+--- a/src/app.py
++++ b/src/app.py
+@@ -1 +1 @@
+-old
++new
+"""
+
+    with pytest.raises(ReviewflowWorkflowError, match="outside the selected"):
+        _validate_fix_diff_scope(diff, allowed_paths={"src/other.py"})
 
 
 def test_reviewflow_state_round_trip_and_locking(tmp_path) -> None:
@@ -146,6 +249,42 @@ def test_reviewflow_state_models_match_reviewflow_json_shape(tmp_path) -> None:
     assert '"claimedFeatureIds"' in run_json
     assert '"patchAttemptId": "pat_1"' in patch_json
     assert '"status": "validated"' in patch_json
+
+
+def test_reviewflow_migrates_legacy_state_dir_to_reviewflow_brand(tmp_path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+
+    init_project(root=root, state_dir=".clawpatch")
+    legacy_config = root / ".clawpatch" / "config.json"
+    legacy_config.write_text(
+        legacy_config.read_text(encoding="utf-8").replace(',\n    ".clawpatch/**"', ""),
+        encoding="utf-8",
+    )
+    loaded = load_project_state(root=root)
+
+    assert (root / ".clawpatch" / "project.json").exists()
+    assert loaded.paths.state_dir == (root / ".pythinker-review-flow").resolve()
+    assert loaded.config.state_dir == ".pythinker-review-flow"
+    assert ".clawpatch/**" in loaded.config.exclude
+    assert (root / ".pythinker-review-flow" / "project.json").exists()
+    assert '"stateDir": ".pythinker-review-flow"' in (
+        root / ".pythinker-review-flow" / "config.json"
+    ).read_text(encoding="utf-8")
+
+
+def test_reviewflow_refuses_legacy_state_with_nested_symlink(tmp_path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+    init_project(root=root, state_dir=".clawpatch")
+    (root / ".clawpatch" / "leak.json").symlink_to(root / "pyproject.toml")
+
+    with pytest.raises(ReviewflowWorkflowError, match="contains symlinks"):
+        load_project_state(root=root)
+
+    assert not (root / ".pythinker-review-flow").exists()
 
 
 def test_clean_locks_clears_feature_and_lock_file(tmp_path) -> None:

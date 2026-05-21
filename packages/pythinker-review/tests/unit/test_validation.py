@@ -6,6 +6,7 @@ from pythinker_review.engine.chunker import Chunk
 from pythinker_review.engine.runner import run_chunks
 from pythinker_review.engine.structured_diff import StructuredHunk
 from pythinker_review.llm.fake import FakeReviewLLM
+from pythinker_review.reviewers.validation import _snippet_matches
 
 
 def _chunk() -> Chunk:
@@ -67,6 +68,44 @@ async def test_runner_keeps_valid_finding_with_matching_evidence() -> None:
     )
     assert result.chunks_failed == 0
     assert len(result.findings) == 1
+
+
+@pytest.mark.asyncio
+async def test_runner_rejects_evidence_that_only_matches_elsewhere_in_file(tmp_path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "x.py").write_text(
+        "def f():\n    return safe\n\ndef g():\n    return secret\n", encoding="utf-8"
+    )
+    result = await run_chunks(
+        chunks=[_chunk()],
+        passes=("code_review",),
+        signals_by_file={},
+        diagnostics_by_file={},
+        llm=FakeReviewLLM(scripted=[_payload(evidence_snippet="return secret")]),
+        jobs=1,
+        per_chunk_timeout_s=10.0,
+        allow_partial=False,
+        repo=repo,
+    )
+    assert result.findings == ()
+    assert result.failed is False
+    assert result.chunk_failures[0].reason == "validation_error"
+
+
+def test_snippet_match_falls_back_to_file_search_for_off_by_one_range(tmp_path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "x.py").write_text("def f():\n    return user\n", encoding="utf-8")
+
+    assert _snippet_matches(
+        repo=repo,
+        file_path="x.py",
+        start_line=2,
+        end_line=3,
+        snippet="return user",
+        rendered="## File: 'x.py'\n",
+    )
 
 
 @pytest.mark.asyncio

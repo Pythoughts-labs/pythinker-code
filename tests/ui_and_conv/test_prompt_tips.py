@@ -37,6 +37,24 @@ from pythinker_code.ui.shell.prompt import (
 # ── Shared helpers ─────────────────────────────────────────────────────────────
 
 
+def test_prompt_toolkit_keyprocessor_shutdown_noise_is_filtered() -> None:
+    unraisable = SimpleNamespace(
+        exc_value=KeyError("__import__"),
+        object="<coroutine object KeyProcessor._start_timeout.<locals>.wait at 0x123>",
+    )
+
+    assert shell_prompt._is_prompt_toolkit_keyprocessor_shutdown_noise(unraisable)
+
+
+def test_other_unraisable_exceptions_are_not_filtered() -> None:
+    unraisable = SimpleNamespace(
+        exc_value=KeyError("other"),
+        object="<coroutine object KeyProcessor._start_timeout.<locals>.wait at 0x123>",
+    )
+
+    assert not shell_prompt._is_prompt_toolkit_keyprocessor_shutdown_noise(unraisable)
+
+
 class _DummyRunningPrompt:
     modal_priority = 10
 

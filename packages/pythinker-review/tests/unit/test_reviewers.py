@@ -45,6 +45,40 @@ async def test_code_review_returns_findings_on_valid_json() -> None:
 
 
 @pytest.mark.asyncio
+async def test_code_review_includes_extra_context_and_caps_findings() -> None:
+    payload = json.dumps(
+        {
+            "findings": [
+                {
+                    "rule_id": f"review.issue_{idx}",
+                    "title": f"issue {idx}",
+                    "rationale": "...",
+                    "category": "correctness",
+                    "severity": "low",
+                    "file": "x.py",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "confidence": 0.6,
+                }
+                for idx in range(3)
+            ]
+        }
+    )
+    llm = FakeReviewLLM(scripted=[payload])
+    result = await run_code_review_pass(
+        chunk=_chunk(),
+        llm=llm,
+        timeout_s=10.0,
+        review_context="Extra review instructions:\n======\nFocus on API risks\n======",
+        max_findings=2,
+    )
+    assert result.ok
+    assert len(result.findings) == 2
+    assert "Focus on API risks" in llm.calls[0][1]
+    assert "Return at most 2 findings" in llm.calls[0][1]
+
+
+@pytest.mark.asyncio
 async def test_security_review_retries_once_on_malformed_then_succeeds() -> None:
     llm = FakeReviewLLM(scripted=["not json", '{"findings": []}'])
     result = await run_security_review_pass(chunk=_chunk(), signals=[], llm=llm, timeout_s=10.0)
@@ -56,6 +90,14 @@ async def test_security_review_retries_once_on_malformed_then_succeeds() -> None
 @pytest.mark.asyncio
 async def test_reviewer_accepts_json_inside_markdown_fence() -> None:
     llm = FakeReviewLLM(scripted=['```json\n{"findings": []}\n```'])
+    result = await run_code_review_pass(chunk=_chunk(), llm=llm, timeout_s=10.0)
+    assert result.ok
+    assert result.findings == ()
+
+
+@pytest.mark.asyncio
+async def test_reviewer_skips_prose_example_object_before_real_json() -> None:
+    llm = FakeReviewLLM(scripted=['Example: {}\nFinal answer:\n{"findings": []}'])
     result = await run_code_review_pass(chunk=_chunk(), llm=llm, timeout_s=10.0)
     assert result.ok
     assert result.findings == ()
