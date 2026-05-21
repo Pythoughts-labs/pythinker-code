@@ -1,7 +1,8 @@
 import re
 from pathlib import Path
 
-from jinja2 import Environment, Undefined
+from jinja2 import Undefined
+from jinja2.sandbox import SandboxedEnvironment as Environment
 from pythinker_core.tooling import BriefDisplayBlock, DisplayBlock, ToolError, ToolReturnValue
 from pythinker_core.utils.typing import JsonType
 

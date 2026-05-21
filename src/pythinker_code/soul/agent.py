@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic
-from jinja2 import Environment as JinjaEnvironment
 from jinja2 import FileSystemLoader, StrictUndefined, TemplateError, UndefinedError
+from jinja2.sandbox import SandboxedEnvironment as JinjaEnvironment
 from pythinker_core.tooling import Toolset
 from pythinker_host.path import HostPath
 
@@ -167,7 +167,10 @@ async def load_agents_md(work_dir: HostPath) -> str | None:
 
     # Phase 3: assemble in root → leaf order, skipping entries emptied by truncation
     parts: list[str] = []
-    for path, content in budgeted:
+    for item in budgeted:
+        if item is None:
+            continue
+        path, content = item
         if content:
             parts.append(f"<!-- From: {path} -->\n{content}")
 
