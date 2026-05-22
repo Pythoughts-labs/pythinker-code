@@ -53,6 +53,8 @@ def _make_tool_result(call_id: str = "call_1") -> ToolResult:
 
 def test_empty_think_part_creates_thinking_indicator():
     """After StepBegin + empty ThinkPart, the thinking indicator must be visible."""
+    from rich.text import Text
+
     view = _LiveView(StatusUpdate())
     view.dispatch_wire_message(TurnBegin(user_input="test"))
     view.dispatch_wire_message(StepBegin(n=1))
@@ -63,6 +65,9 @@ def test_empty_think_part_creates_thinking_indicator():
     # A thinking content block must exist and take priority over moon fallback
     assert view._current_content_block is not None
     assert view._current_content_block.is_think is True
+    agent_blocks = view.compose_agent_output()
+    assert isinstance(agent_blocks[0], Text)
+    assert agent_blocks[0].plain.strip() == ""
     rendered = _render(view.compose())
     assert "Thinking" in rendered
 
@@ -125,6 +130,8 @@ def test_empty_think_then_text_no_spurious_thought_line(monkeypatch):
 
 def test_moon_fallback_during_active_turn():
     """Moon shows as fallback when turn is active but nothing else is visible."""
+    from rich.text import Text
+
     view = _LiveView(StatusUpdate())
 
     # Before TurnBegin — no moon
@@ -136,11 +143,15 @@ def test_moon_fallback_during_active_turn():
     assert view._active_turn_depth > 0
     # compose_agent_output should include the moon spinner
     agent_blocks = view.compose_agent_output()
-    assert len(agent_blocks) > 0
+    assert len(agent_blocks) > 1
+    assert isinstance(agent_blocks[0], Text)
+    assert agent_blocks[0].plain.strip() == ""
 
 
 def test_working_indicator_stays_visible_when_content_block_visible():
     """The activity spinner stays visible while content streams."""
+    from rich.text import Text
+
     view = _LiveView(StatusUpdate())
     view.dispatch_wire_message(TurnBegin(user_input="test"))
     view.dispatch_wire_message(StepBegin(n=1))
@@ -150,7 +161,9 @@ def test_working_indicator_stays_visible_when_content_block_visible():
     # persistent rotating-word spinner visible.
     assert view._current_content_block is not None
     agent_blocks = view.compose_agent_output()
-    assert len(agent_blocks) >= 2
+    assert len(agent_blocks) >= 3
+    assert isinstance(agent_blocks[0], Text)
+    assert agent_blocks[0].plain.strip() == ""
     rendered = _render(agent_blocks[-1])
     assert "Working" not in rendered
     assert "esc to interrupt" in rendered
@@ -177,6 +190,8 @@ def test_action_spacer_between_content_and_spinner_in_all_tui_styles(monkeypatch
 
 def test_moon_fallback_after_all_tools_flushed(monkeypatch):
     """After all tool calls finish, moon fallback reappears automatically."""
+    from rich.text import Text
+
     from pythinker_code.ui.shell.console import console as shell_console
 
     view = _LiveView(StatusUpdate())
@@ -196,7 +211,9 @@ def test_moon_fallback_after_all_tools_flushed(monkeypatch):
 
     # Nothing else visible + turn active → moon fallback shows
     agent_blocks = view.compose_agent_output()
-    assert len(agent_blocks) == 1  # just the moon
+    assert len(agent_blocks) == 2  # leading blank row + spinner
+    assert isinstance(agent_blocks[0], Text)
+    assert agent_blocks[0].plain.strip() == ""
 
 
 def test_working_indicator_stays_visible_while_parallel_tool_still_running(monkeypatch):
@@ -247,6 +264,8 @@ def test_action_spacer_between_parallel_tools_in_all_tui_styles(monkeypatch):
 
 def test_moon_survives_status_update(monkeypatch):
     """StatusUpdate does not affect moon fallback visibility."""
+    from rich.text import Text
+
     from pythinker_code.ui.shell.console import console as shell_console
 
     view = _LiveView(StatusUpdate())
@@ -264,7 +283,9 @@ def test_moon_survives_status_update(monkeypatch):
     # Turn still active, nothing else visible → moon fallback shows
     assert view._active_turn_depth > 0
     agent_blocks = view.compose_agent_output()
-    assert len(agent_blocks) == 1
+    assert len(agent_blocks) == 2
+    assert isinstance(agent_blocks[0], Text)
+    assert agent_blocks[0].plain.strip() == ""
 
 
 def test_moon_hidden_after_turn_end(monkeypatch):

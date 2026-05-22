@@ -85,9 +85,11 @@ _LIVE_VERTICAL_OVERFLOW: Literal["crop", "ellipsis", "visible"] = "ellipsis"
 _ACTION_SPACER = Text(" ")
 
 
-def _append_action_block(blocks: list[RenderableType], block: RenderableType) -> None:
-    """Append a live action block with a one-row gap after any previous action."""
-    if blocks:
+def _append_action_block(
+    blocks: list[RenderableType], block: RenderableType, *, leading: bool = False
+) -> None:
+    """Append a live action block with a one-row gap around stream/status rows."""
+    if blocks or leading:
         blocks.append(_ACTION_SPACER)
     blocks.append(block)
 
@@ -371,7 +373,7 @@ class _LiveView:
             _append_action_block(blocks, self._compaction_block)
         else:
             if self._current_content_block is not None:
-                _append_action_block(blocks, self._current_content_block.compose())
+                _append_action_block(blocks, self._current_content_block.compose(), leading=True)
             # When an approval panel is on-screen for a specific tool call, the
             # panel already previews the same command/diff that the pending tool
             # card would show. Suppress the matching card to avoid the duplicate.
@@ -389,7 +391,7 @@ class _LiveView:
                 # Keep a stable activity indicator visible even while content or
                 # tool cards are already on-screen. This makes long-running
                 # background waits feel alive instead of frozen.
-                _append_action_block(blocks, self._working_indicator())
+                _append_action_block(blocks, self._working_indicator(), leading=True)
         for notification in list(self._live_notification_blocks):
             _append_action_block(blocks, notification.compose())
         return blocks
