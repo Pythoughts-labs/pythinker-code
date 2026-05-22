@@ -41,9 +41,16 @@ def fetch_sdist_metadata(version: str) -> tuple[str, str]:
 
 
 def run_poet(package: str) -> str:
-    """Run homebrew-pypi-poet against an installed package."""
+    """Run homebrew-pypi-poet against an installed package.
+
+    homebrew-pypi-poet only ships a ``poet`` console script (no runnable
+    ``poet`` module), so ``python -m poet`` raises. Resolve the script that
+    sits next to the running interpreter — that's the venv we just
+    installed ``homebrew-pypi-poet`` into in the workflow.
+    """
+    poet = Path(sys.executable).parent / "poet"
     res = subprocess.run(
-        [sys.executable, "-m", "poet", package],
+        [str(poet), package],
         check=True,
         capture_output=True,
         text=True,
