@@ -5,6 +5,7 @@ to the PyInstaller-frozen ``pythinker.exe``. The runtime probes for that file
 to decide whether ``pythinker update`` should re-run the native installer
 instead of shelling out to ``uv tool upgrade``.
 """
+
 from __future__ import annotations
 
 import sys

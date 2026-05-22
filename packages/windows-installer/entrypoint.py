@@ -5,6 +5,7 @@ identically to ``python -m pythinker_code`` — including the crash-handler
 install, proxy-env normalization, and the ``--version`` / ``--help``
 short-circuits that live in ``__main__``.
 """
+
 from __future__ import annotations
 
 import sys

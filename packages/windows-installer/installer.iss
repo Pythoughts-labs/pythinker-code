@@ -46,6 +46,10 @@ Name: "modifypathmachine"; Description: "Add Pythinker to the system PATH"; \
 [Files]
 Source: "..\..\dist\pythinker\*"; DestDir: "{app}"; \
   Flags: ignoreversion recursesubdirs createallsubdirs
+; Drop the native-build sentinel directly next to pythinker.exe (NOT inside
+; _internal/). PyInstaller >=6.1 hides bundled data files under _internal/,
+; which would make is_native_build() always return False.
+Source: ".pythinker-native"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Pythinker"; Filename: "{app}\pythinker.exe"

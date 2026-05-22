@@ -165,7 +165,8 @@ or uv installed**.
 
 Updates: `pythinker update` from inside the native build downloads the latest
 installer from GitHub Releases, verifies its SHA-256, and re-runs it silently.
-Set `DISABLE_AUTOUPDATER=1` to opt out of automatic update prompts.
+Set `PYTHINKER_CLI_NO_AUTO_UPDATE=1` to opt out of automatic update prompts
+(same opt-out used by the PyPI/uv install path).
 
 ### ✨ Recommended install (clean, with logo)
 

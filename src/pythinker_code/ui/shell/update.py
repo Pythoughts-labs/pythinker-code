@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import re
 import subprocess
 import sys
@@ -15,6 +14,8 @@ from rich.text import Text
 
 from pythinker_code.native import (
     is_native_build as _is_native_build,
+)
+from pythinker_code.native import (
     native_installer_asset_name,
     native_installer_release_url,
 )
@@ -257,6 +258,31 @@ def print_update_banner() -> None:
 
 def _update_banner_text(current_version: str, latest_version: str) -> Text:
     upgrade_command = _detect_upgrade_command()
+    if upgrade_command == [NATIVE_INSTALLER_MARKER]:
+        return Text.assemble(
+            ("  ✨ ", "bold cyan"),
+            ("Update available!", "bold"),
+            (f" {current_version} -> {latest_version}", "grey50"),
+            ("\n\n  Release notes: ", "grey50"),
+            (CHANGELOG_URL_EN, "grey50 underline"),
+            ("\n\n  ", ""),
+            ("1", "bold cyan"),
+            (". Run ", ""),
+            ("pythinker update", "bold cyan"),
+            (" (downloads installer automatically)", "grey50"),
+            ("\n  ", ""),
+            ("2", "bold cyan"),
+            (". Or download ", ""),
+            (
+                f"PythinkerSetup-{latest_version}.exe",
+                "bold",
+            ),
+            (" from the ", "grey50"),
+            (
+                "GitHub Releases page",
+                "grey50 underline",
+            ),
+        )
     upgrade_command_text = _format_upgrade_command(upgrade_command)
     return Text.assemble(
         ("  ✨ ", "bold cyan"),
@@ -286,13 +312,9 @@ async def _fetch_native_installer_asset(
     """Return (download_url, sha256) for the installer asset, or None on failure."""
     url = native_installer_release_url(channel=channel)
     try:
-        async with session.get(
-            url, headers={"Accept": "application/vnd.github+json"}
-        ) as resp:
+        async with session.get(url, headers={"Accept": "application/vnd.github+json"}) as resp:
             if resp.status != 200:
-                logger.warning(
-                    "GitHub release lookup returned {status}", status=resp.status
-                )
+                logger.warning("GitHub release lookup returned {status}", status=resp.status)
                 return None
             payload = await resp.json()
     except Exception:
@@ -309,9 +331,7 @@ async def _fetch_native_installer_asset(
         elif name == asset_name + ".sha256":
             sha256_url = asset.get("browser_download_url")
     if not download_url or not sha256_url:
-        logger.warning(
-            "Native installer asset {name} not found on release", name=asset_name
-        )
+        logger.warning("Native installer asset {name} not found on release", name=asset_name)
         return None
 
     try:
@@ -337,12 +357,10 @@ def _run_native_installer(installer_path: Path) -> None:
     sys.exit(0)
 
 
-async def _maybe_run_native_update(
-    latest_version: str, channel: str = "latest"
-) -> UpdateResult:
+async def _maybe_run_native_update(latest_version: str, channel: str = "latest") -> UpdateResult:
     """Native-build update path. Returns UPDATED on success; UPDATE_AVAILABLE if skipped."""
-    if os.environ.get("DISABLE_AUTOUPDATER"):
-        logger.info("DISABLE_AUTOUPDATER set; skipping native auto-update")
+    if _auto_update_disabled():
+        logger.info("PYTHINKER_CLI_NO_AUTO_UPDATE set; skipping native auto-update")
         return UpdateResult.UPDATE_AVAILABLE
 
     import hashlib
@@ -350,9 +368,7 @@ async def _maybe_run_native_update(
 
     timeout = aiohttp.ClientTimeout(total=120, sock_connect=10, sock_read=60)
     async with new_client_session(timeout=timeout) as session:
-        fetched = await _fetch_native_installer_asset(
-            session, latest_version, channel
-        )
+        fetched = await _fetch_native_installer_asset(session, latest_version, channel)
         if fetched is None:
             return UpdateResult.FAILED
         download_url, expected_sha = fetched
@@ -362,9 +378,7 @@ async def _maybe_run_native_update(
         try:
             async with session.get(download_url) as resp:
                 if resp.status != 200:
-                    logger.warning(
-                        "Installer download returned {status}", status=resp.status
-                    )
+                    logger.warning("Installer download returned {status}", status=resp.status)
                     return UpdateResult.FAILED
                 with installer.open("wb") as fh:
                     async for chunk in resp.content.iter_chunked(64 * 1024):
@@ -454,10 +468,7 @@ async def _do_update(*, print: bool, check_only: bool) -> UpdateResult:
             )
             return UpdateResult.UPDATE_AVAILABLE
         if native_result is UpdateResult.FAILED:
-            _print(
-                "[red]Native update failed. "
-                "Download manually from the releases page.[/red]"
-            )
+            _print("[red]Native update failed. Download manually from the releases page.[/red]")
             return UpdateResult.FAILED
         return native_result
 

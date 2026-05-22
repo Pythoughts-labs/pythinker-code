@@ -26,9 +26,12 @@ a = Analysis(
     ["entrypoint.py"],
     pathex=[],
     binaries=[],
-    datas=[
-        ("../.pythinker-native", "."),
-    ],
+    # NOTE: .pythinker-native is NOT bundled via PyInstaller datas on purpose.
+    # PyInstaller >=6.1 places data files under dist/pythinker/_internal/,
+    # which would leave the sentinel invisible to is_native_build() (which
+    # probes alongside pythinker.exe). installer.iss copies the sentinel
+    # directly to {app} so the runtime probe succeeds.
+    datas=[],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
