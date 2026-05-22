@@ -43,6 +43,14 @@ content = content.replace(
 // Remove subsection headers like ### Added, ### Changed, ### Fixed
 content = content.replace(/^### (Added|Changed|Fixed|Improved|Tools|SDK)\n+/gm, "");
 
+// The docs changelog is emitted under docs/en/release-notes/, so links that are
+// correct from the repository root need to be adjusted for VitePress dead-link
+// checking.
+content = content.replaceAll(
+  "docs/history/CHANGELOG-pre-0.8.0.md",
+  "../../history/CHANGELOG-pre-0.8.0.md"
+);
+
 // Write the target file
 writeFileSync(targetPath, HEADER + content.trim() + "\n");
 
