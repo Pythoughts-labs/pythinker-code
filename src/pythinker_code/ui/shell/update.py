@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import subprocess
 import sys
@@ -12,6 +13,11 @@ from shutil import which
 import aiohttp
 from rich.text import Text
 
+from pythinker_code.native import (
+    is_native_build as _is_native_build,
+    native_installer_asset_name,
+    native_installer_release_url,
+)
 from pythinker_code.share import get_share_dir
 from pythinker_code.ui.shell.console import console
 from pythinker_code.utils.aiohttp import new_client_session
@@ -30,6 +36,8 @@ LAST_UPDATE_CHECK_FILE = get_share_dir() / "last_update_check.txt"
 AUTO_UPDATE_CHECK_INTERVAL_SECONDS = 24 * 60 * 60
 
 _UPDATE_LOCK = asyncio.Lock()
+
+NATIVE_INSTALLER_MARKER = "__pythinker_native_installer__"
 
 
 class UpdateResult(Enum):
@@ -55,6 +63,8 @@ def semver_tuple(version: str) -> tuple[int, int, int]:
 
 def _detect_upgrade_command() -> list[str]:
     """Pick the right upgrade argv based on how this interpreter was installed."""
+    if _is_native_build():
+        return [NATIVE_INSTALLER_MARKER]
     exe = sys.executable.replace("\\", "/").lower()
     if "/uv/tools/" in exe:
         return ["uv", "tool", "upgrade", "pythinker-code"]
@@ -270,6 +280,116 @@ def _render_update_banner(current_version: str, latest_version: str) -> None:
     console.print(_update_banner_text(current_version, latest_version))
 
 
+async def _fetch_native_installer_asset(
+    session: aiohttp.ClientSession, latest_version: str, channel: str
+) -> tuple[str, str] | None:
+    """Return (download_url, sha256) for the installer asset, or None on failure."""
+    url = native_installer_release_url(channel=channel)
+    try:
+        async with session.get(
+            url, headers={"Accept": "application/vnd.github+json"}
+        ) as resp:
+            if resp.status != 200:
+                logger.warning(
+                    "GitHub release lookup returned {status}", status=resp.status
+                )
+                return None
+            payload = await resp.json()
+    except Exception:
+        logger.exception("Failed to look up native installer release")
+        return None
+
+    asset_name = native_installer_asset_name(latest_version)
+    download_url: str | None = None
+    sha256_url: str | None = None
+    for asset in payload.get("assets", []):
+        name = asset.get("name", "")
+        if name == asset_name:
+            download_url = asset.get("browser_download_url")
+        elif name == asset_name + ".sha256":
+            sha256_url = asset.get("browser_download_url")
+    if not download_url or not sha256_url:
+        logger.warning(
+            "Native installer asset {name} not found on release", name=asset_name
+        )
+        return None
+
+    try:
+        async with session.get(sha256_url) as resp:
+            text = (await resp.text()).strip()
+    except Exception:
+        logger.exception("Failed to fetch installer sha256")
+        return None
+    sha = text.split()[0] if text else ""
+    if len(sha) != 64:
+        logger.warning("Installer sha256 has unexpected length: {n}", n=len(sha))
+        return None
+    return download_url, sha
+
+
+def _run_native_installer(installer_path: Path) -> None:
+    """Spawn the downloaded installer silently and exit this process."""
+    subprocess.Popen(
+        [str(installer_path), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        | getattr(subprocess, "DETACHED_PROCESS", 0),
+    )
+    sys.exit(0)
+
+
+async def _maybe_run_native_update(
+    latest_version: str, channel: str = "latest"
+) -> UpdateResult:
+    """Native-build update path. Returns UPDATED on success; UPDATE_AVAILABLE if skipped."""
+    if os.environ.get("DISABLE_AUTOUPDATER"):
+        logger.info("DISABLE_AUTOUPDATER set; skipping native auto-update")
+        return UpdateResult.UPDATE_AVAILABLE
+
+    import hashlib
+    import tempfile
+
+    timeout = aiohttp.ClientTimeout(total=120, sock_connect=10, sock_read=60)
+    async with new_client_session(timeout=timeout) as session:
+        fetched = await _fetch_native_installer_asset(
+            session, latest_version, channel
+        )
+        if fetched is None:
+            return UpdateResult.FAILED
+        download_url, expected_sha = fetched
+
+        tmpdir = Path(tempfile.mkdtemp(prefix="pythinker-update-"))
+        installer = tmpdir / native_installer_asset_name(latest_version)
+        try:
+            async with session.get(download_url) as resp:
+                if resp.status != 200:
+                    logger.warning(
+                        "Installer download returned {status}", status=resp.status
+                    )
+                    return UpdateResult.FAILED
+                with installer.open("wb") as fh:
+                    async for chunk in resp.content.iter_chunked(64 * 1024):
+                        fh.write(chunk)
+        except Exception:
+            logger.exception("Installer download failed")
+            return UpdateResult.FAILED
+
+    digest = hashlib.sha256()
+    with installer.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(64 * 1024), b""):
+            digest.update(chunk)
+    actual_sha = digest.hexdigest()
+    if actual_sha != expected_sha:
+        logger.error(
+            "Installer sha mismatch: expected={expected} actual={actual}",
+            expected=expected_sha,
+            actual=actual_sha,
+        )
+        return UpdateResult.FAILED
+
+    _run_native_installer(installer)
+    return UpdateResult.UPDATED  # unreachable; sys.exit fires inside _run_native_installer
+
+
 async def do_update(*, print: bool = True, check_only: bool = False) -> UpdateResult:
     async with _UPDATE_LOCK:
         return await _do_update(print=print, check_only=check_only)
@@ -320,7 +440,26 @@ async def _do_update(*, print: bool, check_only: bool) -> UpdateResult:
         cmd=upgrade_command_text,
     )
     _print(f"Updating pythinker-code {current_version} → {latest_version}...")
-    _print(f"[grey50]Running: {upgrade_command_text}[/grey50]")
+    if upgrade_command != [NATIVE_INSTALLER_MARKER]:
+        _print(f"[grey50]Running: {upgrade_command_text}[/grey50]")
+
+    if upgrade_command == [NATIVE_INSTALLER_MARKER]:
+        _print("[grey50]Downloading native installer for update...[/grey50]")
+        native_result = await _maybe_run_native_update(latest_version)
+        if native_result is UpdateResult.UPDATE_AVAILABLE:
+            _print(
+                "[yellow]Auto-update disabled. "
+                "Download the new installer manually from "
+                "https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest[/yellow]"
+            )
+            return UpdateResult.UPDATE_AVAILABLE
+        if native_result is UpdateResult.FAILED:
+            _print(
+                "[red]Native update failed. "
+                "Download manually from the releases page.[/red]"
+            )
+            return UpdateResult.FAILED
+        return native_result
 
     # On Windows, the running pythinker.exe holds an exclusive lock on its own
     # binary. Any in-process `uv tool upgrade` / `pip install --upgrade` fails
