@@ -27,7 +27,7 @@ from rich.text import Text
 from pythinker_code.ui.shell.console import console
 from pythinker_code.ui.shell.echo import render_user_echo
 from pythinker_code.ui.shell.keyboard import KeyboardListener, KeyEvent
-from pythinker_code.ui.shell.spinner_words import spinner_frame, spinner_message
+from pythinker_code.ui.shell.motion import ActivitySnapshot, activity_status_line
 from pythinker_code.ui.shell.visualize._approval_panel import (
     ApprovalRequestPanel,
     show_approval_in_pager,
@@ -118,6 +118,7 @@ class _LiveView:
         self._show_thinking_stream = show_thinking_stream
 
         self._active_turn_depth = 0
+        self._turn_start_time: float | None = None
         self._compaction_block: _CompactionBlock | None = None
         self._mcp_loading_spinner: RenderableType | None = None
         self._btw_spinner: RenderableType | None = None
@@ -398,13 +399,11 @@ class _LiveView:
         return blocks
 
     def _working_indicator(self) -> Text:
-        # Use manual frame selection instead of Rich Spinner here. This path is
-        # re-rendered by prompt_toolkit/Rich Live, and constructing a fresh Rich
-        # Spinner each render resets its internal clock, making the glyph look
-        # stuck next to the rotating verb.
-        line = Text(f"{spinner_frame()} ", style="cyan")
-        line.append(spinner_message(), style="grey50")
-        return line
+        elapsed = 0.0 if self._turn_start_time is None else time.monotonic() - self._turn_start_time
+        return activity_status_line(
+            ActivitySnapshot(label="Working", elapsed_s=elapsed),
+            width=console.width,
+        )
 
     def compose(self, *, include_status: bool = True) -> RenderableType:
         """Compose the full live view display content.
@@ -436,11 +435,14 @@ class _LiveView:
             # (e.g. during replay), ensure the turn is considered active.
             if self._active_turn_depth == 0:
                 self._active_turn_depth = 1
+                self._turn_start_time = time.monotonic()
             self.refresh_soon()
             return
 
         match msg:
             case TurnBegin():
+                if self._active_turn_depth == 0:
+                    self._turn_start_time = time.monotonic()
                 self._active_turn_depth += 1
                 self.flush_content()
                 self.refresh_soon()
@@ -454,6 +456,8 @@ class _LiveView:
                 console.print(render_user_echo(Message(role="user", content=content)))
             case TurnEnd():
                 self._active_turn_depth = max(0, self._active_turn_depth - 1)
+                if self._active_turn_depth == 0:
+                    self._turn_start_time = None
             case CompactionBegin():
                 self._compaction_block = _CompactionBlock()
                 self.refresh_soon()
@@ -679,6 +683,7 @@ class _LiveView:
 
         if is_interrupt:
             self._active_turn_depth = 0
+            self._turn_start_time = None
 
         while self._approval_request_queue:
             # should not happen, but just in case

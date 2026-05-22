@@ -3,8 +3,9 @@ from __future__ import annotations
 from rich.console import Console
 
 from pythinker_code.ui.shell.console import console as shell_console
+from pythinker_code.ui.shell.visualize import _live_view as live_view_module
 from pythinker_code.ui.shell.visualize import _LiveView, _PromptLiveView
-from pythinker_code.wire.types import Notification, StatusUpdate
+from pythinker_code.wire.types import Notification, StatusUpdate, TurnBegin
 
 
 def _render(renderable) -> str:
@@ -38,6 +39,20 @@ def test_live_view_renders_notification_block():
     assert "Task ID: b0000001" in rendered
     assert "Status: completed" in rendered
     assert "..." in rendered
+
+
+def test_working_indicator_uses_turn_elapsed_time(monkeypatch):
+    now = 1000.0
+    monkeypatch.setattr(live_view_module.time, "monotonic", lambda: now)
+    view = _LiveView(StatusUpdate())
+    view.dispatch_wire_message(TurnBegin(user_input="scan"))
+
+    now = 1012.0
+    rendered = _render(view._working_indicator())
+
+    assert "Working" in rendered
+    assert "12s" in rendered
+    assert "4h" not in rendered
 
 
 def test_prompt_live_view_suppresses_background_task_notifications(monkeypatch):

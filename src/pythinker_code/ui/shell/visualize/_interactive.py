@@ -234,6 +234,8 @@ class _PromptLiveView(_LiveView):
                 if isinstance(msg, TurnEnd):
                     self._active_turn_depth = max(0, self._active_turn_depth - 1)
                     self._turn_ended = self._active_turn_depth == 0
+                    if self._turn_ended:
+                        self._turn_start_time = None
                     self._flush_prompt_refresh()
                     continue
 

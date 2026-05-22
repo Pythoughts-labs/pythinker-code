@@ -221,6 +221,16 @@ def test_composing_live_label_uses_professional_activity_wording():
     assert "tokens" in output
 
 
+def test_thinking_status_line_shows_interrupt_hint():
+    block = _ContentBlock(is_think=True)
+    block.append("reasoning")
+    console = Console(record=True, width=120, color_system=None)
+    console.print(block.compose())
+    output = console.export_text()
+    assert "Thinking" in output
+    assert "esc to interrupt" in output
+
+
 class TestContentBlockCommitment:
     """Verify incremental commitment for composing blocks."""
 
@@ -309,11 +319,15 @@ class TestShowThinkingStream:
         assert "Thinking" in result.plain
 
     def test_stream_mode_status_includes_token_count(self):
-        """Stream mode shows the active thinking status line before content arrives."""
+        """Stream mode shows token count after thinking content arrives."""
+        from rich.console import Group
         from rich.text import Text
 
         block = _ContentBlock(is_think=True, show_thinking_stream=True)
+        block.append("reasoning content")
         result = block.compose()
+        assert isinstance(result, Group)
+        result = result.renderables[0]
         assert isinstance(result, Text)
         plain = result.plain
         assert "Thinking" in plain

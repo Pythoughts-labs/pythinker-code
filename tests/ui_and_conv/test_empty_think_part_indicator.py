@@ -151,7 +151,9 @@ def test_working_indicator_stays_visible_when_content_block_visible():
     assert view._current_content_block is not None
     agent_blocks = view.compose_agent_output()
     assert len(agent_blocks) >= 2
-    assert "…" in _render(agent_blocks[-1])
+    rendered = _render(agent_blocks[-1])
+    assert "Working" in rendered
+    assert "esc to interrupt" in rendered
 
 
 def test_moon_fallback_after_all_tools_flushed(monkeypatch):
@@ -198,7 +200,9 @@ def test_working_indicator_stays_visible_while_parallel_tool_still_running(monke
     # Tool block visible → persistent loading-word spinner remains visible.
     agent_blocks = view.compose_agent_output()
     assert len(agent_blocks) >= 2
-    assert "…" in _render(agent_blocks[-1])
+    rendered = _render(agent_blocks[-1])
+    assert "Working" in rendered
+    assert "esc to interrupt" in rendered
 
 
 def test_moon_survives_status_update(monkeypatch):

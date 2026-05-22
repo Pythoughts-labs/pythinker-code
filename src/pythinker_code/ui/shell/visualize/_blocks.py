@@ -25,6 +25,7 @@ from pythinker_code.soul import format_context_status, format_token_count
 from pythinker_code.tools import extract_key_argument
 from pythinker_code.ui.shell.components import ToolExecutionComponent
 from pythinker_code.ui.shell.console import console
+from pythinker_code.ui.shell.motion import ActivitySnapshot, activity_status_line
 from pythinker_code.ui.shell.tool_renderers import (
     ToolResultPayload,
     get_tool_renderer,
@@ -73,19 +74,6 @@ def _is_active_background_agent(tool_name: str, result_text: str) -> bool:
             k, _, v = line.partition(":")
             values[k.strip()] = v.strip()
     return values.get("kind") == "agent" and values.get("status") in _AGENT_ACTIVE_STATUSES
-
-
-# Animated bullet frames shown after the "Thinking" label. Dots grow in
-# from the left, reach three, then drain out from the left — a continuous
-# rightward flow that loops every ``_BULLET_FRAME_INTERVAL * len(frames)``.
-_BULLET_FRAMES = (".  ", ".. ", "...", " ..", "  .", "   ")
-_BULLET_FRAME_INTERVAL = 0.13  # seconds per frame
-
-
-def _bullet_frame_for(elapsed: float) -> str:
-    """Select the current bullet frame from wall-clock elapsed time."""
-    idx = int(elapsed / _BULLET_FRAME_INTERVAL) % len(_BULLET_FRAMES)
-    return _BULLET_FRAMES[idx]
 
 
 def _truncate_to_display_width(line: str, max_width: int) -> str:
@@ -308,17 +296,22 @@ class _ContentBlock:
         console.print(self._wrap_bullet(Markdown(committed_text)))
         self._committed_len += boundary
 
-    def _compose_spinner(self) -> Text:
+    def _activity_snapshot(self, label: str) -> ActivitySnapshot:
         elapsed = time.monotonic() - self._start_time
-        elapsed_str = format_elapsed(elapsed)
-        count_str = f"{format_token_count(int(self._token_count))} tokens"
+        tokens_int = int(self._token_count)
+        token_rate = None
+        if elapsed > 0.5 and tokens_int > 0:
+            rate = int(tokens_int / elapsed)
+            token_rate = rate if rate > 0 else None
+        return ActivitySnapshot(
+            label=label,
+            elapsed_s=elapsed,
+            tokens=tokens_int,
+            token_rate=token_rate,
+        )
 
-        glyph = "●" if int(time.monotonic() / 0.8) % 2 == 0 else " "
-        line = Text(f"{glyph} ", style=Style(color="grey50"))
-        line.append("Composing...")
-        line.append(f" {elapsed_str}", style="grey50")
-        line.append(f" · {count_str}", style="grey50")
-        return line
+    def _compose_spinner(self) -> Text:
+        return activity_status_line(self._activity_snapshot("Composing"), width=console.width)
 
     def _compose_thinking_stream(self) -> RenderableType:
         """Legacy 'Thinking...' spinner stacked over a 6-line scrolling preview."""
@@ -330,16 +323,7 @@ class _ContentBlock:
         return Group(spinner, Text(preview, style="grey50 italic"))
 
     def _compose_thinking_spinner(self) -> Text:
-        """Legacy 'Thinking...' header used by the stream-mode preview."""
-        elapsed = time.monotonic() - self._start_time
-        elapsed_str = format_elapsed(elapsed)
-        count_str = f"{format_token_count(int(self._token_count))} tokens"
-        glyph = "●" if int(time.monotonic() / 0.8) % 2 == 0 else " "
-        line = Text(f"{glyph} ", style=Style(color="grey50"))
-        line.append("Thinking...")
-        line.append(f" {elapsed_str}", style="grey50")
-        line.append(f" · {count_str}", style="grey50")
-        return line
+        return activity_status_line(self._activity_snapshot("Thinking"), width=console.width)
 
     def _build_preview(self, text: str) -> str:
         """Tail-trim *text* to the last ``_THINKING_PREVIEW_LINES`` and clamp width."""
@@ -349,28 +333,7 @@ class _ContentBlock:
         return "\n".join(_truncate_to_display_width(line, max_width) for line in lines)
 
     def _compose_thinking(self) -> Text:
-        """Render the thinking line: italic Thinking + bullets + metadata."""
-        elapsed = time.monotonic() - self._start_time
-        elapsed_str = format_elapsed(elapsed)
-        tokens_int = int(self._token_count)
-        count_str = f"{format_token_count(tokens_int)} tokens"
-        frame = _bullet_frame_for(elapsed)
-
-        parts: list[tuple[str, str | Style]] = [
-            ("Thinking", "italic"),
-            (f" {frame}", "cyan"),
-            (f"  {elapsed_str}", "grey50"),
-            (f" · {count_str}", "grey50"),
-        ]
-
-        # Live tok/s pulse — a real heartbeat signal that confirms the model
-        # is still streaming even when the raw content is hidden.
-        if elapsed > 0.5 and tokens_int > 0:
-            rate = int(tokens_int / elapsed)
-            if rate > 0:
-                parts.append((f" · {rate} tok/s", "grey50"))
-
-        return Text.assemble(*parts)
+        return activity_status_line(self._activity_snapshot("Thinking"), width=console.width)
 
 
 class _ToolCallBlock:
