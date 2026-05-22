@@ -18,6 +18,7 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     fg,
     format_lines_block,
     invalid_arg,
+    missing_required_arg,
     running_spinner,
     tool_title,
 )
@@ -34,6 +35,8 @@ def _render_call_with_id(
     if task_id is None:
         if "task_id" in args:
             line.append_text(invalid_arg())
+        elif ctx.has_result:
+            line.append_text(missing_required_arg("task_id"))
         else:
             line.append_text(fg("muted", "..."))
     else:

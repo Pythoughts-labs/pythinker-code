@@ -288,6 +288,9 @@ class Runtime:
 
         # Merge invocation flags with persisted session state.
         effective_yolo = yolo or session.state.approval.yolo
+        # An explicit --yolo invocation is already a deliberate trust decision for
+        # this run, so it must not deadlock non-interactive/e2e flows behind safe mode.
+        effective_safe_mode = False if yolo else session.state.trust.safe_mode
         if auto and not session.state.approval.auto:
             session.state.approval.auto = True
             session.save_state()
@@ -297,12 +300,14 @@ class Runtime:
             session.state.approval.yolo = approval_state.yolo
             session.state.approval.auto = approval_state.auto
             session.state.approval.auto_approve_actions = set(approval_state.auto_approve_actions)
+            session.state.trust.safe_mode = approval_state.safe_mode
             session.save_state()
 
         approval_state = ApprovalState(
             yolo=effective_yolo,
             auto=session.state.approval.auto,
             runtime_auto=runtime_auto,
+            safe_mode=effective_safe_mode,
             auto_approve_actions=saved_actions,
             on_change=_on_approval_change,
         )

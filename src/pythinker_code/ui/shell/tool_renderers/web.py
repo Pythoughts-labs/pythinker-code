@@ -15,6 +15,7 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     fg,
     format_lines_block,
     invalid_arg,
+    missing_required_arg,
     running_spinner,
     tool_title,
 )
@@ -38,7 +39,12 @@ def _render_fetch_call(ctx: ToolRenderContext) -> RenderableType:
     line.append_text(tool_title("fetch"))
     line.append(" ")
     if url is None:
-        line.append_text(invalid_arg() if "url" in args else fg("muted", "..."))
+        if "url" in args:
+            line.append_text(invalid_arg())
+        elif ctx.has_result:
+            line.append_text(missing_required_arg("url"))
+        else:
+            line.append_text(fg("muted", "..."))
     else:
         line.append_text(fg("accent", _shorten_url(url)))
     return running_spinner(line, execution_started=ctx.execution_started, has_result=ctx.has_result)
@@ -87,7 +93,12 @@ def _render_search_call(ctx: ToolRenderContext) -> RenderableType:
     line.append_text(tool_title("search"))
     line.append(" ")
     if query is None:
-        line.append_text(invalid_arg() if "query" in args else fg("muted", "..."))
+        if "query" in args:
+            line.append_text(invalid_arg())
+        elif ctx.has_result:
+            line.append_text(missing_required_arg("query"))
+        else:
+            line.append_text(fg("muted", "..."))
     else:
         line.append_text(fg("accent", f'"{query}"'))
     extras: list[str] = []

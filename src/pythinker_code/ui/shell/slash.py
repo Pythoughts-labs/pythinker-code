@@ -1237,6 +1237,242 @@ async def settings(app: Shell, args: str):
     raise Reload(session_id=soul.runtime.session.id)
 
 
+@registry.command(aliases=["rewind-files"])
+@shell_mode_registry.command(aliases=["rewind-files"])
+def restore(app: Shell, args: str) -> None:
+    """List or restore file mutation checkpoints"""
+    from rich.table import Table
+
+    from pythinker_code.file_restore import (
+        list_file_restore_points,
+        restore_file_restore_point,
+    )
+
+    soul = ensure_pythinker_soul(app)
+    if soul is None:
+        return
+
+    session = soul.runtime.session
+    arg = args.strip()
+    if not arg:
+        points = list_file_restore_points(session, limit=20)
+        if not points:
+            console.print("[yellow]No file restore points in this session.[/yellow]")
+            return
+        table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+        table.add_column("ID", style="cyan", no_wrap=True)
+        table.add_column("Tool", no_wrap=True)
+        table.add_column("Path")
+        table.add_column("State", no_wrap=True)
+        for point in points:
+            state = "modified" if point.existed else "created"
+            table.add_row(point.id, point.tool_name, str(point.path), state)
+        console.print(table)
+        console.print("[grey50]Run /restore <id> or /restore latest.[/grey50]")
+        return
+
+    if arg == "latest":
+        points = list_file_restore_points(session, limit=1)
+        if not points:
+            console.print("[yellow]No file restore points in this session.[/yellow]")
+            return
+        restore_id = points[0].id
+    else:
+        restore_id = arg
+
+    try:
+        point = restore_file_restore_point(session, restore_id)
+    except FileNotFoundError:
+        console.print(f"[red]Restore point not found: {restore_id}[/red]")
+        return
+    except OSError as exc:
+        console.print(f"[red]Failed to restore {restore_id}: {exc}[/red]")
+        return
+
+    action = "restored" if point.existed else "removed"
+    console.print(f"[green]File {action} from restore point {point.id}: {point.path}[/green]")
+
+
+@registry.command
+@shell_mode_registry.command
+def trust(app: Shell, args: str) -> None:
+    """Show or update workspace trust safe mode"""
+    soul = ensure_pythinker_soul(app)
+    if soul is None:
+        return
+
+    state = soul.runtime.session.state.trust
+    mode = args.strip().lower()
+    if mode in {"on", "yes", "trust"}:
+        state.trusted = True
+        state.safe_mode = False
+        soul.runtime.approval.set_safe_mode(False)
+        soul.runtime.session.save_state()
+        console.print("[green]Workspace trusted. Safe mode disabled for this session.[/green]")
+        return
+    if mode in {"off", "no", "untrust", "safe"}:
+        state.trusted = False
+        state.safe_mode = True
+        soul.runtime.approval.set_safe_mode(True)
+        soul.runtime.approval.set_yolo(False)
+        soul.runtime.approval.set_auto(False)
+        soul.runtime.session.state.approval.auto_approve_actions.clear()
+        soul.runtime.session.save_state()
+        console.print(
+            "[yellow]Workspace untrusted. Safe mode enabled; auto-approval is disabled.[/yellow]"
+        )
+        return
+    if mode:
+        console.print("[yellow]Usage: /trust [on|off][/yellow]")
+        return
+
+    status = "trusted" if state.trusted else "untrusted"
+    safe = "on" if state.safe_mode else "off"
+    console.print(f"Workspace trust: [bold]{status}[/bold]  safe mode: [bold]{safe}[/bold]")
+
+
+@registry.command
+@shell_mode_registry.command
+async def worklog(app: Shell, args: str) -> None:
+    """Show a compact session activity timeline"""
+    from rich.table import Table
+
+    from pythinker_code.file_restore import list_file_restore_points
+
+    soul = ensure_pythinker_soul(app)
+    if soul is None:
+        return
+
+    counts: dict[str, int] = {}
+    recent: list[str] = []
+    try:
+        async for record in soul.runtime.session.wire_file.iter_records():
+            event = type(record.to_wire_message()).__name__
+            counts[event] = counts.get(event, 0) + 1
+            recent.append(event)
+            recent = recent[-12:]
+    except FileNotFoundError:
+        pass
+
+    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    table.add_column("Signal", style="cyan")
+    table.add_column("Count", justify="right")
+    for key in sorted(counts):
+        table.add_row(key, str(counts[key]))
+    if counts:
+        console.print(table)
+        console.print(f"[grey50]Recent: {' -> '.join(recent)}[/grey50]")
+    else:
+        console.print("[yellow]No worklog events recorded yet.[/yellow]")
+
+    restore_points = list_file_restore_points(soul.runtime.session, limit=5)
+    if restore_points:
+        console.print("[bold]Recent restore points:[/bold]")
+        for point in restore_points:
+            console.print(f"  [cyan]{point.id}[/cyan] {point.tool_name} {point.path}")
+
+
+@registry.command
+@shell_mode_registry.command
+def context(app: Shell, args: str) -> None:
+    """Show context, checkpoint, and compaction status"""
+    from rich.table import Table
+
+    soul = ensure_pythinker_soul(app)
+    if soul is None:
+        return
+
+    status = soul.status
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_column(style="cyan", no_wrap=True)
+    table.add_column()
+    table.add_row("Tokens", str(status.context_tokens or 0))
+    table.add_row("Window", str(status.max_context_tokens or 0))
+    context_usage_label = f"{status.context_usage:.1f}%"
+    table.add_row("Usage", context_usage_label)
+    table.add_row("Checkpoints", str(soul.context.n_checkpoints))
+    table.add_row("Plan mode", "on" if soul.plan_mode else "off")
+    table.add_row("Context file", str(soul.runtime.session.context_file))
+    console.print(table)
+    console.print("[grey50]Use /compact [focus] to summarize old context.[/grey50]")
+
+
+@registry.command
+@shell_mode_registry.command
+def tools(app: Shell, args: str) -> None:
+    """List available tools and permission posture"""
+    from rich.table import Table
+
+    from pythinker_code.soul.permission import permission_profile_for_runtime
+
+    soul = ensure_pythinker_soul(app)
+    if soul is None:
+        return
+
+    profile = permission_profile_for_runtime(soul.runtime)
+    console.print(
+        f"Permission profile: [bold]{profile.name}[/bold] "
+        f"({profile.description}; file mutations={'yes' if profile.allow_file_mutation else 'no'}, "
+        f"shell mutations={'yes' if profile.allow_shell_mutation else 'no'})"
+    )
+
+    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    table.add_column("Tool", style="cyan", no_wrap=True)
+    table.add_column("Description")
+    for tool in sorted(soul.agent.toolset.tools, key=lambda item: item.name):
+        desc = " ".join((tool.description or "").split())
+        if len(desc) > 100:
+            desc = desc[:97] + "..."
+        table.add_row(tool.name, desc)
+    console.print(table)
+    if args.strip().lower() == "audit":
+        console.print(
+            "[grey50]Audit: external MCP/wire/plugin tools are blocked in read-only, "
+            "plan, review, and verify profiles unless their side effects are known.[/grey50]"
+        )
+
+
+@registry.command(aliases=["a11y"])
+@shell_mode_registry.command(aliases=["a11y"])
+def accessibility(app: Shell, args: str) -> None:
+    """Show or update accessibility/plain-output preferences"""
+    soul = ensure_pythinker_soul(app)
+    if soul is None:
+        return
+
+    state = soul.runtime.session.state.accessibility
+    mode = args.strip().lower()
+    match mode:
+        case "plain" | "on":
+            state.plain_output = True
+        case "rich" | "off":
+            state.plain_output = False
+        case "no-animation" | "no-animations":
+            state.animations = False
+        case "animation" | "animations":
+            state.animations = True
+        case "ascii":
+            state.symbols = "ascii"
+        case "unicode":
+            state.symbols = "unicode"
+        case "":
+            pass
+        case _:
+            console.print(
+                "[yellow]Usage: /accessibility "
+                "[plain|rich|no-animation|animation|ascii|unicode][/yellow]"
+            )
+            return
+    if mode:
+        soul.runtime.session.save_state()
+    console.print(
+        "Accessibility: "
+        f"plain_output=[bold]{'on' if state.plain_output else 'off'}[/bold] "
+        f"animations=[bold]{'on' if state.animations else 'off'}[/bold] "
+        f"symbols=[bold]{state.symbols}[/bold]"
+    )
+
+
 @registry.command
 def web(app: Shell, args: str):
     """Open Pythinker Web UI in browser"""

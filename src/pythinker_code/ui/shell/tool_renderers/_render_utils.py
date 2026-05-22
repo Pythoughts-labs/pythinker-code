@@ -20,6 +20,7 @@ __all__ = [
     "fg",
     "format_lines_block",
     "invalid_arg",
+    "missing_required_arg",
     "loading_marker",
     "running_spinner",
     "shorten_path",
@@ -105,6 +106,11 @@ def running_spinner(
 def invalid_arg() -> Text:
     """Placeholder rendered when an arg is not a valid string."""
     return fg("error", "<invalid>")
+
+
+def missing_required_arg(name: str) -> Text:
+    """Clear placeholder for a required arg absent from a finished invalid call."""
+    return fg("error", f"<missing {name}>")
 
 
 def shorten_path(path: str, *, cwd: str | None = None) -> str:

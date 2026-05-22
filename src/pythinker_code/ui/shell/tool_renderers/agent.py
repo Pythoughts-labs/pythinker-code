@@ -21,6 +21,7 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     format_lines_block,
     invalid_arg,
     loading_marker,
+    missing_required_arg,
     running_spinner,
     tool_title,
 )
@@ -69,12 +70,21 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
         has_result=ctx.has_result,
     )
 
+    missing: list[RenderableType] = []
+    if description is None and ctx.has_result:
+        missing.append(missing_required_arg("description"))
     if prompt is None:
         if "prompt" in args:
-            return Group(head, invalid_arg())
+            missing.append(invalid_arg())
+        elif ctx.has_result:
+            missing.append(missing_required_arg("prompt"))
+        if missing:
+            return Group(head, *missing)
         return head
     preview_line = _truncate(prompt.split("\n", 1)[0], _PROMPT_PREVIEW_CHARS)
     body = fg("dim", f"  {preview_line}")
+    if missing:
+        return Group(head, *missing, body)
     return Group(head, body)
 
 

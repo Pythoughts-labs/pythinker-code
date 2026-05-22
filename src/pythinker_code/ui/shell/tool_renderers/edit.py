@@ -32,6 +32,7 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     as_str,
     fg,
     invalid_arg,
+    missing_required_arg,
     running_spinner,
     shorten_path,
     tool_title,
@@ -114,7 +115,12 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
     header.append("(")
 
     if raw_path is None:
-        header.append_text(invalid_arg() if "path" in args else fg("tool_output", "..."))
+        if "path" in args:
+            header.append_text(invalid_arg())
+        elif ctx.has_result:
+            header.append_text(missing_required_arg("path"))
+        else:
+            header.append_text(fg("tool_output", "..."))
     else:
         header.append_text(fg("accent", shorten_path(raw_path, cwd=ctx.cwd)))
     header.append(")")

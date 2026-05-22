@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from pythinker_core.tooling import CallableTool2, ToolError, ToolReturnValue
 from pythinker_host.path import HostPath
 
+from pythinker_code.file_restore import create_file_restore_point
 from pythinker_code.soul.agent import Runtime
 from pythinker_code.soul.approval import Approval
 from pythinker_code.soul.permission import check_file_mutation_allowed
@@ -157,6 +158,8 @@ class WriteFile(CallableTool2[Params]):
                 )
                 if not result:
                     return result.rejection_error()
+
+            create_file_restore_point(self._runtime.session, tool_name=self.name, path=str(p))
 
             # Write content to file
             match params.mode:

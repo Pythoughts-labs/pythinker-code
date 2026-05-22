@@ -18,6 +18,17 @@ class ApprovalStateData(BaseModel):
     auto_approve_actions: set[str] = Field(default_factory=set)
 
 
+class TrustStateData(BaseModel):
+    trusted: bool = False
+    safe_mode: bool = True
+
+
+class AccessibilityStateData(BaseModel):
+    plain_output: bool = False
+    animations: bool = True
+    symbols: Literal["unicode", "ascii"] = "unicode"
+
+
 class TodoItemState(BaseModel):
     """A single todo item stored in session or subagent state."""
 
@@ -28,6 +39,8 @@ class TodoItemState(BaseModel):
 class SessionState(BaseModel):
     version: int = 1
     approval: ApprovalStateData = Field(default_factory=ApprovalStateData)
+    trust: TrustStateData = Field(default_factory=TrustStateData)
+    accessibility: AccessibilityStateData = Field(default_factory=AccessibilityStateData)
     additional_dirs: list[str] = Field(default_factory=list)
     custom_title: str | None = None
     title_generated: bool = False

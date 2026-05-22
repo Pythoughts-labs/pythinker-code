@@ -154,6 +154,20 @@ def test_grep_renders_pattern_and_path():
     assert "(*.py)" in rendered
 
 
+def test_invalid_empty_grep_call_names_missing_pattern():
+    rendered = _render(
+        "Grep",
+        {},
+        output=(
+            "Error validating JSON arguments: 1 validation error for Params\n"
+            "pattern\n  Field required"
+        ),
+        is_error=True,
+    )
+    assert "grep <missing pattern> in ." in rendered
+    assert "grep ... in ." not in rendered
+
+
 # ---------------------------------------------------------------------------
 # find / glob
 # ---------------------------------------------------------------------------
@@ -213,6 +227,20 @@ def test_shell_background_marker():
     assert "background: watch" in rendered
 
 
+def test_invalid_empty_shell_call_names_missing_command():
+    rendered = _render(
+        "Shell",
+        {},
+        output=(
+            "Error validating JSON arguments: 1 validation error for Params\n"
+            "command\n  Field required"
+        ),
+        is_error=True,
+    )
+    assert "$ <missing command>" in rendered
+    assert "$ ..." not in rendered
+
+
 # ---------------------------------------------------------------------------
 # diff component
 # ---------------------------------------------------------------------------
@@ -251,6 +279,21 @@ def test_agent_renders_type_description_and_prompt_preview():
     assert "code-architect" in rendered
     assert "design auth flow" in rendered
     assert "Design the OAuth flow with PKCE" in rendered
+
+
+def test_invalid_empty_agent_call_names_missing_required_fields():
+    rendered = _render(
+        "Agent",
+        {},
+        output=(
+            "Error validating JSON arguments: 2 validation errors for Params\n"
+            "description\n  Field required\n"
+            "prompt\n  Field required"
+        ),
+        is_error=True,
+    )
+    assert "<missing description>" in rendered
+    assert "<missing prompt>" in rendered
 
 
 # ---------------------------------------------------------------------------

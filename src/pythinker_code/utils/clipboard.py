@@ -33,7 +33,30 @@ class ClipboardResult:
 
 
 def is_clipboard_available() -> bool:
-    """Check if the Pyperclip text clipboard is available."""
+    """Check if the Pyperclip text clipboard is available.
+
+    Some Linux clipboard helpers can block indefinitely when there is no
+    reachable clipboard owner. Avoid pyperclip's unbounded paste probe there;
+    the prompt can still run without text-clipboard integration.
+    """
+    if sys.platform == "linux":
+        try:
+            if os.getenv("WAYLAND_DISPLAY") and shutil.which("wl-paste") is not None:
+                subprocess.run(["wl-paste", "--no-newline"], capture_output=True, timeout=0.5)
+                return True
+            if os.getenv("DISPLAY") and shutil.which("xclip") is not None:
+                subprocess.run(
+                    ["xclip", "-selection", "clipboard", "-o"],
+                    capture_output=True,
+                    timeout=0.5,
+                )
+                return True
+        except subprocess.TimeoutExpired:
+            return False
+        except Exception:
+            return False
+        return False
+
     try:
         pyperclip.paste()
         return True

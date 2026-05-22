@@ -58,6 +58,7 @@ class ApprovalState:
         yolo: bool = False,
         auto: bool = False,
         runtime_auto: bool = False,
+        safe_mode: bool = False,
         auto_approve_actions: set[str] | None = None,
         on_change: Callable[[], None] | None = None,
     ):
@@ -69,6 +70,8 @@ class ApprovalState:
         """
         self.runtime_auto = runtime_auto
         """Invocation-only auto flag, e.g. ``--auto`` or ``--print``. Not persisted."""
+        self.safe_mode = safe_mode
+        """When true, all auto-approval paths are suppressed."""
         self.auto_approve_actions: set[str] = auto_approve_actions or set()
         """Set of action names that should automatically be approved."""
         self._on_change = on_change
@@ -120,12 +123,18 @@ class Approval:
         """Toggle invocation-only auto mode without persisting it."""
         self._state.runtime_auto = auto
 
+    def set_safe_mode(self, safe_mode: bool) -> None:
+        self._state.safe_mode = safe_mode
+        self._state.notify_change()
+
     def is_auto_approve(self) -> bool:
         """True when tool calls should be auto-approved.
 
         Auto mode implies auto-approve, so this returns True whenever either the
         explicit yolo flag or auto mode is set.
         """
+        if self._state.safe_mode:
+            return False
         return self._state.yolo or self.is_auto()
 
     def is_yolo(self) -> bool:

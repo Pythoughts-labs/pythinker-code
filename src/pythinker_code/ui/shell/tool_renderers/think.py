@@ -20,6 +20,7 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     fg,
     format_lines_block,
     invalid_arg,
+    missing_required_arg,
     tool_title,
 )
 
@@ -36,6 +37,8 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
     if thought is None:
         if "thought" in args:
             return Group(header, invalid_arg())
+        if ctx.has_result:
+            return Group(header, missing_required_arg("thought"))
         header.append_text(fg("muted", " ..."))
         return header
 

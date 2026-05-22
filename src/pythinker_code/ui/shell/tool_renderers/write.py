@@ -23,6 +23,7 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     fg,
     format_lines_block,
     invalid_arg,
+    missing_required_arg,
     running_spinner,
     shorten_path,
     tool_title,
@@ -46,6 +47,8 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
     if raw_path is None:
         if "path" in args:
             line.append_text(invalid_arg())
+        elif ctx.has_result:
+            line.append_text(missing_required_arg("path"))
         else:
             line.append_text(fg("tool_output", "..."))
     else:
@@ -59,6 +62,8 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
                 head,
                 fg("error", "[invalid content arg - expected string]"),
             )
+        if ctx.has_result:
+            return Group(head, missing_required_arg("content"))
         return head
 
     if not raw_content:

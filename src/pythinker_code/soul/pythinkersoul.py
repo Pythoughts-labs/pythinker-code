@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
@@ -20,7 +21,7 @@ from pythinker_core.chat_provider import (
     APITimeoutError,
     RetryableChatProvider,
 )
-from pythinker_core.message import Message
+from pythinker_core.message import Message, ToolCall
 from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
 from pythinker_code.approval_runtime import (
@@ -164,6 +165,54 @@ def classify_api_error(e: Exception) -> tuple[str, int | None]:
 
 
 type StepStopReason = Literal["no_tool_calls", "tool_rejected"]
+
+
+_MISSING_REQUIRED_FIELD_RE = re.compile(
+    r"^\s*(?P<field>[A-Za-z_][A-Za-z0-9_\-.]*)\s*\n\s+Field required",
+    re.MULTILINE,
+)
+
+
+def _missing_required_fields_from_validation_error(message: str) -> list[str]:
+    """Extract field names from Pydantic's missing-field validation text."""
+    if "Error validating JSON arguments:" not in message:
+        return []
+    return [match.group("field") for match in _MISSING_REQUIRED_FIELD_RE.finditer(message)]
+
+
+def _is_empty_tool_arguments(tool_call: ToolCall) -> bool:
+    raw = tool_call.function.arguments
+    return raw is None or raw.strip() in {"", "{}"}
+
+
+def _malformed_empty_tool_call_summary(
+    tool_calls: Sequence[ToolCall], tool_results: Sequence[ToolResult]
+) -> str | None:
+    """Return a concise summary when a step only produced empty invalid tool calls.
+
+    Some models can get stuck emitting `{}`/empty arguments for tools with required
+    fields. Continuing the agent loop just floods the UI with repeated validation
+    cards. Detect that dead-end shape and stop after the first invalid batch.
+    """
+    if not tool_calls or len(tool_calls) != len(tool_results):
+        return None
+
+    calls_by_id = {call.id: call for call in tool_calls}
+    missing_by_tool: list[str] = []
+    for result in tool_results:
+        call = calls_by_id.get(result.tool_call_id)
+        if call is None or not _is_empty_tool_arguments(call):
+            return None
+        if not result.return_value.is_error:
+            return None
+        fields = _missing_required_fields_from_validation_error(result.return_value.message)
+        if not fields:
+            return None
+        missing_by_tool.append(f"{call.function.name}.{', '.join(fields)}")
+
+    if not missing_by_tool:
+        return None
+    return "; ".join(missing_by_tool)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1248,6 +1297,23 @@ class PythinkerSoul:
         except asyncio.CancelledError:
             await asyncio.shield(grow_context_task)
             raise
+
+        if invalid_summary := _malformed_empty_tool_call_summary(result.tool_calls, results):
+            message = Message(
+                role="assistant",
+                content=[
+                    TextPart(
+                        text=(
+                            "I couldn't continue because the model emitted malformed empty "
+                            "tool calls with missing required arguments: "
+                            f"{invalid_summary}. Please retry the request, or switch models "
+                            "if this repeats."
+                        )
+                    )
+                ],
+            )
+            await self._context.append_message(message)
+            return StepOutcome(stop_reason="no_tool_calls", assistant_message=message)
 
         rejected_errors = [
             result.return_value

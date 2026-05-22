@@ -28,6 +28,7 @@ src/pythinker_code/web/static/assets/
 src/pythinker_code/vis/static/
 
 # Generated reports
+.firecrawl/
 # Graphify generated graph, cache, wiki, and Obsidian vault outputs
 graphify-out/
 graphify-out*/

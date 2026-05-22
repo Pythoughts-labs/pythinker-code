@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -10,8 +11,24 @@ from pythinker_code.utils.clipboard import (
     _VIDEO_SUFFIXES,
     _classify_file_paths,
     _grab_image_linux,
+    is_clipboard_available,
     is_media_clipboard_available,
 )
+
+
+def test_is_clipboard_available_linux_timeout_returns_false(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    monkeypatch.setattr(
+        shutil, "which", lambda cmd: "/usr/bin/wl-paste" if cmd == "wl-paste" else None
+    )
+
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd="wl-paste", timeout=0.5)
+
+    monkeypatch.setattr("pythinker_code.utils.clipboard.subprocess.run", fake_run)
+
+    assert is_clipboard_available() is False
 
 
 def test_classify_video_file(tmp_path: Path) -> None:

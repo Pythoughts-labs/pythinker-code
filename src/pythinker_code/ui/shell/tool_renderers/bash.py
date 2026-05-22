@@ -31,6 +31,7 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     as_str,
     fg,
     invalid_arg,
+    missing_required_arg,
     running_spinner,
 )
 from pythinker_code.ui.theme import tui_rich_style
@@ -50,6 +51,8 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType | None:
     if command is None:
         if "command" in args:
             line.append_text(invalid_arg())
+        elif ctx.has_result:
+            line.append_text(missing_required_arg("command"))
         else:
             line.append_text(fg("tool_output", "..."))
     else:
