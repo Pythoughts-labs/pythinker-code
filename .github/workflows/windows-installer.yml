@@ -1,0 +1,92 @@
+name: Build Windows native installer
+
+on:
+  push:
+    tags:
+      - "pythinker-code-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (e.g. 0.11.0)"
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        shell: pwsh
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if ($env:GITHUB_REF -match '^refs/tags/pythinker-code-v(.+)$') {
+            "version=$($Matches[1])" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } elseif ($env:INPUT_VERSION) {
+            "version=$($env:INPUT_VERSION)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            throw "No version source"
+          }
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Sync project dependencies
+        run: uv sync --frozen --no-dev
+
+      - name: Install PyInstaller
+        run: uv pip install pyinstaller
+
+      - name: Generate icon (from logo.png)
+        shell: pwsh
+        run: |
+          choco install -y imagemagick.tool --no-progress | Out-Null
+          $logo = "docs/media/logo.png"
+          if (-not (Test-Path $logo)) {
+            throw "Expected logo source at $logo; cannot generate installer icon."
+          }
+          magick $logo -define icon:auto-resize=16,32,48,256 `
+            "packages/windows-installer/assets/pythinker.ico"
+          if ($LASTEXITCODE -ne 0) { throw "ImageMagick icon generation failed" }
+
+      - name: Install Inno Setup
+        run: choco install -y innosetup --no-progress
+
+      - name: Build installer
+        shell: pwsh
+        env:
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+          BUILD_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          $py = (& uv run python -c "import sys; print(sys.executable)").Trim()
+          pwsh packages/windows-installer/build.ps1 -Version $env:BUILD_VERSION -Python $py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PythinkerSetup-${{ steps.ver.outputs.version }}
+          path: |
+            dist/PythinkerSetup-*.exe
+            dist/PythinkerSetup-*.exe.sha256
+
+      - name: Attach to Release
+        if: startsWith(github.ref, 'refs/tags/pythinker-code-v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release upload $env:RELEASE_TAG dist/PythinkerSetup-*.exe dist/PythinkerSetup-*.exe.sha256 --clobber
