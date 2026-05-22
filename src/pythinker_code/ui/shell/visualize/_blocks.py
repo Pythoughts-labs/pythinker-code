@@ -31,6 +31,7 @@ from pythinker_code.ui.shell.tool_renderers import (
     get_tool_renderer,
 )
 from pythinker_code.ui.shell.tool_renderers.generic import generic_renderer
+from pythinker_code.ui.shell.visualize._activity_tree import ActivityRow, render_activity_tree
 from pythinker_code.ui.shell.visualize._worklog import (
     WorkLogState,
     denied_error,
@@ -487,27 +488,23 @@ class _ToolCallBlock:
                 )
             )
         if not (style.label == "Subagent" and self._result is not None):
+            rows: list[ActivityRow] = []
             for sub_call, sub_result in self._finished_subagent_tool_calls:
                 argument = extract_key_argument(
                     sub_call.function.arguments or "", sub_call.function.name
                 )
-                sub_url = self._extract_full_url(
-                    sub_call.function.arguments, sub_call.function.name
-                )
-                sub_text = Text()
-                sub_text.append("Used ")
-                sub_text.append(sub_call.function.name, style="blue")
+                detail = sub_call.function.name
                 if argument:
-                    sub_text.append(" (", style="grey50")
-                    arg_style = Style(color="grey50", link=sub_url) if sub_url else "grey50"
-                    sub_text.append(argument, style=arg_style)
-                    sub_text.append(")", style="grey50")
-                children.append(
-                    BulletColumns(
-                        sub_text,
-                        bullet_style="green" if not sub_result.is_error else "dark_red",
+                    detail = f"{detail} {argument}"
+                rows.append(
+                    ActivityRow(
+                        label="agent",
+                        detail=detail,
+                        state="failed" if sub_result.is_error else "completed",
                     )
                 )
+            if rows:
+                children.append(render_activity_tree(rows, width=console.width))
 
         if self._result is None:
             return render_worklog_entry(

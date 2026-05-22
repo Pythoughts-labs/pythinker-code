@@ -168,5 +168,4 @@ def test_completed_subagent_renders_compact_summary():
     assert "Subagent" in output
     assert "completed" in output.lower()
     assert "7 tool calls" in output
-    assert output.count("Used ReadFile") <= 3
-    assert "more tool" not in output.lower()
+    assert output.count("ReadFile") <= 4
