@@ -123,6 +123,15 @@ _PROMPT_STYLE_DARK = {
     "slash-completion-menu.command.match.current": "bg:#3a3a4a fg:#8abeb7 bold",
     "slash-completion-menu.meta.current": "bg:#3a3a4a fg:#a6adba",
     "slash-completion-menu.row.current": "bg:#3a3a4a",
+    "shell-dialog": "fg:#d1d5db",
+    "shell-dialog.title": "fg:#e5e7eb bold",
+    "shell-dialog.border": "fg:#4b5563",
+    "shell-dialog.option": "fg:#9ca3af",
+    "shell-dialog.option.current": "bg:#1f2937 fg:#67e8f9 bold",
+    "shell-footer.key": "fg:#67e8f9 bold",
+    "shell-footer.meta": "fg:#9ca3af",
+    "shell-footer.warning": "fg:#fbbf24",
+    "shell-footer.error": "fg:#fca5a5",
 }
 
 _PROMPT_STYLE_LIGHT = {
@@ -143,6 +152,15 @@ _PROMPT_STYLE_LIGHT = {
     "slash-completion-menu.command.match.current": "bg:#d0d0e0 fg:#5a8080 bold",
     "slash-completion-menu.meta.current": "bg:#d0d0e0 fg:#4b5563",
     "slash-completion-menu.row.current": "bg:#d0d0e0",
+    "shell-dialog": "fg:#374151",
+    "shell-dialog.title": "fg:#1f2937 bold",
+    "shell-dialog.border": "fg:#d1d5db",
+    "shell-dialog.option": "fg:#6b7280",
+    "shell-dialog.option.current": "bg:#d0d0e0 fg:#5a8080 bold",
+    "shell-footer.key": "fg:#5a8080 bold",
+    "shell-footer.meta": "fg:#6b7280",
+    "shell-footer.warning": "fg:#92400e",
+    "shell-footer.error": "fg:#991b1b",
 }
 
 
