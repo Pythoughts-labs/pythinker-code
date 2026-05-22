@@ -8,13 +8,13 @@ from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.document import Document
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.key_binding import KeyPressEvent
-from rich.console import Group, RenderableType
+from rich.console import RenderableType
 from rich.markup import escape
-from rich.panel import Panel
 from rich.text import Text
 
 from pythinker_code.ui.shell.console import console, render_to_ansi
 from pythinker_code.ui.shell.keyboard import KeyEvent
+from pythinker_code.ui.shell.visualize._dialog_shell import DialogOption, render_dialog
 from pythinker_code.utils.rich.markdown import Markdown
 from pythinker_code.wire.types import QuestionRequest
 
@@ -138,55 +138,48 @@ class QuestionRequestPanel:
 
         show_inline_input = other_input_text is not None and self.is_other_selected
 
+        option_rows: list[tuple[str, str]] = []
         for i, (label, description) in enumerate(self._options):
-            num = i + 1
             is_other = i == len(self._options) - 1
             if q.multi_select:
                 checked = "\u2713" if i in self._multi_selected else " "
-                prefix = f"\\[{checked}]"
-                if i == self._selected_index:
-                    option_line = Text.from_markup(f"[cyan]{prefix} {escape(label)}[/cyan]")
-                else:
-                    option_line = Text.from_markup(f"[grey50]{prefix} {escape(label)}[/grey50]")
+                option_label = f"[{checked}] {label}"
             else:
-                if i == self._selected_index:
-                    if is_other and show_inline_input:
-                        input_display = escape(other_input_text) if other_input_text else ""
-                        option_line = Text.from_markup(
-                            f"[cyan]\u2192 \\[{num}] {escape(label)}: {input_display}\u2588[/cyan]"
-                        )
-                    else:
-                        option_line = Text.from_markup(
-                            f"[cyan]\u2192 \\[{num}] {escape(label)}[/cyan]"
-                        )
+                if i == self._selected_index and is_other and show_inline_input:
+                    input_display = other_input_text or ""
+                    option_label = f"{label}: {input_display}\u2588"
                 else:
-                    option_line = Text.from_markup(f"[grey50]  \\[{num}] {escape(label)}[/grey50]")
-            lines.append(option_line)
-
-            if description and not (is_other and show_inline_input):
-                lines.append(Text(f"      {description}", style="dim"))
+                    option_label = label
+            option_rows.append(
+                (option_label, "" if is_other and show_inline_input else description)
+            )
 
         if show_inline_input:
-            lines.append(Text(""))
-            lines.append(
-                Text("  Type your answer, then press Enter to submit.", style="dim italic")
-            )
+            footer = Text("Type your answer, then press Enter to submit.", style="dim")
         elif len(self.request.questions) > 1:
-            lines.append(Text(""))
-            lines.append(
-                Text(
-                    "  \u25c4/\u25ba switch question  "
-                    "\u25b2/\u25bc select  \u21b5 submit  esc exit",
-                    style="dim",
-                )
+            footer = Text(
+                "\u25c4/\u25ba switch question  \u2191/\u2193 select  \u21b5 submit  esc exit",
+                style="dim",
             )
+        else:
+            footer = Text("\u2191/\u2193 select  \u21b5 submit  esc exit", style="dim")
 
-        return Panel(
-            Group(*lines),
-            border_style="grey50",
-            title="[bold]question[/bold]",
-            title_align="left",
-            padding=(0, 1),
+        dialog_options = [
+            DialogOption(
+                label=label,
+                selected=i == self._selected_index,
+                key=str(i + 1),
+                description=description or None,
+            )
+            for i, (label, description) in enumerate(option_rows)
+        ]
+        return render_dialog(
+            kind="question",
+            title="question",
+            body=lines,
+            options=dialog_options,
+            footer=footer,
+            border_style="yellow",
         )
 
     def save_other_draft(self, text: str) -> None:

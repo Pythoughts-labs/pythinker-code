@@ -11,11 +11,11 @@ from prompt_toolkit.key_binding import KeyPressEvent
 from rich.console import Group, RenderableType
 from rich.markup import escape
 from rich.padding import Padding
-from rich.panel import Panel
 from rich.text import Text
 
 from pythinker_code.ui.shell.console import console, render_to_ansi
 from pythinker_code.ui.shell.keyboard import KeyEvent
+from pythinker_code.ui.shell.visualize._dialog_shell import DialogOption, render_dialog
 from pythinker_code.utils.rich.diff_render import (
     collect_diff_hunks,
     render_diff_panel,
@@ -213,14 +213,13 @@ class ApprovalRequestPanel:
         # Whether inline feedback input is active
         show_inline_feedback = feedback_text is not None and self.is_feedback_selected
 
-        # Add menu options with number key labels
-        if lines:
-            lines.append(Text(""))
-        for i, (option_text, _) in enumerate(self.options):
-            num = i + 1
-            is_feedback_option = i == self.FEEDBACK_OPTION_INDEX
-            if i == self.selected_index:
-                if is_feedback_option and show_inline_feedback:
+        if show_inline_feedback:
+            if lines:
+                lines.append(Text(""))
+            for i, (option_text, _) in enumerate(self.options):
+                num = i + 1
+                is_feedback_option = i == self.FEEDBACK_OPTION_INDEX
+                if i == self.selected_index and is_feedback_option:
                     input_display = _render_feedback_with_cursor(
                         feedback_text or "", feedback_cursor
                     )
@@ -231,36 +230,30 @@ class ApprovalRequestPanel:
                             style="cyan",
                         )
                     )
-                else:
+                elif i == self.selected_index:
                     lines.append(Text(f"\u2192 [{num}] {option_text}", style="cyan"))
-            else:
-                lines.append(Text(f"  [{num}] {option_text}", style="grey50"))
-
-        # Keyboard hints
-        lines.append(Text(""))
-        if show_inline_feedback:
-            hint = "  Type your feedback, then press Enter to submit."
+                else:
+                    lines.append(Text(f"  [{num}] {option_text}", style="grey50"))
+            dialog_options: list[DialogOption] = []
+            footer = Text("Type your feedback, then press Enter to submit.", style="dim")
         else:
-            hint = "  \u25b2/\u25bc select  1/2/3/4 choose  \u21b5 confirm"
-            if self.has_expandable_content:
-                hint += "  ctrl-e expand"
-        lines.append(Text(hint, style="dim"))
+            dialog_options = [
+                DialogOption(
+                    label=option_text,
+                    selected=i == self.selected_index,
+                    key=str(i + 1),
+                )
+                for i, (option_text, _) in enumerate(self.options)
+            ]
+            footer = Text("\u2191/\u2193 select  \u21b5 submit  ctrl-e expand", style="dim")
 
-        content = Group(*lines)
-        if width is None:
-            return Panel(
-                content,
-                border_style="yellow",
-                title="[bold]approval[/bold]",
-                title_align="left",
-                padding=(0, 1),
-            )
-        return Panel(
-            content,
+        return render_dialog(
+            kind="approval",
+            title=f"{self.request.sender} approval",
+            body=lines,
+            options=dialog_options,
+            footer=footer,
             border_style="yellow",
-            title="[bold]approval[/bold]",
-            title_align="left",
-            padding=(0, 1),
             width=width,
         )
 
