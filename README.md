@@ -150,6 +150,23 @@ Swap providers and models per-session: `--model openai/gpt-5.5`, hosted Pythinke
 
 ## ⚡ Quick Start
 
+### 🪟 Windows — native installer (recommended)
+
+A signed `PythinkerSetup-x.y.z.exe` is attached to every GitHub Release. It
+bundles Pythinker as a self-contained executable; **you do not need Python, Node,
+or uv installed**.
+
+1. Download the latest installer from the
+   [Releases page](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest)
+   (`PythinkerSetup-x.y.z.exe`).
+2. Run it. The wizard installs to `%LOCALAPPDATA%\Programs\Pythinker` and adds
+   `pythinker` to your user PATH — no admin / UAC prompt.
+3. Open a new PowerShell window and run `pythinker`.
+
+Updates: `pythinker update` from inside the native build downloads the latest
+installer from GitHub Releases, verifies its SHA-256, and re-runs it silently.
+Set `DISABLE_AUTOUPDATER=1` to opt out of automatic update prompts.
+
 ### ✨ Recommended install (clean, with logo)
 
 ```sh
