@@ -19,10 +19,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from rich.console import Group, RenderableType
-from rich.style import Style as RichStyle
 from rich.text import Text
 
 from pythinker_code.ui.shell.components.render_utils import truncate_to_width
+from pythinker_code.ui.shell.design_system import ShellTone, render_segment_line
 from pythinker_code.ui.theme import tui_rich_style
 
 __all__ = [
@@ -196,31 +196,20 @@ def render_footer(state: FooterState, *, width: int) -> RenderableType:
     pwd_truncated = truncate_to_width(pwd, max(1, width))
     pwd_text = Text(pwd_truncated, style=dim)
 
-    stats_left_text, stats_left_plain = _build_stats_left(state)
+    _, stats_left_plain = _build_stats_left(state)
     if len(stats_left_plain) > width:
         truncated = truncate_to_width(stats_left_plain, width)
-        stats_left_text = Text(truncated, style=dim)
         stats_left_plain = truncated
 
     right = _build_right_side(state, plain_left_width=len(stats_left_plain), width=width)
-    if right:
-        space = max(2, width - len(stats_left_plain) - len(right))
-        # If even the minimum 2-space gap plus right doesn't fit, truncate right.
-        if len(stats_left_plain) + 2 + len(right) > width:
-            avail = width - len(stats_left_plain) - 2
-            if avail > 0:
-                right = truncate_to_width(right, avail, ellipsis="")
-                space = max(0, width - len(stats_left_plain) - len(right))
-            else:
-                right = ""
-                space = 0
-        stats_line = Text()
-        stats_line.append_text(stats_left_text)
-        if right:
-            stats_line.append(" " * space, style=dim)
-            stats_line.append(right, style=dim + RichStyle(bold=False))
-    else:
-        stats_line = stats_left_text
+    stats_line = render_segment_line(
+        left=[stats_left_plain],
+        right=[right],
+        width=width,
+        tone=ShellTone.MUTED,
+    )
+    if state.context_percent is not None and state.context_percent > 70:
+        stats_line.stylize(tui_rich_style("warning" if state.context_percent <= 90 else "error"))
 
     children: list[RenderableType] = [pwd_text, stats_line]
     if state.extension_statuses:

@@ -69,3 +69,23 @@ def test_render_footer_unknown_context_shows_question_mark():
     state = FooterState(cwd="/repo", context_percent=None, context_window=200_000)
     out = render_plain(render_footer(state, width=80), width=80)
     assert "?/200k" in out
+
+
+def test_footer_keeps_context_and_hints_width_safe():
+    from pythinker_code.ui.shell.components.footer import FooterState, render_footer
+    from pythinker_code.ui.shell.components.render_utils import render_plain
+
+    footer = render_footer(
+        FooterState(
+            cwd="/tmp/project",
+            context_percent=8.9,
+            context_window=262000,
+            model_id="gpt-5",
+            extension_statuses={"agents": "shift+up/down agents", "interrupt": "esc interrupt"},
+        ),
+        width=48,
+    )
+    output = render_plain(footer, width=48)
+    assert "8.9%" in output
+    assert "gpt-5" in output
+    assert all(len(row) <= 49 for row in output.splitlines() if row)
