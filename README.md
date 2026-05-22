@@ -144,21 +144,53 @@ Swap providers and models per-session: `--model openai/gpt-5.5`, hosted Pythinke
 
 ### 🪟 Windows — native installer (recommended)
 
-A signed `PythinkerSetup-x.y.z.exe` is attached to every GitHub Release. It
-bundles Pythinker as a self-contained executable; **you do not need Python, Node,
-or uv installed**.
+`PythinkerSetup-x.y.z.exe` is attached to every GitHub Release. It bundles
+Pythinker as a self-contained executable — **you do not need Python, Node, or
+uv installed**, and there is no UAC / admin prompt.
 
-1. Download the latest installer from the
-   [Releases page](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest)
-   (`PythinkerSetup-x.y.z.exe`).
-2. Run it. The wizard installs to `%LOCALAPPDATA%\Programs\Pythinker` and adds
-   `pythinker` to your user PATH — no admin / UAC prompt.
-3. Open a new PowerShell window and run `pythinker`.
+**Install in three steps:**
 
-Updates: `pythinker update` from inside the native build downloads the latest
-installer from GitHub Releases, verifies its SHA-256, and re-runs it silently.
-Set `PYTHINKER_CLI_NO_AUTO_UPDATE=1` to opt out of automatic update prompts
-(same opt-out used by the PyPI/uv install path).
+1. Download `PythinkerSetup-x.y.z.exe` and its `.sha256` companion from the
+   [latest Release](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest).
+2. (Optional, recommended) Verify the SHA-256:
+   ```powershell
+   Get-FileHash .\PythinkerSetup-x.y.z.exe -Algorithm SHA256
+   Get-Content  .\PythinkerSetup-x.y.z.exe.sha256
+   ```
+   The hash from `Get-FileHash` must match the one in the `.sha256` file.
+3. Double-click the installer. It writes to `%LOCALAPPDATA%\Programs\Pythinker`,
+   registers `pythinker` on your user PATH (`HKCU\Environment`), and broadcasts
+   `WM_SETTINGCHANGE` so any new shell window picks it up.
+
+Open a fresh PowerShell and run `pythinker --version` to confirm.
+
+> 🛡 **First-launch SmartScreen warning** — until the Authenticode signing
+> cert is wired into the CI pipeline (see [build.ps1](./packages/windows-installer/build.ps1)
+> and the `WINDOWS_CERT_PFX_BASE64` / `WINDOWS_CERT_PASSWORD` secrets), the
+> installer ships unsigned and Windows SmartScreen will show *"Windows
+> protected your PC."* Click **More info → Run anyway**. The published
+> `.sha256` is your integrity check in the meantime.
+
+**Built-in auto-update:** running `pythinker update` from inside the native
+build queries the GitHub Releases API, downloads the newest installer,
+verifies its SHA-256, and re-runs it silently (`/VERYSILENT /SUPPRESSMSGBOXES
+/NORESTART`). Set `PYTHINKER_CLI_NO_AUTO_UPDATE=1` to disable the proactive
+update check on shell startup (this is the same opt-out the PyPI/uv install
+path uses — one knob, both flows).
+
+**Uninstall:** Apps & Features → *Pythinker Code* → Uninstall. The uninstaller
+removes the install directory and reverts the user-PATH edit. A new shell will
+no longer find `pythinker`.
+
+**Per-machine install** (multi-user / IT-managed boxes): pass `/ALLUSERS` to
+the installer from an admin console:
+
+```powershell
+.\PythinkerSetup-x.y.z.exe /ALLUSERS
+```
+
+This installs to `%ProgramFiles%\Pythinker` and registers PATH at the HKLM
+scope. The default (no flag) remains per-user.
 
 ### ✨ Recommended install (clean, with logo)
 

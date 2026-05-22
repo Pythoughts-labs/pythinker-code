@@ -3,11 +3,12 @@ name: Build Windows native installer
 on:
   push:
     tags:
-      - "pythinker-code-v*"
+      # Match the existing PyPI release workflow's tag scheme: v<MAJOR>.<MINOR>.<PATCH>.
+      - "v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to build (e.g. 0.11.0)"
+        description: "Version to build (e.g. 0.12.0)"
         required: true
         type: string
 
@@ -27,7 +28,7 @@ jobs:
           GITHUB_REF: ${{ github.ref }}
           INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if ($env:GITHUB_REF -match '^refs/tags/pythinker-code-v(.+)$') {
+          if ($env:GITHUB_REF -match '^refs/tags/v([0-9]+\.[0-9]+\.[0-9]+)$') {
             "version=$($Matches[1])" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           } elseif ($env:INPUT_VERSION) {
             "version=$($env:INPUT_VERSION)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
@@ -82,11 +83,18 @@ jobs:
             dist/PythinkerSetup-*.exe
             dist/PythinkerSetup-*.exe.sha256
 
-      - name: Attach to Release
-        if: startsWith(github.ref, 'refs/tags/pythinker-code-v')
-        shell: pwsh
+      - name: Attach to Release (create-or-update)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          # The existing release-pythinker-cli.yml workflow also runs on this
+          # tag and uses softprops with `make_latest: true`. Both jobs are
+          # idempotent — whichever wins the race creates the Release, the
+          # other one just uploads its assets.
+          fail_on_unmatched_files: false
+          files: |
+            dist/PythinkerSetup-*.exe
+            dist/PythinkerSetup-*.exe.sha256
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          gh release upload $env:RELEASE_TAG dist/PythinkerSetup-*.exe dist/PythinkerSetup-*.exe.sha256 --clobber
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
