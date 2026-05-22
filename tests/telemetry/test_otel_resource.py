@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from importlib.metadata import version as _pkg_version
+
 import pytest
 
 from pythinker_code.telemetry.otel import (  # pyright: ignore[reportPrivateUsage]
@@ -11,10 +13,13 @@ from pythinker_code.telemetry.otel import (  # pyright: ignore[reportPrivateUsag
 
 
 def test_resource_service_name_matches_signoz_dashboard() -> None:
-    resource = _resource(version="2.6.0", ui_mode="shell", device_id="dev-test")
+    # Pin the test to whatever version is currently in pyproject.toml so the
+    # OTel resource assertions don't have to be hand-edited on every release.
+    pythinker_version = _pkg_version("pythinker-code")
+    resource = _resource(version=pythinker_version, ui_mode="shell", device_id="dev-test")
 
     assert resource.attributes["service.name"] == "pythinker-cli"
-    assert resource.attributes["service.version"] == "2.6.0"
+    assert resource.attributes["service.version"] == pythinker_version
     assert resource.attributes["ui.mode"] == "shell"
 
 

@@ -3,7 +3,7 @@ name: Release (pythinker-code)
 on:
   push:
     tags:
-      - "[0-9]*"
+      - "v[0-9]+.[0-9]+.[0-9]+"
 
 permissions:
   contents: write
@@ -12,9 +12,29 @@ jobs:
   validate:
     name: Validate tag
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Derive version from tag
+        id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Tag scheme is v<MAJOR>.<MINOR>.<PATCH>; strip the leading 'v' so
+          # downstream steps (README grep, CHANGELOG grep, build env vars,
+          # artifact names) see the bare PEP 440 version.
+          version="${REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error title=Invalid tag::Tag must match v<MAJOR>.<MINOR>.<PATCH>" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "RELEASE_VERSION=${version}" >> "$GITHUB_ENV"
+          echo "Derived release version: ${version}"
 
       - name: Set up Python 3.14
         uses: actions/setup-python@v5
@@ -26,7 +46,7 @@ jobs:
         run: |
           python scripts/check_version_tag.py \
             --pyproject pyproject.toml \
-            --expected-version "${GITHUB_REF_NAME}"
+            --expected-version "${RELEASE_VERSION}"
 
       - name: Check dependency versions
         run: |
@@ -42,8 +62,6 @@ jobs:
       # CHANGELOG.md must have a top-level "## <version> (...)" entry.
       # Missing any of these blocks both the GitHub Release and PyPI publish.
       - name: Verify README references the new version
-        env:
-          RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           missing=()
@@ -61,8 +79,6 @@ jobs:
           echo "README.md references release ${RELEASE_VERSION}"
 
       - name: Verify CHANGELOG references the new version
-        env:
-          RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           if ! grep -qE "^## ${RELEASE_VERSION} \\(" CHANGELOG.md; then
@@ -92,7 +108,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       PYTHINKER_WEB_STRICT_VERSION: "1"
-      PYTHINKER_WEB_EXPECT_VERSION: ${{ github.ref_name }}
+      PYTHINKER_WEB_EXPECT_VERSION: ${{ needs.validate.outputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -380,7 +396,7 @@ jobs:
       - name: Package onefile artifact
         shell: python
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ needs.validate.outputs.version }}
           TARGET: ${{ matrix.target }}
         run: |
           import os
@@ -423,7 +439,7 @@ jobs:
       - name: Package onedir artifact
         shell: python
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ needs.validate.outputs.version }}
           TARGET: ${{ matrix.target }}
         run: |
           import os
@@ -547,7 +563,7 @@ jobs:
       contents: read
     env:
       PYTHINKER_WEB_STRICT_VERSION: "1"
-      PYTHINKER_WEB_EXPECT_VERSION: ${{ github.ref_name }}
+      PYTHINKER_WEB_EXPECT_VERSION: ${{ needs.validate.outputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

@@ -28,8 +28,14 @@ def main() -> int:
     parser.add_argument("--expected-version", required=True)
     args = parser.parse_args()
 
+    # Release tags follow the `v<MAJOR>.<MINOR>.<PATCH>` scheme; accept the
+    # value either with or without the leading `v` so this script works both
+    # when invoked from CI (which now passes the bare version derived from the
+    # tag) and when invoked locally with a raw tag name.
+    expected_version = args.expected_version.removeprefix("v")
+
     semver_re = re.compile(r"^\d+\.\d+\.\d+$")
-    if not semver_re.match(args.expected_version):
+    if not semver_re.match(expected_version):
         print(
             f"error: expected version must include patch (x.y.z): {args.expected_version}",
             file=sys.stderr,
@@ -50,15 +56,15 @@ def main() -> int:
         )
         return 1
 
-    if project_version != args.expected_version:
+    if project_version != expected_version:
         print(
             "error: version mismatch: "
-            f"{args.pyproject} has {project_version}, expected {args.expected_version}",
+            f"{args.pyproject} has {project_version}, expected {expected_version}",
             file=sys.stderr,
         )
         return 1
 
-    print(f"ok: {args.pyproject} matches expected version {args.expected_version}")
+    print(f"ok: {args.pyproject} matches expected version {expected_version}")
     return 0
 
 

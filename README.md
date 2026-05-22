@@ -50,134 +50,18 @@ It speaks the [**Agent Client Protocol (ACP)**](https://github.com/agentclientpr
 
 ---
 
-## 🆕 What's New in 2.7.0
+## 🆕 What's New in 0.8.0
 
-First-class agent-first code review, security review, and root-cause debugging, via the new
-`pythinker-review` workspace package.
+Version-scheme reset. Pythinker Code moves to a `0.MINOR.PATCH` line; `0.8.0` is the new starting release, replacing the prior 1.x/2.x lineage.
 
-- **`pythinker review diff`** — runs a code-review pass on the current branch's diff against `origin/main` (or `--base <ref>`, `--staged`, `--working-tree`, `--range A..B`). Outputs pretty / JSON / SARIF. `--fail-on <severity>` makes it a CI gate.
-- **`pythinker review diff --with-security`** — runs the code-review and security-review passes in parallel.
-- **`pythinker secscan diff`** — security-only pass with Pythinker Security Scan deterministic prompt anchors for secrets, command/SQL/NoSQL injection, deserialization, SSRF, path traversal, XSS, redirects, JWT/CORS issues, prompt-injection surfaces, debug endpoints, weak crypto, and more.
-- **`pythinker security-scan scan`** — repo-wide Pythinker Security Scan pipeline for deterministic candidate discovery, model-backed investigation, revalidation, triage, reports, and exports.
-- **`pythinker debug failure <log-file>`** — root-cause debugger pass over failing test output, stack traces, logs, and correlated diff context, with secret redaction before prompts.
-- **`pythinker review diff --mode deslopify`** — read-only Reviewflow-style simplification review for accidental complexity, duplicate wrappers, dead branches, and brittle test/type band-aids.
-- **Evidence validation** — findings outside the reviewed chunk, unsafe paths, stale line ranges, or non-matching evidence snippets are rejected and surfaced as validation failures instead of being silently persisted.
-- **Findings store** at `.pythinker-review/runs/<id>/` for inspection via `pythinker review list`, `pythinker review show <id>`, `pythinker review next`, and `pythinker review show-finding <finding-id>`.
-- **Code-reviewr PR assistant parity** — read-only `pythinker review describe`, `improve`/`suggest`, `ask`, `ask-line`, `labels`, `changelog`, `docs`, `compliance`, `help-docs`, `similar-issues`, `tools`, and `config` commands produce structured PR artifacts/helpers without posting or modifying files.
-- **Reviewflow workflows** — compatible project/feature/run/finding/patch state models power `pythinker review init`, `map`, `review`, `report`, `next`, `show --finding`, `triage`, `revalidate`, `fix`, `open-pr`, `ci`, and `doctor`.
-- **Three new subagent roles** — `code-reviewer`, `security-reviewer`, and `debugger` — usable from any interactive Pythinker session, producing the standard SUMMARY/EVIDENCE/CHANGES/RISKS/BLOCKERS block.
-- **Fail-closed by default** — any chunk timeout, malformed model output, or worker exception exits non-zero. `--allow-partial` is the explicit escape hatch and surfaces failures in output.
+- **New version line — `0.MINOR.PATCH`.** `MINOR` is a monotonically increasing release counter; `PATCH` is reserved for hotfixes. No `1.0.0` milestone is planned on this line.
+- **PyPI reset.** All prior `pythinker-code` 1.x/2.x releases have been **yanked** from PyPI. New installs (`pip install pythinker-code`, `pip install --upgrade pythinker-code`, `uv tool install pythinker-code`, and `pythinker update`) resolve to `0.8.0`.
+- **GitHub reset.** All pre-`0.8.0` GitHub Releases and matching git tags have been removed. `v0.8.0` is the first tag on the new line.
+- **Tag scheme.** Release tags are now `v<MAJOR>.<MINOR>.<PATCH>` (e.g. `v0.8.0`). The release workflow trigger and `scripts/check_version_tag.py` both expect the `v` prefix.
+- **No app-level regressions.** All functionality shipped through 2.7.0 is preserved: review-first workflows (`pythinker review`, `pythinker secscan`, `pythinker security-scan`, `pythinker debug`), Reviewflow stateful review/fix workflows, the `code-reviewer` / `security-reviewer` / `debugger` subagent roles, hardened review-output validation, and the read-only PR artifact helpers.
+- **History preserved in-repo.** The detailed 1.x/2.x release notes are archived at [`docs/history/CHANGELOG-pre-0.8.0.md`](docs/history/CHANGELOG-pre-0.8.0.md).
 
-No new third-party runtime dependencies. Reuses the active Pythinker model when invoked via `pythinker review` / `pythinker secscan` / `pythinker security-scan` / `pythinker debug`; the standalone `pythinker-review` / `pythinker-secscan` / `pythinker-security-scan` / `pythinker-debug` console scripts accept explicit/env configuration.
-
-Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==2.7.0`.
-
-## 🆕 What's New in 2.6.0
-
-> **Hotfix release for Kimi K2.x and DeepSeek users on PyPI.**
-
-The runtime fix for the strict-interleaved `thinking is enabled but reasoning_content is missing in assistant tool call message at index N` rejection was in the `pythinker-core` source since 2.4.0, but the published `pythinker-core==1.0.0` on PyPI predates it — so installs of `pythinker-code` 2.4.0 / 2.5.0 from PyPI kept hitting the bug on Kimi K2.5, K2.6, and DeepSeek (including through OpenCode Go). Reported in [#37](https://github.com/mohamed-elkholy95/Pythinker-Code/issues/37).
-
-2.6.0 bumps the pinned dep:
-
-- **`pythinker-core` 1.0.0 → 1.1.0** (published independently to PyPI) — strict-interleaved providers (`kimi-k2*`, `deepseek*`) now always emit `reasoning_content` on assistant turns, with the fallback chain `ThinkPart → extract_text() → "[reasoning unavailable]"`. Multi-step tool flows on Kimi/DeepSeek no longer trip the strict thinking-replay check.
-- **Root pin** `pythinker-core[contrib]==1.0.0 → 1.1.0` — new installs of `pip install --upgrade pythinker-code==2.6.0` (and `uv tool install`/`upgrade`) pick up the fix automatically.
-
-No app-level changes vs 2.5.0; everything from the 2.5.0 release is still present. **Existing 2.5.0 users on Kimi K2.x / DeepSeek must upgrade to 2.6.0.**
-
-Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==2.6.0`.
-
-### What was new in 2.5.0
-
-## 🆕 What's New in 2.5.0
-
-Coding-agent runtime hardening: runtime-enforced permission profiles, FetchURL SSRF protection, a Windows self-upgrade fix, and a configurable feedback endpoint.
-
-- **Runtime-enforced permission profiles** — every built-in role (`read-only` / `plan` / `ask` / `implement` / `review` / `verify`) is now backed by `src/pythinker_code/soul/permission.py`. Profiles are snapshot per LLM step so a mid-step model switch can't escalate. **Plan mode hard-denies** non-plan writes and dangerous shell mutations instead of relying on prompt-deny.
-- **Plan → Implement handoff** — new `tools/plan/handoff.py` plus dynamic injection through `soul/dynamic_injections/plan_mode.py` carries the approved plan into implementation without re-priming the context.
-- **FetchURL SSRF + size hardening** — `_validate_fetch_url` blocks private / loopback / link-local / multicast / reserved IPv4 + IPv6 ranges; rejects non-`http`/`https` schemes; non-host URLs. Responses are streamed with a hard **5 MB** ceiling honoring `Content-Length`.
-- **Windows self-upgrade fixed** — `pythinker update` on Windows now spawns the upgrade in a **detached console** and exits the parent before `uv tool upgrade` runs, releasing the lock on the running `pythinker.exe`. Eliminates the `os error 32: The process cannot access the file because it is being used by another process` error.
-- **Background recovery improved** — `recoverable` (resumable via stored `agent_id`) vs `lost` (worker gone, no resume target). Subagent instances are parked as `idle` when recoverable. `pythinker-host` subprocess teardown kills the entire child process tree and creates a new session group.
-- **Feedback endpoint config** — new `feedback` config block (`endpoint_url`, `api_key`, `custom_headers`). The `/feedback` slash command now routes submissions to a user-configured HTTP endpoint instead of being a no-op.
-- **Welcome-screen version banner** — installed Pythinker version is now visible up-front.
-- **VS 2026 CI forward-compat probe** — non-blocking `windows-2025-vs2026` matrix entry on the host + cli builds validates MSVC v144 ahead of GitHub's eventual `windows-2022` deprecation.
-- **anthropic 0.101 compat** — added fallbacks for the six new tool-result block types so `pyright` stays exhaustive.
-- **Telemetry hygiene** — OTel `service.name` normalized to a stable value for SigNoz dashboards; Sentry filters drop test and shutdown noise.
-
-Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==2.5.0` (note: 2.5.0 PyPI installs are affected by [#37](https://github.com/mohamed-elkholy95/Pythinker-Code/issues/37) on Kimi/DeepSeek — see the 2.6.0 hotfix above).
-
-### What was new in 2.4.0
-
-## 🆕 What's New in 2.4.0
-
-Subagent roles overhaul, Kimi K2 provider support, and a ripgrep-free Grep fallback.
-
-- **New subagents** — `implementer` (scoped edits + verification), `review` (severity-scored read-only review), and `verifier` (`PASS` / `FAIL` / `FLAKY` validation runner). Join the existing `coder` / `explore` / `plan` roster.
-- **Structured subagent output** — every default agent now answers with `### SUMMARY / EVIDENCE / CHANGES / RISKS / BLOCKERS`, so the parent agent can consume results without re-parsing prose. New recommended flow: **Scout → Plan → Implement → Review → Verify** (review and verify can run in parallel).
-- **Kimi K2.5 / K2.6 support** — `--thinking` is routed via the provider-specific `thinking.type` body field, and assistant tool-call replays always carry `reasoning_content` so multi-step tool flows stop tripping the strict thinking-replay check. Same hardening applied to DeepSeek's strict mode.
-- **`Grep` works without `rg`** — pure-Python fallback honors `pattern` / `glob` / `type` / `ignore_case` / `multiline` / `context` / `output_mode` / `offset` / `head_limit` and respects `.gitignore`. The downloader also retries against the upstream GitHub releases mirror and accepts `PYTHINKER_RG_PATH=/absolute/path` plus extra discovery paths (`~/.cargo/bin`, `~/.local/bin`, `~/.pi/agent/bin`, `/usr/bin`, `/usr/local/bin`).
-- **`AGENTS.md` rewritten** to match the new roster, and `tools/agent/description.md` documents the parallel-review and cross-check patterns.
-
-Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==2.4.0`.
-
-### What was new in 2.3.0
-
-## 🆕 What's New in 2.3.0
-
-Telemetry & observability audit on top of 2.2.1.
-
-- **38 silent-catch sites instrumented** — tool failures, OAuth errors, MCP hiccups, hook callbacks, subagent crashes now surface in Bugsink + SigNoz.
-- **`/report-error` slash command** — user-invoked complement to automatic capture.
-- **OTel trace sampling tunable** — `PYTHINKER_OTEL_TRACE_SAMPLE_RATE` for operators running their own collector.
-- **`pythinker.mcp.call` span** with `mcp.server` attribute.
-- **`docs/en/reference/telemetry.md`** documents the full contract.
-
-### What was new in 2.2.1
-
-## 🆕 What's New in 2.2.1
-
-CI hardening on top of 2.2.0.
-
-- **macOS binary build is now optional-codesign** — the release workflow detects whether `APPLE_CERTIFICATE_P12` / `APPLE_NOTARIZATION_KEY_P8` repo secrets are set. When they aren't (the v2.2.0 case), it ships an ad-hoc-signed PyInstaller binary instead of failing the whole release. PyPI install (`pip install pythinker-code`) is unaffected.
-- **PyPI publish is idempotent** — `pypa/gh-action-pypi-publish` now runs with `skip-existing: true`, so re-running the release workflow against an already-published version is a no-op.
-
-### What was new in 2.2.0
-
-Animated installer + Windows PATH automation, on top of 2.1.2.
-
-- **Tetris-style logo animation** — both `scripts/install.sh` and `scripts/install.ps1` now build the robot-head logo piece-by-piece (walls → top bar → bottom bar → eyes → ears → antenna), settling into the final mark before the install proceeds. Falls back gracefully to the existing static logo when the terminal isn't interactive (`CI=1`, `NO_COLOR`, `TERM=dumb`, redirected stdout, or `PYTHINKER_NO_ANIMATION=1`).
-- **Animation tunables** — `PYTHINKER_LOGO_FRAME_DELAY` / `PYTHINKER_LOGO_STAGGER_DELAY` (bash, seconds) and `PYTHINKER_LOGO_FRAME_DELAY_MS` / `PYTHINKER_LOGO_STAGGER_DELAY_MS` (PowerShell, milliseconds) let you slow down or speed up playback.
-- **Windows: idempotent User PATH write** — `install.ps1` now appends `~/.local/bin` to your User PATH via the registry (`[Environment]::SetEnvironmentVariable`) and broadcasts `WM_SETTINGCHANGE` so future shells pick it up. Re-running the installer is a no-op if the directory is already present.
-
-### Carried forward from 2.1.2
-
-Windows installer fix on top of 2.1.1.
-
-- **Windows installer runs in the current shell** — `scripts/install.ps1` is now invoked via `& $installer` instead of a `powershell -File` subprocess, and the bundled `uv` bootstrap is dot-sourced inside an anonymous scope. PATH updates from `uv` now land in the calling PowerShell session, so `uv`, `uvx`, and `pythinker` are immediately runnable after the installer finishes — no "Open a new shell" dance.
-- **Diagnostic fallback** — if `pythinker` is somehow still not on PATH (e.g., the script was deliberately run as a subprocess), the installer now prints the absolute path to the shim and tells you what to do.
-- **Regression tests** — `tests/test_installation_docs.py` locks in the current-session invocation and the dot-sourced `uv` bootstrap.
-
-### Carried forward from 2.1.1
-
-Documentation refresh + CI hardening on top of 2.1.0.
-
-- **PyPI page rendering** — README image and key file links converted to absolute GitHub URLs so the project page on PyPI renders the logo, demo GIFs, and architecture diagram correctly.
-- **Type-checking on Python 3.14** — `@asynccontextmanager` / `@contextmanager` helpers now use `AsyncGenerator` / `Generator` return annotations; container-walk attribute access is properly cast; selector test helpers narrow `SelectorHeader | SelectorItem` unions.
-- **`render_plain`** — no longer hits Rich's `is_dumb_terminal` size override (CI sets `TERM=dumb`); the explicit `width=` argument is honored everywhere.
-- **License section** — corrected from MIT to Apache-2.0 (matches `pyproject.toml` and the existing badge).
-- **CI cleanup** — `release-validate` step now points at the root `pyproject.toml`; PTY-based e2e tests skip on GitHub Actions runners (chronic `prompt_toolkit` hang); typos allowlist for verbatim CLI output.
-
-### Carried forward from 2.1.0
-
-A focused refresh of the TUI and slash-command UX.
-
-- **Selectors package** — interactive `/theme`, `/thinking`, `/model`, `/login`, `/settings`, `/extension`, and `/show-images` panels replace the old numeric/text prompts.
-- **`/thinking` slash command** — toggle reasoning effort live, mid-session.
-- **`/settings` panel** — a real `SettingsList` over your `Config` (theme, default model, TUI style, default thinking, telemetry, loop limits, background tasks).
-- **Card-style TUI polish** — bordered shell card, footer/toolbar, and a full set of tool renderers (read / write / edit / grep / find / bash / agent), plus a diff component. Subagent cards show a running-dots spinner while they work.
-- **Selector framework** — `SelectorHeader` sentinel and per-row `on_change` callback for richer custom selectors.
-- **Prompt templates** — discovery is now `~/.pythinker/prompts` and `<project>/.pythinker/prompts`. The legacy directory lookup has been retired.
-- **TUI style flag** — only `card` (default) and `pythinker` are accepted; the legacy alias has been dropped.
+Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==0.8.0`.
 
 
 ---
