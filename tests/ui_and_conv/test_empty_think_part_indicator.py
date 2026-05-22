@@ -147,12 +147,12 @@ def test_working_indicator_stays_visible_when_content_block_visible():
     view.dispatch_wire_message(TextPart(text="Hello"))
 
     # Content block visible — compose_agent_output should also keep the
-    # persistent Working spinner visible.
+    # persistent rotating-word spinner visible.
     assert view._current_content_block is not None
     agent_blocks = view.compose_agent_output()
     assert len(agent_blocks) >= 2
     rendered = _render(agent_blocks[-1])
-    assert "Working" in rendered
+    assert "Working" not in rendered
     assert "esc to interrupt" in rendered
 
 
@@ -201,7 +201,7 @@ def test_working_indicator_stays_visible_while_parallel_tool_still_running(monke
     agent_blocks = view.compose_agent_output()
     assert len(agent_blocks) >= 2
     rendered = _render(agent_blocks[-1])
-    assert "Working" in rendered
+    assert "Working" not in rendered
     assert "esc to interrupt" in rendered
 
 
