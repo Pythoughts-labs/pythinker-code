@@ -1,0 +1,141 @@
+name: Update Homebrew tap
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to push to the tap (e.g. 0.13.0)"
+        required: true
+        type: string
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      TAP_OWNER: mohamed-elkholy95
+      TAP_REPO:  homebrew-pythinker
+    steps:
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            version="$INPUT_VERSION"
+          else
+            echo "::error::No version source available" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for PyPI to have pythinker-code <version>
+        env:
+          PKG_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + 30 * 60 ))
+          while true; do
+            status=$(curl -s -o /dev/null -w "%{http_code}" \
+              "https://pypi.org/pypi/pythinker-code/${PKG_VERSION}/json")
+            if [ "$status" = "200" ]; then
+              echo "PyPI has pythinker-code ${PKG_VERSION}"
+              break
+            fi
+            if [ "$(date +%s)" -gt "$deadline" ]; then
+              echo "::error::PyPI did not publish pythinker-code ${PKG_VERSION} within 30 minutes" >&2
+              exit 1
+            fi
+            echo "PyPI not ready yet (HTTP $status); sleeping 30s"
+            sleep 30
+          done
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install pythinker-code + homebrew-pypi-poet
+        env:
+          PKG_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euxo pipefail
+          python -m venv /tmp/poet-env
+          /tmp/poet-env/bin/pip install --upgrade pip
+          /tmp/poet-env/bin/pip install \
+            "pythinker-code==${PKG_VERSION}" \
+            homebrew-pypi-poet
+
+      - name: Generate formula
+        env:
+          PKG_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euxo pipefail
+          mkdir -p out/Formula
+          /tmp/poet-env/bin/python packages/homebrew-tap/generate-formula.py \
+            --version "$PKG_VERSION" \
+            --template packages/homebrew-tap/pythinker-code.rb.tmpl \
+            --output out/Formula/pythinker-code.rb
+          echo "--- generated formula head ---"
+          head -30 out/Formula/pythinker-code.rb
+
+      - name: Checkout tap repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TAP_OWNER }}/${{ env.TAP_REPO }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap-repo
+          fetch-depth: 1
+
+      - name: Sync formula into tap repo
+        env:
+          PKG_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euxo pipefail
+          mkdir -p tap-repo/Formula
+          cp out/Formula/pythinker-code.rb tap-repo/Formula/pythinker-code.rb
+
+          if [ ! -f tap-repo/README.md ]; then
+            cat > tap-repo/README.md <<EOF
+          # homebrew-pythinker
+
+          Homebrew tap for [Pythinker Code](https://github.com/mohamed-elkholy95/Pythinker-Code).
+
+          \`\`\`sh
+          brew install mohamed-elkholy95/pythinker/pythinker-code
+          \`\`\`
+
+          This tap is auto-updated by the
+          [homebrew-tap.yml](https://github.com/mohamed-elkholy95/Pythinker-Code/blob/main/.github/workflows/homebrew-tap.yml)
+          workflow on every \`v*.*.*\` tag. Do not hand-edit \`Formula/*\` — your
+          edits will be overwritten on the next release.
+          EOF
+          fi
+
+      - name: Commit and push to tap repo
+        env:
+          PKG_VERSION: ${{ steps.ver.outputs.version }}
+        working-directory: tap-repo
+        run: |
+          set -euxo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "Formula already up to date for ${PKG_VERSION}; nothing to push."
+            exit 0
+          fi
+          git add Formula/pythinker-code.rb README.md
+          git commit -m "pythinker-code ${PKG_VERSION}" \
+                     -m "Auto-updated by Pythinker-Code/.github/workflows/homebrew-tap.yml"
+          git push origin HEAD:main
