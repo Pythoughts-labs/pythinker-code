@@ -1,0 +1,136 @@
+name: Build Linux native packages
+
+on:
+  push:
+    tags:
+      # Same scheme as release-pythinker-cli.yml and windows-installer.yml.
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (e.g. 0.13.0)"
+        required: true
+        type: string
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+            qemu: false
+          - arch: aarch64
+            runner: ubuntu-latest
+            qemu: true
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            version="$INPUT_VERSION"
+          else
+            echo "::error::No version source available" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU (aarch64 only)
+        if: matrix.qemu
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Python
+        if: '!matrix.qemu'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install build tools (native amd64)
+        if: '!matrix.qemu'
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip uv
+          uv sync --frozen --no-dev
+          uv pip install pyinstaller
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ruby ruby-dev rpm
+          sudo gem install --no-document fpm
+
+      - name: Build packages (native amd64)
+        if: '!matrix.qemu'
+        env:
+          PKG_VERSION: ${{ steps.ver.outputs.version }}
+          PKG_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euxo pipefail
+          export PATH="$PWD/.venv/bin:$PATH"
+          bash packages/linux-installer/build.sh "$PKG_VERSION" "$PKG_ARCH"
+
+      - name: Build packages (aarch64 via QEMU)
+        if: matrix.qemu
+        env:
+          PKG_VERSION: ${{ steps.ver.outputs.version }}
+          PKG_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euxo pipefail
+          docker run --rm --platform linux/arm64 \
+            -v "$PWD:/work" -w /work \
+            -e PKG_VERSION -e PKG_ARCH \
+            python:3.13-slim-bookworm bash -c '
+              set -euxo pipefail
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                ruby ruby-dev rpm tar gzip build-essential
+              gem install --no-document fpm
+              python -m pip install --upgrade pip uv
+              uv sync --frozen --no-dev
+              uv pip install pyinstaller
+              export PATH="/work/.venv/bin:$PATH"
+              bash packages/linux-installer/build.sh "$PKG_VERSION" "$PKG_ARCH"
+            '
+
+      - name: List dist artifacts
+        run: ls -la dist
+
+      - name: Upload artifact (per-arch)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pythinker-linux-${{ matrix.arch }}-${{ steps.ver.outputs.version }}
+          path: |
+            dist/pythinker-code_*.deb
+            dist/pythinker-code_*.deb.sha256
+            dist/pythinker-code-*.rpm
+            dist/pythinker-code-*.rpm.sha256
+            dist/pythinker-code-*-linux-*.tar.gz
+            dist/pythinker-code-*-linux-*.tar.gz.sha256
+
+      - name: Attach to Release (create-or-update)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          fail_on_unmatched_files: false
+          files: |
+            dist/pythinker-code_*.deb
+            dist/pythinker-code_*.deb.sha256
+            dist/pythinker-code-*.rpm
+            dist/pythinker-code-*.rpm.sha256
+            dist/pythinker-code-*-linux-*.tar.gz
+            dist/pythinker-code-*-linux-*.tar.gz.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
