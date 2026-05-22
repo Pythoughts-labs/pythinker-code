@@ -27,7 +27,6 @@ import sys
 import urllib.request
 from pathlib import Path
 
-
 PYPI_JSON = "https://pypi.org/pypi/pythinker-code/{version}/json"
 
 
@@ -69,8 +68,7 @@ def main() -> int:
     resources = indent_resources(run_poet("pythinker-code"))
     tmpl = args.template.read_text(encoding="utf-8")
     formula = (
-        tmpl
-        .replace("__SDIST_URL__", sdist_url)
+        tmpl.replace("__SDIST_URL__", sdist_url)
         .replace("__SDIST_SHA256__", sdist_sha)
         .replace("__RESOURCES__", resources)
     )
