@@ -152,7 +152,9 @@ def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> Rendera
         collapsed_max_lines=0,
         style_token="error",
     )
-    return body if body.plain else None
+    if not body.plain:
+        return None
+    return body
 
 
 TODO_RENDERER = ToolRenderDefinition(

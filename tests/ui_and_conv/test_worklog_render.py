@@ -68,6 +68,25 @@ def test_failed_entry_renders_only_explicit_target_and_detail():
     assert "Command failed with exit code 1" in output
 
 
+def test_worklog_entry_uses_shared_status_language():
+    from pythinker_code.ui.shell.components.render_utils import render_plain
+    from pythinker_code.ui.shell.visualize._worklog import WorkLogState, render_worklog_entry
+
+    output = render_plain(
+        render_worklog_entry(
+            label="Shell",
+            target="pytest",
+            state=WorkLogState.FAILED,
+            detail="exit code 1",
+        ),
+        width=100,
+    )
+    assert "Shell" in output
+    assert "pytest" in output
+    assert "failed" in output.lower()
+    assert "exit code 1" in output
+
+
 def test_denied_error_detects_user_denials_without_matching_regular_failures():
     assert denied_error("user dismissed permission")
     assert denied_error("QuestionRejectedError: rejected")

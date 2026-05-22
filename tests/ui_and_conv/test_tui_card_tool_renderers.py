@@ -23,6 +23,7 @@ from pythinker_code.ui.shell.tool_renderers import (
     get_tool_renderer,
     register_builtin_renderers,
 )
+from pythinker_code.ui.shell.tool_renderers.generic import generic_renderer
 
 
 @pytest.fixture(autouse=True)
@@ -50,6 +51,22 @@ def _render(
     comp.mark_execution_started()
     comp.set_result(ToolResultPayload(text=output, is_error=is_error))
     comp.set_expanded(expanded)
+    return render_plain(comp.render(), width=width)
+
+
+def _render_with_definition(
+    tool: str,
+    args: dict,
+    *,
+    output: str = "",
+    is_error: bool = False,
+    width: int = 100,
+) -> str:
+    comp = ToolExecutionComponent(tool, "tc-1", definition=generic_renderer(), cwd="/repo")
+    comp.update_args(args)
+    comp.set_args_complete()
+    comp.mark_execution_started()
+    comp.set_result(ToolResultPayload(text=output, is_error=is_error))
     return render_plain(comp.render(), width=width)
 
 
@@ -192,6 +209,7 @@ def test_shell_renders_command_and_output():
     rendered = _render("Shell", {"command": "ls -la", "timeout": 60}, output="total 0")
     assert "$ ls -la" in rendered
     assert "total 0" in rendered
+    assert "⎿" not in rendered
 
 
 def test_shell_collapses_long_command_and_reports_output_lines():
@@ -202,6 +220,14 @@ def test_shell_collapses_long_command_and_reports_output_lines():
     assert "echo second" in rendered
     assert "echo third" not in rendered
     assert "8 lines · ctrl+e expand" in rendered
+
+
+def test_shell_wraps_substantial_output_in_response_gutter():
+    rendered = _render("Shell", {"command": "pytest"}, output="failed\nexit code 1")
+    assert "⎿" in rendered
+    assert "⎿    ⎿" not in rendered
+    assert "failed" in rendered
+    assert "exit code 1" in rendered
 
 
 def test_shell_uses_comment_label_for_long_script():
@@ -239,6 +265,16 @@ def test_invalid_empty_shell_call_names_missing_command():
     )
     assert "$ <missing command>" in rendered
     assert "$ ..." not in rendered
+
+
+def test_generic_substantial_output_uses_single_response_gutter():
+    rendered = _render_with_definition(
+        "UnknownTool",
+        {"path": "x"},
+        output="line1\nline2",
+    )
+    assert "⎿  line1" in rendered
+    assert "⎿    ⎿" not in rendered
 
 
 # ---------------------------------------------------------------------------

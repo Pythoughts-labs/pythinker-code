@@ -11,7 +11,7 @@ import json
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from pythinker_code.ui.shell.components import sanitize_ansi
+from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
 from pythinker_code.ui.shell.tool_renderers import (
     ToolRenderContext,
     ToolRenderDefinition,

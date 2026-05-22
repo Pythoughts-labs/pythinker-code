@@ -15,6 +15,7 @@ from pythinker_code.tools.display import (
     DiffDisplayBlock,
     TodoDisplayBlock,
 )
+from pythinker_code.ui.shell.design_system import ShellTone, StatusName, shell_style, status_icon
 from pythinker_code.utils.rich.columns import BulletColumns
 from pythinker_code.utils.rich.diff_render import (
     collect_diff_hunks,
@@ -63,26 +64,27 @@ _TOOL_STYLES: dict[str, ToolStyle] = {
 
 
 _STATE_STYLE = {
-    WorkLogState.RUNNING: "bright_white",
-    WorkLogState.COMPLETED: "grey50",
-    WorkLogState.FAILED: "red",
-    WorkLogState.DENIED: "grey50 strike",
-    WorkLogState.INTERRUPTED: "yellow",
+    WorkLogState.RUNNING: shell_style(ShellTone.ACCENT),
+    WorkLogState.COMPLETED: shell_style(ShellTone.MUTED),
+    WorkLogState.FAILED: shell_style(ShellTone.ERROR),
+    WorkLogState.DENIED: shell_style(ShellTone.MUTED) + Style(strike=True),
+    WorkLogState.INTERRUPTED: shell_style(ShellTone.WARNING),
 }
 
-_STATE_ICON_STYLE = {
-    WorkLogState.COMPLETED: Style(color="green"),
-    WorkLogState.FAILED: Style(color="red"),
-    WorkLogState.DENIED: Style(color="grey50", strike=True),
-    WorkLogState.INTERRUPTED: Style(color="yellow"),
+_STATE_ICON: dict[WorkLogState, StatusName] = {
+    WorkLogState.RUNNING: "running",
+    WorkLogState.COMPLETED: "completed",
+    WorkLogState.FAILED: "failed",
+    WorkLogState.DENIED: "denied",
+    WorkLogState.INTERRUPTED: "interrupted",
 }
 
 
-def _state_icon(state: WorkLogState) -> tuple[str, Style]:
-    if state == WorkLogState.RUNNING:
-        glyph = "●" if int(time.monotonic() / 0.8) % 2 == 0 else " "
-        return glyph, Style(color="grey50")
-    return "●", _STATE_ICON_STYLE[state]
+def _state_icon(state: WorkLogState) -> Text:
+    icon = status_icon(_STATE_ICON[state])
+    if state == WorkLogState.RUNNING and int(time.monotonic() / 0.8) % 2 != 0:
+        return Text(" ", style=icon.style)
+    return icon
 
 
 def tool_style(name: str) -> ToolStyle:
@@ -118,8 +120,7 @@ def render_worklog_entry(
 ) -> RenderableType:
     line = Text()
     if icon_renderable is None:
-        glyph, glyph_style = _state_icon(state)
-        line.append(glyph, style=glyph_style)
+        line.append_text(_state_icon(state))
         line.append(" ")
     line.append(label, style="bold")
     if target:

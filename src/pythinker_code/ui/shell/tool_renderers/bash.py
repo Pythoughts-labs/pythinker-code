@@ -20,8 +20,10 @@ from pythinker_code.ui.shell.components.bash_execution import (
     BashExecutionState,
     BashStatus,
     format_bash_command_for_header,
+    render_bash_execution,
     render_bash_result_output,
 )
+from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
 from pythinker_code.ui.shell.tool_renderers import (
     ToolRenderContext,
     ToolRenderDefinition,
@@ -67,6 +69,8 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType | None:
         description = as_str(args.get("description"))
         suffix = f" (background: {description})" if description else " (background)"
         line.append_text(fg("muted", suffix))
+    if ctx.has_result and command:
+        return None
     return running_spinner(line, execution_started=ctx.execution_started, has_result=ctx.has_result)
 
 
@@ -88,13 +92,37 @@ def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> Rendera
     status: BashStatus = "error" if result.is_error else "complete"
     bash_state = BashExecutionState(
         command=command,
-        output=result.text or "",
+        output=sanitize_ansi(result.text or ""),
         status=status,
         exit_code=None if not result.is_error else 1,
         expanded=ctx.expanded,
         header_suffix="".join(suffix_parts),
     )
+    if _is_short_inline_output(bash_state.output):
+        return _render_inline_completed_result(bash_state, is_error=result.is_error)
+    if ctx.has_result:
+        return render_bash_execution(bash_state, width=ctx.width)
     return render_bash_result_output(bash_state, width=ctx.width)
+
+
+def _is_short_inline_output(output: str) -> bool:
+    text = output.strip()
+    return bool(text) and "\n" not in text and len(text) <= 80
+
+
+def _render_inline_completed_result(state: BashExecutionState, *, is_error: bool) -> Text:
+    status_style = tui_rich_style("error" if is_error else "success")
+    line = Text("✘ " if is_error else "✔ ", style=status_style)
+    line.append("$ ", style=tui_rich_style("bash_mode") + RichStyle(bold=True))
+    line.append(
+        format_bash_command_for_header(state.command, expanded=state.expanded),
+        style=tui_rich_style("bash_mode") + RichStyle(bold=True),
+    )
+    if state.header_suffix:
+        line.append(state.header_suffix, style=tui_rich_style("muted"))
+    line.append(" · ", style=tui_rich_style("muted"))
+    line.append(state.output.strip(), style=tui_rich_style("error" if is_error else "muted"))
+    return line
 
 
 SHELL_RENDERER = ToolRenderDefinition(
