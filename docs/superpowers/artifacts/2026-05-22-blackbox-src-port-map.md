@@ -42,3 +42,24 @@ uv run pythinker --yolo --prompt "scan code base "
 - Hosted account flows, Slack/GitHub app install surfaces, and remote-only services are not ported.
 - Analytics-specific prompt or metadata code is not ported.
 - Product names, proprietary service endpoints, and unrelated commands are not ported.
+
+## Visual Smoke Result
+
+Command:
+
+```bash
+uv run pythinker --yolo --prompt "scan code base "
+```
+
+Observed:
+
+- Thinking/composing status: Blackbox-style spinner/status rendered with elapsed time, token count,
+  token rate, and interrupt hint during streamed reasoning.
+- Subagent/tool activity: Active explore subagents rendered as compact rows with readable labels and
+  truncated details.
+- Footer/context stability: Context footer stayed aligned and width-safe, including
+  `8.9% (23.4k/262k)`.
+- Overlap/viewport behavior: Live region repainted cleanly with no obvious overlapping rows or
+  viewport overflow while thinking and subagent rows updated.
+- Interrupt cleanup: The TTY session handle was no longer available after context compaction, and no
+  matching `uv run pythinker --yolo --prompt "scan code base "` process remained in `ps`.
