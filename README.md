@@ -50,16 +50,17 @@ It speaks the [**Agent Client Protocol (ACP)**](https://github.com/agentclientpr
 
 ---
 
-## 🆕 What's New in 0.9.0
+## 🆕 What's New in 0.10.0
 
-- **Cleaner TUI — tool card backgrounds removed.** The grey pending/running overlay behind tool execution cards (subagents, bash, reads, etc.) is gone. Only user-message blocks keep a background tint, keeping visual focus on your input.
-- **Welcome screen enhancements.** The startup panel now shows the current git branch (highlighted in magenta) and the session auto-save path alongside the working directory and session ID.
-- **Bash header strip styling.** The `$ command` strip in bash execution headers now uses the `tool_pending_bg` theme token, matching the reference renderer across light and dark themes.
-- **Pythinker markdown renderer in all messages.** User, assistant, and custom messages now render through `pythinker_markdown` for consistent heading, code-block, and table styling.
-- **Expanded theme palette.** A new `MarkdownColors` / `markdown_rich_style` subsystem in `theme.py` covers headings, emphasis, inline code, links, blockquotes, table borders, code-block backgrounds, and spinner states with separate dark and light palettes.
-- **Improved tool fallback renderers.** Call fallbacks now show a status glyph (`✔`/`✘`/`●`); result fallbacks truncate at 60 lines / 4000 chars with an italicised note and use correct theme tokens.
+- **Tool failure recovery improvements.** The agent loop now handles malformed or empty tool-call responses more gracefully and can continue the session instead of leaving the UI stuck after a bad provider turn.
+- **Safer file edits.** File write and replace tools now create restore points before mutating files, giving sessions a clearer recovery path after risky changes.
+- **Session UX state tracking.** Runtime session state now records additional UX metadata so shell surfaces can provide better continuity across long-running work.
+- **Shell command enhancements.** New shell slash-command plumbing improves discoverability and keeps interactive workflows smoother.
+- **TUI renderer polish.** Tool cards now share more consistent status glyphs, truncation behavior, and result summaries across bash, read, write, edit, grep, find, web, subagent, background, ask-user, and think renderers.
+- **Clipboard handling hardening.** Clipboard helpers now degrade more cleanly when platform clipboard access is unavailable.
+- **Release and TUI specs.** The repository now includes the blackbox TUI port design and a visual smoke-test criterion for future terminal UI work.
 
-Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==0.9.0`.
+Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==0.10.0`.
 
 
 ---

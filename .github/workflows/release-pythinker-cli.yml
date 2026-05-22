@@ -549,8 +549,53 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  publish-python-testpypi:
+    name: Publish Python package to TestPyPI
+    needs: validate
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/pythinker-code/
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      PYTHINKER_WEB_STRICT_VERSION: "1"
+      PYTHINKER_WEB_EXPECT_VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          allow-prereleases: true
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          version: "0.8.5"
+
+      - name: Set up Node.js (web build)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build distributions
+        run: make build-pythinker-code
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist
+          skip-existing: true
+
   publish-python:
-    name: Publish Python package
+    name: Publish Python package to PyPI
     needs: validate
     runs-on: ubuntu-latest
     environment:

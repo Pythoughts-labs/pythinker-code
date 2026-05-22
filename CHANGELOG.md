@@ -15,6 +15,20 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.10.0 (2026-05-22)
+
+### What changed in this release
+
+- **Tool failure recovery improvements.** The agent loop now handles malformed or empty tool-call responses more gracefully and can continue the session instead of leaving the UI stuck after a bad provider turn.
+- **Safer file edits.** File write and replace tools now create restore points before mutating files, giving sessions a clearer recovery path after risky changes.
+- **Session UX state tracking.** Runtime session state now records additional UX metadata so shell surfaces can provide better continuity across long-running work.
+- **Shell command enhancements.** New shell slash-command plumbing improves discoverability and keeps interactive workflows smoother.
+- **TUI renderer polish.** Tool cards now share more consistent status glyphs, truncation behavior, and result summaries across bash, read, write, edit, grep, find, web, subagent, background, ask-user, and think renderers.
+- **Clipboard handling hardening.** Clipboard helpers now degrade more cleanly when platform clipboard access is unavailable.
+- **Release and TUI specs.** The repository now includes the blackbox TUI port design and a visual smoke-test criterion for future terminal UI work.
+
+Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==0.10.0`.
+
 ## 0.9.0 (2026-05-21)
 
 ### What changed in this release
