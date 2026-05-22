@@ -148,94 +148,173 @@ matches your OS — no Python, Node, or `uv` prerequisite.
 
 | Platform | One-line install | Artifact |
 |---|---|---|
-| **🪟 Windows** | Download + double-click `PythinkerSetup-x.y.z.exe` | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
+| **🪟 Windows** | Download + double-click `PythinkerSetup-0.13.0.exe` | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
 | **🍎 macOS (Apple Silicon + Intel)** | `brew install mohamed-elkholy95/pythinker/pythinker-code` | Homebrew tap |
-| **🐧 Linux (Debian / Ubuntu)** | `sudo dpkg -i pythinker-code_x.y.z_amd64.deb` | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
-| **🐧 Linux (Fedora / RHEL / openSUSE)** | `sudo rpm -i pythinker-code-x.y.z.x86_64.rpm` | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
+| **🐧 Linux (Debian / Ubuntu)** | `sudo dpkg -i pythinker-code_0.13.0_amd64.deb` | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
+| **🐧 Linux (Fedora / RHEL / openSUSE)** | `sudo rpm -i pythinker-code-0.13.0.x86_64.rpm` | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
 | **🌐 macOS / Linux — curl-bash** | `curl -fsSL https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install-native.sh \| bash` | tarball |
+| **🐍 Python fallback** (universal) | `pip install pythinker-code` | PyPI |
 
-> **Updates** — Once installed, `pythinker update` checks the GitHub Releases
-> API, verifies the new artifact's SHA-256, and re-runs the installer for you.
-> Set `PYTHINKER_CLI_NO_AUTO_UPDATE=1` to disable the startup update check.
+Every artifact ships with a matching `.sha256` file — verify before install on
+any platform with `sha256sum`, `shasum -a 256`, or `Get-FileHash`.
 
-> **Verifying downloads** — Every artifact ships with a matching `.sha256`
-> file. Verify before installing with `sha256sum`, `shasum -a 256`, or
-> PowerShell's `Get-FileHash` (see platform sections below).
+After install, on any OS:
 
-### 🪟 Windows native installer — details
+```sh
+pythinker --version            # confirm install
+pythinker login                # (optional) authenticate a hosted provider
+pythinker                      # start the interactive TUI
+```
 
-`PythinkerSetup-x.y.z.exe` installs per-user to `%LOCALAPPDATA%\Programs\Pythinker`
-and adds `pythinker` to your user PATH (`HKCU\Environment`). No UAC prompt.
+> **In-app updates** — `pythinker update` queries the GitHub Releases API and
+> re-runs the right installer for your build with SHA-256 verification. Set
+> `PYTHINKER_CLI_NO_AUTO_UPDATE=1` to disable the proactive startup check.
+
+---
+
+### 🪟 Windows — native installer
+
+`PythinkerSetup-0.13.0.exe` is a signed* Inno Setup wizard. Installs per-user
+into `%LOCALAPPDATA%\Programs\Pythinker`, registers `pythinker` on your user
+PATH (`HKCU\Environment`), broadcasts `WM_SETTINGCHANGE` so new shells see
+the change. **No UAC prompt.**
 
 ```powershell
-# 1. Verify the download
-Get-FileHash .\PythinkerSetup-x.y.z.exe -Algorithm SHA256
-Get-Content  .\PythinkerSetup-x.y.z.exe.sha256
+# 1. Download the installer + checksum from the Releases page above.
 
-# 2. Run the installer (double-click also works)
-.\PythinkerSetup-x.y.z.exe
+# 2. Verify the download
+Get-FileHash .\PythinkerSetup-0.13.0.exe -Algorithm SHA256
+Get-Content  .\PythinkerSetup-0.13.0.exe.sha256
+# The two hashes must match.
 
-# 3. Open a fresh PowerShell
+# 3. Run it
+.\PythinkerSetup-0.13.0.exe
+
+# 4. Open a fresh PowerShell
 pythinker --version
 ```
 
-**Per-machine install** (IT-managed boxes): `.\PythinkerSetup-x.y.z.exe /ALLUSERS`
-installs to `%ProgramFiles%\Pythinker` and writes to HKLM.
+**Per-machine install** (IT-managed boxes): `.\PythinkerSetup-0.13.0.exe /ALLUSERS`
+installs to `%ProgramFiles%\Pythinker` and writes PATH to HKLM (requires admin).
 
-**Uninstall:** Apps & Features → *Pythinker Code* → Uninstall reverts both the
-files and the PATH edit.
+**Upgrade:** `pythinker update` from inside the running app — it downloads
+the newest installer, verifies SHA-256, and re-runs it silently
+(`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`).
 
-> 🛡 **First-launch SmartScreen warning** — until the Authenticode cert is in
-> CI, the installer ships unsigned and SmartScreen shows *"Windows protected
-> your PC."* Click **More info → Run anyway**. Use the published SHA-256 as
-> your integrity check.
+**Uninstall:** Apps & Features → *Pythinker Code* → Uninstall reverts both
+the files and the PATH edit.
 
-### 🍎 macOS — Homebrew
+> 🛡 **First-launch SmartScreen warning** — \*until the Authenticode cert is
+> provisioned in CI, the installer ships unsigned and Windows shows
+> *"Windows protected your PC."* Click **More info → Run anyway**. Use the
+> published `.sha256` as your integrity check until signing comes online.
+
+---
+
+### 🍎 macOS — Homebrew tap
 
 ```sh
+# 1. Install
 brew install mohamed-elkholy95/pythinker/pythinker-code
-brew upgrade pythinker-code   # manual updates; brew packages don't auto-update
+
+# 2. Verify
+pythinker --version
+which pythinker          # -> /opt/homebrew/bin/pythinker (Apple Silicon)
+                         #    or /usr/local/bin/pythinker (Intel)
 ```
 
-Drops `pythinker` at `$(brew --prefix)/bin/pythinker`. Works on Apple Silicon
-and Intel; brew picks the right Python build for you.
+Works on **Apple Silicon and Intel** — brew picks the right Python build for
+you. The tap auto-publishes a fresh formula on every Pythinker release, so
+`brew upgrade pythinker-code` always finds the latest version.
+
+**Upgrade:** `brew upgrade pythinker-code` (Homebrew packages don't
+auto-update; run this whenever you want the latest).
+
+**Uninstall:** `brew uninstall pythinker-code && brew untap mohamed-elkholy95/pythinker`.
+
+> The tap repo is [mohamed-elkholy95/homebrew-pythinker](https://github.com/mohamed-elkholy95/homebrew-pythinker)
+> — auto-maintained, do not hand-edit.
+
+---
 
 ### 🐧 Linux — system packages
 
-Native packages are attached to every GitHub Release. Both `.deb` and `.rpm`
-are built for `x86_64` and `aarch64`:
+Native `.deb` and `.rpm` packages for both `x86_64` and `aarch64` are
+attached to every GitHub Release.
 
 ```sh
-# Debian / Ubuntu
-sudo dpkg -i pythinker-code_x.y.z_amd64.deb
-# If apt complains about missing deps:
-sudo apt-get install -f
+# Debian / Ubuntu (x86_64)
+sudo dpkg -i pythinker-code_0.13.0_amd64.deb
+sudo apt-get install -f       # only if dpkg reports missing deps
 
-# Fedora / RHEL / openSUSE
-sudo rpm -i pythinker-code-x.y.z.x86_64.rpm
-# or:
-sudo dnf install ./pythinker-code-x.y.z.x86_64.rpm
+# Debian / Ubuntu (ARM64)
+sudo dpkg -i pythinker-code_0.13.0_arm64.deb
+
+# Fedora / RHEL / openSUSE (x86_64)
+sudo rpm -i pythinker-code-0.13.0.x86_64.rpm
+# or use the package manager (preferred — handles deps):
+sudo dnf install ./pythinker-code-0.13.0.x86_64.rpm
+sudo zypper install ./pythinker-code-0.13.0.x86_64.rpm
+
+# Fedora / RHEL (aarch64)
+sudo rpm -i pythinker-code-0.13.0.aarch64.rpm
 ```
 
-Both packages drop `/usr/bin/pythinker` (a small launcher that execs the real
-binary under `/usr/lib/pythinker/`).
+Both packages drop a small `/usr/bin/pythinker` launcher that execs the real
+binary under `/usr/lib/pythinker/`, so your `$PATH` stays tidy.
+
+**Verify before install:**
+
+```sh
+sha256sum -c pythinker-code_0.13.0_amd64.deb.sha256        # Debian/Ubuntu
+sha256sum -c pythinker-code-0.13.0.x86_64.rpm.sha256       # Fedora/RHEL
+```
+
+**Upgrade:** download the new `.deb`/`.rpm` from Releases and `dpkg -i` /
+`dnf install` over it. Or run `pythinker update` from inside the running
+app — it'll fetch the matching new package and prompt for sudo to install.
+
+**Uninstall:**
+
+```sh
+sudo dpkg -r pythinker-code                                # Debian/Ubuntu
+sudo rpm -e pythinker-code                                 # Fedora/RHEL
+```
+
+---
 
 ### 🌐 macOS / Linux — curl-bash native installer
 
-For machines without a package manager (containers, fresh VMs), the
-[install-native.sh](./scripts/install-native.sh) helper downloads the right
-tarball for your OS + arch, verifies SHA-256, and installs to `~/.local/`.
+For containers, fresh VMs, or any host without a system package manager.
+The [install-native.sh](./scripts/install-native.sh) helper detects your
+OS + arch, downloads the matching PyInstaller-frozen tarball, verifies its
+SHA-256, and lands the single binary at `~/.local/bin/pythinker`.
 
 ```sh
+# Latest release
 curl -fsSL https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install-native.sh | bash
 
-# Pin a specific version:
-curl -fsSL ...install-native.sh | bash -s -- --version 0.13.0
+# Pin a specific version
+curl -fsSL https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install-native.sh \
+  | bash -s -- --version 0.13.0
+
+# Custom prefix (defaults to $HOME/.local)
+curl -fsSL ...install-native.sh | bash -s -- --prefix /opt/pythinker
 ```
 
-The script lands the binary at `~/.local/share/pythinker/` and symlinks
-`~/.local/bin/pythinker`. It prints PATH guidance if `~/.local/bin` isn't on
-your `$PATH`.
+Supported targets:
+
+| `uname -s / -m`             | Tarball asset                                            |
+|---|---|
+| Linux / x86_64              | `pythinker-0.13.0-x86_64-unknown-linux-gnu.tar.gz`        |
+| Linux / aarch64             | `pythinker-0.13.0-aarch64-unknown-linux-gnu.tar.gz`       |
+| Darwin / arm64              | `pythinker-0.13.0-aarch64-apple-darwin.tar.gz`            |
+
+The script prints PATH guidance if `~/.local/bin` isn't already on your
+`$PATH`. Intel macOS users — use Homebrew or `pip install pythinker-code`;
+no PyInstaller-built Intel Darwin binary is published.
+
+**Uninstall:** `rm ~/.local/bin/pythinker`.
 
 ### 🛠 Power-user / legacy install paths
 
