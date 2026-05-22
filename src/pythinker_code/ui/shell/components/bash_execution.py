@@ -134,7 +134,6 @@ def format_bash_command_for_header(command: str, *, expanded: bool) -> str:
 
 
 def _status_header(state: BashExecutionState) -> Text:
-    accent = _accent_style(state)
     if state.status in ("pending", "running"):
         header = _pulsing_marker()
         header.append("Running", style=tui_rich_style("muted") + RichStyle(bold=True))

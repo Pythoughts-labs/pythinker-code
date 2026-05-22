@@ -18,13 +18,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from rich.console import Console, ConsoleOptions, Group, RenderResult, RenderableType
+from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
 from rich.markdown import CodeBlock, Markdown
 from rich.padding import Padding
 from rich.rule import Rule
 from rich.style import Style as RichStyle
 from rich.syntax import Syntax
 from rich.text import Text
+from rich.theme import Theme
 
 from pythinker_code.ui.theme import ThemeName, get_markdown_colors
 
@@ -38,9 +39,7 @@ __all__ = [
 class _BorderedCodeBlock(CodeBlock):
     """Code block with ``╭─ lang`` / ``╰─`` border rules and background tint."""
 
-    def __rich_console__(
-        self, console: Console, options: ConsoleOptions
-    ) -> RenderResult:
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         colors = get_markdown_colors()
         border_style = RichStyle(color=colors.code_block_border, bold=True)
         bg_style = RichStyle(bgcolor=colors.code_block_bg) if colors.code_block_bg else RichStyle()
@@ -96,24 +95,10 @@ class PythinkerMarkdown(Markdown):
 
     elements = {**Markdown.elements, "fence": _BorderedCodeBlock, "code_block": _BorderedCodeBlock}
 
-    def __rich_console__(
-        self, console: Console, options: ConsoleOptions
-    ) -> RenderResult:
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         overrides = _markdown_style_overrides()
-        with console.use_theme(_PythinkerMarkdownTheme(overrides)):
+        with console.use_theme(Theme(overrides, inherit=True)):
             yield from super().__rich_console__(console, options)
-
-
-class _PythinkerMarkdownTheme:
-    """Lightweight Rich ``Theme`` shim — only enough to satisfy ``Console.use_theme``."""
-
-    def __init__(self, styles: dict[str, RichStyle]) -> None:
-        from rich.theme import Theme
-
-        self._theme = Theme(styles, inherit=True)
-
-    def __getattr__(self, name: str):  # type: ignore[no-untyped-def]
-        return getattr(self._theme, name)
 
 
 def pythinker_markdown(text: str, *, code_theme: str = "monokai") -> PythinkerMarkdown:
@@ -199,9 +184,7 @@ def _find_stream_safe_boundary(text: str) -> int | None:
             open_fence = opener
             cursor = line_end
             continue
-        if not content.strip():
-            last_boundary = line_end
-        elif content.rstrip().endswith(_SENTENCE_END):
+        if not content.strip() or content.rstrip().endswith(_SENTENCE_END):
             last_boundary = line_end
         cursor = line_end
     return last_boundary

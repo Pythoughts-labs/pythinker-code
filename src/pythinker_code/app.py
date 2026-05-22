@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 _CWD_LOCK = asyncio.Lock()
 
 
-def _safe_git_branch(cwd: str | Path) -> str | None:
+def _safe_git_branch(cwd: str | Path | HostPath) -> str | None:
     """Return the current git branch name, or ``None`` outside a repo / on error."""
     import subprocess
 
@@ -49,6 +49,7 @@ def _safe_git_branch(cwd: str | Path) -> str | None:
         result = subprocess.run(
             ["git", "-C", str(cwd), "branch", "--show-current"],
             capture_output=True,
+            encoding="utf-8",
             text=True,
             timeout=1.0,
             check=False,
@@ -752,7 +753,9 @@ class PythinkerCLI:
             welcome_info.append(WelcomeInfoItem(name="Branch", value=branch_name))
         welcome_info.append(WelcomeInfoItem(name="Session", value=self._runtime.session.id))
         try:
-            auto_save_path = str(shorten_home(self._runtime.session.context_file))
+            auto_save_path = str(
+                shorten_home(HostPath.unsafe_from_local_path(self._runtime.session.context_file))
+            )
         except Exception:
             auto_save_path = ""
         if auto_save_path:

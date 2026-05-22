@@ -235,6 +235,10 @@ class ToolExecutionComponent:
         return None
 
     def _background_style(self) -> Style | None:
+        if self._status in _PENDING_LIKE:
+            return tui_rich_style("tool_pending_bg")
+        if self._status in (ToolExecutionStatus.ERROR, ToolExecutionStatus.DENIED):
+            return tui_rich_style("tool_error_bg")
         return None
 
     def _call_fallback(self) -> RenderableType:
