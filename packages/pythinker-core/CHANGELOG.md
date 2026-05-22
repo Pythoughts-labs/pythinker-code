@@ -1,5 +1,17 @@
 # Pythinker Core Changelog
 
+## 1.1.1 (2026-05-22)
+
+Hotfix release for the PyPI install conflict reported on Windows (and reproducible on every platform): `pip install pythinker-code` failed with
+
+```
+fastmcp 3.2.0 depends on mcp<2.0 and >=1.24.0
+pythinker-core 1.1.0 depends on mcp<1.17 and >=1
+```
+
+- **`mcp` constraint widened to `>=1.23,<2`.** The source had already been corrected after the 1.1.0 release, but the change never reached PyPI because the version wasn't bumped. 1.1.1 republishes the fixed constraint so resolvers can pick an `mcp` that also satisfies `fastmcp==3.2.0`.
+- No code changes; metadata-only patch — drop-in upgrade from 1.1.0.
+
 ## 1.1.0 (2026-05-13)
 
 Strict-interleaved reasoning replay for Kimi K2.x and DeepSeek, plus the SDK 0.101 anthropic compat fix.
