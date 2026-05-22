@@ -58,7 +58,7 @@ Version-scheme reset. Pythinker Code moves to a `0.MINOR.PATCH` line; `0.8.0` is
 - **PyPI reset.** All prior `pythinker-code` 1.x/2.x releases have been **yanked** from PyPI. New installs (`pip install pythinker-code`, `pip install --upgrade pythinker-code`, `uv tool install pythinker-code`, and `pythinker update`) resolve to `0.8.0`.
 - **GitHub reset.** All pre-`0.8.0` GitHub Releases and matching git tags have been removed. `v0.8.0` is the first tag on the new line.
 - **Tag scheme.** Release tags are now `v<MAJOR>.<MINOR>.<PATCH>` (e.g. `v0.8.0`). The release workflow trigger and `scripts/check_version_tag.py` both expect the `v` prefix.
-- **No app-level regressions.** All functionality shipped through 2.7.0 is preserved: review-first workflows (`pythinker review`, `pythinker secscan`, `pythinker security-scan`, `pythinker debug`), Reviewflow stateful review/fix workflows, the `code-reviewer` / `security-reviewer` / `debugger` subagent roles, hardened review-output validation, and the read-only PR artifact helpers.
+- **No app-level regressions.** All functionality included in 0.8.0 is preserved: review-first workflows (`pythinker review`, `pythinker secscan`, `pythinker security-scan`, `pythinker debug`), Reviewflow stateful review/fix workflows, the `code-reviewer` / `security-reviewer` / `debugger` subagent roles, hardened review-output validation, and the read-only PR artifact helpers.
 - **History preserved in-repo.** The detailed 1.x/2.x release notes are archived at [`docs/history/CHANGELOG-pre-0.8.0.md`](docs/history/CHANGELOG-pre-0.8.0.md).
 
 Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==0.8.0`.

@@ -17,12 +17,12 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## 0.8.0 (2026-05-21)
 
-Version-scheme reset. The next release after `pythinker-code` 2.7.0 ships as
-`0.8.0` under the new `0.MINOR.PATCH` line.
+Version-scheme reset. `pythinker-code` now ships as `0.8.0` under the new
+`0.MINOR.PATCH` line.
 
 ### What changed in this release
 
-- **Version line reset.** `pyproject.toml` `version` moves from `2.7.0` to `0.8.0`.
+- **Version line reset.** `pyproject.toml` `version` is `0.8.0` under the new release design.
   All prior `pythinker-code` 1.x/2.x releases have been yanked from PyPI and
   removed from the GitHub Releases page. New installs of
   `pip install --upgrade pythinker-code==0.8.0` resolve to the `0.x` line.
@@ -44,9 +44,9 @@ Version-scheme reset. The next release after `pythinker-code` 2.7.0 ships as
   instead of a hard-coded string, so future version bumps don't require a test
   edit.
 
-### Carried forward from 2.7.0
+### Included in 0.8.0
 
-All functionality shipped through `pythinker-code` 2.7.0 is preserved:
+All functionality included in `pythinker-code` 0.8.0 is preserved:
 review-first workflows (`pythinker review`, `pythinker secscan`,
 `pythinker security-scan`, `pythinker debug`), Reviewflow stateful
 review/fix workflows, the new `code-reviewer` / `security-reviewer` /
@@ -55,6 +55,6 @@ read-only PR artifact helpers (`describe`, `improve` / `suggest`, `ask`,
 `labels`, `changelog`, `docs`, `compliance`, etc.).
 
 See [`docs/history/CHANGELOG-pre-0.8.0.md`](docs/history/CHANGELOG-pre-0.8.0.md)
-for the detailed 2.x release-by-release notes.
+for the archived pre-reset release-by-release notes.
 
 Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==0.8.0`.

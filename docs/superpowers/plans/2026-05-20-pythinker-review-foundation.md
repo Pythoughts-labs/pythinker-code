@@ -45,7 +45,7 @@ The revised spec (`docs/superpowers/specs/2026-05-20-pythinker-review-foundation
 | 15 | Standalone Typer CLIs | ✅ done | `pythinker-review`, `pythinker-secscan`, `pythinker-debug` |
 | 16 | `pythinker-code` lazy CLI wrappers + adapter | ✅ done | `cli/review.py`, `cli/secscan.py`, `cli/debug.py`; `_lazy_group.py` extended |
 | 17 | YAML subagent roles | ✅ done | `code_reviewer.yaml`, `security_reviewer.yaml`, `debugger.yaml`; `agent.yaml` updated |
-| 18 | AGENTS.md row + README "What's New" + package README | ✅ done | row added, 2.7.0 section added, package README expanded |
+| 18 | AGENTS.md row + README "What's New" + package README | ✅ done | row added, 0.8.0 section added, package README expanded |
 | — | **Blackbox parity map** (criterion #2) | ✅ done | `packages/pythinker-review/docs/blackbox-parity.md` covers all three repos |
 | — | **Product-posture default prompt** (criterion #10) | ✅ done | `agents/default/system.md` opens with evidence-first posture |
 | 20 | **Blackbox hardening: evidence, deslopify, advisor context** | ✅ done | `reviewers/validation.py`, `deslopify_review.py`, `signals/{scanner,tech,advisor}.py`, richer prompts/schema, saved-finding `next`/`show-finding` |
@@ -76,7 +76,7 @@ The revised spec (`docs/superpowers/specs/2026-05-20-pythinker-review-foundation
    3. `docs(review): document review foundation completion` — root README plus plan/spec updates.
 
 2. **Release decision (not required for Phase 1A):**
-   - Bump root `pyproject.toml` `version = "2.6.0"` → `"2.7.0"`.
+   - Bump root `pyproject.toml` `version = "2.6.0"` → `"0.8.0"`.
    - Add CHANGELOG entry.
    - Cut release per existing release process.
 
@@ -4730,7 +4730,7 @@ Edit `AGENTS.md`. Find the verification matrix table (search for "Verification m
 Edit `README.md`. Insert a new section above the existing "What's New in 2.6.0":
 
 ```markdown
-## 🆕 What's New in 2.7.0
+## 🆕 What's New in 0.8.0
 
 First-class agent-first code review, security review, and root-cause debugging, via the new
 `pythinker-review` workspace package.
@@ -4745,10 +4745,10 @@ First-class agent-first code review, security review, and root-cause debugging, 
 
 No new third-party runtime dependencies. Reuses the active Pythinker model when invoked via `pythinker review` / `pythinker secscan` / `pythinker debug`; the standalone `pythinker-review` / `pythinker-secscan` / `pythinker-debug` console scripts accept explicit/env configuration.
 
-Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==2.7.0`.
+Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==0.8.0`.
 ```
 
-(Bump `version = "2.6.0"` to `"2.7.0"` in root `pyproject.toml` only when actually releasing — not as part of this implementation plan. Document the bump as a release-time step.)
+(Bump `version = "2.6.0"` to `"0.8.0"` in root `pyproject.toml` only when actually releasing — not as part of this implementation plan. Document the bump as a release-time step.)
 
 - [ ] **Step 3: Flesh out package README**
 
@@ -4951,7 +4951,7 @@ Finally the docs:
 git add AGENTS.md README.md \
         docs/superpowers/specs/2026-05-20-pythinker-review-foundation-design.md \
         docs/superpowers/plans/2026-05-20-pythinker-review-foundation.md
-git commit -m "docs(review): AGENTS.md verification row + README What's New 2.7.0 + spec/plan revisions
+git commit -m "docs(review): AGENTS.md verification row + README What's New 0.8.0 + spec/plan revisions
 
 Spec was revised after implementation to record the product-direction
 shift (review/debug/security first), add the debug capability and
@@ -4971,11 +4971,11 @@ Expected: no modified, no untracked. If anything remains, decide whether it belo
 
 - [ ] **Step 4: Optional — Release prep (not required for landing Phase 1A)**
 
-Only do this if cutting a `pythinker-code` 2.7.0 release in the same change set. Otherwise defer to a separate release commit.
+Only do this if cutting a `pythinker-code` 0.8.0 release in the same change set. Otherwise defer to a separate release commit.
 
-- Bump `version = "2.6.0"` → `"2.7.0"` in root `pyproject.toml`.
-- Update `CHANGELOG.md` with a 2.7.0 entry mirroring the README "What's New" section.
+- Bump `version = "2.6.0"` → `"0.8.0"` in root `pyproject.toml`.
+- Update `CHANGELOG.md` with a 0.8.0 entry mirroring the README "What's New" section.
 - Re-run `make check && make test`.
-- Commit: `chore(release): 2.7.0 — pythinker-review Phase 1A`.
+- Commit: `chore(release): 0.8.0 — pythinker-review Phase 1A`.
 
 ---

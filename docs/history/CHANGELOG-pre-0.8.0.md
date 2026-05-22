@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 2.7.0 (2026-05-21)
+## 0.8.0 (2026-05-21)
 
 First-class review-first workflows: code review, security scanning, root-cause debugging, PR artifact helpers, and Reviewflow stateful review/fix workflows.
 
@@ -12,9 +12,9 @@ First-class review-first workflows: code review, security scanning, root-cause d
 - Added Reviewflow workflow commands and state models for `init`, `map`, `review`, `report`, `next`, `show --finding`, `triage`, `revalidate`, `fix`, `open-pr`, `ci`, and `doctor`.
 - Added the `code-reviewer`, `security-reviewer`, and `debugger` subagent roles for interactive Pythinker sessions.
 - Hardened review output validation so unsafe paths, stale line ranges, mismatched evidence snippets, malformed model JSON, worker failures, and timeouts fail closed unless `--allow-partial` is explicitly used.
-- Refreshed README release notes with the 2.7.0 review/security/debug feature set and the pinned `pythinker-code==2.7.0` upgrade snippet required by the release gate.
+- Refreshed README release notes with the 0.8.0 review/security/debug feature set and the pinned `pythinker-code==0.8.0` upgrade snippet required by the release gate.
 
-Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==2.7.0`.
+Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==0.8.0`.
 
 ## 2.6.0 (2026-05-13)
 
