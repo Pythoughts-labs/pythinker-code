@@ -3,8 +3,8 @@ PyPI release.
 
 Runs in the homebrew-tap.yml workflow after PyPI has the new version.
 Expects ``pythinker-code==<VERSION>`` to already be installed into the
-current Python environment so ``homebrew-pypi-poet`` can introspect its
-dependency tree.
+current Python environment so we can enumerate its transitive deps via
+``pip freeze``.
 
 Usage:
     python generate-formula.py \\
@@ -12,9 +12,10 @@ Usage:
         --template packages/homebrew-tap/pythinker-code.rb.tmpl \\
         --output Formula/pythinker-code.rb
 
-The generated formula uses ``virtualenv_install_with_resources`` and lists
-every transitive dependency as a ``resource`` block with its PyPI URL +
-SHA-256, which is the standard Homebrew pattern for Python CLIs.
+We do not use ``homebrew-pypi-poet`` — that package was last updated in
+2018, still imports ``pkg_resources`` (removed in setuptools 81), and
+crashes on modern packages whose metadata declares extras like
+``html_clean``. Reimplementing the relevant bits is < 40 lines.
 """
 
 from __future__ import annotations
@@ -27,41 +28,51 @@ import sys
 import urllib.request
 from pathlib import Path
 
-PYPI_JSON = "https://pypi.org/pypi/pythinker-code/{version}/json"
+PYPI_PROJECT_JSON = "https://pypi.org/pypi/{name}/{version}/json"
 
 
-def fetch_sdist_metadata(version: str) -> tuple[str, str]:
-    """Return (sdist_url, sdist_sha256) for the given pythinker-code version."""
-    with urllib.request.urlopen(PYPI_JSON.format(version=version), timeout=30) as resp:
+def fetch_sdist_metadata(name: str, version: str) -> tuple[str, str]:
+    """Return (sdist_url, sdist_sha256) for the given package/version on PyPI."""
+    url = PYPI_PROJECT_JSON.format(name=name, version=version)
+    with urllib.request.urlopen(url, timeout=30) as resp:
         data = json.load(resp)
     for f in data.get("urls", []):
         if f.get("packagetype") == "sdist":
             return f["url"], f["digests"]["sha256"]
-    raise RuntimeError(f"no sdist found on PyPI for pythinker-code=={version}")
+    raise RuntimeError(f"no sdist on PyPI for {name}=={version}")
 
 
-def run_poet(package: str) -> str:
-    """Run homebrew-pypi-poet against an installed package.
+def list_dependencies(root_package: str) -> list[tuple[str, str]]:
+    """Return [(name, version), ...] for every dep of root_package except itself.
 
-    homebrew-pypi-poet only ships a ``poet`` console script (no runnable
-    ``poet`` module), so ``python -m poet`` raises. Resolve the script that
-    sits next to the running interpreter — that's the venv we just
-    installed ``homebrew-pypi-poet`` into in the workflow.
+    We rely on ``pip freeze`` of the venv we're running in, which lists the
+    full transitive closure after ``pip install pythinker-code==<ver>``.
     """
-    poet = Path(sys.executable).parent / "poet"
     res = subprocess.run(
-        [str(poet), package],
+        [sys.executable, "-m", "pip", "freeze", "--exclude", root_package],
         check=True,
         capture_output=True,
         text=True,
     )
-    return res.stdout
+    deps: list[tuple[str, str]] = []
+    for line in res.stdout.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("-e "):
+            continue
+        # Skip editable installs / VCS pins that don't have a clean PyPI sdist.
+        if " @ " in line or line.startswith("file:") or line.startswith("git+"):
+            continue
+        if "==" not in line:
+            continue
+        name, version = line.split("==", 1)
+        deps.append((name.strip(), version.strip()))
+    return deps
 
 
-def indent_resources(block: str, spaces: int = 2) -> str:
-    """Indent every line so the resource blocks sit inside the class body."""
-    pad = " " * spaces
-    return "\n".join(pad + ln if ln.strip() else ln for ln in block.splitlines())
+def render_resource(name: str, version: str) -> str:
+    """Render a single Homebrew `resource` stanza for one PyPI package."""
+    url, sha = fetch_sdist_metadata(name, version)
+    return f'  resource "{name}" do\n    url "{url}"\n    sha256 "{sha}"\n  end\n'
 
 
 def main() -> int:
@@ -71,8 +82,18 @@ def main() -> int:
     ap.add_argument("--output", type=Path, required=True)
     args = ap.parse_args()
 
-    sdist_url, sdist_sha = fetch_sdist_metadata(args.version)
-    resources = indent_resources(run_poet("pythinker-code"))
+    sdist_url, sdist_sha = fetch_sdist_metadata("pythinker-code", args.version)
+    deps = list_dependencies("pythinker-code")
+    print(f"enumerated {len(deps)} transitive deps from pip freeze")
+
+    resource_blocks: list[str] = []
+    for name, version in deps:
+        try:
+            resource_blocks.append(render_resource(name, version))
+        except Exception as exc:
+            print(f"WARN: skipping {name}=={version}: {exc}", file=sys.stderr)
+    resources = "\n".join(resource_blocks).rstrip()
+
     tmpl = args.template.read_text(encoding="utf-8")
     formula = (
         tmpl.replace("__SDIST_URL__", sdist_url)
@@ -83,11 +104,11 @@ def main() -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(formula, encoding="utf-8")
 
-    # Print a short summary for the workflow log.
     digest = hashlib.sha256(formula.encode("utf-8")).hexdigest()
     print(f"formula written to {args.output}")
     print(f"sdist URL    : {sdist_url}")
     print(f"sdist sha256 : {sdist_sha}")
+    print(f"resources    : {len(resource_blocks)}")
     print(f"formula sha  : {digest}")
     return 0
 

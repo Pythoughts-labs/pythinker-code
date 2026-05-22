@@ -66,16 +66,19 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install pythinker-code + homebrew-pypi-poet
+      - name: Install pythinker-code into a fresh venv
         env:
           PKG_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euxo pipefail
+          # Fresh venv so `pip freeze` lists exactly pythinker-code's transitive
+          # closure, no test/build tooling. We do NOT install homebrew-pypi-poet
+          # — it's unmaintained, imports pkg_resources (gone in setuptools 81+),
+          # and crashes on modern extras. generate-formula.py reimplements the
+          # 30 lines we need.
           python -m venv /tmp/poet-env
           /tmp/poet-env/bin/pip install --upgrade pip
-          /tmp/poet-env/bin/pip install \
-            "pythinker-code==${PKG_VERSION}" \
-            homebrew-pypi-poet
+          /tmp/poet-env/bin/pip install "pythinker-code==${PKG_VERSION}"
 
       - name: Generate formula
         env:
