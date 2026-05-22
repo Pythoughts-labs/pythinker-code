@@ -1735,6 +1735,10 @@ def _value_style_for_label(label: str, level: WelcomeInfoItem.Level) -> str:
         return "grey39"
     if label == "Model":
         return "bold bright_white"
+    if label == "Branch":
+        return "magenta"
+    if label == "Auto-save":
+        return "grey50"
     return level.value
 
 

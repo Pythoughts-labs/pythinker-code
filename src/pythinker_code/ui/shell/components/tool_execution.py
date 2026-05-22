@@ -52,6 +52,9 @@ class ToolExecutionStatus(Enum):
 
 _PENDING_LIKE = frozenset({ToolExecutionStatus.PENDING, ToolExecutionStatus.RUNNING})
 
+_MAX_RESULT_LINES = 60
+_MAX_RESULT_CHARS = 4000
+
 
 @dataclass(slots=True)
 class _CallState:
@@ -232,25 +235,47 @@ class ToolExecutionComponent:
         return None
 
     def _background_style(self) -> Style | None:
-        if self._status == ToolExecutionStatus.SUCCESS:
-            return None
-        if self._status == ToolExecutionStatus.ERROR or self._status == ToolExecutionStatus.DENIED:
-            token = "tool_error_bg"
-        elif self._status in _PENDING_LIKE:
-            token = "tool_pending_bg"
-        else:
-            token = "tool_pending_bg"
-        return tui_rich_style(token)
+        return None
 
     def _call_fallback(self) -> RenderableType:
-        return Text(self._definition.label or self._state.tool_name, style="bold")
+        label = self._definition.label or self._state.tool_name
+        if self._status == ToolExecutionStatus.SUCCESS:
+            glyph = "✔ "
+            glyph_style = tui_rich_style("success") + Style(bold=True)
+        elif self._status in (ToolExecutionStatus.ERROR, ToolExecutionStatus.DENIED):
+            glyph = "✘ "
+            glyph_style = tui_rich_style("error") + Style(bold=True)
+        elif self._status == ToolExecutionStatus.CANCELLED:
+            glyph = "● "
+            glyph_style = tui_rich_style("warning") + Style(bold=True)
+        else:
+            glyph = "● "
+            glyph_style = tui_rich_style("muted") + Style(bold=True)
+        header = Text()
+        header.append(glyph, style=glyph_style)
+        header.append(label, style=Style(bold=True))
+        return header
 
     def _result_fallback(self) -> RenderableType | None:
         result = self._state.result
         if result is None or not result.text:
             return None
-        style = "red" if result.is_error else "grey70"
-        return Text(result.text, style=style)
+        text = result.text
+        truncated = False
+        if not self._state.expanded:
+            lines = text.splitlines()
+            if len(lines) > _MAX_RESULT_LINES or len(text) > _MAX_RESULT_CHARS:
+                lines = lines[:_MAX_RESULT_LINES]
+                text = "\n".join(lines)[:_MAX_RESULT_CHARS]
+                truncated = True
+        style = tui_rich_style("error") if result.is_error else tui_rich_style("muted")
+        body = Text(text, style=style)
+        if truncated:
+            body.append(
+                "\n… output truncated for display; full result preserved in session.",
+                style=tui_rich_style("muted") + Style(italic=True),
+            )
+        return body
 
     def _is_truncatable(self) -> bool:
         """Heuristic: only show the expand hint when there's likely more to see."""

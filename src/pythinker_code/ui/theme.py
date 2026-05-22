@@ -190,6 +190,81 @@ _TOOLBAR_LIGHT = ToolbarColors(
 
 
 # ---------------------------------------------------------------------------
+# Markdown / spinner palette (used by ui/shell markdown renderer and the
+# turn-execution spinner). Foreground colors only; resolved to Rich styles
+# by ``markdown_rich_style``. Values are Rich color names so they degrade
+# gracefully on 16-color terminals.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class MarkdownColors:
+    heading: str
+    emphasis: str
+    strong: str
+    inline_code: str
+    link: str
+    quote: str
+    table_border: str
+    code_block_border: str
+    code_block_bg: str
+    spinner_active: str
+    spinner_done: str
+    spinner_failed: str
+
+
+_MARKDOWN_DARK = MarkdownColors(
+    heading="cyan",
+    emphasis="magenta",
+    strong="yellow",
+    inline_code="green",
+    link="blue",
+    quote="bright_black",
+    table_border="dark_cyan",
+    code_block_border="bright_black",
+    code_block_bg="grey15",
+    spinner_active="blue",
+    spinner_done="green",
+    spinner_failed="red",
+)
+
+_MARKDOWN_LIGHT = MarkdownColors(
+    heading="#0e7490",
+    emphasis="#7e22ce",
+    strong="#a16207",
+    inline_code="#15803d",
+    link="#1d4ed8",
+    quote="#6b7280",
+    table_border="#0e7490",
+    code_block_border="#9ca3af",
+    code_block_bg="#f1f5f9",
+    spinner_active="#1d4ed8",
+    spinner_done="#15803d",
+    spinner_failed="#b91c1c",
+)
+
+
+def get_markdown_colors(theme: ThemeName | None = None) -> MarkdownColors:
+    name = theme if theme is not None else _active_theme
+    return _MARKDOWN_LIGHT if name == "light" else _MARKDOWN_DARK
+
+
+def markdown_rich_style(token: str, *, theme: ThemeName | None = None) -> RichStyle:
+    """Resolve a MarkdownColors field name to a Rich Style.
+
+    Background tokens (suffix ``_bg``) produce a style with ``bgcolor``;
+    everything else produces a style with ``color``.
+    """
+    colors = get_markdown_colors(theme)
+    value = getattr(colors, token)
+    if not value:
+        return RichStyle()
+    if token.endswith("_bg"):
+        return RichStyle(bgcolor=value)
+    return RichStyle(color=value)
+
+
+# ---------------------------------------------------------------------------
 # MCP status prompt colors (used by ui/shell/mcp_status.py)
 # ---------------------------------------------------------------------------
 

@@ -76,6 +76,18 @@ def _accent_style(state: BashExecutionState) -> RichStyle:
     return tui_rich_style("muted" if state.exclude_from_context else "bash_mode")
 
 
+def _command_strip_style(state: BashExecutionState) -> RichStyle:
+    """Background tint for the ``$ cmd`` portion of the bash header.
+
+    Mirrors the dark 256-color strip used by the reference renderer; on light
+    themes we use the tool pending background so the strip still reads as a
+    contiguous run rather than blending into the surrounding card.
+    """
+    accent = _accent_style(state)
+    bg = tui_rich_style("tool_pending_bg")
+    return accent + bg + RichStyle(bold=True)
+
+
 def _output_lines(output: str) -> list[str]:
     cleaned = sanitize_ansi(output).replace("\r\n", "\n").replace("\r", "\n")
     if cleaned == "":
@@ -136,11 +148,12 @@ def _status_header(state: BashExecutionState) -> Text:
         header = Text("✔ ", style=tui_rich_style("success"))
         header.append("Ran", style=tui_rich_style("success") + RichStyle(bold=True))
 
+    strip = _command_strip_style(state)
     header.append(" ")
-    header.append("$ ", style=accent + RichStyle(bold=True))
+    header.append("$ ", style=strip)
     header.append(
         format_bash_command_for_header(state.command, expanded=state.expanded),
-        style=accent + RichStyle(bold=True),
+        style=strip,
     )
     if state.header_suffix:
         header.append(state.header_suffix, style=tui_rich_style("muted"))

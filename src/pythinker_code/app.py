@@ -41,6 +41,26 @@ if TYPE_CHECKING:
 _CWD_LOCK = asyncio.Lock()
 
 
+def _safe_git_branch(cwd: str | Path) -> str | None:
+    """Return the current git branch name, or ``None`` outside a repo / on error."""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(cwd), "branch", "--show-current"],
+            capture_output=True,
+            text=True,
+            timeout=1.0,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    branch = result.stdout.strip()
+    return branch or None
+
+
 def _patch_session_id(record: dict[str, Any]) -> None:
     """Inject the current session ID (from ContextVar) into log records."""
     try:
@@ -723,12 +743,20 @@ class PythinkerCLI:
             print_update_banner()
             schedule_auto_update_check()
 
+        work_dir = self._runtime.session.work_dir
         welcome_info = [
-            WelcomeInfoItem(
-                name="Directory", value=str(shorten_home(self._runtime.session.work_dir))
-            ),
-            WelcomeInfoItem(name="Session", value=self._runtime.session.id),
+            WelcomeInfoItem(name="Directory", value=str(shorten_home(work_dir))),
         ]
+        branch_name = _safe_git_branch(work_dir)
+        if branch_name:
+            welcome_info.append(WelcomeInfoItem(name="Branch", value=branch_name))
+        welcome_info.append(WelcomeInfoItem(name="Session", value=self._runtime.session.id))
+        try:
+            auto_save_path = str(shorten_home(self._runtime.session.context_file))
+        except Exception:
+            auto_save_path = ""
+        if auto_save_path:
+            welcome_info.append(WelcomeInfoItem(name="Auto-save", value=auto_save_path))
         if base_url := self._env_overrides.get("PYTHINKER_BASE_URL"):
             welcome_info.append(
                 WelcomeInfoItem(

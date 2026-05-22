@@ -19,11 +19,11 @@ from dataclasses import dataclass
 from typing import Literal
 
 from rich.console import Group, RenderableType
-from rich.markdown import Markdown
 from rich.padding import Padding
 from rich.style import Style as RichStyle
 from rich.text import Text
 
+from pythinker_code.ui.shell.components.markdown import pythinker_markdown
 from pythinker_code.ui.theme import tui_rich_style
 
 __all__ = [
@@ -64,7 +64,7 @@ def render_user_message(text: str) -> RenderableType:
     and one cell of right padding. Avoid vertical padding so submitted prompts
     do not look like standalone panels.
     """
-    md = Markdown(text)
+    md = pythinker_markdown(text)
     bg = tui_rich_style("user_message_bg")
     fg = tui_rich_style("user_message_text")
     style = bg + fg if fg else bg
@@ -96,7 +96,7 @@ def render_assistant_message(
     for i, item in enumerate(items):
         next_visible = i + 1 < len(items)
         if item.kind == "text":
-            blocks.append(Markdown(item.text.strip()))
+            blocks.append(pythinker_markdown(item.text.strip()))
         elif item.kind == "thinking":
             if hide_thinking:
                 blocks.append(Text(hidden_thinking_label, style=thinking_style))
@@ -141,9 +141,9 @@ def render_custom_message(message: CustomMessageInput) -> RenderableType:
     bg_style = tui_rich_style("custom_message_bg")
 
     label = Text(f"[{message.custom_type}]", style=label_style)
-    body = Markdown(message.text) if message.text.strip() else Text("")
+    body = pythinker_markdown(message.text) if message.text.strip() else Text("")
 
-    if isinstance(body, Markdown):
+    if not isinstance(body, Text):
         block = Group(label, Text(""), body)
     elif text_style:
         block = Group(label, Text(""), Text(message.text, style=text_style))
