@@ -1,0 +1,98 @@
+name: Build macOS native tarball
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (e.g. 0.13.0)"
+        required: true
+        type: string
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest
+          - arch: x86_64
+            runner: macos-13
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            version="$INPUT_VERSION"
+          else
+            echo "::error::No version source available" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install build tools
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip uv
+          uv sync --frozen --no-dev
+          uv pip install pyinstaller
+
+      - name: Freeze and tar
+        env:
+          PKG_VERSION: ${{ steps.ver.outputs.version }}
+          PKG_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euxo pipefail
+          export PATH="$PWD/.venv/bin:$PATH"
+          pushd packages/linux-installer
+          python -m PyInstaller --noconfirm \
+            --distpath "$GITHUB_WORKSPACE/dist" \
+            --workpath "$GITHUB_WORKSPACE/build/macos-installer" \
+            pythinker.spec
+          popd
+          echo "pythinker-native-build" > dist/pythinker/.pythinker-native
+          cp LICENSE dist/pythinker/LICENSE
+          TARBALL="dist/pythinker-code-${PKG_VERSION}-macos-${PKG_ARCH}.tar.gz"
+          tar -C dist -czf "$TARBALL" pythinker
+          shasum -a 256 "$TARBALL" > "${TARBALL}.sha256"
+          ls -la dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pythinker-macos-${{ matrix.arch }}-${{ steps.ver.outputs.version }}
+          path: |
+            dist/pythinker-code-*-macos-*.tar.gz
+            dist/pythinker-code-*-macos-*.tar.gz.sha256
+
+      - name: Attach to Release (create-or-update)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          fail_on_unmatched_files: false
+          files: |
+            dist/pythinker-code-*-macos-*.tar.gz
+            dist/pythinker-code-*-macos-*.tar.gz.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
