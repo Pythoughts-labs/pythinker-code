@@ -50,18 +50,16 @@ It speaks the [**Agent Client Protocol (ACP)**](https://github.com/agentclientpr
 
 ---
 
-## 🆕 What's New in 0.8.0
+## 🆕 What's New in 0.9.0
 
-Version-scheme reset. Pythinker Code moves to a `0.MINOR.PATCH` line; `0.8.0` is the new starting release, replacing the prior 1.x/2.x lineage.
+- **Cleaner TUI — tool card backgrounds removed.** The grey pending/running overlay behind tool execution cards (subagents, bash, reads, etc.) is gone. Only user-message blocks keep a background tint, keeping visual focus on your input.
+- **Welcome screen enhancements.** The startup panel now shows the current git branch (highlighted in magenta) and the session auto-save path alongside the working directory and session ID.
+- **Bash header strip styling.** The `$ command` strip in bash execution headers now uses the `tool_pending_bg` theme token, matching the reference renderer across light and dark themes.
+- **Pythinker markdown renderer in all messages.** User, assistant, and custom messages now render through `pythinker_markdown` for consistent heading, code-block, and table styling.
+- **Expanded theme palette.** A new `MarkdownColors` / `markdown_rich_style` subsystem in `theme.py` covers headings, emphasis, inline code, links, blockquotes, table borders, code-block backgrounds, and spinner states with separate dark and light palettes.
+- **Improved tool fallback renderers.** Call fallbacks now show a status glyph (`✔`/`✘`/`●`); result fallbacks truncate at 60 lines / 4000 chars with an italicised note and use correct theme tokens.
 
-- **New version line — `0.MINOR.PATCH`.** `MINOR` is a monotonically increasing release counter; `PATCH` is reserved for hotfixes. No `1.0.0` milestone is planned on this line.
-- **PyPI reset.** All prior `pythinker-code` 1.x/2.x releases have been **yanked** from PyPI. New installs (`pip install pythinker-code`, `pip install --upgrade pythinker-code`, `uv tool install pythinker-code`, and `pythinker update`) resolve to `0.8.0`.
-- **GitHub reset.** All pre-`0.8.0` GitHub Releases and matching git tags have been removed. `v0.8.0` is the first tag on the new line.
-- **Tag scheme.** Release tags are now `v<MAJOR>.<MINOR>.<PATCH>` (e.g. `v0.8.0`). The release workflow trigger and `scripts/check_version_tag.py` both expect the `v` prefix.
-- **No app-level regressions.** All functionality included in 0.8.0 is preserved: review-first workflows (`pythinker review`, `pythinker secscan`, `pythinker security-scan`, `pythinker debug`), Reviewflow stateful review/fix workflows, the `code-reviewer` / `security-reviewer` / `debugger` subagent roles, hardened review-output validation, and the read-only PR artifact helpers.
-- **History preserved in-repo.** The detailed 1.x/2.x release notes are archived at [`docs/history/CHANGELOG-pre-0.8.0.md`](docs/history/CHANGELOG-pre-0.8.0.md).
-
-Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==0.8.0`.
+Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==0.9.0`.
 
 
 ---

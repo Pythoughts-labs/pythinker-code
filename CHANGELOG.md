@@ -15,6 +15,38 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.9.0 (2026-05-21)
+
+### What changed in this release
+
+- **Cleaner TUI — tool card backgrounds removed.** The grey pending/running
+  background overlay that appeared behind every tool execution card (subagents,
+  bash executions, reads, etc.) has been removed. Only user-message blocks
+  retain a background tint, keeping the visual hierarchy focused on your input.
+- **Welcome screen enhancements.** The startup info panel now shows the current
+  git branch (when inside a git repo) and the session auto-save path alongside
+  the working directory and session ID. Branch name is highlighted in magenta
+  for quick scanning.
+- **Bash header strip styling.** The `$ command` portion of bash execution
+  headers now picks up the `tool_pending_bg` token for the strip background,
+  matching the reference renderer style and providing consistent visual weight
+  across themes.
+- **Pythinker markdown renderer wired into message components.** User messages,
+  assistant messages, and custom messages now render through `pythinker_markdown`
+  (the project's own Markdown renderer) instead of raw `rich.markdown.Markdown`,
+  giving consistent heading, code-block, and table styling everywhere.
+- **Expanded theme palette.** `theme.py` gains a full `MarkdownColors` /
+  `markdown_rich_style` subsystem with dark and light palettes covering headings,
+  emphasis, inline code, links, blockquotes, table borders, code-block borders
+  and backgrounds, and spinner states (active/done/failed).
+- **Improved tool fallback renderers.** The call fallback now emits a
+  status-glyph header (`✔`/`✘`/`●`) instead of a bare label. The result
+  fallback now truncates long outputs at 60 lines / 4000 chars with an
+  italicised note (matching the card renderer's behaviour), and applies the
+  correct theme tokens for error vs. muted output.
+
+Upgrade with `pythinker update` or `pip install --upgrade pythinker-code==0.9.0`.
+
 ## 0.8.0 (2026-05-21)
 
 Version-scheme reset. `pythinker-code` now ships as `0.8.0` under the new
