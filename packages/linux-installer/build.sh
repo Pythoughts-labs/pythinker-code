@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# Build .deb + .rpm + tar.gz for Pythinker Code on the host Linux arch.
+# Build .deb + .rpm packages for Pythinker Code on the host Linux arch.
 #
 # Usage:  bash packages/linux-installer/build.sh <version> [<arch>]
 #   arch defaults to the host's `uname -m` (x86_64 / aarch64).
 #
 # Outputs (all under dist/):
-#   pythinker-code_<version>_<deb-arch>.deb
-#   pythinker-code-<version>.<rpm-arch>.rpm
-#   pythinker-code-<version>-linux-<arch>.tar.gz
+#   pythinker-code_<version>_<deb-arch>.deb         (Debian / Ubuntu)
+#   pythinker-code-<version>.<rpm-arch>.rpm         (Fedora / RHEL / openSUSE)
+#
+# Portable tarballs for the curl-bash native installer come from the
+# existing release-pythinker-cli.yml workflow (target-triple naming).
 #
 # Requirements (CI installs these; for local builds install once):
 #   - python3 + pyinstaller
 #   - ruby + fpm (`sudo apt-get install -y ruby ruby-dev && sudo gem install fpm`)
-#
-# This script is sandbox-friendly: no sudo, no system writes outside dist/.
 set -euo pipefail
 
 VERSION="${1:-}"
@@ -25,8 +25,8 @@ fi
 # Map uname -m to the conventions the two packaging formats use.
 HOST_ARCH="${2:-$(uname -m)}"
 case "$HOST_ARCH" in
-  x86_64)  DEB_ARCH="amd64";  RPM_ARCH="x86_64";  TAR_ARCH="x86_64"  ;;
-  aarch64) DEB_ARCH="arm64";  RPM_ARCH="aarch64"; TAR_ARCH="aarch64" ;;
+  x86_64)  DEB_ARCH="amd64";  RPM_ARCH="x86_64"   ;;
+  aarch64) DEB_ARCH="arm64";  RPM_ARCH="aarch64"  ;;
   *) echo "unsupported arch: $HOST_ARCH" >&2; exit 2 ;;
 esac
 
@@ -58,11 +58,11 @@ fi
 echo "pythinker-native-build" > "$FROZEN_DIR/.pythinker-native"
 cp "$REPO_ROOT/LICENSE" "$FROZEN_DIR/LICENSE"
 
-# --- 1. Portable tarball (used by scripts/install-native.sh) -----------------
-TARBALL="$DIST_DIR/pythinker-code-$VERSION-linux-$TAR_ARCH.tar.gz"
-echo "==> Building tarball: $(basename "$TARBALL")"
-tar -C "$DIST_DIR" -czf "$TARBALL" pythinker
-sha256sum "$TARBALL" | tee "$TARBALL.sha256" > /dev/null
+# NOTE: We intentionally do NOT produce a portable tarball here — the
+# existing release-pythinker-cli.yml workflow already publishes onefile
+# tarballs with target-triple naming (pythinker-X.Y.Z-x86_64-unknown-linux-gnu.tar.gz),
+# which scripts/install-native.sh downloads. This build is responsible only
+# for the .deb / .rpm package-manager artifacts.
 
 # Stage a /usr-prefixed layout fpm can wrap directly into .deb / .rpm.
 STAGE="$BUILD_DIR/stage-$HOST_ARCH"
@@ -117,6 +117,5 @@ fpm "${FPM_COMMON[@]}" \
 sha256sum "$RPM_OUT" | tee "$RPM_OUT.sha256" > /dev/null
 
 echo ""
-echo "  deb     : $DEB_OUT"
-echo "  rpm     : $RPM_OUT"
-echo "  tarball : $TARBALL"
+echo "  deb : $DEB_OUT"
+echo "  rpm : $RPM_OUT"

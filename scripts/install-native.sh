@@ -1,29 +1,28 @@
 #!/usr/bin/env bash
 # Pythinker Code — native curl-bash installer.
 #
-# Downloads a PyInstaller-built tarball for your OS + arch from the latest
-# GitHub Release, verifies its SHA-256, installs it under
-#   ~/.local/share/pythinker     (the frozen binary + its _internal/ tree)
-# and symlinks
-#   ~/.local/bin/pythinker       (so the CLI is on PATH out of the box).
+# Downloads the PyInstaller-built single-file binary for your OS + arch from
+# the latest GitHub Release, verifies its SHA-256, and installs it at
+#   ~/.local/bin/pythinker
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install-native.sh | bash
 #
 #   # Pin a specific version:
-#   curl -fsSL .../install-native.sh | bash -s -- --version 0.13.0
+#   curl -fsSL .../install-native.sh | bash -s -- --version 0.12.0
 #
-#   # Or run locally:
-#   bash scripts/install-native.sh --version 0.13.0
+#   # Custom install prefix (default $HOME/.local):
+#   curl -fsSL .../install-native.sh | bash -s -- --prefix /opt/pythinker
 #
-# Supported targets:
-#   linux-x86_64, linux-aarch64
-#   macos-arm64 (Apple Silicon), macos-x86_64 (Intel)
+# Supported targets (target triples — matches existing release artifacts):
+#   x86_64-unknown-linux-gnu       (Linux x86_64)
+#   aarch64-unknown-linux-gnu      (Linux ARM64)
+#   aarch64-apple-darwin           (macOS Apple Silicon)
 #
-# Windows users: use the native PythinkerSetup-x.y.z.exe installer instead.
+# Windows users: download PythinkerSetup-x.y.z.exe from the Releases page.
+# Intel macOS: no native binary is published; use Homebrew or pip install.
 set -euo pipefail
 
-# --- args -----------------------------------------------------------------
 VERSION=""
 INSTALL_PREFIX="${PYTHINKER_INSTALL_PREFIX:-$HOME/.local}"
 NO_COLOR="${NO_COLOR:-}"
@@ -41,7 +40,6 @@ done
 
 REPO="mohamed-elkholy95/Pythinker-Code"
 
-# --- color ---------------------------------------------------------------
 if [ -t 1 ] && [ -z "$NO_COLOR" ] && [ "${TERM:-}" != "dumb" ]; then
   IRIS=$'\033[38;5;152m'; CORAL=$'\033[38;5;216m'; DIM=$'\033[2m'
   BOLD=$'\033[1m'; RESET=$'\033[0m'
@@ -55,29 +53,27 @@ fail() { printf '  %s✗%s %s\n' "$CORAL" "$RESET" "$1" >&2; exit 1; }
 # --- detect target -------------------------------------------------------
 os="$(uname -s)"
 arch="$(uname -m)"
-case "$os" in
-  Linux)  os_slug="linux"  ;;
-  Darwin) os_slug="macos"  ;;
-  MINGW*|MSYS*|CYGWIN*)
-    fail "On Windows, use the native PythinkerSetup-x.y.z.exe installer instead." ;;
-  *) fail "unsupported OS: $os" ;;
+case "$os/$arch" in
+  Linux/x86_64|Linux/amd64)
+    target="x86_64-unknown-linux-gnu" ;;
+  Linux/aarch64|Linux/arm64)
+    target="aarch64-unknown-linux-gnu" ;;
+  Darwin/arm64)
+    target="aarch64-apple-darwin" ;;
+  Darwin/x86_64)
+    fail "No PyInstaller-built Intel macOS binary is published.
+Use Homebrew (\`brew install mohamed-elkholy95/pythinker/pythinker-code\`),
+or pip (\`pip install pythinker-code\`)." ;;
+  MINGW*/*|MSYS*/*|CYGWIN*/*)
+    fail "On Windows, download PythinkerSetup-x.y.z.exe from the Releases page." ;;
+  *)
+    fail "unsupported target: $os/$arch" ;;
 esac
-case "$arch" in
-  x86_64|amd64)
-    arch_slug="x86_64" ;;
-  aarch64|arm64)
-    # Linux reports aarch64; macOS reports arm64. Tarball naming follows
-    # the convention each OS expects in its tarball filenames.
-    if [ "$os_slug" = "macos" ]; then arch_slug="arm64"; else arch_slug="aarch64"; fi ;;
-  *) fail "unsupported arch: $arch" ;;
-esac
-target="${os_slug}-${arch_slug}"
 
 # --- resolve version -----------------------------------------------------
 if [ -z "$VERSION" ]; then
   step "Looking up latest Pythinker release"
   api="https://api.github.com/repos/${REPO}/releases/latest"
-  # We avoid jq to keep the installer dependency-free.
   if command -v curl >/dev/null 2>&1; then
     payload="$(curl -fsSL "$api")"
   elif command -v wget >/dev/null 2>&1; then
@@ -86,13 +82,11 @@ if [ -z "$VERSION" ]; then
     fail "need curl or wget to fetch the release index"
   fi
   VERSION="$(printf '%s' "$payload" | sed -nE 's/.*"tag_name": *"v([0-9]+\.[0-9]+\.[0-9]+)".*/\1/p' | head -n 1)"
-  if [ -z "$VERSION" ]; then
-    fail "could not parse latest release tag from $api"
-  fi
+  [ -z "$VERSION" ] && fail "could not parse latest release tag from $api"
   ok "Latest version is $VERSION"
 fi
 
-tarball="pythinker-code-${VERSION}-${target}.tar.gz"
+tarball="pythinker-${VERSION}-${target}.tar.gz"
 tarball_url="https://github.com/${REPO}/releases/download/v${VERSION}/${tarball}"
 sha_url="${tarball_url}.sha256"
 
@@ -117,22 +111,19 @@ elif command -v shasum >/dev/null 2>&1; then
 else
   fail "need sha256sum or shasum to verify the download"
 fi
-if [ "$expected" != "$actual" ]; then
-  fail "SHA-256 mismatch: expected $expected, got $actual"
-fi
+[ "$expected" != "$actual" ] && fail "SHA-256 mismatch: expected $expected, got $actual"
 ok "Checksum OK"
 
 # --- install -----------------------------------------------------------
-share_dir="$INSTALL_PREFIX/share/pythinker"
 bin_dir="$INSTALL_PREFIX/bin"
-
-step "Installing into $share_dir"
-rm -rf "$share_dir"
-mkdir -p "$share_dir" "$bin_dir"
-tar -C "$share_dir" --strip-components=1 -xzf "$tmpdir/$tarball"
-
-ln -sfn "$share_dir/pythinker" "$bin_dir/pythinker"
-ok "Installed $(${bin_dir}/pythinker --version 2>/dev/null || echo "pythinker $VERSION")"
+step "Installing into $bin_dir/pythinker"
+mkdir -p "$bin_dir"
+# The existing release tarball contains a single `pythinker` file at the
+# tarball root (PyInstaller --onefile output).
+tar -C "$tmpdir" -xzf "$tmpdir/$tarball"
+[ -x "$tmpdir/pythinker" ] || fail "tarball did not contain an executable named 'pythinker'"
+install -m 0755 "$tmpdir/pythinker" "$bin_dir/pythinker"
+ok "Installed $("$bin_dir/pythinker" --version 2>/dev/null || echo "pythinker $VERSION")"
 
 # --- PATH guidance --------------------------------------------------------
 case ":$PATH:" in

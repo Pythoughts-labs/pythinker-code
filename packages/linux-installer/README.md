@@ -37,7 +37,10 @@ Outputs to `dist/`:
 
 - `pythinker-code_0.13.0_amd64.deb`
 - `pythinker-code-0.13.0.x86_64.rpm`
-- `pythinker-code-0.13.0-linux-x86_64.tar.gz` (used by `scripts/install-native.sh`)
+
+The portable tarball used by `scripts/install-native.sh` is published by
+the existing `release-pythinker-cli.yml` workflow under the cargo-dist
+target-triple naming (e.g. `pythinker-0.13.0-x86_64-unknown-linux-gnu.tar.gz`).
 
 ## CI
 

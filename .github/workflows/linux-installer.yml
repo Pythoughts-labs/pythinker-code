@@ -116,8 +116,6 @@ jobs:
             dist/pythinker-code_*.deb.sha256
             dist/pythinker-code-*.rpm
             dist/pythinker-code-*.rpm.sha256
-            dist/pythinker-code-*-linux-*.tar.gz
-            dist/pythinker-code-*-linux-*.tar.gz.sha256
 
       - name: Attach to Release (create-or-update)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -130,7 +128,5 @@ jobs:
             dist/pythinker-code_*.deb.sha256
             dist/pythinker-code-*.rpm
             dist/pythinker-code-*.rpm.sha256
-            dist/pythinker-code-*-linux-*.tar.gz
-            dist/pythinker-code-*-linux-*.tar.gz.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
