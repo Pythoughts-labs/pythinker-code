@@ -437,9 +437,9 @@ def test_shell_question_roundtrip_with_other_answer(tmp_path: Path) -> None:
         # Select "Other" (option 3) for the second question
         shell.send_key("3")
         shell.send_key("enter")
-        shell.read_until_contains(
-            "Type your answer, then press Enter to submit.", after=turn_mark, timeout=15.0
-        )
+        # The hint text can be fragmented by prompt_toolkit's differential
+        # renderer, so wait for the stable custom-answer input marker instead.
+        shell.read_until_contains("Other:", after=turn_mark, timeout=15.0)
         shell.send_line("Custom follow-up")
         shell.read_until_contains("Question flow complete.", after=turn_mark, timeout=15.0)
         prompt_mark = shell.mark()
