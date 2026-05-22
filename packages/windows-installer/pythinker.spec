@@ -2,11 +2,12 @@
 # PyInstaller spec for the Pythinker Code Windows native build.
 # Mode: --onedir (faster startup, fewer AV false-positives than --onefile).
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 
 hiddenimports = []
+datas = []
 for pkg in (
     "pythinker_code",
     "pythinker_core",
@@ -21,17 +22,24 @@ for pkg in (
         hiddenimports.extend(collect_submodules(pkg))
     except Exception:
         pass
+    # pythinker_code ships *.md prompts, *.yaml agent specs, SKILL.md,
+    # tool descriptions, etc. as package data. Without collect_data_files()
+    # PyInstaller silently omits them and the frozen binary crashes the
+    # first time it tries to read init.md / coder.yaml / etc.
+    try:
+        datas.extend(collect_data_files(pkg, include_py_files=False))
+    except Exception:
+        pass
 
 a = Analysis(
     ["entrypoint.py"],
     pathex=[],
     binaries=[],
-    # NOTE: .pythinker-native is NOT bundled via PyInstaller datas on purpose.
-    # PyInstaller >=6.1 places data files under dist/pythinker/_internal/,
-    # which would leave the sentinel invisible to is_native_build() (which
-    # probes alongside pythinker.exe). installer.iss copies the sentinel
-    # directly to {app} so the runtime probe succeeds.
-    datas=[],
+    # NOTE: .pythinker-native is NOT bundled here on purpose. PyInstaller
+    # >=6.1 places PyInstaller datas under dist/pythinker/_internal/, which
+    # would hide the sentinel from is_native_build() (which probes alongside
+    # pythinker.exe). installer.iss copies the sentinel directly to {app}.
+    datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

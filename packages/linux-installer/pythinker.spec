@@ -3,11 +3,12 @@
 # / tarball). Mode: --onedir — fpm wraps the directory into the package and
 # install-native.sh tar-gzips it for the curl-bash flow.
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 
 hiddenimports = []
+datas = []
 for pkg in (
     "pythinker_code",
     "pythinker_core",
@@ -22,14 +23,20 @@ for pkg in (
         hiddenimports.extend(collect_submodules(pkg))
     except Exception:
         pass
+    # pythinker_code ships *.md prompts, *.yaml agent specs, SKILL.md,
+    # tool descriptions, etc. as package data. Without explicit
+    # collect_data_files() PyInstaller misses them and the frozen binary
+    # crashes the first time it tries to load init.md / coder.yaml / etc.
+    try:
+        datas.extend(collect_data_files(pkg, include_py_files=False))
+    except Exception:
+        pass
 
 a = Analysis(
     ["entrypoint.py"],
     pathex=[],
     binaries=[],
-    # No PyInstaller datas: the runtime probe for the native build looks
-    # next to the executable. Packagers drop sentinel + LICENSE separately.
-    datas=[],
+    datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
