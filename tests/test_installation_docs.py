@@ -21,7 +21,6 @@ def test_windows_readme_documents_powershell_one_liner() -> None:
     readme = (ROOT / "README.md").read_text()
 
     assert "irm https://pythinker.com/install.ps1 \\| iex" in readme
-    assert 'powershell -c "irm https://pythinker.com/install.ps1 | iex"' in readme
     assert (
         "raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install.ps1"
         not in readme
@@ -71,16 +70,17 @@ def test_readme_downloads_rpm_before_local_install() -> None:
     )
 
 
-def test_quick_start_names_open_suse_installer_and_install_sh_is_native_shim() -> None:
+def test_quick_start_standardizes_on_hosted_native_installers() -> None:
     readme = (ROOT / "README.md").read_text()
-    installer = (ROOT / "scripts" / "install.sh").read_text()
-    version = project_version()
-    rpm = f"pythinker-code-{version}.x86_64.rpm"
 
-    assert f"Linux (Fedora / RHEL)** | Download `{rpm}`, then `sudo dnf install ./{rpm}`" in readme
-    assert f"Linux (openSUSE)** | Download `{rpm}`, then `sudo zypper install ./{rpm}`" in readme
-    assert "install-native.sh" in installer
-    assert "https://pythinker.com/install.sh" in installer
+    assert not (ROOT / "scripts" / "install.sh").exists()
+    assert "**🪟 Windows** | `irm https://pythinker.com/install.ps1 \\| iex`" in readme
+    assert (
+        "**🍎 macOS / 🐧 Linux** | `curl -fsSL https://pythinker.com/install.sh \\| bash`" in readme
+    )
+    assert "uvx pythinker-code" not in readme
+    assert "uv tool install pythinker-code" not in readme
+    assert "pipx install pythinker-code" not in readme
 
 
 def test_public_install_scripts_match_native_sources_of_truth() -> None:

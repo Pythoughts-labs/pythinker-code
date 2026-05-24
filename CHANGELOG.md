@@ -15,6 +15,16 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.16.0 (2026-05-24)
+
+### What changed in this release
+
+- **Standardized native install docs across platforms.** README Quick Start now presents one canonical Windows command (`irm https://pythinker.com/install.ps1 | iex`) and one canonical macOS/Linux command (`curl -fsSL https://pythinker.com/install.sh | bash`) before package-manager/manual alternatives.
+- **Removed old local installer guidance.** User-facing docs no longer advertise legacy local shell wrappers or Python-tool manager shortcuts. `pip install pythinker-code==0.16.0` remains as the universal Python fallback and release-gate snippet.
+- **Aligned release artifact instructions.** Manual Windows, Linux package, and tarball sections all point at `0.16.0` GitHub Release assets and keep SHA-256 verification explicit.
+
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.16.0`, or use the native installer for your OS (see the README install table).
+
 ## 0.15.0 (2026-05-24)
 
 ### What changed in this release
