@@ -23,7 +23,11 @@ from pythinker_code.utils.datetime import format_elapsed
 
 _FRAMES = SPINNER_FRAMES
 _FRAME_INTERVAL_S = SPINNER_FRAME_INTERVAL_S
-_VERB_SPINNER_STYLE = Style(color="#F5A97F")
+
+
+def verb_spinner_style() -> Style:
+    """Brand-coral style for the active verb spinner (resolves per theme)."""
+    return shell_style(ShellTone.ACCENT)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,8 +93,8 @@ def activity_status_line(snapshot: ActivitySnapshot, *, width: int | None = None
         # Composing / Thinking: muted grey, not the bright coral verb accent.
         glyph_style = shell_style(ShellTone.MUTED)
     else:
-        glyph_style = _VERB_SPINNER_STYLE
-    label_style = snapshot.label_style if snapshot.label_style is not None else _VERB_SPINNER_STYLE
+        glyph_style = verb_spinner_style()
+    label_style = snapshot.label_style if snapshot.label_style is not None else verb_spinner_style()
     if snapshot.label.lower() == "thinking":
         label_style += Style(italic=True)
     if snapshot.spinner == "shape":

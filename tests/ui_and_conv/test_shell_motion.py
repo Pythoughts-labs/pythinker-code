@@ -60,9 +60,12 @@ def test_activity_status_line_uses_clean_metadata_separator():
 
 
 def test_activity_status_line_colors_spinner_verb_orange():
+    from pythinker_code.ui.theme import set_active_theme
+
+    set_active_theme("dark")
     line = activity_status_line(ActivitySnapshot(label="Cultivating", elapsed_s=77.0))
 
     output = _ansi(line)
 
-    assert "38;2;245;169;127" in output
+    assert "38;2;238;153;131" in output
     assert "Cultivating…" in output

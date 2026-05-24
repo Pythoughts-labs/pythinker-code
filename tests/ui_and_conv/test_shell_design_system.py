@@ -69,3 +69,11 @@ def test_shell_style_resolves_brand_tokens_and_switches_theme():
     set_active_theme("light")
     assert shell_style(ShellTone.ACCENT).color.triplet.hex.lower() == "#ae5430"
     set_active_theme("dark")
+
+
+def test_verb_spinner_uses_accent_token():
+    from pythinker_code.ui.shell.motion import verb_spinner_style
+    from pythinker_code.ui.theme import set_active_theme
+
+    set_active_theme("dark")
+    assert verb_spinner_style().color.triplet.hex.lower() == "#ee9983"
