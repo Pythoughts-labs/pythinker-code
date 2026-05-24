@@ -278,13 +278,13 @@ def _model_picker_style():
     base = get_task_browser_style()
     extra = PTKStyle.from_dict(
         {
-            "provider-header": "#67e8f9 bold",
+            "provider-header": "#BAC4FD bold",
             "selected-row": "bg:#164e63 #ecfeff bold",
             "option": "",
             "filter": "bg:#0f172a",
             "filter.label": "bg:#0f172a #cbd5e1",
             "filter.text": "bg:#0f172a #ecfeff bold",
-            "filter.cursor": "bg:#0f172a #67e8f9",
+            "filter.cursor": "bg:#0f172a #BAC4FD",
             "filter.hint": "bg:#0f172a #64748b italic",
         }
     )

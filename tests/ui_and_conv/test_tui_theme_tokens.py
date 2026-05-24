@@ -35,7 +35,7 @@ def test_dark_tokens_have_pi_reference_values():
     assert t.tool_pending_bg == "#282832"
     assert t.tool_success_bg == "#283228"
     assert t.tool_error_bg == "#3c2828"
-    assert t.accent == "#7dd3fc"
+    assert t.accent == "#BAC4FD"
 
 
 def test_light_tokens_have_pi_reference_values():
@@ -103,5 +103,5 @@ def test_dark_markdown_uses_lighter_blue_accents():
     colors = get_markdown_colors("dark")
 
     assert colors.link == "#93c5fd"
-    assert colors.spinner_active == "#7dd3fc"
+    assert colors.spinner_active == "#BAC4FD"
     assert markdown_rich_style("link", theme="dark").color is not None
