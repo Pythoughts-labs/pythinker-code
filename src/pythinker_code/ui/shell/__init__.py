@@ -1777,17 +1777,20 @@ def _value_style_for_label(label: str, level: WelcomeInfoItem.Level) -> str:
     """INFO-level styling per label; WARN/ERROR colors always win."""
     if level is not WelcomeInfoItem.Level.INFO:
         return level.value
+    from pythinker_code.ui.theme import get_tui_tokens
+
+    tokens = get_tui_tokens()
     label = label.strip()
     if label == "Directory":
-        return "cyan"
+        return tokens.info or "cyan"
     if label == "Session":
-        return "grey39"
+        return tokens.dim or "grey39"
     if label == "Model":
-        return "bold bright_white"
+        return f"bold {tokens.text}" if tokens.text else "bold bright_white"
     if label == "Branch":
-        return "magenta"
+        return tokens.accent or "magenta"
     if label == "Auto-save":
-        return "grey50"
+        return tokens.muted or "grey50"
     return level.value
 
 
