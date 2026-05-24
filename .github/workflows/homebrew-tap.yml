@@ -78,7 +78,15 @@ jobs:
           # 30 lines we need.
           python -m venv /tmp/poet-env
           /tmp/poet-env/bin/pip install --upgrade pip
-          /tmp/poet-env/bin/pip install "pythinker-code==${PKG_VERSION}"
+          deadline=$(( $(date +%s) + 30 * 60 ))
+          until /tmp/poet-env/bin/pip install "pythinker-code==${PKG_VERSION}"; do
+            if [ "$(date +%s)" -gt "$deadline" ]; then
+              echo "::error::pip could not install pythinker-code ${PKG_VERSION} within 30 minutes" >&2
+              exit 1
+            fi
+            echo "pip index not ready for pythinker-code ${PKG_VERSION}; sleeping 30s"
+            sleep 30
+          done
 
       - name: Generate formula
         env:
