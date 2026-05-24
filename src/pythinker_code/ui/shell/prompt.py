@@ -2435,9 +2435,7 @@ class CustomPromptSession:
         if not (pinned and any(fragment for _, fragment, *_ in pinned)):
             # No separate pinned tail: keep the old behavior of preserving the
             # last status row so delegates that don't split stay correct.
-            return _fit_formatted_text_to_rows(
-                preamble, columns, max_rows, preserve_tail_rows=1
-            )
+            return _fit_formatted_text_to_rows(preamble, columns, max_rows, preserve_tail_rows=1)
         pinned_rows = len(_formatted_text_display_rows(pinned, columns))
         body_budget = max(1, max_rows - pinned_rows)
         clipped = _fit_formatted_text_to_rows(preamble, columns, body_budget)

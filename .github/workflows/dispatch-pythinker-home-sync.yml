@@ -23,8 +23,8 @@ jobs:
           DISPATCH_TOKEN: ${{ secrets.PYTHINKER_HOME_REPO_DISPATCH_TOKEN }}
         run: |
           if [ -z "$DISPATCH_TOKEN" ]; then
-            echo "Missing secret: PYTHINKER_HOME_REPO_DISPATCH_TOKEN" >&2
-            exit 1
+            echo "::notice::Skipping pythinker-home sync: PYTHINKER_HOME_REPO_DISPATCH_TOKEN is not configured"
+            exit 0
           fi
 
           curl --fail-with-body \
