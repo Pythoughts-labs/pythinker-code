@@ -23,7 +23,9 @@ def test_default_config_dump():
         {
             "default_model": "",
             "default_thinking": False,
+            "agent_execution_profile": "default",
             "default_yolo": False,
+            "ask_user_question_policy": "ask_except_auto",
             "default_plan_mode": False,
             "default_editor": "",
             "theme": "dark",
@@ -80,6 +82,35 @@ def test_load_config_text_toml():
 def test_load_config_text_json():
     config = load_config_from_string('{"default_model": ""}')
     assert config == get_default_config()
+
+
+def test_agent_execution_profile_autonomous_sets_autonomy_defaults():
+    config = load_config_from_string('agent_execution_profile = "autonomous_coding"')
+
+    assert config.default_yolo is True
+    assert config.ask_user_question_policy == "never"
+
+
+def test_agent_execution_profile_respects_explicit_values():
+    config = load_config_from_string(
+        "\n".join(
+            [
+                'agent_execution_profile = "autonomous_coding"',
+                "default_yolo = false",
+                'ask_user_question_policy = "always"',
+            ]
+        )
+    )
+
+    assert config.default_yolo is False
+    assert config.ask_user_question_policy == "always"
+
+
+def test_agent_execution_profile_plan_only_sets_plan_defaults():
+    config = load_config_from_string('agent_execution_profile = "plan_only"')
+
+    assert config.default_plan_mode is True
+    assert config.ask_user_question_policy == "always"
 
 
 def test_load_config_sets_source_file(tmp_path):

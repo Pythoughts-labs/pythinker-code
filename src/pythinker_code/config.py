@@ -24,6 +24,14 @@ from pythinker_code.llm import ModelCapability, ProviderType
 from pythinker_code.share import get_share_dir
 from pythinker_code.utils.logging import logger
 
+AgentExecutionProfile = Literal[
+    "default",
+    "review_safe",
+    "autonomous_coding",
+    "plan_only",
+    "ci_fixer",
+]
+
 
 class OAuthRef(BaseModel):
     """Reference to OAuth credentials stored outside the config file."""
@@ -249,6 +257,13 @@ class Config(BaseModel):
     )
     default_model: str = Field(default="", description="Default model to use")
     default_thinking: bool = Field(default=False, description="Default thinking mode")
+    agent_execution_profile: AgentExecutionProfile = Field(
+        default="default",
+        description=(
+            "Preset defaults for agent autonomy. Profiles only fill unset related options: "
+            "review_safe, autonomous_coding, plan_only, or ci_fixer."
+        ),
+    )
     default_yolo: bool = Field(default=False, description="Default yolo (auto-approve) mode")
     ask_user_question_policy: Literal["always", "ask_except_auto", "never"] = Field(
         default="ask_except_auto",
@@ -330,12 +345,34 @@ class Config(BaseModel):
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
+        self._apply_agent_execution_profile()
         if self.default_model and self.default_model not in self.models:
             raise ValueError(f"Default model {self.default_model} not found in models")
         for model in self.models.values():
             if model.provider not in self.providers:
                 raise ValueError(f"Provider {model.provider} not found in providers")
         return self
+
+    def _apply_agent_execution_profile(self) -> None:
+        profile = self.agent_execution_profile
+        if profile == "default":
+            return
+        fields_set = self.model_fields_set
+        if profile == "review_safe":
+            if "ask_user_question_policy" not in fields_set:
+                self.ask_user_question_policy = "always"
+        elif profile == "autonomous_coding":
+            if "default_yolo" not in fields_set:
+                self.default_yolo = True
+            if "ask_user_question_policy" not in fields_set:
+                self.ask_user_question_policy = "never"
+        elif profile == "plan_only":
+            if "default_plan_mode" not in fields_set:
+                self.default_plan_mode = True
+            if "ask_user_question_policy" not in fields_set:
+                self.ask_user_question_policy = "always"
+        elif profile == "ci_fixer" and "ask_user_question_policy" not in fields_set:
+            self.ask_user_question_policy = "ask_except_auto"
 
 
 def get_config_file() -> Path:
