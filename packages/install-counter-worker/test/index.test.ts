@@ -95,6 +95,25 @@ describe("worker router", () => {
     expect(await res.text()).toBe(ORIGIN_BODY);
   });
 
+  it("does not throw a 1101 when the origin fetch itself fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("network");
+      }),
+    );
+    const { env, run } = makeEnv();
+    const c = ctx();
+    const res = await worker.fetch(
+      new Request("https://pythinker.com/install.sh", { headers: { "user-agent": "curl/8" } }),
+      env,
+      c,
+    );
+    await Promise.all(c._promises);
+    expect(res.status).toBe(503);
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it("/api/installs returns JSON with CORS", async () => {
     const { env } = makeEnv({ n: 12345 });
     const res = await worker.fetch(new Request("https://pythinker.com/api/installs"), env, ctx());

@@ -757,6 +757,16 @@ Expected: `{"schemaVersion":1,"label":"installs","message":"…","color":"blue"}
 Run: `curl -fsSL https://pythinker.com/install.sh | head -5`
 Expected: the real install script bytes (unchanged behavior).
 
+- [ ] **Step 3b: Confirm the subrequest is actually CDN-cached** (the stale-if-error story depends on it)
+
+```bash
+curl -sI https://pythinker.com/install.sh | grep -i 'cf-cache-status'
+curl -sI https://pythinker.com/install.sh | grep -i 'cf-cache-status'
+```
+Expected: second call shows `HIT` (cacheable). If both show `BYPASS`/`DYNAMIC`,
+the subrequest isn't CDN-cached — add `cf: { cacheEverything: true, cacheTtl: 300 }`
+to the `fetch(origin, …)` options in `src/index.ts` and redeploy.
+
 - [ ] **Step 4: README badge renders** — open the repo README on GitHub; the Installs badge shows the count.
 
 - [ ] **Step 5: Final commit / PR**

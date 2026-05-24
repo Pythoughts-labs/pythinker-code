@@ -35,7 +35,18 @@ export default {
       // Fetch bytes from the proxied download host (CDN-cached, honors
       // stale-if-error). Never fetch the proxied install route itself.
       const origin = `https://${env.DL_HOST}${path}${url.search}`;
-      const res = await fetch(origin, request);
+      let res: Response;
+      try {
+        res = await fetch(origin, request);
+      } catch {
+        // Origin and its CDN cache are both unavailable. Fail open: never let
+        // the Worker throw (that would surface a 1101 error page to curl|bash).
+        // Return a harmless shellscript that exits non-zero; do not count.
+        return new Response("# install temporarily unavailable\nexit 1\n", {
+          status: 503,
+          headers: { "content-type": "text/x-shellscript; charset=utf-8" },
+        });
+      }
 
       const eligible =
         request.method === "GET" &&
