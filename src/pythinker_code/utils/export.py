@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+import shlex
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 import aiofiles
 import yaml
@@ -516,6 +517,39 @@ def stringify_context_history(history: Sequence[Message]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _parse_export_args(args: str) -> tuple[str, Literal["markdown", "yaml"] | None] | str:
+    if not args.strip():
+        return "", None
+    try:
+        tokens = shlex.split(args)
+    except ValueError as exc:
+        return f"Invalid export arguments: {exc}"
+    cleaned_tokens: list[str] = []
+    export_format: Literal["markdown", "yaml"] | None = None
+    idx = 0
+    while idx < len(tokens):
+        token = tokens[idx]
+        if token == "--format":
+            if idx + 1 >= len(tokens):
+                return "Invalid export arguments: --format requires markdown or yaml."
+            value = tokens[idx + 1].lower()
+            if value not in {"markdown", "md", "yaml", "yml"}:
+                return "Invalid export format. Use markdown or yaml."
+            export_format = "yaml" if value in {"yaml", "yml"} else "markdown"
+            idx += 2
+            continue
+        if token.startswith("--format="):
+            value = token.split("=", 1)[1].lower()
+            if value not in {"markdown", "md", "yaml", "yml"}:
+                return "Invalid export format. Use markdown or yaml."
+            export_format = "yaml" if value in {"yaml", "yml"} else "markdown"
+            idx += 1
+            continue
+        cleaned_tokens.append(token)
+        idx += 1
+    return " ".join(shlex.quote(token) for token in cleaned_tokens), export_format
+
+
 async def perform_export(
     history: Sequence[Message],
     session_id: str,
@@ -534,9 +568,14 @@ async def perform_export(
 
     now = datetime.now().astimezone()
     short_id = session_id[:8]
-    default_name = f"pythinker-export-{short_id}-{now.strftime('%Y%m%d-%H%M%S')}.md"
+    parsed_args = _parse_export_args(args)
+    if isinstance(parsed_args, str):
+        return parsed_args
+    path_args, export_format = parsed_args
+    default_suffix = ".yaml" if export_format == "yaml" else ".md"
+    default_name = f"pythinker-export-{short_id}-{now.strftime('%Y%m%d-%H%M%S')}{default_suffix}"
 
-    cleaned = sanitize_cli_path(args)
+    cleaned = sanitize_cli_path(path_args)
     if cleaned:
         # sanitize_cli_path only strips quotes; it preserves trailing separators.
         directory_hint = cleaned.endswith(("/", "\\"))
@@ -548,6 +587,11 @@ async def perform_export(
             output = output / default_name
     else:
         output = default_dir / default_name
+
+    if export_format == "yaml" and output.suffix.lower() not in {".yaml", ".yml"}:
+        output = output.with_suffix(".yaml")
+    elif export_format == "markdown" and output.suffix.lower() in {".yaml", ".yml"}:
+        output = output.with_suffix(".md")
 
     if output.suffix.lower() in {".yaml", ".yml"}:
         content = build_export_yaml(

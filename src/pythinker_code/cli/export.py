@@ -14,8 +14,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 import typer
+from pythinker_core.message import Message
 from pythinker_host.path import HostPath
 
+from pythinker_code.utils.export import build_export_yaml
 from pythinker_code.wire.file import WireFileMetadata, parse_wire_file_line
 from pythinker_code.wire.types import TurnBegin
 
@@ -194,6 +196,24 @@ def _collect_recent_log_files(session_dir: Path) -> list[Path]:
     return [path for _, path in result]
 
 
+def _load_context_messages(session_dir: Path) -> list[Message]:
+    context_file = session_dir / "context.jsonl"
+    if not context_file.exists():
+        return []
+    messages: list[Message] = []
+    try:
+        with context_file.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                with contextlib.suppress(Exception):
+                    messages.append(Message.model_validate_json(line))
+    except OSError:
+        return []
+    return messages
+
+
 def _build_manifest(session_id: str, session_dir: Path) -> dict[str, str | None]:
     """Build a manifest dict with system and session diagnostics.
 
@@ -261,6 +281,13 @@ def export(
             help="Skip confirmation when exporting the previous session by default.",
         ),
     ] = False,
+    format: Annotated[
+        str | None,
+        typer.Option(
+            "--format",
+            help="Transcript format to add at the archive root. Currently supports yaml.",
+        ),
+    ] = None,
 ) -> None:
     """Export a session as a ZIP archive."""
     work_dir = _resolve_work_dir(ctx)
@@ -294,6 +321,10 @@ def export(
     # Collect recent global log files for diagnostics
     log_files = _collect_recent_log_files(session_dir)
 
+    if format is not None and format.lower() not in {"yaml", "yml"}:
+        typer.echo("Error: --format currently supports only yaml for ZIP exports.", err=True)
+        raise typer.Exit(code=1)
+
     # Build manifest with system diagnostics
     manifest = _build_manifest(session_id, session_dir)
 
@@ -301,6 +332,14 @@ def export(
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+        yaml_transcript = build_export_yaml(
+            session_id=session_id,
+            work_dir=str(work_dir),
+            history=_load_context_messages(session_dir),
+            token_count=0,
+            now=datetime.now(UTC),
+        )
+        zf.writestr("transcript.yaml", yaml_transcript)
         for file_path in files:
             with contextlib.suppress(OSError):
                 zf.write(file_path, arcname=str(file_path.relative_to(session_dir)))

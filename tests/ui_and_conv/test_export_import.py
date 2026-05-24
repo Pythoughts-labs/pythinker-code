@@ -914,6 +914,23 @@ class TestPerformExport:
         assert "# Pythinker Session Export" in content
         assert "Hello" in content
 
+    async def test_writes_yaml_with_explicit_format_flag(self, tmp_path: Path) -> None:
+        output = tmp_path / "my-export.md"
+        result = await perform_export(
+            history=_SIMPLE_HISTORY,
+            session_id="abc12345",
+            work_dir="/work",
+            token_count=123,
+            args=f"--format yaml {output}",
+            default_dir=tmp_path,
+        )
+
+        yaml_output = tmp_path / "my-export.yaml"
+        assert isinstance(result, tuple)
+        assert result[0] == yaml_output
+        parsed = yaml.safe_load(yaml_output.read_text())
+        assert parsed["session_id"] == "abc12345"
+
     async def test_writes_yaml_when_output_has_yaml_suffix(self, tmp_path: Path) -> None:
         output = tmp_path / "my-export.yaml"
         result = await perform_export(
