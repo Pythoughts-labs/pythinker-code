@@ -28,35 +28,38 @@ def _restore_active_theme():
         set_active_theme(saved)
 
 
-def test_dark_tokens_have_pi_reference_values():
+def test_dark_tokens_have_brand_values():
     set_active_theme("dark")
     t = get_tui_tokens()
-    assert t.tool_pending_bg == "#282a3a"
-    assert t.tool_success_bg == "#253527"
-    assert t.tool_error_bg == "#3a2632"
-    assert t.accent == "#9CA3AF"
-    assert t.border == "#6b7280"
+    assert t.accent == "#EE9983"          # coral
+    assert t.border == "#3A506D"          # slate
+    assert t.info == "#AFE3F1"            # cyan
+    assert t.success == "#7BC97F"
+    assert t.error == "#EF5E62"
+    assert t.tool_pending_bg == "#1B2230"
+    assert t.tool_error_bg == "#2E1D24"
 
 
-def test_light_tokens_have_pi_reference_values():
+def test_light_tokens_have_brand_values():
     set_active_theme("light")
     t = get_tui_tokens()
-    assert t.tool_pending_bg == "#e8e8f0"
-    assert t.tool_success_bg == "#e8f0e8"
-    assert t.tool_error_bg == "#f0e8e8"
-    assert t.accent == "#0284c7"
+    assert t.accent == "#AE5430"          # text-safe coral
+    assert t.info == "#176B7E"            # text-safe cyan
+    assert t.text == "#213853"            # navy text
+    assert t.error == "#C0392B"
+    assert t.tool_pending_bg == "#EFE7E8"
 
 
 def test_get_tui_tokens_with_explicit_theme_arg():
     set_active_theme("dark")
     light = get_tui_tokens("light")
-    assert light.tool_pending_bg.startswith("#e8")
+    assert light.tool_pending_bg.startswith("#EF")
 
 
 def test_text_token_is_empty_string_for_terminal_default():
-    # Theme convention: empty string = use terminal's default fg color.
+    # Dark theme: empty string = use terminal's default fg color.
+    # Light theme uses an explicit navy text color (#213853).
     assert get_tui_tokens("dark").text == ""
-    assert get_tui_tokens("light").text == ""
 
 
 def test_tokens_dataclass_is_frozen():
