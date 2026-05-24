@@ -102,19 +102,14 @@ def test_tui_rich_style_unknown_token_raises():
         tui_rich_style("not_a_real_token")
 
 
-def test_dark_markdown_is_minimal_two_colour():
-    # Minimal scheme: one accent (heading == strong) for important words, muted
-    # grey for everything structural (emphasis, code, links, quotes).
+def test_dark_markdown_uses_brand_roles():
     colors = get_markdown_colors("dark")
-
-    accent = "#9CA3AF"
-    muted = "#8b90a8"
-    assert colors.heading == accent
-    assert colors.strong == accent
-    assert colors.emphasis == muted
-    assert colors.inline_code == muted
-    assert colors.link == muted
-    assert colors.quote == muted
+    assert colors.heading == "#EE9983"      # coral
+    assert colors.strong == "#EE9983"
+    assert colors.emphasis == "#8B93A3"     # muted
+    assert colors.inline_code == "#AFE3F1"  # cyan
+    assert colors.link == "#AFE3F1"
+    assert colors.spinner_active == "#EE9983"
     assert markdown_rich_style("link", theme="dark").color is not None
 
 

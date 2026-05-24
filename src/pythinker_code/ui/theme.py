@@ -231,36 +231,36 @@ class MarkdownColors:
     spinner_failed: str
 
 
-# Minimal two-colour scheme: one accent (heading == strong) for important words,
-# muted grey for everything structural (emphasis, code, links, quotes, borders).
+# Brand role mapping: heading/strong use coral accent, emphasis/quote use muted
+# grey, code/links use cyan, structural borders use border_muted.
 _MARKDOWN_DARK = MarkdownColors(
-    heading="#9CA3AF",
-    emphasis="#8b90a8",
-    strong="#9CA3AF",
-    inline_code="#8b90a8",
-    link="#8b90a8",
-    quote="#8b90a8",
-    table_border="#8b90a8",
-    code_block_border="#555a70",
+    heading="#EE9983",
+    emphasis="#8B93A3",
+    strong="#EE9983",
+    inline_code="#AFE3F1",
+    link="#AFE3F1",
+    quote="#8B93A3",
+    table_border="#2B3A52",
+    code_block_border="#2B3A52",
     code_block_bg="#1f2030",
-    spinner_active="#9CA3AF",
-    spinner_done="green",
-    spinner_failed="red",
+    spinner_active="#EE9983",
+    spinner_done="#7BC97F",
+    spinner_failed="#EF5E62",
 )
 
 _MARKDOWN_LIGHT = MarkdownColors(
-    heading="#0e7490",
-    emphasis="#6b7280",
-    strong="#0e7490",
-    inline_code="#6b7280",
-    link="#6b7280",
-    quote="#6b7280",
-    table_border="#6b7280",
-    code_block_border="#9ca3af",
+    heading="#AE5430",
+    emphasis="#5D6B80",
+    strong="#AE5430",
+    inline_code="#176B7E",
+    link="#176B7E",
+    quote="#5D6B80",
+    table_border="#C8BEC0",
+    code_block_border="#C8BEC0",
     code_block_bg="#f1f5f9",
-    spinner_active="#0e7490",
-    spinner_done="#15803d",
-    spinner_failed="#b91c1c",
+    spinner_active="#AE5430",
+    spinner_done="#2C7A39",
+    spinner_failed="#C0392B",
 )
 
 
