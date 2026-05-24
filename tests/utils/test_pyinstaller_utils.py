@@ -105,8 +105,16 @@ def test_pyinstaller_datas():
             "pythinker_code/skills/implement-specs",
         ),
         (
+            "src/pythinker_code/skills/pr-walkthrough/SKILL.md",
+            "pythinker_code/skills/pr-walkthrough",
+        ),
+        (
             "src/pythinker_code/skills/pythinker-code-help/SKILL.md",
             "pythinker_code/skills/pythinker-code-help",
+        ),
+        (
+            "src/pythinker_code/skills/reproduce-bug-report/SKILL.md",
+            "pythinker_code/skills/reproduce-bug-report",
         ),
         (
             "src/pythinker_code/skills/resolve-merge-conflicts/SKILL.md",
@@ -123,6 +131,14 @@ def test_pyinstaller_datas():
         (
             "src/pythinker_code/skills/spec-driven-implementation/SKILL.md",
             "pythinker_code/skills/spec-driven-implementation",
+        ),
+        (
+            "src/pythinker_code/skills/write-product-spec/SKILL.md",
+            "pythinker_code/skills/write-product-spec",
+        ),
+        (
+            "src/pythinker_code/skills/write-tech-spec/SKILL.md",
+            "pythinker_code/skills/write-tech-spec",
         ),
         ("src/pythinker_code/tools/agent/description.md", "pythinker_code/tools/agent"),
         ("src/pythinker_code/tools/ask_user/description.md", "pythinker_code/tools/ask_user"),
