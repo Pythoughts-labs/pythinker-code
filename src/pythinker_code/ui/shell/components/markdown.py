@@ -79,7 +79,7 @@ def _markdown_style_overrides(theme: ThemeName | None = None) -> dict[str, RichS
         "markdown.h1": RichStyle(color=colors.heading, bold=True),
         "markdown.h1.border": RichStyle(color=colors.heading),
         "markdown.h1.underline": RichStyle(color=colors.heading),
-        "markdown.h2": RichStyle(bold=True, underline=True),
+        "markdown.h2": RichStyle(color=colors.heading, bold=True, underline=True),
         "markdown.h3": RichStyle(color=colors.heading, bold=True),
         "markdown.h4": RichStyle(color=colors.heading, bold=True, dim=True),
         "markdown.strong": RichStyle(color=colors.strong, bold=True),
@@ -87,7 +87,8 @@ def _markdown_style_overrides(theme: ThemeName | None = None) -> dict[str, RichS
         "markdown.emph": RichStyle(color=colors.emphasis, italic=True),
         "markdown.code": RichStyle(color=colors.inline_code, bold=True),
         "markdown.link": RichStyle(color=colors.link, underline=True),
-        "markdown.link_url": RichStyle(color=colors.link, underline=True),
+        # The bracketed URL reads as secondary to the link text.
+        "markdown.link_url": RichStyle(color=colors.link, underline=True, dim=True),
         "markdown.block_quote": RichStyle(color=colors.quote, italic=True),
         "markdown.hr": RichStyle(color=colors.code_block_border),
         "markdown.code_block": RichStyle(color=colors.inline_code),

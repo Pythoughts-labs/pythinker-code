@@ -4,6 +4,7 @@ from rich.columns import Columns
 from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
 from rich.measure import Measurement
 from rich.segment import Segment
+from rich.style import StyleType
 from rich.text import Text
 
 
@@ -56,7 +57,7 @@ class BulletColumns:
         self,
         renderable: RenderableType,
         *,
-        bullet_style: str | None = None,
+        bullet_style: StyleType | None = None,
         bullet: RenderableType | None = None,
         padding: int = 1,
     ) -> None:

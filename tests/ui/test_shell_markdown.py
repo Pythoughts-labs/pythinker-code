@@ -84,3 +84,21 @@ def test_expanded_special_messages_use_shell_markdown_renderer() -> None:
     assert "print('themed')" in output
     assert "╭" in output
     assert "╰" in output
+
+
+def test_h2_has_heading_color_like_other_headings():
+    """Regression: markdown.h2 previously had no color, unlike h1/h3/h4."""
+    from pythinker_code.ui.shell.components.markdown import _markdown_style_overrides
+
+    overrides = _markdown_style_overrides()
+    assert overrides["markdown.h2"].color is not None
+    assert overrides["markdown.h2"].color == overrides["markdown.h1"].color
+
+
+def test_link_url_is_dimmed_relative_to_link_text():
+    """The bracketed URL reads as secondary to the link text."""
+    from pythinker_code.ui.shell.components.markdown import _markdown_style_overrides
+
+    overrides = _markdown_style_overrides()
+    assert overrides["markdown.link_url"].dim is True
+    assert not overrides["markdown.link"].dim

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import time
 
-# Dotted braille spinner frames. These match the user's requested visual style
-# (e.g. ``⠴ Smooshing...``) and render consistently across Linux terminals.
-SPINNER_FRAMES: tuple[str, ...] = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
-SPINNER_FRAME_INTERVAL_S = 0.08
+# Spinner frames live in one place (glyphs); re-exported here for callers that
+# import them from the spinner module.
+from pythinker_code.ui.shell.glyphs import SPINNER_FRAME_INTERVAL_S, SPINNER_FRAMES
+
 # Keep each verb on-screen long enough to be readable, matching Blackbox's
 # stable loading-word feel rather than changing every frame.
 SPINNER_VERB_INTERVAL_S = 600.0

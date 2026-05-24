@@ -268,7 +268,26 @@ instead.
   risky, low reward); syntax-highlighting tool cards (would change the boxless look);
   line-number token muted-vs-dim unification (marginal benefit, visible-change risk).
 
-### Tracks C/D — PENDING
-C: markdown theme bugs (H2 color, `grey50`→token, link vs link_url) + streaming re-parse /
-dead `PythinkerMarkdownStream`. D: theme-literal lint test, width/`NO_COLOR`/reduced-motion
-snapshot matrix, marker-glyph registry.
+### Track C — DONE (2026-05-24)
+- C1: H2 heading color bug fixed; `link_url` dimmed vs `link`; 3 thinking-path `grey50`
+  literals → `tui_rich_style("thinking_text")`; widened `BulletColumns.bullet_style` to
+  `StyleType`. +2 regression tests.
+- C2: no-op — streaming already parses only new committed slices (not whole buffer), and
+  `PythinkerMarkdownStream` is tested (not dead). Left intact (surgical-change discipline).
+- C3: skipped — code-block line numbers would change the boxless look.
+
+### Track D — DONE (2026-05-24)
+- Finished the `grey50` sweep in `_blocks.py` (subagent/content/bullets) → `tui_rich_style`
+  tokens; `_blocks.py` is now grey50-free.
+- New `glyphs.py`: single source for spinner frames + interval + reduced-motion glyph;
+  `motion.py` and `spinner_words.py` dedup to it (same object, verified by `is`).
+- `test_render_matrix.py`: width {40,80,120} x NO_COLOR x reduced-motion matrix asserting
+  boxless inline diff, content-stable-under-color-toggle, static glyph under reduced motion.
+- `test_render_hardening.py`: guard that `_blocks.py` stays grey50-free + spinner-frame
+  single-source.
+- Deferred (honest): whole-repo raw-color lint enforcement (too big/risky for one pass —
+  needs a systematic sweep first); broad `●`/`⎿`/`❯` marker migration (prompt symbols
+  already centralized via `PROMPT_SYMBOL_*`; adding unused constants would be speculative).
+
+### Final verification
+`make check-pythinker-code` clean; `tests/ui_and_conv`+`ui`+`utils` = 1556 passed, 1 skipped.

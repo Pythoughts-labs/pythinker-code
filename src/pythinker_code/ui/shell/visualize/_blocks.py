@@ -207,15 +207,16 @@ class _ContentBlock:
                 remaining = self._pending_text()
                 if not remaining:
                     return Text("")
+                thinking_style = tui_rich_style("thinking_text")
                 return BulletColumns(
-                    Markdown(remaining, style="grey50 italic"),
-                    bullet_style="grey50",
+                    Markdown(remaining, style=thinking_style + Style(italic=True)),
+                    bullet_style=thinking_style,
                 )
             elapsed_str = format_elapsed(time.monotonic() - self._start_time)
             count_str = format_token_count(int(self._token_count))
             return Text(
                 f"Thought for {elapsed_str} · {count_str} tokens",
-                style="grey50 italic",
+                style=tui_rich_style("thinking_text") + Style(italic=True),
             )
         remaining = self._pending_text()
         if not remaining:
@@ -284,7 +285,8 @@ class _ContentBlock:
         if not pending:
             return spinner
         preview = self._build_preview(pending)
-        return Group(spinner, Text(preview, style="grey50 italic"))
+        preview_style = tui_rich_style("thinking_text") + Style(italic=True)
+        return Group(spinner, Text(preview, style=preview_style))
 
     def _compose_thinking_spinner(self) -> Text:
         return activity_status_line(
@@ -436,9 +438,9 @@ class _ToolCallBlock:
                 BulletColumns(
                     Text(
                         f"subagent {self._subagent_type} ({self._subagent_id})",
-                        style="grey50",
+                        style=tui_rich_style("muted"),
                     ),
-                    bullet_style="grey50",
+                    bullet_style=tui_rich_style("muted"),
                 )
             )
 
@@ -447,23 +449,23 @@ class _ToolCallBlock:
             if self._n_finished_subagent_tool_calls:
                 summary = Text(
                     f"{self._n_finished_subagent_tool_calls} tool calls completed",
-                    style="grey50",
+                    style=tui_rich_style("muted"),
                 )
                 if self._finished_subagent_tool_calls:
                     summary.append(
                         f" · {len(self._finished_subagent_tool_calls)} recent tracked",
-                        style="grey50",
+                        style=tui_rich_style("muted"),
                     )
-                children.append(BulletColumns(summary, bullet_style="grey50"))
+                children.append(BulletColumns(summary, bullet_style=tui_rich_style("muted")))
         elif self._n_finished_subagent_tool_calls > MAX_SUBAGENT_TOOL_CALLS_TO_SHOW:
             n_hidden = self._n_finished_subagent_tool_calls - MAX_SUBAGENT_TOOL_CALLS_TO_SHOW
             children.append(
                 BulletColumns(
                     Text(
                         f"{n_hidden} more tool call{'s' if n_hidden > 1 else ''} ...",
-                        style="grey50 italic",
+                        style=tui_rich_style("muted") + Style(italic=True),
                     ),
-                    bullet_style="grey50",
+                    bullet_style=tui_rich_style("muted"),
                 )
             )
         if not (style.label == "Subagent" and self._result is not None):
@@ -660,7 +662,7 @@ class _NotificationBlock:
             preview = "\n".join(body_lines[:2])
             if len(body_lines) > 2:
                 preview += "\n..."
-            lines.append(Text(preview, style="grey50"))
+            lines.append(Text(preview, style=tui_rich_style("muted")))
         return BulletColumns(Group(*lines), bullet_style=style)
 
 

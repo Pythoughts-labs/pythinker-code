@@ -11,10 +11,15 @@ from rich.text import Text
 from pythinker_code.soul import format_token_count
 from pythinker_code.ui.shell.components.render_utils import cell_width
 from pythinker_code.ui.shell.design_system import ShellTone, shell_style
+from pythinker_code.ui.shell.glyphs import (
+    REDUCED_MOTION_GLYPH,
+    SPINNER_FRAME_INTERVAL_S,
+    SPINNER_FRAMES,
+)
 from pythinker_code.utils.datetime import format_elapsed
 
-_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
-_FRAME_INTERVAL_S = 0.08
+_FRAMES = SPINNER_FRAMES
+_FRAME_INTERVAL_S = SPINNER_FRAME_INTERVAL_S
 _VERB_SPINNER_STYLE = Style(color="#F5A97F")
 
 
@@ -41,7 +46,7 @@ def reduced_motion_enabled() -> bool:
 
 def spinner_frame_at(elapsed_s: float, *, reduced_motion: bool = False) -> str:
     if reduced_motion:
-        return "●"
+        return REDUCED_MOTION_GLYPH
     index = int(max(0.0, elapsed_s) / _FRAME_INTERVAL_S) % len(_FRAMES)
     return _FRAMES[index]
 
