@@ -12,13 +12,23 @@ def test_is_native_build_false_when_not_frozen():
 
 
 def test_is_native_build_false_when_frozen_without_sentinel(tmp_path):
-    fake_exe = tmp_path / "pythinker.exe"
+    fake_exe = tmp_path / "other-app"
     fake_exe.write_bytes(b"")
     with (
         patch.object(sys, "frozen", True, create=True),
         patch.object(sys, "executable", str(fake_exe)),
     ):
         assert native.is_native_build() is False
+
+
+def test_is_native_build_true_when_frozen_pythinker_without_sentinel(tmp_path):
+    fake_exe = tmp_path / "pythinker"
+    fake_exe.write_bytes(b"")
+    with (
+        patch.object(sys, "frozen", True, create=True),
+        patch.object(sys, "executable", str(fake_exe)),
+    ):
+        assert native.is_native_build() is True
 
 
 def test_is_native_build_true_when_sentinel_present(tmp_path):
@@ -44,3 +54,14 @@ def test_native_installer_release_url_stable():
 
 def test_native_installer_asset_name():
     assert native.native_installer_asset_name("0.11.0") == "PythinkerSetup-0.11.0.exe"
+
+
+def test_native_archive_asset_name_linux_x86_64():
+    with (
+        patch.object(sys, "platform", "linux"),
+        patch("platform.machine", return_value="x86_64"),
+    ):
+        assert (
+            native.native_archive_asset_name("0.14.0")
+            == "pythinker-0.14.0-x86_64-unknown-linux-gnu.tar.gz"
+        )

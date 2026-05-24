@@ -15,6 +15,16 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.15.0 (2026-05-24)
+
+### What changed in this release
+
+- **Fixed `pythinker update` for curl-bash native installs.** Frozen onefile installs in `~/.local/bin/pythinker` are now detected as native even when older tarballs do not include the `.pythinker-native` sentinel, avoiding the broken `pythinker -m pip install --upgrade pythinker-code` path.
+- **Added Unix native archive updating.** Linux and Apple Silicon macOS native builds now download the matching GitHub Release tarball, verify its `.sha256`, extract `pythinker`, and replace the current executable in place.
+- **Improved native update guidance.** The update banner now shows the canonical fixed-version curl installer on Unix and keeps the Windows installer guidance for Windows native builds.
+
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.15.0`, or use the native installer for your OS (see the README install table).
+
 ## 0.14.0 (2026-05-24)
 
 ### What changed in this release

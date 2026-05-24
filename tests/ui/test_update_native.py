@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tarfile
 from unittest.mock import patch
 
 import pytest
@@ -38,4 +39,43 @@ def test_native_banner_does_not_leak_marker(monkeypatch):
         rendered = upd._update_banner_text("0.1.0", "0.2.0")
     text = rendered.plain
     assert upd.NATIVE_INSTALLER_MARKER not in text
-    assert "PythinkerSetup-0.2.0.exe" in text
+    assert "pythinker update" in text
+    assert "native updater" in text
+
+
+def test_native_banner_uses_curl_installer_on_unix(monkeypatch):
+    with (
+        patch("pythinker_code.ui.shell.update._is_native_build", return_value=True),
+        patch("pythinker_code.ui.shell.update._is_windows", return_value=False),
+    ):
+        rendered = upd._update_banner_text("0.1.0", "0.2.0")
+    text = rendered.plain
+    assert "curl -fsSL https://pythinker.com/install.sh | bash -s -- --version 0.2.0" in text
+
+
+def test_native_banner_uses_installer_on_windows(monkeypatch):
+    with (
+        patch("pythinker_code.ui.shell.update._is_native_build", return_value=True),
+        patch("pythinker_code.ui.shell.update._is_windows", return_value=True),
+    ):
+        rendered = upd._update_banner_text("0.1.0", "0.2.0")
+    assert "PythinkerSetup-0.2.0.exe" in rendered.plain
+
+
+def test_install_native_archive_replaces_current_executable(monkeypatch, tmp_path):
+    current = tmp_path / "pythinker"
+    current.write_text("old", encoding="utf-8")
+    current.chmod(0o755)
+
+    payload = tmp_path / "payload"
+    payload.mkdir()
+    (payload / "pythinker").write_text("new", encoding="utf-8")
+    archive = tmp_path / "pythinker-0.2.0-x86_64-unknown-linux-gnu.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(payload / "pythinker", arcname="pythinker")
+
+    monkeypatch.setattr(upd.sys, "executable", str(current))
+
+    assert upd._install_native_archive(archive) is upd.UpdateResult.UPDATED
+    assert current.read_text(encoding="utf-8") == "new"
+    assert current.stat().st_mode & 0o111
