@@ -36,16 +36,27 @@ origin hostname. The badge and JSON API read the same counter.
 
 ```
 curl/irm ──> CF edge ──> Worker(/install.sh, /install.ps1)
-                           │  UA bot-filter (curl/wget/powershell ⇒ real install)
-                           │  ctx.waitUntil(D1: UPDATE counter SET n=n+1)  ← fail-open, non-blocking
-                           └─ fetch ORIGIN_HOST/<script>  (edge-cached, stale-if-error)
+                           │  GET + UA bot-filter (curl/wget/powershell ⇒ real install)
+                           │  fetch DL_HOST/<script>  ──> CF CDN (cached, stale-if-error) ──> VPS
+                           │  on 200 with body ⇒ ctx.waitUntil(D1: UPDATE counter SET n=n+1)  ← fail-open
+                           └─ return script bytes
 shields.io ─> /api/installs/badge ─> D1 SELECT n ─> {schemaVersion,label,message,color}
 tooling   ─> /api/installs        ─> D1 SELECT n ─> {"installs": N}
 ```
 
 The Worker never fetches its own proxied route (which would recurse). It fetches
-a **DNS-only (grey-cloud)** `origin.pythinker.com` pointing at the VPS, keeping
-the VPS as the single source of truth for the script bytes.
+the script bytes from a **separate proxied (orange-cloud) hostname**
+`dl.pythinker.com` that has **no Worker route**. Because that hostname goes
+through normal Cloudflare CDN caching, the existing
+`Cache-Control: …, stale-if-error=86400` on the script is honored natively by
+the CDN — a VPS outage still serves the last-good bytes, with no Workers Cache
+API involvement. The VPS remains the single source of truth for the script.
+
+> **Why not DNS-only (grey-cloud) origin?** A grey-cloud subrequest bypasses the
+> CDN, and the Workers Cache API (`caches.default`) does not honor
+> `stale-if-error` and is only per-colo — so it cannot replicate today's
+> stale-on-error behavior. The proxied `dl.pythinker.com` path is therefore
+> preferred over a DNS-only origin.
 
 ## Components
 
@@ -55,7 +66,7 @@ the VPS as the single source of truth for the script bytes.
   - **`wrangler.jsonc`** — routes for `pythinker.com/install.sh`,
     `pythinker.com/install.ps1`, `pythinker.com/api/installs`,
     `pythinker.com/api/installs/badge`; one D1 binding `DB`; var
-    `ORIGIN_HOST = "origin.pythinker.com"`.
+    `DL_HOST = "dl.pythinker.com"` (proxied, **not** routed to this Worker).
   - **`src/index.ts`** — request router:
     - install routes → bot-filter, `ctx.waitUntil` increment, serve from origin
     - api routes → read counter, return JSON
@@ -66,38 +77,62 @@ the VPS as the single source of truth for the script bytes.
   CREATE TABLE counter (id INTEGER PRIMARY KEY, n INTEGER NOT NULL DEFAULT 0);
   INSERT INTO counter (id, n) VALUES (1, 0);
   ```
+  D1 processes writes single-threaded per database, and every install fetch
+  hits the same hot row. This is acceptable for expected low-volume install
+  traffic. **If D1 overload errors appear under spikes, switch to Workers
+  Analytics Engine or a batched Durable Object aggregator** — recorded here as
+  the documented escalation path, not built now.
 - **`scripts/seed-install-counter.mjs`** — one-time backfill. Queries the
   Cloudflare GraphQL Analytics API (`httpRequestsAdaptiveGroups`) for the last
   ~30 days of bot-filtered `/install.sh` + `/install.ps1` requests and writes
-  the result as the starting `n`. Requires a read-only CF analytics API token,
-  passed via env var, never committed.
+  the result as the starting `n`. Requirements:
+  - Applies the **same UA classifier** as the Worker (one shared module), so
+    the seed is consistent with forward counting.
+  - Supports `--dry-run` (print the computed seed, write nothing) and a manual
+    `--start <N>` override for when analytics are unavailable.
+  - Requires a read-only CF analytics API token, passed via env var, never
+    committed.
+  - **Caveat:** CF GraphQL dataset availability, lookback, and sampling vary by
+    plan; the seed is approximate and may be limited or unavailable. The manual
+    `--start` fallback exists precisely for this.
 - **README badge** — one new shields.io `endpoint` badge next to the existing
   Downloads badge:
   `https://img.shields.io/endpoint?url=https://pythinker.com/api/installs/badge`.
 
 ## Data flow & bot filter
 
+- **Count only a real, served install.** A fetch is counted only when *all* of
+  these hold: method is `GET`; UA matches the install classifier; the origin/CDN
+  response is `200` with a body successfully obtained. `HEAD`, `OPTIONS`, health
+  checks, non-200s, and origin/cache failures are **not** counted — this avoids
+  counting failed fetches as installs.
 - Real installs send `User-Agent` of `curl/*`, `Wget/*`, or PowerShell
   (`WindowsPowerShell`, `PowerShell`). Only these are counted; browsers,
   Googlebot, uptime monitors, etc. are skipped. The matcher is a single regex
-  constant, unit-tested.
-- Increment runs as
-  `ctx.waitUntil(env.DB.prepare("UPDATE counter SET n = n + 1 WHERE id = 1").run())`
-  — executed after the response is returned, so it never delays or breaks the
-  install pipe. `UPDATE … n = n + 1` is atomic in D1, so concurrent fetches do
-  not race.
-- `/api/installs` → `{"installs": N}`.
+  constant in a shared module (also used by the seed script), unit-tested.
+- After a successful `200` response, the increment is scheduled as
+  `ctx.waitUntil(env.DB.prepare("UPDATE counter SET n = n + 1 WHERE id = 1").run().catch(…))`
+  — scheduled without awaiting, so it may continue after the response is
+  returned and never delays or breaks the install pipe. `UPDATE … n = n + 1` is
+  a single atomic SQL statement, so concurrent fetches do not race.
+- `/api/installs` → `{"installs": N}`, `Content-Type: application/json`,
+  `Access-Control-Allow-Origin: *`, `GET` only.
 - `/api/installs/badge` → `{"schemaVersion": 1, "label": "installs",
-  "message": "12,345", "color": "blue"}` (thousands-formatted message), served
-  with `Cache-Control: public, max-age=300`.
+  "message": "12,345", "color": "blue"}` (thousands-formatted, non-empty
+  `message`), `Content-Type: application/json`, served with
+  `Cache-Control: public, max-age=300`, `GET` only.
 
 ## Error handling (fail-open is the rule)
 
-- **D1 write throws** → swallowed inside `waitUntil`; the install response is
-  unaffected. A counter outage must never break installs.
-- **Origin fetch fails** → serve from `caches.default` to replicate today's
-  `stale-if-error=86400`. A VPS outage must not break `curl | bash` when
-  Cloudflare already holds the same bytes.
+- **D1 write throws** → swallowed via `.catch` inside `waitUntil`; the install
+  response is unaffected. A counter outage must never break installs. (Under a
+  D1 spike/overload some increments may be dropped — acceptable for a vanity
+  counter; see the WAE/DO escalation path above.)
+- **Origin fetch fails** → the subrequest to the proxied `dl.pythinker.com`
+  goes through normal Cloudflare CDN caching, which honors the script's
+  `stale-if-error=86400` natively. A VPS outage therefore still serves the
+  last-good bytes without any Workers Cache API logic. A failed fetch is **not**
+  counted (no `200`).
 - **D1 read fails on `/api/*`** → return `200` with `message: "unknown"` / grey
   color for the badge (keeps the shields.io payload valid) and
   `{"installs": null}` for the JSON endpoint.
@@ -106,11 +141,14 @@ the VPS as the single source of truth for the script bytes.
 
 - **Unit:** UA classifier — `curl/8.5.0`, `Wget/1.21`, PowerShell ⇒ counted;
   Chrome, Googlebot, empty UA ⇒ skipped.
-- **Unit:** badge JSON shape + thousands formatting; `/api/installs` shape.
+- **Unit:** badge JSON shape + thousands formatting; `/api/installs` shape +
+  `Access-Control-Allow-Origin: *` header.
+- **Behavior:** count gating — non-`GET` (HEAD/OPTIONS) and non-`200` origin
+  responses do **not** increment; only a `GET` + matching UA + `200` does.
 - **Behavior:** simulated D1 throw ⇒ install response still `200` with script
   bytes (fail-open).
-- **Behavior:** origin fetch targets `ORIGIN_HOST`, never the proxied route
-  (loopback guard).
+- **Behavior:** subrequest targets `DL_HOST`, never the proxied `pythinker.com`
+  install route (loopback guard).
 - **Integration:** `wrangler dev` with local D1 — curl each route, assert the
   counter increments for a `curl` UA and does not for a browser UA.
 
@@ -123,7 +161,9 @@ the VPS as the single source of truth for the script bytes.
 
 ## Open operational tasks (for the plan, not the code)
 
-- Create DNS-only `origin.pythinker.com` → VPS.
+- Create proxied (orange-cloud) `dl.pythinker.com` → VPS, serving the same
+  install scripts with the same `Cache-Control`; ensure **no Worker route** is
+  bound to it.
 - Create the D1 database and bind it; run the schema migration.
 - Provision a read-only CF analytics API token for the seed script.
-- Run the seed script once before announcing the badge.
+- Run the seed script once (`--dry-run` first) before announcing the badge.
