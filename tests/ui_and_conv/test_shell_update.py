@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -10,49 +9,134 @@ from pythinker_code.ui.shell import update
 
 
 @pytest.mark.asyncio
-async def test_schedule_auto_update_check_runs_silent_and_throttles(monkeypatch, tmp_path):
+async def test_prompt_pre_start_update_runs_update_and_exits_on_accept(monkeypatch):
+    calls: list[tuple[bool]] = []
+
+    async def fake_resolve() -> str:
+        return "999.0.0"
+
+    async def fake_confirm(current: str, latest: str) -> bool:
+        return True
+
+    async def fake_do_update(*, print: bool) -> update.UpdateResult:
+        calls.append((print,))
+        return update.UpdateResult.UPDATED
+
+    monkeypatch.setattr(update.sys, "stdout", SimpleNamespace(isatty=lambda: True))
+    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: False)
+    monkeypatch.setattr(update, "_resolve_latest_version_for_prompt", fake_resolve)
+    monkeypatch.setattr(update, "_confirm_update_now", fake_confirm)
+    monkeypatch.setattr(update, "do_update", fake_do_update)
+
+    with pytest.raises(update.typer.Exit) as excinfo:
+        await update.prompt_pre_start_update()
+
+    assert excinfo.value.exit_code == 0
+    assert calls == [(True,)]
+
+
+@pytest.mark.asyncio
+async def test_prompt_pre_start_update_continues_on_decline(monkeypatch):
+    async def fake_resolve() -> str:
+        return "999.0.0"
+
+    async def fake_confirm(current: str, latest: str) -> bool:
+        return False
+
+    async def fail_do_update(*, print: bool) -> update.UpdateResult:
+        raise AssertionError("declining must not run the update")
+
+    monkeypatch.setattr(update.sys, "stdout", SimpleNamespace(isatty=lambda: True))
+    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: False)
+    monkeypatch.setattr(update, "_resolve_latest_version_for_prompt", fake_resolve)
+    monkeypatch.setattr(update, "_confirm_update_now", fake_confirm)
+    monkeypatch.setattr(update, "do_update", fail_do_update)
+
+    # Returns without raising typer.Exit (session continues).
+    assert await update.prompt_pre_start_update() is None
+
+
+@pytest.mark.asyncio
+async def test_prompt_pre_start_update_skips_when_up_to_date(monkeypatch):
+    confirmed: list[bool] = []
+
+    async def fake_resolve() -> str:
+        return "0.0.0"
+
+    async def fake_confirm(current: str, latest: str) -> bool:
+        confirmed.append(True)
+        return True
+
+    monkeypatch.setattr(update.sys, "stdout", SimpleNamespace(isatty=lambda: True))
+    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: False)
+    monkeypatch.setattr(update, "_resolve_latest_version_for_prompt", fake_resolve)
+    monkeypatch.setattr(update, "_confirm_update_now", fake_confirm)
+
+    assert await update.prompt_pre_start_update() is None
+    assert confirmed == []
+
+
+@pytest.mark.asyncio
+async def test_prompt_pre_start_update_respects_opt_out(monkeypatch):
+    async def fail_resolve() -> str:
+        raise AssertionError("opt-out must short-circuit before checking versions")
+
+    monkeypatch.setenv("PYTHINKER_CLI_NO_AUTO_UPDATE", "1")
+    monkeypatch.setattr(update.sys, "stdout", SimpleNamespace(isatty=lambda: True))
+    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: False)
+    monkeypatch.setattr(update, "_resolve_latest_version_for_prompt", fail_resolve)
+
+    assert await update.prompt_pre_start_update() is None
+
+
+@pytest.mark.asyncio
+async def test_prompt_pre_start_update_skips_non_tty(monkeypatch):
+    async def fail_resolve() -> str:
+        raise AssertionError("non-tty must short-circuit before checking versions")
+
+    monkeypatch.setattr(update.sys, "stdout", SimpleNamespace(isatty=lambda: False))
+    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: False)
+    monkeypatch.setattr(update, "_resolve_latest_version_for_prompt", fail_resolve)
+
+    assert await update.prompt_pre_start_update() is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_latest_version_fetches_when_due(monkeypatch, tmp_path):
+    latest_file = tmp_path / "latest.txt"
     last_check_file = tmp_path / "last_update_check.txt"
     calls: list[tuple[bool, bool]] = []
 
     async def fake_do_update(*, print: bool, check_only: bool) -> update.UpdateResult:
         calls.append((print, check_only))
-        return update.UpdateResult.UP_TO_DATE
+        latest_file.write_text("2.0.0", encoding="utf-8")
+        return update.UpdateResult.UPDATE_AVAILABLE
 
+    monkeypatch.setattr(update, "LATEST_VERSION_FILE", latest_file)
     monkeypatch.setattr(update, "LAST_UPDATE_CHECK_FILE", last_check_file)
-    monkeypatch.setattr(update.sys, "stdout", SimpleNamespace(isatty=lambda: True))
-    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: False)
+    monkeypatch.setattr(update, "_should_auto_check_for_updates", lambda: True)
     monkeypatch.setattr(update, "do_update", fake_do_update)
 
-    task = update.schedule_auto_update_check()
+    result = await update._resolve_latest_version_for_prompt()
 
-    assert task is not None
-    assert await task is update.UpdateResult.UP_TO_DATE
+    assert result == "2.0.0"
     assert calls == [(False, True)]
     assert last_check_file.exists()
 
-    calls.clear()
-    assert update.schedule_auto_update_check() is None
-    assert calls == []
-
 
 @pytest.mark.asyncio
-async def test_schedule_auto_update_check_notifies_when_update_is_available(monkeypatch, tmp_path):
-    async def fake_do_update(*, print: bool, check_only: bool) -> update.UpdateResult:
-        return update.UpdateResult.UPDATE_AVAILABLE
+async def test_resolve_latest_version_uses_cache_when_not_due(monkeypatch, tmp_path):
+    latest_file = tmp_path / "latest.txt"
+    latest_file.write_text("3.1.0", encoding="utf-8")
 
-    banners: list[bool] = []
-    monkeypatch.setattr(update, "LAST_UPDATE_CHECK_FILE", tmp_path / "last_update_check.txt")
-    monkeypatch.setattr(update.sys, "stdout", SimpleNamespace(isatty=lambda: True))
-    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: False)
-    monkeypatch.setattr(update, "do_update", fake_do_update)
-    monkeypatch.setattr(update, "print_update_banner", lambda: banners.append(True))
+    async def fail_do_update(*, print: bool, check_only: bool) -> update.UpdateResult:
+        raise AssertionError("must not hit the network when the throttle is not due")
 
-    task = update.schedule_auto_update_check()
+    monkeypatch.setattr(update, "LATEST_VERSION_FILE", latest_file)
+    monkeypatch.setattr(update, "_should_auto_check_for_updates", lambda: False)
+    monkeypatch.setattr(update, "do_update", fail_do_update)
 
-    assert task is not None
-    assert await task is update.UpdateResult.UPDATE_AVAILABLE
-    await asyncio.sleep(0)
-    assert banners == [True]
+    assert await update._resolve_latest_version_for_prompt() == "3.1.0"
 
 
 @pytest.mark.asyncio
@@ -89,7 +173,7 @@ async def test_do_update_on_windows_spawns_detached_and_exits(monkeypatch, tmp_p
     assert spawned and "pythinker-code" in spawned[0]
 
 
-def test_update_banner_uses_codex_style_release_prompt(monkeypatch):
+def test_update_prompt_text_shows_version_and_command(monkeypatch):
     rendered = Console(width=100, record=True, color_system=None)
     monkeypatch.setattr(update, "console", rendered)
     monkeypatch.setattr(
@@ -98,39 +182,10 @@ def test_update_banner_uses_codex_style_release_prompt(monkeypatch):
         lambda: ["uv", "tool", "upgrade", "pythinker-code"],
     )
 
-    update._render_update_banner("1.2.0", "1.3.0")
+    text = update._update_prompt_text("1.2.0", "1.3.0")
+    rendered.print(text)
     output = rendered.export_text()
 
     assert "✨ Update available! 1.2.0 -> 1.3.0" in output
     assert "Release notes:" in output
-    assert "pythinker update" in output
     assert "uv tool upgrade pythinker-code" in output
-    assert "Update Available" not in output
-    assert "╭" not in output
-
-
-@pytest.mark.asyncio
-async def test_schedule_auto_update_check_respects_opt_out(monkeypatch, tmp_path):
-    async def fail_do_update(*, print: bool, check_only: bool) -> update.UpdateResult:
-        raise AssertionError("auto update check should not run")
-
-    monkeypatch.setenv("PYTHINKER_CLI_NO_AUTO_UPDATE", "1")
-    monkeypatch.setattr(update, "LAST_UPDATE_CHECK_FILE", tmp_path / "last_update_check.txt")
-    monkeypatch.setattr(update.sys, "stdout", SimpleNamespace(isatty=lambda: True))
-    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: False)
-    monkeypatch.setattr(update, "do_update", fail_do_update)
-
-    assert update.schedule_auto_update_check() is None
-
-
-@pytest.mark.asyncio
-async def test_schedule_auto_update_check_skips_source_checkout(monkeypatch, tmp_path):
-    async def fail_do_update(*, print: bool, check_only: bool) -> update.UpdateResult:
-        raise AssertionError("source checkout should not run auto update check")
-
-    monkeypatch.setattr(update, "LAST_UPDATE_CHECK_FILE", tmp_path / "last_update_check.txt")
-    monkeypatch.setattr(update.sys, "stdout", SimpleNamespace(isatty=lambda: True))
-    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: True)
-    monkeypatch.setattr(update, "do_update", fail_do_update)
-
-    assert update.schedule_auto_update_check() is None

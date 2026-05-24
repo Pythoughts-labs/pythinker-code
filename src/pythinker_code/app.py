@@ -735,15 +735,6 @@ class PythinkerCLI:
         """Run the Pythinker CLI instance with shell UI."""
         from pythinker_code.ui.shell import Shell, WelcomeInfoItem
 
-        if command is None:
-            from pythinker_code.ui.shell.update import (
-                print_update_banner,
-                schedule_auto_update_check,
-            )
-
-            print_update_banner()
-            schedule_auto_update_check()
-
         work_dir = self._runtime.session.work_dir
         welcome_info = [
             WelcomeInfoItem(name="Directory", value=str(shorten_home(work_dir))),

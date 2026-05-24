@@ -1839,9 +1839,6 @@ def _print_welcome_info(name: str, info_items: list[WelcomeInfoItem]) -> None:
             tips_table.add_row("  › ", tip_text)
         rows.append(tips_table)
 
-    # Update notice is rendered as a standalone banner above the welcome panel
-    # by `print_update_banner()` (called from app.py before this point).
-
     version_title = Text.assemble(
         ("Pythinker Code", _PYTHINKER_BORDER),
         (f" v{get_version()}", "grey50"),
