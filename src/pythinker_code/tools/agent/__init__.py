@@ -9,7 +9,7 @@ from pythinker_code.soul.agent import Runtime
 from pythinker_code.soul.toolset import get_current_tool_call_or_none
 from pythinker_code.subagents.models import AgentLaunchSpec, AgentTypeDefinition
 from pythinker_code.subagents.runner import ForegroundRunRequest, ForegroundSubagentRunner
-from pythinker_code.tools.utils import load_desc
+from pythinker_code.tools.utils import ToolResultStatus, load_desc, tool_status_line
 from pythinker_code.utils.logging import logger
 
 NAME = "Agent"
@@ -336,6 +336,7 @@ class AgentTool(CallableTool2[Params]):
                 str(params.budget_seconds) if params.budget_seconds is not None else "(none)"
             )
             lines = [
+                tool_status_line(ToolResultStatus.launched),
                 f"task_id: {view.spec.id}",
                 f"kind: {view.spec.kind}",
                 f"status: {view.runtime.status}",
@@ -360,6 +361,7 @@ class AgentTool(CallableTool2[Params]):
                 output="\n".join(lines),
                 message="Background task started.",
                 display=[],
+                extras={"status": ToolResultStatus.launched.value},
             )
         except FileNotFoundError as exc:
             return ToolError(message=str(exc), brief="Agent not found")
@@ -415,7 +417,13 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
             results.append((child, result))
 
         any_error = any(result.is_error for _, result in results)
-        lines = [f"summary: {params.summary}", f"agent_count: {len(results)}", "agents:"]
+        tool_status = ToolResultStatus.failure if any_error else ToolResultStatus.launched
+        lines = [
+            tool_status_line(tool_status),
+            f"summary: {params.summary}",
+            f"agent_count: {len(results)}",
+            "agents:",
+        ]
         for child, result in results:
             status = "error" if result.is_error else "launched"
             lines.append(f"- name: {child.name}")
@@ -434,6 +442,7 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
             output="\n".join(lines),
             message=("One or more agents failed." if any_error else "Agents launched."),
             display=[],
+            extras={"status": tool_status.value},
         )
 
     @staticmethod

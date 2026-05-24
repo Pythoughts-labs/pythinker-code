@@ -86,6 +86,8 @@ async def test_shell_background_starts_task(shell_tool, runtime, monkeypatch):
     assert not result.is_error
     assert "task_id:" in result.output
     assert "status: starting" in result.output
+    assert "tool_status: launched" in result.output
+    assert result.extras == {"status": "launched"}
     assert "automatic_notification: true" in result.output
     assert "human_shell_hint:" in result.output
     assert "/task list" in result.output
@@ -113,6 +115,8 @@ async def test_task_output_returns_completed_output(
 
     output_path = runtime.background_tasks.store.output_path(spec.id).resolve()
     assert not result.is_error
+    assert "tool_status: success" in result.output
+    assert result.extras == {"status": "success"}
     assert "retrieval_status: success" in result.output
     assert "status: completed" in result.output
     assert f"output_path: {output_path}" in result.output
@@ -150,6 +154,26 @@ async def test_task_list_returns_active_tasks(runtime, task_list_tool):
 
 
 @pytest.mark.asyncio
+async def test_task_output_reads_explicit_byte_page(runtime, task_output_tool):
+    spec = _write_task(
+        runtime,
+        "b7777777",
+        status="running",
+        output="0123456789abcdef\n",
+    )
+
+    result = await task_output_tool(task_output_tool.params(task_id=spec.id, offset=4, max_bytes=6))
+
+    assert not result.is_error
+    assert "tool_status: long_running_snapshot" in result.output
+    assert "offset: 4" in result.output
+    assert "next_offset: 10" in result.output
+    assert "eof: false" in result.output
+    assert "456789" in result.output
+    assert result.extras == {"status": "long_running_snapshot"}
+
+
+@pytest.mark.asyncio
 async def test_task_output_returns_not_ready_for_running_task(runtime, task_output_tool):
     spec = _write_task(
         runtime,
@@ -163,6 +187,8 @@ async def test_task_output_returns_not_ready_for_running_task(runtime, task_outp
     )
 
     assert not result.is_error
+    assert "tool_status: long_running_snapshot" in result.output
+    assert result.extras == {"status": "long_running_snapshot"}
     assert "retrieval_status: not_ready" in result.output
     assert "status: running" in result.output
     assert "output_truncated: false" in result.output
@@ -182,6 +208,7 @@ async def test_task_output_defaults_to_non_blocking_snapshot(runtime, task_outpu
 
     assert not result.is_error
     assert result.message == "Task snapshot retrieved."
+    assert "tool_status: long_running_snapshot" in result.output
     assert "retrieval_status: not_ready" in result.output
     assert "status: running" in result.output
 
@@ -212,6 +239,7 @@ async def test_task_output_missing_task_does_not_pollute_store(runtime, task_out
 
     assert result.is_error
     assert result.brief == "Task not found"
+    assert result.extras == {"status": "error"}
     assert runtime.background_tasks.store.list_task_ids() == []
     assert not runtime.background_tasks.store.task_path("bmissing01").exists()
 
@@ -249,6 +277,8 @@ async def test_task_output_explicitly_surfaces_timeout_contract(runtime, task_ou
 
     output_path = runtime.background_tasks.store.output_path(spec.id).resolve()
     assert not result.is_error
+    assert "tool_status: failure" in result.output
+    assert result.extras == {"status": "failure"}
     assert "status: failed" in result.output
     assert "interrupted: true" in result.output
     assert "timed_out: true" in result.output

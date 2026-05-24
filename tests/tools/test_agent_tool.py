@@ -492,6 +492,8 @@ async def test_agent_tool_starts_background_task(agent_tool, runtime, monkeypatc
         )
 
     assert not result.is_error
+    assert "tool_status: launched" in result.output
+    assert result.extras == {"status": "launched"}
     assert "task_id: a-task-1" in result.output
     assert "kind: agent" in result.output
     assert "automatic_notification: true" in result.output
@@ -545,6 +547,8 @@ async def test_run_agents_launches_background_children_with_base_prompt(runtime,
         )
 
     assert not result.is_error
+    assert "tool_status: launched" in result.output
+    assert result.extras == {"status": "launched"}
     assert "agent_count: 2" in result.output
     assert "task_id: task-1" in result.output
     assert "task_id: task-2" in result.output

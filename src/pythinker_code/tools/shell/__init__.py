@@ -14,7 +14,7 @@ from pythinker_code.soul.approval import Approval
 from pythinker_code.soul.permission import check_shell_command_allowed
 from pythinker_code.soul.toolset import get_current_tool_call_or_none
 from pythinker_code.tools.display import BackgroundTaskDisplayBlock, ShellDisplayBlock
-from pythinker_code.tools.utils import ToolResultBuilder, load_desc
+from pythinker_code.tools.utils import ToolResultBuilder, ToolResultStatus, load_desc
 from pythinker_code.utils.environment import Environment
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.subprocess_env import get_noninteractive_env
@@ -115,16 +115,18 @@ class Shell(CallableTool2[Params]):
             )
 
             if exitcode == 0:
-                return builder.ok("Command executed successfully.")
+                return builder.ok("Command executed successfully.", status=ToolResultStatus.success)
             else:
                 return builder.error(
                     f"Command failed with exit code: {exitcode}.",
                     brief=f"Failed with exit code: {exitcode}",
+                    status=ToolResultStatus.failure,
                 )
         except TimeoutError:
             return builder.error(
                 f"Command killed by timeout ({params.timeout}s)",
                 brief=f"Killed by timeout ({params.timeout}s)",
+                status=ToolResultStatus.cancelled,
             )
         except Exception as e:
             from pythinker_code.telemetry.errors import report_handled_error
@@ -138,6 +140,7 @@ class Shell(CallableTool2[Params]):
             return builder.error(
                 f"Command execution failed: {e}",
                 brief="Execution failed",
+                status=ToolResultStatus.error,
             )
 
     async def _run_in_background(self, params: Params) -> ToolReturnValue:
@@ -146,6 +149,7 @@ class Shell(CallableTool2[Params]):
             return ToolResultBuilder().error(
                 "Background shell requires a tool call context.",
                 brief="No tool call context",
+                status=ToolResultStatus.error,
             )
 
         result = await self._approval.request(
@@ -182,7 +186,11 @@ class Shell(CallableTool2[Params]):
                 error=exc,
             )
             builder = ToolResultBuilder()
-            return builder.error(f"Failed to start background task: {exc}", brief="Start failed")
+            return builder.error(
+                f"Failed to start background task: {exc}",
+                brief="Start failed",
+                status=ToolResultStatus.error,
+            )
 
         return self._background_ok(view)
 
@@ -192,6 +200,7 @@ class Shell(CallableTool2[Params]):
             "\n".join(
                 [
                     format_task(view, include_command=True),
+                    "tool_status: launched",
                     "automatic_notification: true",
                     "next_step: You will be automatically notified when it completes.",
                     (
@@ -216,7 +225,11 @@ class Shell(CallableTool2[Params]):
                 description=view.spec.description,
             )
         )
-        return builder.ok("Background task started", brief=f"Started {view.spec.id}")
+        return builder.ok(
+            "Background task started",
+            brief=f"Started {view.spec.id}",
+            status=ToolResultStatus.launched,
+        )
 
     async def _run_shell_command(
         self,

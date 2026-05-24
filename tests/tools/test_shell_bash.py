@@ -23,6 +23,7 @@ async def test_simple_command(shell_tool: Shell):
     assert not result.is_error
     assert result.output == snapshot("Hello World\n")
     assert result.message == snapshot("Command executed successfully.")
+    assert result.extras == {"status": "success"}
 
 
 async def test_command_with_error(shell_tool: Shell):
@@ -33,6 +34,7 @@ async def test_command_with_error(shell_tool: Shell):
     assert "No such file or directory" in result.output
     assert "Command failed with exit code:" in result.message
     assert "Failed with exit code:" in result.brief
+    assert result.extras == {"status": "failure"}
 
 
 async def test_command_chaining(shell_tool: Shell):
@@ -95,6 +97,7 @@ async def test_command_timeout_expires(shell_tool: Shell):
     assert result.is_error
     assert result.message == snapshot("Command killed by timeout (1s)")
     assert result.brief == snapshot("Killed by timeout (1s)")
+    assert result.extras == {"status": "cancelled"}
 
 
 async def test_environment_variables(shell_tool: Shell):

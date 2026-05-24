@@ -9,7 +9,7 @@ from pythinker_code.background import TaskView, format_task, format_task_list, l
 from pythinker_code.soul.agent import Runtime
 from pythinker_code.soul.approval import Approval
 from pythinker_code.tools.display import BackgroundTaskDisplayBlock
-from pythinker_code.tools.utils import load_desc
+from pythinker_code.tools.utils import ToolResultStatus, load_desc, tool_error, tool_status_line
 
 TASK_OUTPUT_PREVIEW_BYTES = 32 << 10
 TASK_OUTPUT_READ_HINT_LINES = 300
@@ -34,9 +34,22 @@ def _task_display(runtime: Runtime, task_id: str) -> BackgroundTaskDisplayBlock:
     )
 
 
+def _tool_status_for_view(view: TaskView) -> ToolResultStatus:
+    if view.runtime.status in {"starting", "running"}:
+        return ToolResultStatus.long_running_snapshot
+    if view.runtime.status == "completed":
+        return ToolResultStatus.success
+    if view.runtime.status == "killed":
+        return ToolResultStatus.cancelled
+    if view.runtime.status in {"failed", "lost"}:
+        return ToolResultStatus.failure
+    return ToolResultStatus.error
+
+
 def _format_task_output(
     view: TaskView,
     *,
+    tool_status: ToolResultStatus,
     retrieval_status: str,
     output: str,
     output_path: Path,
@@ -44,10 +57,14 @@ def _format_task_output(
     output_size_bytes: int,
     output_preview_bytes: int,
     output_truncated: bool,
+    offset: int,
+    next_offset: int,
+    eof: bool,
 ) -> str:
     terminal_reason = "timed_out" if view.runtime.timed_out else view.runtime.status
     output_path_str = str(output_path.resolve())
     lines = [
+        tool_status_line(tool_status),
         f"retrieval_status: {retrieval_status}",
         f"task_id: {view.spec.id}",
         f"kind: {view.spec.kind}",
@@ -89,6 +106,9 @@ def _format_task_output(
             f"output_size_bytes: {output_size_bytes}",
             f"output_preview_bytes: {output_preview_bytes}",
             f"output_truncated: {str(output_truncated).lower()}",
+            f"offset: {offset}",
+            f"next_offset: {next_offset}",
+            f"eof: {str(eof).lower()}",
             "",
             f"full_output_available: {str(full_output_available).lower()}",
             "full_output_tool: ReadFile",
@@ -110,6 +130,19 @@ def _format_task_output(
 
 class TaskOutputParams(BaseModel):
     task_id: str = Field(description="The background task ID to inspect.")
+    offset: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Byte offset to read from. Omit to return the default tail preview for compatibility."
+        ),
+    )
+    max_bytes: int = Field(
+        default=TASK_OUTPUT_PREVIEW_BYTES,
+        ge=1,
+        le=1024 * 1024,
+        description="Maximum bytes to read from the task output log.",
+    )
     block: bool = Field(
         default=False,
         description="Whether to wait for the task to finish before returning.",
@@ -176,6 +209,7 @@ class TaskList(CallableTool2[TaskListParams]):
             output=format_task_list(views, active_only=params.active_only),
             message="Task list retrieved.",
             display=list(display),
+            extras={"status": ToolResultStatus.success.value},
         )
 
 
@@ -188,26 +222,42 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
         super().__init__()
         self._runtime = runtime
 
-    def _render_output_preview(self, task_id: str) -> tuple[str, bool, int, int, bool, Path]:
+    def _missing_task_error(self, task_id: str) -> ToolReturnValue:
+        return tool_error(
+            message=f"Task not found: {task_id}",
+            brief="Task not found",
+            status=ToolResultStatus.error,
+        )
+
+    def _render_output_preview(
+        self,
+        task_id: str,
+        *,
+        offset: int | None,
+        max_bytes: int,
+    ) -> tuple[str, bool, int, int, bool, Path, int, int, bool]:
         manager = self._runtime.background_tasks
         output_path = manager.resolve_output_path(task_id)
         try:
             output_size = output_path.stat().st_size if output_path.exists() else 0
         except OSError:
             output_size = 0
-        preview_offset = max(0, output_size - TASK_OUTPUT_PREVIEW_BYTES)
+        read_offset = max(0, output_size - max_bytes) if offset is None else offset
         chunk = manager.read_output(
             task_id,
-            offset=preview_offset,
-            max_bytes=TASK_OUTPUT_PREVIEW_BYTES,
+            offset=read_offset,
+            max_bytes=max_bytes,
         )
         return (
             chunk.text.rstrip("\n"),
             output_size > 0,
             output_size,
             chunk.next_offset - chunk.offset,
-            preview_offset > 0,
+            offset is None and read_offset > 0,
             output_path,
+            chunk.offset,
+            chunk.next_offset,
+            chunk.eof,
         )
 
     @override
@@ -217,7 +267,7 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
 
         view = self._runtime.background_tasks.get_task(params.task_id)
         if view is None:
-            return ToolError(message=f"Task not found: {params.task_id}", brief="Task not found")
+            return self._missing_task_error(params.task_id)
 
         if params.block:
             view = await self._runtime.background_tasks.wait(
@@ -243,7 +293,14 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
             output_preview_bytes,
             output_truncated,
             output_path,
-        ) = self._render_output_preview(params.task_id)
+            offset,
+            next_offset,
+            eof,
+        ) = self._render_output_preview(
+            params.task_id,
+            offset=params.offset,
+            max_bytes=params.max_bytes,
+        )
         consumer = view.consumer.model_copy(
             update={
                 "last_seen_output_size": output_size,
@@ -252,10 +309,12 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
         )
         self._runtime.background_tasks.store.write_consumer(params.task_id, consumer)
 
+        tool_status = _tool_status_for_view(view)
         return ToolReturnValue(
             is_error=False,
             output=_format_task_output(
                 view,
+                tool_status=tool_status,
                 retrieval_status=retrieval_status,
                 output=output,
                 output_path=output_path,
@@ -263,13 +322,17 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
                 output_size_bytes=output_size,
                 output_preview_bytes=output_preview_bytes,
                 output_truncated=output_truncated,
+                offset=offset,
+                next_offset=next_offset,
+                eof=eof,
             ),
             message=(
                 "Task snapshot retrieved."
-                if not params.block and retrieval_status == "not_ready"
+                if tool_status == ToolResultStatus.long_running_snapshot
                 else "Task output retrieved."
             ),
             display=[_task_display(self._runtime, params.task_id)],
+            extras={"status": tool_status.value},
         )
 
 
@@ -295,7 +358,11 @@ class TaskStop(CallableTool2[TaskStopParams]):
 
         view = self._runtime.background_tasks.get_task(params.task_id)
         if view is None:
-            return ToolError(message=f"Task not found: {params.task_id}", brief="Task not found")
+            return tool_error(
+                message=f"Task not found: {params.task_id}",
+                brief="Task not found",
+                status=ToolResultStatus.error,
+            )
 
         result = await self._approval.request(
             self.name,
@@ -312,7 +379,13 @@ class TaskStop(CallableTool2[TaskStopParams]):
         )
         return ToolReturnValue(
             is_error=False,
-            output=format_task(view, include_command=True),
+            output="\n".join(
+                [
+                    tool_status_line(ToolResultStatus.cancelled),
+                    format_task(view, include_command=True),
+                ]
+            ),
             message="Task stop requested.",
             display=[_task_display(self._runtime, params.task_id)],
+            extras={"status": ToolResultStatus.cancelled.value},
         )

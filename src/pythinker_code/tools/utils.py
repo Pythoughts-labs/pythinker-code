@@ -1,4 +1,5 @@
 import re
+from enum import StrEnum
 from pathlib import Path
 
 from jinja2 import Undefined
@@ -50,6 +51,29 @@ def truncate_line(line: str, max_length: int, marker: str = "...") -> str:
 # Default output limits
 DEFAULT_MAX_CHARS = 50_000
 DEFAULT_MAX_LINE_LENGTH = 2000
+
+
+class ToolResultStatus(StrEnum):
+    """Machine-readable status taxonomy for tool results.
+
+    This supplements ToolReturnValue.is_error for compatibility with existing callers.
+    """
+
+    success = "success"
+    error = "error"
+    cancelled = "cancelled"
+    denied = "denied"
+    failure = "failure"
+    launched = "launched"
+    long_running_snapshot = "long_running_snapshot"
+
+
+def tool_status_value(status: ToolResultStatus | str) -> str:
+    return status.value if isinstance(status, ToolResultStatus) else status
+
+
+def tool_status_line(status: ToolResultStatus | str) -> str:
+    return f"tool_status: {tool_status_value(status)}"
 
 
 class ToolResultBuilder:
@@ -138,7 +162,13 @@ class ToolResultBuilder:
             self._extras = {}
         self._extras.update(extras)
 
-    def ok(self, message: str = "", *, brief: str = "") -> ToolReturnValue:
+    def ok(
+        self,
+        message: str = "",
+        *,
+        brief: str = "",
+        status: ToolResultStatus | str = ToolResultStatus.success,
+    ) -> ToolReturnValue:
         """Create a ToolReturnValue with is_error=False and the current output."""
         output = "".join(self._buffer)
 
@@ -156,10 +186,16 @@ class ToolResultBuilder:
             output=output,
             message=final_message,
             display=([BriefDisplayBlock(text=brief)] if brief else []) + self._display,
-            extras=self._extras,
+            extras={**(self._extras or {}), "status": tool_status_value(status)},
         )
 
-    def error(self, message: str, *, brief: str) -> ToolReturnValue:
+    def error(
+        self,
+        message: str,
+        *,
+        brief: str,
+        status: ToolResultStatus | str = ToolResultStatus.error,
+    ) -> ToolReturnValue:
         """Create a ToolReturnValue with is_error=True and the current output."""
         output = "".join(self._buffer)
 
@@ -176,8 +212,24 @@ class ToolResultBuilder:
             output=output,
             message=final_message,
             display=([BriefDisplayBlock(text=brief)] if brief else []) + self._display,
-            extras=self._extras,
+            extras={**(self._extras or {}), "status": tool_status_value(status)},
         )
+
+
+def tool_error(
+    message: str,
+    *,
+    brief: str,
+    status: ToolResultStatus | str = ToolResultStatus.error,
+    output: str = "",
+) -> ToolReturnValue:
+    return ToolReturnValue(
+        is_error=True,
+        output=output,
+        message=message,
+        display=[BriefDisplayBlock(text=brief)] if brief else [],
+        extras={"status": tool_status_value(status)},
+    )
 
 
 class ToolRejectedError(ToolError):
@@ -197,4 +249,5 @@ class ToolRejectedError(ToolError):
             ),
             brief=brief,
         )
+        self.extras = {"status": ToolResultStatus.denied.value}
         self.has_feedback = has_feedback
