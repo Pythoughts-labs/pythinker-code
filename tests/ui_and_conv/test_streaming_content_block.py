@@ -228,7 +228,7 @@ def test_thinking_status_line_uses_compact_activity_metadata():
     console.print(block.compose())
     output = console.export_text()
     assert "Thinking…" in output
-    assert "(" in output
+    assert "·" in output
     assert "esc to interrupt" not in output
 
 

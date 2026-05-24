@@ -31,7 +31,7 @@ def test_activity_status_line_contains_label_elapsed_tokens_and_interrupt_hint()
     )
     output = _plain(line)
     assert "Thinking…" in output
-    assert "(12s · ↓ 2.4k tokens · 42 t/s · esc)" in output
+    assert "· 12s · ↓ 2.4k tokens · 42 t/s · esc" in output
     assert "esc to interrupt" not in output
 
 
@@ -45,9 +45,9 @@ def test_activity_status_line_hides_secondary_parts_at_narrow_width():
     assert "42 t/s" not in output
 
 
-def test_activity_status_line_uses_parenthesized_metadata():
+def test_activity_status_line_uses_clean_metadata_separator():
     line = activity_status_line(ActivitySnapshot(label="Pythinking", elapsed_s=30.0, tokens=1300))
 
     output = _plain(line).strip()
 
-    assert "Pythinking… (30s · ↓ 1.3k tokens)" in output
+    assert "Pythinking… · 30s · ↓ 1.3k tokens" in output

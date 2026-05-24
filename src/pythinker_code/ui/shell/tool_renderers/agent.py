@@ -10,7 +10,6 @@ from rich.console import Group, RenderableType
 from rich.style import Style as RichStyle
 from rich.text import Text
 
-from pythinker_code.ui.shell.motion import spinner_frame_at
 from pythinker_code.ui.shell.tool_renderers import (
     ToolRenderContext,
     ToolRenderDefinition,
@@ -21,6 +20,7 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     fg,
     format_lines_block,
     invalid_arg,
+    loading_marker,
     missing_required_arg,
     tool_title,
 )
@@ -34,9 +34,8 @@ _BACKGROUND_ACTIVE_STATUSES = frozenset({"created", "starting", "running", "awai
 
 
 def _subagent_loader(ctx: ToolRenderContext) -> Text:
-    """Return the animated loader used for active subagent rows."""
-    elapsed = ctx.elapsed_s if ctx.elapsed_s is not None else 0.0
-    return Text(f"{spinner_frame_at(elapsed)} ", style=tui_rich_style("accent"))
+    """Return the pulsing dot loader used for active subagent rows."""
+    return loading_marker()
 
 
 def _with_active_loader(renderable: RenderableType, ctx: ToolRenderContext) -> RenderableType:

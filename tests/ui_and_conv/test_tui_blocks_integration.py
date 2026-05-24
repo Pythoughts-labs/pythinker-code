@@ -154,12 +154,12 @@ def test_card_style_error_result(_force_card_style):
     assert "permission denied" in rendered
 
 
-def test_card_style_running_subagent_uses_animated_loader(_force_card_style, monkeypatch):
+def test_card_style_running_subagent_uses_solid_circle(_force_card_style, monkeypatch):
     from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
 
     register_builtin_renderers()
     monkeypatch.setattr(
-        "pythinker_code.ui.shell.components.tool_execution.time.monotonic", lambda: 0.0
+        "pythinker_code.ui.shell.tool_renderers._render_utils.time.monotonic", lambda: 0.0
     )
     block = _ToolCallBlock(
         _make_tool_call(name="Agent", args='{"description":"Audit UI","prompt":"check"}')
@@ -169,7 +169,8 @@ def test_card_style_running_subagent_uses_animated_loader(_force_card_style, mon
 
     assert "subagent" in rendered
     assert "Audit UI" in rendered
-    assert any(frame in rendered for frame in spinner_frames)
+    assert "●" in rendered
+    assert not any(frame in rendered for frame in spinner_frames)
 
     block.finish(_ok_result("done"))
     finished = render_plain(block.compose(), width=80)
@@ -224,7 +225,7 @@ def test_card_style_running_subagent_marker_pulses(_force_card_style, monkeypatc
 
     register_builtin_renderers()
     monkeypatch.setattr(
-        "pythinker_code.ui.shell.components.tool_execution.time.monotonic", lambda: 0.0
+        "pythinker_code.ui.shell.tool_renderers._render_utils.time.monotonic", lambda: 0.0
     )
     block = _ToolCallBlock(
         _make_tool_call(name="Agent", args='{"description":"Audit UI","prompt":"check"}')
@@ -232,23 +233,23 @@ def test_card_style_running_subagent_marker_pulses(_force_card_style, monkeypatc
 
     first = render_plain(block.compose(), width=80)
     monkeypatch.setattr(
-        "pythinker_code.ui.shell.components.tool_execution.time.monotonic", lambda: 0.09
+        "pythinker_code.ui.shell.tool_renderers._render_utils.time.monotonic", lambda: 0.9
     )
     second = render_plain(block.compose(), width=80)
 
     assert first != second
     assert "subagent" in first
-    assert "⠋" in first
+    assert "●" in first
     assert "subagent" in second
-    assert "⠙" in second
+    assert "•" in second
 
 
-def test_card_style_background_subagent_result_uses_animated_loader(_force_card_style, monkeypatch):
+def test_card_style_background_subagent_result_keeps_solid_circle(_force_card_style, monkeypatch):
     from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
 
     register_builtin_renderers()
     monkeypatch.setattr(
-        "pythinker_code.ui.shell.components.tool_execution.time.monotonic", lambda: 0.0
+        "pythinker_code.ui.shell.tool_renderers._render_utils.time.monotonic", lambda: 0.0
     )
     block = _ToolCallBlock(
         _make_tool_call(
@@ -271,7 +272,8 @@ def test_card_style_background_subagent_result_uses_animated_loader(_force_card_
     assert "background subagent working" in rendered
     assert "background audit" in rendered
     assert "status: running" in rendered
-    assert any(frame in rendered for frame in spinner_frames)
+    assert "●" in rendered
+    assert not any(frame in rendered for frame in spinner_frames)
 
 
 def test_card_style_background_subagent_marker_pulses(_force_card_style, monkeypatch):
@@ -279,7 +281,7 @@ def test_card_style_background_subagent_marker_pulses(_force_card_style, monkeyp
 
     register_builtin_renderers()
     monkeypatch.setattr(
-        "pythinker_code.ui.shell.components.tool_execution.time.monotonic", lambda: 0.0
+        "pythinker_code.ui.shell.tool_renderers._render_utils.time.monotonic", lambda: 0.0
     )
     block = _ToolCallBlock(
         _make_tool_call(
@@ -299,15 +301,15 @@ def test_card_style_background_subagent_marker_pulses(_force_card_style, monkeyp
 
     first = render_plain(block.compose(), width=80)
     monkeypatch.setattr(
-        "pythinker_code.ui.shell.components.tool_execution.time.monotonic", lambda: 0.09
+        "pythinker_code.ui.shell.tool_renderers._render_utils.time.monotonic", lambda: 0.9
     )
     second = render_plain(block.compose(), width=80)
 
     assert first != second
     assert "background subagent working" in first
-    assert "⠋" in first
+    assert "●" in first
     assert "background subagent working" in second
-    assert "⠙" in second
+    assert "•" in second
 
 
 def test_card_style_lifecycle_marks_execution_started(_force_card_style):

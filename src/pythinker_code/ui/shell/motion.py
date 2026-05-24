@@ -85,6 +85,7 @@ def activity_status_line(snapshot: ActivitySnapshot, *, width: int | None = None
                 kept.append(part)
         parts = kept
     if parts:
-        text.append(" ")
-        text.append(f"({' · '.join(parts)})", style=shell_style(ShellTone.MUTED))
+        text.append(" ", style=shell_style(ShellTone.MUTED))
+        text.append("· ", style=shell_style(ShellTone.MUTED))
+        text.append(" · ".join(parts), style=shell_style(ShellTone.MUTED))
     return text

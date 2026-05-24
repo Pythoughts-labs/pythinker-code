@@ -28,7 +28,6 @@ from pythinker_code.ui.shell.console import console, current_console_width
 from pythinker_code.ui.shell.echo import render_user_echo
 from pythinker_code.ui.shell.keyboard import KeyboardListener, KeyEvent
 from pythinker_code.ui.shell.motion import ActivitySnapshot, activity_status_line
-from pythinker_code.ui.shell.spinner_words import spinner_message
 from pythinker_code.ui.shell.visualize._approval_panel import (
     ApprovalRequestPanel,
     show_approval_in_pager,
@@ -400,7 +399,7 @@ class _LiveView:
         now = time.monotonic()
         elapsed = 0.0 if self._turn_start_time is None else now - self._turn_start_time
         return activity_status_line(
-            ActivitySnapshot(label=spinner_message(now), elapsed_s=elapsed),
+            ActivitySnapshot(label="Working", elapsed_s=elapsed),
             width=current_console_width(),
         )
 
