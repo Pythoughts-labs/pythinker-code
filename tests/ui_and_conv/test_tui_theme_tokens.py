@@ -34,8 +34,8 @@ def test_dark_tokens_have_pi_reference_values():
     assert t.tool_pending_bg == "#282a3a"
     assert t.tool_success_bg == "#253527"
     assert t.tool_error_bg == "#3a2632"
-    assert t.accent == "#BAC4FD"
-    assert t.border == "#8EA0F8"
+    assert t.accent == "#9CA3AF"
+    assert t.border == "#6b7280"
 
 
 def test_light_tokens_have_pi_reference_values():
@@ -99,10 +99,17 @@ def test_tui_rich_style_unknown_token_raises():
         tui_rich_style("not_a_real_token")
 
 
-def test_dark_markdown_uses_lighter_blue_accents():
+def test_dark_markdown_is_minimal_two_colour():
+    # Minimal scheme: one accent (heading == strong) for important words, muted
+    # grey for everything structural (emphasis, code, links, quotes).
     colors = get_markdown_colors("dark")
 
-    assert colors.link == "#BAC4FD"
-    assert colors.heading == "#BAC4FD"
-    assert colors.spinner_active == "#BAC4FD"
+    accent = "#9CA3AF"
+    muted = "#8b90a8"
+    assert colors.heading == accent
+    assert colors.strong == accent
+    assert colors.emphasis == muted
+    assert colors.inline_code == muted
+    assert colors.link == muted
+    assert colors.quote == muted
     assert markdown_rich_style("link", theme="dark").color is not None

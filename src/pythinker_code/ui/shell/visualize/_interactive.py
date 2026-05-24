@@ -382,10 +382,20 @@ class _PromptLiveView(_LiveView):
         """
         if self._turn_ended:
             return ANSI("")
-        blocks = self.compose_agent_output()
+        # Exclude the trailing verb spinner — the prompt pins it separately via
+        # ``render_pinned_status_tail`` so a clipped agent stream cannot hide it.
+        blocks = self.compose_agent_output(include_working_indicator=False)
         if not blocks:
             return ANSI("")
         body = render_to_ansi(Group(*blocks), columns=columns).rstrip("\n")
+        return ANSI(body if body else "")
+
+    def render_pinned_status_tail(self, columns: int) -> ANSI:
+        """Render the trailing verb spinner that the prompt keeps pinned below a
+        (possibly clipped) agent stream, so it stays visible above the input."""
+        if self._turn_ended or self._active_turn_depth <= 0:
+            return ANSI("")
+        body = render_to_ansi(self._working_indicator(), columns=columns).rstrip("\n")
         return ANSI(body if body else "")
 
     def render_running_prompt_body(self, columns: int) -> ANSI:

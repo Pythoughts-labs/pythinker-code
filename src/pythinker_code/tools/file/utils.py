@@ -237,15 +237,23 @@ def detect_file_type(path: str | PurePath, header: bytes | None = None) -> FileT
             elif mime_type.startswith("video/"):
                 media_hint = FileType(kind="video", mime_type=mime_type)
 
-    if media_hint and media_hint.kind in ("image", "video"):
-        return media_hint
-
     if header is not None:
         sniffed = sniff_media_from_magic(header)
         if sniffed:
+            # Magic bytes are authoritative. A cross-kind mismatch between the
+            # extension hint and the bytes (e.g. .png suffix, video bytes) is
+            # suspect — refuse to classify rather than trust either.
             if media_hint and sniffed.kind != media_hint.kind:
                 return FileType(kind="unknown", mime_type="")
             return sniffed
+        # No media magic found. Don't blindly trust a media *extension*:
+        if media_hint and media_hint.kind in ("image", "video"):
+            if b"\x00" not in header:
+                # Looks like text despite a media extension — let it be read.
+                return FileType(kind="text", mime_type="text/plain")
+            # Binary content with an unrecognized signature: a real but
+            # unsniffable media file is the most likely explanation.
+            return media_hint
         # NUL bytes are a strong signal of binary content.
         if b"\x00" in header:
             return FileType(kind="unknown", mime_type="")

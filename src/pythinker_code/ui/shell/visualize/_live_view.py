@@ -420,11 +420,19 @@ class _LiveView:
             blocks.append(self._current_question_panel.render())
         return blocks
 
-    def compose_agent_output(self) -> list[RenderableType]:
+    def compose_agent_output(
+        self, *, include_working_indicator: bool = True
+    ) -> list[RenderableType]:
         """Spinners, content blocks, tool calls, notifications.
 
         Pure agent streaming status — no interactive overlays.
         Always safe to render regardless of modal state.
+
+        ``include_working_indicator`` controls whether the trailing verb
+        spinner is emitted. The interactive prompt sets it ``False`` so it can
+        pin the spinner *below* a clipped agent stream (see
+        ``render_pinned_status_tail``), keeping it visible instead of letting
+        the clip hint cover it.
 
         Display priority (highest → lowest):
           1. MCP loading spinner (connecting to servers)
@@ -458,8 +466,11 @@ class _LiveView:
                     and tool_call.tool_call_id == suppressed_tool_call_id
                 ):
                     continue
-                _append_action_block(blocks, tool_call.compose())
-            if self._active_turn_depth > 0:
+                # leading=True gives the first live tool card a blank row above
+                # it too, so a still-running agent is separated from a finished
+                # one already committed to scrollback.
+                _append_action_block(blocks, tool_call.compose(), leading=True)
+            if include_working_indicator and self._active_turn_depth > 0:
                 # Keep a stable activity indicator visible even while content or
                 # tool cards are already on-screen. This makes long-running
                 # background waits feel alive instead of frozen.

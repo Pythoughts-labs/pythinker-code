@@ -29,5 +29,23 @@ def test_detect_file_type_header_overrides():
     assert detect_file_type("sample.bin", header=png_header).mime_type == "image/png"
     assert detect_file_type("sample", header=mp4_header).kind == "video"
     assert detect_file_type("sample", header=iso5_header).kind == "video"
-    assert detect_file_type("sample.png", header=mp4_header).kind == "image"
+    # A media extension whose magic bytes say a *different* media kind is a
+    # mismatch — refuse to classify rather than trusting the extension.
+    assert detect_file_type("sample.png", header=mp4_header).kind == "unknown"
     assert detect_file_type("notes.txt", header=binary_header).kind == "unknown"
+
+
+def test_detect_file_type_media_suffix_validated_against_header():
+    png_header = b"\x89PNG\r\n\x1a\n" + b"pngdata"
+
+    # Real PNG with a .png extension: confirmed by magic bytes.
+    assert detect_file_type("logo.png", header=png_header).kind == "image"
+    # Text mislabeled with a media extension: don't block it as media.
+    text_like = b"<svg>not really binary</svg>\njust text\n"
+    assert detect_file_type("diagram.png", header=text_like).kind == "text"
+    # Binary with a media extension but no recognized signature: trust the
+    # extension (likely a real but unsniffable media file).
+    odd_media = b"\x00\x01\x02\x03 some binary payload"
+    assert detect_file_type("clip.mp4", header=odd_media).kind == "video"
+    # Without a header we can't validate, so the extension hint stands.
+    assert detect_file_type("photo.jpg").kind == "image"

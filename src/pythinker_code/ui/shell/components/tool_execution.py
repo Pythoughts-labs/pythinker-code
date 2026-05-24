@@ -168,6 +168,20 @@ class ToolExecutionComponent:
         ctx = self._build_context(width=width)
         children: list[RenderableType] = []
 
+        # Render the result first so a renderer can stash state (e.g. a resolved
+        # task label) that its call header reads in the same frame; append in
+        # display order (header above result) below.
+        result = self._state.result
+        rendered_result: RenderableType | None = None
+        if result is not None:
+            if self._definition.render_result is not None:
+                try:
+                    rendered_result = self._definition.render_result(ctx, result)
+                except Exception:  # noqa: BLE001
+                    rendered_result = self._result_fallback()
+            else:
+                rendered_result = self._result_fallback()
+
         if self._definition.render_call is not None:
             try:
                 call = self._definition.render_call(ctx)
@@ -178,18 +192,8 @@ class ToolExecutionComponent:
         else:
             children.append(self._call_fallback())
 
-        result = self._state.result
-        if result is not None and self._definition.render_result is not None:
-            try:
-                rendered_result = self._definition.render_result(ctx, result)
-            except Exception:  # noqa: BLE001
-                rendered_result = self._result_fallback()
-            if rendered_result is not None:
-                children.append(rendered_result)
-        elif result is not None:
-            fallback = self._result_fallback()
-            if fallback is not None:
-                children.append(fallback)
+        if rendered_result is not None:
+            children.append(rendered_result)
 
         if not self._state.expanded and self._is_truncatable():
             children.append(key_hint("app.tools.expand", "expand"))

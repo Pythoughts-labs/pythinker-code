@@ -282,11 +282,13 @@ class _ContentBlock:
             tokens=tokens_int,
             token_rate=token_rate,
             label_style=label_style,
+            # Composing / Thinking use the morphing filled shape, not braille dots.
+            spinner="shape",
         )
 
     def _compose_spinner(self) -> Text:
         return activity_status_line(
-            self._activity_snapshot("Composing", label_style=tui_rich_style("activity_label")),
+            self._activity_snapshot("Composing", label_style=tui_rich_style("thinking_text")),
             width=current_console_width(),
         )
 

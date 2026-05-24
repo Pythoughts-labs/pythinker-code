@@ -15,6 +15,7 @@ from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
+from pythinker_code.ui.shell.spacing import blank_row
 from pythinker_code.ui.shell.tool_renderers import (
     ToolRenderContext,
     ToolRenderDefinition,
@@ -136,6 +137,8 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
     if not ctx.expanded and len(items) > len(visible):
         remaining = len(items) - len(visible)
         rows.append(fg("muted", f"{_TREE_LAST} ... +{remaining} more (ctrl+o to expand)"))
+    # Breathing room beneath the plan before the next step.
+    rows.append(blank_row())
     rendered = Group(*rows)
     return running_spinner(
         rendered, execution_started=ctx.execution_started, has_result=ctx.has_result

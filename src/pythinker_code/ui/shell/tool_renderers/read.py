@@ -41,6 +41,14 @@ def _format_line_range(args: dict[str, Any]) -> Text | None:
         start = int(offset) if offset is not None else 1  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
+    # A negative offset is tail mode (read the last N lines from EOF). A forward
+    # ``start-end`` range is meaningless here, so show it as ``tail N`` instead
+    # of the confusing ``:-100--81``.
+    if start < 0:
+        text = f":tail {abs(start)}"
+        if isinstance(limit, int):
+            text += f" · limit {limit}"
+        return fg("warning", text)
     if limit is None:
         return fg("warning", f":{start}")
     try:

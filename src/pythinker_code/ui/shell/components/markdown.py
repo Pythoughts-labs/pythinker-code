@@ -17,7 +17,7 @@ Wraps Rich's ``Markdown`` element with three changes:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from markdown_it import MarkdownIt
@@ -30,6 +30,7 @@ from rich.syntax import Syntax
 from rich.text import Text
 from rich.theme import Theme
 
+from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
 from pythinker_code.ui.shell.spacing import CODE_BLOCK_PADDING
 from pythinker_code.ui.theme import ThemeName, get_markdown_colors
 from pythinker_code.utils.rich.markdown import CodeBlock, Markdown
@@ -93,15 +94,25 @@ def _markdown_style_overrides(theme: ThemeName | None = None) -> dict[str, RichS
         "markdown.hr": RichStyle(color=colors.code_block_border),
         "markdown.code_block": RichStyle(color=colors.inline_code),
         "markdown.code_block.border": RichStyle(color=colors.code_block_border, bold=True),
-        "markdown.item.bullet": RichStyle(color=colors.strong, bold=True),
-        "markdown.item.number": RichStyle(color=colors.strong, bold=True),
+        # Bullets/numbers are structural, not "important words" — keep them muted
+        # so the accent is reserved for headings and bold text.
+        "markdown.item.bullet": RichStyle(color=colors.quote, bold=True),
+        "markdown.item.number": RichStyle(color=colors.quote, bold=True),
     }
 
 
 class PythinkerMarkdown(Markdown):
-    """Drop-in replacement for ``rich.markdown.Markdown`` with the Pythinker palette."""
+    """Drop-in replacement for ``rich.markdown.Markdown`` with the Pythinker palette.
+
+    Markup is run through :func:`sanitize_ansi` first so terminal control
+    sequences embedded in model/user/custom text cannot reach the terminal
+    (cursor moves, color leaks) when rendered as Markdown.
+    """
 
     elements = {**Markdown.elements, "fence": _BorderedCodeBlock, "code_block": _BorderedCodeBlock}
+
+    def __init__(self, markup: str, *args: Any, **kwargs: Any) -> None:
+        super().__init__(sanitize_ansi(markup), *args, **kwargs)
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         overrides = _markdown_style_overrides()

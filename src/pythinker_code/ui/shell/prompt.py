@@ -1492,6 +1492,18 @@ class AgentStatusProvider(Protocol):
     def render_agent_status(self, columns: int) -> AnyFormattedText: ...
 
 
+@runtime_checkable
+class PinnedStatusTailProvider(Protocol):
+    """Optional protocol for delegates exposing a trailing status tail (the
+    verb spinner) that must stay pinned *below* a clipped agent stream.
+
+    Kept separate from ``AgentStatusProvider`` so delegates that don't split
+    out a pinned tail still satisfy ``AgentStatusProvider`` unchanged.
+    """
+
+    def render_pinned_status_tail(self, columns: int) -> AnyFormattedText: ...
+
+
 _toast_queues: dict[Literal["left", "right"], deque[_ToastEntry]] = {
     "left": deque(),
     "right": deque(),
@@ -2102,12 +2114,13 @@ class CustomPromptSession:
             preamble.extend(body)
             ensure_prompt_newline(preamble)
 
-        if preamble:
-            preamble = _fit_formatted_text_to_rows(
+        pinned = self._render_pinned_status_tail(columns)
+        if preamble or pinned:
+            preamble = self._fit_preamble_with_pinned_tail(
                 preamble,
+                pinned,
                 columns,
                 _prompt_preamble_max_rows(getattr(size, "rows", None)),
-                preserve_tail_rows=1,
             )
             fragments.extend(preamble)
 
@@ -2259,6 +2272,12 @@ class CustomPromptSession:
         # agent status above it first; approval/question controls must remain usable.
         agent_status = self._render_agent_status(columns)
         body = self._render_interactive_body(columns)
+        pinned = self._render_pinned_status_tail(columns)
+        pinned_rows = (
+            len(_formatted_text_display_rows(pinned, columns))
+            if pinned and any(fragment for _, fragment, *_ in pinned)
+            else 0
+        )
         max_rows = _prompt_preamble_max_rows(getattr(size, "rows", None))
         modal_active = self._active_modal_delegate() is not None
 
@@ -2268,7 +2287,7 @@ class CustomPromptSession:
 
         if modal_active and body:
             body_rows = len(_formatted_text_display_rows(body, columns))
-            status_budget = max(0, max_rows - body_rows)
+            status_budget = max(0, max_rows - body_rows - pinned_rows)
             if agent_status and status_budget > 0:
                 clipped_status = _fit_formatted_text_to_rows(
                     agent_status,
@@ -2280,6 +2299,9 @@ class CustomPromptSession:
                 ensure_prompt_newline(fragments)
             fragments.extend(body)
             ensure_prompt_newline(fragments)
+            if pinned_rows:
+                fragments.extend(pinned)
+                ensure_prompt_newline(fragments)
         else:
             preamble: FormattedText = FormattedText()
             if agent_status:
@@ -2288,12 +2310,12 @@ class CustomPromptSession:
             if body:
                 preamble.extend(body)
                 ensure_prompt_newline(preamble)
-            if preamble:
-                preamble = _fit_formatted_text_to_rows(
+            if preamble or pinned_rows:
+                preamble = self._fit_preamble_with_pinned_tail(
                     preamble,
+                    pinned,
                     columns,
                     max_rows,
-                    preserve_tail_rows=1,
                 )
                 fragments.extend(preamble)
 
@@ -2381,15 +2403,59 @@ class CustomPromptSession:
                 rendered.append(("", "\n"))
                 return rendered
 
-        fragments = self._render_background_working_status(columns)
+        # An in-flight turn pins its own working indicator (the verb spinner);
+        # drop the verb here so the background-task line shows only the count.
+        pinned_active = bool(self._render_pinned_status_tail(columns))
+        fragments = self._render_background_working_status(columns, show_verb=not pinned_active)
         status = self._render_status_block(columns)
         if status:
             ensure_prompt_newline(fragments)
             fragments.extend(status)
         return fragments
 
-    def _render_background_working_status(self, columns: int) -> FormattedText:
-        """Render an idle prompt spinner while background work is active."""
+    def _render_pinned_status_tail(self, columns: int) -> FormattedText:
+        """Trailing verb spinner that stays pinned below a clipped agent stream."""
+        running = self._running_prompt_delegate
+        if running is not None and isinstance(running, PinnedStatusTailProvider):
+            rendered = to_formatted_text(running.render_pinned_status_tail(columns))
+            if any(fragment for _, fragment, *_ in rendered):
+                return rendered
+        return FormattedText()
+
+    @staticmethod
+    def _fit_preamble_with_pinned_tail(
+        preamble: FormattedText,
+        pinned: FormattedText,
+        columns: int,
+        max_rows: int,
+    ) -> FormattedText:
+        """Clip *preamble* to fit *max_rows* while always rendering *pinned*
+        (the verb spinner) below it, so the clip hint never covers the spinner.
+        """
+        if not (pinned and any(fragment for _, fragment, *_ in pinned)):
+            # No separate pinned tail: keep the old behavior of preserving the
+            # last status row so delegates that don't split stay correct.
+            return _fit_formatted_text_to_rows(
+                preamble, columns, max_rows, preserve_tail_rows=1
+            )
+        pinned_rows = len(_formatted_text_display_rows(pinned, columns))
+        body_budget = max(1, max_rows - pinned_rows)
+        clipped = _fit_formatted_text_to_rows(preamble, columns, body_budget)
+        out: FormattedText = FormattedText()
+        out.extend(clipped)
+        ensure_prompt_newline(out)
+        out.extend(pinned)
+        return out
+
+    def _render_background_working_status(
+        self, columns: int, *, show_verb: bool = True
+    ) -> FormattedText:
+        """Render a prompt spinner while background work is active.
+
+        ``show_verb`` is set ``False`` when an in-flight turn already pins a
+        working indicator with the activity verb — then this line shows only the
+        background-task count, so the verb (``Reticulating…``) isn't duplicated.
+        """
         counts = self._background_task_counts()
         total = counts.bash + counts.agent
         if total <= 0:
@@ -2404,7 +2470,7 @@ class CustomPromptSession:
             detail = f"{counts.agent} background agent{'s' if counts.agent != 1 else ''}"
         elif counts.bash:
             detail = f"{counts.bash} background bash task{'s' if counts.bash != 1 else ''}"
-        text = f"{frame} {spinner_message(now)} {detail}"
+        text = f"{frame} {spinner_message(now)} {detail}" if show_verb else f"{frame} {detail}"
         if _display_width(text) > columns:
             text = _truncate_right(text, columns)
         return FormattedText([("ansicyan", text)])

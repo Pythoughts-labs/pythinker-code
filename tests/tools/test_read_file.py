@@ -166,7 +166,7 @@ async def test_read_image_file(read_file_tool: ReadFile, temp_work_dir: HostPath
 
     assert result.is_error
     assert result.message == snapshot(
-        f"`{image_file}` is a image file. Use other appropriate tools to read image or video files."
+        f"`{image_file}` is an image file. Use the ReadMediaFile tool to read image or video files."
     )
     assert result.brief == snapshot("Unsupported file type")
 
@@ -181,7 +181,7 @@ async def test_read_extensionless_image_file(read_file_tool: ReadFile, temp_work
 
     assert result.is_error
     assert result.message == snapshot(
-        f"`{image_file}` is a image file. Use other appropriate tools to read image or video files."
+        f"`{image_file}` is an image file. Use the ReadMediaFile tool to read image or video files."
     )
     assert result.brief == snapshot("Unsupported file type")
 
@@ -196,7 +196,7 @@ async def test_read_video_file(read_file_tool: ReadFile, temp_work_dir: HostPath
 
     assert result.is_error
     assert result.message == snapshot(
-        f"`{video_file}` is a video file. Use other appropriate tools to read image or video files."
+        f"`{video_file}` is a video file. Use the ReadMediaFile tool to read image or video files."
     )
     assert result.brief == snapshot("Unsupported file type")
 

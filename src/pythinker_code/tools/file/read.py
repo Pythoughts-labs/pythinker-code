@@ -135,10 +135,11 @@ class ReadFile(CallableTool2[Params]):
             header = await p.read_bytes(MEDIA_SNIFF_BYTES)
             file_type = detect_file_type(str(p), header=header)
             if file_type.kind in ("image", "video"):
+                article = "an" if file_type.kind == "image" else "a"
                 return ToolError(
                     message=(
-                        f"`{params.path}` is a {file_type.kind} file. "
-                        "Use other appropriate tools to read image or video files."
+                        f"`{params.path}` is {article} {file_type.kind} file. "
+                        "Use the ReadMediaFile tool to read image or video files."
                     ),
                     brief="Unsupported file type",
                 )

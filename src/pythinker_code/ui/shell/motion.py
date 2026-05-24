@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import Literal
 
 from rich.style import Style
 from rich.text import Text
@@ -13,6 +14,8 @@ from pythinker_code.ui.shell.components.render_utils import cell_width
 from pythinker_code.ui.shell.design_system import ShellTone, shell_style
 from pythinker_code.ui.shell.glyphs import (
     REDUCED_MOTION_GLYPH,
+    SHAPE_FRAME_INTERVAL_S,
+    SHAPE_FRAMES,
     SPINNER_FRAME_INTERVAL_S,
     SPINNER_FRAMES,
 )
@@ -33,6 +36,8 @@ class ActivitySnapshot:
     interrupt_hint: str = ""
     reduced_motion: bool = False
     label_style: Style | None = None
+    # "braille" = dotted spinner (default); "shape" = morphing filled shape.
+    spinner: Literal["braille", "shape"] = "braille"
 
 
 def reduced_motion_enabled() -> bool:
@@ -44,11 +49,17 @@ def reduced_motion_enabled() -> bool:
     }
 
 
-def spinner_frame_at(elapsed_s: float, *, reduced_motion: bool = False) -> str:
+def spinner_frame_at(
+    elapsed_s: float,
+    *,
+    reduced_motion: bool = False,
+    frames: tuple[str, ...] = _FRAMES,
+    interval_s: float = _FRAME_INTERVAL_S,
+) -> str:
     if reduced_motion:
         return REDUCED_MOTION_GLYPH
-    index = int(max(0.0, elapsed_s) / _FRAME_INTERVAL_S) % len(_FRAMES)
-    return _FRAMES[index]
+    index = int(max(0.0, elapsed_s) / interval_s) % len(frames)
+    return frames[index]
 
 
 def _candidate_parts(snapshot: ActivitySnapshot) -> list[str]:
@@ -72,12 +83,24 @@ def _activity_label(label: str) -> str:
 
 def activity_status_line(snapshot: ActivitySnapshot, *, width: int | None = None) -> Text:
     reduced = snapshot.reduced_motion or reduced_motion_enabled()
-    glyph_style = shell_style(ShellTone.WARNING) if snapshot.stalled else _VERB_SPINNER_STYLE
+    if snapshot.stalled:
+        glyph_style = shell_style(ShellTone.WARNING)
+    elif snapshot.spinner == "shape":
+        # Composing / Thinking: muted grey, not the bright coral verb accent.
+        glyph_style = shell_style(ShellTone.MUTED)
+    else:
+        glyph_style = _VERB_SPINNER_STYLE
     label_style = snapshot.label_style if snapshot.label_style is not None else _VERB_SPINNER_STYLE
     if snapshot.label.lower() == "thinking":
         label_style += Style(italic=True)
+    if snapshot.spinner == "shape":
+        frames, interval_s = SHAPE_FRAMES, SHAPE_FRAME_INTERVAL_S
+    else:
+        frames, interval_s = _FRAMES, _FRAME_INTERVAL_S
     text = Text(
-        spinner_frame_at(snapshot.elapsed_s, reduced_motion=reduced),
+        spinner_frame_at(
+            snapshot.elapsed_s, reduced_motion=reduced, frames=frames, interval_s=interval_s
+        ),
         style=glyph_style,
     )
     text.append(" ")

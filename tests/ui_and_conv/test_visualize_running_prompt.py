@@ -90,7 +90,7 @@ def test_render_agent_status_uses_compose_agent_output_not_compose() -> None:
     agent_calls: list[bool] = []
     compose_calls: list[bool] = []
 
-    def fake_compose_agent_output():
+    def fake_compose_agent_output(*, include_working_indicator: bool = True):
         agent_calls.append(True)
         return [Text("agent-status")]
 
@@ -106,6 +106,60 @@ def test_render_agent_status_uses_compose_agent_output_not_compose() -> None:
     assert agent_calls == [True], "compose_agent_output() should be called"
     assert compose_calls == [], "compose() should NOT be called"
     assert "agent-status" in rendered.value
+
+
+def test_render_pinned_status_tail_returns_spinner_when_turn_active() -> None:
+    import time as _time
+
+    view = object.__new__(_PromptLiveView)
+    view._turn_ended = False
+    view._active_turn_depth = 1
+    view._turn_start_time = _time.monotonic()
+
+    out = view.render_pinned_status_tail(80)
+    assert out.value.strip() != ""
+
+
+def test_render_pinned_status_tail_empty_when_turn_inactive() -> None:
+    view = object.__new__(_PromptLiveView)
+    view._turn_ended = True
+    view._active_turn_depth = 1
+    assert view.render_pinned_status_tail(80).value == ""
+
+    view2 = object.__new__(_PromptLiveView)
+    view2._turn_ended = False
+    view2._active_turn_depth = 0
+    assert view2.render_pinned_status_tail(80).value == ""
+
+
+def test_pinned_tail_survives_preamble_clip() -> None:
+    """A clipped agent stream must not hide the pinned verb spinner: the spinner
+    text stays visible *after* the clip hint instead of being covered by it."""
+    from prompt_toolkit.formatted_text import FormattedText
+
+    preamble = FormattedText([("", "\n".join(f"line {i}" for i in range(40)))])
+    pinned = FormattedText([("", "Pondering…\n"), ("", "  ⎿ Tip: do the thing")])
+
+    out = CustomPromptSession._fit_preamble_with_pinned_tail(
+        preamble, pinned, columns=80, max_rows=6
+    )
+    text = "".join(fragment for _, fragment, *_ in out)
+
+    assert "output clipped to fit terminal" in text
+    assert "Pondering…" in text
+    # The spinner is pinned below the clip hint, never clipped away above it.
+    assert text.index("output clipped") < text.index("Pondering…")
+
+
+def test_pinned_tail_absent_falls_back_to_plain_clip() -> None:
+    from prompt_toolkit.formatted_text import FormattedText
+
+    preamble = FormattedText([("", "\n".join(f"line {i}" for i in range(40)))])
+    out = CustomPromptSession._fit_preamble_with_pinned_tail(
+        preamble, FormattedText(), columns=80, max_rows=6
+    )
+    text = "".join(fragment for _, fragment, *_ in out)
+    assert "output clipped to fit terminal" in text
 
 
 def test_prompt_status_shows_working_spinner_for_background_tasks() -> None:
@@ -137,6 +191,31 @@ def test_prompt_status_falls_back_to_background_spinner_after_turn_end() -> None
 
     assert "…" in text
     assert "1 background agent" in text
+
+
+def test_background_status_drops_verb_when_working_indicator_pinned() -> None:
+    """During an active turn the pinned working indicator owns the verb, so the
+    background-task line must show the count *without* repeating it."""
+    session = object.__new__(CustomPromptSession)
+    session._background_task_count_provider = lambda: BgTaskCounts(agent=3)
+    session._status_block_provider = None
+
+    class _ActiveDelegate:
+        def render_agent_status(self, columns: int):  # noqa: ARG002
+            return ""  # no body content yet — only the spinner is active
+
+        def render_pinned_status_tail(self, columns: int):  # noqa: ARG002
+            return "Reticulating… · 42s"
+
+    session._running_prompt_delegate = cast(Any, _ActiveDelegate())
+
+    rendered = CustomPromptSession._render_agent_status(session, 80)
+    text = "".join(item[1] for item in rendered)
+
+    # Count stays visible…
+    assert "3 background agents" in text
+    # …but the verb is not duplicated here (the pinned tail carries it).
+    assert "…" not in text
 
 
 def test_running_prompt_hides_placeholder() -> None:

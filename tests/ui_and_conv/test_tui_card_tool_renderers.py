@@ -99,6 +99,27 @@ def test_read_renders_path_and_range():
     assert "Read 2 lines" in rendered
 
 
+def test_read_renders_negative_offset_as_tail():
+    rendered = _render(
+        "ReadFile",
+        {"path": "/repo/src/foo.py", "line_offset": -100},
+        output="line1",
+    )
+    assert "src/foo.py" in rendered
+    assert ":tail 100" in rendered
+    # The confusing forward-range form must not appear for tail reads.
+    assert "--" not in rendered
+
+
+def test_read_renders_negative_offset_with_limit():
+    rendered = _render(
+        "ReadFile",
+        {"path": "/repo/src/foo.py", "line_offset": -100, "n_lines": 20},
+        output="line1",
+    )
+    assert ":tail 100 · limit 20" in rendered
+
+
 def test_read_result_matches_reference_summary_only():
     body = "\n".join(f"line {i}" for i in range(20))
     rendered = _render("ReadFile", {"path": "/repo/x.py"}, output=body)
@@ -456,6 +477,36 @@ def test_invalid_empty_shell_call_names_missing_command():
     )
     assert "● Bash(<missing command>)" in rendered
     assert "$ ..." not in rendered
+
+
+def test_task_output_header_shows_description_not_id():
+    from pythinker_code.tools.display import BackgroundTaskDisplayBlock
+
+    defn = get_tool_renderer("TaskOutput")
+    assert defn is not None
+    comp = ToolExecutionComponent("TaskOutput", "tc-1", definition=defn, cwd="/repo")
+    comp.update_args({"task_id": "agent-pyl4xz6a", "block": True})
+    comp.set_args_complete()
+    comp.mark_execution_started()
+    comp.set_result(
+        ToolResultPayload(
+            text="status: completed",
+            details={
+                "display": [
+                    BackgroundTaskDisplayBlock(
+                        task_id="agent-pyl4xz6a",
+                        kind="agent",
+                        status="completed",
+                        description="Shell TUI mapping",
+                    )
+                ]
+            },
+        )
+    )
+    rendered = render_plain(comp.render(), width=80)
+    # Friendly description is the primary label; raw id kept as a dim suffix.
+    assert "Shell TUI mapping" in rendered
+    assert rendered.index("Shell TUI mapping") < rendered.index("agent-pyl4xz6a")
 
 
 def test_generic_substantial_output_uses_single_response_gutter():

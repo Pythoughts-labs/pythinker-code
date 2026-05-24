@@ -8,11 +8,13 @@ from __future__ import annotations
 from rich.console import Group, RenderableType
 from rich.text import Text
 
+from pythinker_code.tools.display import BackgroundTaskDisplayBlock
 from pythinker_code.ui.shell.tool_renderers import (
     ToolRenderContext,
     ToolRenderDefinition,
     ToolResultPayload,
 )
+from pythinker_code.ui.shell.tool_renderers._file_diff import display_blocks_from_result
 from pythinker_code.ui.shell.tool_renderers._render_utils import (
     as_str,
     fg,
@@ -22,6 +24,17 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     running_spinner,
     tool_call_header,
 )
+
+
+def _stash_task_label(ctx: ToolRenderContext, result: ToolResultPayload) -> None:
+    """Remember a task's human description so the header can show it instead
+    of the opaque ``agent-xxxx`` / ``bash-xxxx`` id."""
+    if ctx.state.get("task_label"):
+        return
+    for block in display_blocks_from_result(result):
+        if isinstance(block, BackgroundTaskDisplayBlock) and block.description:
+            ctx.state["task_label"] = block.description
+            break
 
 
 def _render_call_with_id(
@@ -38,7 +51,14 @@ def _render_call_with_id(
         else:
             summary.append_text(fg("muted", "..."))
     else:
-        summary.append_text(fg("accent", task_id))
+        # Prefer the task's human description (stashed from the result) over the
+        # opaque id; keep the id as a dim suffix for traceability.
+        task_label = ctx.state.get("task_label")
+        if task_label:
+            summary.append_text(fg("accent", task_label))
+            summary.append_text(fg("muted", f" · {task_id}"))
+        else:
+            summary.append_text(fg("accent", task_id))
     for extra in extras:
         summary.append_text(fg("muted", f" · {extra}"))
     style_token = "error" if ctx.is_error else "success" if ctx.has_result else "muted"
@@ -56,6 +76,7 @@ def _render_block_result(
     *,
     collapsed_lines: int = 12,
 ) -> RenderableType | None:
+    _stash_task_label(ctx, result)
     if not result.text:
         return None
     body, remaining = format_lines_block(

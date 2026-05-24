@@ -13,6 +13,17 @@ def _render_text(renderable: object, *, width: int = 72) -> str:
     return console.export_text()
 
 
+def test_shell_markdown_strips_terminal_control_sequences() -> None:
+    # Model/user text may smuggle ANSI escapes; rendering them would move the
+    # cursor / leak colors and break the transcript layout.
+    malicious = "Hello \x1b[31mred\x1b[0m \x1b[2J\x1b]0;pwned\x07 world"
+    output = _render_text(PythinkerMarkdown(malicious))
+
+    assert "Hello" in output and "world" in output
+    assert "\x1b" not in output
+    assert "pwned" not in output  # OSC title-set payload stripped
+
+
 def test_shell_markdown_uses_pythinker_code_block_frame() -> None:
     output = _render_text(
         PythinkerMarkdown(
