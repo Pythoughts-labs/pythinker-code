@@ -12,16 +12,26 @@ from rich.console import Group, RenderableType
 from rich.text import Text
 
 from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
+from pythinker_code.ui.shell.render_constants import expand_hint
 from pythinker_code.ui.shell.tool_renderers import (
     ToolRenderContext,
     ToolRenderDefinition,
     ToolResultPayload,
 )
-from pythinker_code.ui.shell.tool_renderers._render_utils import running_spinner, tool_call_header
+from pythinker_code.ui.shell.tool_renderers._render_utils import (
+    fg,
+    format_lines_block,
+    running_spinner,
+    tool_call_header,
+)
 
 _GENERIC_TOOL_NAME = "__generic__"
 """Sentinel name used to register the fallback. Tools without their own
 entry can be looked up via ``get_tool_renderer(name) or _generic()``."""
+
+# Cap unregistered-tool output (e.g. a large Skill payload) so a huge result
+# can't flood scrollback or overlap the live spinner; ctrl+o reveals the rest.
+_GENERIC_COLLAPSED_LINES = 15
 
 
 def _render_call(ctx: ToolRenderContext) -> RenderableType | None:
@@ -48,8 +58,18 @@ def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> Rendera
     text = sanitize_ansi(result.text or "").rstrip("\n")
     if not text:
         return None
-    style = "red" if result.is_error else "grey70"
-    return Text(text, style=style)
+    style_token = "error" if result.is_error else "tool_output"
+    body, remaining = format_lines_block(
+        text,
+        expanded=ctx.expanded,
+        collapsed_max_lines=_GENERIC_COLLAPSED_LINES,
+        style_token=style_token,
+    )
+    if remaining > 0:
+        # We render our own count-aware hint, so suppress the duplicate generic one.
+        ctx.state["__suppress_generic_expand_hint__"] = True
+        return Group(body, fg("muted", expand_hint(remaining)))
+    return body
 
 
 GENERIC_RENDERER = ToolRenderDefinition(

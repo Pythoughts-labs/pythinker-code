@@ -33,6 +33,7 @@ from pythinker_code.ui.shell.motion import (
     activity_status_line,
     reduced_motion_enabled,
 )
+from pythinker_code.ui.shell.tips import FEATURE_TIPS
 from pythinker_code.ui.shell.tool_renderers import (
     ToolResultPayload,
     get_tool_renderer,
@@ -208,8 +209,11 @@ class _ContentBlock:
                 if not remaining:
                     return Text("")
                 thinking_style = tui_rich_style("thinking_text")
+                # Render reasoning as plain muted text — not themed Markdown — so
+                # it reads as uniform grey rather than picking up bright heading /
+                # purple emphasis colors.
                 return BulletColumns(
-                    Markdown(remaining, style=thinking_style + Style(italic=True)),
+                    Text(remaining, style=thinking_style + Style(italic=True)),
                     bullet_style=thinking_style,
                 )
             elapsed_str = format_elapsed(time.monotonic() - self._start_time)
@@ -243,6 +247,11 @@ class _ContentBlock:
         self._has_printed_bullet = True
         return BulletColumns(renderable)
 
+    @property
+    def has_emitted_to_scrollback(self) -> bool:
+        """Whether any part of this block has been printed to scrollback yet."""
+        return self._has_printed_bullet
+
     def _flush_committed(self) -> None:
         """Commit confirmed markdown blocks to permanent terminal output."""
         pending = self._pending_text()
@@ -252,6 +261,9 @@ class _ContentBlock:
         if boundary is None:
             return
         committed_text = pending[:boundary]
+        if not self._has_printed_bullet:
+            # Leading blank row separates this step from the previous block.
+            console.print()
         console.print(self._wrap_bullet(Markdown(committed_text)))
         self._committed_len += boundary
 
@@ -290,7 +302,7 @@ class _ContentBlock:
 
     def _compose_thinking_spinner(self) -> Text:
         return activity_status_line(
-            self._activity_snapshot("Thinking", label_style=tui_rich_style("activity_label")),
+            self._activity_snapshot("Thinking", label_style=tui_rich_style("thinking_text")),
             width=current_console_width(),
         )
 
@@ -303,7 +315,7 @@ class _ContentBlock:
 
     def _compose_thinking(self) -> Text:
         return activity_status_line(
-            self._activity_snapshot("Thinking", label_style=tui_rich_style("activity_label")),
+            self._activity_snapshot("Thinking", label_style=tui_rich_style("thinking_text")),
             width=current_console_width(),
         )
 
@@ -716,17 +728,7 @@ class _CompactionBlock:
     EXPECTED_DURATION_S = 60.0
     MAX_ESTIMATED_PROGRESS = 0.95
 
-    TIPS: tuple[str, ...] = (
-        "Shift+Tab toggles plan mode for multi-step work",
-        "Subagents keep your main context clean",
-        "/verify before declaring work done",
-        "/learn captures a lesson after a correction",
-        "@-mention files to attach them to the next message",
-        "/feedback sends a note to the Pythinker team",
-        "/theme switches between dark and light",
-        "Ctrl+O opens your $EDITOR for long messages",
-        "Use /resume to pick up a previous session",
-    )
+    TIPS: tuple[str, ...] = FEATURE_TIPS
 
     def __init__(self) -> None:
         self._start = time.monotonic()

@@ -242,20 +242,25 @@ def _style_for(renderable: Text, text: str) -> Style:
     return Style.parse(span.style) if isinstance(span.style, str) else span.style
 
 
-def test_composing_and_thinking_labels_use_activity_label_token():
+def test_composing_uses_activity_label_thinking_uses_muted_token():
+    # Composing keeps the bright activity label; thinking reads as muted grey
+    # (thinking_text), not the bright/purple palette.
     composing = _ContentBlock(is_think=False)
     composing.append("hello")
     composing_renderable = composing.compose()
     assert isinstance(composing_renderable, Text)
-    expected = tui_rich_style("activity_label")
-    assert _style_for(composing_renderable, "Composing").color == expected.color
+    assert (
+        _style_for(composing_renderable, "Composing").color
+        == tui_rich_style("activity_label").color
+    )
 
     thinking = _ContentBlock(is_think=True)
     thinking.append("reasoning")
     thinking_renderable = thinking.compose()
     assert isinstance(thinking_renderable, Text)
     thinking_style = _style_for(thinking_renderable, "Thinking")
-    assert thinking_style.color == expected.color
+    assert thinking_style.color == tui_rich_style("thinking_text").color
+    assert thinking_style.color != tui_rich_style("activity_label").color
     assert thinking_style.italic
 
 

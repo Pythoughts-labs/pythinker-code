@@ -1649,9 +1649,14 @@ class CustomPromptSession:
 
         def _accept_completion(buff: Buffer) -> None:
             """Accept the current or first completion, suppressing re-completion."""
-            completion = buff.complete_state.current_completion  # type: ignore[union-attr]
-            if not completion:
-                completion = buff.complete_state.completions[0]  # type: ignore[union-attr]
+            state = buff.complete_state
+            if state is None:
+                return
+            completion = state.current_completion
+            if completion is None:
+                if not state.completions:
+                    return
+                completion = state.completions[0]
             self._suppress_auto_completion = True
             try:
                 buff.apply_completion(completion)

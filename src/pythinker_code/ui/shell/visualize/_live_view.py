@@ -34,6 +34,7 @@ from pythinker_code.ui.shell.motion import (
 )
 from pythinker_code.ui.shell.spacing import BLANK_ROW
 from pythinker_code.ui.shell.spinner_words import spinner_message
+from pythinker_code.ui.shell.tips import current_tip
 from pythinker_code.ui.shell.visualize._approval_panel import (
     ApprovalRequestPanel,
     show_approval_in_pager,
@@ -52,6 +53,7 @@ from pythinker_code.ui.shell.visualize._question_panel import (
     show_question_body_in_pager,
 )
 from pythinker_code.ui.shell.visualize._worklog import render_worklog_card
+from pythinker_code.ui.theme import tui_rich_style
 from pythinker_code.utils.aioqueue import Queue, QueueShutDown
 from pythinker_code.utils.datetime import format_elapsed
 from pythinker_code.utils.logging import logger
@@ -92,6 +94,9 @@ _LIVE_VERTICAL_OVERFLOW: Literal["crop", "ellipsis", "visible"] = "ellipsis"
 # Canonical inter-block spacer. The live stream owns the gaps *between* action
 # blocks; cards/panels must not add external top/bottom spacing (see spacing.py).
 _ACTION_SPACER = BLANK_ROW
+# Show the rotating feature tip under the spinner only once a turn has been
+# running long enough that a quick turn won't flash it.
+_WORKING_TIP_MIN_ELAPSED_S = 4.0
 
 
 def _append_action_block(
@@ -231,10 +236,14 @@ class _LiveView:
                             self._show_expandable_panel_content()
                         finally:
                             # Reset live render shape so the next refresh re-anchors cleanly.
-                            self._reset_live_shape(live)
-                            live.start()
-                            live.update(self.compose(), refresh=True)
-                            await listener.resume()
+                            # Resume the listener even if restarting Live raises, so the
+                            # keyboard never deadlocks paused.
+                            try:
+                                self._reset_live_shape(live)
+                                live.start()
+                                live.update(self.compose(), refresh=True)
+                            finally:
+                                await listener.resume()
                     elif self._toggle_latest_tool_card():
                         live.update(self.compose(), refresh=True)
                     return
@@ -249,9 +258,12 @@ class _LiveView:
                     try:
                         text = await prompt_other_input(question_text)
                     finally:
-                        self._reset_live_shape(live)
-                        live.start()
-                        await listener.resume()
+                        # Always resume the listener, even if restarting Live raises.
+                        try:
+                            self._reset_live_shape(live)
+                            live.start()
+                        finally:
+                            await listener.resume()
 
                     self._submit_question_other_text(text)
                     live.update(self.compose(), refresh=True)
@@ -456,13 +468,20 @@ class _LiveView:
             _append_action_block(blocks, notification.compose())
         return blocks
 
-    def _working_indicator(self) -> Text:
+    def _working_indicator(self) -> RenderableType:
         now = time.monotonic()
         elapsed = 0.0 if self._turn_start_time is None else now - self._turn_start_time
-        return activity_status_line(
+        line = activity_status_line(
             ActivitySnapshot(label=spinner_message(now), elapsed_s=elapsed),
             width=current_console_width(),
         )
+        # During longer waits, surface a rotating CLI-feature tip under the verb.
+        if elapsed < _WORKING_TIP_MIN_ELAPSED_S:
+            return line
+        tip = Text("  ⎿  ", style=tui_rich_style("muted"))
+        tip.append("Tip: ", style=tui_rich_style("dim"))
+        tip.append(current_tip(now), style=tui_rich_style("dim"))
+        return Group(line, tip)
 
     def compose(self, *, include_status: bool = True) -> RenderableType:
         """Compose the full live view display content.
@@ -785,6 +804,11 @@ class _LiveView:
         """Flush the current content block."""
         if self._current_content_block is not None:
             if self._current_content_block.has_pending():
+                # One blank row before the block (matching tool cards) so steps
+                # are separated — unless this block already streamed earlier
+                # paragraphs, in which case this is its continuation.
+                if not self._current_content_block.has_emitted_to_scrollback:
+                    console.print()
                 console.print(self._current_content_block.compose_final())
             self._current_content_block = None
             self.refresh_soon()
@@ -816,6 +840,7 @@ class _LiveView:
         """Flush rendered notifications to terminal history."""
         self._live_notification_blocks.clear()
         while self._notification_blocks:
+            console.print()
             console.print(self._notification_blocks.popleft().compose())
             self.refresh_soon()
 
