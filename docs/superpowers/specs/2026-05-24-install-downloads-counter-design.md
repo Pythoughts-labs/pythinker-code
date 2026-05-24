@@ -59,26 +59,32 @@ origin hostname. The badge and JSON API read the same counter.
 ```
 curl/irm ──> CF edge ──> Worker(/install.sh, /install.ps1)
                            │  GET + UA bot-filter (curl/wget/powershell ⇒ real install)
-                           │  fetch DL_HOST/<script>  ──> CF CDN (cached, stale-if-error) ──> VPS
+                           │  fetch https://pythinker.com/<script> {cf:{cacheTtl:300}}
+                           │     └─ same-zone subrequest ⇒ CF sends straight to VPS origin (no recursion)
                            │  on 200 with body ⇒ ctx.waitUntil(D1: UPDATE counter SET n=n+1)  ← fail-open
-                           └─ return script bytes
+                           └─ return script bytes (503 "exit 1" shellscript if origin unreachable)
 shields.io ─> /api/installs/badge ─> D1 SELECT n ─> {schemaVersion,label,message,color}
 tooling   ─> /api/installs        ─> D1 SELECT n ─> {"installs": N}
 ```
 
-The Worker never fetches its own proxied route (which would recurse). It fetches
-the script bytes from a **separate proxied (orange-cloud) hostname**
-`dl.pythinker.com` that has **no Worker route**. Because that hostname goes
-through normal Cloudflare CDN caching, the existing
-`Cache-Control: …, stale-if-error=86400` on the script is honored natively by
-the CDN — a VPS outage still serves the last-good bytes, with no Workers Cache
-API involvement. The VPS remains the single source of truth for the script.
+The Worker fetches the script from the **apex** (`https://pythinker.com/<script>`).
+Cloudflare documents that **routes cannot be the target of a same-zone `fetch()`**
+— a same-zone subrequest is sent **directly to the origin**, bypassing the Worker
+route. So this does **not** recurse, needs **no extra hostname**, and the origin
+receives `Host: pythinker.com` (which it serves; it 404s other hosts). The VPS
+remains the single source of truth. `cf: { cacheEverything: true, cacheTtl: 300 }`
+lets the edge cache the script to keep origin load low.
 
-> **Why not DNS-only (grey-cloud) origin?** A grey-cloud subrequest bypasses the
-> CDN, and the Workers Cache API (`caches.default`) does not honor
-> `stale-if-error` and is only per-colo — so it cannot replicate today's
-> stale-on-error behavior. The proxied `dl.pythinker.com` path is therefore
-> preferred over a DNS-only origin.
+> **Why not a separate `dl.pythinker.com` hostname (earlier draft)?** Two reasons
+> discovered during implementation: (1) the VPS routes by `Host` header and
+> **404s any host other than `pythinker.com`**, so `dl` would need a VPS-side
+> vhost change (no SSH available); (2) the same-zone-fetch rule already routes
+> the apex subrequest to origin without recursion, making a second hostname
+> unnecessary. **Accepted regression:** a same-zone subrequest may bypass the CDN
+> cache, so `stale-if-error=86400` is not guaranteed. During a simultaneous VPS
+> outage + cache miss, users get a clean `503` (`exit 1` shellscript) instead of
+> last-good bytes — a small, graceful degradation (never a 1101 error page).
+> Verify actual cache behavior post-deploy via `cf-cache-status` (see plan).
 
 ## Components
 
@@ -87,8 +93,7 @@ API involvement. The VPS remains the single source of truth for the script.
   `Env` interface, `export default { fetch }`).
   - **`wrangler.jsonc`** — routes for `pythinker.com/install.sh`,
     `pythinker.com/install.ps1`, `pythinker.com/api/installs`,
-    `pythinker.com/api/installs/badge`; one D1 binding `DB`; var
-    `DL_HOST = "dl.pythinker.com"` (proxied, **not** routed to this Worker).
+    `pythinker.com/api/installs/badge`; one D1 binding `DB`.
   - **`src/index.ts`** — request router:
     - install routes → bot-filter, `ctx.waitUntil` increment, serve from origin
     - api routes → read counter, return JSON
@@ -150,11 +155,12 @@ API involvement. The VPS remains the single source of truth for the script.
   response is unaffected. A counter outage must never break installs. (Under a
   D1 spike/overload some increments may be dropped — acceptable for a vanity
   counter; see the WAE/DO escalation path above.)
-- **Origin fetch fails** → the subrequest to the proxied `dl.pythinker.com`
-  goes through normal Cloudflare CDN caching, which honors the script's
-  `stale-if-error=86400` natively. A VPS outage therefore still serves the
-  last-good bytes without any Workers Cache API logic. A failed fetch is **not**
-  counted (no `200`).
+- **Origin fetch fails** → the `fetch()` is wrapped in `try/catch`; on a thrown
+  error (origin unreachable) the Worker returns a graceful `503` shellscript
+  (`# install temporarily unavailable\nexit 1`) rather than letting the Worker
+  throw (which would surface a Cloudflare `1101` error page to `curl | bash`).
+  A failed fetch is **not** counted (no `200`). See the accepted `stale-if-error`
+  regression noted under Architecture.
 - **D1 read fails on `/api/*`** → return `200` with `message: "unknown"` / grey
   color for the badge (keeps the shields.io payload valid) and
   `{"installs": null}` for the JSON endpoint.
@@ -183,9 +189,6 @@ API involvement. The VPS remains the single source of truth for the script.
 
 ## Open operational tasks (for the plan, not the code)
 
-- Create proxied (orange-cloud) `dl.pythinker.com` → VPS, serving the same
-  install scripts with the same `Cache-Control`; ensure **no Worker route** is
-  bound to it.
 - Create the D1 database and bind it; run the schema migration.
 - Provision a read-only CF analytics API token for the seed script.
 - Run the seed script once (`--dry-run` first) before announcing the badge.

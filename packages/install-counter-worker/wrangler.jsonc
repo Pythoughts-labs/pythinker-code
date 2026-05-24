@@ -9,9 +9,6 @@
     { "pattern": "pythinker.com/api/installs", "zone_name": "pythinker.com" },
     { "pattern": "pythinker.com/api/installs/badge", "zone_name": "pythinker.com" }
   ],
-  "vars": {
-    "DL_HOST": "dl.pythinker.com"
-  },
   "d1_databases": [
     {
       "binding": "DB",

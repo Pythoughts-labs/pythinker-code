@@ -700,17 +700,10 @@ git commit -m "chore(install-counter): bind created D1 database id"
 Run: `npx wrangler d1 execute install_counter --remote --file ./schema.sql`
 Expected: success; `SELECT n FROM counter WHERE id=1` returns 0.
 
-- [ ] **Step 4: Create `dl.pythinker.com` DNS record (browser, user-approved)**
-
-Via Chrome DevTools MCP, open the Cloudflare dashboard → pythinker.com → DNS.
-Add: **Type** `A`/`AAAA` (or `CNAME`) → **Name** `dl` → **Target** the same
-origin the VPS uses for `pythinker.com` → **Proxy status: Proxied (orange)**.
-**Show the exact values to the user and get explicit confirmation before saving.**
-Then verify the VPS serves the script for this host:
-
-Run: `curl -fsSI https://dl.pythinker.com/install.sh`
-Expected: `200`, `content-type: text/x-shellscript`. (If the VPS vhosts by Host
-header, ensure it answers for `dl.pythinker.com` too — operational fix on the VPS.)
+> **Note (changed during implementation):** the original `dl.pythinker.com`
+> hostname was dropped. The VPS 404s any `Host` other than `pythinker.com`, and
+> Cloudflare routes same-zone subrequests straight to origin (no recursion), so
+> the Worker fetches the apex directly. **No DNS record is created.**
 
 - [ ] **Step 5: Deploy the Worker**
 

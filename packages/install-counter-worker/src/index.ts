@@ -5,7 +5,6 @@ import { isInstallUserAgent } from "./ua";
 
 export interface Env {
   DB: D1Database;
-  DL_HOST: string;
 }
 
 const INSTALL_PATHS = new Set(["/install.sh", "/install.ps1"]);
@@ -32,12 +31,18 @@ export default {
     }
 
     if (INSTALL_PATHS.has(path)) {
-      // Fetch bytes from the proxied download host (CDN-cached, honors
-      // stale-if-error). Never fetch the proxied install route itself.
-      const origin = `https://${env.DL_HOST}${path}${url.search}`;
+      // Fetch the script from the apex. Cloudflare routes a same-zone
+      // subrequest straight to the origin (routes can't be the target of a
+      // same-zone fetch), so this does NOT recurse into this Worker. cacheTtl
+      // lets the edge cache the script to keep origin load low.
+      const origin = `https://pythinker.com${path}${url.search}`;
+      const init: RequestInit =
+        request.method === "GET"
+          ? { method: "GET", headers: request.headers, cf: { cacheEverything: true, cacheTtl: 300 } }
+          : { method: request.method, headers: request.headers };
       let res: Response;
       try {
-        res = await fetch(origin, request);
+        res = await fetch(origin, init);
       } catch {
         // Origin and its CDN cache are both unavailable. Fail open: never let
         // the Worker throw (that would surface a 1101 error page to curl|bash).

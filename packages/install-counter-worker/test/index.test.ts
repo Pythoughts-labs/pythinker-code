@@ -9,7 +9,7 @@ function makeEnv(opts: { n?: number; throwOnWrite?: boolean } = {}) {
   });
   const first = vi.fn(async () => ({ n: opts.n ?? 0 }));
   const prepare = vi.fn((_sql: string): Stmt => ({ run, first }));
-  return { env: { DB: { prepare }, DL_HOST: "dl.pythinker.com" } as any, run, prepare };
+  return { env: { DB: { prepare } } as any, run, prepare };
 }
 
 function ctx() {
@@ -40,8 +40,9 @@ describe("worker router", () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toBe(ORIGIN_BODY);
     expect(run).toHaveBeenCalledTimes(1);
-    // subrequest hit DL_HOST, never the proxied route (loopback guard)
-    expect((fetch as any).mock.calls[0][0]).toContain("dl.pythinker.com/install.sh");
+    // subrequest targets the apex; CF runtime sends same-zone fetches to origin
+    // (no recursion) — that behavior can't be exercised in vitest.
+    expect((fetch as any).mock.calls[0][0]).toBe("https://pythinker.com/install.sh");
   });
 
   it("does NOT increment for a browser UA", async () => {
