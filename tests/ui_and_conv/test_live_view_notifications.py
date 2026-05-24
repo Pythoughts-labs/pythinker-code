@@ -54,7 +54,7 @@ def test_working_indicator_uses_turn_elapsed_time(monkeypatch):
     assert "4h" not in rendered
 
 
-def test_working_indicator_uses_stable_professional_label(monkeypatch):
+def test_working_indicator_uses_rotating_thinking_words(monkeypatch):
     now = 90.0
     monkeypatch.setattr(live_view_module.time, "monotonic", lambda: now)
     view = _LiveView(StatusUpdate())
@@ -62,11 +62,11 @@ def test_working_indicator_uses_stable_professional_label(monkeypatch):
 
     rendered = _render(view._working_indicator())
 
-    assert "Working…" in rendered
-    assert "Accomplishing" not in rendered
+    assert "Accomplishing…" in rendered
+    assert "Working" not in rendered
 
 
-def test_working_indicator_keeps_stable_label_over_time(monkeypatch):
+def test_working_indicator_rotates_thinking_words_every_ten_minutes(monkeypatch):
     now = 0.0
     monkeypatch.setattr(live_view_module.time, "monotonic", lambda: now)
     view = _LiveView(StatusUpdate())
@@ -78,9 +78,9 @@ def test_working_indicator_keeps_stable_label_over_time(monkeypatch):
     now = 600.0
     second = _render(view._working_indicator())
 
-    assert "Working…" in first
-    assert "Working…" in still_first
-    assert "Working…" in second
+    assert "Accomplishing…" in first
+    assert "Accomplishing…" in still_first
+    assert "Actioning…" in second
 
 
 def test_prompt_live_view_suppresses_background_task_notifications(monkeypatch):

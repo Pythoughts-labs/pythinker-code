@@ -22,7 +22,6 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     invalid_arg,
     loading_marker,
     missing_required_arg,
-    tool_title,
 )
 from pythinker_code.ui.theme import tui_rich_style
 from pythinker_code.utils.datetime import format_elapsed
@@ -33,9 +32,9 @@ _PROMPT_PREVIEW_CHARS = 80
 _BACKGROUND_ACTIVE_STATUSES = frozenset({"created", "starting", "running", "awaiting_approval"})
 
 
-def _subagent_loader(ctx: ToolRenderContext) -> Text:
-    """Return the pulsing dot loader used for active subagent rows."""
-    return loading_marker()
+def _subagent_loader(_ctx: ToolRenderContext) -> Text:
+    """Return the pulsating solid-circle loader used for active subagent rows."""
+    return loading_marker(style_token="accent")
 
 
 def _with_active_loader(renderable: RenderableType, ctx: ToolRenderContext) -> RenderableType:
@@ -65,9 +64,9 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
     model = as_str(args.get("model"))
 
     header = Text()
-    header.append_text(tool_title("subagent"))
+    header.append("subagent", style=tui_rich_style("accent") + RichStyle(bold=True))
     header.append(" ")
-    header.append_text(fg("accent", subagent_type))
+    header.append_text(fg("border_accent", subagent_type))
     if description:
         header.append_text(fg("muted", f" [{description}]"))
     if model:
@@ -123,7 +122,7 @@ def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> Rendera
         if description:
             label = f"{label}: {description}"
         line = _subagent_loader(ctx)
-        line.append(label, style=tui_rich_style("muted"))
+        line.append(label, style=tui_rich_style("accent") + RichStyle(bold=True))
         return Group(line, fg("dim", f"  status: {background_status}"))
     # Distinct success symbol so the eye doesn't mistake a finished subagent
     # for a generic tool tick — heavy check on success, heavy ballot on error.

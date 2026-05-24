@@ -62,20 +62,27 @@ def tool_title(label: str) -> Text:
     return Text(label, style=base + RichStyle(bold=True))
 
 
-def loading_marker(*, done: bool = False, pulse: bool = True, now: float | None = None) -> Text:
+def loading_marker(
+    *,
+    done: bool = False,
+    pulse: bool = True,
+    now: float | None = None,
+    style_token: str = "muted",
+) -> Text:
     """Return the app-wide task marker.
 
     Running tasks always show a visible dot that pulses between heavy/light
     dot glyphs; completed tasks use a green checkmark. The animated braille
-    spinner is reserved for the bottom thinking-word status.
+    spinner is reserved for the bottom thinking-word status. Callers may pass
+    ``style_token="accent"`` for prominent rows such as subagents.
     """
     if done:
         return Text("✓ ", style=tui_rich_style("success"))
     if not pulse:
-        return Text("● ", style=tui_rich_style("muted"))
+        return Text("● ", style=tui_rich_style(style_token))
     t = time.monotonic() if now is None else now
     glyph = "●" if int(t / 0.8) % 2 == 0 else "•"
-    return Text(f"{glyph} ", style=tui_rich_style("muted"))
+    return Text(f"{glyph} ", style=tui_rich_style(style_token))
 
 
 def running_spinner(

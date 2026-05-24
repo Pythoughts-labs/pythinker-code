@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from rich.style import Style
 from rich.text import Text
 
 from pythinker_code.soul import format_token_count
@@ -14,6 +15,7 @@ from pythinker_code.utils.datetime import format_elapsed
 
 _FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 _FRAME_INTERVAL_S = 0.08
+_VERB_SPINNER_STYLE = Style(color="#F5A97F")
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,16 +66,16 @@ def _activity_label(label: str) -> str:
 
 def activity_status_line(snapshot: ActivitySnapshot, *, width: int | None = None) -> Text:
     reduced = snapshot.reduced_motion or reduced_motion_enabled()
-    glyph_style = ShellTone.WARNING if snapshot.stalled else ShellTone.ACCENT
+    glyph_style = shell_style(ShellTone.WARNING) if snapshot.stalled else _VERB_SPINNER_STYLE
+    label_style = _VERB_SPINNER_STYLE
+    if snapshot.label.lower() == "thinking":
+        label_style += Style(italic=True)
     text = Text(
         spinner_frame_at(snapshot.elapsed_s, reduced_motion=reduced),
-        style=shell_style(glyph_style),
+        style=glyph_style,
     )
     text.append(" ")
-    text.append(
-        _activity_label(snapshot.label),
-        style="italic" if snapshot.label.lower() == "thinking" else "",
-    )
+    text.append(_activity_label(snapshot.label), style=label_style)
 
     parts = _candidate_parts(snapshot)
     if width is not None:

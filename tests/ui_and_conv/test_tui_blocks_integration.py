@@ -244,7 +244,9 @@ def test_card_style_running_subagent_marker_pulses(_force_card_style, monkeypatc
     assert "•" in second
 
 
-def test_card_style_background_subagent_result_keeps_solid_circle(_force_card_style, monkeypatch):
+def test_card_style_background_subagent_result_keeps_solid_circle(
+    _force_card_style, monkeypatch
+):
     from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
 
     register_builtin_renderers()

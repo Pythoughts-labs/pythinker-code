@@ -11,6 +11,12 @@ def _plain(renderable) -> str:
     return console.export_text()
 
 
+def _ansi(renderable) -> str:
+    console = Console(record=True, width=100, color_system="truecolor")
+    console.print(renderable)
+    return console.export_text(styles=True)
+
+
 def test_spinner_frame_changes_with_time():
     assert spinner_frame_at(0.0) != spinner_frame_at(0.2)
 
@@ -51,3 +57,12 @@ def test_activity_status_line_uses_clean_metadata_separator():
     output = _plain(line).strip()
 
     assert "Pythinking… · 30s · ↓ 1.3k tokens" in output
+
+
+def test_activity_status_line_colors_spinner_verb_orange():
+    line = activity_status_line(ActivitySnapshot(label="Cultivating", elapsed_s=77.0))
+
+    output = _ansi(line)
+
+    assert "38;2;245;169;127" in output
+    assert "Cultivating…" in output
