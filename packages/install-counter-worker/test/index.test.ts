@@ -45,7 +45,7 @@ describe("worker router", () => {
     expect((fetch as any).mock.calls[0][0]).toBe("https://pythinker.com/install.sh");
   });
 
-  it("does NOT increment for a browser UA", async () => {
+  it("increments for ANY UA on a 200 (no bot filter)", async () => {
     const { env, run } = makeEnv();
     const c = ctx();
     await worker.fetch(
@@ -54,7 +54,7 @@ describe("worker router", () => {
       c,
     );
     await Promise.all(c._promises);
-    expect(run).not.toHaveBeenCalled();
+    expect(run).toHaveBeenCalledTimes(1);
   });
 
   it("does NOT increment when origin returns non-200", async () => {

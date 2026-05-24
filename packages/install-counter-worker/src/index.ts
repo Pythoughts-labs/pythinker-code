@@ -1,7 +1,6 @@
 import type { D1Database, ExecutionContext } from "@cloudflare/workers-types";
 import { badgeJson, installsJson } from "./badge";
 import { incrementCount, readCount } from "./counter";
-import { isInstallUserAgent } from "./ua";
 
 export interface Env {
   DB: D1Database;
@@ -50,12 +49,10 @@ export default {
         });
       }
 
-      const eligible =
-        request.method === "GET" &&
-        res.status === 200 &&
-        isInstallUserAgent(request.headers.get("user-agent"));
-
-      if (eligible) {
+      // Count every successful GET of the script (no User-Agent filter):
+      // browsers, crawlers and monitors all count. This is a download/hit
+      // metric, not an audited install count.
+      if (request.method === "GET" && res.status === 200) {
         // Scheduled without awaiting; may continue after the response returns.
         ctx.waitUntil(incrementCount(env.DB).catch(() => {}));
       }
