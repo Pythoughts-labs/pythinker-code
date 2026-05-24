@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
+
 from pythinker_code.ui.shell.console import NEUTRAL_MARKDOWN_THEME
+from pythinker_code.ui.theme import TUI_TOKEN_NAMES, tui_rich_style
 
 
 class TestNeutralMarkdownThemeNoBgColor:
@@ -51,3 +54,11 @@ class TestNeutralMarkdownThemeNoBgColor:
                 assert style.bgcolor is None, (
                     f"{name} should have no background color, got bgcolor={style.bgcolor}"
                 )
+
+
+def test_tui_token_names_are_validated_before_style_lookup() -> None:
+    assert "accent" in TUI_TOKEN_NAMES
+    assert tui_rich_style("accent") is not None
+
+    with pytest.raises(ValueError, match="Unknown TUI token"):
+        tui_rich_style("not_a_real_token")

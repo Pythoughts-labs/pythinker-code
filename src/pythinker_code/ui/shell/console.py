@@ -77,6 +77,20 @@ class _PythinkerConsole(Console):
 console = _PythinkerConsole(highlight=False, theme=NEUTRAL_MARKDOWN_THEME)
 
 
+def current_console_width(active_console: Console | None = None, *, default: int = 78) -> int:
+    """Return the current terminal width without relying on cached ``Console.width``.
+
+    Rich's ``Console.width`` can be stale across live refreshes after terminal
+    resizes. ``Console.size.width`` re-queries the console options and keeps
+    activity/status lines width-adaptive.
+    """
+    target = active_console or console
+    try:
+        return max(1, target.size.width)
+    except Exception:
+        return default
+
+
 # Matches OSC 8 hyperlink open/close markers emitted by Rich's Style(link=...).
 # Format: ESC ] 8 ; <params> ; <uri> ST   where ST is ESC \ or BEL (\x07).
 # prompt_toolkit's ANSI parser does not understand OSC 8 and renders the raw

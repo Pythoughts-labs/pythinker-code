@@ -1,6 +1,6 @@
 from rich.console import Console
 
-from pythinker_code.ui.shell.components.markdown import PythinkerMarkdown
+from pythinker_code.ui.shell.components.markdown import PythinkerMarkdown, PythinkerMarkdownStream
 from pythinker_code.ui.shell.components.special_messages import (
     SkillInvocationInput,
     render_skill_invocation,
@@ -43,6 +43,32 @@ def test_shell_markdown_keeps_rich_fork_table_records() -> None:
     assert "Suggested improvement:" in output
     assert "Priority: High" in output
     assert "Effort: XS" in output
+
+
+def test_markdown_stream_uses_parser_backed_block_boundaries() -> None:
+    stream = PythinkerMarkdownStream()
+
+    first = stream.push("Before.\n\n| A | B |\n|---|---|\n")
+    ready = stream.push("| 1 | 2 |\n\nAfter.")
+
+    assert first is not None
+    assert "Before." in first
+    assert "| A | B |" not in first
+    assert ready is not None
+    assert "| 1 | 2 |" in ready
+    assert "After." not in ready
+
+
+def test_markdown_stream_does_not_flush_incomplete_fence() -> None:
+    stream = PythinkerMarkdownStream()
+
+    assert stream.push("```python\nprint(1)\n") is None
+
+
+def test_markdown_stream_flushes_single_line_sentence() -> None:
+    stream = PythinkerMarkdownStream()
+
+    assert stream.push("A short sentence.") == "A short sentence."
 
 
 def test_expanded_special_messages_use_shell_markdown_renderer() -> None:

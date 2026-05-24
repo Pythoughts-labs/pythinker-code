@@ -17,6 +17,10 @@ Wraps Rich's ``Markdown`` element with three changes:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from markdown_it import MarkdownIt
 
 from rich.cells import cell_len
 from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
@@ -113,83 +117,75 @@ def pythinker_markdown(text: str, *, code_theme: str = "monokai") -> PythinkerMa
 # ---------------------------------------------------------------------------
 
 
-_FENCE_CHARS = ("`", "~")
 _SENTENCE_END = (".", "!", "?", ";", ":")
+_SELF_CLOSING_BLOCKS = frozenset(("fence", "code_block", "hr", "html_block"))
+
+# Lazy-initialized markdown-it parser for incremental token commitment.
+_md_parser: MarkdownIt | None = None
 
 
-@dataclass(slots=True)
-class _FenceMarker:
-    char: str
-    length: int
+def _get_md_parser() -> MarkdownIt:
+    global _md_parser
+    if _md_parser is None:
+        from markdown_it import MarkdownIt
+
+        # Match the extensions used by the rendering path
+        # (pythinker_code.utils.rich.markdown.Markdown) so that block
+        # boundaries are detected consistently.
+        _md_parser = MarkdownIt().enable("strikethrough").enable("table")
+    return _md_parser
 
 
-def _parse_fence_opener(line: str) -> _FenceMarker | None:
-    stripped = line.lstrip(" ")
-    indent = len(line) - len(stripped)
-    if indent > 3 or not stripped:
+def markdown_commit_boundary(text: str) -> int | None:
+    """Return the offset up to which streamed markdown can be committed.
+
+    The last top-level block is treated as still mutable, so callers only
+    permanently print completed blocks. Nested tokens (list items, blockquote
+    children, table rows) stay with their parent block.
+    """
+    md = _get_md_parser()
+    tokens = md.parse(text)
+
+    block_maps: list[list[int]] = []
+    depth = 0
+    for token in tokens:
+        if token.nesting == 1:
+            if depth == 0 and token.map is not None:
+                block_maps.append(token.map)
+            depth += 1
+        elif token.nesting == -1:
+            depth -= 1
+        elif depth == 0 and token.type in _SELF_CLOSING_BLOCKS and token.map is not None:
+            block_maps.append(token.map)
+
+    if len(block_maps) < 2:
         return None
-    ch = stripped[0]
-    if ch not in _FENCE_CHARS:
-        return None
-    length = 0
-    for c in stripped:
-        if c == ch:
-            length += 1
-        else:
-            break
-    if length < 3:
-        return None
-    info = stripped[length:]
-    if ch == "`" and "`" in info:
-        return None
-    return _FenceMarker(char=ch, length=length)
 
-
-def _line_closes_fence(line: str, opener: _FenceMarker) -> bool:
-    stripped = line.lstrip(" ")
-    indent = len(line) - len(stripped)
-    if indent > 3:
-        return False
-    length = 0
-    for c in stripped:
-        if c == opener.char:
-            length += 1
-        else:
-            break
-    if length < opener.length:
-        return False
-    rest = stripped[length:]
-    return all(c in " \t" for c in rest)
+    target_line = block_maps[-2][1]
+    offset = 0
+    for _ in range(target_line):
+        offset = text.index("\n", offset) + 1
+    return offset
 
 
 def _find_stream_safe_boundary(text: str) -> int | None:
     """Return an index in ``text`` that is safe to flush, or ``None``.
 
-    Safe boundaries are blank lines outside any open code fence, or — to avoid
-    the well-known long-paragraph stall — the end of a non-fenced line that
-    ends in sentence-final punctuation.
+    Parser-backed block commitment handles multi-line markdown constructs such
+    as tables, lists, and fenced code. A sentence-final fallback is kept only
+    for single-line prose so long plain paragraphs still become visible without
+    waiting for a blank line or a second markdown block.
     """
-    open_fence: _FenceMarker | None = None
-    last_boundary: int | None = None
-    cursor = 0
-    for line in text.splitlines(keepends=True):
-        line_end = cursor + len(line)
-        content = line.rstrip("\n")
-        if open_fence is not None:
-            if _line_closes_fence(content, open_fence):
-                open_fence = None
-                last_boundary = line_end
-            cursor = line_end
-            continue
-        opener = _parse_fence_opener(content)
-        if opener is not None:
-            open_fence = opener
-            cursor = line_end
-            continue
-        if not content.strip() or content.rstrip().endswith(_SENTENCE_END):
-            last_boundary = line_end
-        cursor = line_end
-    return last_boundary
+    boundary = markdown_commit_boundary(text)
+    if boundary is not None:
+        return boundary
+
+    if "\n" in text:
+        return None
+    stripped = text.rstrip()
+    if stripped.endswith(_SENTENCE_END):
+        return len(text)
+    return None
 
 
 @dataclass(slots=True)

@@ -509,7 +509,7 @@ def test_concurrent_prompt_error(tmp_path) -> None:
                             "output": "hi\n",
                             "message": "Command executed successfully.",
                             "display": [],
-                            "extras": None,
+                            "extras": {"status": "success"},
                         },
                     },
                 },

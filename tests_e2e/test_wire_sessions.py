@@ -475,7 +475,7 @@ def test_replay_streams_wire_history(tmp_path) -> None:
                             "output": "ok\n",
                             "message": "Command executed successfully.",
                             "display": [],
-                            "extras": None,
+                            "extras": {"status": "success"},
                         },
                     },
                 },

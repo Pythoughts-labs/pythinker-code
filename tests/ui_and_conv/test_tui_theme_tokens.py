@@ -95,7 +95,7 @@ def test_tui_rich_style_empty_token_produces_empty_style():
 
 
 def test_tui_rich_style_unknown_token_raises():
-    with pytest.raises(AttributeError):
+    with pytest.raises(ValueError):
         tui_rich_style("not_a_real_token")
 
 

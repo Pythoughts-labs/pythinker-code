@@ -6,7 +6,7 @@ terminal themes only requires changing the active ``ThemeName``.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Literal
 
 from prompt_toolkit.styles import Style as PTKStyle
@@ -403,6 +403,9 @@ class TuiTokens:
     bash_mode: str
 
 
+TUI_TOKEN_NAMES = frozenset(field.name for field in fields(TuiTokens))
+
+
 _TUI_TOKENS_DARK = TuiTokens(
     accent="#7dd3fc",
     border="#5f87ff",
@@ -477,8 +480,11 @@ def tui_rich_style(token: str, *, theme: ThemeName | None = None) -> RichStyle:
     (``""``) yield an empty style — Rich falls back to terminal defaults.
 
     Raises:
-        AttributeError: If *token* is not a known TuiTokens field.
+        ValueError: If *token* is not a known TuiTokens field.
     """
+    if token not in TUI_TOKEN_NAMES:
+        known = ", ".join(sorted(TUI_TOKEN_NAMES))
+        raise ValueError(f"Unknown TUI token {token!r}. Known tokens: {known}")
     tokens = get_tui_tokens(theme)
     value = getattr(tokens, token)
     if not value:

@@ -11,10 +11,7 @@ import json
 import random
 import time
 from collections import deque
-from typing import TYPE_CHECKING, Any, NamedTuple, cast
-
-if TYPE_CHECKING:
-    from markdown_it import MarkdownIt
+from typing import Any, NamedTuple, cast
 
 import streamingjson  # type: ignore[reportMissingTypeStubs]
 from rich.console import Console, ConsoleOptions, Group, RenderableType, RenderResult
@@ -24,8 +21,13 @@ from rich.text import Text
 from pythinker_code.soul import format_context_status, format_token_count
 from pythinker_code.tools import extract_key_argument
 from pythinker_code.ui.shell.components import ToolExecutionComponent
-from pythinker_code.ui.shell.components.markdown import PythinkerMarkdown as Markdown
-from pythinker_code.ui.shell.console import console
+from pythinker_code.ui.shell.components.markdown import (
+    PythinkerMarkdown as Markdown,
+)
+from pythinker_code.ui.shell.components.markdown import (
+    markdown_commit_boundary,
+)
+from pythinker_code.ui.shell.console import console, current_console_width
 from pythinker_code.ui.shell.motion import ActivitySnapshot, activity_status_line
 from pythinker_code.ui.shell.tool_renderers import (
     ToolResultPayload,
@@ -56,7 +58,6 @@ from pythinker_code.wire.types import (
 
 _ELLIPSIS = "..."
 _THINKING_PREVIEW_LINES = 6
-_SELF_CLOSING_BLOCKS = frozenset(("fence", "code_block", "hr", "html_block"))
 MAX_SUBAGENT_TOOL_CALLS_TO_SHOW = 4
 
 # Background-agent statuses that mean "still running" — the tool call result
@@ -96,21 +97,6 @@ def _truncate_to_display_width(line: str, max_width: int) -> str:
     return line
 
 
-# Lazy-initialized markdown-it parser for incremental token commitment.
-_md_parser: MarkdownIt | None = None
-
-
-def _get_md_parser() -> MarkdownIt:
-    global _md_parser
-    if _md_parser is None:
-        from markdown_it import MarkdownIt
-
-        # Match the extensions used by the rendering path (utils/rich/markdown.py)
-        # so that block boundaries are detected consistently.
-        _md_parser = MarkdownIt().enable("strikethrough").enable("table")
-    return _md_parser
-
-
 def _estimate_tokens(text: str) -> float:
     """Estimate token count for mixed CJK/Latin text.
 
@@ -140,41 +126,8 @@ def _estimate_tokens(text: str) -> float:
 
 
 def _find_committed_boundary(text: str) -> int | None:
-    """Return the character offset up to which *text* can be safely committed.
-
-    Uses the incremental token commitment algorithm: parse text into block-level
-    tokens via ``markdown-it-py``, confirm all blocks except the last one (which
-    may be incomplete due to streaming truncation).
-
-    Returns ``None`` when there are fewer than 2 blocks (nothing to confirm yet).
-    """
-    md = _get_md_parser()
-    tokens = md.parse(text)
-
-    # Collect only TOP-LEVEL block boundaries by tracking nesting depth.
-    # Nested tokens (e.g. list_item_open inside bullet_list_open) must not be
-    # treated as independent blocks — otherwise lists and blockquotes get split.
-    block_maps: list[list[int]] = []
-    depth = 0
-    for t in tokens:
-        if t.nesting == 1:
-            if depth == 0 and t.map is not None:
-                block_maps.append(t.map)
-            depth += 1
-        elif t.nesting == -1:
-            depth -= 1
-        elif depth == 0 and t.type in _SELF_CLOSING_BLOCKS and t.map is not None:
-            block_maps.append(t.map)
-
-    if len(block_maps) < 2:
-        return None
-
-    # Convert end-line number to character offset by scanning newlines.
-    target_line = block_maps[-2][1]
-    offset = 0
-    for _ in range(target_line):
-        offset = text.index("\n", offset) + 1
-    return offset
+    """Return the character offset up to which *text* can be safely committed."""
+    return markdown_commit_boundary(text)
 
 
 def _tail_lines(text: str, n: int) -> str:
@@ -312,7 +265,9 @@ class _ContentBlock:
         )
 
     def _compose_spinner(self) -> Text:
-        return activity_status_line(self._activity_snapshot("Composing"), width=console.width)
+        return activity_status_line(
+            self._activity_snapshot("Composing"), width=current_console_width()
+        )
 
     def _compose_thinking_stream(self) -> RenderableType:
         """Legacy 'Thinking...' spinner stacked over a 6-line scrolling preview."""
@@ -324,17 +279,21 @@ class _ContentBlock:
         return Group(spinner, Text(preview, style="grey50 italic"))
 
     def _compose_thinking_spinner(self) -> Text:
-        return activity_status_line(self._activity_snapshot("Thinking"), width=console.width)
+        return activity_status_line(
+            self._activity_snapshot("Thinking"), width=current_console_width()
+        )
 
     def _build_preview(self, text: str) -> str:
         """Tail-trim *text* to the last ``_THINKING_PREVIEW_LINES`` and clamp width."""
-        max_width = console.width - 2 if console.width else 78
+        max_width = current_console_width() - 2
         tail_text = _tail_lines(text, _THINKING_PREVIEW_LINES)
         lines = tail_text.split("\n")
         return "\n".join(_truncate_to_display_width(line, max_width) for line in lines)
 
     def _compose_thinking(self) -> Text:
-        return activity_status_line(self._activity_snapshot("Thinking"), width=console.width)
+        return activity_status_line(
+            self._activity_snapshot("Thinking"), width=current_console_width()
+        )
 
 
 class _ToolCallBlock:
@@ -504,7 +463,7 @@ class _ToolCallBlock:
                     )
                 )
             if rows:
-                children.append(render_activity_tree(rows, width=console.width))
+                children.append(render_activity_tree(rows, width=current_console_width()))
 
         if self._result is None:
             return render_worklog_entry(

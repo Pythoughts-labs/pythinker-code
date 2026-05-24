@@ -123,13 +123,21 @@ def test_export_rejects_non_yaml_format_for_zip(
 
     result = CliRunner().invoke(
         cli,
-        ["--work-dir", str(work_dir), "export", "--yes", "--format", "markdown", "--output", str(output)],
+        [
+            "--work-dir",
+            str(work_dir),
+            "export",
+            "--yes",
+            "--format",
+            "markdown",
+            "--output",
+            str(output),
+        ],
     )
 
     assert result.exit_code == 1
     assert "--format currently supports only yaml" in result.output
     assert not output.exists()
-
 
 
 def test_export_previous_session_can_skip_confirmation_with_yes(

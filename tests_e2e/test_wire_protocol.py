@@ -86,13 +86,73 @@ def test_initialize_handshake(tmp_path) -> None:
                             "aliases": [],
                         },
                         {
+                            "name": "skill:check-impl-against-spec",
+                            "description": "Compare an implementation against a product or technical spec and report gaps with evidence.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:create-pr",
+                            "description": "Prepare a pull request by summarizing changes, verification, risks, and reviewer guidance without adding AI footers.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:diagnose-ci-failures",
+                            "description": "Diagnose failing CI, lint, typecheck, build, or test logs and propose or implement the smallest verified fix.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:fix-errors",
+                            "description": "Fix concrete errors from logs, failing commands, exceptions, or diagnostics with root-cause-first discipline.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:implement-specs",
+                            "description": "Implement one or more checked-in specs using scout-plan-implement-verify workflow.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:pr-walkthrough",
+                            "description": "Produce a concise reviewer-friendly walkthrough of a PR or diff, including changed areas, behavior, tests, and risks.",
+                            "aliases": [],
+                        },
+                        {
                             "name": "skill:pythinker-code-help",
                             "description": "Answer Pythinker CLI usage, configuration, and troubleshooting questions. Use when user asks about Pythinker CLI installation, setup, configuration, slash commands, keyboard shortcuts, MCP integration, providers, environment variables, how something works internally, or any questions about Pythinker CLI itself.",
                             "aliases": [],
                         },
                         {
+                            "name": "skill:reproduce-bug-report",
+                            "description": "Reproduce a bug report with evidence-first investigation, bounded variants, and a clear repro/non-repro verdict.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:resolve-merge-conflicts",
+                            "description": "Resolve git merge/rebase conflicts safely by preserving both sides' intent and validating the result.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:review-pr",
+                            "description": "Review a pull request or working-tree diff with severity-scored, evidence-backed findings.",
+                            "aliases": [],
+                        },
+                        {
                             "name": "skill:skill-creator",
                             "description": "Guide for creating effective skills. This skill should be used when users want to create a new skill (or update an existing skill) that extends Pythinker's capabilities with specialized knowledge, workflows, or tool integrations.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:spec-driven-implementation",
+                            "description": "Implement a feature or fix from product/technical specs while checking the final code against the stated requirements.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:write-product-spec",
+                            "description": "Draft a product spec from a user request, issue, or bug report with goals, non-goals, requirements, and acceptance criteria.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:write-tech-spec",
+                            "description": "Draft a technical implementation spec from product requirements and codebase evidence.",
                             "aliases": [],
                         },
                     ],
@@ -196,13 +256,73 @@ def test_initialize_external_tool_conflict(tmp_path) -> None:
                             "aliases": [],
                         },
                         {
+                            "name": "skill:check-impl-against-spec",
+                            "description": "Compare an implementation against a product or technical spec and report gaps with evidence.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:create-pr",
+                            "description": "Prepare a pull request by summarizing changes, verification, risks, and reviewer guidance without adding AI footers.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:diagnose-ci-failures",
+                            "description": "Diagnose failing CI, lint, typecheck, build, or test logs and propose or implement the smallest verified fix.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:fix-errors",
+                            "description": "Fix concrete errors from logs, failing commands, exceptions, or diagnostics with root-cause-first discipline.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:implement-specs",
+                            "description": "Implement one or more checked-in specs using scout-plan-implement-verify workflow.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:pr-walkthrough",
+                            "description": "Produce a concise reviewer-friendly walkthrough of a PR or diff, including changed areas, behavior, tests, and risks.",
+                            "aliases": [],
+                        },
+                        {
                             "name": "skill:pythinker-code-help",
                             "description": "Answer Pythinker CLI usage, configuration, and troubleshooting questions. Use when user asks about Pythinker CLI installation, setup, configuration, slash commands, keyboard shortcuts, MCP integration, providers, environment variables, how something works internally, or any questions about Pythinker CLI itself.",
                             "aliases": [],
                         },
                         {
+                            "name": "skill:reproduce-bug-report",
+                            "description": "Reproduce a bug report with evidence-first investigation, bounded variants, and a clear repro/non-repro verdict.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:resolve-merge-conflicts",
+                            "description": "Resolve git merge/rebase conflicts safely by preserving both sides' intent and validating the result.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:review-pr",
+                            "description": "Review a pull request or working-tree diff with severity-scored, evidence-backed findings.",
+                            "aliases": [],
+                        },
+                        {
                             "name": "skill:skill-creator",
                             "description": "Guide for creating effective skills. This skill should be used when users want to create a new skill (or update an existing skill) that extends Pythinker's capabilities with specialized knowledge, workflows, or tool integrations.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:spec-driven-implementation",
+                            "description": "Implement a feature or fix from product/technical specs while checking the final code against the stated requirements.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:write-product-spec",
+                            "description": "Draft a product spec from a user request, issue, or bug report with goals, non-goals, requirements, and acceptance criteria.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:write-tech-spec",
+                            "description": "Draft a technical implementation spec from product requirements and codebase evidence.",
                             "aliases": [],
                         },
                     ],
