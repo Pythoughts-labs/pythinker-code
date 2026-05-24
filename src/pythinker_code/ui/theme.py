@@ -431,7 +431,9 @@ _TUI_TOKENS_DARK = TuiTokens(
     tool_pending_bg="#282a3a",
     tool_success_bg="#253527",
     tool_error_bg="#3a2632",
-    tool_title="",
+    # Standard grey for inline tool/agent header labels and emphasized counts,
+    # matching the accent so inline shell text reads as one uniform grey.
+    tool_title="#9CA3AF",
     tool_output="#8b90a8",
     tool_diff_added="#A6E3A1",
     tool_diff_removed="#F38BA8",
