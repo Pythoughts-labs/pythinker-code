@@ -20,10 +20,12 @@ def test_unix_readme_installer_uses_canonical_native_endpoint() -> None:
 def test_windows_readme_documents_powershell_one_liner() -> None:
     readme = (ROOT / "README.md").read_text()
 
+    assert "irm https://pythinker.com/install.ps1 \\| iex" in readme
+    assert 'powershell -c "irm https://pythinker.com/install.ps1 | iex"' in readme
     assert (
-        'powershell -c "irm https://raw.githubusercontent.com/mohamed-elkholy95/'
-        'Pythinker-Code/main/scripts/install.ps1 | iex"'
-    ) in readme
+        "raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install.ps1"
+        not in readme
+    )
     assert "-File $installer" not in readme
 
 
@@ -33,21 +35,21 @@ def test_getting_started_uses_canonical_native_installer_url() -> None:
     assert "https://code.pythinker.com/install.sh" not in guide
     assert "https://code.pythinker.com/install.ps1" not in guide
     assert "curl -fsSL https://pythinker.com/install.sh | bash" in guide
+    assert "irm https://pythinker.com/install.ps1 | iex" in guide
     assert (
         "https://raw.githubusercontent.com/mohamed-elkholy95/"
         "Pythinker-Code/main/scripts/install.ps1"
-    ) in guide
+    ) not in guide
 
 
-def test_windows_installer_runs_uv_bootstrap_in_current_process() -> None:
+def test_windows_installer_bootstrap_downloads_native_setup() -> None:
     installer = (ROOT / "scripts" / "install.ps1").read_text()
 
-    # Bootstrapping uv must happen in the current process (dot-source) so its
-    # PATH / registry side effects survive. A `powershell -File` subprocess
-    # would discard them.
-    assert "-File $uvInstaller" not in installer
-    assert ". $uvInstaller" in installer
-    assert "winget install --id astral-sh.uv" in installer
+    assert "PythinkerSetup-$Version.exe" in installer
+    assert "Get-FileHash -Algorithm SHA256" in installer
+    assert "Start-Process -FilePath $installerPath" in installer
+    assert "'/CURRENTUSER'" in installer
+    assert "uv tool install" not in installer
 
 
 def test_readme_downloads_rpm_before_local_install() -> None:
@@ -81,19 +83,29 @@ def test_quick_start_names_open_suse_installer_and_install_sh_is_native_shim() -
     assert "https://pythinker.com/install.sh" in installer
 
 
-def test_public_install_script_matches_native_source_of_truth() -> None:
-    native = (ROOT / "scripts" / "install-native.sh").read_bytes()
+def test_public_install_scripts_match_native_sources_of_truth() -> None:
+    native_sh = (ROOT / "scripts" / "install-native.sh").read_bytes()
+    native_ps1 = (ROOT / "scripts" / "install.ps1").read_bytes()
 
-    assert (ROOT / "docs" / "public" / "install.sh").read_bytes() == native
-    assert (ROOT / "web" / "public" / "install.sh").read_bytes() == native
+    assert (ROOT / "docs" / "public" / "install.sh").read_bytes() == native_sh
+    assert (ROOT / "web" / "public" / "install.sh").read_bytes() == native_sh
+    assert (ROOT / "docs" / "public" / "install.ps1").read_bytes() == native_ps1
+    assert (ROOT / "web" / "public" / "install.ps1").read_bytes() == native_ps1
 
-    expected_headers = (
+    expected_sh_headers = (
         "/install.sh\n"
         "  Content-Type: text/x-shellscript; charset=utf-8\n"
         "  Cache-Control: public, max-age=300, s-maxage=900, stale-if-error=86400\n"
     )
-    assert expected_headers in (ROOT / "docs" / "public" / "_headers").read_text()
-    assert expected_headers in (ROOT / "web" / "public" / "_headers").read_text()
+    expected_ps1_headers = (
+        "/install.ps1\n"
+        "  Content-Type: text/plain; charset=utf-8\n"
+        "  Cache-Control: public, max-age=300, s-maxage=900, stale-if-error=86400\n"
+    )
+    assert expected_sh_headers in (ROOT / "docs" / "public" / "_headers").read_text()
+    assert expected_sh_headers in (ROOT / "web" / "public" / "_headers").read_text()
+    assert expected_ps1_headers in (ROOT / "docs" / "public" / "_headers").read_text()
+    assert expected_ps1_headers in (ROOT / "web" / "public" / "_headers").read_text()
 
 
 def test_installation_docs_do_not_use_placeholder_package_artifacts() -> None:

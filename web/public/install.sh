@@ -68,8 +68,8 @@ or pip (\`pip install pythinker-code\`)." ;;
     fail "On Windows, download PythinkerSetup-x.y.z.exe from:
 https://github.com/${REPO}/releases/latest
 
-PowerShell fallback:
-powershell -c \"irm https://raw.githubusercontent.com/${REPO}/main/scripts/install.ps1 | iex\"" ;;
+PowerShell installer:
+powershell -c \"irm https://pythinker.com/install.ps1 | iex\" ;;
   *)
     fail "unsupported target: $os/$arch" ;;
 esac

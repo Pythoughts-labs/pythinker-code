@@ -37,12 +37,14 @@ curl -fsSL https://pythinker.com/install.sh | bash -s -- --version 0.13.0
 curl -fsSL https://pythinker.com/install.sh | bash -s -- --prefix /opt/pythinker
 ```
 
-On Windows, download `PythinkerSetup-0.13.0.exe` from the [latest release](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest), or run the PowerShell fallback:
+On Windows, run the PowerShell bootstrap. It downloads the native installer, verifies its SHA-256 file, and runs the per-user install:
 
 ```powershell
 # Windows (PowerShell)
-powershell -c "irm https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install.ps1 | iex"
+irm https://pythinker.com/install.ps1 | iex
 ```
+
+You can also download `PythinkerSetup-0.13.0.exe` manually from the [latest release](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest).
 
 Verify the installation:
 

@@ -15,6 +15,7 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- Add the Windows-native PowerShell endpoint `irm https://pythinker.com/install.ps1 | iex`; it downloads `PythinkerSetup-x.y.z.exe`, verifies SHA-256, and runs the per-user installer silently.
 - Make `https://pythinker.com/install.sh` the canonical native curl-bash installer endpoint, add static-site copies with short CDN cache headers, and convert `scripts/install.sh` into a compatibility shim to the native installer.
 
 ## 0.13.0 (2026-05-22)

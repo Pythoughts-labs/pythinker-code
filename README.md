@@ -53,10 +53,10 @@ It speaks the [**Agent Client Protocol (ACP)**](https://github.com/agentclientpr
 ## 🆕 What's New in 0.13.0
 
 - **Native installers for macOS and Linux.** `brew install mohamed-elkholy95/pythinker/pythinker-code` works on both macOS (Intel + Apple Silicon) and Linux brew installs. Debian/Ubuntu users get `pythinker-code_0.13.0_<arch>.deb`, Fedora/RHEL/openSUSE users get `pythinker-code-0.13.0.<arch>.rpm`, both built for `x86_64` and `aarch64`. Together with the Windows `PythinkerSetup-0.13.0.exe` shipped in 0.12.0, Pythinker now has a real native installer on every supported platform.
-- **Canonical `install.sh`.** `curl -fsSL https://pythinker.com/install.sh | bash` auto-detects your OS + arch, verifies SHA-256, and lands `pythinker` at `~/.local/bin/`. The endpoint serves the native installer directly; GitHub raw URLs remain only as an undocumented debug fallback.
+- **Canonical install endpoints.** `curl -fsSL https://pythinker.com/install.sh | bash` auto-detects macOS/Linux, while `irm https://pythinker.com/install.ps1 | iex` downloads and runs the Windows native installer. Both verify SHA-256 before installing; GitHub raw URLs remain only as undocumented debug fallbacks.
 - **Homebrew tap auto-publishes on every release.** A new tag-triggered workflow regenerates `Formula/pythinker-code.rb` (132 transitive deps enumerated automatically) and pushes it to [mohamed-elkholy95/homebrew-pythinker](https://github.com/mohamed-elkholy95/homebrew-pythinker). `brew upgrade pythinker-code` picks up new versions; no hand-curation per release.
 - **Frozen-binary fix for 0.12.0's installer.** The PyInstaller specs now bundle every `.md` / `.yaml` package data file (`prompts/`, `agents/`, `tools/*/description.md`, `skills/*/SKILL.md`). 0.12.0's Windows installer crashed on first prompt load — **upgrade to 0.13.0** to fix it.
-- **Legacy install paths deprecated.** The helper shell scripts (`install.sh`, `install.ps1`), `uvx`, `uv tool install`, `pipx install`, and bare `pip install` keep working but are now flagged as legacy. README Quick Start leads with the per-OS native installer table. Set `PYTHINKER_INSTALL_QUIET_DEPRECATION=1` to silence the deprecation banner in the helper scripts.
+- **Legacy Python install paths deprecated.** `uvx`, `uv tool install`, `pipx install`, and bare `pip install` keep working but are flagged as legacy. README Quick Start leads with the per-OS native installer table.
 
 Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.13.0`, or use the native installer for your platform from the [Releases page](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest).
 
@@ -148,7 +148,7 @@ matches your OS — no Python, Node, or `uv` prerequisite.
 
 | Platform | One-line install | Artifact |
 |---|---|---|
-| **🪟 Windows** | Download + double-click `PythinkerSetup-0.13.0.exe` | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
+| **🪟 Windows** | `irm https://pythinker.com/install.ps1 \| iex` | native `.exe` installer |
 | **🍎 macOS (Apple Silicon + Intel)** | `brew install mohamed-elkholy95/pythinker/pythinker-code` | Homebrew tap |
 | **🐧 Linux (Debian / Ubuntu)** | `sudo dpkg -i pythinker-code_0.13.0_amd64.deb` | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
 | **🐧 Linux (Fedora / RHEL)** | Download `pythinker-code-0.13.0.x86_64.rpm`, then `sudo dnf install ./pythinker-code-0.13.0.x86_64.rpm` | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
@@ -181,17 +181,14 @@ PATH (`HKCU\Environment`), broadcasts `WM_SETTINGCHANGE` so new shells see
 the change. **No UAC prompt.**
 
 ```powershell
-# 1. Download the installer + checksum from the Releases page above.
+# One-line install (downloads the native .exe, verifies SHA-256, runs per-user)
+irm https://pythinker.com/install.ps1 | iex
 
-# 2. Verify the download
-Get-FileHash .\PythinkerSetup-0.13.0.exe -Algorithm SHA256
-Get-Content  .\PythinkerSetup-0.13.0.exe.sha256
-# The two hashes must match.
-
-# 3. Run it
+# Or manually download the installer + checksum from the Releases page,
+# verify with Get-FileHash, then run:
 .\PythinkerSetup-0.13.0.exe
 
-# 4. Open a fresh PowerShell
+# Open a fresh PowerShell
 pythinker --version
 ```
 
@@ -348,8 +345,8 @@ no PyInstaller-built Intel Darwin binary is published.
 ```sh
 # Compatibility shim to the native installer
 scripts/install.sh
-# Windows PowerShell wrapper:
-powershell -c "irm https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install.ps1 | iex"
+# Windows PowerShell native installer bootstrap:
+powershell -c "irm https://pythinker.com/install.ps1 | iex"
 
 # Legacy: one-off run via uvx
 uvx pythinker-code
