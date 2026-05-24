@@ -469,7 +469,10 @@ class PythinkerSoul:
 
         ask_tool = self._agent.toolset.find("AskUserQuestion")
         if isinstance(ask_tool, AskUserQuestion):
-            ask_tool.bind_auto(self._approval.is_auto)
+            ask_tool.bind_auto(
+                self._approval.is_auto,
+                policy=self._runtime.config.ask_user_question_policy,
+            )
 
     def _ensure_plan_session_id(self) -> None:
         """Allocate a stable plan session ID on first activation."""

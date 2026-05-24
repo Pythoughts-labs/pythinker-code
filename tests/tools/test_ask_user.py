@@ -206,6 +206,41 @@ async def test_ask_user_auto_auto_dismiss():
         _current_wire.reset(wire_token)
 
 
+async def test_ask_user_policy_never_auto_dismisses_without_wire():
+    tool = AskUserQuestion()
+    tool.bind_auto(is_auto=lambda: False, policy="never")
+
+    wire_token = _current_wire.set(None)
+    try:
+        result = await tool(_make_params())
+        assert not result.is_error
+        assert isinstance(result.output, str)
+        parsed = json.loads(result.output)
+        assert parsed["answers"] == {}
+        assert "policy" in parsed["note"].lower()
+    finally:
+        _current_wire.reset(wire_token)
+
+
+async def test_ask_user_policy_always_asks_in_auto_mode():
+    tool = AskUserQuestion()
+    tool.bind_auto(is_auto=lambda: True, policy="always")
+
+    wire_token = _current_wire.set(None)
+    tool_call = ToolCall(
+        id="tc-policy-always",
+        function=ToolCall.FunctionBody(name="AskUserQuestion", arguments=None),
+    )
+    tc_token = current_tool_call.set(tool_call)
+    try:
+        result = await tool(_make_params())
+        assert result.is_error
+        assert "Wire" in result.message
+    finally:
+        current_tool_call.reset(tc_token)
+        _current_wire.reset(wire_token)
+
+
 async def test_ask_user_unbound_falls_through():
     """When bind_auto is never called, falls through to normal flow."""
     tool = AskUserQuestion()

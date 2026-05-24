@@ -4,7 +4,7 @@ import json
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import override
+from typing import Literal, override
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -23,6 +23,8 @@ from pythinker_code.wire.types import (
 logger = logging.getLogger(__name__)
 
 NAME = "AskUserQuestion"
+
+AskUserPolicy = Literal["always", "ask_except_auto", "never"]
 
 _BASE_DESCRIPTION = load_desc(Path(__file__).parent / "description.md")
 
@@ -72,22 +74,32 @@ class AskUserQuestion(CallableTool2[Params]):
     def __init__(self) -> None:
         super().__init__()
         self._is_auto: Callable[[], bool] | None = None
+        self._policy: AskUserPolicy = "ask_except_auto"
 
-    def bind_auto(self, is_auto: Callable[[], bool]) -> None:
-        """Late-bind auto-mode checker so we can auto-dismiss when no user is present."""
+    def bind_auto(
+        self,
+        is_auto: Callable[[], bool],
+        policy: AskUserPolicy = "ask_except_auto",
+    ) -> None:
+        """Late-bind auto-mode checker and question policy."""
         self._is_auto = is_auto
+        self._policy = policy
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
-        if self._is_auto and self._is_auto():
+        if self._policy == "never" or (
+            self._policy == "ask_except_auto" and self._is_auto and self._is_auto()
+        ):
+            note = (
+                "Ask-user policy is set to never. Make your own decision."
+                if self._policy == "never"
+                else "Running in auto mode. No user is present. Make your own decision."
+            )
             return ToolReturnValue(
                 is_error=False,
-                output=(
-                    '{"answers": {}, "note": "Running in auto mode.'
-                    ' No user is present. Make your own decision."}'
-                ),
-                message="Auto mode, auto-dismissed.",
-                display=[BriefDisplayBlock(text="Auto-dismissed (auto mode)")],
+                output=json.dumps({"answers": {}, "note": note}, ensure_ascii=False),
+                message="Question auto-dismissed.",
+                display=[BriefDisplayBlock(text="Question auto-dismissed")],
             )
 
         wire = get_wire_or_none()

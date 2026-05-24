@@ -250,6 +250,13 @@ class Config(BaseModel):
     default_model: str = Field(default="", description="Default model to use")
     default_thinking: bool = Field(default=False, description="Default thinking mode")
     default_yolo: bool = Field(default=False, description="Default yolo (auto-approve) mode")
+    ask_user_question_policy: Literal["always", "ask_except_auto", "never"] = Field(
+        default="ask_except_auto",
+        description=(
+            "Controls AskUserQuestion behavior: always ask, ask except in auto mode, "
+            "or never pause and let the agent use best judgment."
+        ),
+    )
     skip_auto_prompt_injection: bool = Field(
         default=False,
         description=(
