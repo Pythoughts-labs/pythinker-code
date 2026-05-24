@@ -1,0 +1,6 @@
+/install.sh
+  Content-Type: text/x-shellscript; charset=utf-8
+  Cache-Control: public, max-age=300, s-maxage=900, stale-if-error=86400
+
+/releases/*
+  Cache-Control: public, max-age=31536000, immutable

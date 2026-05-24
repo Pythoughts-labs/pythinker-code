@@ -53,7 +53,7 @@ It speaks the [**Agent Client Protocol (ACP)**](https://github.com/agentclientpr
 ## 🆕 What's New in 0.13.0
 
 - **Native installers for macOS and Linux.** `brew install mohamed-elkholy95/pythinker/pythinker-code` works on both macOS (Intel + Apple Silicon) and Linux brew installs. Debian/Ubuntu users get `pythinker-code_0.13.0_<arch>.deb`, Fedora/RHEL/openSUSE users get `pythinker-code-0.13.0.<arch>.rpm`, both built for `x86_64` and `aarch64`. Together with the Windows `PythinkerSetup-0.13.0.exe` shipped in 0.12.0, Pythinker now has a real native installer on every supported platform.
-- **Cross-OS `install-native.sh`.** `curl -fsSL .../install-native.sh | bash` auto-detects your OS + arch, verifies SHA-256, and lands `pythinker` at `~/.local/bin/`. The script is the no-package-manager fallback for containers and fresh VMs.
+- **Canonical `install.sh`.** `curl -fsSL https://pythinker.com/install.sh | bash` auto-detects your OS + arch, verifies SHA-256, and lands `pythinker` at `~/.local/bin/`. The endpoint serves the native installer directly; GitHub raw URLs remain only as an undocumented debug fallback.
 - **Homebrew tap auto-publishes on every release.** A new tag-triggered workflow regenerates `Formula/pythinker-code.rb` (132 transitive deps enumerated automatically) and pushes it to [mohamed-elkholy95/homebrew-pythinker](https://github.com/mohamed-elkholy95/homebrew-pythinker). `brew upgrade pythinker-code` picks up new versions; no hand-curation per release.
 - **Frozen-binary fix for 0.12.0's installer.** The PyInstaller specs now bundle every `.md` / `.yaml` package data file (`prompts/`, `agents/`, `tools/*/description.md`, `skills/*/SKILL.md`). 0.12.0's Windows installer crashed on first prompt load — **upgrade to 0.13.0** to fix it.
 - **Legacy install paths deprecated.** The helper shell scripts (`install.sh`, `install.ps1`), `uvx`, `uv tool install`, `pipx install`, and bare `pip install` keep working but are now flagged as legacy. README Quick Start leads with the per-OS native installer table. Set `PYTHINKER_INSTALL_QUIET_DEPRECATION=1` to silence the deprecation banner in the helper scripts.
@@ -153,7 +153,7 @@ matches your OS — no Python, Node, or `uv` prerequisite.
 | **🐧 Linux (Debian / Ubuntu)** | `sudo dpkg -i pythinker-code_0.13.0_amd64.deb` | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
 | **🐧 Linux (Fedora / RHEL)** | Download `pythinker-code-0.13.0.x86_64.rpm`, then `sudo dnf install ./pythinker-code-0.13.0.x86_64.rpm` | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
 | **🐧 Linux (openSUSE)** | Download `pythinker-code-0.13.0.x86_64.rpm`, then `sudo zypper install ./pythinker-code-0.13.0.x86_64.rpm` | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
-| **🌐 macOS / Linux — curl-bash** | `curl -fsSL https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install-native.sh \| bash` | tarball |
+| **🌐 macOS / Linux — curl-bash** | `curl -fsSL https://pythinker.com/install.sh \| bash` | tarball |
 | **🐍 Python fallback** (universal) | `pip install pythinker-code` | PyPI |
 
 Every artifact ships with a matching `.sha256` file — verify before install on
@@ -293,21 +293,33 @@ sudo rpm -e pythinker-code                                 # Fedora/RHEL
 ### 🌐 macOS / Linux — curl-bash native installer
 
 For containers, fresh VMs, or any host without a system package manager.
-The [install-native.sh](./scripts/install-native.sh) helper detects your
-OS + arch, downloads the matching PyInstaller-frozen tarball, verifies its
-SHA-256, and lands the single binary at `~/.local/bin/pythinker`.
+The canonical `https://pythinker.com/install.sh` endpoint is backed by
+[`scripts/install-native.sh`](./scripts/install-native.sh). It serves shell
+script content directly, detects your OS + arch, downloads the matching
+PyInstaller-frozen tarball, verifies its SHA-256, and lands the single binary
+at `~/.local/bin/pythinker`.
 
 ```sh
 # Latest release
-curl -fsSL https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install-native.sh | bash
+curl -fsSL https://pythinker.com/install.sh | bash
 
 # Pin a specific version
-curl -fsSL https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install-native.sh \
-  | bash -s -- --version 0.13.0
+curl -fsSL https://pythinker.com/install.sh | bash -s -- --version 0.13.0
 
 # Custom prefix (defaults to $HOME/.local)
-curl -fsSL ...install-native.sh | bash -s -- --prefix /opt/pythinker
+curl -fsSL https://pythinker.com/install.sh | bash -s -- --prefix /opt/pythinker
 ```
+
+Host `/install.sh` with:
+
+```http
+Content-Type: text/x-shellscript; charset=utf-8
+Cache-Control: public, max-age=300, s-maxage=900, stale-if-error=86400
+```
+
+Use long immutable caching only for versioned release artifact URLs, for
+example `Cache-Control: public, max-age=31536000, immutable` on fixed-tag
+assets.
 
 Supported targets:
 
@@ -334,8 +346,8 @@ no PyInstaller-built Intel Darwin binary is published.
 <summary>Legacy shell-script wrappers + uv / pipx</summary>
 
 ```sh
-# Legacy: uv-based shell-script wrappers (prints a deprecation banner on run)
-curl -fsSL https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install.sh | bash
+# Compatibility shim to the native installer
+scripts/install.sh
 # Windows PowerShell wrapper:
 powershell -c "irm https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install.ps1 | iex"
 

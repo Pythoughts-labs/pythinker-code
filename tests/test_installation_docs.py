@@ -9,10 +9,11 @@ def project_version() -> str:
     return project["project"]["version"]
 
 
-def test_unix_readme_installer_invokes_bash_for_bash_script() -> None:
+def test_unix_readme_installer_uses_canonical_native_endpoint() -> None:
     readme = (ROOT / "README.md").read_text()
 
-    assert "scripts/install.sh | bash" in readme
+    assert "curl -fsSL https://pythinker.com/install.sh | bash" in readme
+    assert "scripts/install.sh | bash" not in readme
     assert "scripts/install.sh | sh" not in readme
 
 
@@ -26,10 +27,12 @@ def test_windows_readme_documents_powershell_one_liner() -> None:
     assert "-File $installer" not in readme
 
 
-def test_windows_getting_started_uses_resolvable_installer_url() -> None:
+def test_getting_started_uses_canonical_native_installer_url() -> None:
     guide = (ROOT / "docs" / "en" / "guides" / "getting-started.md").read_text()
 
+    assert "https://code.pythinker.com/install.sh" not in guide
     assert "https://code.pythinker.com/install.ps1" not in guide
+    assert "curl -fsSL https://pythinker.com/install.sh | bash" in guide
     assert (
         "https://raw.githubusercontent.com/mohamed-elkholy95/"
         "Pythinker-Code/main/scripts/install.ps1"
@@ -66,7 +69,7 @@ def test_readme_downloads_rpm_before_local_install() -> None:
     )
 
 
-def test_quick_start_and_legacy_banner_name_open_suse_installer() -> None:
+def test_quick_start_names_open_suse_installer_and_install_sh_is_native_shim() -> None:
     readme = (ROOT / "README.md").read_text()
     installer = (ROOT / "scripts" / "install.sh").read_text()
     version = project_version()
@@ -74,7 +77,23 @@ def test_quick_start_and_legacy_banner_name_open_suse_installer() -> None:
 
     assert f"Linux (Fedora / RHEL)** | Download `{rpm}`, then `sudo dnf install ./{rpm}`" in readme
     assert f"Linux (openSUSE)** | Download `{rpm}`, then `sudo zypper install ./{rpm}`" in readme
-    assert "dpkg/dnf/zypper" in installer
+    assert "install-native.sh" in installer
+    assert "https://pythinker.com/install.sh" in installer
+
+
+def test_public_install_script_matches_native_source_of_truth() -> None:
+    native = (ROOT / "scripts" / "install-native.sh").read_bytes()
+
+    assert (ROOT / "docs" / "public" / "install.sh").read_bytes() == native
+    assert (ROOT / "web" / "public" / "install.sh").read_bytes() == native
+
+    expected_headers = (
+        "/install.sh\n"
+        "  Content-Type: text/x-shellscript; charset=utf-8\n"
+        "  Cache-Control: public, max-age=300, s-maxage=900, stale-if-error=86400\n"
+    )
+    assert expected_headers in (ROOT / "docs" / "public" / "_headers").read_text()
+    assert expected_headers in (ROOT / "web" / "public" / "_headers").read_text()
 
 
 def test_installation_docs_do_not_use_placeholder_package_artifacts() -> None:

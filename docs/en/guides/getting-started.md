@@ -24,12 +24,20 @@ If you encounter issues or have suggestions, please provide feedback on [GitHub 
 
 ## Installation
 
-Run the installation script to complete the installation. The script will first install [uv](https://docs.astral.sh/uv/) (a Python package manager), then install Pythinker Code via uv:
+Run the native installation script to complete the installation. The canonical endpoint serves the shell script directly and installs the PyInstaller-built binary by default:
 
 ```sh
 # Linux / macOS
-curl -LsSf https://code.pythinker.com/install.sh | bash
+curl -fsSL https://pythinker.com/install.sh | bash
+
+# Pin a specific version
+curl -fsSL https://pythinker.com/install.sh | bash -s -- --version 0.13.0
+
+# Custom prefix (defaults to $HOME/.local)
+curl -fsSL https://pythinker.com/install.sh | bash -s -- --prefix /opt/pythinker
 ```
+
+On Windows, download `PythinkerSetup-0.13.0.exe` from the [latest release](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest), or run the PowerShell fallback:
 
 ```powershell
 # Windows (PowerShell)
@@ -46,29 +54,27 @@ pythinker --version
 Due to macOS security checks, the first run of the `pythinker` command may take longer. You can add your terminal application in "System Settings → Privacy & Security → Developer Tools" to speed up subsequent launches.
 :::
 
-If you already have uv installed, you can also run:
+If you need the legacy Python package fallback, use:
 
 ```sh
-uv tool install --python 3.13 pythinker-code
+pip install pythinker-code
 ```
-
-::: tip
-Pythinker Code supports Python 3.12–3.14, with Python 3.13 recommended.
-:::
 
 ## Upgrade and uninstall
 
 Upgrade to the latest version:
 
 ```sh
-uv tool upgrade pythinker-code --no-cache
+pythinker update
 ```
 
-Uninstall Pythinker Code:
+Uninstall a curl-bash install:
 
 ```sh
-uv tool uninstall pythinker-code
+rm ~/.local/bin/pythinker
 ```
+
+If you installed through a platform package manager, uninstall with the same tool: Homebrew (`brew uninstall pythinker-code`), Debian/Ubuntu (`sudo dpkg -r pythinker-code`), or RPM (`sudo rpm -e pythinker-code`).
 
 ## First run
 
