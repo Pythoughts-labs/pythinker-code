@@ -123,14 +123,13 @@ describe("worker router", () => {
     expect(await res.json()).toEqual({ installs: 12345 });
   });
 
-  it("/api/installs/badge returns shields-endpoint JSON", async () => {
+  it("/api/installs/badge returns a compact shields-endpoint JSON", async () => {
     const { env } = makeEnv({ n: 12345 });
     const res = await worker.fetch(new Request("https://pythinker.com/api/installs/badge"), env, ctx());
-    expect(await res.json()).toEqual({
-      schemaVersion: 1,
-      label: "installs",
-      message: "12,345",
-      color: "blue",
-    });
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.schemaVersion).toBe(1);
+    expect(body.label).toBe("installs");
+    expect(body.message).toBe("12.3k");
+    expect(body.style).toBe("flat-square");
   });
 });
