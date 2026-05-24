@@ -1,0 +1,62 @@
+import type { D1Database, ExecutionContext } from "@cloudflare/workers-types";
+import { badgeJson, installsJson } from "./badge";
+import { incrementCount, readCount } from "./counter";
+import { isInstallUserAgent } from "./ua";
+
+export interface Env {
+  DB: D1Database;
+  DL_HOST: string;
+}
+
+const INSTALL_PATHS = new Set(["/install.sh", "/install.ps1"]);
+
+function json(body: unknown, extraHeaders: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(body), {
+    headers: { "content-type": "application/json; charset=utf-8", ...extraHeaders },
+  });
+}
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    if (path === "/api/installs") {
+      const n = await safeRead(env);
+      return json(installsJson(n), { "access-control-allow-origin": "*" });
+    }
+
+    if (path === "/api/installs/badge") {
+      const n = await safeRead(env);
+      return json(badgeJson(n), { "cache-control": "public, max-age=300" });
+    }
+
+    if (INSTALL_PATHS.has(path)) {
+      // Fetch bytes from the proxied download host (CDN-cached, honors
+      // stale-if-error). Never fetch the proxied install route itself.
+      const origin = `https://${env.DL_HOST}${path}${url.search}`;
+      const res = await fetch(origin, request);
+
+      const eligible =
+        request.method === "GET" &&
+        res.status === 200 &&
+        isInstallUserAgent(request.headers.get("user-agent"));
+
+      if (eligible) {
+        // Scheduled without awaiting; may continue after the response returns.
+        ctx.waitUntil(incrementCount(env.DB).catch(() => {}));
+      }
+      return res;
+    }
+
+    return new Response("Not found", { status: 404 });
+  },
+};
+
+async function safeRead(env: Env): Promise<number | null> {
+  try {
+    return await readCount(env.DB);
+  } catch {
+    return null;
+  }
+}
