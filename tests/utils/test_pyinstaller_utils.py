@@ -85,12 +85,32 @@ def test_pyinstaller_datas():
         ("src/pythinker_code/prompts/compact.md", "pythinker_code/prompts"),
         ("src/pythinker_code/prompts/init.md", "pythinker_code/prompts"),
         (
+            "src/pythinker_code/skills/check-impl-against-spec/SKILL.md",
+            "pythinker_code/skills/check-impl-against-spec",
+        ),
+        (
+            "src/pythinker_code/skills/create-pr/SKILL.md",
+            "pythinker_code/skills/create-pr",
+        ),
+        (
             "src/pythinker_code/skills/diagnose-ci-failures/SKILL.md",
             "pythinker_code/skills/diagnose-ci-failures",
         ),
         (
+            "src/pythinker_code/skills/fix-errors/SKILL.md",
+            "pythinker_code/skills/fix-errors",
+        ),
+        (
+            "src/pythinker_code/skills/implement-specs/SKILL.md",
+            "pythinker_code/skills/implement-specs",
+        ),
+        (
             "src/pythinker_code/skills/pythinker-code-help/SKILL.md",
             "pythinker_code/skills/pythinker-code-help",
+        ),
+        (
+            "src/pythinker_code/skills/resolve-merge-conflicts/SKILL.md",
+            "pythinker_code/skills/resolve-merge-conflicts",
         ),
         (
             "src/pythinker_code/skills/review-pr/SKILL.md",
