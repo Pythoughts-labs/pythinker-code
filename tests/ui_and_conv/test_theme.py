@@ -334,6 +334,12 @@ async def test_shell_startup_initializes_theme_from_config(
 # ---------------------------------------------------------------------------
 
 
+def test_prompt_caret_is_coral_dark():
+    set_active_theme("dark")
+    from pythinker_code.ui.theme import _PROMPT_STYLE_DARK
+    assert "#EE9983" in _PROMPT_STYLE_DARK["compact-input.prompt"]
+
+
 def test_render_diff_panel_both_themes():
     from rich.console import Console
 
