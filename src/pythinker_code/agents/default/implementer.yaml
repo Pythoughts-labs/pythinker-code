@@ -35,6 +35,7 @@ agent:
     - "pythinker_code.tools.file:SmartSearch"
     - "pythinker_code.tools.file:WriteFile"
     - "pythinker_code.tools.file:StrReplaceFile"
+    - "pythinker_code.tools.skill:ReadSkill"
     - "pythinker_code.tools.web:SearchWeb"
     - "pythinker_code.tools.web:FetchURL"
   exclude_tools:

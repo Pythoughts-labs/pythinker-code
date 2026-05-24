@@ -12,6 +12,9 @@ agent:
       - Use Grep/Glob to check sibling call sites, similar patterns, and existing tests.
       - Score each finding as BLOCKER, MAJOR, MINOR, or NIT.
       - Order findings by severity, BLOCKER first.
+      - Do not request tests unless they cover a distinct behavior or risk introduced by the change.
+      - Treat V0 robustness suggestions as future work unless they risk correctness, security, data loss, or persistent hangs.
+      - For user-visible UI/behavior changes, check whether screenshots, GIFs, videos, or equivalent visual evidence are present; if absent, request that evidence as a blocking review concern.
       - Be constructive: cite failure modes and evidence, not author intent.
 
       Final response contract:
@@ -34,6 +37,7 @@ agent:
     - "pythinker_code.tools.file:Glob"
     - "pythinker_code.tools.file:Grep"
     - "pythinker_code.tools.file:SmartSearch"
+    - "pythinker_code.tools.skill:ReadSkill"
     - "pythinker_code.tools.web:SearchWeb"
     - "pythinker_code.tools.web:FetchURL"
   exclude_tools:

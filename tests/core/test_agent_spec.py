@@ -27,6 +27,8 @@ def test_load_default_agent_spec():
     assert spec.tools == snapshot(
         [
             "pythinker_code.tools.agent:Agent",
+            "pythinker_code.tools.agent:RunAgents",
+            "pythinker_code.tools.skill:ReadSkill",
             "pythinker_code.tools.ask_user:AskUserQuestion",
             "pythinker_code.tools.todo:SetTodoList",
             "pythinker_code.tools.shell:Shell",
@@ -139,6 +141,8 @@ Bullet list of anything that stopped completion, or `None.`.
     assert subagent_specs["coder"].tools == snapshot(
         [
             "pythinker_code.tools.agent:Agent",
+            "pythinker_code.tools.agent:RunAgents",
+            "pythinker_code.tools.skill:ReadSkill",
             "pythinker_code.tools.ask_user:AskUserQuestion",
             "pythinker_code.tools.todo:SetTodoList",
             "pythinker_code.tools.shell:Shell",
@@ -218,6 +222,7 @@ Bullet list of missing context/capabilities or `None.`.
             "pythinker_code.tools.file:Glob",
             "pythinker_code.tools.file:Grep",
             "pythinker_code.tools.file:SmartSearch",
+            "pythinker_code.tools.skill:ReadSkill",
             "pythinker_code.tools.web:SearchWeb",
             "pythinker_code.tools.web:FetchURL",
         ]
@@ -236,6 +241,8 @@ Bullet list of missing context/capabilities or `None.`.
     assert subagent_specs["explore"].tools == snapshot(
         [
             "pythinker_code.tools.agent:Agent",
+            "pythinker_code.tools.agent:RunAgents",
+            "pythinker_code.tools.skill:ReadSkill",
             "pythinker_code.tools.ask_user:AskUserQuestion",
             "pythinker_code.tools.todo:SetTodoList",
             "pythinker_code.tools.shell:Shell",
@@ -297,6 +304,7 @@ Bullet list of questions that must be answered before execution, or `None.`.
             "pythinker_code.tools.file:Glob",
             "pythinker_code.tools.file:Grep",
             "pythinker_code.tools.file:SmartSearch",
+            "pythinker_code.tools.skill:ReadSkill",
             "pythinker_code.tools.web:SearchWeb",
             "pythinker_code.tools.web:FetchURL",
         ]
@@ -316,6 +324,8 @@ Bullet list of questions that must be answered before execution, or `None.`.
     assert subagent_specs["plan"].tools == snapshot(
         [
             "pythinker_code.tools.agent:Agent",
+            "pythinker_code.tools.agent:RunAgents",
+            "pythinker_code.tools.skill:ReadSkill",
             "pythinker_code.tools.ask_user:AskUserQuestion",
             "pythinker_code.tools.todo:SetTodoList",
             "pythinker_code.tools.shell:Shell",
@@ -415,6 +425,8 @@ agent:
         assert spec.tools == snapshot(
             [
                 "pythinker_code.tools.agent:Agent",
+                "pythinker_code.tools.agent:RunAgents",
+                "pythinker_code.tools.skill:ReadSkill",
                 "pythinker_code.tools.ask_user:AskUserQuestion",
                 "pythinker_code.tools.todo:SetTodoList",
                 "pythinker_code.tools.shell:Shell",

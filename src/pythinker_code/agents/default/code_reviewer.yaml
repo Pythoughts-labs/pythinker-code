@@ -21,6 +21,9 @@ agent:
       Review discipline:
       - Flag only issues introduced or made reachable by the diff.
       - Prefer no finding over vague speculation.
+      - Do not request tests unless they cover a distinct behavior or risk introduced by the change.
+      - Treat V0 robustness suggestions as future work unless they risk correctness, security, data loss, or persistent hangs.
+      - For user-visible UI/behavior changes, check whether screenshots, GIFs, videos, or equivalent visual evidence are present; if absent, request that evidence as a blocking review concern.
       - Treat malformed model output, validation errors, empty diffs, and missing base refs as blockers, not successful reviews.
       - Surface false-positive risks and coverage limits clearly.
 
@@ -41,6 +44,7 @@ agent:
     - "pythinker_code.tools.shell:Shell"
     - "pythinker_code.tools.file:ReadFile"
     - "pythinker_code.tools.file:Grep"
+    - "pythinker_code.tools.skill:ReadSkill"
   exclude_tools:
     - "pythinker_code.tools.file:WriteFile"
     - "pythinker_code.tools.file:StrReplaceFile"
