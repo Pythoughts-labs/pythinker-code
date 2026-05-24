@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pythinker-install-counter-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-24",
+  "routes": [
+    { "pattern": "pythinker.com/install.sh", "zone_name": "pythinker.com" },
+    { "pattern": "pythinker.com/install.ps1", "zone_name": "pythinker.com" },
+    { "pattern": "pythinker.com/api/installs", "zone_name": "pythinker.com" },
+    { "pattern": "pythinker.com/api/installs/badge", "zone_name": "pythinker.com" }
+  ],
+  "vars": {
+    "DL_HOST": "dl.pythinker.com"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "install_counter",
+      "database_id": "PLACEHOLDER_SET_IN_TASK_8"
+    }
+  ]
+}
