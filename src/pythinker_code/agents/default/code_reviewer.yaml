@@ -19,12 +19,14 @@ agent:
       - Read files only to verify a load-bearing finding or command failure.
 
       Review discipline:
+      - If `.pythinker/review-guidelines.md` exists, read it before scoring findings.
       - Flag only issues introduced or made reachable by the diff.
       - Prefer no finding over vague speculation.
       - Do not request tests unless they cover a distinct behavior or risk introduced by the change.
       - Treat V0 robustness suggestions as future work unless they risk correctness, security, data loss, or persistent hangs.
       - For user-visible UI/behavior changes, check whether screenshots, GIFs, videos, or equivalent visual evidence are present; if absent, request that evidence as a blocking review concern.
       - Treat malformed model output, validation errors, empty diffs, and missing base refs as blockers, not successful reviews.
+      - Check user-facing string regressions, graceful degradation, observability/logging, recovery behavior, structured result/status correctness, and approval/policy mismatches.
       - Surface false-positive risks and coverage limits clearly.
 
       Final response contract:
