@@ -268,7 +268,7 @@ async def test_fetch_url_with_service(runtime) -> None:
     await runner.setup()
     site = web.TCPSite(runner, host="127.0.0.1", port=0)
     await site.start()
-    port = site._server.sockets[0].getsockname()[1]  # type: ignore
+    port = site._server.sockets[0].getsockname()[1]  # pyright: ignore[reportAttributeAccessIssue, reportOptionalMemberAccess]
     service_url = f"http://127.0.0.1:{port}/fetch"
 
     try:

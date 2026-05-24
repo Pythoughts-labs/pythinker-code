@@ -15,6 +15,10 @@ from pythinker_code.skill import (
     find_project_skills_dirs,
     find_user_skills_dirs,
     get_builtin_skills_dir,
+    get_local_specialization,
+    index_skills,
+    local_specialization_name,
+    read_skill_text_with_local_specialization,
     resolve_skills_roots,
 )
 
@@ -330,6 +334,36 @@ async def test_discover_skills_from_roots_first_wins(tmp_path):
 
     assert len(skills) == 1
     assert skills[0].description == "A"
+
+
+@pytest.mark.asyncio
+async def test_read_skill_text_with_local_specialization_appends_companion(tmp_path):
+    """A <skill>-local companion supplements the core skill when invoked."""
+    root = tmp_path / "skills"
+    root.mkdir()
+    _write_skill(
+        root / "review-pr",
+        "---\nname: review-pr\ndescription: Core review workflow\n---\nCore instructions",
+    )
+    _write_skill(
+        root / "review-pr-local",
+        "---\nname: review-pr-local\ndescription: Local review rules\n---\nLocal instructions",
+    )
+
+    skills = await discover_skills(HostPath.unsafe_from_local_path(root), scope="project")
+    skills_by_name = index_skills(skills)
+    core = skills_by_name["review-pr"]
+
+    assert local_specialization_name("review-pr") == "review-pr-local"
+    assert get_local_specialization(core, skills_by_name) is skills_by_name["review-pr-local"]
+    assert get_local_specialization(skills_by_name["review-pr-local"], skills_by_name) is None
+
+    text = await read_skill_text_with_local_specialization(core, skills_by_name)
+
+    assert text is not None
+    assert "Core instructions" in text
+    assert "# Local specialization: review-pr-local" in text
+    assert "Local instructions" in text
 
 
 # ---------------------------------------------------------------------------

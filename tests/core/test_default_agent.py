@@ -183,7 +183,7 @@ No skills found.
 
 ## How to use skills
 
-Identify the skills that are likely to be useful for the tasks you are currently working on, read the `SKILL.md` file for detailed instructions, guidelines, scripts and more.
+Identify the skills that are likely to be useful for the tasks you are currently working on, read the `SKILL.md` file for detailed instructions, guidelines, scripts and more. If a skill `<name>` has a companion `<name>-local`, treat `<name>-local` as local project specialization and apply it after the core skill.
 
 Only read skill details when needed to conserve the context window.
 
@@ -378,6 +378,7 @@ async def test_default_agent_background_bash_guardrails(runtime: Runtime):
     assert tool_names == snapshot(
         [
             "Agent",
+            "RunAgents",
             "AskUserQuestion",
             "SetTodoList",
             "Shell",

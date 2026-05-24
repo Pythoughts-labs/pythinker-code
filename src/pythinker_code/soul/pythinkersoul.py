@@ -39,7 +39,7 @@ from pythinker_code.notifications import (
     extract_notification_ids,
 )
 from pythinker_code.prompt_templates import PromptTemplate, expand_prompt_template
-from pythinker_code.skill import Skill, read_skill_text
+from pythinker_code.skill import Skill, read_skill_text_with_local_specialization
 from pythinker_code.skill.flow import Flow, FlowEdge, FlowNode, parse_choice
 from pythinker_code.soul import (
     LLMNotSet,
@@ -957,7 +957,9 @@ class PythinkerSoul:
             from pythinker_code.telemetry import track
 
             track("skill_invoked", skill_name=_skill.name)
-            skill_text = await read_skill_text(_skill)
+            skill_text = await read_skill_text_with_local_specialization(
+                _skill, soul._runtime.skills
+            )
             if skill_text is None:
                 wire_send(
                     TextPart(text=f'Failed to load skill "/{SKILL_COMMAND_PREFIX}{_skill.name}".')

@@ -82,6 +82,53 @@ class Params(BaseModel):
         return self.timeout
 
 
+class AgentRunConfig(BaseModel):
+    name: str = Field(description="Stable short name for this child agent")
+    prompt: str = Field(description="Agent-specific task prompt")
+    title: str | None = Field(
+        default=None,
+        description="Optional 3-5 word display title. Defaults to name.",
+    )
+    subagent_type: str = Field(
+        default="coder",
+        description="Built-in agent type for this child agent.",
+    )
+
+
+class RunAgentsParams(BaseModel):
+    summary: str = Field(description="Short summary of the multi-agent run")
+    base_prompt: str = Field(
+        default="",
+        description="Shared context prepended to every child prompt.",
+    )
+    agents: list[AgentRunConfig] = Field(
+        description="Child agents to launch with shared base_prompt plus their own prompt.",
+        min_length=1,
+        max_length=8,
+    )
+    model: str | None = Field(
+        default=None,
+        description="Optional model override applied to every child agent.",
+    )
+    run_in_background: bool = Field(
+        default=True,
+        description=(
+            "Launch children as background tasks by default so independent work can run in "
+            "parallel. Set false only when sequential foreground results are needed immediately."
+        ),
+    )
+    timeout: int | None = Field(
+        default=None,
+        description="Optional per-agent timeout in seconds.",
+        ge=30,
+        le=MAX_BACKGROUND_TIMEOUT,
+    )
+    isolation: Literal["none", "worktree"] = Field(
+        default="none",
+        description="Optional isolation request for background child agents.",
+    )
+
+
 class AgentTool(CallableTool2[Params]):
     name: str = NAME
     params: type[Params] = Params
@@ -323,4 +370,80 @@ class AgentTool(CallableTool2[Params]):
             return ToolError(message=str(exc), brief="Background start failed")
 
 
+class RunAgentsTool(CallableTool2[RunAgentsParams]):
+    name: str = "RunAgents"
+    params: type[RunAgentsParams] = RunAgentsParams
+
+    def __init__(self, runtime: Runtime):
+        super().__init__(
+            description=(
+                "Launch a bounded group of focused child agents that share context. "
+                "Use this for scout/plan/implement/review/verify workflows when multiple "
+                "subtasks can be delegated together. Each child receives base_prompt, then "
+                "its own prompt. Background mode returns task IDs immediately; foreground "
+                "mode runs children sequentially and returns their summaries."
+            )
+        )
+        self._runtime = runtime
+        self._agent_tool = AgentTool(runtime)
+
+    @override
+    async def __call__(self, params: RunAgentsParams) -> ToolReturnValue:
+        if self._runtime.role != "root":
+            return ToolError(
+                message="Subagents cannot launch other subagents.",
+                brief="RunAgents unavailable",
+            )
+        if params.model is not None and params.model not in self._runtime.config.models:
+            return ToolError(
+                message=f"Unknown model alias: {params.model}",
+                brief="Invalid model alias",
+            )
+
+        results: list[tuple[AgentRunConfig, ToolReturnValue]] = []
+        for child in params.agents:
+            child_params = Params(
+                description=(child.title or child.name).strip(),
+                prompt=self._child_prompt(params.base_prompt, child.prompt),
+                subagent_type=child.subagent_type or "coder",
+                model=params.model,
+                run_in_background=params.run_in_background,
+                timeout=params.timeout,
+                isolation=params.isolation,
+            )
+            result = await self._agent_tool(child_params)
+            results.append((child, result))
+
+        any_error = any(result.is_error for _, result in results)
+        lines = [f"summary: {params.summary}", f"agent_count: {len(results)}", "agents:"]
+        for child, result in results:
+            status = "error" if result.is_error else "launched"
+            lines.append(f"- name: {child.name}")
+            lines.append(f"  subagent_type: {child.subagent_type or 'coder'}")
+            lines.append(f"  status: {status}")
+            if result.is_error:
+                lines.append(f"  brief: {result.brief}")
+                lines.append(f"  message: {result.message}")
+            else:
+                output = result.output if isinstance(result.output, str) else str(result.output)
+                indented = "\n".join(f"    {line}" for line in output.splitlines())
+                lines.append("  result: |")
+                lines.append(indented)
+        return ToolReturnValue(
+            is_error=any_error,
+            output="\n".join(lines),
+            message=("One or more agents failed." if any_error else "Agents launched."),
+            display=[],
+        )
+
+    @staticmethod
+    def _child_prompt(base_prompt: str, prompt: str) -> str:
+        base = base_prompt.strip()
+        child = prompt.strip()
+        if base and child:
+            return f"{base}\n\n{child}"
+        return base or child
+
+
 Agent = AgentTool
+RunAgents = RunAgentsTool

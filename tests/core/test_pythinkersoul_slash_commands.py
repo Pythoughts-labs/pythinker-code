@@ -103,6 +103,56 @@ async def test_skill_slash_run_does_not_auto_generate_session_title(
 
 
 @pytest.mark.asyncio
+async def test_skill_slash_run_appends_local_specialization(
+    runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    core_dir = tmp_path / "review-pr"
+    core_dir.mkdir()
+    core_dir.joinpath("SKILL.md").write_text("Core review workflow", encoding="utf-8")
+    local_dir = tmp_path / "review-pr-local"
+    local_dir.mkdir()
+    local_dir.joinpath("SKILL.md").write_text("Local review rules", encoding="utf-8")
+    runtime.skills = {
+        "review-pr": Skill(
+            name="review-pr",
+            description="Review PR",
+            type="standard",
+            dir=HostPath.unsafe_from_local_path(core_dir),
+            skill_md_file=HostPath.unsafe_from_local_path(core_dir / "SKILL.md"),
+            scope="builtin",
+        ),
+        "review-pr-local": Skill(
+            name="review-pr-local",
+            description="Local review rules",
+            type="standard",
+            dir=HostPath.unsafe_from_local_path(local_dir),
+            skill_md_file=HostPath.unsafe_from_local_path(local_dir / "SKILL.md"),
+            scope="project",
+        ),
+    }
+
+    agent = Agent(
+        name="Test Agent",
+        system_prompt="Test system prompt.",
+        toolset=EmptyToolset(),
+        runtime=runtime,
+    )
+    soul = PythinkerSoul(agent, context=Context(file_backend=tmp_path / "history.jsonl"))
+    turn = AsyncMock(return_value=None)
+    monkeypatch.setattr(soul, "_turn", turn)
+    monkeypatch.setattr(pythinkersoul_module, "wire_send", lambda _msg: None)
+
+    await soul.run("/skill:review-pr check diff")
+
+    message = turn.call_args.args[0]
+    text = message.extract_text()
+    assert "Core review workflow" in text
+    assert "# Local specialization: review-pr-local" in text
+    assert "Local review rules" in text
+    assert "User request:\ncheck diff" in text
+
+
+@pytest.mark.asyncio
 async def test_flow_slash_run_does_not_auto_generate_session_title(
     runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

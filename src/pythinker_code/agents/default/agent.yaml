@@ -6,6 +6,7 @@ agent:
     ROLE_ADDITIONAL: ""
   tools:
     - "pythinker_code.tools.agent:Agent"
+    - "pythinker_code.tools.agent:RunAgents"
     # - "pythinker_code.tools.dmail:SendDMail"
     # - "pythinker_code.tools.think:Think"
     - "pythinker_code.tools.ask_user:AskUserQuestion"

@@ -328,7 +328,10 @@ async def test_wire_message_serde():
     assert legacy_msg.event == StepBegin(n=3)
 
     with pytest.raises(ValueError):
-        ApprovalResponse(request_id="request_123", response="invalid_response")  # type: ignore
+        ApprovalResponse(
+            request_id="request_123",
+            response="invalid_response",  # pyright: ignore[reportArgumentType]
+        )
 
     msg = ApprovalRequest(
         id="request_123",

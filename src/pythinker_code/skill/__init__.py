@@ -402,6 +402,51 @@ async def read_skill_text(skill: Skill) -> str | None:
         return None
 
 
+LOCAL_SPECIALIZATION_SUFFIX = "-local"
+
+
+def local_specialization_name(name: str) -> str:
+    """Return the companion local-specialization skill name for *name*."""
+    if name.endswith(LOCAL_SPECIALIZATION_SUFFIX):
+        return name
+    return f"{name}{LOCAL_SPECIALIZATION_SUFFIX}"
+
+
+def get_local_specialization(skill: Skill, skills_by_name: dict[str, Skill]) -> Skill | None:
+    """Return the ``<skill>-local`` companion, if one is available.
+
+    Local specializations are additive supplements to a core workflow skill, not
+    replacements for the existing same-name scope precedence rules.
+    """
+    if skill.name.endswith(LOCAL_SPECIALIZATION_SUFFIX):
+        return None
+    return skills_by_name.get(normalize_skill_name(local_specialization_name(skill.name)))
+
+
+async def read_skill_text_with_local_specialization(
+    skill: Skill, skills_by_name: dict[str, Skill]
+) -> str | None:
+    """Read a skill, appending its ``<name>-local`` specialization when present."""
+    skill_text = await read_skill_text(skill)
+    if skill_text is None:
+        return None
+
+    local_skill = get_local_specialization(skill, skills_by_name)
+    if local_skill is None:
+        return skill_text
+
+    local_text = await read_skill_text(local_skill)
+    if local_text is None:
+        logger.warning(
+            "Failed to read local specialization {name} for skill {skill}",
+            name=local_skill.name,
+            skill=skill.name,
+        )
+        return skill_text
+
+    return f"{skill_text}\n\n---\n\n# Local specialization: {local_skill.name}\n\n{local_text}"
+
+
 class Skill(BaseModel):
     """Information about a single skill."""
 
