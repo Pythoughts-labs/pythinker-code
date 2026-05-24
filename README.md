@@ -32,7 +32,7 @@
 
 <br /><br />
 
-<img src="https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/docs/media/pythinker-code.gif" alt="Pythinker Code terminal demo" width="860">
+<img src="https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/docs/media/pythinker-cli.gif" alt="Pythinker Code terminal demo" width="860">
 
 </div>
 
@@ -151,7 +151,8 @@ matches your OS — no Python, Node, or `uv` prerequisite.
 | **🪟 Windows** | Download + double-click `PythinkerSetup-0.13.0.exe` | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
 | **🍎 macOS (Apple Silicon + Intel)** | `brew install mohamed-elkholy95/pythinker/pythinker-code` | Homebrew tap |
 | **🐧 Linux (Debian / Ubuntu)** | `sudo dpkg -i pythinker-code_0.13.0_amd64.deb` | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
-| **🐧 Linux (Fedora / RHEL / openSUSE)** | `sudo rpm -i pythinker-code-0.13.0.x86_64.rpm` | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
+| **🐧 Linux (Fedora / RHEL)** | Download `pythinker-code-0.13.0.x86_64.rpm`, then `sudo dnf install ./pythinker-code-0.13.0.x86_64.rpm` | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
+| **🐧 Linux (openSUSE)** | Download `pythinker-code-0.13.0.x86_64.rpm`, then `sudo zypper install ./pythinker-code-0.13.0.x86_64.rpm` | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
 | **🌐 macOS / Linux — curl-bash** | `curl -fsSL https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install-native.sh \| bash` | tarball |
 | **🐍 Python fallback** (universal) | `pip install pythinker-code` | PyPI |
 
@@ -251,13 +252,19 @@ sudo apt-get install -f       # only if dpkg reports missing deps
 sudo dpkg -i pythinker-code_0.13.0_arm64.deb
 
 # Fedora / RHEL / openSUSE (x86_64)
-sudo rpm -i pythinker-code-0.13.0.x86_64.rpm
-# or use the package manager (preferred — handles deps):
+curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.13.0/pythinker-code-0.13.0.x86_64.rpm
+curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.13.0/pythinker-code-0.13.0.x86_64.rpm.sha256
+sha256sum -c pythinker-code-0.13.0.x86_64.rpm.sha256
+# Fedora / RHEL:
 sudo dnf install ./pythinker-code-0.13.0.x86_64.rpm
+# openSUSE:
 sudo zypper install ./pythinker-code-0.13.0.x86_64.rpm
 
 # Fedora / RHEL (aarch64)
-sudo rpm -i pythinker-code-0.13.0.aarch64.rpm
+curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.13.0/pythinker-code-0.13.0.aarch64.rpm
+curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.13.0/pythinker-code-0.13.0.aarch64.rpm.sha256
+sha256sum -c pythinker-code-0.13.0.aarch64.rpm.sha256
+sudo dnf install ./pythinker-code-0.13.0.aarch64.rpm
 ```
 
 Both packages drop a small `/usr/bin/pythinker` launcher that execs the real
@@ -330,10 +337,7 @@ no PyInstaller-built Intel Darwin binary is published.
 # Legacy: uv-based shell-script wrappers (prints a deprecation banner on run)
 curl -fsSL https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install.sh | bash
 # Windows PowerShell wrapper:
-$installer = Join-Path $env:TEMP "pythinker-install.ps1"
-iwr -UseBasicParsing https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install.ps1 -OutFile $installer
-& $installer
-Remove-Item $installer
+powershell -c "irm https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install.ps1 | iex"
 
 # Legacy: one-off run via uvx
 uvx pythinker-code

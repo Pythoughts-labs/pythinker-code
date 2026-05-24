@@ -197,7 +197,7 @@ print_logo
 #
 # Recommended replacement:
 #   - macOS:    brew install mohamed-elkholy95/pythinker/pythinker-code
-#   - Linux:    sudo dpkg -i pythinker-code_*.deb  (or  sudo rpm -i ...)
+#   - Linux:    download a release .deb/.rpm, then install it with dpkg/dnf/zypper
 #   - macOS / Linux without a package manager:
 #       curl -fsSL https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install-native.sh | bash
 #
@@ -209,7 +209,7 @@ if [ -z "${PYTHINKER_INSTALL_QUIET_DEPRECATION:-}" ]; then
     "$BOLD$CORAL" "$RESET"
   printf '  Prefer the native installer for your OS:\n'
   printf '    %smacOS:%s   brew install mohamed-elkholy95/pythinker/pythinker-code\n' "$IRIS" "$RESET"
-  printf '    %sLinux:%s   sudo dpkg -i pythinker-code_*.deb   # or   sudo rpm -i ...\n' "$IRIS" "$RESET"
+  printf '    %sLinux:%s   download a release .deb/.rpm, then install it with dpkg/dnf/zypper\n' "$IRIS" "$RESET"
   printf '    %sCross-OS:%s curl -fsSL https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install-native.sh | bash\n' "$IRIS" "$RESET"
   printf '  Continuing with the legacy uv install in 3s... (Ctrl-C to abort)\n\n'
   sleep 3

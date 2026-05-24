@@ -33,7 +33,7 @@ curl -LsSf https://code.pythinker.com/install.sh | bash
 
 ```powershell
 # Windows (PowerShell)
-Invoke-RestMethod https://code.pythinker.com/install.ps1 | Invoke-Expression
+powershell -c "irm https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install.ps1 | iex"
 ```
 
 Verify the installation:

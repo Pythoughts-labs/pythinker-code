@@ -4,17 +4,23 @@ Builds `.deb` (Debian / Ubuntu) and `.rpm` (Fedora / RHEL / openSUSE) packages
 for Pythinker Code by freezing the CLI with PyInstaller and wrapping the
 output with [`fpm`](https://github.com/jordansissel/fpm).
 
-End-user install once an artifact is downloaded from the GitHub Release:
+End-user install from the current GitHub Release:
 
 ```sh
 # Debian / Ubuntu
-sudo dpkg -i pythinker-code_x.y.z_amd64.deb
+curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.13.0/pythinker-code_0.13.0_amd64.deb
+curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.13.0/pythinker-code_0.13.0_amd64.deb.sha256
+sha256sum -c pythinker-code_0.13.0_amd64.deb.sha256
+sudo dpkg -i pythinker-code_0.13.0_amd64.deb
 sudo apt-get install -f       # only needed if dependencies fail to resolve
 
 # Fedora / RHEL / openSUSE
-sudo rpm -i pythinker-code-x.y.z.x86_64.rpm
-# or
-sudo dnf install ./pythinker-code-x.y.z.x86_64.rpm
+curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.13.0/pythinker-code-0.13.0.x86_64.rpm
+curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.13.0/pythinker-code-0.13.0.x86_64.rpm.sha256
+sha256sum -c pythinker-code-0.13.0.x86_64.rpm.sha256
+sudo dnf install ./pythinker-code-0.13.0.x86_64.rpm
+# or, on openSUSE:
+sudo zypper install ./pythinker-code-0.13.0.x86_64.rpm
 ```
 
 The package drops a single executable at `/usr/bin/pythinker` and a license
