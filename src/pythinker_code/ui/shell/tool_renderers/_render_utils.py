@@ -82,12 +82,13 @@ def tool_call_header(
     header.append("● ", style=tui_rich_style(style_token))
     header.append_text(tool_title(name))
     if summary is not None:
-        header.append("(")
+        paren_style = tui_rich_style("muted")
+        header.append("(", style=paren_style)
         if isinstance(summary, Text):
             header.append_text(summary)
         else:
             header.append(summary)
-        header.append(")")
+        header.append(")", style=paren_style)
     return header
 
 

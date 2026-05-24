@@ -509,6 +509,22 @@ def test_task_output_header_shows_description_not_id():
     assert rendered.index("Shell TUI mapping") < rendered.index("agent-pyl4xz6a")
 
 
+def test_task_output_header_resolves_name_while_running():
+    """With a registered resolver the friendly name shows even while the task is
+    still running (no result yet) — not just after a result arrives."""
+    from pythinker_code.ui.shell.tool_renderers.background import set_task_label_resolver
+
+    set_task_label_resolver(lambda tid: "src-mapper" if tid == "agent-7ofm18ub" else None)
+    try:
+        rendered = _render_running(
+            "TaskOutput", {"task_id": "agent-7ofm18ub", "block": True}, width=80
+        )
+    finally:
+        set_task_label_resolver(None)
+    assert "src-mapper" in rendered
+    assert rendered.index("src-mapper") < rendered.index("agent-7ofm18ub")
+
+
 def test_generic_substantial_output_uses_single_response_gutter():
     rendered = _render_with_definition(
         "UnknownTool",

@@ -507,6 +507,25 @@ class Shell:
             resume_prompt.clear()
             await idle_events.put(_PromptEvent(kind="input", user_input=user_input))
 
+    def _register_task_label_resolver(self) -> None:
+        """Let TaskOutput/TaskStop headers show a task's friendly description
+        (resolved from the background-task store) instead of the opaque id,
+        even while the task is still running."""
+        if not isinstance(self.soul, PythinkerSoul):
+            return
+        from pythinker_code.ui.shell.tool_renderers.background import set_task_label_resolver
+
+        store = self.soul.runtime.background_tasks.store
+
+        def _resolve(task_id: str) -> str | None:
+            try:
+                description = store.merged_view(task_id).spec.description
+            except Exception:  # noqa: BLE001 - missing/unreadable task must not crash the UI
+                return None
+            return description or None
+
+        set_task_label_resolver(_resolve)
+
     async def run(self, command: str | None = None) -> bool:
         _run_start_time = time.monotonic()
 
@@ -527,6 +546,7 @@ class Shell:
                 )
 
                 register_builtin_renderers()
+                self._register_task_label_resolver()
 
             # Run any pending extension setup callbacks. Safe to call when
             # nothing's queued — the function returns an empty list and

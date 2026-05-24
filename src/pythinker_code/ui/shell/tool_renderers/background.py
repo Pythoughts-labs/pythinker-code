@@ -5,6 +5,8 @@ Covers ``TaskList``, ``TaskOutput``, and ``TaskStop``.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from rich.console import Group, RenderableType
 from rich.text import Text
 
@@ -24,6 +26,35 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     running_spinner,
     tool_call_header,
 )
+
+# Process-wide resolver: task_id -> human description. Registered by the shell
+# from the runtime's background-task store so a TaskOutput/TaskStop header can
+# show the friendly name even while the task is still running (before any
+# result arrives). Returns None when unknown or unset.
+_task_label_resolver: Callable[[str], str | None] | None = None
+
+
+def set_task_label_resolver(resolver: Callable[[str], str | None] | None) -> None:
+    """Register (or clear) the call-time task-id → description resolver."""
+    global _task_label_resolver
+    _task_label_resolver = resolver
+
+
+def _resolve_task_label(ctx: ToolRenderContext, task_id: str) -> str | None:
+    """Resolve and cache a task's human description for *task_id*.
+
+    Caches in ``ctx.state`` so the store is read at most once per card (the
+    description is immutable), avoiding a filesystem read on every redraw.
+    """
+    cached = ctx.state.get("task_label")
+    if cached:
+        return cached if cached != task_id else None
+    if _task_label_resolver is not None:
+        label = _task_label_resolver(task_id)
+        if label and label != task_id:
+            ctx.state["task_label"] = label
+            return label
+    return None
 
 
 def _stash_task_label(ctx: ToolRenderContext, result: ToolResultPayload) -> None:
@@ -51,9 +82,10 @@ def _render_call_with_id(
         else:
             summary.append_text(fg("muted", "..."))
     else:
-        # Prefer the task's human description (stashed from the result) over the
-        # opaque id; keep the id as a dim suffix for traceability.
-        task_label = ctx.state.get("task_label")
+        # Prefer the task's human description (resolved from the store at
+        # call-time, or stashed from the result) over the opaque id; keep the
+        # id as a dim suffix for traceability.
+        task_label = _resolve_task_label(ctx, task_id)
         if task_label:
             summary.append_text(fg("accent", task_label))
             summary.append_text(fg("muted", f" · {task_id}"))
