@@ -10,6 +10,7 @@ from rich.console import Group, RenderableType
 from rich.style import Style as RichStyle
 from rich.text import Text
 
+from pythinker_code.ui.shell.motion import spinner_frame_at
 from pythinker_code.ui.shell.tool_renderers import (
     ToolRenderContext,
     ToolRenderDefinition,
@@ -20,9 +21,7 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     fg,
     format_lines_block,
     invalid_arg,
-    loading_marker,
     missing_required_arg,
-    running_spinner,
     tool_title,
 )
 from pythinker_code.ui.theme import tui_rich_style
@@ -32,6 +31,23 @@ _TOOL_NAME = "Agent"
 _DEFAULT_COLLAPSED_LINES = 6
 _PROMPT_PREVIEW_CHARS = 80
 _BACKGROUND_ACTIVE_STATUSES = frozenset({"created", "starting", "running", "awaiting_approval"})
+
+
+def _subagent_loader(ctx: ToolRenderContext) -> Text:
+    """Return the animated loader used for active subagent rows."""
+    elapsed = ctx.elapsed_s if ctx.elapsed_s is not None else 0.0
+    return Text(f"{spinner_frame_at(elapsed)} ", style=tui_rich_style("accent"))
+
+
+def _with_active_loader(renderable: RenderableType, ctx: ToolRenderContext) -> RenderableType:
+    if not (ctx.execution_started and (not ctx.has_result or ctx.is_partial)):
+        return renderable
+    marker = _subagent_loader(ctx)
+    if isinstance(renderable, Text):
+        out = marker.copy()
+        out.append_text(renderable)
+        return out
+    return Group(marker, renderable)
 
 
 def _truncate(text: str, max_chars: int) -> str:
@@ -62,13 +78,7 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
     if resume:
         header.append_text(fg("muted", f" (resume {resume[:8]})"))
 
-    # Active subagent affordance: a running subagent gets the shared solid
-    # loading marker. Animated dots are reserved for the bottom thinking words.
-    head = running_spinner(
-        header,
-        execution_started=ctx.execution_started,
-        has_result=ctx.has_result,
-    )
+    head = _with_active_loader(header, ctx)
 
     missing: list[RenderableType] = []
     if description is None and ctx.has_result:
@@ -113,7 +123,7 @@ def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> Rendera
         label = "background subagent working"
         if description:
             label = f"{label}: {description}"
-        line = loading_marker()
+        line = _subagent_loader(ctx)
         line.append(label, style=tui_rich_style("muted"))
         return Group(line, fg("dim", f"  status: {background_status}"))
     # Distinct success symbol so the eye doesn't mistake a finished subagent
