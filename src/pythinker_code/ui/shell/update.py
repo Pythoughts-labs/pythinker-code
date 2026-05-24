@@ -14,6 +14,7 @@ from pathlib import Path
 from shutil import which
 
 import aiohttp
+import typer
 from rich.text import Text
 
 from pythinker_code.native import (
@@ -37,7 +38,6 @@ CHANGELOG_URL_EN = "https://github.com/mohamed-elkholy95/Pythinker-Code/blob/mai
 UPGRADE_COMMAND = ["uv", "tool", "upgrade", "pythinker-code"]
 
 LATEST_VERSION_FILE = get_share_dir() / "latest_version.txt"
-SKIPPED_VERSION_FILE = get_share_dir() / "skipped_version.txt"
 LAST_UPDATE_CHECK_FILE = get_share_dir() / "last_update_check.txt"
 AUTO_UPDATE_CHECK_INTERVAL_SECONDS = 24 * 60 * 60
 
@@ -205,108 +205,81 @@ def _mark_auto_update_check_attempt() -> None:
         logger.exception("Failed to write last update-check timestamp:")
 
 
-def schedule_auto_update_check() -> asyncio.Task[UpdateResult] | None:
-    """Schedule a silent, throttled PyPI update check for interactive shell startup."""
-    if not _should_auto_check_for_updates():
-        return None
+async def prompt_pre_start_update() -> None:
+    """pythinker-x-style blocking update prompt for the interactive shell.
 
-    _mark_auto_update_check_attempt()
-    task = asyncio.create_task(
-        do_update(print=False, check_only=True),
-        name="pythinker-update-check",
-    )
-
-    def _log_result(done: asyncio.Task[UpdateResult]) -> None:
-        try:
-            result = done.result()
-        except asyncio.CancelledError:
-            return
-        except Exception:
-            logger.exception("Background update check failed:")
-            return
-        if result is UpdateResult.UPDATE_AVAILABLE:
-            logger.info("Update available; showing notification banner")
-            print_update_banner()
-
-    task.add_done_callback(_log_result)
-    return task
-
-
-def print_update_banner() -> None:
-    """Print a non-blocking 'Update Available' banner if a newer version is cached."""
+    Runs once at startup, before the agent loop. When a newer release exists,
+    asks the user whether to update now. Accepting runs the update and exits so
+    the user relaunches the new version; declining continues the current session
+    (the 24h throttle governs how often the prompt reappears).
+    """
     from pythinker_code.constant import VERSION as current_version
 
     if _auto_update_disabled() or _is_running_from_source_checkout():
         return
     if not sys.stdout.isatty():
         return
-    if not LATEST_VERSION_FILE.exists():
+
+    latest_version = await _resolve_latest_version_for_prompt()
+    if not latest_version:
+        return
+    if semver_tuple(latest_version) <= semver_tuple(current_version):
         return
 
-    try:
-        latest_version = LATEST_VERSION_FILE.read_text(encoding="utf-8").strip()
-    except OSError:
-        return
-    if not latest_version or semver_tuple(latest_version) <= semver_tuple(current_version):
+    if not await _confirm_update_now(current_version, latest_version):
         return
 
-    if SKIPPED_VERSION_FILE.exists():
+    result = await do_update(print=True)
+    if result is UpdateResult.UPDATED:
+        raise typer.Exit(0)
+
+
+async def _resolve_latest_version_for_prompt() -> str | None:
+    """Return the latest known release, fetching from PyPI only when the 24h
+    throttle is due; otherwise fall back to the cached value."""
+    if _should_auto_check_for_updates():
+        _mark_auto_update_check_attempt()
         try:
-            skipped = SKIPPED_VERSION_FILE.read_text(encoding="utf-8").strip()
-        except OSError:
-            skipped = ""
-        if skipped == latest_version:
-            return
+            await do_update(print=False, check_only=True)
+        except Exception:
+            logger.exception("Pre-start update check failed:")
+    try:
+        return LATEST_VERSION_FILE.read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
 
-    _render_update_banner(current_version, latest_version)
+
+async def _confirm_update_now(current_version: str, latest_version: str) -> bool:
+    from prompt_toolkit.shortcuts.choice_input import ChoiceInput
+
+    console.print(_update_prompt_text(current_version, latest_version))
+    try:
+        selection = await ChoiceInput(
+            message="Update now?",
+            options=[("update", "Update now"), ("skip", "Skip")],
+            default="update",
+        ).prompt_async()
+    except (EOFError, KeyboardInterrupt):
+        return False
+    return selection == "update"
 
 
-def _update_banner_text(current_version: str, latest_version: str) -> Text:
+def _update_prompt_text(current_version: str, latest_version: str) -> Text:
     upgrade_command = _detect_upgrade_command()
     if upgrade_command == [NATIVE_INSTALLER_MARKER]:
-        return Text.assemble(
-            ("  ✨ ", "bold cyan"),
-            ("Update available!", "bold"),
-            (f" {current_version} -> {latest_version}", "grey50"),
-            ("\n\n  Release notes: ", "grey50"),
-            (CHANGELOG_URL_EN, "grey50 underline"),
-            ("\n\n  ", ""),
-            ("1", "bold cyan"),
-            (". Run ", ""),
-            ("pythinker update", "bold cyan"),
-            (" (downloads native updater automatically)", "grey50"),
-            ("\n  ", ""),
-            ("2", "bold cyan"),
-            (". Or run ", ""),
-            (_native_manual_update_command(latest_version), "bold"),
-        )
-    upgrade_command_text = _format_upgrade_command(upgrade_command)
+        update_method = "downloads the native updater automatically"
+    else:
+        update_method = _format_upgrade_command(upgrade_command)
     return Text.assemble(
-        ("  ✨ ", "bold cyan"),
+        ("\n  ✨ ", "bold cyan"),
         ("Update available!", "bold"),
         (f" {current_version} -> {latest_version}", "grey50"),
-        ("\n\n  Release notes: ", "grey50"),
+        ("\n  Release notes: ", "grey50"),
         (CHANGELOG_URL_EN, "grey50 underline"),
-        ("\n\n  ", ""),
-        ("1", "bold cyan"),
-        (". Run ", ""),
-        ("pythinker update", "bold cyan"),
-        ("\n  ", ""),
-        ("2", "bold cyan"),
-        (". Or run ", ""),
-        (upgrade_command_text, "bold"),
+        ("\n  Update method: ", "grey50"),
+        (update_method, "bold"),
+        ("\n", ""),
     )
-
-
-def _render_update_banner(current_version: str, latest_version: str) -> None:
-    console.print()
-    console.print(_update_banner_text(current_version, latest_version))
-
-
-def _native_manual_update_command(latest_version: str) -> str:
-    if _is_windows():
-        return f"download PythinkerSetup-{latest_version}.exe from GitHub Releases"
-    return f"curl -fsSL https://pythinker.com/install.sh | bash -s -- --version {latest_version}"
 
 
 async def _fetch_native_release_asset(

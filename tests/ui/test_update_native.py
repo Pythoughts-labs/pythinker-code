@@ -33,33 +33,13 @@ async def test_native_update_skipped_when_auto_disabled(monkeypatch):
     assert result is upd.UpdateResult.UPDATE_AVAILABLE
 
 
-def test_native_banner_does_not_leak_marker(monkeypatch):
-    """Regression: the update banner must never render the raw marker token."""
+def test_native_prompt_does_not_leak_marker(monkeypatch):
+    """Regression: the update prompt must never render the raw marker token."""
     with patch("pythinker_code.ui.shell.update._is_native_build", return_value=True):
-        rendered = upd._update_banner_text("0.1.0", "0.2.0")
+        rendered = upd._update_prompt_text("0.1.0", "0.2.0")
     text = rendered.plain
     assert upd.NATIVE_INSTALLER_MARKER not in text
-    assert "pythinker update" in text
     assert "native updater" in text
-
-
-def test_native_banner_uses_curl_installer_on_unix(monkeypatch):
-    with (
-        patch("pythinker_code.ui.shell.update._is_native_build", return_value=True),
-        patch("pythinker_code.ui.shell.update._is_windows", return_value=False),
-    ):
-        rendered = upd._update_banner_text("0.1.0", "0.2.0")
-    text = rendered.plain
-    assert "curl -fsSL https://pythinker.com/install.sh | bash -s -- --version 0.2.0" in text
-
-
-def test_native_banner_uses_installer_on_windows(monkeypatch):
-    with (
-        patch("pythinker_code.ui.shell.update._is_native_build", return_value=True),
-        patch("pythinker_code.ui.shell.update._is_windows", return_value=True),
-    ):
-        rendered = upd._update_banner_text("0.1.0", "0.2.0")
-    assert "PythinkerSetup-0.2.0.exe" in rendered.plain
 
 
 def test_install_native_archive_replaces_current_executable(monkeypatch, tmp_path):
