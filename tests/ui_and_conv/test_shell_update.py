@@ -10,7 +10,7 @@ from pythinker_code.ui.shell import update
 
 @pytest.mark.asyncio
 async def test_prompt_pre_start_update_runs_update_and_exits_on_accept(monkeypatch):
-    calls: list[tuple[bool]] = []
+    calls: list[str] = []
 
     async def fake_resolve() -> str:
         return "999.0.0"
@@ -19,20 +19,53 @@ async def test_prompt_pre_start_update_runs_update_and_exits_on_accept(monkeypat
         return True
 
     async def fake_do_update(*, print: bool) -> update.UpdateResult:
-        calls.append((print,))
+        assert print is True
+        calls.append("update")
         return update.UpdateResult.UPDATED
+
+    async def fake_ack() -> None:
+        calls.append("ack")
 
     monkeypatch.setattr(update.sys, "stdout", SimpleNamespace(isatty=lambda: True))
     monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: False)
     monkeypatch.setattr(update, "_resolve_latest_version_for_prompt", fake_resolve)
     monkeypatch.setattr(update, "_confirm_update_now", fake_confirm)
     monkeypatch.setattr(update, "do_update", fake_do_update)
+    monkeypatch.setattr(update, "_await_exit_acknowledgment", fake_ack)
 
     with pytest.raises(update.typer.Exit) as excinfo:
         await update.prompt_pre_start_update()
 
     assert excinfo.value.exit_code == 0
-    assert calls == [(True,)]
+    # The acknowledgment pause must run after the update and before the exit so
+    # the "Updated / relaunch" message stays on screen instead of vanishing.
+    assert calls == ["update", "ack"]
+
+
+@pytest.mark.asyncio
+async def test_await_exit_acknowledgment_waits_for_keypress(monkeypatch):
+    waited: list[bool] = []
+
+    def fake_input(*_a) -> str:
+        waited.append(True)
+        return ""
+
+    monkeypatch.setattr("builtins.input", fake_input)
+
+    await update._await_exit_acknowledgment()
+
+    assert waited == [True]
+
+
+@pytest.mark.asyncio
+async def test_await_exit_acknowledgment_swallows_eof(monkeypatch):
+    def fake_input(*_a) -> str:
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", fake_input)
+
+    # A piped/closed stdin must not crash the exit path.
+    assert await update._await_exit_acknowledgment() is None
 
 
 @pytest.mark.asyncio

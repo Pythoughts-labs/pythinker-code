@@ -231,7 +231,29 @@ async def prompt_pre_start_update() -> None:
 
     result = await do_update(print=True)
     if result is UpdateResult.UPDATED:
+        # do_update() already printed "Updated successfully!" + the relaunch
+        # hint. Wait for the user to acknowledge before exiting so the message
+        # stays on screen instead of the process vanishing (which reads as a
+        # crash) right after they chose "Update now".
+        await _await_exit_acknowledgment()
         raise typer.Exit(0)
+
+
+async def _await_exit_acknowledgment() -> None:
+    """Block on a keypress so the update/relaunch message is readable before exit.
+
+    Making the close user-initiated is the point: a fixed sleep would still
+    close on its own and read as a crash. Runs ``input`` off the event loop;
+    EOF/Ctrl-C just proceed to exit.
+    """
+    console.print(
+        "\n[grey50]Press Enter to close Pythinker, then relaunch to use the new version.[/grey50]"
+    )
+    loop = asyncio.get_running_loop()
+    try:
+        await loop.run_in_executor(None, input)
+    except (EOFError, KeyboardInterrupt):
+        return
 
 
 async def _resolve_latest_version_for_prompt() -> str | None:
