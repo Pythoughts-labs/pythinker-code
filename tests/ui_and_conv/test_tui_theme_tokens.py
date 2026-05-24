@@ -113,3 +113,11 @@ def test_dark_markdown_is_minimal_two_colour():
     assert colors.link == muted
     assert colors.quote == muted
     assert markdown_rich_style("link", theme="dark").color is not None
+
+
+def test_info_token_exists_and_is_cyan():
+    assert get_tui_tokens("dark").info == "#AFE3F1"
+    assert get_tui_tokens("light").info == "#176B7E"
+    # resolver works for the new token
+    set_active_theme("dark")
+    assert tui_rich_style("info").color is not None

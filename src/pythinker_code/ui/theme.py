@@ -378,6 +378,7 @@ class TuiTokens:
     border: str
     border_accent: str
     border_muted: str
+    info: str
     success: str
     error: str
     warning: str
@@ -414,6 +415,7 @@ _TUI_TOKENS_DARK = TuiTokens(
     border="#6b7280",
     border_accent="#9CA3AF",
     border_muted="#555a70",
+    info="#AFE3F1",
     success="#A6E3A1",
     error="#F38BA8",
     warning="#F2CC60",
@@ -447,6 +449,7 @@ _TUI_TOKENS_LIGHT = TuiTokens(
     border="#547da7",
     border_accent="#5a8080",
     border_muted="#b0b0b0",
+    info="#176B7E",
     success="#588458",
     error="#aa5555",
     warning="#9a7326",
