@@ -31,7 +31,8 @@ async def test_skill_lockfile_round_trip_and_verify(tmp_path: Path) -> None:
     skill_file.write_text("Review instructions", encoding="utf-8")
     skills = {"review-pr": _skill("review-pr", skill_file)}
 
-    lock = await build_skill_lock(skills)
+    lock = await build_skill_lock(skills, project_root=tmp_path)
+    assert lock.skills["review-pr"].skill_path == "skills/review-pr/SKILL.md"
     lock_path = tmp_path / "skills-lock.json"
     write_skill_lock(lock_path, lock)
 

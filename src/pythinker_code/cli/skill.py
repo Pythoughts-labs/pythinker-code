@@ -20,6 +20,10 @@ from pythinker_code.skill.lockfile import (
 cli = typer.Typer(help="Inspect and lock Pythinker skills.")
 
 
+def _resolve_project_path(work_dir: Path, path: Path) -> Path:
+    return path if path.is_absolute() else work_dir / path
+
+
 async def _discover(work_dir: Path):
     config = load_config()
     roots = await resolve_skills_roots(
@@ -42,6 +46,11 @@ def list_skills(
 
     async def _run() -> None:
         skills = await _discover(work_dir)
+        if skills and not (work_dir / LOCKFILE_NAME).exists():
+            typer.echo(
+                f"Warning: discovered {len(skills)} skill(s) but no {LOCKFILE_NAME} in {work_dir}.",
+                err=True,
+            )
         for skill in sorted(skills.values(), key=lambda item: item.name):
             typer.echo(f"{skill.name}\t{skill.scope}\t{skill.skill_md_file}")
 
@@ -61,9 +70,10 @@ def lock_skills(
 
     async def _run() -> None:
         skills = await _discover(work_dir)
-        lock = await build_skill_lock(skills)
-        write_skill_lock(output, lock)
-        typer.echo(f"Wrote {output} with {len(lock.skills)} skill(s).")
+        lock = await build_skill_lock(skills, project_root=work_dir)
+        output_path = _resolve_project_path(work_dir, output)
+        write_skill_lock(output_path, lock)
+        typer.echo(f"Wrote {output_path} with {len(lock.skills)} skill(s).")
 
     asyncio.run(_run())
 
@@ -80,15 +90,16 @@ def verify_lock(
     work_dir = work_dir.resolve()
 
     async def _run() -> None:
-        if not lockfile.exists():
-            typer.echo(f"Lockfile not found: {lockfile}", err=True)
+        lockfile_path = _resolve_project_path(work_dir, lockfile)
+        if not lockfile_path.exists():
+            typer.echo(f"Lockfile not found: {lockfile_path}", err=True)
             raise typer.Exit(code=1)
         skills = await _discover(work_dir)
-        errors = await verify_skill_lock(skills, load_skill_lock(lockfile))
+        errors = await verify_skill_lock(skills, load_skill_lock(lockfile_path))
         if errors:
             for error in errors:
                 typer.echo(error, err=True)
             raise typer.Exit(code=1)
-        typer.echo(f"Verified {lockfile}.")
+        typer.echo(f"Verified {lockfile_path}.")
 
     asyncio.run(_run())

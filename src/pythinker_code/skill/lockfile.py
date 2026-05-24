@@ -30,22 +30,35 @@ def skill_content_hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
-async def lock_entry_for_skill(skill: Skill) -> SkillLockEntry | None:
+def _display_skill_path(path: Path, project_root: Path | None) -> str:
+    if project_root is None:
+        return str(path)
+    try:
+        return path.resolve().relative_to(project_root.resolve()).as_posix()
+    except ValueError:
+        return str(path)
+
+
+async def lock_entry_for_skill(
+    skill: Skill, *, project_root: Path | None = None
+) -> SkillLockEntry | None:
     content = await read_skill_text(skill)
     if content is None:
         return None
     return SkillLockEntry(
-        skillPath=str(skill.skill_md_file),
+        skillPath=_display_skill_path(Path(str(skill.skill_md_file)), project_root),
         computedHash=skill_content_hash(content),
         source=skill.scope,
         sourceType=skill.scope,
     )
 
 
-async def build_skill_lock(skills: dict[str, Skill]) -> SkillLockFile:
+async def build_skill_lock(
+    skills: dict[str, Skill], *, project_root: Path | None = None
+) -> SkillLockFile:
     entries: dict[str, SkillLockEntry] = {}
     for skill in sorted(skills.values(), key=lambda item: normalize_skill_name(item.name)):
-        entry = await lock_entry_for_skill(skill)
+        entry = await lock_entry_for_skill(skill, project_root=project_root)
         if entry is not None:
             entries[skill.name] = entry
     return SkillLockFile(skills=entries)

@@ -103,7 +103,7 @@ Manage stdio and HTTP MCP servers with `pythinker mcp`. OAuth-backed servers, pe
 
 ### 🤖 Subagents & Skills
 
-Delegate focused work to built-in subagents. Load reusable instructions via `/skill:<name>` and bundled prompt flows via `/flow:<name>`.
+Delegate focused work to built-in subagents. Load reusable instructions via `/skill:<name>` and bundled prompt flows via `/flow:<name>`. Use `pythinker skill list`, `pythinker skill lock`, and `pythinker skill verify-lock` to inspect project skills and pin their hashes in `skills-lock.json`.
 
 </td>
 <td width="50%" valign="top">
