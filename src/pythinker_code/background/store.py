@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 from pathlib import Path
@@ -12,6 +13,7 @@ from pythinker_code.utils.logging import logger
 from .models import (
     TaskConsumerState,
     TaskControl,
+    TaskInputEvent,
     TaskOutputChunk,
     TaskRuntime,
     TaskSpec,
@@ -34,6 +36,7 @@ class BackgroundTaskStore:
     CONTROL_FILE = "control.json"
     CONSUMER_FILE = "consumer.json"
     OUTPUT_FILE = "output.log"
+    INPUT_FILE = "input.jsonl"
 
     def __init__(self, root: Path):
         self._root = root
@@ -72,6 +75,9 @@ class BackgroundTaskStore:
     def output_path(self, task_id: str) -> Path:
         return self.task_path(task_id) / self.OUTPUT_FILE
 
+    def input_path(self, task_id: str) -> Path:
+        return self.task_path(task_id) / self.INPUT_FILE
+
     def create_task(self, spec: TaskSpec) -> None:
         task_dir = self.task_dir(spec.id)
         atomic_json_write(spec.model_dump(mode="json"), task_dir / self.SPEC_FILE)
@@ -82,6 +88,7 @@ class BackgroundTaskStore:
             task_dir / self.CONSUMER_FILE,
         )
         self.output_path(spec.id).touch(exist_ok=True)
+        self.input_path(spec.id).touch(exist_ok=True)
 
     def list_task_ids(self) -> list[str]:
         if not self.root.exists():
@@ -173,6 +180,32 @@ class BackgroundTaskStore:
             reverse=True,
         )
         return views
+
+    def append_input_event(self, task_id: str, event: TaskInputEvent) -> None:
+        _validate_task_id(task_id)
+        path = self.input_path(task_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(event.model_dump(mode="json"), ensure_ascii=False))
+            f.write("\n")
+
+    def read_input_events(self, task_id: str) -> list[TaskInputEvent]:
+        path = self.input_path(task_id)
+        if not path.exists():
+            return []
+        events: list[TaskInputEvent] = []
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                events.append(TaskInputEvent.model_validate_json(line))
+        except (OSError, ValidationError, ValueError, UnicodeDecodeError) as exc:
+            logger.warning(
+                "Failed to read task input events from {path}; ignoring unreadable input: {error}",
+                path=path,
+                error=exc,
+            )
+        return events
 
     def read_output(
         self,

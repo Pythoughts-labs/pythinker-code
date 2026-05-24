@@ -116,3 +116,12 @@ class TaskOutputChunk(BaseModel):
     text: str
     eof: bool
     status: TaskStatus
+
+
+class TaskInputEvent(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    created_at: float = Field(default_factory=time.time)
+    text: str
+    newline: bool = True

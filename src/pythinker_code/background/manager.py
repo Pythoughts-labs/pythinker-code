@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 from .ids import generate_task_id
 from .models import (
+    TaskInputEvent,
     TaskOutputChunk,
     TaskRuntime,
     TaskSpec,
@@ -312,6 +313,23 @@ class BackgroundTaskManager:
     def resolve_output_path(self, task_id: str) -> Path:
         """Return the canonical output path for *task_id*."""
         return self._store.output_path(task_id)
+
+    def write_input(self, task_id: str, *, text: str, newline: bool = True) -> TaskInputEvent:
+        self._ensure_root()
+        view = self._store.merged_view(task_id)
+        if view.spec.kind != "bash":
+            raise RuntimeError("TaskInput is only supported for bash background tasks.")
+        if is_terminal_status(view.runtime.status):
+            raise RuntimeError(f"Task {task_id} is already terminal ({view.runtime.status}).")
+        if view.runtime.status not in {"starting", "running"}:
+            raise RuntimeError(f"Task {task_id} is not ready for input ({view.runtime.status}).")
+        event = TaskInputEvent(
+            id=f"i{time.time_ns()}",
+            text=text,
+            newline=newline,
+        )
+        self._store.append_input_event(task_id, event)
+        return event
 
     def read_output(
         self,

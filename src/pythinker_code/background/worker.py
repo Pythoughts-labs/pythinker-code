@@ -69,6 +69,7 @@ async def run_background_task_worker(
     process: asyncio.subprocess.Process | None = None
     control_task: asyncio.Task[None] | None = None
     heartbeat_task: asyncio.Task[None] | None = None
+    input_task: asyncio.Task[None] | None = None
     stop_event = asyncio.Event()
     kill_sent_at: float | None = None
     timed_out = False
@@ -118,11 +119,28 @@ async def run_background_task_worker(
                 ):
                     await _terminate_process(force=True)
 
+    async def _input_loop() -> None:
+        seen_event_ids: set[str] = set()
+        while not stop_event.is_set():
+            await asyncio.sleep(control_poll_interval_ms / 1000)
+            if process is None or process.returncode is not None or process.stdin is None:
+                return
+            for event in store.read_input_events(task_id):
+                if event.id in seen_event_ids:
+                    continue
+                seen_event_ids.add(event.id)
+                payload = event.text + ("\n" if event.newline else "")
+                try:
+                    process.stdin.write(payload.encode("utf-8"))
+                    await process.stdin.drain()
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+
     try:
         output_path = store.output_path(task_id)
         with output_path.open("ab") as output_file:
             spawn_kwargs: dict[str, Any] = {
-                "stdin": subprocess.DEVNULL,
+                "stdin": asyncio.subprocess.PIPE,
                 "stdout": output_file,
                 "stderr": output_file,
                 "cwd": spec.cwd,
@@ -151,6 +169,7 @@ async def run_background_task_worker(
 
             heartbeat_task = asyncio.create_task(_heartbeat_loop())
             control_task = asyncio.create_task(_control_loop())
+            input_task = asyncio.create_task(_input_loop())
             if spec.timeout_s is None:
                 returncode = await process.wait()
             else:
@@ -179,7 +198,11 @@ async def run_background_task_worker(
         return
     finally:
         stop_event.set()
-        for task in (heartbeat_task, control_task):
+        if process is not None and process.stdin is not None:
+            with contextlib.suppress(BrokenPipeError, ConnectionResetError):
+                process.stdin.close()
+                await process.stdin.wait_closed()
+        for task in (heartbeat_task, control_task, input_task):
             if task is not None:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

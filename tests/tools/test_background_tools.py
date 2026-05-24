@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 
 import pytest
@@ -30,6 +31,12 @@ def _write_task(runtime, task_id: str, *, status: TaskStatus, output: str = ""):
         runtime_state.exit_code = 0 if status == "completed" else 1
     store.write_runtime(task_id, runtime_state)
     return spec
+
+
+def _extract_task_id(output: str) -> str:
+    match = re.search(r"^task_id: (\S+)$", output, re.MULTILINE)
+    assert match is not None
+    return match.group(1)
 
 
 def _write_agent_task(
@@ -128,6 +135,76 @@ async def test_task_output_returns_completed_output(
     consumer = runtime.background_tasks.store.read_consumer(spec.id)
     assert consumer.last_seen_output_size == len(b"build line 1\nbuild line 2\n")
     assert consumer.last_viewed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_task_input_queues_input_for_running_shell_task(runtime, task_input_tool):
+    spec = _write_task(
+        runtime,
+        "b7777778",
+        status="running",
+        output="waiting\n",
+    )
+
+    result = await task_input_tool(
+        task_input_tool.params(task_id=spec.id, text="hello process", newline=True)
+    )
+
+    assert not result.is_error
+    assert "tool_status: success" in result.output
+    assert "input_event_id:" in result.output
+    assert "input: hello process" in result.output
+    assert result.extras == {"status": "success"}
+    events = runtime.background_tasks.store.read_input_events(spec.id)
+    assert len(events) == 1
+    assert events[0].text == "hello process"
+    assert events[0].newline is True
+
+
+@pytest.mark.asyncio
+async def test_task_input_rejects_terminal_task(runtime, task_input_tool):
+    spec = _write_task(runtime, "b7777779", status="completed", output="done\n")
+
+    result = await task_input_tool(task_input_tool.params(task_id=spec.id, text="too late"))
+
+    assert result.is_error
+    assert result.brief == "Input rejected"
+    assert "already terminal" in result.message
+    assert runtime.background_tasks.store.read_input_events(spec.id) == []
+
+
+@pytest.mark.asyncio
+async def test_task_input_rejects_control_heavy_input(runtime, task_input_tool):
+    spec = _write_task(runtime, "b7777780", status="running", output="waiting\n")
+
+    result = await task_input_tool(task_input_tool.params(task_id=spec.id, text="\x00\x01bad"))
+
+    assert result.is_error
+    assert result.brief == "Unsafe input"
+    assert runtime.background_tasks.store.read_input_events(spec.id) == []
+
+
+@pytest.mark.asyncio
+async def test_background_shell_receives_task_input(shell_tool, task_input_tool, task_output_tool):
+    start = await shell_tool(
+        Params(
+            command='read line; echo "got:$line"',
+            timeout=10,
+            run_in_background=True,
+            description="input echo",
+        )
+    )
+    assert not start.is_error
+    task_id = _extract_task_id(start.output)
+
+    write = await task_input_tool(task_input_tool.params(task_id=task_id, text="ping"))
+    assert not write.is_error
+
+    result = await task_output_tool(task_output_tool.params(task_id=task_id, block=True, timeout=10))
+
+    assert not result.is_error
+    assert "got:ping" in result.output
+    assert "tool_status: success" in result.output
 
 
 @pytest.mark.asyncio

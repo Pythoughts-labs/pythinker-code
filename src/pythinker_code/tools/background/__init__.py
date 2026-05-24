@@ -1,3 +1,4 @@
+import re
 import time
 from pathlib import Path
 from typing import override
@@ -13,6 +14,9 @@ from pythinker_code.tools.utils import ToolResultStatus, load_desc, tool_error, 
 
 TASK_OUTPUT_PREVIEW_BYTES = 32 << 10
 TASK_OUTPUT_READ_HINT_LINES = 300
+SECRET_LIKE_RE = re.compile(
+    r"(?i)(api[_-]?key|auth|bearer|credential|passwd|password|secret|token)"
+)
 
 
 def _ensure_root(runtime: Runtime) -> ToolError | None:
@@ -152,6 +156,19 @@ class TaskOutputParams(BaseModel):
         ge=0,
         le=3600,
         description="Maximum number of seconds to wait when block=true.",
+    )
+
+
+class TaskInputParams(BaseModel):
+    task_id: str = Field(description="The running background shell task ID to write to.")
+    text: str = Field(
+        min_length=1,
+        max_length=32_000,
+        description="Text to send to the process stdin.",
+    )
+    newline: bool = Field(
+        default=True,
+        description="Whether to append a newline after the text.",
     )
 
 
@@ -333,6 +350,104 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
             ),
             display=[_task_display(self._runtime, params.task_id)],
             extras={"status": tool_status.value},
+        )
+
+
+def _is_control_heavy(text: str) -> bool:
+    if "\x00" in text:
+        return True
+    control_chars = sum(
+        1 for char in text if ord(char) < 32 and char not in {"\n", "\r", "\t"}
+    )
+    return control_chars > 0 and control_chars / max(len(text), 1) > 0.1
+
+
+def _redact_input_for_display(text: str) -> str:
+    if SECRET_LIKE_RE.search(text):
+        return "[redacted: input looks secret-like]"
+    single_line = " ".join(text.splitlines())
+    if len(single_line) > 120:
+        return single_line[:117] + "..."
+    return single_line
+
+
+class TaskInput(CallableTool2[TaskInputParams]):
+    name: str = "TaskInput"
+    description: str = load_desc(Path(__file__).parent / "input.md")
+    params: type[TaskInputParams] = TaskInputParams
+
+    def __init__(self, runtime: Runtime, approval: Approval):
+        super().__init__()
+        self._runtime = runtime
+        self._approval = approval
+
+    @override
+    async def __call__(self, params: TaskInputParams) -> ToolReturnValue:
+        if err := _ensure_root(self._runtime):
+            return err
+        if self._runtime.session.state.plan_mode:
+            return tool_error(
+                message="TaskInput is not available in plan mode.",
+                brief="Blocked in plan mode",
+                status=ToolResultStatus.denied,
+            )
+        if _is_control_heavy(params.text):
+            return tool_error(
+                message="TaskInput rejected binary/control-heavy input.",
+                brief="Unsafe input",
+                status=ToolResultStatus.error,
+            )
+
+        view = self._runtime.background_tasks.get_task(params.task_id)
+        if view is None:
+            return tool_error(
+                message=f"Task not found: {params.task_id}",
+                brief="Task not found",
+                status=ToolResultStatus.error,
+            )
+        if view.spec.kind != "bash":
+            return tool_error(
+                message="TaskInput is only supported for shell background tasks.",
+                brief="Unsupported task kind",
+                status=ToolResultStatus.error,
+            )
+
+        display_text = _redact_input_for_display(params.text)
+        result = await self._approval.request(
+            self.name,
+            "write to background task stdin",
+            f"Write input to background task `{params.task_id}`: {display_text}",
+            display=[_task_display(self._runtime, params.task_id)],
+        )
+        if not result:
+            return result.rejection_error()
+
+        try:
+            event = self._runtime.background_tasks.write_input(
+                params.task_id,
+                text=params.text,
+                newline=params.newline,
+            )
+        except RuntimeError as exc:
+            return tool_error(
+                message=str(exc),
+                brief="Input rejected",
+                status=ToolResultStatus.error,
+            )
+
+        lines = [
+            tool_status_line(ToolResultStatus.success),
+            f"task_id: {params.task_id}",
+            f"input_event_id: {event.id}",
+            f"newline: {str(event.newline).lower()}",
+            "input: " + display_text,
+        ]
+        return ToolReturnValue(
+            is_error=False,
+            output="\n".join(lines),
+            message="Task input queued.",
+            display=[_task_display(self._runtime, params.task_id)],
+            extras={"status": ToolResultStatus.success.value},
         )
 
 

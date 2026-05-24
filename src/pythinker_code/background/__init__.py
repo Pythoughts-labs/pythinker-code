@@ -3,6 +3,7 @@ from .manager import BackgroundTaskManager
 from .models import (
     TaskConsumerState,
     TaskControl,
+    TaskInputEvent,
     TaskKind,
     TaskOutputChunk,
     TaskRuntime,
@@ -20,6 +21,7 @@ __all__ = [
     "BackgroundTaskStore",
     "TaskConsumerState",
     "TaskControl",
+    "TaskInputEvent",
     "TaskKind",
     "TaskOutputChunk",
     "TaskRuntime",
