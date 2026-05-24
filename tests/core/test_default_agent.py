@@ -379,6 +379,7 @@ async def test_default_agent_background_bash_guardrails(runtime: Runtime):
         [
             "Agent",
             "RunAgents",
+            "ReadSkill",
             "AskUserQuestion",
             "SetTodoList",
             "Shell",

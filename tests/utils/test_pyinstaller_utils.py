@@ -161,6 +161,7 @@ def test_pyinstaller_datas():
         ("src/pythinker_code/tools/plan/enter_description.md", "pythinker_code/tools/plan"),
         ("src/pythinker_code/tools/shell/bash.md", "pythinker_code/tools/shell"),
         ("src/pythinker_code/tools/shell/powershell.md", "pythinker_code/tools/shell"),
+        ("src/pythinker_code/tools/skill/description.md", "pythinker_code/tools/skill"),
         (
             "src/pythinker_code/tools/think/think.md",
             "pythinker_code/tools/think",
@@ -223,6 +224,7 @@ def test_pyinstaller_hiddenimports():
             "pythinker_code.tools.plan.handoff",
             "pythinker_code.tools.plan.heroes",
             "pythinker_code.tools.shell",
+            "pythinker_code.tools.skill",
             "pythinker_code.tools.test",
             "pythinker_code.tools.think",
             "pythinker_code.tools.todo",
