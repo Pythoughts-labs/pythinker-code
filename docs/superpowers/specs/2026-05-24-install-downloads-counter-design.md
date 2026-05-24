@@ -1,7 +1,23 @@
 # Install Downloads Counter — Design
 
 **Date:** 2026-05-24
-**Status:** Approved (brainstorming) — pending implementation plan
+**Status:** Implemented & deployed.
+
+> **Amendments during/after implementation (read first):**
+> 1. **Dropped `dl.pythinker.com`.** The Worker fetches the apex directly via a
+>    same-zone subrequest (CF routes it to origin, no recursion). See the
+>    Architecture note. Side effect: install fetches are no longer edge-cached
+>    (`cf-cache-status: DYNAMIC`).
+> 2. **Dropped the User-Agent bot filter (per user request).** The counter now
+>    increments on **every successful `GET`** of `/install.sh` / `/install.ps1`
+>    — browsers, crawlers and monitors included. The sections below that describe
+>    UA bot-filtering (`ua.ts`, "Data flow & bot filter") are **superseded**; the
+>    `ua.ts` module and its tests were removed. **Recommendation:** relabel the
+>    badge from "installs" to "downloads", since it now counts all hits, not
+>    installs.
+> 3. **Counter seeded to 5,500** from pepy (PyPI downloads) as a manual baseline,
+>    then counts forward. The number therefore blends a PyPI-download seed with
+>    forward all-traffic hit counting.
 
 ## Problem
 
@@ -58,7 +74,7 @@ origin hostname. The badge and JSON API read the same counter.
 
 ```
 curl/irm ──> CF edge ──> Worker(/install.sh, /install.ps1)
-                           │  GET + UA bot-filter (curl/wget/powershell ⇒ real install)
+                           │  GET + 200 ⇒ count (no UA filter — all hits count; see Amendment 2)
                            │  fetch https://pythinker.com/<script> {cf:{cacheTtl:300}}
                            │     └─ same-zone subrequest ⇒ CF sends straight to VPS origin (no recursion)
                            │  on 200 with body ⇒ ctx.waitUntil(D1: UPDATE counter SET n=n+1)  ← fail-open
