@@ -230,6 +230,12 @@ class AgentTool(CallableTool2[Params]):
             return err
         if params.run_in_background:
             return await self._run_in_background(params)
+        if params.isolation != "none":
+            logger.warning(
+                "isolation={isolation!r} has no effect on foreground agents; "
+                "use run_in_background=True to enable isolation.",
+                isolation=params.isolation,
+            )
         timeout = params.effective_timeout
         try:
             runner = ForegroundSubagentRunner(self._runtime)
@@ -410,6 +416,7 @@ def _run_agents_fingerprint(params: RunAgentsParams) -> str:
     payload = {
         "summary": params.summary,
         "agent_count": len(params.agents),
+        "agent_names": [agent.name for agent in params.agents],
         "subagent_types": [agent.subagent_type or "coder" for agent in params.agents],
         "model": params.model,
         "run_in_background": params.run_in_background,

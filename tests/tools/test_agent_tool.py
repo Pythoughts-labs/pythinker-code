@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from pythinker_core.chat_provider import APIConnectionError, APIStatusError, ChatProviderError
@@ -1936,3 +1937,81 @@ async def test_agent_tool_background_sets_parent_agent_id(agent_tool, runtime, m
     assert len(created_specs) == 1
     # Root agent has subagent_id=None, so parent_agent_id should be None.
     assert created_specs[0].parent_agent_id is None
+
+
+# ---------------------------------------------------------------------------
+# GAP 2: isolation warning for foreground agents
+# ---------------------------------------------------------------------------
+
+
+async def test_agent_tool_warns_when_isolation_set_for_foreground(agent_tool, runtime, monkeypatch):
+    """isolation='worktree' on a foreground agent logs a warning (isolation only applies to background)."""
+    runtime.labor_market.add_builtin_type(
+        AgentTypeDefinition(
+            name="coder",
+            description="Coder",
+            agent_file=runtime.subagent_store.root / "coder.yaml",
+            tool_policy=ToolPolicy(mode="inherit"),
+        )
+    )
+
+    async def fake_load_agent(agent_file, runtime, *, mcp_configs, start_mcp_loading=True):
+        return SoulAgent(name=agent_file.stem, system_prompt="", toolset=EmptyToolset(), runtime=runtime)
+
+    async def fake_run_soul(soul, user_input, ui_loop_fn, cancel_event, wire_file=None, runtime=None):
+        await soul.context.append_message(Message(role="assistant", content=[TextPart(text="done")]))
+
+    monkeypatch.setattr("pythinker_code.subagents.builder.load_agent", fake_load_agent)
+    monkeypatch.setattr("pythinker_code.subagents.runner.run_soul", fake_run_soul)
+
+    with patch("pythinker_code.tools.agent.logger") as mock_log:
+        result = await agent_tool(
+            agent_tool.params(
+                description="task",
+                prompt="do it",
+                run_in_background=False,
+                isolation="worktree",
+            )
+        )
+
+    assert not result.is_error
+    mock_log.warning.assert_called_once()
+    warning_msg = str(mock_log.warning.call_args)
+    assert "isolation" in warning_msg.lower()
+
+
+# ---------------------------------------------------------------------------
+# GAP 3: fingerprint includes agent names
+# ---------------------------------------------------------------------------
+
+
+def test_run_agents_fingerprint_differs_when_names_differ():
+    """Different agent names produce different fingerprints even with same count, types, summary."""
+    from pythinker_code.tools.agent import _run_agents_fingerprint, RunAgentsParams, AgentRunConfig
+
+    params_a = RunAgentsParams(
+        summary="Build the widget",
+        agents=[
+            AgentRunConfig(name="explore-auth", prompt="Look at auth", subagent_type="explore"),
+            AgentRunConfig(name="implement-ui", prompt="Build UI", subagent_type="coder"),
+        ],
+    )
+    params_b = RunAgentsParams(
+        summary="Build the widget",
+        agents=[
+            AgentRunConfig(name="explore-db", prompt="Look at DB", subagent_type="explore"),
+            AgentRunConfig(name="implement-api", prompt="Build API", subagent_type="coder"),
+        ],
+    )
+    assert _run_agents_fingerprint(params_a) != _run_agents_fingerprint(params_b)
+
+
+def test_run_agents_fingerprint_stable_for_identical_params():
+    """Identical RunAgents params always produce the same fingerprint."""
+    from pythinker_code.tools.agent import _run_agents_fingerprint, RunAgentsParams, AgentRunConfig
+
+    params = RunAgentsParams(
+        summary="Investigate bug",
+        agents=[AgentRunConfig(name="scout", prompt="Find it", subagent_type="explore")],
+    )
+    assert _run_agents_fingerprint(params) == _run_agents_fingerprint(params)
