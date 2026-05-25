@@ -203,6 +203,27 @@ def test_prompt_status_shows_working_spinner_for_background_tasks() -> None:
     assert "2 background agents" in text
 
 
+def test_background_status_splits_verb_and_count_styles() -> None:
+    from pythinker_code.ui.theme import get_active_theme, get_tui_tokens, set_active_theme
+
+    saved_theme = get_active_theme()
+    try:
+        set_active_theme("dark")
+        session = object.__new__(CustomPromptSession)
+        session._background_task_count_provider = lambda: BgTaskCounts(agent=2)
+
+        rendered = CustomPromptSession._render_background_working_status(session, 80)
+    finally:
+        set_active_theme(saved_theme)
+
+    fragments = [(style, text) for style, text, *_ in rendered]
+    muted_style = f"fg:{get_tui_tokens('dark').muted}"
+
+    assert any(style == "fg:#EE9983" and "…" in text for style, text in fragments)
+    assert any(style == muted_style and "2 background agents" in text for style, text in fragments)
+    assert all(style != "ansicyan" for style, _ in fragments)
+
+
 def test_prompt_status_falls_back_to_background_spinner_after_turn_end() -> None:
     session = object.__new__(CustomPromptSession)
     session._background_task_count_provider = lambda: BgTaskCounts(agent=1)

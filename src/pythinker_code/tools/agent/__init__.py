@@ -538,17 +538,25 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
             results.append((child, result))
 
         any_error = any(result.is_error for _, result in results)
-        tool_status = ToolResultStatus.failure if any_error else ToolResultStatus.launched
+        tool_status = (
+            ToolResultStatus.failure
+            if any_error
+            else ToolResultStatus.launched
+            if params.run_in_background
+            else ToolResultStatus.success
+        )
+        mode = "background" if params.run_in_background else "foreground"
         lines = [
             tool_status_line(tool_status),
             f"orchestration_approval: {orchestration_approval}",
             f"orchestration_fingerprint: {fingerprint[:12]}",
             f"summary: {params.summary}",
+            f"mode: {mode}",
             f"agent_count: {len(results)}",
             "agents:",
         ]
         for child, result in results:
-            status = "error" if result.is_error else "launched"
+            status = self._child_result_status(result, run_in_background=params.run_in_background)
             lines.append(f"- name: {child.name}")
             lines.append(f"  subagent_type: {child.subagent_type or 'coder'}")
             lines.append(f"  status: {status}")
@@ -563,10 +571,28 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
         return ToolReturnValue(
             is_error=any_error,
             output="\n".join(lines),
-            message=("One or more agents failed." if any_error else "Agents launched."),
+            message=(
+                "One or more agents failed."
+                if any_error
+                else "Agents launched."
+                if params.run_in_background
+                else "Agents completed."
+            ),
             display=[],
             extras={"status": tool_status.value},
         )
+
+    @staticmethod
+    def _child_result_status(result: ToolReturnValue, *, run_in_background: bool) -> str:
+        if result.is_error:
+            return "error"
+        output = result.output if isinstance(result.output, str) else str(result.output)
+        for line in output.splitlines():
+            if line.startswith("status:"):
+                status = line.removeprefix("status:").strip()
+                if status:
+                    return status
+        return "launched" if run_in_background else "completed"
 
     @staticmethod
     def _child_prompt(base_prompt: str, prompt: str) -> str:

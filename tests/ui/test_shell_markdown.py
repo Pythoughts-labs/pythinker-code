@@ -37,6 +37,38 @@ def test_shell_markdown_uses_pythinker_code_block_frame() -> None:
     assert "╰" in output
 
 
+def test_shell_markdown_simplifies_report_emoji_icons() -> None:
+    output = _render_text(
+        PythinkerMarkdown(
+            "⏺ Review ✅ Complete\n"
+            "1. 🔴 High\n"
+            "2. 🟡 Medium\n"
+            "3. 🔵 Low\n"
+            "⚠️ Warning\n"
+            "🔍 Results\n"
+            "📋 Actions\n"
+        )
+    )
+
+    assert "• Review ✓ Complete" in output
+    assert "● High" in output
+    assert "● Medium" in output
+    assert "● Low" in output
+    assert "! Warning" in output
+    assert "⌕ Results" in output
+    assert "▣ Actions" in output
+    for emoji in ("⏺", "✅", "🔴", "🟡", "🔵", "⚠️", "🔍", "📋"):
+        assert emoji not in output
+
+
+def test_shell_markdown_keeps_emoji_icons_in_code() -> None:
+    output = _render_text(PythinkerMarkdown("`🔴 inline`\n\n```text\n✅ code\n```\n\n🔴 High"))
+
+    assert "🔴 inline" in output
+    assert "✅ code" in output
+    assert "● High" in output
+
+
 def test_shell_markdown_keeps_rich_fork_table_records() -> None:
     output = _render_text(
         PythinkerMarkdown(

@@ -93,7 +93,7 @@ def test_read_renders_path_and_range():
         {"path": "/repo/src/foo.py", "line_offset": 10, "n_lines": 30},
         output="line1\nline2",
     )
-    assert "⏺ Read(" in rendered
+    assert "• Read(" in rendered
     assert "src/foo.py" in rendered
     assert ":10-39" in rendered
     assert "Read 1 file (ctrl+o to expand)" in rendered
@@ -181,7 +181,7 @@ def test_write_shows_path_and_content_preview():
         {"path": "/repo/new.py", "content": "def f():\n    return 1\n"},
         output="Successfully wrote",
     )
-    assert "⏺ Write(new.py)" in rendered
+    assert "• Write(new.py)" in rendered
     assert "Wrote 2 lines to new.py" in rendered
     assert "1 def f():" in rendered
 
@@ -292,7 +292,7 @@ def test_grep_renders_pattern_and_path():
         {"pattern": "def\\s+", "path": "/repo/src", "glob": "*.py"},
         output="src/foo.py:10: def hello():",
     )
-    assert "⏺ Search(" in rendered
+    assert "• Search(" in rendered
     assert "/def\\s+/" in rendered
     assert "src" in rendered
     assert "*.py" in rendered
@@ -318,7 +318,7 @@ def test_invalid_empty_grep_call_names_missing_pattern():
         ),
         is_error=True,
     )
-    assert "⏺ Search(<missing pattern> in .)" in rendered
+    assert "• Search(<missing pattern> in .)" in rendered
     assert "Error searching files" in rendered
     assert "Search(... in .)" not in rendered
 
@@ -334,7 +334,7 @@ def test_glob_renders_pattern_and_directory():
         {"pattern": "**/*.py", "directory": "/repo/src"},
         output="src/a.py\nsrc/b.py",
     )
-    assert "⏺ Find(" in rendered
+    assert "• Find(" in rendered
     assert "**/*.py" in rendered
     assert "Found 2 files" in rendered
 
@@ -346,7 +346,7 @@ def test_glob_renders_pattern_and_directory():
 
 def test_shell_renders_command_and_output_under_response_gutter():
     rendered = _render("Shell", {"command": "ls -la", "timeout": 60}, output="total 0")
-    assert "⏺ Bash(ls -la)" in rendered
+    assert "• Bash(ls -la)" in rendered
     assert "total 0" in rendered
     assert "⎿" in rendered
 
@@ -434,7 +434,7 @@ def test_shell_error_uses_structured_exit_code_when_available():
 def test_shell_uses_comment_label_for_long_script():
     command = "# build assets\n" + "\n".join(f"echo {i}" for i in range(5))
     rendered = _render("Shell", {"command": command, "timeout": 60}, output="ok")
-    assert "⏺ Bash(build assets)" in rendered
+    assert "• Bash(build assets)" in rendered
     assert "echo 0" not in rendered
 
 
@@ -473,6 +473,14 @@ def test_running_tool_headers_do_not_duplicate_status_bullets():
             {"description": "audit", "prompt": "check", "subagent_type": "explore"},
             "Agent(",
         ),
+        (
+            "RunAgents",
+            {
+                "summary": "audit",
+                "agents": [{"name": "scan", "prompt": "check", "subagent_type": "explore"}],
+            },
+            "RunAgents(",
+        ),
         ("AskUserQuestion", {"questions": [{"question": "Continue?"}]}, "Ask("),
         ("Think", {"thought": "check"}, "Think"),
         ("TaskList", {"active_only": True}, "Tasks("),
@@ -484,8 +492,8 @@ def test_running_tool_headers_do_not_duplicate_status_bullets():
     for tool, args, label in cases:
         rendered = _render_running(tool, args, width=64)
         assert label in rendered
-        assert "● ⏺" not in rendered
-        assert "• ⏺" not in rendered
+        assert "● •" not in rendered
+        assert "• •" not in rendered
 
 
 def test_invalid_empty_shell_call_names_missing_command():
@@ -498,7 +506,7 @@ def test_invalid_empty_shell_call_names_missing_command():
         ),
         is_error=True,
     )
-    assert "⏺ Bash(<missing command>)" in rendered
+    assert "• Bash(<missing command>)" in rendered
     assert "$ ..." not in rendered
 
 
@@ -592,7 +600,7 @@ def test_agent_renders_type_and_description_without_prompt_preview():
         },
         output="Plan ready",
     )
-    assert "⏺ Agent(" in rendered
+    assert "• Agent(" in rendered
     assert "code-architect" in rendered
     assert "design auth flow" in rendered
     assert "Prompt: Design the OAuth flow with PKCE" not in rendered
@@ -615,6 +623,77 @@ def test_invalid_empty_agent_call_names_missing_required_fields():
 
 
 # ---------------------------------------------------------------------------
+# RunAgents
+# ---------------------------------------------------------------------------
+
+
+def test_run_agents_renders_compact_professional_summary():
+    rendered = _render(
+        "RunAgents",
+        {
+            "summary": "Run code and security scans on current diff",
+            "base_prompt": "Repository details that should not be echoed in the terminal",
+            "run_in_background": False,
+            "agents": [
+                {
+                    "name": "code_scan",
+                    "prompt": "Review every changed file and return detailed findings",
+                    "subagent_type": "code-reviewer",
+                },
+                {
+                    "name": "security_scan",
+                    "prompt": "Review for security issues only",
+                    "subagent_type": "security-reviewer",
+                },
+            ],
+        },
+        output=(
+            "tool_status: success\n"
+            "orchestration_approval: requested\n"
+            "orchestration_fingerprint: 13741c0a417d\n"
+            "summary: Run code and security scans on current diff\n"
+            "mode: foreground\n"
+            "agent_count: 2\n"
+            "agents:\n"
+            "- name: code_scan\n"
+            "  subagent_type: code-reviewer\n"
+            "  status: completed\n"
+            "  result: |\n"
+            "    agent_id: ab1ad32a2\n"
+            "    resumed: false\n"
+            "    actual_subagent_type: code-reviewer\n"
+            "    status: completed\n"
+            "\n"
+            "    [summary]\n"
+            "    No correctness findings above the configured threshold.\n"
+            "- name: security_scan\n"
+            "  subagent_type: security-reviewer\n"
+            "  status: completed\n"
+            "  result: |\n"
+            "    agent_id: ac9ed41ff\n"
+            "    resumed: false\n"
+            "    actual_subagent_type: security-reviewer\n"
+            "    status: completed\n"
+            "\n"
+            "    [summary]\n"
+            "    No exploitable security issues were found."
+        ),
+        width=120,
+    )
+    assert "• RunAgents(" in rendered
+    assert "2 agents" in rendered
+    assert "foreground" in rendered
+    assert "code_scan" in rendered
+    assert "security_scan" in rendered
+    assert "No correctness findings" in rendered
+    assert "No exploitable security issues" in rendered
+    assert "Repository details" not in rendered
+    assert "Review every changed file" not in rendered
+    assert "result: |" not in rendered
+    assert "agent_id:" not in rendered
+
+
+# ---------------------------------------------------------------------------
 # AskUserQuestion
 # ---------------------------------------------------------------------------
 
@@ -634,7 +713,7 @@ def test_ask_user_renders_question_and_options():
             ]
         },
     )
-    assert "⏺ Ask(1 question)" in rendered
+    assert "• Ask(1 question)" in rendered
     assert "Which auth method?" in rendered
     assert "OAuth" in rendered
     assert "API key" in rendered
@@ -647,7 +726,7 @@ def test_ask_user_renders_question_and_options():
 
 def test_think_renders_thought_body():
     rendered = _render("Think", {"thought": "First, check the file layout.\nThen draft a fix."})
-    assert "⏺ Think" in rendered
+    assert "• Think" in rendered
     assert "First, check the file layout." in rendered
 
 
@@ -700,7 +779,7 @@ def test_todo_infers_nested_items_from_leading_spaces():
 
 def test_fetch_renders_url():
     rendered = _render("FetchURL", {"url": "https://example.com/page"}, output="<html>...")
-    assert "⏺ Fetch(" in rendered
+    assert "• Fetch(" in rendered
     assert "example.com" in rendered
     assert "Received 9 bytes" in rendered
 
@@ -711,7 +790,7 @@ def test_search_renders_query_and_extras():
         {"query": "python typing", "limit": 10, "include_content": True},
         output="result 1",
     )
-    assert "⏺ WebSearch(" in rendered
+    assert "• WebSearch(" in rendered
     assert "python typing" in rendered
     assert "limit 10" in rendered
     assert "with content" in rendered
@@ -738,7 +817,7 @@ def test_search_counts_structured_result_blocks():
 
 def test_task_list_renders_active_flag():
     rendered = _render("TaskList", {"active_only": True}, output="task-1: running")
-    assert "⏺ Tasks(active)" in rendered
+    assert "• Tasks(active)" in rendered
 
 
 def test_task_output_renders_id_and_block_flag():
@@ -747,14 +826,14 @@ def test_task_output_renders_id_and_block_flag():
         {"task_id": "abc-123", "block": True, "timeout": 60},
         output="logs...",
     )
-    assert "⏺ TaskOutput(" in rendered
+    assert "• TaskOutput(" in rendered
     assert "abc-123" in rendered
     assert "block" in rendered
 
 
 def test_task_stop_renders_id():
     rendered = _render("TaskStop", {"task_id": "abc-123", "reason": "user requested"})
-    assert "⏺ TaskStop(" in rendered
+    assert "• TaskStop(" in rendered
     assert "abc-123" in rendered
 
 
@@ -765,7 +844,7 @@ def test_task_stop_renders_id():
 
 def test_enter_plan_mode_renders():
     rendered = _render("EnterPlanMode", {})
-    assert "⏺ Plan(entering)" in rendered
+    assert "• Plan(entering)" in rendered
 
 
 def test_exit_plan_mode_renders_options():
@@ -778,7 +857,7 @@ def test_exit_plan_mode_renders_options():
             ]
         },
     )
-    assert "⏺ Plan(exiting)" in rendered
+    assert "• Plan(exiting)" in rendered
     assert "Refactor first" in rendered
     assert "Add tests first" in rendered
 
@@ -792,7 +871,7 @@ def test_card_renders_compact_without_outer_padding():
     """Compact tool cards should start at the title and avoid extra outer padding."""
     rendered = _render("Glob", {"pattern": "*.py", "directory": "/repo"}, output="foo.py")
     lines = [line.strip() for line in rendered.splitlines()]
-    assert lines[0] == "⏺ Find(*.py in /repo)"
+    assert lines[0] == "• Find(*.py in /repo)"
     assert lines[-1] == "⎿  Found 1 file ctrl+o expand"
 
 

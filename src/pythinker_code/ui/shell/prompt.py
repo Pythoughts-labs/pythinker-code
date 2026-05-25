@@ -88,6 +88,7 @@ PROMPT_SYMBOL_SHELL = "$"
 PROMPT_SYMBOL_THINKING = "💫"
 PROMPT_SYMBOL_PLAN = "📋"
 _CARD_SIDE_PADDING = 2
+_PROMPT_VERB_SPINNER_STYLE = "fg:#EE9983"  # brand-exception: verb shimmer orange
 
 
 # prompt_toolkit 3.0.52 can emit these during prompt shutdown on Python 3.14
@@ -2035,6 +2036,8 @@ class CustomPromptSession:
         self._slash_menu_control = SlashCommandMenuControl(
             left_padding=self._slash_menu_left_padding
         )
+        slash_completion_filter = Condition(self._should_show_slash_completion_menu)
+        non_slash_completion_filter = has_completions & ~slash_completion_filter
         slash_menu = ConditionalContainer(
             Window(
                 content=self._slash_menu_control,
@@ -2042,15 +2045,22 @@ class CustomPromptSession:
                 height=Dimension(max=10),
                 style="class:slash-completion-menu",
             ),
-            filter=has_completions & Condition(self._should_show_slash_completion_menu),
+            filter=has_completions & slash_completion_filter,
+        )
+        non_slash_menu = ConditionalContainer(
+            CompletionsMenu(max_height=6, scroll_offset=1),
+            filter=non_slash_completion_filter,
         )
         root = self._session.layout.container
         buffer_container = _find_default_buffer_container(root, self._session.default_buffer)
+        inserted_inline_menus = False
         if isinstance(root, HSplit) and buffer_container is not None:
             children = cast(list[object], root.children)
             for index, child in enumerate(children):
                 if _container_contains(child, buffer_container):
                     children.insert(index + 1, slash_menu)
+                    children.insert(index + 2, non_slash_menu)
+                    inserted_inline_menus = True
                     break
 
         original_float = next(
@@ -2063,10 +2073,20 @@ class CustomPromptSession:
         )
         if original_float is None:
             return
-        original_float.content = ConditionalContainer(
-            original_float.content,
-            filter=~Condition(self._should_show_slash_completion_menu),
-        )
+        if inserted_inline_menus:
+            # Inline menus are inserted directly below the compact input row.
+            # Hide the original floating menu: with the prompt anchored near the
+            # bottom of the terminal it can render off-screen, and when it does
+            # fit it would duplicate the inline file-mention menu.
+            original_float.content = ConditionalContainer(
+                original_float.content,
+                filter=Condition(lambda: False),
+            )
+        else:
+            original_float.content = ConditionalContainer(
+                original_float.content,
+                filter=~slash_completion_filter,
+            )
 
     def _install_prompt_buffer_visibility(self) -> None:
         buffer_container = _find_default_buffer_container(
@@ -2480,10 +2500,32 @@ class CustomPromptSession:
             detail = f"{counts.agent} background agent{'s' if counts.agent != 1 else ''}"
         elif counts.bash:
             detail = f"{counts.bash} background bash task{'s' if counts.bash != 1 else ''}"
-        text = f"{frame} {spinner_message(now)} {detail}" if show_verb else f"{frame} {detail}"
-        if _display_width(text) > columns:
-            text = _truncate_right(text, columns)
-        return FormattedText([("ansicyan", text)])
+        tokens = _get_tui_tokens()
+        muted_style = f"fg:{tokens.muted}" if tokens.muted else ""
+        frame_style = f"fg:{tokens.thinking_text}" if tokens.thinking_text else muted_style
+        frame_text = f"{frame} "
+        if show_verb:
+            verb_text = spinner_message(now)
+            detail_text = f" {detail}"
+            if _display_width(frame_text + verb_text + detail_text) > columns:
+                detail_budget = columns - _display_width(frame_text + verb_text)
+                if detail_budget > 0:
+                    detail_text = _truncate_right(detail_text, detail_budget)
+                else:
+                    detail_text = ""
+                    verb_text = _truncate_right(verb_text, columns - _display_width(frame_text))
+            return FormattedText(
+                [
+                    (frame_style, frame_text),
+                    (_PROMPT_VERB_SPINNER_STYLE, verb_text),
+                    (muted_style, detail_text),
+                ]
+            )
+
+        detail_text = detail
+        if _display_width(frame_text + detail_text) > columns:
+            detail_text = _truncate_right(detail_text, columns - _display_width(frame_text))
+        return FormattedText([(muted_style, frame_text + detail_text)])
 
     def _background_task_counts(self) -> BgTaskCounts:
         provider = getattr(self, "_background_task_count_provider", None)

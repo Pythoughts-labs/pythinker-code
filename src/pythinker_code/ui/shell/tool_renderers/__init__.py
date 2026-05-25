@@ -173,6 +173,7 @@ def register_builtin_renderers() -> None:
     register_tool_renderer(find.FIND_RENDERER)
     register_tool_renderer(bash.SHELL_RENDERER)
     register_tool_renderer(agent.AGENT_RENDERER)
+    register_tool_renderer(agent.RUN_AGENTS_RENDERER)
     register_tool_renderer(ask_user.ASK_USER_RENDERER)
     register_tool_renderer(think.THINK_RENDERER)
     register_tool_renderer(todo.TODO_RENDERER)

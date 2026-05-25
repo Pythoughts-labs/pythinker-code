@@ -16,6 +16,7 @@ Wraps Rich's ``Markdown`` element with three changes:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -34,6 +35,37 @@ from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
 from pythinker_code.ui.shell.spacing import CODE_BLOCK_PADDING
 from pythinker_code.ui.theme import ThemeName, get_markdown_colors
 from pythinker_code.utils.rich.markdown import CodeBlock, Markdown
+
+_MARKDOWN_ICON_REPLACEMENTS = {
+    "✅": "✓",
+    "☑️": "✓",
+    "☑": "✓",
+    "✔️": "✓",
+    "✔": "✓",
+    "❌": "×",
+    "✖️": "×",
+    "✖": "×",
+    "🚫": "×",
+    "⚠️": "!",
+    "⚠": "!",
+    "🔴": "●",
+    "🟠": "●",
+    "🟡": "●",
+    "🟢": "●",
+    "🔵": "●",
+    "🟣": "●",
+    "⚫": "●",
+    "⚪": "○",
+    "🔍": "⌕",
+    "🔎": "⌕",
+    "📋": "▣",
+    "📝": "▣",
+    "📌": "•",
+    "⏺": "•",
+}
+_MARKDOWN_ICON_KEYS = tuple(sorted(_MARKDOWN_ICON_REPLACEMENTS, key=len, reverse=True))
+_FENCE_RE = re.compile(r"^(?P<indent> {0,3})(?P<fence>`{3,}|~{3,})")
+
 
 __all__ = [
     "PythinkerMarkdown",
@@ -101,18 +133,86 @@ def _markdown_style_overrides(theme: ThemeName | None = None) -> dict[str, RichS
     }
 
 
+def _replace_report_icons(text: str) -> str:
+    """Replace large/color emoji status icons with compact monochrome glyphs."""
+    if not any(icon in text for icon in _MARKDOWN_ICON_KEYS):
+        return text
+    out: list[str] = []
+    i = 0
+    inline_code_ticks = 0
+    while i < len(text):
+        if text[i] == "`":
+            j = i
+            while j < len(text) and text[j] == "`":
+                j += 1
+            tick_count = j - i
+            out.append(text[i:j])
+            if inline_code_ticks == 0:
+                inline_code_ticks = tick_count
+            elif inline_code_ticks == tick_count:
+                inline_code_ticks = 0
+            i = j
+            continue
+        if inline_code_ticks:
+            out.append(text[i])
+            i += 1
+            continue
+        for icon in _MARKDOWN_ICON_KEYS:
+            if text.startswith(icon, i):
+                out.append(_MARKDOWN_ICON_REPLACEMENTS[icon])
+                i += len(icon)
+                break
+        else:
+            out.append(text[i])
+            i += 1
+    return "".join(out)
+
+
+def _simplify_markdown_report_icons(markup: str) -> str:
+    """Simplify report/status emoji outside fenced code blocks."""
+    if not any(icon in markup for icon in _MARKDOWN_ICON_KEYS):
+        return markup
+
+    lines: list[str] = []
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    for line in markup.splitlines(keepends=True):
+        match = _FENCE_RE.match(line)
+        if in_fence:
+            lines.append(line)
+            if match is not None:
+                fence = match.group("fence")
+                if fence.startswith(fence_char) and len(fence) >= fence_len:
+                    in_fence = False
+                    fence_char = ""
+                    fence_len = 0
+            continue
+        if match is not None:
+            fence = match.group("fence")
+            in_fence = True
+            fence_char = fence[0]
+            fence_len = len(fence)
+            lines.append(line)
+            continue
+        lines.append(_replace_report_icons(line))
+    return "".join(lines)
+
+
 class PythinkerMarkdown(Markdown):
     """Drop-in replacement for ``rich.markdown.Markdown`` with the Pythinker palette.
 
     Markup is run through :func:`sanitize_ansi` first so terminal control
     sequences embedded in model/user/custom text cannot reach the terminal
-    (cursor moves, color leaks) when rendered as Markdown.
+    (cursor moves, color leaks) when rendered as Markdown. Large emoji status
+    icons are then normalized to compact monochrome glyphs for calmer reports.
     """
 
     elements = {**Markdown.elements, "fence": _BorderedCodeBlock, "code_block": _BorderedCodeBlock}
 
     def __init__(self, markup: str, *args: Any, **kwargs: Any) -> None:
-        super().__init__(sanitize_ansi(markup), *args, **kwargs)
+        safe_markup = sanitize_ansi(markup)
+        super().__init__(_simplify_markdown_report_icons(safe_markup), *args, **kwargs)
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         overrides = _markdown_style_overrides()

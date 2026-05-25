@@ -194,7 +194,7 @@ def test_card_style_finished_subagent_shows_compact_result(_force_card_style, mo
     block.finish(_ok_result("done"))
     rendered = render_plain(block.compose(), width=80)
 
-    assert "⏺ Agent(coder · Audit UI)" in rendered
+    assert "• Agent(coder · Audit UI)" in rendered
     assert "⎿  done" in rendered
     assert "Agent finished" not in rendered
 
@@ -308,9 +308,9 @@ def test_card_style_background_subagent_marker_pulses(_force_card_style, monkeyp
 
     assert first != second
     assert "background subagent working" in first
-    assert "●" in first
+    assert "⎿  ● background subagent working" in first
     assert "background subagent working" in second
-    assert "•" not in second
+    assert "⎿    background subagent working" in second
 
 
 def test_card_style_lifecycle_marks_execution_started(_force_card_style):

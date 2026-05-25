@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 from pythinker_core.chat_provider import APIConnectionError, APIStatusError, ChatProviderError
 from pythinker_core.message import Message
+from pythinker_core.tooling import ToolOk
 from pythinker_core.tooling.empty import EmptyToolset
 
 from pythinker_code.approval_runtime import get_current_approval_source_or_none
@@ -560,6 +561,55 @@ async def test_run_agents_launches_background_children_with_base_prompt(runtime,
         "Shared context\n\nFind API files",
         "Shared context\n\nFind tests",
     ]
+
+
+async def test_run_agents_foreground_reports_completed_status(runtime):
+    calls = []
+
+    class FakeAgentTool:
+        def check_execution_policy(self, subagent_type):
+            return None
+
+        async def __call__(self, params):
+            calls.append(params)
+            return ToolOk(
+                output=(
+                    "agent_id: afocused1\n"
+                    "resumed: false\n"
+                    f"actual_subagent_type: {params.subagent_type}\n"
+                    "status: completed\n"
+                    "\n"
+                    "[summary]\n"
+                    f"Completed {params.description}."
+                )
+            )
+
+    tool = RunAgents(runtime)
+    tool._agent_tool = FakeAgentTool()  # type: ignore[assignment]
+
+    with tool_call_context("RunAgents"):
+        result = await tool(
+            tool.params(
+                summary="sequential review",
+                agents=[
+                    AgentRunConfig(
+                        name="reviewer",
+                        title="Reviewer",
+                        subagent_type="code-reviewer",
+                        prompt="Review the diff",
+                    )
+                ],
+                run_in_background=False,
+            )
+        )
+
+    assert not result.is_error
+    assert result.message == "Agents completed."
+    assert result.extras == {"status": "success"}
+    assert "tool_status: success" in result.output
+    assert "mode: foreground" in result.output
+    assert "status: completed" in result.output
+    assert calls and calls[0].run_in_background is False
 
 
 async def test_run_agents_rejects_background_batch_over_available_slots(runtime, monkeypatch):

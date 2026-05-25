@@ -77,7 +77,7 @@ def tool_call_header(
 ) -> Text:
     """Return the Blackbox/Claude-style tool-use row.
 
-    Shape: ``⏺ Tool(summary)``.  The surrounding ``ToolExecutionComponent``
+    Shape: ``• Tool(summary)``.  The surrounding ``ToolExecutionComponent``
     owns result gutters; individual renderers should keep this row compact.
     """
     header = Text()
