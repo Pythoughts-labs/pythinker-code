@@ -1479,6 +1479,7 @@ class PythinkerSoul:
                 cwd=str(Path.cwd()),
                 trigger=trigger_reason,
                 token_count=before_tokens,
+                custom_instructions=custom_instruction,
             ),
         )
         for result in pre_compact_results:
@@ -1545,8 +1546,17 @@ class PythinkerSoul:
                 compact_summary=summary_text,
             ),
         )
+        session_start_results = await self._hook_engine.trigger(
+            "SessionStart",
+            matcher_value="compact",
+            input_data=events.session_start(
+                session_id=self._runtime.session.id,
+                cwd=str(Path.cwd()),
+                source="compact",
+            ),
+        )
         hook_context_message = build_hook_context_message(
-            result.additional_context for result in post_compact_results
+            result.additional_context for result in [*post_compact_results, *session_start_results]
         )
         if hook_context_message is not None:
             await self._context.append_message(hook_context_message)

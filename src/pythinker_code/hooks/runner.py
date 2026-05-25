@@ -97,7 +97,14 @@ async def run_hook(
                     additional_context=additional_context,
                 )
         except (json.JSONDecodeError, TypeError):
-            pass
+            if _stdout_adds_context(input_data):
+                return HookResult(
+                    action="allow",
+                    stdout=stdout,
+                    stderr=stderr,
+                    exit_code=exit_code,
+                    additional_context=stdout,
+                )
 
     return HookResult(action="allow", stdout=stdout, stderr=stderr, exit_code=exit_code)
 
@@ -109,3 +116,11 @@ def _extract_additional_context(parsed: dict[str, Any], hook_output: dict[str, A
         if isinstance(value, str) and value.strip():
             return value
     return ""
+
+
+def _stdout_adds_context(input_data: dict[str, Any]) -> bool:
+    """Whether plain stdout from this hook should be recoverable as context."""
+    event = input_data.get("hook_event_name")
+    if event == "PostCompact":
+        return True
+    return event == "SessionStart" and input_data.get("source") == "compact"

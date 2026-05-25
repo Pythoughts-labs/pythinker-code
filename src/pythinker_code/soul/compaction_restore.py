@@ -5,7 +5,7 @@ import os
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from pythinker_core.message import Message
 from pythinker_host.path import HostPath
@@ -155,7 +155,7 @@ def compact_summary_text(messages: Sequence[Message]) -> str:
 
 
 def build_hook_context_message(contexts: Iterable[str]) -> Message | None:
-    """Build a bounded PostCompact hook context reminder, if any hooks supplied one."""
+    """Build a bounded post-compaction hook context reminder, if supplied."""
     cleaned: list[str] = []
     total = 0
     for context in contexts:
@@ -173,7 +173,7 @@ def build_hook_context_message(contexts: Iterable[str]) -> Message | None:
     if not cleaned:
         return None
     body = (
-        "Additional context supplied by PostCompact hooks. Treat this as factual "
+        "Additional context supplied by post-compaction hooks. Treat this as factual "
         "session context restored after compaction:\n\n" + "\n\n---\n\n".join(cleaned)
     )
     return Message(role="user", content=[system_reminder(body)])
@@ -192,7 +192,7 @@ def _extract_path_values(value: Any, *, parent_key: str = "", depth: int = 0) ->
     if depth > 4:
         return
     if isinstance(value, dict):
-        for key, child in value.items():
+        for key, child in cast(dict[str, Any], value).items():
             key_str = str(key)
             if key_str in _PATH_KEYS:
                 yield from _string_values(child)
@@ -207,7 +207,7 @@ def _string_values(value: Any) -> Iterable[str]:
     if isinstance(value, str):
         yield value
     elif isinstance(value, list | tuple):
-        for item in value:
+        for item in cast(list[Any], value):
             if isinstance(item, str):
                 yield item
 

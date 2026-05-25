@@ -104,7 +104,7 @@ def test_build_hook_context_message_uses_additional_context_only() -> None:
 
     assert message is not None
     assert "Reload these rules" in message.extract_text("\n")
-    assert "PostCompact hooks" in message.extract_text("\n")
+    assert "post-compaction hooks" in message.extract_text("\n")
 
 
 @pytest.mark.asyncio
@@ -143,6 +143,7 @@ async def test_compact_context_restores_files_and_hook_context(
         side_effect=[
             [],
             [HookResult(additional_context="Hook restored context")],
+            [HookResult(additional_context="SessionStart compact context")],
         ]
     )
 
@@ -160,10 +161,19 @@ async def test_compact_context_restores_files_and_hook_context(
     assert "docs/plan.md" in history_text
     assert "src/app.py" in history_text
     assert "Hook restored context" in history_text
+    assert "SessionStart compact context" in history_text
     assert any("Conversation compacted." in text for text in sent_texts)
     assert any("Referenced file docs/plan.md" in text for text in sent_texts)
     assert any("Read src/app.py" in text for text in sent_texts)
 
+    pre_call = soul._hook_engine.trigger.await_args_list[0]  # pyright: ignore[reportPrivateUsage]
+    assert pre_call.args[0] == "PreCompact"
+    assert pre_call.kwargs["input_data"]["custom_instructions"] == "keep files"
+
     post_call = soul._hook_engine.trigger.await_args_list[1]  # pyright: ignore[reportPrivateUsage]
     assert post_call.args[0] == "PostCompact"
     assert post_call.kwargs["input_data"]["compact_summary"] == "compacted summary"
+
+    session_start_call = soul._hook_engine.trigger.await_args_list[2]  # pyright: ignore[reportPrivateUsage]
+    assert session_start_call.args[0] == "SessionStart"
+    assert session_start_call.kwargs["matcher_value"] == "compact"

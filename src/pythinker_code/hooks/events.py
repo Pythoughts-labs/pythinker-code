@@ -148,11 +148,13 @@ def pre_compact(
     cwd: str,
     trigger: str,
     token_count: int,
+    custom_instructions: str = "",
 ) -> dict[str, Any]:
     return {
         **_base("PreCompact", session_id, cwd),
         "trigger": trigger,
         "token_count": token_count,
+        "custom_instructions": custom_instructions,
     }
 
 
