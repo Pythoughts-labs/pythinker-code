@@ -24,12 +24,20 @@ MAX_FOREGROUND_TIMEOUT = 5 * 60
 MAX_BACKGROUND_TIMEOUT = 24 * 60 * 60
 
 
+def _default_background_description(*, auto_promoted: bool) -> str:
+    if auto_promoted:
+        return "long-running shell command"
+    return "background shell command"
+
+
 class Params(BaseModel):
     command: str = Field(description="The command to execute.")
     timeout: int = Field(
         description=(
             "The timeout in seconds for the command to execute. "
-            "If the command takes longer than this, it will be killed."
+            "If the command takes longer than this, it will be killed. "
+            f"Foreground commands may use at most {MAX_FOREGROUND_TIMEOUT}s; "
+            "higher values are automatically run as background tasks."
         ),
         default=60,
         ge=1,
@@ -37,24 +45,27 @@ class Params(BaseModel):
     )
     run_in_background: bool = Field(
         default=False,
-        description="Whether to run the command as a background task.",
+        description=(
+            "Whether to run the command as a background task. This is automatically enabled "
+            f"when timeout is greater than {MAX_FOREGROUND_TIMEOUT}s."
+        ),
     )
     description: str = Field(
         default="",
         description=(
-            "A short description for the background task. Required when run_in_background=true."
+            "A short description for the background task. If omitted, a generic description "
+            "is used."
         ),
     )
 
     @model_validator(mode="after")
     def _validate_background_fields(self) -> Self:
-        if self.run_in_background and not self.description.strip():
-            raise ValueError("description is required when run_in_background is true")
+        auto_promoted = False
         if not self.run_in_background and self.timeout > MAX_FOREGROUND_TIMEOUT:
-            raise ValueError(
-                f"timeout must be <= {MAX_FOREGROUND_TIMEOUT}s for foreground commands; "
-                f"use run_in_background=true for longer timeouts (up to {MAX_BACKGROUND_TIMEOUT}s)"
-            )
+            self.run_in_background = True
+            auto_promoted = True
+        if self.run_in_background and not self.description.strip():
+            self.description = _default_background_description(auto_promoted=auto_promoted)
         return self
 
 

@@ -209,11 +209,15 @@ async def test_timeout_parameter_validation_bounds(shell_tool: Shell):
     with pytest.raises(ValueError, match="timeout"):
         Params(command="echo test", timeout=MAX_BACKGROUND_TIMEOUT + 1)
 
-    # Test foreground timeout > MAX_FOREGROUND_TIMEOUT (should fail validation)
-    with pytest.raises(ValueError, match="foreground"):
-        Params(command="echo test", timeout=MAX_FOREGROUND_TIMEOUT + 1)
+    # Foreground commands with long timeouts are automatically promoted to
+    # background tasks instead of failing validation. This keeps model-emitted
+    # long-running scans/builds from getting stuck in a validation retry loop.
+    params = Params(command="echo test", timeout=MAX_FOREGROUND_TIMEOUT + 1)
+    assert params.timeout == MAX_FOREGROUND_TIMEOUT + 1
+    assert params.run_in_background is True
+    assert params.description == "long-running shell command"
 
-    # Background commands can use longer timeouts
+    # Background commands can use longer timeouts and keep explicit descriptions.
     params = Params(
         command="make build",
         timeout=MAX_FOREGROUND_TIMEOUT + 1,
@@ -221,6 +225,11 @@ async def test_timeout_parameter_validation_bounds(shell_tool: Shell):
         description="long build",
     )
     assert params.timeout == MAX_FOREGROUND_TIMEOUT + 1
+    assert params.run_in_background is True
+    assert params.description == "long build"
+
+    params = Params(command="sleep 60", run_in_background=True)
+    assert params.description == "background shell command"
 
 
 async def test_shell_works_in_plan_mode(shell_tool: Shell, runtime):
