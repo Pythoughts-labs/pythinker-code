@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from pythinker_host.path import HostPath
@@ -8,6 +9,7 @@ from pythinker_host.path import HostPath
 from pythinker_code.agentspec import DEFAULT_AGENT_FILE
 from pythinker_code.soul.agent import load_agent
 from pythinker_code.subagents.discovery import (
+    MarkdownAgentSpec,
     discover_markdown_agents,
     materialize_markdown_agent_specs,
     parse_markdown_agent,
@@ -126,3 +128,53 @@ async def test_load_agent_registers_project_markdown_agents(runtime) -> None:
         "pythinker_code.tools.file:ReadFile",
         "pythinker_code.tools.file:Grep",
     )
+
+
+def test_materialize_warns_on_unknown_model(tmp_path: Path) -> None:
+    """Unknown model in markdown agent frontmatter logs a warning and falls back."""
+    agent = MarkdownAgentSpec(
+        name="my-agent",
+        description="Does stuff",
+        prompt_file=HostPath.unsafe_from_local_path(tmp_path / "my-agent.md"),
+        scope="project",
+        tools=None,
+        model="nonexistent-model-xyz",
+        when_to_use="When needed",
+    )
+    (tmp_path / "my-agent.md").write_text("---\nname: my-agent\n---\nDo the thing.")
+
+    with patch("pythinker_code.subagents.discovery.logger") as mock_logger:
+        type_defs = materialize_markdown_agent_specs(
+            [agent],
+            output_dir=tmp_path / "out",
+            available_models={"claude-sonnet", "claude-haiku"},
+        )
+
+    assert type_defs[0].default_model is None
+    mock_logger.warning.assert_called_once()
+    warning_call_str = str(mock_logger.warning.call_args)
+    assert "nonexistent-model-xyz" in warning_call_str
+
+
+def test_materialize_no_warning_when_model_is_valid(tmp_path: Path) -> None:
+    """Valid model in markdown agent frontmatter does not log a warning."""
+    agent = MarkdownAgentSpec(
+        name="my-agent",
+        description="Does stuff",
+        prompt_file=HostPath.unsafe_from_local_path(tmp_path / "my-agent.md"),
+        scope="project",
+        tools=None,
+        model="claude-sonnet",
+        when_to_use="When needed",
+    )
+    (tmp_path / "my-agent.md").write_text("---\nname: my-agent\n---\nDo the thing.")
+
+    with patch("pythinker_code.subagents.discovery.logger") as mock_logger:
+        type_defs = materialize_markdown_agent_specs(
+            [agent],
+            output_dir=tmp_path / "out",
+            available_models={"claude-sonnet", "claude-haiku"},
+        )
+
+    assert type_defs[0].default_model == "claude-sonnet"
+    mock_logger.warning.assert_not_called()

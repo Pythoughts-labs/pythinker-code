@@ -170,6 +170,18 @@ def materialize_markdown_agent_specs(
                 "when_to_use": agent.when_to_use,
             },
         }
+        if (
+            agent.model
+            and available_models is not None
+            and agent.model not in available_models
+        ):
+            logger.warning(
+                "Markdown agent {name!r} specifies unknown model {model!r}; "
+                "falling back to parent model. Known models: {known}",
+                name=agent.name,
+                model=agent.model,
+                known=sorted(available_models),
+            )
         model = agent.model if available_models is None or agent.model in available_models else None
         if model:
             payload["agent"]["model"] = model
