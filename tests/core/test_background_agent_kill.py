@@ -486,7 +486,6 @@ async def test_background_runner_propagates_hook_engine(runtime, monkeypatch):
     runtime.hook_engine = hook_engine
 
     hook_engine_calls: list[object] = []
-    soul_started = asyncio.Event()
 
     async def fake_load_agent(agent_file, rt, *, mcp_configs, start_mcp_loading=True):
         soul = SoulAgent(
@@ -520,7 +519,9 @@ async def test_background_runner_propagates_hook_engine(runtime, monkeypatch):
 
     long = "x" * 250
 
-    async def fake_run_soul(soul, user_input, ui_loop_fn, cancel_event, wire_file=None, runtime=None):
+    async def fake_run_soul(
+        soul, user_input, ui_loop_fn, cancel_event, wire_file=None, runtime=None
+    ):
         await soul.context.append_message(Message(role="assistant", content=[TextPart(text=long)]))
 
     monkeypatch.setattr("pythinker_code.subagents.builder.load_agent", fake_load_agent)

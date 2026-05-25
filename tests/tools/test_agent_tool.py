@@ -1991,7 +1991,7 @@ async def test_agent_tool_warns_when_isolation_set_for_foreground(agent_tool, ru
 
 def test_run_agents_fingerprint_differs_when_names_differ():
     """Different agent names produce different fingerprints even with same count, types, summary."""
-    from pythinker_code.tools.agent import _run_agents_fingerprint, RunAgentsParams, AgentRunConfig
+    from pythinker_code.tools.agent import AgentRunConfig, RunAgentsParams, _run_agents_fingerprint
 
     params_a = RunAgentsParams(
         summary="Build the widget",
@@ -2012,7 +2012,7 @@ def test_run_agents_fingerprint_differs_when_names_differ():
 
 def test_run_agents_fingerprint_stable_for_identical_params():
     """Identical RunAgents params always produce the same fingerprint."""
-    from pythinker_code.tools.agent import _run_agents_fingerprint, RunAgentsParams, AgentRunConfig
+    from pythinker_code.tools.agent import AgentRunConfig, RunAgentsParams, _run_agents_fingerprint
 
     params = RunAgentsParams(
         summary="Investigate bug",
