@@ -4,6 +4,7 @@ import json
 from typing import TYPE_CHECKING
 
 from pythinker_core.message import Message
+from rich import box
 from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.rule import Rule
@@ -39,6 +40,7 @@ def _format_content_part(part: ContentPart) -> Text | Panel | Group:
                     text.strip()[8:-9].strip(),
                     title="[dim]system[/dim]",
                     border_style="dim yellow",  # brand-exception: no dim-warning token
+                    box=box.ROUNDED,
                     padding=(0, 1),
                 )
             return Text(text, style="white")
@@ -48,6 +50,7 @@ def _format_content_part(part: ContentPart) -> Text | Panel | Group:
                 think,
                 title="[dim]thinking[/dim]",
                 border_style="dim cyan",  # brand-exception: no dim-info token
+                box=box.ROUNDED,
                 padding=(0, 1),
             )
 
@@ -97,6 +100,7 @@ def _format_tool_call(tool_call: ToolCall) -> Panel:
         content,
         title="[bold]Tool Call[/bold]",
         border_style=tui_rich_style("warning"),
+        box=box.ROUNDED,
         padding=(0, 1),
     )
 
@@ -105,8 +109,8 @@ def _format_message(msg: Message, index: int) -> Panel:
     """Format a single message."""
     # Role styling
     role_colors = {
-        "system": "magenta",
-        "developer": "magenta",
+        "system": "yellow",
+        "developer": "cyan",
         "user": "green",
         "assistant": "blue",
         "tool": "yellow",
@@ -151,6 +155,7 @@ def _format_message(msg: Message, index: int) -> Panel:
         group,
         title=title,
         border_style=role_color,
+        box=box.ROUNDED,
         padding=(0, 1),
     )
 
@@ -168,6 +173,7 @@ def debug(app: Shell, args: str):
             Panel(
                 "Context is empty - no messages yet",
                 border_style=tui_rich_style("warning"),
+                box=box.ROUNDED,
                 padding=(1, 2),
             )
         )
@@ -184,6 +190,7 @@ def debug(app: Shell, args: str):
             ),
             title="[bold]Context Info[/bold]",
             border_style=tui_rich_style("border"),
+            box=box.ROUNDED,
             padding=(0, 1),
         ),
         Rule(style="dim"),

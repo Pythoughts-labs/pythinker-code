@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from rich import box
 from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.progress_bar import ProgressBar
@@ -26,6 +27,7 @@ def _build_usage_panel(
             Text("No usage data", style=tui_rich_style("muted")),
             title="API Usage",
             border_style=tui_rich_style("border_muted"),
+            box=box.ROUNDED,
         )
 
     label_width = max((len(r.label) for r in rows), default=6)
@@ -41,6 +43,7 @@ def _build_usage_panel(
         Group(*lines),
         title="API Usage",
         border_style=tui_rich_style("border_muted"),
+        box=box.ROUNDED,
         padding=(0, 2),
         expand=False,
     )

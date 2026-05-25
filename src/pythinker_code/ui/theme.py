@@ -52,22 +52,22 @@ def _task_browser_style_dark() -> PTKStyle:
     return PTKStyle.from_dict(
         {
             "header": "bg:#1f2937 #e5e7eb",
-            "header.title": "bg:#1f2937 #EE9983 bold",
-            "header.meta": "bg:#1f2937 #8B93A3",
+            "header.title": "bg:#1f2937 #F4F4F5 bold",
+            "header.meta": "bg:#1f2937 #A3A3A3",
             "status.running": "bg:#1f2937 #7BC97F bold",
             "status.success": "bg:#1f2937 #7BC97F",
             "status.warning": "bg:#1f2937 #E6B450",
             "status.error": "bg:#1f2937 #EF5E62",
             "status.info": "bg:#1f2937 #AFE3F1",
             "task-list": "bg:#111827 #d1d5db",
-            "task-list.checked": "bg:#243C54 #AFE3F1 bold",
+            "task-list.checked": "bg:#164e63 #ecfeff bold",
             "frame.border": "#3A506D",
-            "frame.label": "bg:#17182a #EE9983 bold",
-            "footer": "bg:#17182a #d7dcff",
-            "footer.key": "bg:#17182a #EE9983 bold",
-            "footer.text": "bg:#17182a #d7dcff",
+            "frame.label": "bg:#17182a #F4F4F5 bold",
+            "footer": "bg:#17182a #A3A3A3",
+            "footer.key": "bg:#17182a #AFE3F1 bold",
+            "footer.text": "bg:#17182a #A3A3A3",
             "footer.warning": "bg:#4a3315 #E6B450 bold",
-            "footer.meta": "bg:#17182a #9aa4d6",
+            "footer.meta": "bg:#17182a #5F6B7E",
         }
     )
 
@@ -76,19 +76,19 @@ def _task_browser_style_light() -> PTKStyle:
     return PTKStyle.from_dict(
         {
             "header": "bg:#e5e7eb #1f2937",
-            "header.title": "bg:#e5e7eb #AE5430 bold",
-            "header.meta": "bg:#e5e7eb #5D6B80",
+            "header.title": "bg:#e5e7eb #213853 bold",
+            "header.meta": "bg:#e5e7eb #666666",
             "status.running": "bg:#e5e7eb #2C7A39 bold",
             "status.success": "bg:#e5e7eb #2C7A39",
             "status.warning": "bg:#e5e7eb #9A6B18",
             "status.error": "bg:#e5e7eb #C0392B",
             "status.info": "bg:#e5e7eb #176B7E",
             "task-list": "bg:#f9fafb #374151",
-            "task-list.checked": "bg:#F3D9D2 #176B7E bold",
+            "task-list.checked": "bg:#cffafe #164e63 bold",
             "frame.border": "#495F7C",
-            "frame.label": "bg:#f1f5f9 #AE5430 bold",
+            "frame.label": "bg:#f1f5f9 #213853 bold",
             "footer": "bg:#f1f5f9 #475569",
-            "footer.key": "bg:#f1f5f9 #AE5430 bold",
+            "footer.key": "bg:#f1f5f9 #176B7E bold",
             "footer.text": "bg:#f1f5f9 #475569",
             "footer.warning": "bg:#fee2e2 #C0392B bold",
             "footer.meta": "bg:#f1f5f9 #64748b",
@@ -107,29 +107,29 @@ _PROMPT_STYLE_DARK = {
     # colored. Lets the terminal background show through so the input row
     # reads as a single line of text rather than a chrome panel.
     "compact-input": "",
-    "compact-input.prompt": "fg:#EE9983 bold",
-    "compact-input.frame": "fg:#2B3A52",
-    "running-prompt-placeholder": "fg:#8B93A3 italic",
+    "compact-input.prompt": "fg:#F4F4F5 bold",
+    "compact-input.frame": "fg:#3A506D",
+    "running-prompt-placeholder": "fg:#A3A3A3 italic",
     "running-prompt-separator": "fg:#2B3A52",
     # Slash completion menu — selected row gets the same selected-bg as cards.
     "slash-completion-menu": "",
     "slash-completion-menu.separator": "fg:#2B3A52",
     "slash-completion-menu.marker": "fg:#2B3A52",
-    "slash-completion-menu.marker.current": "fg:#EE9983 bold",
-    "slash-completion-menu.command": "fg:#c4c9e8",
-    "slash-completion-menu.command.match": "fg:#EE9983 bold",
-    "slash-completion-menu.meta": "fg:#8B93A3",
-    "slash-completion-menu.command.current": "bg:#243C54 fg:#EE9983 bold",
-    "slash-completion-menu.command.match.current": "bg:#243C54 fg:#EE9983 bold",
-    "slash-completion-menu.meta.current": "bg:#243C54 fg:#c4c9e8",
+    "slash-completion-menu.marker.current": "fg:#AFE3F1 bold",
+    "slash-completion-menu.command": "fg:#F4F4F5",
+    "slash-completion-menu.command.match": "fg:#AFE3F1 bold",
+    "slash-completion-menu.meta": "fg:#A3A3A3",
+    "slash-completion-menu.command.current": "bg:#243C54 fg:#F4F4F5 bold",
+    "slash-completion-menu.command.match.current": "bg:#243C54 fg:#AFE3F1 bold",
+    "slash-completion-menu.meta.current": "bg:#243C54 fg:#A3A3A3",
     "slash-completion-menu.row.current": "bg:#243C54",
-    "shell-dialog": "fg:#d7dcff",
-    "shell-dialog.title": "fg:#f4f6ff bold",
+    "shell-dialog": "fg:#F4F4F5",
+    "shell-dialog.title": "fg:#F4F4F5 bold",
     "shell-dialog.border": "fg:#2B3A52",
-    "shell-dialog.option": "fg:#aeb6df",
-    "shell-dialog.option.current": "bg:#243C54 fg:#EE9983 bold",
-    "shell-footer.key": "fg:#EE9983 bold",
-    "shell-footer.meta": "fg:#aeb6df",
+    "shell-dialog.option": "fg:#A3A3A3",
+    "shell-dialog.option.current": "bg:#243C54 fg:#F4F4F5 bold",
+    "shell-footer.key": "fg:#AFE3F1 bold",
+    "shell-footer.meta": "fg:#A3A3A3",
     "shell-footer.warning": "fg:#E6B450",
     "shell-footer.error": "fg:#EF5E62",
 }
@@ -137,28 +137,28 @@ _PROMPT_STYLE_DARK = {
 _PROMPT_STYLE_LIGHT = {
     "bottom-toolbar": "noreverse",
     "compact-input": "",
-    "compact-input.prompt": "fg:#AE5430 bold",
-    "compact-input.frame": "fg:#C8BEC0",
-    "running-prompt-placeholder": "fg:#5D6B80 italic",
+    "compact-input.prompt": "fg:#213853 bold",
+    "compact-input.frame": "fg:#495F7C",
+    "running-prompt-placeholder": "fg:#666666 italic",
     "running-prompt-separator": "fg:#C8BEC0",
     "slash-completion-menu": "",
     "slash-completion-menu.separator": "fg:#C8BEC0",
     "slash-completion-menu.marker": "fg:#8A93A0",
-    "slash-completion-menu.marker.current": "fg:#AE5430 bold",
+    "slash-completion-menu.marker.current": "fg:#176B7E bold",
     "slash-completion-menu.command": "fg:#4b5563",
-    "slash-completion-menu.command.match": "fg:#AE5430 bold",
-    "slash-completion-menu.meta": "fg:#5D6B80",
-    "slash-completion-menu.command.current": "bg:#F3D9D2 fg:#AE5430 bold",
-    "slash-completion-menu.command.match.current": "bg:#F3D9D2 fg:#AE5430 bold",
-    "slash-completion-menu.meta.current": "bg:#F3D9D2 fg:#4b5563",
-    "slash-completion-menu.row.current": "bg:#F3D9D2",
+    "slash-completion-menu.command.match": "fg:#176B7E bold",
+    "slash-completion-menu.meta": "fg:#666666",
+    "slash-completion-menu.command.current": "bg:#E6F2F6 fg:#213853 bold",
+    "slash-completion-menu.command.match.current": "bg:#E6F2F6 fg:#176B7E bold",
+    "slash-completion-menu.meta.current": "bg:#E6F2F6 fg:#666666",
+    "slash-completion-menu.row.current": "bg:#E6F2F6",
     "shell-dialog": "fg:#374151",
     "shell-dialog.title": "fg:#213853 bold",
     "shell-dialog.border": "fg:#C8BEC0",
-    "shell-dialog.option": "fg:#5D6B80",
-    "shell-dialog.option.current": "bg:#F3D9D2 fg:#AE5430 bold",
-    "shell-footer.key": "fg:#AE5430 bold",
-    "shell-footer.meta": "fg:#5D6B80",
+    "shell-dialog.option": "fg:#666666",
+    "shell-dialog.option.current": "bg:#E6F2F6 fg:#213853 bold",
+    "shell-footer.key": "fg:#176B7E bold",
+    "shell-footer.meta": "fg:#666666",
     "shell-footer.warning": "fg:#9A6B18",
     "shell-footer.error": "fg:#C0392B",
 }
@@ -185,25 +185,25 @@ class ToolbarColors:
 _TOOLBAR_DARK = ToolbarColors(
     separator="fg:#2B3A52",
     yolo_label="bold fg:#E6B450",
-    auto_label="bold fg:#EE9983",
+    auto_label="bold fg:#7BC97F",
     plan_label="bold fg:#AFE3F1",
     plan_prompt="fg:#AFE3F1",
     cwd="fg:#5F6B7E",
-    bg_tasks="fg:#8B93A3",
-    tip="fg:#5F6B7E",
-    tip_key="fg:#8B93A3 bold",
+    bg_tasks="fg:#A3A3A3",
+    tip="fg:#A3A3A3",
+    tip_key="fg:#A3A3A3 bold",
 )
 
 _TOOLBAR_LIGHT = ToolbarColors(
     separator="fg:#C8BEC0",
     yolo_label="bold fg:#9A6B18",
-    auto_label="bold fg:#AE5430",
+    auto_label="bold fg:#2C7A39",
     plan_label="bold fg:#176B7E",
     plan_prompt="fg:#176B7E",
     cwd="fg:#8A93A0",
-    bg_tasks="fg:#5D6B80",
-    tip="fg:#8A93A0",
-    tip_key="fg:#5D6B80 bold",
+    bg_tasks="fg:#666666",
+    tip="fg:#666666",
+    tip_key="fg:#666666 bold",
 )
 
 
@@ -231,42 +231,31 @@ class MarkdownColors:
     spinner_failed: str
 
 
-# Brand role mapping: heading/strong use coral accent, emphasis/quote use muted
-# grey, code/links use cyan, structural borders use border_muted.
-_MARKDOWN_DARK = MarkdownColors(
-    heading="#EE9983",
-    emphasis="#8B93A3",
-    strong="#EE9983",
-    inline_code="#AFE3F1",
-    link="#AFE3F1",
-    quote="#8B93A3",
-    table_border="#2B3A52",
-    code_block_border="#2B3A52",
-    code_block_bg="#1f2030",
-    spinner_active="#EE9983",
-    spinner_done="#7BC97F",
-    spinner_failed="#EF5E62",
-)
-
-_MARKDOWN_LIGHT = MarkdownColors(
-    heading="#AE5430",
-    emphasis="#5D6B80",
-    strong="#AE5430",
-    inline_code="#176B7E",
-    link="#176B7E",
-    quote="#5D6B80",
-    table_border="#C8BEC0",
-    code_block_border="#C8BEC0",
-    code_block_bg="#f1f5f9",
-    spinner_active="#AE5430",
-    spinner_done="#2C7A39",
-    spinner_failed="#C0392B",
-)
+# Markdown/report role mapping: prose-heavy output stays professional and
+# low-chrome. Headings/strong text use primary text, emphasis/quotes use muted
+# grey, code/links use blue, and status accents stay green/red.
+# All values are derived from TuiTokens so there is a single source of truth.
+def _build_markdown_colors(tokens: TuiTokens) -> MarkdownColors:
+    return MarkdownColors(
+        heading=tokens.tool_title,
+        emphasis=tokens.muted,
+        strong=tokens.tool_title,
+        inline_code=tokens.info,
+        link=tokens.info,
+        quote=tokens.muted,
+        table_border=tokens.border_muted,
+        code_block_border=tokens.border_muted,
+        code_block_bg=tokens.code_block_bg,
+        spinner_active=tokens.info,
+        spinner_done=tokens.success,
+        spinner_failed=tokens.error,
+    )
 
 
 def get_markdown_colors(theme: ThemeName | None = None) -> MarkdownColors:
     name = theme if theme is not None else _active_theme
-    return _MARKDOWN_LIGHT if name == "light" else _MARKDOWN_DARK
+    tokens = _TUI_TOKENS_LIGHT if name == "light" else _TUI_TOKENS_DARK
+    return _build_markdown_colors(tokens)
 
 
 def markdown_rich_style(token: str, *, theme: ThemeName | None = None) -> RichStyle:
@@ -301,7 +290,7 @@ class MCPPromptColors:
 
 _MCP_PROMPT_DARK = MCPPromptColors(
     text="fg:#d4d4d4",
-    detail="fg:#8B93A3",
+    detail="fg:#A3A3A3",
     connected="fg:#7BC97F",
     connecting="fg:#AFE3F1",
     pending="fg:#E6B450",
@@ -310,7 +299,7 @@ _MCP_PROMPT_DARK = MCPPromptColors(
 
 _MCP_PROMPT_LIGHT = MCPPromptColors(
     text="fg:#213853",
-    detail="fg:#5D6B80",
+    detail="fg:#666666",
     connected="fg:#2C7A39",
     connecting="fg:#176B7E",
     pending="fg:#9A6B18",
@@ -405,25 +394,27 @@ class TuiTokens:
     tool_diff_context: str
     # Bash mode accent
     bash_mode: str
+    # Code block background (used by markdown renderer)
+    code_block_bg: str
 
 
 TUI_TOKEN_NAMES = frozenset(field.name for field in fields(TuiTokens))
 
 
 _TUI_TOKENS_DARK = TuiTokens(
-    accent="#EE9983",
+    accent="#5EA7E8",
     border="#3A506D",
-    border_accent="#EE9983",
+    border_accent="#AFE3F1",
     border_muted="#2B3A52",
     info="#AFE3F1",
     success="#7BC97F",
     error="#EF5E62",
     warning="#E6B450",
-    muted="#8B93A3",
+    muted="#A3A3A3",
     dim="#5F6B7E",
     text="",
-    thinking_text="#7FB4C4",
-    activity_label="#F2EBEC",
+    thinking_text="#8A8A8A",
+    activity_label="#F4F4F5",
     selected_bg="#243C54",
     user_message_bg="#1B2738",
     user_message_text="",
@@ -433,30 +424,31 @@ _TUI_TOKENS_DARK = TuiTokens(
     tool_pending_bg="#1B2230",
     tool_success_bg="#16271C",
     tool_error_bg="#2E1D24",
-    tool_title="#8B93A3",
-    tool_output="#8B93A3",
+    tool_title="#F4F4F5",
+    tool_output="#A3A3A3",
     tool_diff_added="#7BC97F",
     tool_diff_removed="#EF5E62",
-    tool_diff_context="#8B93A3",
+    tool_diff_context="#A3A3A3",
     bash_mode="#7BC97F",
+    code_block_bg="#1f2030",
 )
 
 
 _TUI_TOKENS_LIGHT = TuiTokens(
-    accent="#AE5430",
+    accent="#256EA8",
     border="#495F7C",
-    border_accent="#DD786D",
+    border_accent="#176B7E",
     border_muted="#C8BEC0",
     info="#176B7E",
     success="#2C7A39",
     error="#C0392B",
     warning="#9A6B18",
-    muted="#5D6B80",
+    muted="#666666",
     dim="#8A93A0",
     text="#213853",
-    thinking_text="#5D6B80",
+    thinking_text="#6B6B6B",
     activity_label="#213853",
-    selected_bg="#F3D9D2",
+    selected_bg="#E6F2F6",
     user_message_bg="#F0E4E4",
     user_message_text="",
     custom_message_bg="#E6F2F6",
@@ -465,13 +457,18 @@ _TUI_TOKENS_LIGHT = TuiTokens(
     tool_pending_bg="#EFE7E8",
     tool_success_bg="#E4F0E6",
     tool_error_bg="#F6E3E3",
-    tool_title="",
-    tool_output="#5D6B80",
+    tool_title="#213853",
+    tool_output="#666666",
     tool_diff_added="#2C7A39",
     tool_diff_removed="#C0392B",
-    tool_diff_context="#5D6B80",
+    tool_diff_context="#666666",
     bash_mode="#2C7A39",
+    code_block_bg="#f1f5f9",
 )
+
+# Pre-built markdown palettes derived from the canonical token instances.
+_MARKDOWN_DARK = _build_markdown_colors(_TUI_TOKENS_DARK)
+_MARKDOWN_LIGHT = _build_markdown_colors(_TUI_TOKENS_LIGHT)
 
 
 def get_tui_tokens(theme: ThemeName | None = None) -> TuiTokens:

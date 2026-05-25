@@ -76,7 +76,7 @@ def _ansi(renderable: RenderableType, *, width: int = 60) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_pending_card_uses_tool_pending_bg():
+def test_pending_card_renders_without_background_tint():
     comp = ToolExecutionComponent(
         "ReadFile",
         "t1",
@@ -90,8 +90,8 @@ def test_pending_card_uses_tool_pending_bg():
     assert "src/foo.py" in text
 
     coloured = _ansi(comp.render(), width=60)
-    # Default dark theme tool_pending_bg = #1B2230 -> rgb(27,34,48).
-    assert "48;2;27;34;48" in coloured
+    # Blackbox-style pending/running tool rows sit on the terminal background.
+    assert "48;2;27;34;48" not in coloured
 
 
 def test_success_card_renders_compact_without_success_bg():

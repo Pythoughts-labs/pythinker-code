@@ -17,6 +17,7 @@ from typing import Literal
 
 from pythinker_core.message import Message
 from pythinker_core.tooling import ToolError, ToolOk
+from rich import box
 from rich.console import Group, RenderableType
 from rich.live import Live
 from rich.markup import escape as rich_escape
@@ -595,6 +596,7 @@ class _LiveView:
                             Markdown(response),
                             title=f"[dim]btw: {rich_escape(truncated_q)}[/dim]",
                             border_style=tui_rich_style("border_muted"),
+                            box=box.ROUNDED,
                             padding=(0, 1),
                         )
                     )
@@ -604,6 +606,7 @@ class _LiveView:
                             Text(error, style=tui_rich_style("error")),
                             title="[dim]btw (error)[/dim]",
                             border_style=tui_rich_style("error"),
+                            box=box.ROUNDED,
                             padding=(0, 1),
                         )
                     )

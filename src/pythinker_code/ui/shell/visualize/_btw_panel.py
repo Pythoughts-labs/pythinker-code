@@ -17,6 +17,7 @@ from collections.abc import Callable
 
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.key_binding import KeyPressEvent
+from rich import box
 from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.style import Style
@@ -101,7 +102,7 @@ class _BtwModalDelegate:
 
     def _loading_marker(self) -> Text:
         glyph = "●" if reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0 else " "
-        return Text(glyph, style=Style(color="grey50"))
+        return Text(glyph, style=tui_rich_style("muted"))
 
     def _build_title(self) -> str:
         if self._is_loading:
@@ -155,6 +156,7 @@ class _BtwModalDelegate:
             title=self._build_title(),
             title_align="left",
             border_style=tui_rich_style("border_muted"),
+            box=box.ROUNDED,
             padding=DIALOG_PANEL_PADDING,
         )
 

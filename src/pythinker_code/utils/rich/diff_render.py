@@ -14,21 +14,29 @@ from enum import Enum, auto
 
 from rich.console import RenderableType
 from rich.panel import Panel
+from rich.style import Style as RichStyle
 from rich.table import Table
 from rich.text import Text
 
 from pythinker_code.tools.display import DiffDisplayBlock
-from pythinker_code.ui.shell.render_constants import (
-    DIFF_CONTEXT_LINES,
-    DIFF_LINE_NUMBER_MIN_WIDTH,
-    expand_hint,
-)
-from pythinker_code.ui.theme import get_diff_colors
+from pythinker_code.ui.theme import get_diff_colors, tui_rich_style
 from pythinker_code.utils.rich.syntax import PythinkerSyntax
 
 _INLINE_DIFF_MIN_RATIO = 0.5  # skip inline diff when lines are too dissimilar
 
+DIFF_CONTEXT_LINES = 3
+DIFF_LINE_NUMBER_MIN_WIDTH = 2
 MAX_PREVIEW_CHANGED_LINES = 6
+
+
+def _expand_hint(remaining: int) -> str:
+    """Return the shell's canonical expand hint without importing shell at module load."""
+    try:
+        from pythinker_code.ui.shell.render_constants import expand_hint
+    except ImportError:
+        plural = "s" if remaining != 1 else ""
+        return f"… {remaining} more line{plural} (ctrl+o to expand)"
+    return expand_hint(remaining)
 
 
 # ---------------------------------------------------------------------------
@@ -258,9 +266,9 @@ def _build_diff_header(path: str, added: int, removed: int) -> Text:
     """Build the file header text: stats + path."""
     header = Text()
     if added > 0:
-        header.append(f"+{added} ", style="bold green")
+        header.append(f"+{added} ", style=tui_rich_style("tool_diff_added") + RichStyle(bold=True))
     if removed > 0:
-        header.append(f"-{removed} ", style="bold red")
+        header.append(f"-{removed} ", style=tui_rich_style("tool_diff_removed") + RichStyle(bold=True))
     header.append(path)
     return header
 
@@ -348,14 +356,14 @@ def render_diff_panel(
             if dl.kind == DiffLineKind.ADD:
                 table.add_row(
                     Text(str(dl.new_num)),
-                    Text(" + ", style="green"),
+                    Text(" + ", style=tui_rich_style("tool_diff_added")),
                     dl.content,
                     style=colors.add_bg,
                 )
             elif dl.kind == DiffLineKind.DELETE:
                 table.add_row(
                     Text(str(dl.old_num)),
-                    Text(" - ", style="red"),
+                    Text(" - ", style=tui_rich_style("tool_diff_removed")),
                     dl.content,
                     style=colors.del_bg,
                 )
@@ -422,14 +430,16 @@ def render_diff_preview(
         line = Text()
         ln = dl.old_num if dl.kind == DiffLineKind.DELETE else dl.new_num
         line.append(str(ln).rjust(num_width), style="dim")
-        marker_style = "green" if dl.kind == DiffLineKind.ADD else "red"
+        marker_style = tui_rich_style(
+            "tool_diff_added" if dl.kind == DiffLineKind.ADD else "tool_diff_removed"
+        )
         marker_char = "+" if dl.kind == DiffLineKind.ADD else "-"
         line.append(f" {marker_char} ", style=marker_style)
         line.append_text(dl.content)
         result.append(line)
 
     if remaining > 0:
-        result.append(Text(expand_hint(remaining), style="dim italic"))
+        result.append(Text(_expand_hint(remaining), style="dim italic"))
 
     return result, remaining
 

@@ -25,7 +25,7 @@ def render_mcp_console(snapshot: MCPStatusSnapshot) -> RenderableType:
     )
     if snapshot.loading:
         glyph = "●" if reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0 else " "
-        header = Text(f"{glyph} ", style=Style(color="grey50"))
+        header = Text(f"{glyph} ", style=tui_rich_style("muted"))
         header.append_text(header_text)
     else:
         header = header_text
@@ -86,14 +86,14 @@ def render_mcp_prompt(snapshot: MCPStatusSnapshot, *, now: float | None = None) 
     return FormattedText(fragments)
 
 
-def _status_color(status: str) -> str:
+def _status_color(status: str) -> Style:
     return {
-        "connected": "green",
-        "connecting": "cyan",
-        "pending": "yellow",
-        "failed": "red",
-        "unauthorized": "red",
-    }.get(status, "red")
+        "connected": tui_rich_style("success"),
+        "connecting": tui_rich_style("info"),
+        "pending": tui_rich_style("warning"),
+        "failed": tui_rich_style("error"),
+        "unauthorized": tui_rich_style("error"),
+    }.get(status, tui_rich_style("error"))
 
 
 def _prompt_status_style(status: str) -> str:

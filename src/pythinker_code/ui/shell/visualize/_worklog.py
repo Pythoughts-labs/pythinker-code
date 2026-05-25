@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from pythinker_core.tooling import BriefDisplayBlock, DisplayBlock
+from rich import box
 from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.style import Style
@@ -19,7 +20,7 @@ from pythinker_code.ui.shell.components.markdown import PythinkerMarkdown as Mar
 from pythinker_code.ui.shell.design_system import ShellTone, StatusName, shell_style, status_icon
 from pythinker_code.ui.shell.motion import reduced_motion_enabled
 from pythinker_code.ui.shell.spacing import WORKLOG_PANEL_PADDING
-from pythinker_code.ui.theme import tui_rich_style
+from pythinker_code.ui.theme import get_tui_tokens, tui_rich_style
 from pythinker_code.utils.rich.columns import BulletColumns
 from pythinker_code.utils.rich.diff_render import (
     collect_diff_hunks,
@@ -44,25 +45,25 @@ class ToolStyle:
 
 
 _TOOL_STYLES: dict[str, ToolStyle] = {
-    "Read": ToolStyle("Read", "->", "cyan"),
-    "ReadFile": ToolStyle("Read", "->", "cyan"),
-    "Grep": ToolStyle("Search", "*", "blue"),
-    "Glob": ToolStyle("Find", "*", "blue"),
-    "Edit": ToolStyle("Edit", "<-", "magenta"),
-    "Replace": ToolStyle("Edit", "<-", "magenta"),
-    "Write": ToolStyle("Write", "<-", "magenta"),
-    "WriteFile": ToolStyle("Write", "<-", "magenta"),
-    "ApplyPatch": ToolStyle("Patch", "◆", "magenta"),
-    "Bash": ToolStyle("Shell", "$", "green"),
-    "Shell": ToolStyle("Shell", "$", "green"),
-    "TodoWrite": ToolStyle("Todo", "☑", "yellow"),
-    "Agent": ToolStyle("Subagent", "●", "#9CA3AF"),
-    "Task": ToolStyle("Subagent", "●", "#9CA3AF"),
-    "AskUser": ToolStyle("Ask", "?", "yellow"),
-    "FetchURL": ToolStyle("Fetch", "%", "blue"),
-    "WebFetch": ToolStyle("Fetch", "%", "blue"),
-    "WebSearch": ToolStyle("Search", "◈", "blue"),
-    "Skill": ToolStyle("Skill", "◇", "cyan"),
+    "Read": ToolStyle("Read", "->", "info"),
+    "ReadFile": ToolStyle("Read", "->", "info"),
+    "Grep": ToolStyle("Search", "*", "info"),
+    "Glob": ToolStyle("Find", "*", "info"),
+    "Edit": ToolStyle("Edit", "<-", "accent"),
+    "Replace": ToolStyle("Edit", "<-", "accent"),
+    "Write": ToolStyle("Write", "<-", "accent"),
+    "WriteFile": ToolStyle("Write", "<-", "accent"),
+    "ApplyPatch": ToolStyle("Patch", "◆", "accent"),
+    "Bash": ToolStyle("Shell", "$", "success"),
+    "Shell": ToolStyle("Shell", "$", "success"),
+    "TodoWrite": ToolStyle("Todo", "☑", "warning"),
+    "Agent": ToolStyle("Subagent", "●", "muted"),
+    "Task": ToolStyle("Subagent", "●", "muted"),
+    "AskUser": ToolStyle("Ask", "?", "warning"),
+    "FetchURL": ToolStyle("Fetch", "%", "info"),
+    "WebFetch": ToolStyle("Fetch", "%", "info"),
+    "WebSearch": ToolStyle("Search", "◈", "info"),
+    "Skill": ToolStyle("Skill", "◇", "info"),
 }
 
 
@@ -94,8 +95,14 @@ def _state_icon(state: WorkLogState) -> Text:
     return icon
 
 
+def _tool_token_style(token_name: str) -> str:
+    tokens = get_tui_tokens()
+    return getattr(tokens, token_name, tokens.info)
+
+
 def tool_style(name: str) -> ToolStyle:
-    return _TOOL_STYLES.get(name, ToolStyle(name, "⚙", "blue"))
+    style = _TOOL_STYLES.get(name, ToolStyle(name, "⚙", "info"))
+    return ToolStyle(style.label, style.icon, _tool_token_style(style.style))
 
 
 def denied_error(message: str) -> bool:
@@ -121,7 +128,7 @@ def render_worklog_entry(
     state: WorkLogState,
     detail: str | None = None,
     icon: str = "•",
-    icon_style: str = "blue",
+    icon_style: str = "info",
     icon_renderable: RenderableType | None = None,
     children: list[RenderableType] | None = None,
 ) -> RenderableType:
@@ -162,6 +169,7 @@ def render_worklog_card(
         subtitle=subtitle,
         subtitle_align="left",
         border_style=border_style,
+        box=box.ROUNDED,
         padding=WORKLOG_PANEL_PADDING,
         expand=False,
     )

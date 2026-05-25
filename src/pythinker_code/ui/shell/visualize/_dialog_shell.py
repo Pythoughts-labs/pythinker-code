@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from rich import box
 from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.text import Text
@@ -65,6 +66,7 @@ def render_dialog(
         title=dialog_title("approval" if kind == "approval" else "question", title),
         title_align="left",
         border_style=border_style,
+        box=box.ROUNDED,
         padding=DIALOG_PANEL_PADDING,
         width=width,
     )

@@ -18,6 +18,7 @@ from pythinker_core.chat_provider import (
     APITimeoutError,
     ChatProviderError,
 )
+from rich import box
 from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.table import Table
@@ -391,6 +392,7 @@ class Shell:
             ),
             title="[bold]Session crashed[/bold]",
             border_style=tui_rich_style("error"),
+            box=box.ROUNDED,
         )
         console.print()
         console.print(panel)
@@ -1804,7 +1806,7 @@ def _value_style_for_label(label: str, level: WelcomeInfoItem.Level) -> str:
     if label == "Model":
         return f"bold {tokens.text}" if tokens.text else "bold bright_white"
     if label == "Branch":
-        return tokens.accent or "magenta"
+        return tokens.info or "cyan"
     if label == "Auto-save":
         return tokens.muted or "grey50"
     return level.value
@@ -1870,6 +1872,7 @@ def _print_welcome_info(name: str, info_items: list[WelcomeInfoItem]) -> None:
             title=version_title,
             title_align="left",
             border_style=_PYTHINKER_BORDER,
+            box=box.ROUNDED,
             expand=False,
             padding=(1, 2),
         )

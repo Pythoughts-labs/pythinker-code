@@ -11,6 +11,7 @@ from prompt_toolkit.layout import HSplit, Layout, VSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import Box, Frame, RadioList
+from rich import box
 from rich.console import Group
 from rich.panel import Panel
 from rich.text import Text
@@ -463,6 +464,7 @@ def _build_full_output_renderable(view: TaskView, output: str) -> Panel:
         ),
         title="Background Task Output",
         border_style=tui_rich_style("border"),
+        box=box.ROUNDED,
     )
 
 

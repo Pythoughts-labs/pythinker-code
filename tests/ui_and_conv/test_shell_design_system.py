@@ -64,14 +64,14 @@ def test_shell_style_resolves_brand_tokens_and_switches_theme():
     from pythinker_code.ui.theme import set_active_theme
 
     set_active_theme("dark")
-    assert shell_style(ShellTone.ACCENT).color.triplet.hex.lower() == "#ee9983"
+    assert shell_style(ShellTone.ACCENT).color.triplet.hex.lower() == "#5ea7e8"
     assert shell_style(ShellTone.SUCCESS).color.triplet.hex.lower() == "#7bc97f"
     set_active_theme("light")
-    assert shell_style(ShellTone.ACCENT).color.triplet.hex.lower() == "#ae5430"
+    assert shell_style(ShellTone.ACCENT).color.triplet.hex.lower() == "#256ea8"
     set_active_theme("dark")
 
 
-def test_verb_spinner_uses_accent_token():
+def test_verb_spinner_stays_orange_independent_of_accent_token():
     from pythinker_code.ui.shell.motion import verb_spinner_style
     from pythinker_code.ui.theme import set_active_theme
 

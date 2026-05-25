@@ -1952,7 +1952,6 @@ class CustomPromptSession:
 
         self._session = PromptSession[str](
             message=self._render_message,
-            # prompt_continuation=FormattedText([("fg:#4d4d4d", "... ")]),
             completer=self._agent_mode_completer,
             complete_while_typing=True,
             reserve_space_for_menu=6,
@@ -2826,6 +2825,9 @@ class CustomPromptSession:
         # Mode indicator (agent / shell) + model name + thinking indicator.
         # Degrade gracefully on narrow terminals:
         #   full: "agent (model-name ○)"  → mid: "agent ○"  → bare: "agent"
+        tokens = _get_tui_tokens()
+        mode_style = f"fg:{tokens.text or tokens.activity_label}"
+        secondary_style = f"fg:{tokens.muted}"
         mode = str(self._mode)
         if self._mode == PromptMode.AGENT and self._model_name:
             thinking_dot = "●" if self._thinking else "○"
@@ -2836,7 +2838,7 @@ class CustomPromptSession:
             elif _display_width(mode_mid) <= remaining - 2:
                 mode = mode_mid
             # else: keep bare mode name — model_name and dot are both dropped
-        fragments.extend([("", mode), ("", "  ")])
+        fragments.extend([(mode_style, mode), ("", "  ")])
         remaining -= _display_width(mode) + 2
 
         # CWD (truncated from left) + git branch with status badge
@@ -2913,14 +2915,14 @@ class CustomPromptSession:
                 if _display_width(left_text) > max_left:
                     left_text = _truncate_right(left_text, max_left)
                 left_width = _display_width(left_text)
-                fragments.append(("", left_text))
+                fragments.append((secondary_style, left_text))
             else:
                 left_width = 0
         else:
             left_width = 0
 
         fragments.append(("", " " * max(0, columns - left_width - right_width)))
-        fragments.append(("", right_text))
+        fragments.append((secondary_style, right_text))
 
         return FormattedText(fragments)
 
@@ -2935,6 +2937,9 @@ class CustomPromptSession:
 
         fragments: list[tuple[str, str]] = []
         tc = get_toolbar_colors()
+        tokens = _get_tui_tokens()
+        mode_style = f"fg:{tokens.text or tokens.activity_label}"
+        secondary_style = f"fg:{tokens.muted}"
 
         fragments.append((tc.separator, "─" * columns))
         fragments.append(("", "\n"))
@@ -2972,29 +2977,39 @@ class CustomPromptSession:
 
         # ── line 2: extension statuses (left) + context% + model (right) ───
         right_parts: list[str] = []
-        right_parts.append(
+        right_fragments: list[tuple[str, str]] = []
+
+        def _append_right(style: str, text: str) -> None:
+            if right_fragments:
+                right_fragments.append(("", "  "))
+            right_fragments.append((style, text))
+            right_parts.append(text)
+
+        _append_right(
+            secondary_style,
             format_context_status(
                 status.context_usage,
                 status.context_tokens,
                 status.max_context_tokens,
-            )
+            ),
         )
         # Compact ``17k/200k`` glyph next to the percentage when both sides are known.
         if status.max_context_tokens:
             ctx_compact = (
                 f"{format_tokens(status.context_tokens)}/{format_tokens(status.max_context_tokens)}"
             )
-            right_parts.append(ctx_compact)
+            _append_right(secondary_style, ctx_compact)
         if self._model_name:
             thinking_dot = "●" if self._thinking else "○"
             mode = str(self._mode)
-            right_parts.append(f"{mode} {self._model_name} {thinking_dot}")
+            _append_right(mode_style, f"{mode} {self._model_name} {thinking_dot}")
         right_text = "  ".join(right_parts)
         right_width = _display_width(right_text)
         if right_width > columns:
             # Keep the footer single-line on narrow terminals; preserve the right edge
             # where the model/status glyphs tend to be most useful.
             right_text = _truncate_left(right_text, max(0, columns))
+            right_fragments = [(secondary_style, right_text)]
             right_width = _display_width(right_text)
 
         # Left side: prefer extension statuses, then active background work,
@@ -3023,13 +3038,13 @@ class CustomPromptSession:
             if left_toast is not None:
                 left_text = left_toast.message
                 left_text = _truncate_right(left_text, max_left_width)
-                fragments.append(("", left_text))
+                fragments.append((secondary_style, left_text))
                 left_width = _display_width(left_text)
             else:
                 left_width = 0
 
         fragments.append(("", " " * max(0, columns - left_width - right_width)))
-        fragments.append(("", right_text))
+        fragments.extend(right_fragments)
         return FormattedText(fragments)
 
     def _get_two_rotating_tips(self) -> str | None:
