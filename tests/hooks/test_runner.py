@@ -47,6 +47,31 @@ async def test_json_additional_context():
 
 
 @pytest.mark.asyncio
+async def test_plain_stdout_adds_postcompact_context():
+    result = await run_hook(
+        "echo reload compacted rules", {"hook_event_name": "PostCompact"}, timeout=5
+    )
+    assert result.action == "allow"
+    assert result.additional_context == "reload compacted rules\n"
+
+
+@pytest.mark.asyncio
+async def test_plain_stdout_adds_sessionstart_compact_context_only():
+    compact = await run_hook(
+        "echo compact context",
+        {"hook_event_name": "SessionStart", "source": "compact"},
+        timeout=5,
+    )
+    startup = await run_hook(
+        "echo startup context",
+        {"hook_event_name": "SessionStart", "source": "startup"},
+        timeout=5,
+    )
+    assert compact.additional_context == "compact context\n"
+    assert startup.additional_context == ""
+
+
+@pytest.mark.asyncio
 async def test_stdin_receives_json():
     cmd = """python3 -c "import sys,json; d=json.load(sys.stdin); print(d['tool_name'])" """
     result = await run_hook(cmd, {"tool_name": "WriteFile"}, timeout=5)
