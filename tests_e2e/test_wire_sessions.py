@@ -294,7 +294,7 @@ def test_manual_compact(tmp_path) -> None:
                 {
                     "method": "event",
                     "type": "ContentPart",
-                    "payload": {"type": "text", "text": "The context has been compacted."},
+                    "payload": {"type": "text", "text": "Conversation compacted."},
                 },
                 {
                     "method": "event",
