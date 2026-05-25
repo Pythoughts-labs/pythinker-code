@@ -170,11 +170,7 @@ def materialize_markdown_agent_specs(
                 "when_to_use": agent.when_to_use,
             },
         }
-        if (
-            agent.model
-            and available_models is not None
-            and agent.model not in available_models
-        ):
+        if agent.model and available_models is not None and agent.model not in available_models:
             logger.warning(
                 "Markdown agent {name!r} specifies unknown model {model!r}; "
                 "falling back to parent model. Known models: {known}",

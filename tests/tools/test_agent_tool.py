@@ -1888,9 +1888,7 @@ async def test_agent_tool_records_parent_agent_id_as_none_for_root(
     # Root agent has subagent_id=None
     assert runtime.subagent_id is None
 
-    result = await agent_tool(
-        agent_tool.params(description="task", prompt="do it")
-    )
+    result = await agent_tool(agent_tool.params(description="task", prompt="do it"))
 
     assert not result.is_error
     agent_id = _extract_agent_id(result.output)
@@ -1956,10 +1954,16 @@ async def test_agent_tool_warns_when_isolation_set_for_foreground(agent_tool, ru
     )
 
     async def fake_load_agent(agent_file, runtime, *, mcp_configs, start_mcp_loading=True):
-        return SoulAgent(name=agent_file.stem, system_prompt="", toolset=EmptyToolset(), runtime=runtime)
+        return SoulAgent(
+            name=agent_file.stem, system_prompt="", toolset=EmptyToolset(), runtime=runtime
+        )
 
-    async def fake_run_soul(soul, user_input, ui_loop_fn, cancel_event, wire_file=None, runtime=None):
-        await soul.context.append_message(Message(role="assistant", content=[TextPart(text="done")]))
+    async def fake_run_soul(
+        soul, user_input, ui_loop_fn, cancel_event, wire_file=None, runtime=None
+    ):
+        await soul.context.append_message(
+            Message(role="assistant", content=[TextPart(text="done")])
+        )
 
     monkeypatch.setattr("pythinker_code.subagents.builder.load_agent", fake_load_agent)
     monkeypatch.setattr("pythinker_code.subagents.runner.run_soul", fake_run_soul)
