@@ -37,8 +37,19 @@ from pythinker_code.wire.types import (
 if TYPE_CHECKING:
     from pythinker_code.soul.agent import Runtime
 
-SUMMARY_MIN_LENGTH = 200
 SUMMARY_CONTINUATION_ATTEMPTS = 1
+_SUMMARY_MIN_LENGTH_DEFAULT = 200
+_SUMMARY_MIN_LENGTH_BY_TYPE: dict[str, int] = {
+    "verifier": 50,
+    "explore": 100,
+    "debugger": 150,
+    "code-reviewer": 150,
+    "review": 150,
+    "security-reviewer": 150,
+    "coder": 200,
+    "implementer": 200,
+    "plan": 300,
+}
 SUMMARY_CONTINUATION_PROMPT = """
 Your previous response was too brief. Please provide a more comprehensive summary that includes:
 
@@ -147,6 +158,8 @@ async def run_with_summary_continuation(
     prompt: str,
     ui_loop_fn: UILoopFn,
     wire_path: Path,
+    *,
+    min_length: int = _SUMMARY_MIN_LENGTH_DEFAULT,
 ) -> tuple[str | None, SoulRunFailure | None]:
     """Run soul, then optionally extend the summary if it is too short.
 
@@ -160,7 +173,7 @@ async def run_with_summary_continuation(
 
     final_response = soul.context.history[-1].extract_text(sep="\n")
     remaining = SUMMARY_CONTINUATION_ATTEMPTS
-    while remaining > 0 and len(final_response) < SUMMARY_MIN_LENGTH:
+    while remaining > 0 and len(final_response) < min_length:
         remaining -= 1
         failure = await run_soul_checked(
             soul,
@@ -295,6 +308,7 @@ class ForegroundSubagentRunner:
                 prompt,
                 ui_loop_fn,
                 self._store.wire_path(agent_id),
+                min_length=_SUMMARY_MIN_LENGTH_BY_TYPE.get(actual_type, _SUMMARY_MIN_LENGTH_DEFAULT),
             )
             if failure is not None:
                 self._store.update_instance(agent_id, status="failed")

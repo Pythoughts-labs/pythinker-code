@@ -15,7 +15,11 @@ from pythinker_code.soul import RunCancelled
 from pythinker_code.subagents.builder import SubagentBuilder
 from pythinker_code.subagents.core import SubagentRunSpec, prepare_soul
 from pythinker_code.subagents.output import SubagentOutputWriter
-from pythinker_code.subagents.runner import run_with_summary_continuation
+from pythinker_code.subagents.runner import (
+    _SUMMARY_MIN_LENGTH_BY_TYPE,
+    _SUMMARY_MIN_LENGTH_DEFAULT,
+    run_with_summary_continuation,
+)
 from pythinker_code.utils.logging import logger
 from pythinker_code.wire import Wire
 
@@ -175,6 +179,9 @@ class BackgroundAgentRunner:
             prompt,
             _ui_loop_fn,
             self._runtime.subagent_store.wire_path(self._agent_id),
+            min_length=_SUMMARY_MIN_LENGTH_BY_TYPE.get(
+                self._subagent_type, _SUMMARY_MIN_LENGTH_DEFAULT
+            ),
         )
         if failure is not None:
             self._manager._mark_task_failed(self._task_id, failure.message)

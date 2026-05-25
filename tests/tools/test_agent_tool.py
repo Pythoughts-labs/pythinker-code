@@ -1539,7 +1539,7 @@ async def test_agent_tool_returns_error_when_final_response_is_none(
 
     # Patch run_with_summary_continuation to return (None, None) — simulating
     # the defensive scenario where final_response is None but failure is also None.
-    async def fake_run_with_summary(soul, prompt, ui_loop_fn, wire_path):
+    async def fake_run_with_summary(soul, prompt, ui_loop_fn, wire_path, **kwargs):
         return None, None
 
     monkeypatch.setattr(
@@ -1695,7 +1695,7 @@ async def test_background_agent_marks_failed_when_final_response_is_none(
 
     monkeypatch.setattr("pythinker_code.subagents.builder.load_agent", fake_load_agent)
 
-    async def fake_run_with_summary(soul, prompt, ui_loop_fn, wire_path):
+    async def fake_run_with_summary(soul, prompt, ui_loop_fn, wire_path, **kwargs):
         return None, None
 
     monkeypatch.setattr(
@@ -1811,7 +1811,7 @@ async def test_background_agent_marks_killed_when_run_cancelled(agent_tool, runt
 
     monkeypatch.setattr("pythinker_code.subagents.builder.load_agent", fake_load_agent)
 
-    async def fake_run_with_summary(soul, prompt, ui_loop_fn, wire_path):
+    async def fake_run_with_summary(soul, prompt, ui_loop_fn, wire_path, **kwargs):
         raise RunCancelled()
 
     monkeypatch.setattr(
