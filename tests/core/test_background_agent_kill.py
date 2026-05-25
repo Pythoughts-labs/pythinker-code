@@ -496,7 +496,10 @@ async def test_background_runner_propagates_hook_engine(runtime, monkeypatch):
         )
         return soul
 
-    original_prepare_soul = None
+    import pythinker_code.background.agent_runner as agent_runner_mod
+    import pythinker_code.subagents.core as core_mod
+
+    original_prepare_soul = core_mod.prepare_soul
 
     async def fake_prepare_soul(spec, rt, builder, store, on_stage=None):
         # Call the real prepare_soul to get the real soul.
@@ -511,10 +514,6 @@ async def test_background_runner_propagates_hook_engine(runtime, monkeypatch):
         soul.set_hook_engine = tracking_set_hook_engine
         return soul, prompt
 
-    import pythinker_code.background.agent_runner as agent_runner_mod
-    import pythinker_code.subagents.core as core_mod
-
-    original_prepare_soul = core_mod.prepare_soul
     monkeypatch.setattr(agent_runner_mod, "prepare_soul", fake_prepare_soul)
 
     long = "x" * 250

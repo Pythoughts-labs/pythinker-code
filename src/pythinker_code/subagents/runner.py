@@ -308,7 +308,9 @@ class ForegroundSubagentRunner:
                 prompt,
                 ui_loop_fn,
                 self._store.wire_path(agent_id),
-                min_length=_SUMMARY_MIN_LENGTH_BY_TYPE.get(actual_type, _SUMMARY_MIN_LENGTH_DEFAULT),
+                min_length=_SUMMARY_MIN_LENGTH_BY_TYPE.get(
+                    actual_type, _SUMMARY_MIN_LENGTH_DEFAULT
+                ),
             )
             if failure is not None:
                 self._store.update_instance(agent_id, status="failed")

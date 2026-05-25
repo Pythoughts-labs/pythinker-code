@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from pythinker_code.subagents.runner import (
-    run_with_summary_continuation,
     _SUMMARY_MIN_LENGTH_BY_TYPE,
     _SUMMARY_MIN_LENGTH_DEFAULT,
+    run_with_summary_continuation,
 )
 
 
