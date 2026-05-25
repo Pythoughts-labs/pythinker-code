@@ -56,6 +56,11 @@ from pythinker_code.soul.compaction import (
     estimate_text_tokens,
     should_auto_compact,
 )
+from pythinker_code.soul.compaction_restore import (
+    build_compaction_restore_context,
+    build_hook_context_message,
+    compact_summary_text,
+)
 from pythinker_code.soul.context import Context
 from pythinker_code.soul.dynamic_injection import (
     DynamicInjection,
@@ -954,6 +959,17 @@ class PythinkerSoul:
         _run_template.__doc__ = template.description
         return _run_template
 
+    def _record_invoked_skill(self, skill_name: str) -> None:
+        """Remember a slash-invoked skill so compaction can restore its instructions."""
+        active_skills = self._runtime.session.state.active_skills
+        if skill_name in active_skills:
+            return
+        active_skills.append(skill_name)
+        try:
+            self._runtime.session.save_state()
+        except Exception:
+            logger.warning("Failed to persist active skill state", exc_info=True)
+
     def _make_skill_runner(
         self, skill: Skill
     ) -> Callable[[PythinkerSoul, str], None | Awaitable[None]]:
@@ -969,6 +985,7 @@ class PythinkerSoul:
                     TextPart(text=f'Failed to load skill "/{SKILL_COMMAND_PREFIX}{_skill.name}".')
                 )
                 return
+            soul._record_invoked_skill(_skill.name)
             extra = args.strip()
             if extra:
                 skill_text = f"{skill_text}\n\nUser request:\n{extra}"
@@ -1451,9 +1468,10 @@ class PythinkerSoul:
 
         trigger_reason = "manual" if custom_instruction else "auto"
         before_tokens = self._context.token_count
+        history_before_compaction = tuple(self._context.history)
         from pythinker_code.hooks import events
 
-        await self._hook_engine.trigger(
+        pre_compact_results = await self._hook_engine.trigger(
             "PreCompact",
             matcher_value=trigger_reason,
             input_data=events.pre_compact(
@@ -1462,6 +1480,16 @@ class PythinkerSoul:
                 trigger=trigger_reason,
                 token_count=before_tokens,
             ),
+        )
+        for result in pre_compact_results:
+            if result.action == "block":
+                raise RuntimeError(result.reason or "Compaction blocked by PreCompact hook")
+
+        restore_context = await build_compaction_restore_context(
+            history_before_compaction,
+            work_dir=self._runtime.builtin_args.PYTHINKER_WORK_DIR,
+            active_skill_names=getattr(self._runtime.session.state, "active_skills", ()),
+            skills_by_name=getattr(self._runtime, "skills", {}),
         )
 
         wire_send(CompactionBegin())
@@ -1484,6 +1512,11 @@ class PythinkerSoul:
         await self._checkpoint()
         await self._context.append_message(compaction_result.messages)
         estimated_token_count = compaction_result.estimated_token_count
+        summary_text = compact_summary_text(compaction_result.messages)
+
+        if restore_context.messages:
+            await self._context.append_message(restore_context.messages)
+            estimated_token_count += estimate_text_tokens(restore_context.messages)
 
         if self._runtime.role == "root":
             active_task_snapshot = build_active_task_snapshot(self._runtime.background_tasks)
@@ -1501,6 +1534,24 @@ class PythinkerSoul:
                 await self._context.append_message(active_task_message)
                 estimated_token_count += estimate_text_tokens([active_task_message])
 
+        post_compact_results = await self._hook_engine.trigger(
+            "PostCompact",
+            matcher_value=trigger_reason,
+            input_data=events.post_compact(
+                session_id=self._runtime.session.id,
+                cwd=str(Path.cwd()),
+                trigger=trigger_reason,
+                estimated_token_count=estimated_token_count,
+                compact_summary=summary_text,
+            ),
+        )
+        hook_context_message = build_hook_context_message(
+            result.additional_context for result in post_compact_results
+        )
+        if hook_context_message is not None:
+            await self._context.append_message(hook_context_message)
+            estimated_token_count += estimate_text_tokens([hook_context_message])
+
         # Estimate token count so context_usage is not reported as 0%
         await self._context.update_token_count(estimated_token_count)
 
@@ -1511,6 +1562,7 @@ class PythinkerSoul:
         await self._notify_injection_providers_compacted()
 
         wire_send(CompactionEnd())
+        wire_send(TextPart(text=restore_context.display_text()))
 
         from pythinker_code.telemetry import track
 
@@ -1520,17 +1572,6 @@ class PythinkerSoul:
             before_tokens=before_tokens,
             after_tokens=estimated_token_count,
             success=True,
-        )
-
-        self._hook_engine.fire_and_forget_trigger(
-            "PostCompact",
-            matcher_value=trigger_reason,
-            input_data=events.post_compact(
-                session_id=self._runtime.session.id,
-                cwd=str(Path.cwd()),
-                trigger=trigger_reason,
-                estimated_token_count=estimated_token_count,
-            ),
         )
 
     @staticmethod

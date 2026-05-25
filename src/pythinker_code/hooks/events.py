@@ -162,11 +162,13 @@ def post_compact(
     cwd: str,
     trigger: str,
     estimated_token_count: int,
+    compact_summary: str = "",
 ) -> dict[str, Any]:
     return {
         **_base("PostCompact", session_id, cwd),
         "trigger": trigger,
         "estimated_token_count": estimated_token_count,
+        "compact_summary": compact_summary,
     }
 
 

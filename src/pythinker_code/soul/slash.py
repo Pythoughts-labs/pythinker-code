@@ -65,7 +65,6 @@ async def compact(soul: PythinkerSoul, args: str):
 
     logger.info("Running `/compact`")
     await soul.compact_context(custom_instruction=args.strip())
-    wire_send(TextPart(text="The context has been compacted."))
     snap = soul.status
     wire_send(
         StatusUpdate(

@@ -18,6 +18,7 @@ class HookResult:
     stderr: str = ""
     exit_code: int = 0
     timed_out: bool = False
+    additional_context: str = ""
 
 
 async def run_hook(
@@ -78,6 +79,7 @@ async def run_hook(
             if isinstance(raw, dict):
                 parsed = cast(dict[str, Any], raw)
                 hook_output = cast(dict[str, Any], parsed.get("hookSpecificOutput", {}))
+                additional_context = _extract_additional_context(parsed, hook_output)
                 if hook_output.get("permissionDecision") == "deny":
                     return HookResult(
                         action="block",
@@ -85,8 +87,25 @@ async def run_hook(
                         stdout=stdout,
                         stderr=stderr,
                         exit_code=0,
+                        additional_context=additional_context,
                     )
+                return HookResult(
+                    action="allow",
+                    stdout=stdout,
+                    stderr=stderr,
+                    exit_code=exit_code,
+                    additional_context=additional_context,
+                )
         except (json.JSONDecodeError, TypeError):
             pass
 
     return HookResult(action="allow", stdout=stdout, stderr=stderr, exit_code=exit_code)
+
+
+def _extract_additional_context(parsed: dict[str, Any], hook_output: dict[str, Any]) -> str:
+    """Extract Claude-Code-style additionalContext from JSON hook output."""
+    candidates = (hook_output.get("additionalContext"), parsed.get("additionalContext"))
+    for value in candidates:
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""

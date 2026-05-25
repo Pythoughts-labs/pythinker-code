@@ -55,6 +55,8 @@ class SessionState(BaseModel):
     auto_archive_exempt: bool = False
     # Todo list state
     todos: list[TodoItemState] = Field(default_factory=list)  # pyright: ignore[reportUnknownVariableType]
+    # Skill names explicitly invoked in this session and restored after compaction.
+    active_skills: list[str] = Field(default_factory=list)
 
 
 _LEGACY_METADATA_FILENAME = "metadata.json"

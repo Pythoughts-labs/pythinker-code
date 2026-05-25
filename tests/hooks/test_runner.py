@@ -39,6 +39,14 @@ async def test_json_deny_decision():
 
 
 @pytest.mark.asyncio
+async def test_json_additional_context():
+    cmd = """echo '{"hookSpecificOutput": {"additionalContext": "reload compacted rules"}}' """
+    result = await run_hook(cmd, {"hook_event_name": "PostCompact"}, timeout=5)
+    assert result.action == "allow"
+    assert result.additional_context == "reload compacted rules"
+
+
+@pytest.mark.asyncio
 async def test_stdin_receives_json():
     cmd = """python3 -c "import sys,json; d=json.load(sys.stdin); print(d['tool_name'])" """
     result = await run_hook(cmd, {"tool_name": "WriteFile"}, timeout=5)
