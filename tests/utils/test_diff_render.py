@@ -574,7 +574,7 @@ class TestLineNumberOffsets:
 
 def _render_with_color(renderable) -> str:
     """Render to ANSI string with truecolor enabled."""
-    console = Console(width=120, force_terminal=True, color_system="truecolor")
+    console = Console(width=120, force_terminal=True, color_system="truecolor", no_color=False)
     with console.capture() as cap:
         console.print(renderable, end="")
     return cap.get()
