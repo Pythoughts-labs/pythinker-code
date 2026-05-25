@@ -5,9 +5,11 @@ import importlib
 from pythinker_core.message import ToolCall
 from pythinker_core.tooling import ToolResult, ToolReturnValue
 from rich.console import Console, Group
+from rich.style import Style
 
 from pythinker_code.tools.display import TodoDisplayBlock, TodoDisplayItem
 from pythinker_code.ui.shell.visualize import _LiveView
+from pythinker_code.ui.theme import tui_rich_style
 from pythinker_code.wire.types import StatusUpdate, TurnBegin
 
 _live_view_module = importlib.import_module("pythinker_code.ui.shell.visualize._live_view")
@@ -17,6 +19,13 @@ def _render(renderable) -> str:
     console = Console(width=100, record=True, highlight=False)
     console.print(renderable)
     return console.export_text()
+
+
+def _style_for(renderable, text: str) -> Style:
+    start = renderable.plain.index(text)
+    end = start + len(text)
+    span = next(span for span in renderable.spans if span.start <= start and span.end >= end)
+    return Style.parse(span.style) if isinstance(span.style, str) else span.style
 
 
 def _todo_call(call_id: str = "todo-1") -> ToolCall:
@@ -55,14 +64,15 @@ def _todo_result(call_id: str = "todo-1") -> ToolResult:
 def test_todo_update_pins_current_task_under_activity_line(monkeypatch) -> None:
     now = 1000.0
     monkeypatch.setattr(_live_view_module.time, "monotonic", lambda: now)
-    view = _LiveView(StatusUpdate())
+    view = _LiveView(StatusUpdate(context_tokens=10_000))
     view.dispatch_wire_message(TurnBegin(user_input="work"))
     view.dispatch_wire_message(_todo_call())
     view.dispatch_wire_message(_todo_result())
 
+    now = 1460.0
     rendered = _render(view._working_indicator())
 
-    assert "✽ Implement pinned todos…" in rendered
+    assert "✽ Implement pinned todos… (7m 40s · ↓ 10k tokens)" in rendered
     assert "⎿  ◼ Implement pinned todos" in rendered
     assert "✔ Explore UI" in rendered
     assert "✔ Write tests" in rendered
@@ -83,6 +93,18 @@ def test_successful_todo_tool_card_is_suppressed() -> None:
     rendered = _render(Group(*view.compose_agent_output()))
     assert "Implement pinned todos" in rendered
     assert "SetTodoList" not in rendered
+
+
+def test_completed_todo_row_is_muted_and_struck() -> None:
+    view = _LiveView(StatusUpdate())
+
+    row = view._pinned_todo_row(
+        TodoDisplayItem(title="Finished task", status="done"), is_first=True, width=80
+    )
+    title_style = _style_for(row, "Finished task")
+
+    assert title_style.strike is True
+    assert title_style.color == tui_rich_style("muted").color
 
 
 def test_toggle_pinned_todos_hides_todo_rows() -> None:
