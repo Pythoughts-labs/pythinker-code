@@ -78,9 +78,9 @@ def help(app: Shell, args: str):
     from rich.console import Group, RenderableType
     from rich.text import Text
 
+    from pythinker_code.ui.theme import get_tui_tokens, tui_rich_style
     from pythinker_code.utils.rich.columns import BulletColumns
 
-    from pythinker_code.ui.theme import get_tui_tokens, tui_rich_style
     _tok = get_tui_tokens()
 
     def section(title: str, items: list[tuple[str, str]], color: str) -> BulletColumns:
@@ -89,8 +89,7 @@ def help(app: Shell, args: str):
             lines.append(
                 BulletColumns(
                     Text.from_markup(
-                        f"[{color}]{_rich_escape(name)}[/]: "
-                        f"[{_tok.muted}]{_rich_escape(desc)}[/]"
+                        f"[{color}]{_rich_escape(name)}[/]: [{_tok.muted}]{_rich_escape(desc)}[/]"
                     ),
                     bullet_style=color,
                 )
@@ -101,7 +100,9 @@ def help(app: Shell, args: str):
     renderables.append(
         BulletColumns(
             Group(
-                Text.from_markup(f"[{_tok.muted}]Help! I need somebody. Help! Not just anybody.[/]"),
+                Text.from_markup(
+                    f"[{_tok.muted}]Help! I need somebody. Help! Not just anybody.[/]"
+                ),
                 Text.from_markup(f"[{_tok.muted}]Help! You know I need someone. Help![/]"),
                 Text.from_markup(f"[{_tok.muted}]\u2015 The Beatles, [italic]Help![/italic][/]"),
             ),
@@ -172,6 +173,7 @@ def agents(app: Shell, args: str):
     builtin_types = getattr(labor_market, "builtin_types", {}) or {}
     type_defs = sorted(builtin_types.values(), key=lambda item: item.name)
     from pythinker_code.ui.theme import get_tui_tokens, tui_rich_style
+
     _tok = get_tui_tokens()
 
     if not type_defs:
@@ -184,6 +186,7 @@ def agents(app: Shell, args: str):
     table.add_column(ratio=1, no_wrap=True)
     table.add_column(ratio=2, no_wrap=True)
     from rich.style import Style as _RichStyle
+
     table.add_row(
         Text("agent", style=tui_rich_style("info") + _RichStyle(bold=True)),
         Text("when to use", style="bold"),
@@ -199,7 +202,9 @@ def agents(app: Shell, args: str):
         )
         table.add_row(
             Text(type_def.name, style=tui_rich_style("info")),
-            Text(type_def.when_to_use or type_def.description or "—", style=tui_rich_style("muted")),
+            Text(
+                type_def.when_to_use or type_def.description or "—", style=tui_rich_style("muted")
+            ),
             Text(type_def.default_model or "inherit", style=tui_rich_style("dim")),
             Text(tool_label, style=tui_rich_style("dim")),
         )
@@ -270,7 +275,9 @@ async def model(app: Shell, args: str):
     selected_model_cfg = config.models[selected_model_name]
     selected_provider = config.providers.get(selected_model_cfg.provider)
     if selected_provider is None:
-        console.print(f"[{_t.error}]Provider not found: {_rich_escape(selected_model_cfg.provider)}[/]")
+        console.print(
+            f"[{_t.error}]Provider not found: {_rich_escape(selected_model_cfg.provider)}[/]"
+        )
         return
 
     # Step 2: Determine thinking mode
@@ -489,7 +496,9 @@ async def editor(app: Shell, args: str):
     else:
         resolved = get_editor_command()
         label = " ".join(resolved) if resolved else "none"
-        console.print(f"[{_t_ed.success}]Editor set to auto-detect (resolved: {_rich_escape(label)})[/]")
+        console.print(
+            f"[{_t_ed.success}]Editor set to auto-detect (resolved: {_rich_escape(label)})[/]"
+        )
 
 
 @registry.command(aliases=["release-notes"])
@@ -747,7 +756,8 @@ async def feedback(app: Shell, args: str):
 
             track("feedback_submitted")
             console.print(
-                f"[{_t_fb.success}]Feedback submitted, thank you! Your session ID is: {session_id}[/]"
+                f"[{_t_fb.success}]Feedback submitted, thank you! "
+                f"Your session ID is: {session_id}[/]"
             )
         except TimeoutError:
             console.print(f"[{_t_fb.error}]Feedback submission timed out.[/]")
@@ -971,7 +981,8 @@ async def list_sessions(app: Shell, args: str):
     if selected_work_dir != current_session.work_dir:
         cmd = f"pythinker --work-dir {shlex.quote(str(selected_work_dir))} --session {selection}"
         console.print(
-            f"[{_t_sess.warning}]Session is in a different directory. Run:[/]\n  {_rich_escape(cmd)}"
+            f"[{_t_sess.warning}]Session is in a different directory. Run:[/]\n"
+            f"  {_rich_escape(cmd)}"
         )
         return
 
@@ -996,7 +1007,9 @@ async def task(app: Shell, args: str):
         console.print(f'[{_t_task.warning}]Usage: "/task" opens the interactive task browser.[/]')
         return
     if soul.runtime.role != "root":
-        console.print(f"[{_t_task.warning}]Background tasks are only available from the root agent.[/]")
+        console.print(
+            f"[{_t_task.warning}]Background tasks are only available from the root agent.[/]"
+        )
         return
 
     await TaskBrowserApp(soul).run()
@@ -1006,7 +1019,8 @@ async def task(app: Shell, args: str):
 @shell_mode_registry.command(aliases=["color"])
 async def theme(app: Shell, args: str) -> None:
     """Switch terminal color theme — interactive picker when no args given"""
-    from pythinker_code.ui.theme import get_active_theme, get_tui_tokens as _get_tok_theme
+    from pythinker_code.ui.theme import get_active_theme
+    from pythinker_code.ui.theme import get_tui_tokens as _get_tok_theme
 
     soul = ensure_pythinker_soul(app)
     if soul is None:
@@ -1028,7 +1042,9 @@ async def theme(app: Shell, args: str) -> None:
         arg = chosen
 
     if arg not in ("dark", "light"):
-        console.print(f"[{_t_theme.error}]Unknown theme: {_rich_escape(arg)}. Use 'dark' or 'light'.[/]")
+        console.print(
+            f"[{_t_theme.error}]Unknown theme: {_rich_escape(arg)}. Use 'dark' or 'light'.[/]"
+        )
         return
 
     if arg == current:
@@ -1173,7 +1189,9 @@ def tui(app: Shell, args: str):
 
     if target not in ("card", "pythinker"):
         target_label = _rich_escape(target)
-        console.print(f"[{_t_tui.error}]Unknown style: {target_label}. Use 'card' or 'pythinker'.[/]")
+        console.print(
+            f"[{_t_tui.error}]Unknown style: {target_label}. Use 'card' or 'pythinker'.[/]"
+        )
         return
 
     if target == current:
@@ -1220,7 +1238,8 @@ async def settings(app: Shell, args: str):
     from rich.table import Table
     from rich.text import Text
 
-    from pythinker_code.ui.theme import get_active_theme, get_tui_tokens as _get_tok_set, tui_rich_style
+    from pythinker_code.ui.theme import get_active_theme, tui_rich_style
+    from pythinker_code.ui.theme import get_tui_tokens as _get_tok_set
     from pythinker_code.ui.tui_config import get_active_tui_style
 
     _t_set = _get_tok_set()
@@ -1387,7 +1406,9 @@ def trust(app: Shell, args: str) -> None:
         state.safe_mode = False
         soul.runtime.approval.set_safe_mode(False)
         soul.runtime.session.save_state()
-        console.print(f"[{_t_trust.success}]Workspace trusted. Safe mode disabled for this session.[/]")
+        console.print(
+            f"[{_t_trust.success}]Workspace trusted. Safe mode disabled for this session.[/]"
+        )
         return
     if mode in {"off", "no", "untrust", "safe"}:
         state.trusted = False
@@ -1398,7 +1419,8 @@ def trust(app: Shell, args: str) -> None:
         soul.runtime.session.state.approval.auto_approve_actions.clear()
         soul.runtime.session.save_state()
         console.print(
-            f"[{_t_trust.warning}]Workspace untrusted. Safe mode enabled; auto-approval is disabled.[/]"
+            f"[{_t_trust.warning}]Workspace untrusted. Safe mode enabled; "
+            "auto-approval is disabled.[/]"
         )
         return
     if mode:
@@ -1434,6 +1456,7 @@ async def worklog(app: Shell, args: str) -> None:
         pass
 
     from pythinker_code.ui.theme import get_tui_tokens, tui_rich_style
+
     _tok = get_tui_tokens()
 
     table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
@@ -1468,6 +1491,7 @@ def context(app: Shell, args: str) -> None:
         return
 
     from pythinker_code.ui.theme import get_tui_tokens, tui_rich_style
+
     _tok = get_tui_tokens()
 
     status = soul.status

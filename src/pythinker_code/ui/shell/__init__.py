@@ -38,7 +38,6 @@ from pythinker_code.soul import (
 from pythinker_code.soul.pythinkersoul import FLOW_COMMAND_PREFIX, PythinkerSoul
 from pythinker_code.ui.shell.components.render_utils import render_message_response, sanitize_ansi
 from pythinker_code.ui.shell.console import console
-from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens, tui_rich_style
 from pythinker_code.ui.shell.echo import render_user_echo_text
 from pythinker_code.ui.shell.mcp_status import render_mcp_prompt
 from pythinker_code.ui.shell.prompt import (
@@ -60,6 +59,8 @@ from pythinker_code.ui.shell.visualize import (
     ApprovalPromptDelegate,
     visualize,
 )
+from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
+from pythinker_code.ui.theme import tui_rich_style
 from pythinker_code.utils.aioqueue import QueueShutDown
 from pythinker_code.utils.envvar import get_env_bool
 from pythinker_code.utils.logging import logger
@@ -927,7 +928,8 @@ class Shell:
         if split_cmd and len(split_cmd) == 2 and split_cmd[0] == "cd":
             _t = _get_tui_tokens()
             console.print(
-                f"[{_t.warning}]Warning: Directory changes are not preserved across command executions.[/]"
+                f"[{_t.warning}]Warning: Directory changes are not preserved "
+                "across command executions.[/]"
             )
             return
 
@@ -1170,7 +1172,9 @@ class Shell:
                 # Warn about remaining items in the local pending buffer.
                 # Clear after printing so finally doesn't duplicate.
                 for msg in pending:
-                    console.print(f"[{_get_tui_tokens().warning}]Queued message dropped: {msg.command}[/]")
+                    console.print(
+                        f"[{_get_tui_tokens().warning}]Queued message dropped: {msg.command}[/]"
+                    )
                 pending.clear()
             return True
         except LLMNotSet:
@@ -1193,7 +1197,8 @@ class Shell:
                 )
             elif isinstance(e, APIStatusError) and e.status_code == 402:
                 console.print(
-                    f"[{_t.error}]Membership expired, please renew your plan[/]\n[dim]Server: {e}[/dim]"
+                    f"[{_t.error}]Membership expired, please renew your plan[/]\n"
+                    f"[dim]Server: {e}[/dim]"
                 )
             elif isinstance(e, APIStatusError) and e.status_code == 403:
                 console.print(
@@ -1314,7 +1319,9 @@ class Shell:
             if captured_view is not None:
                 all_lost.extend(captured_view.drain_queued_messages())
             for msg in all_lost:
-                console.print(f"[{_get_tui_tokens().warning}]Queued message dropped: {msg.command}[/]")
+                console.print(
+                    f"[{_get_tui_tokens().warning}]Queued message dropped: {msg.command}[/]"
+                )
             self._maybe_present_pending_approvals()
             remove_sigint()
         return False

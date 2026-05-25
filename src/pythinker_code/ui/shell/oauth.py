@@ -53,13 +53,13 @@ from pythinker_code.auth.openrouter import (
 )
 from pythinker_code.cli import Reload
 from pythinker_code.ui.shell.console import console
-from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
 from pythinker_code.ui.shell.selectors.oauth import (
     OAuthProviderEntry,
     OAuthProviderStatus,
     run_oauth_selector,
 )
 from pythinker_code.ui.shell.slash import ensure_pythinker_soul, registry
+from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
 
 if TYPE_CHECKING:
     from pythinker_code.soul.pythinkersoul import PythinkerSoul
@@ -81,6 +81,7 @@ async def _render_oauth_events(events: AsyncIterator[OAuthEvent]) -> bool:
                 status.stop()
                 status = None
             from rich.style import Style as _RStyle
+
             match event.type:
                 case "error":
                     _style: _RStyle | None = _RStyle(color=_t.error)

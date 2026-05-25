@@ -19,7 +19,8 @@ from pythinker_code.ui.shell.keyboard import KeyEvent
 from pythinker_code.ui.shell.keymap import key_text
 from pythinker_code.ui.shell.spacing import blank_row
 from pythinker_code.ui.shell.visualize._dialog_shell import DialogOption, render_dialog
-from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens, tui_rich_style
+from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
+from pythinker_code.ui.theme import tui_rich_style
 from pythinker_code.utils.rich.diff_render import (
     collect_diff_hunks,
     render_diff_panel,
@@ -251,7 +252,9 @@ class ApprovalRequestPanel:
                         )
                     )
                 elif i == self.selected_index:
-                    lines.append(Text(f"\u2192 [{num}] {option_text}", style=tui_rich_style("accent")))
+                    lines.append(
+                        Text(f"\u2192 [{num}] {option_text}", style=tui_rich_style("accent"))
+                    )
                 else:
                     lines.append(Text(f"  [{num}] {option_text}", style=tui_rich_style("muted")))
             dialog_options: list[DialogOption] = []
@@ -309,10 +312,17 @@ class ApprovalRequestPanel:
             else:
                 assert self.request.agent_id is not None
                 subagent_text = self.request.agent_id
-            lines.append(Text(f"Subagent: {_safe_display_text(subagent_text)}", style=tui_rich_style("muted")))
+            lines.append(
+                Text(
+                    f"Subagent: {_safe_display_text(subagent_text)}", style=tui_rich_style("muted")
+                )
+            )
         if self.request.source_description:
             lines.append(
-                Text(f"Task: {_safe_display_text(self.request.source_description)}", style=tui_rich_style("muted"))
+                Text(
+                    f"Task: {_safe_display_text(self.request.source_description)}",
+                    style=tui_rich_style("muted"),
+                )
             )
         return lines
 
@@ -337,6 +347,7 @@ def show_approval_in_pager(panel: ApprovalRequestPanel) -> None:
     """Show the full approval request content in a pager."""
     with console.screen(), console.pager(styles=True):
         from pythinker_code.ui.theme import get_tui_tokens
+
         _tokens = get_tui_tokens()
         console.print(
             Text.from_markup(

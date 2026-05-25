@@ -10,7 +10,6 @@ from pythinker_code.config import LLMProvider
 from pythinker_code.soul.pythinkersoul import PythinkerSoul
 from pythinker_code.ui.shell.console import console
 from pythinker_code.ui.shell.slash import registry
-from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
 from pythinker_code.ui.shell.usage_adapters import ADAPTERS
 from pythinker_code.ui.shell.usage_adapters.base import UsageAdapter, UsageReport, UsageRow
 from pythinker_code.ui.shell.usage_adapters.pythinker import to_int as _to_int
@@ -26,6 +25,7 @@ from pythinker_code.ui.shell.usage_render import (
 from pythinker_code.ui.shell.usage_render import (
     remaining_quota as _remaining_quota,
 )
+from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
 from pythinker_code.usage_ratelimit_cache import get_cache
 from pythinker_code.utils.datetime import format_duration
 

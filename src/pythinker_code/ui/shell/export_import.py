@@ -115,6 +115,7 @@ async def import_context(app: Shell, args: str):
     )
     if source_desc.startswith("file") and is_sensitive_file(Path(target).name):
         console.print(
-            f"[{_t.warning}]Warning: This file may contain secrets (API keys, tokens, credentials). "
-            f"The content is now part of your session context.[/]"
+            f"[{_t.warning}]Warning: This file may contain secrets "
+            "(API keys, tokens, credentials). "
+            "The content is now part of your session context.[/]"
         )

@@ -216,7 +216,9 @@ def render_display_blocks(
                         render_worklog_card(
                             title,
                             Markdown(text, style=style),
-                            border_style=tui_rich_style("error") if is_error else tui_rich_style("dim"),
+                            border_style=tui_rich_style("error")
+                            if is_error
+                            else tui_rich_style("dim"),
                         )
                     )
                 else:
@@ -234,7 +236,9 @@ def render_display_blocks(
                     case _:
                         marker = "·"
                 lines.append(f"{marker} {todo.title}")
-            rendered.append(render_worklog_card("Todos", Text("\n".join(lines), style=tui_rich_style("muted"))))
+            rendered.append(
+                render_worklog_card("Todos", Text("\n".join(lines), style=tui_rich_style("muted")))
+            )
             idx += 1
             continue
         if isinstance(block, BackgroundTaskDisplayBlock):

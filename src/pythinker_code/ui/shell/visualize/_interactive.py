@@ -21,7 +21,6 @@ from rich.console import Group, RenderableType
 from rich.text import Text
 
 from pythinker_code.ui.shell.console import console, render_to_ansi
-from pythinker_code.ui.theme import tui_rich_style
 from pythinker_code.ui.shell.echo import render_user_echo_text
 from pythinker_code.ui.shell.keyboard import KeyEvent
 from pythinker_code.ui.shell.prompt import (
@@ -35,6 +34,7 @@ from pythinker_code.ui.shell.visualize._question_panel import (
     QuestionPromptDelegate,
     QuestionRequestPanel,
 )
+from pythinker_code.ui.theme import tui_rich_style
 from pythinker_code.utils.aioqueue import QueueShutDown
 from pythinker_code.wire import WireUISide
 from pythinker_code.wire.types import (

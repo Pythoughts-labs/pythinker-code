@@ -13,7 +13,6 @@ from rich.text import Text
 
 from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
 from pythinker_code.ui.shell.render_constants import expand_hint
-from pythinker_code.ui.theme import tui_rich_style
 from pythinker_code.ui.shell.tool_renderers import (
     ToolRenderContext,
     ToolRenderDefinition,
@@ -25,6 +24,7 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     running_spinner,
     tool_call_header,
 )
+from pythinker_code.ui.theme import tui_rich_style
 
 _GENERIC_TOOL_NAME = "__generic__"
 """Sentinel name used to register the fallback. Tools without their own

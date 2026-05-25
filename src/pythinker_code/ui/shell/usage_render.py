@@ -23,7 +23,9 @@ def _build_usage_panel(
     rows = ([summary] if summary else []) + limits
     if not rows and not notes:
         return Panel(
-            Text("No usage data", style=tui_rich_style("muted")), title="API Usage", border_style=tui_rich_style("border_muted")
+            Text("No usage data", style=tui_rich_style("muted")),
+            title="API Usage",
+            border_style=tui_rich_style("border_muted"),
         )
 
     label_width = max((len(r.label) for r in rows), default=6)

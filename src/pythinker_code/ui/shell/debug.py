@@ -7,6 +7,7 @@ from pythinker_core.message import Message
 from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.rule import Rule
+from rich.style import Style
 from rich.syntax import Syntax
 from rich.text import Text
 
@@ -52,19 +53,25 @@ def _format_content_part(part: ContentPart) -> Text | Panel | Group:
 
         case ImageURLPart(image_url=img):
             url_display = img.url[:80] + "..." if len(img.url) > 80 else img.url
-            return Text(f"[Image] {url_display}", style="blue")  # brand-exception: dev diagnostic media label
+            # brand-exception: dev diagnostic media label
+            return Text(f"[Image] {url_display}", style="blue")
 
         case AudioURLPart(audio_url=audio):
             url_display = audio.url[:80] + "..." if len(audio.url) > 80 else audio.url
             id_text = f" (id: {audio.id})" if audio.id else ""
-            return Text(f"[Audio{id_text}] {url_display}", style="blue")  # brand-exception: dev diagnostic media label
+            # brand-exception: dev diagnostic media label
+            return Text(f"[Audio{id_text}] {url_display}", style="blue")
 
         case VideoURLPart(video_url=video):
             url_display = video.url[:80] + "..." if len(video.url) > 80 else video.url
-            return Text(f"[Video] {url_display}", style="blue")  # brand-exception: dev diagnostic media label
+            # brand-exception: dev diagnostic media label
+            return Text(f"[Video] {url_display}", style="blue")
 
         case _:
-            return Text(f"[Unknown content type: {type(part).__name__}]", style=tui_rich_style("error"))
+            return Text(
+                f"[Unknown content type: {type(part).__name__}]",
+                style=tui_rich_style("error"),
+            )
 
 
 def _format_tool_call(tool_call: ToolCall) -> Panel:
@@ -77,7 +84,10 @@ def _format_tool_call(tool_call: ToolCall) -> Panel:
         args_syntax = Text(args, style=tui_rich_style("error"))
 
     content = Group(
-        Text(f"Function: {tool_call.function.name}", style="bold cyan"),
+        Text(
+            f"Function: {tool_call.function.name}",
+            style=tui_rich_style("info") + Style(bold=True),
+        ),
         Text(f"Call ID: {tool_call.id}", style="dim"),
         Text("Arguments:", style="bold"),
         args_syntax,

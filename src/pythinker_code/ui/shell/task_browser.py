@@ -18,7 +18,8 @@ from rich.text import Text
 from pythinker_code.background import TaskView, is_terminal_status
 from pythinker_code.soul.pythinkersoul import PythinkerSoul
 from pythinker_code.ui.shell.console import console
-from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens, tui_rich_style
+from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
+from pythinker_code.ui.theme import tui_rich_style
 from pythinker_code.utils.datetime import format_duration, format_relative_time
 
 TaskBrowserFilter = Literal["all", "active"]

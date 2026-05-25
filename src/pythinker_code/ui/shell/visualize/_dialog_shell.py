@@ -11,7 +11,7 @@ from rich.text import Text
 
 from pythinker_code.ui.shell.design_system import dialog_title
 from pythinker_code.ui.shell.spacing import DIALOG_PANEL_PADDING, blank_row
-from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens, tui_rich_style
+from pythinker_code.ui.theme import tui_rich_style
 
 DialogKind = Literal["approval", "question", "warning", "info"]
 
@@ -29,7 +29,11 @@ def _render_option(option: DialogOption) -> Text:
 
     prefix = "→" if option.selected else " "
     key = f"[{option.key}] " if option.key else ""
-    style = tui_rich_style("accent") + _RStyle(bold=True) if option.selected else tui_rich_style("muted")
+    style = (
+        tui_rich_style("accent") + _RStyle(bold=True)
+        if option.selected
+        else tui_rich_style("muted")
+    )
     text = Text(f"{prefix} {key}{option.label}", style=style)
     if option.description:
         text.append(f"  {option.description}", style="dim")

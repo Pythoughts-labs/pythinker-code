@@ -531,7 +531,9 @@ async def _do_update(*, print: bool, check_only: bool) -> UpdateResult:
             )
             return UpdateResult.UPDATE_AVAILABLE
         if native_result is UpdateResult.FAILED:
-            _print(f"[{_t.error}]Native update failed. Download manually from the releases page.[/]")
+            _print(
+                f"[{_t.error}]Native update failed. Download manually from the releases page.[/]"
+            )
             return UpdateResult.FAILED
         if native_result is UpdateResult.UPDATED:
             _print(f"[{_t.success}]Updated successfully![/]")
