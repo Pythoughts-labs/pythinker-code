@@ -19,6 +19,7 @@ from pythinker_code.ui.shell.components.markdown import PythinkerMarkdown as Mar
 from pythinker_code.ui.shell.design_system import ShellTone, StatusName, shell_style, status_icon
 from pythinker_code.ui.shell.motion import reduced_motion_enabled
 from pythinker_code.ui.shell.spacing import WORKLOG_PANEL_PADDING
+from pythinker_code.ui.theme import tui_rich_style
 from pythinker_code.utils.rich.columns import BulletColumns
 from pythinker_code.utils.rich.diff_render import (
     collect_diff_hunks,
@@ -131,11 +132,11 @@ def render_worklog_entry(
     line.append(label, style="bold")
     if target:
         line.append(" ")
-        line.append(target, style="grey70")
+        line.append(target, style=tui_rich_style("muted"))
     line.append(" ")
     line.append(state.value, style=_STATE_STYLE[state])
     if detail:
-        line.append(" · ", style="grey50")
+        line.append(" · ", style=tui_rich_style("muted"))
         line.append(detail, style=_STATE_STYLE[state])
     if icon_renderable is not None:
         return BulletColumns(
@@ -209,13 +210,13 @@ def render_display_blocks(
             text = block.text.strip()
             if text:
                 title = "Error" if is_error else "Report"
-                style = "red" if is_error else "grey70"
+                style = tui_rich_style("error") if is_error else tui_rich_style("muted")
                 if "\n" in text or len(text) > 100:
                     rendered.append(
                         render_worklog_card(
                             title,
                             Markdown(text, style=style),
-                            border_style="red" if is_error else "grey39",
+                            border_style=tui_rich_style("error") if is_error else tui_rich_style("dim"),
                         )
                     )
                 else:
@@ -233,7 +234,7 @@ def render_display_blocks(
                     case _:
                         marker = "·"
                 lines.append(f"{marker} {todo.title}")
-            rendered.append(render_worklog_card("Todos", Text("\n".join(lines), style="grey70")))
+            rendered.append(render_worklog_card("Todos", Text("\n".join(lines), style=tui_rich_style("muted"))))
             idx += 1
             continue
         if isinstance(block, BackgroundTaskDisplayBlock):
@@ -242,7 +243,7 @@ def render_display_blocks(
                     "Background task",
                     Text(
                         f"{block.task_id} [{block.status}] {block.kind}: {block.description}",
-                        style="grey70",
+                        style=tui_rich_style("muted"),
                     ),
                 )
             )

@@ -21,6 +21,7 @@ from rich.console import Group, RenderableType
 from rich.text import Text
 
 from pythinker_code.ui.shell.console import console, render_to_ansi
+from pythinker_code.ui.theme import tui_rich_style
 from pythinker_code.ui.shell.echo import render_user_echo_text
 from pythinker_code.ui.shell.keyboard import KeyEvent
 from pythinker_code.ui.shell.prompt import (
@@ -404,8 +405,10 @@ class _PromptLiveView(_LiveView):
             return ANSI("")
 
         blocks: list[RenderableType] = []
+        from rich.style import Style as _RStyle
+
         for qi in self._queued_messages:
-            blocks.append(Text(f"❯ {qi.command}", style="dim cyan"))
+            blocks.append(Text(f"❯ {qi.command}", style=tui_rich_style("info") + _RStyle(dim=True)))
         blocks.append(Text("↑ to edit · ctrl-s to send immediately", style="dim"))
 
         body = render_to_ansi(Group(*blocks), columns=columns).rstrip("\n")

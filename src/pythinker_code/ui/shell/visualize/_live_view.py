@@ -113,7 +113,7 @@ def _format_step_retry(retry: StepRetry) -> Text:
     wait = format_elapsed(retry.wait_s)
     return Text(
         f"Retrying after {reason} · attempt {retry.next_attempt}/{retry.max_attempts} · {wait}",
-        style="grey50 italic",
+        style=tui_rich_style("muted") + Style(italic=True),
     )
 
 
@@ -567,8 +567,8 @@ class _LiveView:
                 glyph = (
                     "●" if reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0 else " "
                 )
-                line = Text(f"{glyph} ", style=Style(color="grey50"))
-                line.append("Connecting MCP servers...", style="grey50")
+                line = Text(f"{glyph} ", style=tui_rich_style("muted"))
+                line.append("Connecting MCP servers...", style=tui_rich_style("muted"))
                 self._mcp_loading_spinner = line
                 self.refresh_soon()
             case MCPLoadingEnd():
@@ -580,8 +580,8 @@ class _LiveView:
                 glyph = (
                     "●" if reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0 else " "
                 )
-                line = Text(f"{glyph} ", style=Style(color="grey50"))
-                line.append(f"Side question... {truncated}", style="grey50")
+                line = Text(f"{glyph} ", style=tui_rich_style("muted"))
+                line.append(f"Side question... {truncated}", style=tui_rich_style("muted"))
                 self._btw_spinner = line
                 self.refresh_soon()
             case BtwEnd(response=response, error=error):
@@ -594,16 +594,16 @@ class _LiveView:
                         Panel(
                             Markdown(response),
                             title=f"[dim]btw: {rich_escape(truncated_q)}[/dim]",
-                            border_style="grey50",
+                            border_style=tui_rich_style("border_muted"),
                             padding=(0, 1),
                         )
                     )
                 elif error:
                     console.print(
                         Panel(
-                            Text(error, style="red"),
+                            Text(error, style=tui_rich_style("error")),
                             title="[dim]btw (error)[/dim]",
-                            border_style="red",
+                            border_style=tui_rich_style("error"),
                             padding=(0, 1),
                         )
                     )
@@ -964,7 +964,7 @@ class _LiveView:
             "Plan",
             plan_body,
             subtitle=msg.file_path,
-            border_style="cyan",
+            border_style=tui_rich_style("border"),
         )
         console.print(panel)
 

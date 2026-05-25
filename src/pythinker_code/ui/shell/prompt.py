@@ -65,7 +65,7 @@ from pythinker_code.ui.shell.placeholders import (
 )
 from pythinker_code.ui.shell.spacing import ensure_prompt_newline
 from pythinker_code.ui.shell.spinner_words import spinner_message
-from pythinker_code.ui.theme import get_prompt_style, get_toolbar_colors
+from pythinker_code.ui.theme import get_prompt_style, get_toolbar_colors, get_tui_tokens as _get_tui_tokens
 from pythinker_code.ui.tui_config import is_card_style
 from pythinker_code.utils.clipboard import (
     grab_media_from_clipboard,
@@ -2598,7 +2598,7 @@ class CustomPromptSession:
         if result.images:
             if "image_in" not in self._model_capabilities:
                 console.print(
-                    "[yellow]Image input is not supported by the selected LLM model[/yellow]"
+                    f"[{_get_tui_tokens().warning}]Image input is not supported by the selected LLM model[/]"
                 )
             else:
                 for image in result.images:

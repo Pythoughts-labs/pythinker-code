@@ -13,6 +13,7 @@ from rich.text import Text
 
 from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
 from pythinker_code.ui.shell.render_constants import expand_hint
+from pythinker_code.ui.theme import tui_rich_style
 from pythinker_code.ui.shell.tool_renderers import (
     ToolRenderContext,
     ToolRenderDefinition,
@@ -48,7 +49,7 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType | None:
         body = json.dumps(ctx.args, indent=2, ensure_ascii=False, sort_keys=True)
     except (TypeError, ValueError):
         body = repr(ctx.args)
-    rendered = Group(header, Text(body, style="grey50"))
+    rendered = Group(header, Text(body, style=tui_rich_style("muted")))
     return running_spinner(
         rendered, execution_started=ctx.execution_started, has_result=ctx.has_result
     )

@@ -9,7 +9,7 @@ from rich.text import Text
 
 from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
 from pythinker_code.ui.shell.motion import reduced_motion_enabled
-from pythinker_code.ui.theme import get_mcp_prompt_colors
+from pythinker_code.ui.theme import get_mcp_prompt_colors, tui_rich_style
 from pythinker_code.utils.rich.columns import BulletColumns
 from pythinker_code.wire.types import MCPServerSnapshot, MCPStatusSnapshot
 
@@ -39,17 +39,17 @@ def render_mcp_console(snapshot: MCPStatusSnapshot) -> RenderableType:
         if server.status == "unauthorized":
             server_line.append(
                 f" (unauthorized - run: pythinker mcp auth {server_name})",
-                style="grey50",
+                style=tui_rich_style("muted"),
             )
         elif server.status != "connected":
-            server_line.append(f" ({server_status})", style="grey50")
+            server_line.append(f" ({server_status})", style=tui_rich_style("muted"))
 
         lines: list[RenderableType] = [server_line]
         for tool_name in server.tools:
             lines.append(
                 BulletColumns(
-                    Text(_safe_text(tool_name), style="grey50"),
-                    bullet_style="grey50",
+                    Text(_safe_text(tool_name), style=tui_rich_style("muted")),
+                    bullet_style=tui_rich_style("muted"),
                 )
             )
         renderables.append(BulletColumns(Group(*lines), bullet_style=color))
