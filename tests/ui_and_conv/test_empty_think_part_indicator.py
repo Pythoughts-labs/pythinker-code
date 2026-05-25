@@ -99,12 +99,12 @@ def test_empty_think_then_real_think_no_artifact(monkeypatch):
     assert view._current_content_block is not None
     assert view._current_content_block.is_think is True
     assert view._current_content_block.raw_text == "Let me analyze this..."
-    # No spurious "Thought for..." lines should have been printed
+    # No spurious thinking trace lines should have been printed
     assert len(printed) == 0
 
 
 def test_empty_think_then_text_no_spurious_thought_line(monkeypatch):
-    """Empty ThinkPart followed by TextPart should not print 'Thought for 0s'."""
+    """Empty ThinkPart followed by TextPart should not print a thinking trace."""
     from pythinker_code.ui.shell.console import console as shell_console
 
     view = _LiveView(StatusUpdate())
@@ -121,7 +121,7 @@ def test_empty_think_then_text_no_spurious_thought_line(monkeypatch):
     assert view._current_content_block.raw_text == "Hello!"
     for item in printed:
         rendered = _render(item)
-        assert "Thought for" not in rendered
+        assert "Crunched for" not in rendered
 
 
 def test_step_retry_clears_partial_content_and_updates_live_status(monkeypatch):

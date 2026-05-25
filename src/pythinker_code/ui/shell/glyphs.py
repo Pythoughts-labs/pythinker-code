@@ -22,10 +22,26 @@ SHAPE_FRAME_INTERVAL_S: Final = 0.45
 #: Static stand-in used when motion is disabled.
 REDUCED_MOTION_GLYPH: Final = "●"
 
+#: Transcript row marker for assistant/tool-call lines.
+TRANSCRIPT_ASSISTANT_MARKER: Final = "⏺"
+#: Transcript prompt marker for submitted user input.
+TRANSCRIPT_PROMPT_MARKER: Final = "❯"
+#: Transcript marker for completed thinking/status timing rows.
+TRANSCRIPT_STATUS_MARKER: Final = "✻"
+#: Transcript marker for active task/status rows.
+TRANSCRIPT_ACTIVE_MARKER: Final = "✶"
+#: Transcript gutter marker for tool results.
+TRANSCRIPT_TOOL_GUTTER: Final = "⎿"
+
 __all__ = [
     "SPINNER_FRAMES",
     "SHAPE_FRAMES",
     "SPINNER_FRAME_INTERVAL_S",
     "SHAPE_FRAME_INTERVAL_S",
     "REDUCED_MOTION_GLYPH",
+    "TRANSCRIPT_ASSISTANT_MARKER",
+    "TRANSCRIPT_PROMPT_MARKER",
+    "TRANSCRIPT_STATUS_MARKER",
+    "TRANSCRIPT_ACTIVE_MARKER",
+    "TRANSCRIPT_TOOL_GUTTER",
 ]

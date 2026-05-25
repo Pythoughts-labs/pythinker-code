@@ -135,7 +135,7 @@ def test_working_indicator_pins_todos_under_spinner(monkeypatch):
     now = 1060.0
     rendered = _render(view._working_indicator())
 
-    assert "✽ Explore project context — blogs page and image components… (1m 0s)" in rendered
+    assert "✶ Explore project context — blogs page and image components… (1m 0s)" in rendered
     assert "⎿  ✔ Gather requirements" in rendered
     assert "✔ Inspect UI" in rendered
     assert "◼ Explore project context" in rendered

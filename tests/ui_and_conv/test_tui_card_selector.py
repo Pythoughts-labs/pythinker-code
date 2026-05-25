@@ -171,7 +171,7 @@ def test_format_item_line_marks_selected_with_arrow():
         width=40,
     )
     flat = _plain(line)
-    assert "›" in flat
+    assert "❯" in flat
     assert "alpha" in flat
     assert "first" in flat
 

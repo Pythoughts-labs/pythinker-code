@@ -58,6 +58,7 @@ from pythinker_code.share import get_share_dir
 from pythinker_code.soul import StatusSnapshot, format_context_status
 from pythinker_code.ui.shell import placeholders as prompt_placeholders
 from pythinker_code.ui.shell.console import console
+from pythinker_code.ui.shell.glyphs import TRANSCRIPT_PROMPT_MARKER
 from pythinker_code.ui.shell.placeholders import (
     PromptPlaceholderManager,
     normalize_pasted_text,
@@ -82,7 +83,7 @@ CachedAttachment = prompt_placeholders.CachedAttachment
 _parse_attachment_kind = prompt_placeholders.parse_attachment_kind
 
 PROMPT_SYMBOL = "✨"
-PROMPT_SYMBOL_AGENT_INPUT = "›"
+PROMPT_SYMBOL_AGENT_INPUT = TRANSCRIPT_PROMPT_MARKER
 PROMPT_SYMBOL_SHELL = "$"
 PROMPT_SYMBOL_THINKING = "💫"
 PROMPT_SYMBOL_PLAN = "📋"
@@ -866,7 +867,7 @@ class SlashCommandMenuControl(UIControl):
             if is_current
             else "class:slash-completion-menu.marker"
         )
-        marker = "› " if is_current else "  "
+        marker = f"{TRANSCRIPT_PROMPT_MARKER} " if is_current else "  "
 
         # When a row is selected, use the row.current background for the
         # gap and trailing padding so the highlight reads as a contiguous bar
@@ -2092,7 +2093,7 @@ class CustomPromptSession:
         side_padding = _card_side_padding()
         if self._mode == PromptMode.SHELL:
             return side_padding + max(1, get_cwidth(f"{PROMPT_SYMBOL_SHELL} ") - 2)
-        # Agent mode: prompt prefix is "› " inside the compact input block.
+        # Agent mode: prompt prefix uses the transcript marker inside the compact input block.
         return side_padding + 1
 
     def _render_message(self) -> FormattedText:
@@ -2334,9 +2335,6 @@ class CustomPromptSession:
 
         if is_card_style():
             ensure_prompt_newline(fragments)
-            tc = get_toolbar_colors()
-            fragments.append((tc.separator, "─" * columns))
-            fragments.append(("", "\n"))
             fragments.append(("", _card_side_indent()))
         else:
             fragments.append(("", "\n"))

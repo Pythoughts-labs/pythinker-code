@@ -33,6 +33,7 @@ from prompt_toolkit.layout import HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
 
+from pythinker_code.ui.shell.glyphs import TRANSCRIPT_PROMPT_MARKER
 from pythinker_code.ui.theme import get_prompt_style
 
 __all__ = [
@@ -97,7 +98,7 @@ def _format_item_line[T](
     Reuses the same ``slash-completion-menu`` style classes as the prompt's
     completion menu so the visual treatment is consistent.
     """
-    marker = "› " if is_selected else "  "
+    marker = f"{TRANSCRIPT_PROMPT_MARKER} " if is_selected else "  "
     marker_style = (
         "class:slash-completion-menu.marker.current"
         if is_selected

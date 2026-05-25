@@ -325,7 +325,7 @@ class TestShowThinkingStream:
     where thinking content is rendered as a 6-line scrolling preview during
     streaming and committed to history as full markdown when the block ends.
     The default (``False``) keeps the compact 'Thinking ...' indicator and
-    one-line ``Thought for ...`` trace introduced in 1.32.
+    one-line ``✻ Crunched for ...`` trace introduced in 1.32.
     """
 
     def test_compact_mode_compose_returns_compact_text(self):
@@ -377,8 +377,8 @@ class TestShowThinkingStream:
         block.append("Some thought content")
         result = block.compose_final()
         assert isinstance(result, Text)
-        assert "Thought for" in result.plain
-        assert "tokens" in result.plain
+        assert result.plain.startswith("✻ Crunched for ")
+        assert "tokens" not in result.plain
         # Compact trace must not contain the raw reasoning content
         assert "thought content" not in result.plain
 

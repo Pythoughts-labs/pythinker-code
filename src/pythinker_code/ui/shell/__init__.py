@@ -1858,7 +1858,7 @@ def _print_welcome_info(name: str, info_items: list[WelcomeInfoItem]) -> None:
         for item in tips:
             tip_text = Text(item.value, style=item.level.value)
             tip_text.highlight_regex(r"/[A-Za-z][A-Za-z0-9_-]*", "yellow bold")
-            tips_table.add_row("  › ", tip_text)
+            tips_table.add_row("  • ", tip_text)
         rows.append(tips_table)
 
     version_title = Text.assemble(

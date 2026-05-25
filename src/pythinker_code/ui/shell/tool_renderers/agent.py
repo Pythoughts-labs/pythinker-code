@@ -22,23 +22,15 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     tool_call_header,
 )
 from pythinker_code.ui.theme import tui_rich_style
-from pythinker_code.utils.datetime import format_elapsed
 
 _TOOL_NAME = "Agent"
 _DEFAULT_COLLAPSED_LINES = 6
-_PROMPT_PREVIEW_CHARS = 80
 _BACKGROUND_ACTIVE_STATUSES = frozenset({"created", "starting", "running", "awaiting_approval"})
 
 
 def _subagent_loader(_ctx: ToolRenderContext) -> Text:
     """Return the pulsating solid-circle loader used for active subagent result rows."""
     return loading_marker(style_token="accent")
-
-
-def _truncate(text: str, max_chars: int) -> str:
-    if len(text) <= max_chars:
-        return text
-    return text[: max_chars - 1].rstrip() + "…"
 
 
 def _render_call(ctx: ToolRenderContext) -> RenderableType:
@@ -83,11 +75,7 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
             marker_style_token=secondary_token,
         )
 
-    preview_line = _truncate(prompt.split("\n", 1)[0], _PROMPT_PREVIEW_CHARS)
-    body = Text()
-    body.append("Prompt: ", style=tui_rich_style(secondary_token) + RichStyle(bold=True))
-    body.append(preview_line, style=tui_rich_style(secondary_token))
-    rendered = Group(header, *missing, body) if missing else Group(header, body)
+    rendered = Group(header, *missing) if missing else header
     return running_spinner(
         rendered,
         execution_started=ctx.execution_started,
@@ -125,28 +113,18 @@ def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> Rendera
         line.append(label, style=tui_rich_style("accent") + RichStyle(bold=True))
         return Group(line, fg("dim", f"status: {background_status}"))
 
-    icon = fg("error", "✘") if result.is_error else fg("success", "✔")
     body, remaining = format_lines_block(
         result.text,
         expanded=ctx.expanded,
         collapsed_max_lines=_DEFAULT_COLLAPSED_LINES,
         style_token="error" if result.is_error else "tool_output",
     )
-    head = Text()
-    head.append_text(icon)
-    head.append(" ")
-    head.append("Agent finished", style=tui_rich_style("thinking_text") + RichStyle(bold=True))
-    if ctx.elapsed_s is not None:
-        head.append(
-            f" · Crunched for {format_elapsed(ctx.elapsed_s)}",
-            style=tui_rich_style("thinking_text"),
-        )
     if not body.plain:
-        return head
+        return fg("error", "Agent failed") if result.is_error else None
     if remaining > 0:
         more = fg("muted", f"... ({remaining} more lines, ctrl+o to expand)")
-        return Group(head, body, more)
-    return Group(head, body)
+        return Group(body, more)
+    return body
 
 
 AGENT_RENDERER = ToolRenderDefinition(

@@ -30,6 +30,7 @@ from pythinker_code.tools.display import TodoDisplayBlock, TodoDisplayItem
 from pythinker_code.ui.shell.components.render_utils import cell_width, truncate_to_width
 from pythinker_code.ui.shell.console import console, current_console_width
 from pythinker_code.ui.shell.echo import render_user_echo
+from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ACTIVE_MARKER, TRANSCRIPT_TOOL_GUTTER
 from pythinker_code.ui.shell.keyboard import KeyboardListener, KeyEvent
 from pythinker_code.ui.shell.motion import (
     ActivitySnapshot,
@@ -529,7 +530,7 @@ class _LiveView:
         if self._latest_context_tokens:
             parts.append(f"↓ {format_token_count(self._latest_context_tokens)} tokens")
         metadata = f"({' · '.join(parts)})"
-        prefix = "✽ "
+        prefix = f"{TRANSCRIPT_ACTIVE_MARKER} "
         suffix = f" {metadata}"
         label_width = max(1, width - cell_width(prefix) - cell_width(suffix))
 
@@ -591,7 +592,7 @@ class _LiveView:
             icon = "◻"
             icon_token = "muted"
             title_style = tui_rich_style("tool_output")
-        prefix = "  ⎿  " if is_first else "     "
+        prefix = f"  {TRANSCRIPT_TOOL_GUTTER}  " if is_first else "     "
         title_budget = max(1, width - cell_width(prefix) - 2)
         title = truncate_to_width(todo.title.strip(), title_budget)
         row = Text(prefix, style=tui_rich_style("muted"))

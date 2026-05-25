@@ -10,6 +10,7 @@ from rich.console import Console, Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
+from pythinker_code.ui.shell.glyphs import TRANSCRIPT_TOOL_GUTTER
 from pythinker_code.ui.theme import tui_rich_style
 
 _ELLIPSIS = "…"
@@ -155,7 +156,7 @@ def render_message_response(renderable: RenderableType) -> RenderableType:
     table = Table.grid(padding=0)
     table.add_column(width=5, no_wrap=True)
     table.add_column(ratio=1)
-    table.add_row(Text("  ⎿  ", style=tui_rich_style("muted")), renderable)
+    table.add_row(Text(f"  {TRANSCRIPT_TOOL_GUTTER}  ", style=tui_rich_style("muted")), renderable)
     return Group(table)
 
 

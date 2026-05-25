@@ -173,7 +173,7 @@ def test_wrap_to_width_respects_max_lines():
 
 def test_slash_menu_preselects_first_item_when_index_unset(monkeypatch):
     """When the slash menu opens with `complete_index is None`, the first row
-    must render as visually highlighted (`›` marker, current style) and the
+    must render as visually highlighted (`❯` marker, current style) and the
     cursor must land on that row. This matches what Enter actually commits
     (the first completion) and what `_install_prompt_buffer_visibility`'s
     `on_completions_changed` handler sets `complete_index` to as soon as the
@@ -206,8 +206,8 @@ def test_slash_menu_preselects_first_item_when_index_unset(monkeypatch):
     assert content.line_count == len(completions)
     assert content.cursor_position.y == 0
     # First row is highlighted, second row is not.
-    assert "›" in rendered_lines[0]
-    assert "›" not in rendered_lines[1]
+    assert "❯" in rendered_lines[0]
+    assert "❯" not in rendered_lines[1]
     assert "Ctrl-O" in rendered_lines[0]
     assert rendered_lines[0].count("/editor") == 1
 

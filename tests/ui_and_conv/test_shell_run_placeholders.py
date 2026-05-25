@@ -152,7 +152,7 @@ async def test_shell_run_treats_hidden_slash_in_placeholder_as_regular_agent_inp
     assert _FakePromptSession.instances[0].prompt_calls == 2
     shell.run_soul_command.assert_awaited_once_with([TextPart(text="/quit\nstill send this")])
     shell._run_slash_command.assert_not_awaited()
-    assert printed == ["› [Pasted text #1 +3 lines]", "", "Bye!"]
+    assert printed == ["❯ [Pasted text #1 +3 lines]", "", "Bye!"]
 
 
 @pytest.mark.asyncio
@@ -221,7 +221,7 @@ async def test_shell_run_echoes_visible_skill_slash_with_placeholder_before_disp
     assert _FakePromptSession.instances[0].prompt_calls == 2
     shell.run_soul_command.assert_awaited_once_with("/skill:demo line1\nline2\nline3")
     shell._run_slash_command.assert_not_awaited()
-    assert printed == ["› /skill:demo [Pasted text #1 +3 lines]", "", "Bye!"]
+    assert printed == ["❯ /skill:demo [Pasted text #1 +3 lines]", "", "Bye!"]
 
 
 @pytest.mark.asyncio
@@ -256,7 +256,7 @@ async def test_shell_run_echoes_visible_flow_slash_with_placeholder_before_dispa
     assert _FakePromptSession.instances[0].prompt_calls == 2
     shell.run_soul_command.assert_awaited_once_with("/flow:demo line1\nline2\nline3")
     shell._run_slash_command.assert_not_awaited()
-    assert printed == ["› /flow:demo [Pasted text #1 +3 lines]", "", "Bye!"]
+    assert printed == ["❯ /flow:demo [Pasted text #1 +3 lines]", "", "Bye!"]
 
 
 @pytest.mark.asyncio
@@ -284,7 +284,7 @@ async def test_shell_run_echoes_unregistered_skill_slash_before_unknown_dispatch
     assert result is True
     shell.run_soul_command.assert_not_awaited()
     shell._run_slash_command.assert_awaited_once()
-    assert printed == ["› /skill:not-found fix login", "Bye!"]
+    assert printed == ["❯ /skill:not-found fix login", "Bye!"]
 
 
 @pytest.mark.asyncio
@@ -312,7 +312,7 @@ async def test_shell_run_echoes_unregistered_flow_slash_before_unknown_dispatch(
     assert result is True
     shell.run_soul_command.assert_not_awaited()
     shell._run_slash_command.assert_awaited_once()
-    assert printed == ["› /flow:not-found run it", "Bye!"]
+    assert printed == ["❯ /flow:not-found run it", "Bye!"]
 
 
 @pytest.mark.asyncio

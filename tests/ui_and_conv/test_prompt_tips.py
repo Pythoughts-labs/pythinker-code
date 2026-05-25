@@ -783,7 +783,7 @@ def test_running_prompt_uses_shared_toolbar_and_codex_input_layout(monkeypatch: 
 
     rendered_message = prompt_session._render_agent_prompt_message()
     plain_message = "".join(fragment[1] for fragment in rendered_message)
-    assert plain_message == f"live view ({width})\n\n› "
+    assert plain_message == f"live view ({width})\n\n❯ "
     assert "─" not in plain_message
     assert "input" not in plain_message
 
@@ -827,7 +827,7 @@ def test_running_prompt_preamble_is_clipped_on_short_terminals(monkeypatch: Any)
     assert "output clipped to fit terminal" in plain_message
     assert "Ctrl+E expand" not in plain_message
     assert len(plain_message.splitlines()) <= rows - 3
-    assert plain_message.endswith(f"\n{'─' * width}\n  › ")
+    assert plain_message.endswith("\n  ❯ ")
 
 
 def test_clipped_agent_status_preserves_thinking_indicator(monkeypatch: Any) -> None:
@@ -871,7 +871,7 @@ def test_clipped_agent_status_preserves_thinking_indicator(monkeypatch: Any) -> 
         "Prestigitating…"
     )
     assert len(plain_message.splitlines()) <= rows - 3
-    assert plain_message.endswith(f"\n{'─' * width}\n  › ")
+    assert plain_message.endswith("\n  ❯ ")
 
 
 def test_modal_prompt_hides_normal_separator_and_prompt_label(monkeypatch) -> None:
@@ -1141,7 +1141,7 @@ def test_slash_menu_highlights_typed_command_prefix(monkeypatch: Any) -> None:
     content = SlashCommandMenuControl(left_padding=lambda: 0).create_content(width=60, height=5)
     line = content.get_line(0)
 
-    assert "".join(text for _, text, *_ in line).lstrip().startswith("› /model")
+    assert "".join(text for _, text, *_ in line).lstrip().startswith("❯ /model")
     highlighted = [(style, text) for style, text, *_ in line if "command.match" in style]
     assert highlighted[:2] == [
         ("class:slash-completion-menu.command.match.current", "m"),
@@ -1234,7 +1234,7 @@ def test_idle_agent_prompt_uses_same_codex_input_layout(monkeypatch: Any) -> Non
 
     rendered_message = prompt_session._render_agent_prompt_message()
     plain_message = "".join(fragment[1] for fragment in rendered_message)
-    assert plain_message == f"{'─' * width}\n  › "
+    assert plain_message == "  ❯ "
     assert "input" not in plain_message
 
 

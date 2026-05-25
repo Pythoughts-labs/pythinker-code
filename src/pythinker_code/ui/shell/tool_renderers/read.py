@@ -7,10 +7,9 @@ the entire file body into the terminal transcript.
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
-from rich.console import RenderableType
+from rich.console import Group, RenderableType
 from rich.text import Text
 
 from pythinker_code.ui.shell.tool_renderers import (
@@ -21,6 +20,7 @@ from pythinker_code.ui.shell.tool_renderers import (
 from pythinker_code.ui.shell.tool_renderers._render_utils import (
     as_str,
     fg,
+    format_numbered_lines_block,
     invalid_arg,
     missing_required_arg,
     running_spinner,
@@ -29,7 +29,6 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
 )
 
 _TOOL_NAME = "ReadFile"
-_READ_COUNT_RE = re.compile(r"(\d+)\s+lines?\s+read", re.IGNORECASE)
 
 
 def _format_line_range(args: dict[str, Any]) -> Text | None:
@@ -81,19 +80,6 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
     return running_spinner(line, execution_started=ctx.execution_started, has_result=ctx.has_result)
 
 
-def _read_count(result: ToolResultPayload) -> int:
-    message = result.details.get("message")
-    if isinstance(message, str):
-        match = _READ_COUNT_RE.search(message)
-        if match:
-            return int(match.group(1))
-    output = result.details.get("output")
-    text = output if isinstance(output, str) else result.text
-    if not text:
-        return 0
-    return text.count("\n") + (0 if text.endswith("\n") else 1)
-
-
 def _friendly_error(text: str) -> str:
     lowered = text.lower()
     if "does not exist" in lowered or "file not found" in lowered:
@@ -116,11 +102,32 @@ def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> Rendera
 
     message = result.details.get("message")
     if isinstance(message, str) and message.startswith("Directory listing for `"):
-        return fg("tool_output", "Listed directory")
+        return fg("tool_output", "Listed 1 directory")
 
-    line_count = _read_count(result)
-    noun = "line" if line_count == 1 else "lines"
-    return fg("tool_output", f"Read {line_count} {noun}")
+    output = result.details.get("output")
+    output_text = output if isinstance(output, str) and output else result.text
+    if not output_text:
+        return fg("tool_output", "Read 1 file")
+
+    if not ctx.expanded:
+        return fg("tool_output", "Read 1 file (ctrl+o to expand)")
+
+    start_line = 1
+    offset = ctx.args.get("line_offset")
+    if isinstance(offset, int) and offset > 0:
+        start_line = offset
+    body, _remaining, _total = format_numbered_lines_block(
+        output_text,
+        expanded=True,
+        collapsed_max_lines=0,
+        start_line=start_line,
+        style_token="tool_output",
+    )
+    return (
+        Group(fg("tool_output", "Read 1 file"), body)
+        if body.plain
+        else fg("tool_output", "Read 1 file")
+    )
 
 
 READ_RENDERER = ToolRenderDefinition(

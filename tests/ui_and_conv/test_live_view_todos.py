@@ -72,7 +72,7 @@ def test_todo_update_pins_current_task_under_activity_line(monkeypatch) -> None:
     now = 1460.0
     rendered = _render(view._working_indicator())
 
-    assert "✽ Implement pinned todos… (7m 40s · ↓ 10k tokens)" in rendered
+    assert "✶ Implement pinned todos… (7m 40s · ↓ 10k tokens)" in rendered
     assert "⎿  ◼ Implement pinned todos" in rendered
     assert "✔ Explore UI" in rendered
     assert "✔ Write tests" in rendered

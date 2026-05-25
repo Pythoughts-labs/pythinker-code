@@ -234,6 +234,8 @@ def render_bash_result_output(state: BashExecutionState, *, width: int = 100) ->
     output = _result_output_block(display, status=state.status)
     if output is not None:
         children.append(output)
+    elif state.status == "complete":
+        children.append(Text("Done", style=tui_rich_style("muted")))
     elif state.status not in ("pending", "running"):
         children.append(Text("(No output)", style=tui_rich_style("muted")))
     children.extend(_bash_footer_lines(state, hidden=hidden, total_output_lines=total_output_lines))

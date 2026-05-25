@@ -98,7 +98,7 @@ def change_summary_text(added: int, removed: int) -> Text:
         text.append(f" line{'s' if added != 1 else ''}")
         parts.append(text)
     if removed:
-        text = Text("Removed ")
+        text = Text("removed ")
         text.append(str(removed), style="bold")
         text.append(f" line{'s' if removed != 1 else ''}")
         parts.append(text)

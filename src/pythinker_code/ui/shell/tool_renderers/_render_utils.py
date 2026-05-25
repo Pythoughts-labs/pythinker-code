@@ -14,6 +14,7 @@ from rich.table import Table
 from rich.text import Text
 
 from pythinker_code.ui.shell.components import sanitize_ansi
+from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ASSISTANT_MARKER
 from pythinker_code.ui.shell.motion import reduced_motion_enabled
 from pythinker_code.ui.shell.render_constants import LISTING_LINE_NUMBER_MIN_WIDTH
 from pythinker_code.ui.theme import tui_rich_style
@@ -76,11 +77,11 @@ def tool_call_header(
 ) -> Text:
     """Return the Blackbox/Claude-style tool-use row.
 
-    Shape: ``● Tool(summary)``.  The surrounding ``ToolExecutionComponent``
+    Shape: ``⏺ Tool(summary)``.  The surrounding ``ToolExecutionComponent``
     owns result gutters; individual renderers should keep this row compact.
     """
     header = Text()
-    header.append("● ", style=tui_rich_style(style_token))
+    header.append(f"{TRANSCRIPT_ASSISTANT_MARKER} ", style=tui_rich_style(style_token))
     header.append_text(tool_title(name))
     if summary is not None:
         paren_style = tui_rich_style(paren_style_token)
@@ -125,9 +126,9 @@ def running_spinner(
 ) -> RenderableType:
     """Wrap *renderable* in the animated tool marker while executing.
 
-    Tool-use headers already render a static ``●`` for completed/error states.
+    Tool-use headers already render a static transcript marker for completed/error states.
     While a tool is running, that static marker would sit immediately after the
-    animated marker (``• ● Bash(...)``). Strip the static header marker in the
+    animated marker. Strip the static header marker in the
     running state and place the content in a two-column grid so wrapped command
     text remains indented under the tool text instead of jumping to column 0.
     """
@@ -152,7 +153,8 @@ def _strip_running_static_marker(renderable: RenderableType) -> RenderableType:
     or ``Padding`` around the header and follow-up rows.
     """
     if isinstance(renderable, Text):
-        if not renderable.plain.startswith(("● ", "• ")):
+        marker_prefixes = (f"{TRANSCRIPT_ASSISTANT_MARKER} ", "● ", "• ")
+        if not renderable.plain.startswith(marker_prefixes):
             return renderable
         parts = renderable.divide([2])
         return parts[1] if len(parts) > 1 else Text("")

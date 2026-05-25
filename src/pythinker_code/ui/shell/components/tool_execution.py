@@ -29,6 +29,7 @@ from rich.text import Text
 
 from pythinker_code.ui.shell.components.key_hints import key_hint
 from pythinker_code.ui.shell.components.render_utils import render_message_response
+from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ASSISTANT_MARKER
 from pythinker_code.ui.shell.spacing import TINTED_CARD_PADDING
 from pythinker_code.ui.shell.tool_renderers import (
     ToolRenderContext,
@@ -252,7 +253,7 @@ class ToolExecutionComponent:
     def _call_fallback(self) -> RenderableType:
         label = self._definition.label or self._state.tool_name
         if self._status == ToolExecutionStatus.SUCCESS:
-            glyph = "✔ "
+            glyph = f"{TRANSCRIPT_ASSISTANT_MARKER} "
             glyph_style = tui_rich_style("success") + Style(bold=True)
         elif self._status in (ToolExecutionStatus.ERROR, ToolExecutionStatus.DENIED):
             glyph = "✘ "
@@ -261,7 +262,7 @@ class ToolExecutionComponent:
             glyph = "● "
             glyph_style = tui_rich_style("warning") + Style(bold=True)
         else:
-            glyph = "● "
+            glyph = f"{TRANSCRIPT_ASSISTANT_MARKER} "
             glyph_style = tui_rich_style("muted") + Style(bold=True)
         header = Text()
         header.append(glyph, style=glyph_style)

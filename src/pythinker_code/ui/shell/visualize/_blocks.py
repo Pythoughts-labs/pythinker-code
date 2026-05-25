@@ -28,6 +28,7 @@ from pythinker_code.ui.shell.components.markdown import (
     markdown_commit_boundary,
 )
 from pythinker_code.ui.shell.console import console, current_console_width
+from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ASSISTANT_MARKER, TRANSCRIPT_STATUS_MARKER
 from pythinker_code.ui.shell.motion import (
     ActivitySnapshot,
     activity_status_line,
@@ -157,7 +158,7 @@ class _ContentBlock:
     raw reasoning text only for token accounting and never render it.  The
     Live area shows a compact ``Thinking`` label with an animated bullet
     sequence, elapsed time, token count, and a live tokens/second pulse;
-    when the block ends, a one-liner ``Thought for Xs · N tokens`` is
+    when the block ends, a one-liner ``✻ Crunched for Xs`` trace is
     committed to history in grey italics.
 
     When ``show_thinking_stream=True``, the legacy behavior is restored: the
@@ -217,9 +218,8 @@ class _ContentBlock:
                     bullet_style=thinking_style,
                 )
             elapsed_str = format_elapsed(time.monotonic() - self._start_time)
-            count_str = format_token_count(int(self._token_count))
             return Text(
-                f"Thought for {elapsed_str} · {count_str} tokens",
+                f"{TRANSCRIPT_STATUS_MARKER} Crunched for {elapsed_str}",
                 style=tui_rich_style("thinking_text") + Style(italic=True),
             )
         remaining = self._pending_text()
@@ -245,7 +245,10 @@ class _ContentBlock:
         if self._has_printed_bullet:
             return BulletColumns(renderable, bullet=Text(" "))
         self._has_printed_bullet = True
-        return BulletColumns(renderable)
+        return BulletColumns(
+            renderable,
+            bullet=Text(TRANSCRIPT_ASSISTANT_MARKER, style=tui_rich_style("accent")),
+        )
 
     @property
     def has_emitted_to_scrollback(self) -> bool:
