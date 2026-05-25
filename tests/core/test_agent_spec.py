@@ -673,9 +673,15 @@ agent:
       description: "Beta agent"
 """)
 
-    (tmp_path / "alpha.yaml").write_text("version: 1\nagent:\n  name: alpha\n  system_prompt_path: ./system.md\n  tools: []\n")
-    (tmp_path / "beta.yaml").write_text("version: 1\nagent:\n  name: beta\n  system_prompt_path: ./system.md\n  tools: []\n")
-    (tmp_path / "gamma.yaml").write_text("version: 1\nagent:\n  name: gamma\n  system_prompt_path: ./system.md\n  tools: []\n")
+    (tmp_path / "alpha.yaml").write_text(
+        "version: 1\nagent:\n  name: alpha\n  system_prompt_path: ./system.md\n  tools: []\n"
+    )
+    (tmp_path / "beta.yaml").write_text(
+        "version: 1\nagent:\n  name: beta\n  system_prompt_path: ./system.md\n  tools: []\n"
+    )
+    (tmp_path / "gamma.yaml").write_text(
+        "version: 1\nagent:\n  name: gamma\n  system_prompt_path: ./system.md\n  tools: []\n"
+    )
 
     child_yaml = tmp_path / "child.yaml"
     child_yaml.write_text("""
@@ -718,7 +724,9 @@ agent:
       description: "Reviewer"
 """)
     for name in ("coder_v1", "coder_v2", "reviewer"):
-        (tmp_path / f"{name}.yaml").write_text(f"version: 1\nagent:\n  name: {name}\n  system_prompt_path: ./system.md\n  tools: []\n")
+        (tmp_path / f"{name}.yaml").write_text(
+            f"version: 1\nagent:\n  name: {name}\n  system_prompt_path: ./system.md\n  tools: []\n"
+        )
 
     child_yaml = tmp_path / "child.yaml"
     child_yaml.write_text("""
