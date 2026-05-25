@@ -101,9 +101,9 @@ async def test_shell_background_starts_task(shell_tool, runtime, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_shell_background_requires_description(shell_tool):
-    with pytest.raises(ValueError, match="description"):
-        Params(command="sleep 1", timeout=10, run_in_background=True)
+async def test_shell_background_uses_default_description(shell_tool):
+    params = Params(command="sleep 1", timeout=10, run_in_background=True)
+    assert params.description == "background shell command"
 
 
 @pytest.mark.asyncio

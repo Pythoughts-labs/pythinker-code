@@ -169,19 +169,19 @@ def test_shell_params_schema(shell_tool: Shell):
                 },
                 "timeout": {
                     "default": 60,
-                    "description": "The timeout in seconds for the command to execute. If the command takes longer than this, it will be killed.",
+                    "description": "The timeout in seconds for the command to execute. If the command takes longer than this, it will be killed. Foreground commands may use at most 300s; higher values are automatically run as background tasks.",
                     "maximum": 86400,
                     "minimum": 1,
                     "type": "integer",
                 },
                 "run_in_background": {
                     "default": False,
-                    "description": "Whether to run the command as a background task.",
+                    "description": "Whether to run the command as a background task. This is automatically enabled when timeout is greater than 300s.",
                     "type": "boolean",
                 },
                 "description": {
                     "default": "",
-                    "description": "A short description for the background task. Required when run_in_background=true.",
+                    "description": "A short description for the background task. If omitted, a generic description is used.",
                     "type": "string",
                 },
             },
