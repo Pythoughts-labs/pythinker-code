@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager, suppress
 from typing import Literal
 
 from pythinker_core.message import Message
-from pythinker_core.tooling import ToolError, ToolOk
+from pythinker_core.tooling import ToolError, ToolOk, ToolReturnValue
 from rich import box
 from rich.console import Group, RenderableType
 from rich.live import Live
@@ -25,6 +25,8 @@ from rich.panel import Panel
 from rich.style import Style
 from rich.text import Text
 
+from pythinker_code.tools.display import TodoDisplayBlock, TodoDisplayItem
+from pythinker_code.ui.shell.components.render_utils import truncate_to_width
 from pythinker_code.ui.shell.console import console, current_console_width
 from pythinker_code.ui.shell.echo import render_user_echo
 from pythinker_code.ui.shell.keyboard import KeyboardListener, KeyEvent
@@ -98,6 +100,7 @@ _ACTION_SPACER = BLANK_ROW
 # Show the rotating feature tip under the spinner only once a turn has been
 # running long enough that a quick turn won't flash it.
 _WORKING_TIP_MIN_ELAPSED_S = 4.0
+_MAX_PINNED_TODO_LINES = 5
 
 
 def _append_action_block(
@@ -168,6 +171,7 @@ class _LiveView:
         self._active_turn_depth = 0
         self._turn_start_time: float | None = None
         self._latest_context_tokens = initial_status.context_tokens
+        self._latest_todos: tuple[TodoDisplayItem, ...] = ()
         self._compaction_block: _CompactionBlock | None = None
         self._mcp_loading_spinner: RenderableType | None = None
         self._btw_spinner: RenderableType | None = None
@@ -484,10 +488,14 @@ class _LiveView:
     def _working_indicator(self) -> RenderableType:
         now = time.monotonic()
         elapsed = 0.0 if self._turn_start_time is None else now - self._turn_start_time
+        width = current_console_width()
         line = activity_status_line(
             ActivitySnapshot(label=spinner_message(now), elapsed_s=elapsed),
-            width=current_console_width(),
+            width=width,
         )
+        todo_block = self._pinned_todo_block(width=width)
+        if todo_block is not None:
+            return Group(line, todo_block)
         # During longer waits, surface a rotating CLI-feature tip under the verb.
         if elapsed < _WORKING_TIP_MIN_ELAPSED_S:
             return line
@@ -495,6 +503,45 @@ class _LiveView:
         tip.append("Tip: ", style=tui_rich_style("dim"))
         tip.append(current_tip(now), style=tui_rich_style("dim"))
         return Group(line, tip)
+
+    def _pinned_todo_block(self, *, width: int) -> RenderableType | None:
+        """Render active/pending todos directly under the pinned verb spinner."""
+        todos = tuple(
+            todo
+            for todo in getattr(self, "_latest_todos", ())
+            if todo.status in ("in_progress", "pending") and todo.title.strip()
+        )
+        if not todos:
+            return None
+
+        visible = todos[:_MAX_PINNED_TODO_LINES]
+        hidden = todos[_MAX_PINNED_TODO_LINES:]
+        rows: list[Text] = []
+        for index, todo in enumerate(visible):
+            first = index == 0
+            prefix = "  ⎿  " if first else "     "
+            icon = "■" if todo.status == "in_progress" else "□"
+            icon_token = "accent" if todo.status == "in_progress" else "muted"
+            title_style = tui_rich_style(
+                "activity_label" if todo.status == "in_progress" else "tool_output"
+            )
+            if todo.status == "in_progress":
+                title_style += Style(bold=True)
+            title_budget = max(1, width - len(prefix) - 2)
+            title = truncate_to_width(todo.title.strip(), title_budget)
+            row = Text(prefix, style=tui_rich_style("muted"))
+            row.append(icon, style=tui_rich_style(icon_token))
+            row.append(" ")
+            row.append(title, style=title_style)
+            rows.append(row)
+
+        if hidden:
+            hidden_pending = sum(1 for todo in hidden if todo.status == "pending")
+            label = "pending" if hidden_pending == len(hidden) else "more"
+            row = Text("     ", style=tui_rich_style("muted"))
+            row.append(f"… +{len(hidden)} {label}", style=tui_rich_style("muted"))
+            rows.append(row)
+        return Group(*rows)
 
     def compose(self, *, include_status: bool = True) -> RenderableType:
         """Compose the full live view display content.
@@ -910,9 +957,17 @@ class _LiveView:
 
     def append_tool_result(self, result: ToolResult) -> None:
         if block := self._tool_call_blocks.get(result.tool_call_id):
+            self._record_todo_display(result.return_value)
             block.finish(result.return_value)
             self.flush_finished_tool_calls()
             self.refresh_soon()
+
+    def _record_todo_display(self, result: ToolReturnValue) -> None:
+        """Remember the latest todo display block for the pinned status tail."""
+        for block in getattr(result, "display", []) or []:
+            if isinstance(block, TodoDisplayBlock):
+                self._latest_todos = tuple(block.items)
+                return
 
     def append_notification(self, notification: Notification) -> None:
         block = _NotificationBlock(notification)
