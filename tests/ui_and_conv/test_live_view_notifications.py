@@ -6,6 +6,7 @@ from rich.console import Console
 
 from pythinker_code.tools.display import TodoDisplayBlock, TodoDisplayItem
 from pythinker_code.ui.shell.console import console as shell_console
+from pythinker_code.ui.shell.keyboard import KeyEvent
 from pythinker_code.ui.shell.visualize import _live_view as live_view_module
 from pythinker_code.ui.shell.visualize import _LiveView, _PromptLiveView
 from pythinker_code.wire.types import Notification, StatusUpdate, TurnBegin
@@ -111,9 +112,12 @@ def test_working_indicator_pins_todos_under_spinner(monkeypatch):
     view = _LiveView(StatusUpdate())
     view.dispatch_wire_message(TurnBegin(user_input="scan"))
     view.dispatch_wire_message(_todo_tool_call())
+    assert view.compose_agent_output(include_working_indicator=False) == []
     view.dispatch_wire_message(
         _todo_tool_result(
             [
+                TodoDisplayItem(title="Gather requirements", status="done"),
+                TodoDisplayItem(title="Inspect UI", status="done"),
                 TodoDisplayItem(
                     title="Explore project context — blogs page and image components",
                     status="in_progress",
@@ -126,18 +130,21 @@ def test_working_indicator_pins_todos_under_spinner(monkeypatch):
             ]
         )
     )
+    assert view.compose_agent_output(include_working_indicator=False) == []
 
     now = 1060.0
     rendered = _render(view._working_indicator())
 
-    assert "⎿  ■ Explore project context" in rendered
-    assert "□ Ask clarifying questions one at a time" in rendered
-    assert "□ Write design doc and self-review spec" in rendered
-    assert "… +1 pending" in rendered
+    assert "⎿  todos(2/8 done · 1 active · 5 pending)" in rendered
+    assert "├─ ● Gather requirements" in rendered
+    assert "├─ ● Inspect UI" in rendered
+    assert "├─ ■ Explore project context" in rendered
+    assert "├─ □ Ask clarifying questions one at a time" in rendered
+    assert "└─ □ Run final checks" in rendered
     assert "Tip:" not in rendered
 
 
-def test_working_indicator_hides_todos_when_all_complete(monkeypatch):
+def test_working_indicator_keeps_done_todos_pinned(monkeypatch):
     now = 1000.0
     monkeypatch.setattr(live_view_module.time, "monotonic", lambda: now)
     view = _LiveView(StatusUpdate())
@@ -149,9 +156,29 @@ def test_working_indicator_hides_todos_when_all_complete(monkeypatch):
 
     rendered = _render(view._working_indicator())
 
-    assert "Done task" not in rendered
+    assert "⎿  todos(1/1 done)" in rendered
+    assert "└─ ● Done task" in rendered
     assert "■" not in rendered
     assert "□" not in rendered
+
+
+def test_ctrl_t_toggles_pinned_todos(monkeypatch):
+    now = 1000.0
+    monkeypatch.setattr(live_view_module.time, "monotonic", lambda: now)
+    view = _LiveView(StatusUpdate())
+    view.dispatch_wire_message(TurnBegin(user_input="scan"))
+    view.dispatch_wire_message(_todo_tool_call())
+    view.dispatch_wire_message(
+        _todo_tool_result([TodoDisplayItem(title="Pinned task", status="pending")])
+    )
+
+    assert "Pinned task" in _render(view._working_indicator())
+
+    view.dispatch_keyboard_event(KeyEvent.CTRL_T)
+    assert "Pinned task" not in _render(view._working_indicator())
+
+    view.dispatch_keyboard_event(KeyEvent.CTRL_T)
+    assert "Pinned task" in _render(view._working_indicator())
 
 
 def test_prompt_live_view_suppresses_background_task_notifications(monkeypatch):

@@ -11,6 +11,7 @@ from prompt_toolkit.key_binding import KeyPressEvent
 from rich.console import Group, RenderableType
 from rich.markup import escape
 from rich.padding import Padding
+from rich.style import Style as RichStyle
 from rich.text import Text
 
 from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
@@ -62,7 +63,7 @@ class ApprovalContentBlock(NamedTuple):
 
     text: str
     lines: int
-    style: str | object = ""  # str or RichStyle; both accepted by rich.text.Text
+    style: str | RichStyle = ""
     lexer: str = ""
 
 

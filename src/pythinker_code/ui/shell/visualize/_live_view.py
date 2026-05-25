@@ -100,7 +100,7 @@ _ACTION_SPACER = BLANK_ROW
 # Show the rotating feature tip under the spinner only once a turn has been
 # running long enough that a quick turn won't flash it.
 _WORKING_TIP_MIN_ELAPSED_S = 4.0
-_MAX_PINNED_TODO_LINES = 5
+_MAX_PINNED_TODO_LINES = 12
 
 
 def _append_action_block(
@@ -172,6 +172,7 @@ class _LiveView:
         self._turn_start_time: float | None = None
         self._latest_context_tokens = initial_status.context_tokens
         self._latest_todos: tuple[TodoDisplayItem, ...] = ()
+        self._pinned_todos_visible = True
         self._compaction_block: _CompactionBlock | None = None
         self._mcp_loading_spinner: RenderableType | None = None
         self._btw_spinner: RenderableType | None = None
@@ -472,6 +473,10 @@ class _LiveView:
                     and tool_call.tool_call_id == suppressed_tool_call_id
                 ):
                     continue
+                if tool_call.is_todo_list:
+                    # Todo updates are pinned under the verb spinner; don't also
+                    # render a floating todo tool card above the stream.
+                    continue
                 # leading=True gives the first live tool card a blank row above
                 # it too, so a still-running agent is separated from a finished
                 # one already committed to scrollback.
@@ -505,28 +510,40 @@ class _LiveView:
         return Group(line, tip)
 
     def _pinned_todo_block(self, *, width: int) -> RenderableType | None:
-        """Render active/pending todos directly under the pinned verb spinner."""
+        """Render the single todo source of truth under the pinned verb spinner."""
+        if not getattr(self, "_pinned_todos_visible", True):
+            return None
         todos = tuple(
             todo
             for todo in getattr(self, "_latest_todos", ())
-            if todo.status in ("in_progress", "pending") and todo.title.strip()
+            if todo.status in ("done", "in_progress", "pending") and todo.title.strip()
         )
         if not todos:
             return None
 
         visible = todos[:_MAX_PINNED_TODO_LINES]
         hidden = todos[_MAX_PINNED_TODO_LINES:]
-        rows: list[Text] = []
+        rows: list[Text] = [self._pinned_todo_header(todos, width=width)]
+        has_continuation = bool(hidden)
         for index, todo in enumerate(visible):
-            first = index == 0
-            prefix = "  ⎿  " if first else "     "
-            icon = "■" if todo.status == "in_progress" else "□"
-            icon_token = "accent" if todo.status == "in_progress" else "muted"
-            title_style = tui_rich_style(
-                "activity_label" if todo.status == "in_progress" else "tool_output"
-            )
+            is_last_visible = index == len(visible) - 1
+            branch = "└─" if is_last_visible and not has_continuation else "├─"
+            if todo.status == "done":
+                icon = "●"
+                icon_token = "success"
+                title_token = "muted"
+            elif todo.status == "in_progress":
+                icon = "■"
+                icon_token = "accent"
+                title_token = "activity_label"
+            else:
+                icon = "□"
+                icon_token = "muted"
+                title_token = "tool_output"
+            title_style = tui_rich_style(title_token)
             if todo.status == "in_progress":
                 title_style += Style(bold=True)
+            prefix = f"     {branch} "
             title_budget = max(1, width - len(prefix) - 2)
             title = truncate_to_width(todo.title.strip(), title_budget)
             row = Text(prefix, style=tui_rich_style("muted"))
@@ -538,10 +555,32 @@ class _LiveView:
         if hidden:
             hidden_pending = sum(1 for todo in hidden if todo.status == "pending")
             label = "pending" if hidden_pending == len(hidden) else "more"
-            row = Text("     ", style=tui_rich_style("muted"))
+            row = Text("     └─ ", style=tui_rich_style("muted"))
             row.append(f"… +{len(hidden)} {label}", style=tui_rich_style("muted"))
             rows.append(row)
         return Group(*rows)
+
+    def toggle_pinned_todos(self) -> bool:
+        """Toggle visibility of the pinned todo list and return the new state."""
+        self._pinned_todos_visible = not getattr(self, "_pinned_todos_visible", True)
+        self.refresh_soon()
+        return self._pinned_todos_visible
+
+    def _pinned_todo_header(self, todos: tuple[TodoDisplayItem, ...], *, width: int) -> Text:
+        """Render the pinned todo summary line with the same counts as the todo card."""
+        total = len(todos)
+        done = sum(1 for todo in todos if todo.status == "done")
+        active = sum(1 for todo in todos if todo.status == "in_progress")
+        pending = sum(1 for todo in todos if todo.status == "pending")
+        parts = [f"{done}/{total} done"]
+        if active:
+            parts.append(f"{active} active")
+        if pending:
+            parts.append(f"{pending} pending")
+        summary = f"todos({' · '.join(parts)})"
+        row = Text("  ⎿  ", style=tui_rich_style("muted"))
+        row.append(truncate_to_width(summary, max(1, width - 5)), style=tui_rich_style("muted"))
+        return row
 
     def compose(self, *, include_status: bool = True) -> RenderableType:
         """Compose the full live view display content.
@@ -761,6 +800,11 @@ class _LiveView:
             self.refresh_soon()
             return
 
+        # Ctrl+T toggles the pinned todo list; it is the only todo UI surface.
+        if event == KeyEvent.CTRL_T and self._latest_todos:
+            self.toggle_pinned_todos()
+            return
+
         # handle ESC key to cancel the run
         if event == KeyEvent.ESCAPE and self._cancel_event is not None:
             from pythinker_code.telemetry import track
@@ -958,6 +1002,14 @@ class _LiveView:
     def append_tool_result(self, result: ToolResult) -> None:
         if block := self._tool_call_blocks.get(result.tool_call_id):
             self._record_todo_display(result.return_value)
+            if block.is_todo_list and not result.return_value.is_error:
+                # Successful todo updates are represented only by the pinned
+                # todo summary under the verb spinner.
+                self._tool_call_blocks.pop(result.tool_call_id, None)
+                if self._last_tool_call_block == block:
+                    self._last_tool_call_block = None
+                self.refresh_soon()
+                return
             block.finish(result.return_value)
             self.flush_finished_tool_calls()
             self.refresh_soon()

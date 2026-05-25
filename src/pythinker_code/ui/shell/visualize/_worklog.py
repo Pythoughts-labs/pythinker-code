@@ -8,7 +8,7 @@ from pythinker_core.tooling import BriefDisplayBlock, DisplayBlock
 from rich import box
 from rich.console import Group, RenderableType
 from rich.panel import Panel
-from rich.style import Style
+from rich.style import Style, StyleType
 from rich.text import Text
 
 from pythinker_code.tools.display import (
@@ -160,7 +160,7 @@ def render_worklog_card(
     body: RenderableType,
     *,
     subtitle: str | None = None,
-    border_style: str = "grey39",
+    border_style: StyleType = "grey39",
 ) -> Panel:
     return Panel(
         body,

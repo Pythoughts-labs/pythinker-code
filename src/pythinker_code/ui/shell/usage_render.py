@@ -4,6 +4,7 @@ from rich import box
 from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.progress_bar import ProgressBar
+from rich.style import Style as RichStyle
 from rich.table import Table
 from rich.text import Text
 
@@ -127,7 +128,7 @@ def _remaining_quota(row: UsageRow) -> tuple[int, float, int]:
     return remaining, remaining / row.limit, row.limit
 
 
-def _ratio_color(remaining_ratio: float) -> object:  # returns RichStyle
+def _ratio_color(remaining_ratio: float) -> RichStyle:
     if remaining_ratio <= 0.1:
         return tui_rich_style("error")
     if remaining_ratio <= 0.3:

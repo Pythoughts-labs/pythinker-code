@@ -447,6 +447,8 @@ class _PromptLiveView(_LiveView):
             return False
         if key == "escape":
             return self._cancel_event is not None
+        if key == "c-t":
+            return bool(getattr(self, "_latest_todos", ()))
         # ↑ on empty buffer: recall last queued message.
         # Only intercept when buffer is empty — otherwise let prompt_toolkit
         # handle ↑ for cursor movement / history navigation.
@@ -462,6 +464,11 @@ class _PromptLiveView(_LiveView):
                 event.app.create_background_task(self._show_panel_in_pager())
             elif self._toggle_latest_tool_card():
                 self._flush_prompt_refresh()
+            return
+
+        if key == "c-t":
+            self.toggle_pinned_todos()
+            self._flush_prompt_refresh()
             return
 
         # ↑ on empty buffer: pop last queued message back to input for editing.

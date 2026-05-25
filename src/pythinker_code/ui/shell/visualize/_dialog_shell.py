@@ -8,6 +8,7 @@ from typing import Literal
 from rich import box
 from rich.console import Group, RenderableType
 from rich.panel import Panel
+from rich.style import StyleType
 from rich.text import Text
 
 from pythinker_code.ui.shell.design_system import dialog_title
@@ -48,7 +49,7 @@ def render_dialog(
     body: list[RenderableType],
     options: list[DialogOption],
     footer: RenderableType | None = None,
-    border_style: object = None,
+    border_style: StyleType | None = None,
     width: int | None = None,
 ) -> RenderableType:
     if border_style is None:

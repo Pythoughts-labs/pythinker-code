@@ -41,7 +41,9 @@ def _filled_bar_segments(segments: list[Segment]) -> list[Segment]:
         (-0.1, "error"),
     ],
 )
-def test_ratio_color_uses_remaining_quota_ratio(remaining_ratio: float, expected_token: str) -> None:
+def test_ratio_color_uses_remaining_quota_ratio(
+    remaining_ratio: float, expected_token: str
+) -> None:
     assert _ratio_color(remaining_ratio) == tui_rich_style(expected_token)
 
 

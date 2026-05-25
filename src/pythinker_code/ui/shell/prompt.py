@@ -1556,6 +1556,7 @@ def _build_toolbar_tips(clipboard_available: bool) -> list[str]:
         _tip("app.plan.toggle", "shift-tab", "plan mode"),
         _tip("app.shell.oneshot", "!", "shell command"),
         _tip("app.editor.external", "ctrl-o", "editor"),
+        _tip("app.todos.toggle", "ctrl-t", "toggle todos"),
         _tip("app.prompt.newline", "ctrl-j", "newline"),
         "/feedback: send feedback",
         "/theme: switch dark/light",
@@ -1839,6 +1840,14 @@ class CustomPromptSession:
         )
         def _(event: KeyPressEvent) -> None:
             self._handle_running_prompt_key("c-e", event)
+
+        @_kb.add(
+            "c-t",
+            eager=True,
+            filter=Condition(lambda: self._should_handle_running_prompt_key("c-t")),
+        )
+        def _(event: KeyPressEvent) -> None:
+            self._handle_running_prompt_key("c-t", event)
 
         @_kb.add(
             "c-c",
@@ -2353,6 +2362,7 @@ class CustomPromptSession:
             "app.mention.files",
             "app.command.slash",
             "app.tools.expand",
+            "app.todos.toggle",
         }
         rows = [
             (
@@ -2442,6 +2452,10 @@ class CustomPromptSession:
         out: FormattedText = FormattedText()
         out.extend(clipped)
         ensure_prompt_newline(out)
+        # Keep the pinned verb spinner visually separated from preceding tool
+        # output/background summaries; when it is the first visible row, this
+        # also creates the initial breathing room above the spinner.
+        out.append(("", "\n"))
         out.extend(pinned)
         return out
 

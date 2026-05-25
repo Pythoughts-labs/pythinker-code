@@ -115,9 +115,7 @@ def test_shape_activity_status_line_defaults_to_neutral_thinking_grey():
     purple_muted = tui_rich_style("muted").color
 
     for label in ("Composing", "Thinking"):
-        line = activity_status_line(
-            ActivitySnapshot(label=label, elapsed_s=1.0, spinner="shape")
-        )
+        line = activity_status_line(ActivitySnapshot(label=label, elapsed_s=1.0, spinner="shape"))
         base_style = Style.parse(line.style) if isinstance(line.style, str) else line.style
         assert base_style.color == thinking_grey
         assert base_style.color != purple_muted

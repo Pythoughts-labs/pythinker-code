@@ -68,6 +68,7 @@ MAX_SUBAGENT_TOOL_CALLS_TO_SHOW = 4
 # has arrived but the spawned agent has not yet finished.  Blocks with this
 # status must stay in the Live area so their spinner keeps animating.
 _AGENT_ACTIVE_STATUSES = frozenset({"created", "starting", "running", "awaiting_approval"})
+_TODO_TOOL_NAMES = frozenset({"SetTodoList", "TodoWrite"})
 
 
 def _is_active_background_agent(tool_name: str, result_text: str) -> bool:
@@ -369,6 +370,10 @@ class _ToolCallBlock:
     @property
     def tool_call_id(self) -> str:
         return self._tool_call_id
+
+    @property
+    def is_todo_list(self) -> bool:
+        return self._tool_name in _TODO_TOOL_NAMES
 
     @property
     def finished(self) -> bool:
