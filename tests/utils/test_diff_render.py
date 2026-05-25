@@ -567,7 +567,7 @@ class TestLineNumberOffsets:
 
 
 # ---------------------------------------------------------------------------
-# Marker colors — must use brand tokens, not hardcoded ANSI green/red
+# Marker colors — match the reference terminal ANSI green/red styling
 # ---------------------------------------------------------------------------
 
 
@@ -579,52 +579,37 @@ def _render_with_color(renderable) -> str:
     return cap.get()
 
 
-class TestDiffMarkerTokenColors:
-    def test_add_marker_uses_brand_token_not_ansi_green(self) -> None:
-        """'+' marker must use tool_diff_added token (truecolor hex), not hardcoded ANSI green."""
+class TestDiffMarkerReferenceColors:
+    def test_panel_markers_use_reference_ansi_green_red(self) -> None:
+        """Full diff markers must keep reference-style ANSI green/red, even in panels."""
         from pythinker_code.ui.theme import set_active_theme
 
         set_active_theme("dark")
         hunks, a, r = _collect("old_line", "new_line")
         ansi_out = _render_with_color(render_diff_panel("test.py", hunks, a, r))
-        # Hardcoded ANSI "green" = \x1b[32m; brand token produces \x1b[38;2;...m truecolor
-        assert "\x1b[32m" not in ansi_out, (
-            "'+' marker must use tool_diff_added token (truecolor), not hardcoded ANSI green"
-        )
+        assert "\x1b[32;" in ansi_out
+        assert "\x1b[31;" in ansi_out
 
-    def test_del_marker_uses_brand_token_not_ansi_red(self) -> None:
-        """'-' marker must use tool_diff_removed token (truecolor hex), not hardcoded ANSI red."""
+    def test_header_stats_use_bold_reference_ansi_colors(self) -> None:
+        """Header +N/-N stats match Rich's bold green/red reference styling."""
         from pythinker_code.ui.theme import set_active_theme
 
         set_active_theme("dark")
         hunks, a, r = _collect("old_line", "new_line")
         ansi_out = _render_with_color(render_diff_panel("test.py", hunks, a, r))
-        # Hardcoded ANSI "red" = \x1b[31m; brand token produces \x1b[38;2;...m truecolor
-        assert "\x1b[31m" not in ansi_out, (
-            "'-' marker must use tool_diff_removed token (truecolor), not hardcoded ANSI red"
-        )
+        assert "\x1b[1;32m" in ansi_out
+        assert "\x1b[1;31m" in ansi_out
 
-    def test_header_stats_use_brand_tokens(self) -> None:
-        """Header +N/-N stats must use brand tokens, not hardcoded green/red."""
-        from pythinker_code.ui.theme import set_active_theme
-
-        set_active_theme("dark")
-        hunks, a, r = _collect("old_line", "new_line")
-        ansi_out = _render_with_color(render_diff_panel("test.py", hunks, a, r))
-        assert "\x1b[32m" not in ansi_out
-        assert "\x1b[31m" not in ansi_out
-
-    def test_preview_markers_use_brand_tokens(self) -> None:
-        """render_diff_preview markers must use brand tokens, not hardcoded ANSI colors."""
+    def test_preview_markers_use_reference_ansi_colors(self) -> None:
+        """render_diff_preview markers must use the same ANSI colors as the full panel."""
         from pythinker_code.ui.theme import set_active_theme
 
         set_active_theme("dark")
         hunks, a, r = _collect("old_line", "new_line")
         renderables, _ = render_diff_preview("test.py", hunks, a, r)
-        for renderable in renderables:
-            ansi_out = _render_with_color(renderable)
-            assert "\x1b[32m" not in ansi_out
-            assert "\x1b[31m" not in ansi_out
+        ansi_out = "".join(_render_with_color(renderable) for renderable in renderables)
+        assert "\x1b[32m" in ansi_out
+        assert "\x1b[31m" in ansi_out
 
 
 # ---------------------------------------------------------------------------

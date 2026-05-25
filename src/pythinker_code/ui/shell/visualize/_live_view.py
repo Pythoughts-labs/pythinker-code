@@ -167,6 +167,7 @@ class _LiveView:
 
         self._active_turn_depth = 0
         self._turn_start_time: float | None = None
+        self._latest_context_tokens = initial_status.context_tokens
         self._compaction_block: _CompactionBlock | None = None
         self._mcp_loading_spinner: RenderableType | None = None
         self._btw_spinner: RenderableType | None = None
@@ -559,7 +560,9 @@ class _LiveView:
                 if self._active_turn_depth == 0:
                     self._turn_start_time = None
             case CompactionBegin():
-                self._compaction_block = _CompactionBlock()
+                self._compaction_block = _CompactionBlock(
+                    context_tokens=self._latest_context_tokens,
+                )
                 self.refresh_soon()
             case CompactionEnd():
                 self._compaction_block = None
@@ -613,6 +616,10 @@ class _LiveView:
                 self.refresh_soon()
             case StatusUpdate():
                 self._status_block.update(msg)
+                if msg.context_tokens is not None:
+                    self._latest_context_tokens = msg.context_tokens
+                    if self._compaction_block is not None:
+                        self._compaction_block.update_context_tokens(msg.context_tokens)
             case Notification():
                 self.append_notification(msg)
             case ContentPart():

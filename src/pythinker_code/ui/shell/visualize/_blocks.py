@@ -31,7 +31,6 @@ from pythinker_code.ui.shell.console import console, current_console_width
 from pythinker_code.ui.shell.motion import (
     ActivitySnapshot,
     activity_status_line,
-    reduced_motion_enabled,
 )
 from pythinker_code.ui.shell.tips import FEATURE_TIPS
 from pythinker_code.ui.shell.tool_renderers import (
@@ -732,9 +731,15 @@ class _CompactionBlock:
 
     TIPS: tuple[str, ...] = FEATURE_TIPS
 
-    def __init__(self) -> None:
+    def __init__(self, *, context_tokens: int | None = None) -> None:
         self._start = time.monotonic()
         self._tip = random.choice(self.TIPS)
+        self._context_tokens = context_tokens
+
+    def update_context_tokens(self, context_tokens: int | None) -> None:
+        """Refresh the token count shown in the compacting title."""
+        if context_tokens is not None:
+            self._context_tokens = context_tokens
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         yield from console.render(self._render(), options)
@@ -748,17 +753,20 @@ class _CompactionBlock:
         accent = tui_rich_style("accent")
         muted = tui_rich_style("muted")
         subtle = tui_rich_style("dim")
+        title_style = accent + Style(italic=True)
 
         title = Text()
-        glyph = "●" if reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0 else " "
-        title.append(f"{glyph} ", style=tui_rich_style("muted"))
-        title.append("Compacting conversation…")
-        title.append(f" ({format_elapsed(elapsed)})", style=subtle)
+        title.append("✢ ", style=accent)
+        title.append("Compacting conversation…", style=title_style)
+        title.append(f" ({format_elapsed(elapsed)}", style=subtle)
+        if self._context_tokens is not None:
+            title.append(f" · ↑ {format_token_count(self._context_tokens)} tokens", style=subtle)
+        title.append(")", style=subtle)
 
         bar = Text("  ")
-        bar.append("▰" * filled, style=accent)
+        bar.append("▰" * filled, style=tui_rich_style("activity_label"))
         bar.append("▱" * empty, style=muted)
-        bar.append(f" {pct}%", style=accent + Style(bold=True))
+        bar.append(f" {pct}%", style=muted)
 
         tip = Text("  ⎿  ", style=muted)
         tip.append(f"Tip: {self._tip}", style=subtle)
