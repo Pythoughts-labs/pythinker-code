@@ -236,7 +236,7 @@ def test_background_status_splits_verb_and_count_styles() -> None:
     fragments = [(style, text) for style, text, *_ in rendered]
     muted_style = f"fg:{get_tui_tokens('dark').muted}"
 
-    assert any(style == "fg:#EE9983" and "…" in text for style, text in fragments)
+    assert any(style == "fg:#E6B450" and "…" in text for style, text in fragments)
     assert any(style == muted_style and "2 background agents" in text for style, text in fragments)
     assert all(style != "ansicyan" for style, _ in fragments)
 

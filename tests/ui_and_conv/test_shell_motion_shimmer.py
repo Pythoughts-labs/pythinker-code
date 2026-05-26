@@ -14,7 +14,7 @@ def _color_hex(color: Color | None) -> str:
 def test_shimmer_returns_base_accent_when_reduced_motion():
     set_active_theme("dark")
     s = shimmer_spinner_style(0.0, reduced_motion=True)
-    assert _color_hex(s.color) == "#ee9983"
+    assert _color_hex(s.color) == "#e6b450"
 
 
 def test_shimmer_varies_over_time_when_motion_enabled(monkeypatch):
@@ -23,4 +23,4 @@ def test_shimmer_varies_over_time_when_motion_enabled(monkeypatch):
     first = _color_hex(shimmer_spinner_style(0.0, reduced_motion=False).color)
     later = _color_hex(shimmer_spinner_style(0.22, reduced_motion=False).color)
     # At least one sampled frame differs from the base when animating.
-    assert first != later or first != "#ee9983"
+    assert first != later or first != "#e6b450"

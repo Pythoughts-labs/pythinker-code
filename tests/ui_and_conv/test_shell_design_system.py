@@ -81,9 +81,9 @@ def test_shell_style_resolves_brand_tokens_and_switches_theme():
     set_active_theme("dark")
 
 
-def test_verb_spinner_stays_orange_independent_of_accent_token():
+def test_verb_spinner_stays_muted_yellow_independent_of_accent_token():
     from pythinker_code.ui.shell.motion import verb_spinner_style
     from pythinker_code.ui.theme import set_active_theme
 
     set_active_theme("dark")
-    assert _color_hex(verb_spinner_style()) == "#ee9983"
+    assert _color_hex(verb_spinner_style()) == "#e6b450"

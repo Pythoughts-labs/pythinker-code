@@ -28,22 +28,22 @@ _FRAME_INTERVAL_S = SPINNER_FRAME_INTERVAL_S
 
 
 def verb_spinner_style() -> Style:
-    """Orange style for the active verb spinner word."""
-    return Style(color=Color.parse("#EE9983"))  # brand-exception: verb shimmer orange
+    """Muted yellow style for the active verb spinner word."""
+    return Style(color=Color.parse("#E6B450"))  # brand-exception: muted yellow verb shimmer
 
 
-# ChatGPT-like clean shimmer: a subtle orange sweep on the active verb only.
-_SHIMMER_BASE = "#EE9983"  # brand-exception: orange shimmer literal
-_SHIMMER_MID = "#F2A892"  # brand-exception: orange shimmer literal
-_SHIMMER_HIGHLIGHT = "#FFD5C7"  # brand-exception: orange shimmer literal
+# ChatGPT-like clean shimmer: a subtle muted-yellow sweep on the active verb only.
+_SHIMMER_BASE = "#E6B450"  # brand-exception: muted yellow shimmer literal
+_SHIMMER_MID = "#EBC46E"  # brand-exception: muted yellow shimmer literal
+_SHIMMER_HIGHLIGHT = "#F3D89A"  # brand-exception: muted yellow shimmer literal
 _SHIMMER_INTERVAL_S = 0.22
 _SPINNER_SILVER_STYLE = Style(color=Color.parse("#C0C0C0"))  # brand-exception: silver spinner
 
 
 def shimmer_spinner_style(elapsed_s: float, *, reduced_motion: bool = False) -> Style:
-    """Clean orange shimmer color for active verb text.
+    """Clean muted-yellow shimmer color for active verb text.
 
-    Reduced motion pins to the base orange so the word stays calm.
+    Reduced motion pins to the base muted yellow so the word stays calm.
     """
     if reduced_motion or reduced_motion_enabled():
         return Style(color=Color.parse(_SHIMMER_BASE))

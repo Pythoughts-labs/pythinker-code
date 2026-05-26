@@ -132,12 +132,15 @@ class Approval:
     def is_auto_approve(self) -> bool:
         """True when tool calls should be auto-approved.
 
-        Auto mode implies auto-approve, so this returns True whenever either the
-        explicit yolo flag or auto mode is set.
+        Yolo is a deliberate, explicit opt-in to auto-approve everything, so it
+        overrides the workspace safe-mode guardrail. Auto mode (no user present)
+        does not — it stays gated behind safe mode for untrusted workspaces.
         """
+        if self._state.yolo:
+            return True
         if self._state.safe_mode:
             return False
-        return self._state.yolo or self.is_auto()
+        return self.is_auto()
 
     def is_yolo(self) -> bool:
         """True only when the user explicitly opted into yolo."""

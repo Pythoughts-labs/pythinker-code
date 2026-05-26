@@ -89,7 +89,7 @@ PROMPT_SYMBOL_SHELL = "$"
 PROMPT_SYMBOL_THINKING = "💫"
 PROMPT_SYMBOL_PLAN = "📋"
 _CARD_SIDE_PADDING = 2
-_PROMPT_VERB_SPINNER_STYLE = "fg:#EE9983"  # brand-exception: verb shimmer orange
+_PROMPT_VERB_SPINNER_STYLE = "fg:#E6B450"  # brand-exception: muted yellow verb shimmer
 
 
 # prompt_toolkit 3.0.52 can emit these during prompt shutdown on Python 3.14

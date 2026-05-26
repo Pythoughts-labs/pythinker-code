@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +14,7 @@ from pythinker_review.security_scan.matchers import (
     create_default_registry,
     evaluate_gate,
     files_for_matcher,
+    path_matches_any,
 )
 from pythinker_review.security_scan.models import CandidateMatch, FileRecord, now_iso
 from pythinker_review.security_scan.store import (
@@ -30,30 +33,56 @@ from pythinker_review.security_scan.tech import (
     write_tech_json,
 )
 
-IGNORE_DIRS = [
-    "**/node_modules/**",
-    "**/.git/**",
-    "**/.security-scan/data/**",
-    "**/.pythinker-review/security-scan/data/**",
-    "**/dist/**",
-    "**/build/**",
-    "**/.next/**",
-    "**/coverage/**",
-    "**/.turbo/**",
-    "**/vendor/**",
-    "**/__tests__/**",
+_IGNORED_DIRECTORY_NAMES = (
+    ".git",
+    ".mypy_cache",
+    ".next",
+    ".nox",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".security-scan",
+    ".tox",
+    ".turbo",
+    ".venv",
+    "__pycache__",
+    "__tests__",
+    "build",
+    "coverage",
+    "dist",
+    "fixtures",
+    "node_modules",
+    "site-packages",
+    "target",
+    "test",
+    "tests",
+    "testserver",
+    "vendor",
+    "venv",
+)
+
+_IGNORED_FILE_PATTERNS = (
     "**/*.test.{ts,tsx,js,jsx,py,go,rs}",
     "**/*.spec.{ts,tsx,js,jsx,py,go,rs}",
-    "**/test/**",
-    "**/tests/**",
-    "**/fixtures/**",
-    "**/testserver/**",
     "**/*.d.ts",
     "**/*.mdx",
     "**/*.md",
     "**/content/docs/**",
     "**/content/docs-wip/**",
-]
+    # Agent worktrees are full repository copies nested under project-local state.
+    # Do not ignore all of .claude: projects may intentionally version prompts or commands there.
+    "**/.claude/worktrees/**",
+    # Keep legacy state out of scans even when the state directory is tracked or unignored.
+    "**/.pythinker-review/security-scan/data/**",
+)
+
+
+def _directory_ignore_patterns(names: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(f"**/{name}/**" for name in names)
+
+
+# Public-by-convention for callers/tests that import the default denylist. These
+# are path globs, not only directories; user/project ignores are appended at run time.
+IGNORE_DIRS = [*_directory_ignore_patterns(_IGNORED_DIRECTORY_NAMES), *_IGNORED_FILE_PATTERNS]
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +118,88 @@ class ScanResult:
 ProgressCallback = Callable[[ScanProgress], None]
 
 
+def _git_listed_files(root: Path) -> list[str] | None:
+    """Return git-visible files, or ``None`` when git cannot answer.
+
+    ``git ls-files`` gives the scanner the same tracked/untracked-but-not-ignored
+    view developers normally review. The filesystem walker remains the fallback
+    for exported archives, non-git projects, or environments without git.
+    """
+    try:
+        proc = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(root),
+                "ls-files",
+                "-z",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
+            timeout=10,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+    return [path for path in proc.stdout.split("\0") if path]
+
+
+def _walk_listed_files(root: Path, ignore: list[str]) -> list[str]:
+    """Filesystem fallback that prunes ignored directories during traversal.
+
+    Pruning at the directory level (rather than filtering files afterwards)
+    keeps the walk from descending into virtualenvs, build outputs, or vendored trees.
+    """
+    found: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
+        try:
+            rel_dir = Path(dirpath).relative_to(root).as_posix()
+        except ValueError:
+            dirnames[:] = []
+            continue
+        prefix = "" if rel_dir == "." else f"{rel_dir}/"
+        # A trailing sentinel stands in for "any file under this dir" so directory
+        # globs like "**/.venv/**" match before os.walk descends into the subtree.
+        dirnames[:] = sorted(
+            d for d in dirnames if not path_matches_any(f"{prefix}{d}/__dir__", ignore)
+        )
+        for name in sorted(filenames):
+            path = Path(dirpath) / name
+            if path.is_symlink() or not path.is_file():
+                continue
+            found.append(f"{prefix}{name}")
+    return found
+
+
+def _candidate_files(root: Path, ignore: list[str]) -> list[str]:
+    """All scannable repo files as posix relative paths, gathered once per scan.
+
+    Prefers git's ignore rules so build output, virtualenvs, and vendored trees
+    are skipped wholesale; the scanner denylist is still applied on top to drop
+    tracked-but-uninteresting files (tests, docs, generated assets). Symlinked
+    files are skipped to avoid scanning outside the requested repository root.
+    """
+    listed = _git_listed_files(root)
+    files = listed if listed is not None else _walk_listed_files(root, ignore)
+    found: set[str] = set()
+    for rel in files:
+        normalized = rel.replace("\\", "/")
+        if normalized.startswith("./"):
+            normalized = normalized[2:]
+        if not normalized or path_matches_any(normalized, ignore):
+            continue
+        path = root / normalized
+        if path.is_symlink() or not path.is_file():
+            continue
+        found.add(normalized)
+    return sorted(found)
+
+
 def scan_project(
     *,
     project_id: str,
@@ -101,7 +212,9 @@ def scan_project(
     root = root.resolve()
     ensure_project(project_id, root, data_root=data_root)
     settings = read_project_settings(project_id, data_root=data_root)
-    detected = detect_tech(root)
+    ignore = [*IGNORE_DIRS, *(settings.ignore_paths if ignore_paths is None else ignore_paths)]
+    candidate_files = _candidate_files(root, ignore)
+    detected = detect_tech(root, file_paths=candidate_files)
     write_tech_json(project_id, detected, data_root=data_root)
 
     registry = create_default_registry()
@@ -122,11 +235,13 @@ def scan_project(
         project_id=project_id,
         root_path=root,
         run_type="scan",
-        scanner_config={"matcherSlugs": [matcher.slug for matcher in active], "mode": "full"},
+        scanner_config={
+            "matcherSlugs": [matcher.slug for matcher in active],
+            "mode": "full",
+            "fileCount": len(candidate_files),
+        },
     )
     write_run_meta(run, data_root=data_root)
-
-    ignore = [*IGNORE_DIRS, *(settings.ignore_paths if ignore_paths is None else ignore_paths)]
     content_cache: dict[str, str | None] = {}
     matches_by_path: dict[str, list[CandidateMatch]] = {}
     scanned_paths: set[str] = set()
@@ -142,7 +257,7 @@ def scan_project(
                 matcher_total=len(active),
             ),
         )
-        files = files_for_matcher(root, matcher, ignore)
+        files = files_for_matcher(candidate_files, matcher)
         match_count = 0
         for rel in files:
             content = content_cache.get(rel)

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import bisect
-import fnmatch
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, cast
 
@@ -644,33 +644,66 @@ def expand_braces(pattern: str) -> list[str]:
 
 
 def path_matches_any(path: str, patterns: list[str] | tuple[str, ...]) -> bool:
+    """Return whether a repo-relative posix path matches any supported glob.
+
+    Use the same glob semantics as matcher file selection instead of ``fnmatch``.
+    In particular, ``**/name/**`` must match both top-level and nested paths,
+    and ``*`` must not accidentally cross directory separators.
+    """
     normalized = path.replace("\\", "/")
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
     for pattern in patterns:
-        for expanded in expand_braces(pattern):
-            if fnmatch.fnmatch(normalized, expanded):
+        for expanded in expand_braces(pattern.replace("\\", "/")):
+            if _compile_glob(expanded).match(normalized) is not None:
                 return True
     return False
 
 
-def files_for_matcher(root: Path, matcher: MatcherSpec, ignore: list[str]) -> list[str]:
+@lru_cache(maxsize=2048)
+def _compile_glob(pattern: str) -> re.Pattern[str]:
+    """Translate a brace-free glob into a regex anchored to a full posix path.
+
+    Mirrors ``Path.glob`` semantics (notably ``**`` spanning directories) but
+    works on plain strings, so it stays compatible with Python 3.12 where
+    ``PurePath.full_match`` is unavailable. ``*`` and ``?`` never cross ``/``.
+    """
+    i, n, out = 0, len(pattern), []
+    while i < n:
+        char = pattern[i]
+        if char == "*":
+            if pattern[i : i + 2] == "**":
+                i += 2
+                if pattern[i : i + 1] == "/":
+                    out.append("(?:.*/)?")  # zero or more leading directories
+                    i += 1
+                else:
+                    out.append(".*")
+            else:
+                out.append("[^/]*")
+                i += 1
+        elif char == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(char))
+            i += 1
+    return re.compile("(?s:" + "".join(out) + r")\Z")
+
+
+def files_for_matcher(files: list[str], matcher: MatcherSpec) -> list[str]:
+    """Select which of ``files`` a matcher applies to.
+
+    ``files`` are repo-relative posix paths gathered once per scan (see
+    ``scanner._candidate_files``), so matching is pure string work and its cost
+    no longer scales with a per-matcher filesystem walk. Brace groups are
+    expanded first because the glob translator does not understand them.
+    """
     found: set[str] = set()
     for pattern in matcher.file_patterns:
         for expanded in expand_braces(pattern):
-            # pathlib handles ** well but not brace expansion; we did that above.
-            try:
-                candidates = root.glob(expanded)
-            except ValueError:
-                continue
-            for candidate in candidates:
-                if not candidate.is_file():
-                    continue
-                try:
-                    rel = candidate.relative_to(root).as_posix()
-                except ValueError:
-                    continue
-                if path_matches_any(rel, ignore):
-                    continue
-                found.add(rel)
+            regex = _compile_glob(expanded)
+            found.update(rel for rel in files if regex.match(rel) is not None)
     return sorted(found)
 
 

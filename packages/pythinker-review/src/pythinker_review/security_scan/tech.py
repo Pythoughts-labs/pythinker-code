@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from pathlib import Path
 
 from pythinker_review.security_scan.models import DetectedTech, now_iso
@@ -80,7 +81,7 @@ COMMON_SENTINELS = (
 )
 
 
-def detect_tech(root_path: Path) -> DetectedTech:
+def detect_tech(root_path: Path, *, file_paths: Iterable[str] | None = None) -> DetectedTech:
     root = root_path.resolve()
     cache: dict[str, str | None] = {}
     tags: set[str] = set()
@@ -98,7 +99,7 @@ def detect_tech(root_path: Path) -> DetectedTech:
     _detect_other_ecosystems(root, cache, tags)
     _detect_infra(root, tags)
 
-    languages = sorted(_languages_from_tags(tags) | _languages_from_files(root))
+    languages = sorted(_languages_from_tags(tags) | _languages_from_files(root, file_paths))
     return DetectedTech.model_validate(
         {
             "tags": sorted(tags),
@@ -455,7 +456,10 @@ def _languages_from_tags(tags: set[str]) -> set[str]:
     return out
 
 
-def _languages_from_files(root: Path) -> set[str]:
+def _languages_from_files(root: Path, file_paths: Iterable[str] | None = None) -> set[str]:
+    if file_paths is not None:
+        return {lang for path in file_paths if (lang := language_for_path(path)) is not None}
+
     out: set[str] = set()
     for language, extensions in LANGUAGE_EXTENSIONS.items():
         for ext in extensions:

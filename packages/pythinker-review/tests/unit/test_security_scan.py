@@ -20,7 +20,7 @@ from pythinker_review.security_scan.store import (
     read_run_meta,
     write_file_record,
 )
-from pythinker_review.security_scan.tech import detect_tech
+from pythinker_review.security_scan.tech import detect_tech, read_tech_json
 
 
 def test_security_scan_registry_ports_all_source_matchers() -> None:
@@ -94,6 +94,121 @@ def test_security_scan_writes_file_records(tmp_path: Path) -> None:
     record = read_file_record("repo", "app.py", data_root=data_root)
     assert record is not None
     assert any(candidate.vuln_slug == "py-fastapi-route" for candidate in record.candidates)
+
+
+def test_security_scan_ignores_virtualenv_and_agent_worktrees(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    source = (
+        "from fastapi import FastAPI\n"
+        "app = FastAPI()\n"
+        "@app.post('/admin')\n"
+        "def admin(user_id: str):\n"
+        "    return {'ok': user_id}\n"
+    )
+    (repo / "pyproject.toml").write_text('dependencies = ["fastapi"]\n', encoding="utf-8")
+    (repo / "app.py").write_text(source, encoding="utf-8")
+    # Heavy directories that must never be walked: dependency trees, build output,
+    # local virtualenvs, and full repo copies under .claude/worktrees/.
+    for ignored in (
+        "node_modules/pkg/app.py",
+        "build/app.py",
+        ".venv/lib/python3.14/site-packages/pkg/app.py",
+        ".claude/worktrees/agent-x/app.py",
+        ".claude/worktrees/agent-x/.venv/lib/site-packages/pkg/app.py",
+    ):
+        path = repo / ignored
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source, encoding="utf-8")
+
+    data_root = tmp_path / "state" / "data"
+    result = scan_project(project_id="repo", root=repo, data_root=data_root)
+
+    assert read_file_record("repo", "app.py", data_root=data_root) is not None
+    for ignored in (
+        "node_modules/pkg/app.py",
+        "build/app.py",
+        ".venv/lib/python3.14/site-packages/pkg/app.py",
+        ".claude/worktrees/agent-x/app.py",
+        ".claude/worktrees/agent-x/.venv/lib/site-packages/pkg/app.py",
+    ):
+        assert read_file_record("repo", ignored, data_root=data_root) is None
+    # Only the real source file is scanned, not the ignored copies.
+    assert result.candidate_count == 1
+
+
+def test_security_scan_tech_detection_ignores_unscannable_trees(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "pyproject.toml").write_text('dependencies = ["fastapi"]\n', encoding="utf-8")
+    (repo / "app.py").write_text("@app.post('/x')\ndef x(): return {}\n", encoding="utf-8")
+    generated_rust = repo / "target" / "debug" / "build" / "generated.rs"
+    generated_rust.parent.mkdir(parents=True)
+    generated_rust.write_text("fn generated() {}\n", encoding="utf-8")
+    data_root = tmp_path / "state" / "data"
+
+    scan_project(project_id="repo", root=repo, data_root=data_root)
+
+    tech = read_tech_json("repo", data_root=data_root)
+    assert tech is not None
+    assert "python" in tech.languages
+    assert "rust" not in tech.languages
+
+
+def test_security_scan_respects_gitignore(tmp_path: Path) -> None:
+    import shutil
+    import subprocess
+
+    import pytest
+
+    if shutil.which("git") is None:
+        pytest.skip("git not available")
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    source = (
+        "from fastapi import FastAPI\n"
+        "app = FastAPI()\n"
+        "@app.post('/admin')\n"
+        "def admin(user_id: str):\n"
+        "    return {'ok': user_id}\n"
+    )
+    (repo / "pyproject.toml").write_text('dependencies = ["fastapi"]\n', encoding="utf-8")
+    (repo / "app.py").write_text(source, encoding="utf-8")
+    # A gitignored directory that IGNORE_DIRS knows nothing about must still be
+    # skipped, because the scan honors git's ignore rules.
+    (repo / ".gitignore").write_text("generated/\n", encoding="utf-8")
+    generated = repo / "generated" / "app.py"
+    generated.parent.mkdir(parents=True)
+    generated.write_text(source, encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+
+    data_root = tmp_path / "state" / "data"
+    result = scan_project(project_id="repo", root=repo, data_root=data_root)
+
+    assert read_file_record("repo", "app.py", data_root=data_root) is not None
+    assert read_file_record("repo", "generated/app.py", data_root=data_root) is None
+    assert result.candidate_count == 1
+
+
+def test_security_scan_matches_direct_children_for_globstar_file_patterns(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    workflow = repo / ".github" / "workflows" / "security.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text("name: ci\npermissions: write-all\n", encoding="utf-8")
+    data_root = tmp_path / "state" / "data"
+
+    result = scan_project(
+        project_id="repo",
+        root=repo,
+        data_root=data_root,
+        matcher_slugs=["github-workflow-security"],
+    )
+
+    assert result.files_scanned == 1
+    record = read_file_record("repo", ".github/workflows/security.yml", data_root=data_root)
+    assert record is not None
+    assert any(candidate.vuln_slug == "github-workflow-security" for candidate in record.candidates)
 
 
 def test_security_scan_stats_count_scanned_files_and_removes_stale_candidates(
