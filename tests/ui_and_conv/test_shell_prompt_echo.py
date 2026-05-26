@@ -143,7 +143,7 @@ def test_render_user_echo_preserves_mixed_content_order() -> None:
     assert rendered.plain == "❯ look [image][audio][video]"
 
 
-def test_card_style_user_echo_renders_message_block_without_prompt_symbol() -> None:
+def test_card_style_user_echo_renders_transcript_prompt_symbol() -> None:
     original = get_active_tui_style()
     try:
         set_active_tui_style("card")
@@ -152,7 +152,7 @@ def test_card_style_user_echo_renders_message_block_without_prompt_symbol() -> N
     finally:
         set_active_tui_style(original)
 
-    assert "apply" in plain
+    assert plain == "❯ apply\n"
     assert "✨" not in plain
 
 

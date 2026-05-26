@@ -23,7 +23,7 @@ SHAPE_FRAME_INTERVAL_S: Final = 0.45
 REDUCED_MOTION_GLYPH: Final = "●"
 
 #: Transcript row marker for assistant/tool-call lines.
-TRANSCRIPT_ASSISTANT_MARKER: Final = "•"
+TRANSCRIPT_ASSISTANT_MARKER: Final = "⏺"
 #: Transcript prompt marker for submitted user input.
 TRANSCRIPT_PROMPT_MARKER: Final = "❯"
 #: Transcript marker for completed thinking/status timing rows.

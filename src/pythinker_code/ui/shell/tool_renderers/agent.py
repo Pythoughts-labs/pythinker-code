@@ -34,8 +34,8 @@ _BACKGROUND_ACTIVE_STATUSES = frozenset({"created", "starting", "running", "awai
 
 
 def _subagent_loader(_ctx: ToolRenderContext) -> Text:
-    """Return the pulsating solid-circle loader used for active subagent result rows."""
-    return loading_marker(style_token="accent")
+    """Return the muted pulsating transcript marker used for active subagent rows."""
+    return loading_marker(style_token="muted")
 
 
 def _render_call(ctx: ToolRenderContext) -> RenderableType:

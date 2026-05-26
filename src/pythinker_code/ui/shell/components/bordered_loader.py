@@ -13,9 +13,9 @@ import time
 from dataclasses import dataclass
 
 from rich.console import Group, RenderableType
-from rich.rule import Rule
 from rich.text import Text
 
+from pythinker_code.ui.shell.components.dynamic_border import DynamicBorder
 from pythinker_code.ui.shell.keymap import key_text
 from pythinker_code.ui.shell.motion import reduced_motion_enabled
 from pythinker_code.ui.theme import tui_rich_style
@@ -45,19 +45,18 @@ class BorderedLoaderState:
 
 def render_bordered_loader(state: BorderedLoaderState) -> RenderableType:
     """Build the bordered loader renderable for *state*."""
-    accent = tui_rich_style(state.accent_token)
     muted = tui_rich_style("muted")
 
     glyph = "●" if reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0 else " "
     loading = Text(f"{glyph} ", style=muted)
     loading.append(state.message, style=muted)
 
-    children: list[RenderableType] = [Rule(style=accent), loading]
+    children: list[RenderableType] = [DynamicBorder(state.accent_token), loading]
     if state.cancellable:
         cancel_key = key_text("tui.select.cancel") or "esc"
         hint = Text()
         hint.append(cancel_key, style=tui_rich_style("dim"))
         hint.append(" cancel", style=muted)
         children.append(hint)
-    children.append(Rule(style=accent))
+    children.append(DynamicBorder(state.accent_token))
     return Group(*children)

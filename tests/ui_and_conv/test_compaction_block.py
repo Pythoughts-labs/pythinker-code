@@ -7,7 +7,7 @@ def test_compaction_block_matches_reference_shape():
     block._start -= 30.0
     rendered = render_plain(block._render(), width=100)
 
-    assert "✢ Compacting conversation…" in rendered
+    assert "· Compacting conversation…" in rendered
     assert "↑ 37.6k tokens" in rendered
     assert "▰" in rendered
     assert "▱" in rendered

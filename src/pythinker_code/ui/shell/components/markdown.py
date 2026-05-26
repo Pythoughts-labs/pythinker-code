@@ -23,20 +23,20 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from markdown_it import MarkdownIt
 
-from rich.cells import cell_len
-from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
-from rich.padding import Padding
+from rich import box
+from rich.console import Console, ConsoleOptions, RenderResult
+from rich.panel import Panel
 from rich.style import Style as RichStyle
 from rich.syntax import Syntax
-from rich.text import Text
 from rich.theme import Theme
 
 from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
 from pythinker_code.ui.shell.spacing import CODE_BLOCK_PADDING
 from pythinker_code.ui.theme import ThemeName, get_markdown_colors
 from pythinker_code.utils.rich.markdown import CodeBlock, Markdown
+from pythinker_code.utils.rich.syntax import PYTHINKER_ANSI_THEME_NAME
 
-_MARKDOWN_ICON_REPLACEMENTS = {
+_MARKDOWN_ICON_REPLACEMENTS: dict[str, str] = {
     "✅": "✓",
     "☑️": "✓",
     "☑": "✓",
@@ -61,9 +61,10 @@ _MARKDOWN_ICON_REPLACEMENTS = {
     "📋": "▣",
     "📝": "▣",
     "📌": "•",
-    "⏺": "•",
 }
-_MARKDOWN_ICON_KEYS = tuple(sorted(_MARKDOWN_ICON_REPLACEMENTS, key=len, reverse=True))
+_MARKDOWN_ICON_KEYS: tuple[str, ...] = tuple(
+    sorted(_MARKDOWN_ICON_REPLACEMENTS, key=len, reverse=True)
+)
 _FENCE_RE = re.compile(r"^(?P<indent> {0,3})(?P<fence>`{3,}|~{3,})")
 
 
@@ -75,34 +76,38 @@ __all__ = [
 
 
 class _BorderedCodeBlock(CodeBlock):
-    """Code block with ``╭─ lang`` / ``╰─`` border rules and background tint."""
+    """Code block with an aligned rounded frame and calm report styling."""
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         colors = get_markdown_colors()
         border_style = RichStyle(color=colors.code_block_border, bold=True)
-        bg_style = RichStyle(bgcolor=colors.code_block_bg) if colors.code_block_bg else RichStyle()
-
-        label = self.lexer_name.strip() or "code"
-        opener_text = f"╭─ {label} "
-        opener = Text(
-            opener_text + "─" * max(0, options.max_width - cell_len(opener_text)),
-            style=border_style,
+        panel_style = (
+            RichStyle(bgcolor=colors.code_block_bg) if colors.code_block_bg else RichStyle()
         )
+
         code_text = str(self.text).rstrip("\n")
-        body: RenderableType = Syntax(
+        syntax = Syntax(
             code_text,
             self.lexer_name,
             theme=self.theme,
             word_wrap=True,
-            padding=CODE_BLOCK_PADDING,
-            background_color=colors.code_block_bg or None,
+            padding=0,
+            background_color=None,
         )
-        if bg_style:
-            body = Padding(body, (0, 0), style=bg_style)
-        closer = Text("╰" + "─" * max(0, options.max_width - 1), style=border_style)
-        yield opener
-        yield body
-        yield closer
+        highlighted = syntax.highlight(code_text)
+        highlighted.rstrip()
+        lexer_name = self.lexer_name.strip()
+        title = lexer_name if lexer_name and lexer_name != "text" else None
+        yield Panel(
+            highlighted,
+            title=title,
+            title_align="left",
+            box=box.ROUNDED,
+            border_style=border_style,
+            padding=CODE_BLOCK_PADDING,
+            expand=True,
+            style=panel_style,
+        )
 
 
 def _markdown_style_overrides(theme: ThemeName | None = None) -> dict[str, RichStyle]:
@@ -220,7 +225,9 @@ class PythinkerMarkdown(Markdown):
             yield from super().__rich_console__(console, options)
 
 
-def pythinker_markdown(text: str, *, code_theme: str = "monokai") -> PythinkerMarkdown:
+def pythinker_markdown(
+    text: str, *, code_theme: str = PYTHINKER_ANSI_THEME_NAME
+) -> PythinkerMarkdown:
     """Build a :class:`PythinkerMarkdown` with the palette pre-wired."""
     return PythinkerMarkdown(text, code_theme=code_theme)
 

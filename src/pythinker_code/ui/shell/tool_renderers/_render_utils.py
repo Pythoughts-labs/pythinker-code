@@ -103,17 +103,16 @@ def loading_marker(
 ) -> Text:
     """Return the app-wide task marker.
 
-    Running tasks use the same solid-dot appear/disappear pulse as the
-    Composing / Thinking indicator; completed tasks use a green checkmark.
-    The animated braille spinner is reserved for the bottom thinking-word
-    status. Callers may pass ``style_token="accent"`` for prominent rows.
+    Running tasks pulse the transcript marker in muted grey; completed tasks
+    show the same marker as a static green dot. The animated braille spinner is
+    reserved for the bottom thinking-word status.
     """
     if done:
-        return Text("✓ ", style=tui_rich_style("success"))
+        return Text(f"{TRANSCRIPT_ASSISTANT_MARKER} ", style=tui_rich_style("success"))
     if not pulse or reduced_motion_enabled():
-        return Text("● ", style=tui_rich_style(style_token))
+        return Text(f"{TRANSCRIPT_ASSISTANT_MARKER} ", style=tui_rich_style(style_token))
     t = time.monotonic() if now is None else now
-    glyph = "●" if int(t / 0.8) % 2 == 0 else " "
+    glyph = TRANSCRIPT_ASSISTANT_MARKER if int(t / 0.8) % 2 == 0 else " "
     return Text(f"{glyph} ", style=tui_rich_style(style_token))
 
 

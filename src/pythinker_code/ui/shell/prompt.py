@@ -181,6 +181,27 @@ def _slash_command_token_before_cursor(document: Document) -> str | None:
     return token
 
 
+def _discard_slash_command(buffer: Buffer) -> bool:
+    """Cancel slash completion and remove the in-progress root slash command."""
+    document = buffer.document
+    token = _slash_command_token_before_cursor(document)
+    if token is None:
+        return False
+
+    buffer.cancel_completion()
+    prefix = document.text_before_cursor[: -len(token)]
+    new_text = prefix + document.text_after_cursor
+    if not new_text.strip():
+        buffer.set_document(Document(), bypass_readonly=True)
+        return True
+
+    buffer.set_document(
+        Document(new_text, cursor_position=min(len(prefix), len(new_text))),
+        bypass_readonly=True,
+    )
+    return True
+
+
 class SlashCommandCompleter(Completer):
     """
     A completer that:
@@ -1697,6 +1718,12 @@ class CustomPromptSession:
             _accept_completion(event.current_buffer)
             event.current_buffer.validate_and_handle()
 
+        @_kb.add("escape", eager=True, filter=_slash_completion_filter)
+        def _(event: KeyPressEvent) -> None:
+            """Slash command completion: Escape discards the draft command."""
+            if _discard_slash_command(event.current_buffer):
+                event.app.invalidate()
+
         @_kb.add("enter", filter=_non_slash_completion_filter)
         def _(event: KeyPressEvent) -> None:
             """Non-slash completion (file mentions, etc.): accept only."""
@@ -2355,6 +2382,9 @@ class CustomPromptSession:
 
         if is_card_style():
             ensure_prompt_newline(fragments)
+            tc = get_toolbar_colors()
+            fragments.append((tc.separator, "─" * columns))
+            fragments.append(("", "\n"))
             fragments.append(("", _card_side_indent()))
         else:
             fragments.append(("", "\n"))

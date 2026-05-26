@@ -616,7 +616,10 @@ class MCPTool[T: ClientTransport](CallableTool):
         super().__init__(
             name=mcp_tool.name,
             description=(
-                f"This is an MCP (Model Context Protocol) tool from MCP server `{server_name}`.\n\n"
+                f"This is an MCP tool from the already-connected MCP server `{server_name}`. "
+                "Call it directly like any built-in tool — do NOT pip install it, import it as a "
+                "Python module, or search the repo for its configuration; the server is already "
+                "wired into your toolset.\n\n"
                 f"{mcp_tool.description or 'No description provided.'}"
             ),
             parameters=mcp_tool.inputSchema,

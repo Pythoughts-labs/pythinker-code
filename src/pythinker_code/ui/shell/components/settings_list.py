@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from prompt_toolkit.application import Application
+from prompt_toolkit.application.current import get_app_or_none
 from prompt_toolkit.formatted_text import StyleAndTextTuples
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
 from prompt_toolkit.layout import HSplit, Layout, Window
@@ -19,7 +20,7 @@ from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
 
 from pythinker_code.ui.shell.components.render_utils import cell_width, truncate_to_width
-from pythinker_code.ui.theme import get_prompt_style
+from pythinker_code.ui.theme import get_prompt_style, get_toolbar_colors
 
 __all__ = [
     "SettingItem",
@@ -224,14 +225,33 @@ def _format_setting_line(
 def _build_application(state: _SettingsListState) -> Application[None]:
     config = state.config
 
+    def _current_width(default: int = 88) -> int:
+        app = get_app_or_none()
+        if app is None:
+            return default
+        try:
+            return max(20, app.output.get_size().columns)
+        except Exception:  # noqa: BLE001 - selector rendering must be defensive
+            return default
+
+    def border_text() -> StyleAndTextTuples:
+        return [(get_toolbar_colors().separator, "─" * _current_width())]
+
     def header_text() -> StyleAndTextTuples:
+        width = _current_width()
+        title = truncate_to_width(f" {config.title} ", width)
         out: StyleAndTextTuples = [
-            ("class:slash-completion-menu.command.current", config.title),
+            ("class:slash-completion-menu.command.current", title),
             ("", "\n"),
         ]
         if config.enable_search:
             display = state.search or "(type to search)"
-            out.append(("class:slash-completion-menu.meta", f"search: {display}"))
+            out.append(
+                (
+                    "class:slash-completion-menu.meta",
+                    truncate_to_width(f"  Search: {display}", width),
+                )
+            )
             out.append(("", "\n"))
         return out
 
@@ -239,7 +259,7 @@ def _build_application(state: _SettingsListState) -> Application[None]:
         if not state.visible:
             return [("class:slash-completion-menu.meta", "  no matching settings"), ("", "\n")]
 
-        width = 88
+        width = _current_width()
         start, end = state.visible_window()
         visible_items = [config.items[i] for i in state.visible]
         label_width = min(30, max(cell_width(item.label) for item in config.items))
@@ -264,7 +284,7 @@ def _build_application(state: _SettingsListState) -> Application[None]:
         selected = state.current_item
         if selected and selected.description:
             rows.append(("", "\n"))
-            description = f"  {truncate_to_width(selected.description, width - 2)}"
+            description = f"  {truncate_to_width(selected.description, max(0, width - 2))}"
             rows.append(("class:slash-completion-menu.meta", description))
             rows.append(("", "\n"))
         return rows
@@ -272,7 +292,12 @@ def _build_application(state: _SettingsListState) -> Application[None]:
     def hint_text() -> StyleAndTextTuples:
         changed = state.changes()
         suffix = f" · {len(changed)} changed" if changed else ""
-        return [("class:slash-completion-menu.meta", config.hint + suffix)]
+        return [
+            (
+                "class:slash-completion-menu.meta",
+                truncate_to_width(config.hint + suffix, _current_width()),
+            )
+        ]
 
     bindings = KeyBindings()
 
@@ -287,6 +312,16 @@ def _build_application(state: _SettingsListState) -> Application[None]:
     @bindings.add("down")
     def _(event: KeyPressEvent) -> None:
         state.move(1)
+        _redraw(event)
+
+    @bindings.add("pageup")
+    def _(event: KeyPressEvent) -> None:
+        state.move(-max(1, config.max_visible))
+        _redraw(event)
+
+    @bindings.add("pagedown")
+    def _(event: KeyPressEvent) -> None:
+        state.move(max(1, config.max_visible))
         _redraw(event)
 
     @bindings.add("enter")
@@ -335,14 +370,28 @@ def _build_application(state: _SettingsListState) -> Application[None]:
             HSplit(
                 [
                     Window(
+                        FormattedTextControl(border_text),
+                        height=1,
+                        style="class:slash-completion-menu",
+                    ),
+                    Window(
                         FormattedTextControl(header_text),
                         height=Dimension(min=header_height, max=header_height),
                         style="class:slash-completion-menu",
                     ),
-                    Window(FormattedTextControl(items_text), style="class:slash-completion-menu"),
+                    Window(
+                        FormattedTextControl(items_text),
+                        height=Dimension(preferred=min(max(1, config.max_visible), 12), min=1),
+                        style="class:slash-completion-menu",
+                    ),
                     Window(
                         FormattedTextControl(hint_text),
                         height=Dimension(min=1, max=1),
+                        style="class:slash-completion-menu",
+                    ),
+                    Window(
+                        FormattedTextControl(border_text),
+                        height=1,
                         style="class:slash-completion-menu",
                     ),
                 ]

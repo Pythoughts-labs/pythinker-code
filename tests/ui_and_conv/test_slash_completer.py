@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from types import SimpleNamespace
 
+from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.completion import CompleteEvent, Completion
 from prompt_toolkit.document import Document
 from prompt_toolkit.layout.containers import ConditionalContainer, FloatContainer, HSplit, Window
@@ -14,6 +15,7 @@ import pythinker_code.ui.shell.prompt as prompt_mod
 from pythinker_code.ui.shell.prompt import (
     SlashCommandCompleter,
     SlashCommandMenuControl,
+    _discard_slash_command,
     _find_prompt_float_container,
     _wrap_to_width,
 )
@@ -82,6 +84,22 @@ def test_should_complete_only_for_root_slash_token():
     assert not SlashCommandCompleter.should_complete(Document(text="test /he", cursor_position=8))
     assert not SlashCommandCompleter.should_complete(Document(text="@src", cursor_position=4))
     assert not SlashCommandCompleter.should_complete(Document(text="/he next", cursor_position=8))
+
+
+def test_discard_slash_command_clears_root_slash_draft():
+    buffer = Buffer()
+    buffer.set_document(Document(text="/theme", cursor_position=6), bypass_readonly=True)
+
+    assert _discard_slash_command(buffer) is True
+    assert buffer.text == ""
+
+
+def test_discard_slash_command_ignores_non_root_slash_text():
+    buffer = Buffer()
+    buffer.set_document(Document(text="ask /theme", cursor_position=10), bypass_readonly=True)
+
+    assert _discard_slash_command(buffer) is False
+    assert buffer.text == "ask /theme"
 
 
 def test_completion_display_uses_canonical_command_name():

@@ -27,14 +27,16 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from prompt_toolkit.application import Application
+from prompt_toolkit.application.current import get_app_or_none
 from prompt_toolkit.formatted_text import StyleAndTextTuples
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
 from prompt_toolkit.layout import HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
 
+from pythinker_code.ui.shell.components.render_utils import cell_width, truncate_to_width
 from pythinker_code.ui.shell.glyphs import TRANSCRIPT_PROMPT_MARKER
-from pythinker_code.ui.theme import get_prompt_style
+from pythinker_code.ui.theme import get_prompt_style, get_toolbar_colors
 
 __all__ = [
     "SelectorConfig",
@@ -83,6 +85,9 @@ class SelectorConfig[T]:
     enable_filter: bool = True
     """When False, type-to-filter is disabled (useful for tiny selectors)."""
 
+    max_visible: int = 12
+    """Maximum selectable/list rows rendered before the list scrolls."""
+
     on_change: Callable[[T], None] | None = None
     """Called whenever the cursor moves to a different SelectorItem."""
 
@@ -125,11 +130,15 @@ def _format_item_line[T](
         desc_parts.append(item.description)
     description = " ".join(desc_parts)
 
-    label = item.label
     gap = "  "
-    # Width budget: marker(2) + label + gap(2) + description + trailing pad
-    used = len(marker) + len(label) + len(gap) + len(description)
-    pad = max(0, width - used)
+    min_desc_width = 10 if description else 0
+    marker_width = cell_width(marker)
+    gap_width = cell_width(gap)
+    label_budget = max(1, width - marker_width - gap_width - min_desc_width)
+    label = truncate_to_width(item.label, label_budget)
+    remaining = max(0, width - marker_width - cell_width(label) - gap_width)
+    description = truncate_to_width(description, remaining, ellipsis="")
+    pad = max(0, width - marker_width - cell_width(label) - gap_width - cell_width(description))
     return [
         (marker_style, marker),
         (label_style, label),
@@ -152,11 +161,23 @@ class _SelectorState[T]:
         self.cancelled = False
         self._refilter(initial=True)
 
+    @staticmethod
+    def _fuzzy_match(needle: str, haystack: str) -> bool:
+        if not needle:
+            return True
+        pos = 0
+        for ch in needle.lower():
+            found = haystack.find(ch, pos)
+            if found < 0:
+                return False
+            pos = found + 1
+        return True
+
     def _matches(self, item: SelectorItem[T]) -> bool:
         if not self.filter:
             return True
-        needle = self.filter.lower()
-        return needle in item.label.lower() or needle in item.description.lower()
+        haystack = f"{item.label} {item.description}".lower()
+        return self._fuzzy_match(self.filter, haystack)
 
     def _selectable_indices(self) -> list[int]:
         return [i for i, item in enumerate(self.visible) if isinstance(item, SelectorItem)]
@@ -235,34 +256,72 @@ class _SelectorState[T]:
             self.filter = ""
             self._refilter()
 
+    def visible_window(self) -> tuple[int, int]:
+        if not self.visible:
+            return (0, 0)
+        max_visible = max(1, self.config.max_visible)
+        if len(self.visible) <= max_visible:
+            return (0, len(self.visible))
+        start = max(0, min(self.selected_idx - max_visible // 2, len(self.visible) - max_visible))
+        end = min(start + max_visible, len(self.visible))
+        return (start, end)
+
 
 def _build_application[T](state: _SelectorState[T]) -> Application[None]:
     config = state.config
 
+    def _current_width(default: int = 80) -> int:
+        app = get_app_or_none()
+        if app is None:
+            return default
+        try:
+            return max(20, app.output.get_size().columns)
+        except Exception:  # noqa: BLE001 - selector rendering must be defensive
+            return default
+
+    def _selectable_count(rows: Sequence[SelectorItem[T] | SelectorHeader]) -> int:
+        return sum(1 for item in rows if isinstance(item, SelectorItem))
+
+    def border_text() -> StyleAndTextTuples:
+        width = _current_width()
+        return [(get_toolbar_colors().separator, "─" * width)]
+
     def header_text() -> StyleAndTextTuples:
+        width = _current_width()
+        total = _selectable_count(config.items)
+        visible = _selectable_count(state.visible)
+        count = f" {visible} of {total}" if state.filter else f" {total}"
+        title = truncate_to_width(f" {config.title} ", max(1, width - cell_width(count)))
+        pad = max(0, width - cell_width(title) - cell_width(count))
         out: StyleAndTextTuples = [
-            ("class:slash-completion-menu.command.current", config.title),
+            ("class:slash-completion-menu.command.current", title),
+            ("class:slash-completion-menu.meta", " " * pad + count),
             ("", "\n"),
         ]
         if config.enable_filter:
             filter_display = state.filter or "(type to filter)"
-            out.append(("class:slash-completion-menu.meta", f"filter: {filter_display}"))
-            out.append(("", "\n"))
+            line = truncate_to_width(f"  Search: {filter_display}", width)
+            out.append(("class:slash-completion-menu.meta", line))
+        else:
+            out.append(("class:slash-completion-menu.meta", "  ↑↓ navigate · Enter select"))
         return out
 
     def items_text() -> StyleAndTextTuples:
+        width = _current_width()
         if not state.visible:
             return [
                 ("class:slash-completion-menu.meta", "  no matches"),
                 ("", "\n"),
             ]
-        width = 80
         rows: StyleAndTextTuples = []
-        for i, item in enumerate(state.visible):
+        start, end = state.visible_window()
+        for i in range(start, end):
+            item = state.visible[i]
             if isinstance(item, SelectorHeader):
+                label = truncate_to_width(f"  {item.label}", width)
                 rows.extend(
                     [
-                        ("class:slash-completion-menu.meta", f"  {item.label}"),
+                        ("class:slash-completion-menu.meta", label),
                         ("", "\n"),
                     ]
                 )
@@ -270,10 +329,17 @@ def _build_application[T](state: _SelectorState[T]) -> Application[None]:
                 rows.extend(
                     _format_item_line(item, is_selected=i == state.selected_idx, width=width)
                 )
+        if start > 0 or end < len(state.visible):
+            selected_pos = max(1, _selectable_count(state.visible[: state.selected_idx + 1]))
+            total = _selectable_count(state.visible)
+            scroll = truncate_to_width(f"  ({selected_pos}/{total})", width)
+            rows.append(("class:slash-completion-menu.meta", scroll))
+            rows.append(("", "\n"))
         return rows
 
     def hint_text() -> StyleAndTextTuples:
-        return [("class:slash-completion-menu.meta", config.hint)]
+        width = _current_width()
+        return [("class:slash-completion-menu.meta", truncate_to_width(config.hint, width))]
 
     bindings = KeyBindings()
 
@@ -283,6 +349,14 @@ def _build_application[T](state: _SelectorState[T]) -> Application[None]:
 
     def on_down(event: KeyPressEvent) -> None:
         state.move(1)
+        event.app.invalidate()
+
+    def on_page_up(event: KeyPressEvent) -> None:
+        state.move(-max(1, config.max_visible))
+        event.app.invalidate()
+
+    def on_page_down(event: KeyPressEvent) -> None:
+        state.move(max(1, config.max_visible))
         event.app.invalidate()
 
     def on_enter(event: KeyPressEvent) -> None:
@@ -295,6 +369,8 @@ def _build_application[T](state: _SelectorState[T]) -> Application[None]:
 
     bindings.add("up")(on_up)
     bindings.add("down")(on_down)
+    bindings.add("pageup")(on_page_up)
+    bindings.add("pagedown")(on_page_down)
     bindings.add("enter")(on_enter)
     bindings.add("escape", eager=True)(on_cancel)
     bindings.add("c-c")(on_cancel)
@@ -324,17 +400,28 @@ def _build_application[T](state: _SelectorState[T]) -> Application[None]:
         HSplit(
             [
                 Window(
+                    FormattedTextControl(border_text),
+                    height=1,
+                    style="class:slash-completion-menu",
+                ),
+                Window(
                     FormattedTextControl(header_text),
                     height=Dimension(min=2, max=2),
                     style="class:slash-completion-menu",
                 ),
                 Window(
                     FormattedTextControl(items_text),
+                    height=Dimension(preferred=min(max(1, config.max_visible), 12), min=1),
                     style="class:slash-completion-menu",
                 ),
                 Window(
                     FormattedTextControl(hint_text),
                     height=Dimension(min=1, max=1),
+                    style="class:slash-completion-menu",
+                ),
+                Window(
+                    FormattedTextControl(border_text),
+                    height=1,
                     style="class:slash-completion-menu",
                 ),
             ]

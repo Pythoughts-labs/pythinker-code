@@ -22,13 +22,19 @@ from pythinker_code.ui.shell.components.diff import (
     compute_edit_diff_string,
     render_diff,
 )
+from pythinker_code.ui.shell.components.dynamic_border import DynamicBorder, render_dynamic_border
 from pythinker_code.ui.shell.components.footer import (
     FooterState,
     FooterUsage,
     format_tokens,
     render_footer,
 )
-from pythinker_code.ui.shell.components.key_hints import key_hint, raw_key_hint
+from pythinker_code.ui.shell.components.key_hints import (
+    format_key_text,
+    key_display_text,
+    key_hint,
+    raw_key_hint,
+)
 from pythinker_code.ui.shell.components.messages import (
     AssistantContent,
     CustomMessageInput,
@@ -73,6 +79,7 @@ __all__ = [
     "BranchSummaryInput",
     "CompactionSummaryInput",
     "CustomMessageInput",
+    "DynamicBorder",
     "EditDiffResult",
     "FooterState",
     "FooterUsage",
@@ -87,7 +94,9 @@ __all__ = [
     "cell_width",
     "compute_edit_diff_string",
     "dim",
+    "format_key_text",
     "format_tokens",
+    "key_display_text",
     "key_hint",
     "raw_key_hint",
     "render_assistant_message",
@@ -97,6 +106,7 @@ __all__ = [
     "render_compaction_summary",
     "render_custom_message",
     "render_diff",
+    "render_dynamic_border",
     "render_footer",
     "render_message_response",
     "render_plain",

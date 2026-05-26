@@ -1234,7 +1234,7 @@ def test_idle_agent_prompt_uses_same_codex_input_layout(monkeypatch: Any) -> Non
 
     rendered_message = prompt_session._render_agent_prompt_message()
     plain_message = "".join(fragment[1] for fragment in rendered_message)
-    assert plain_message == "  ❯ "
+    assert plain_message == f"{'─' * width}\n  ❯ "
     assert "input" not in plain_message
 
 

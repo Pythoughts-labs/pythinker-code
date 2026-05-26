@@ -22,6 +22,7 @@ from pythinker_code.ui.shell.components.render_utils import (
     sanitize_ansi,
     truncate_middle_to_visual_lines,
 )
+from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ASSISTANT_MARKER
 from pythinker_code.ui.shell.motion import reduced_motion_enabled
 from pythinker_code.ui.theme import tui_rich_style
 
@@ -97,7 +98,11 @@ def _output_lines(output: str) -> list[str]:
 
 
 def _pulsing_marker() -> Text:
-    glyph = "●" if reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0 else " "
+    glyph = (
+        TRANSCRIPT_ASSISTANT_MARKER
+        if reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0
+        else " "
+    )
     return Text(f"{glyph} ", style=tui_rich_style("muted"))
 
 
@@ -145,7 +150,7 @@ def _status_header(state: BashExecutionState) -> Text:
         header = Text("● ", style=tui_rich_style("warning"))
         header.append("Cancelled", style=tui_rich_style("warning") + RichStyle(bold=True))
     else:
-        header = Text("✔ ", style=tui_rich_style("success"))
+        header = Text(f"{TRANSCRIPT_ASSISTANT_MARKER} ", style=tui_rich_style("success"))
         header.append("Ran", style=tui_rich_style("success") + RichStyle(bold=True))
 
     strip = _command_strip_style(state)

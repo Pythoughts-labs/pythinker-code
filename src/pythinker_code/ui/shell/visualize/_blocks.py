@@ -158,7 +158,7 @@ class _ContentBlock:
     raw reasoning text only for token accounting and never render it.  The
     Live area shows a compact ``Thinking`` label with an animated bullet
     sequence, elapsed time, token count, and a live tokens/second pulse;
-    when the block ends, a one-liner ``✻ Crunched for Xs`` trace is
+    when the block ends, a one-liner ``✻ Cogitated for Xs`` trace is
     committed to history in grey italics.
 
     When ``show_thinking_stream=True``, the legacy behavior is restored: the
@@ -219,7 +219,7 @@ class _ContentBlock:
                 )
             elapsed_str = format_elapsed(time.monotonic() - self._start_time)
             return Text(
-                f"{TRANSCRIPT_STATUS_MARKER} Crunched for {elapsed_str}",
+                f"{TRANSCRIPT_STATUS_MARKER} Cogitated for {elapsed_str}",
                 style=tui_rich_style("thinking_text") + Style(italic=True),
             )
         remaining = self._pending_text()
@@ -247,7 +247,7 @@ class _ContentBlock:
         self._has_printed_bullet = True
         return BulletColumns(
             renderable,
-            bullet=Text(TRANSCRIPT_ASSISTANT_MARKER, style=tui_rich_style("accent")),
+            bullet=Text(TRANSCRIPT_ASSISTANT_MARKER, style=tui_rich_style("success")),
         )
 
     @property
@@ -764,7 +764,7 @@ class _CompactionBlock:
         title_style = accent + Style(italic=True)
 
         title = Text()
-        title.append("✢ ", style=accent)
+        title.append("· ", style=muted)
         title.append("Compacting conversation…", style=title_style)
         title.append(f" ({format_elapsed(elapsed)}", style=subtle)
         if self._context_tokens is not None:

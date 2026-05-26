@@ -49,6 +49,23 @@ def test_markdown_renders_across_configs(width: int, no_color: bool) -> None:
 
 
 @pytest.mark.parametrize("width", WIDTHS)
+def test_markdown_code_fences_use_aligned_panel_frame(width: int) -> None:
+    out = _render(
+        pythinker_markdown("```bash\npythinker mcp list\n```"),
+        width=width,
+        no_color=True,
+    )
+    lines = [line for line in out.splitlines() if line]
+
+    assert lines[0].startswith("╭─ bash ")
+    assert lines[0].endswith("╮")
+    assert lines[1].startswith("│ pythinker mcp list")
+    assert lines[1].endswith("│")
+    assert lines[2].startswith("╰")
+    assert lines[2].endswith("╯")
+
+
+@pytest.mark.parametrize("width", WIDTHS)
 def test_activity_line_reduced_motion_uses_static_glyph(width: int) -> None:
     snap = ActivitySnapshot(label="Working", elapsed_s=3.0, reduced_motion=True)
     out = _render(activity_status_line(snap, width=width), width=width, no_color=True)

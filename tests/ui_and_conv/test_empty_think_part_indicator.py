@@ -121,7 +121,7 @@ def test_empty_think_then_text_no_spurious_thought_line(monkeypatch):
     assert view._current_content_block.raw_text == "Hello!"
     for item in printed:
         rendered = _render(item)
-        assert "Crunched for" not in rendered
+        assert "Cogitated for" not in rendered
 
 
 def test_step_retry_clears_partial_content_and_updates_live_status(monkeypatch):

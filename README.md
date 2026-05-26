@@ -552,14 +552,18 @@ Pythinker loads [Model Context Protocol](https://modelcontextprotocol.io/) tools
 ### 🛠️ Manage persistent MCP servers
 
 ```sh
+# 📚 Context7 stdio server (Codex-style: NAME -- COMMAND)
+pythinker mcp add context7 -- npx -y @upstash/context7-mcp --api-key YOUR-API-KEY
+# Added MCP server 'context7' to ~/.pythinker/mcp.json
+
 # 🌐 Streamable HTTP server with API key
-pythinker mcp add --transport http context7 https://mcp.context7.com/mcp \
-  --header "CONTEXT7_API_KEY: ctx7sk-your-key"
+pythinker mcp add --transport http docs https://example.com/mcp \
+  --header "API_KEY: your-key"
 
 # 🔐 Streamable HTTP server with OAuth
 pythinker mcp add --transport http --auth oauth linear https://mcp.linear.app/mcp
 
-# 💻 stdio server
+# 💻 stdio server with explicit transport
 pythinker mcp add --transport stdio chrome-devtools -- npx chrome-devtools-mcp@latest
 
 # 📋 List, authorize, test, and remove
