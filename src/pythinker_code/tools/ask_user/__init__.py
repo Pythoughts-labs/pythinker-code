@@ -14,6 +14,7 @@ from pythinker_code.soul import get_wire_or_none, wire_send
 from pythinker_code.soul.toolset import get_current_tool_call_or_none
 from pythinker_code.tools.utils import load_desc
 from pythinker_code.wire.types import (
+    QuestionAnswered,
     QuestionItem,
     QuestionNotSupported,
     QuestionOption,
@@ -158,6 +159,14 @@ class AskUserQuestion(CallableTool2[Params]):
             )
 
         if not answers:
+            wire_send(
+                QuestionAnswered(
+                    request_id=request.id,
+                    tool_call_id=tool_call.id,
+                    answers={},
+                    dismissed=True,
+                )
+            )
             return ToolReturnValue(
                 is_error=False,
                 output='{"answers": {}, "note": "User dismissed the question without answering."}',
@@ -165,6 +174,13 @@ class AskUserQuestion(CallableTool2[Params]):
                 display=[BriefDisplayBlock(text="User dismissed")],
             )
 
+        wire_send(
+            QuestionAnswered(
+                request_id=request.id,
+                tool_call_id=tool_call.id,
+                answers=answers,
+            )
+        )
         formatted = json.dumps({"answers": answers}, ensure_ascii=False)
         return ToolReturnValue(
             is_error=False,

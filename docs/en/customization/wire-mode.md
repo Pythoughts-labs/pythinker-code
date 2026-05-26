@@ -497,6 +497,8 @@ type Event =
   | ToolCallPart
   | ToolResult
   | ApprovalResponse
+  | QuestionAnswered
+  | ProgressNote
   | SubagentEvent
   | BtwBegin
   | BtwEnd
@@ -719,6 +721,44 @@ interface ApprovalResponse {
   response: "approve" | "approve_for_session" | "reject"
   /** Optional feedback text when rejecting, may be absent in JSON */
   feedback?: string
+}
+```
+
+### `QuestionAnswered`
+
+::: info Added
+Added in Wire 1.10.
+:::
+
+Transcript event emitted after a `QuestionRequest` is resolved, so clients can show the user's choice in the conversation flow.
+
+```typescript
+interface QuestionAnswered {
+  /** Corresponding question request ID */
+  request_id: string
+  /** Associated tool call ID */
+  tool_call_id: string
+  /** Answer mapping; empty when dismissed */
+  answers: Record<string, string>
+  /** True when the user dismissed the question without answering */
+  dismissed: boolean
+}
+```
+
+### `ProgressNote`
+
+::: info Added
+Added in Wire 1.10.
+:::
+
+Compact checkpoint/progress note for transcript UIs.
+
+```typescript
+interface ProgressNote {
+  /** Short note title, for example "Checkpoint" */
+  title: string
+  /** Optional markdown body shown below the title */
+  body: string
 }
 ```
 

@@ -460,7 +460,10 @@ class _PromptLiveView(_LiveView):
 
     def handle_running_prompt_key(self, key: str, event: KeyPressEvent) -> None:
         if key in {"c-o", "c-e"}:
-            if self._has_expandable_modal_panel():
+            if self._has_expandable_modal_panel() or (
+                self._expandable_tool_card() is None
+                and self._completed_expandable_tool_card() is not None
+            ):
                 event.app.create_background_task(self._show_panel_in_pager())
             elif self._toggle_latest_tool_card():
                 self._flush_prompt_refresh()

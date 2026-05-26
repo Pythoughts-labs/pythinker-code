@@ -49,6 +49,12 @@ from pythinker_code.ui.shell.visualize._blocks import (
     _NotificationBlock as _NotificationBlock,
 )
 from pythinker_code.ui.shell.visualize._blocks import (
+    _ProgressNoteBlock as _ProgressNoteBlock,
+)
+from pythinker_code.ui.shell.visualize._blocks import (
+    _QuestionAnsweredBlock as _QuestionAnsweredBlock,
+)
+from pythinker_code.ui.shell.visualize._blocks import (
     _StatusBlock as _StatusBlock,
 )
 from pythinker_code.ui.shell.visualize._blocks import (

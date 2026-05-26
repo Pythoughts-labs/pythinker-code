@@ -37,6 +37,7 @@ from pythinker_code.utils.rich.markdown import CodeBlock, Markdown
 from pythinker_code.utils.rich.syntax import PYTHINKER_ANSI_THEME_NAME
 
 _MARKDOWN_ICON_REPLACEMENTS: dict[str, str] = {
+    "⏺": "•",
     "✅": "✓",
     "☑️": "✓",
     "☑": "✓",

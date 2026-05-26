@@ -686,13 +686,16 @@ class Shell:
             if isinstance(self.soul, PythinkerSoul):
                 pythinker_soul = self.soul
                 snapshot = pythinker_soul.status.mcp_status
-                if snapshot and snapshot.loading:
+                if snapshot is not None:
 
                     async def _invalidate_after_mcp_loading() -> None:
                         try:
                             await pythinker_soul.wait_for_background_mcp_loading()
                         except Exception:
                             logger.debug("MCP loading finished with error while refreshing prompt")
+                        # Loading finished: repaint so the bottom-toolbar MCP line
+                        # (rendered below the input) drops away once it is no longer
+                        # loading.
                         if self._prompt_session is prompt_session:
                             prompt_session.invalidate()
 

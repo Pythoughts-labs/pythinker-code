@@ -16,7 +16,12 @@ from pythinker_code.tools.ask_user import (
     QuestionParam,
 )
 from pythinker_code.wire import Wire
-from pythinker_code.wire.types import QuestionNotSupported, QuestionRequest, ToolCall
+from pythinker_code.wire.types import (
+    QuestionAnswered,
+    QuestionNotSupported,
+    QuestionRequest,
+    ToolCall,
+)
 
 
 @pytest.fixture
@@ -72,6 +77,11 @@ async def test_ask_user_basic(ask_user_tool: AskUserQuestion):
         # Resolve the request with an answer
         msg.resolve({"Which option?": "Option A"})
 
+        event = await asyncio.wait_for(ui_side.receive(), timeout=2.0)
+        assert isinstance(event, QuestionAnswered)
+        assert event.answers == {"Which option?": "Option A"}
+        assert event.dismissed is False
+
         result = await asyncio.wait_for(tool_task, timeout=2.0)
         assert not result.is_error
         assert isinstance(result.output, str)
@@ -103,6 +113,11 @@ async def test_ask_user_dismissed(ask_user_tool: AskUserQuestion):
 
         # Resolve with empty answers (simulating user dismiss)
         msg.resolve({})
+
+        event = await asyncio.wait_for(ui_side.receive(), timeout=2.0)
+        assert isinstance(event, QuestionAnswered)
+        assert event.answers == {}
+        assert event.dismissed is True
 
         result = await asyncio.wait_for(tool_task, timeout=2.0)
         assert not result.is_error

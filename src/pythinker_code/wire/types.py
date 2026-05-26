@@ -405,6 +405,28 @@ class QuestionResponse(BaseModel):
     comma-separated."""
 
 
+class QuestionAnswered(BaseModel):
+    """Transcript event emitted after an interactive question is resolved."""
+
+    request_id: str
+    """The ID of the resolved question request."""
+    tool_call_id: str
+    """The tool call that asked the question."""
+    answers: dict[str, str]
+    """Mapping from question text to selected answer label(s). Empty when dismissed."""
+    dismissed: bool = False
+    """Whether the user dismissed the question without answering."""
+
+
+class ProgressNote(BaseModel):
+    """A compact progress/checkpoint note for transcript UIs."""
+
+    title: str
+    """Short note title, for example ``Checkpoint``."""
+    body: str = ""
+    """Optional markdown body shown below the title."""
+
+
 class QuestionNotSupported(Exception):
     """Raised when the connected client does not support interactive questions."""
 
@@ -533,6 +555,8 @@ type Event = (
     | ToolCallPart
     | ToolResult
     | ApprovalResponse
+    | QuestionAnswered
+    | ProgressNote
     | SubagentEvent
     | PlanDisplay
     | BtwBegin
@@ -691,6 +715,8 @@ __all__ = [
     "QuestionOption",
     "QuestionItem",
     "QuestionResponse",
+    "QuestionAnswered",
+    "ProgressNote",
     "QuestionRequest",
     "QuestionNotSupported",
     # helpers
