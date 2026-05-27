@@ -612,7 +612,7 @@ async def test_run_agents_foreground_reports_completed_status(runtime):
     assert calls and calls[0].run_in_background is False
 
 
-async def test_run_agents_rejects_background_batch_over_available_slots(runtime, monkeypatch):
+async def test_run_agents_defers_background_batch_over_available_slots(runtime, monkeypatch):
     runtime.labor_market.add_builtin_type(
         AgentTypeDefinition(
             name="explore",
@@ -661,18 +661,19 @@ async def test_run_agents_rejects_background_batch_over_available_slots(runtime,
             )
         )
 
-    assert result.is_error
-    assert result.brief == "Background task limit"
-    assert "RunAgents requested 5 background agent(s)" in result.message
-    assert "only 4 background task slot(s) are available" in result.message
-    assert "reason: background_task_limit" in result.output
-    assert created == []
-    assert approval_requests == 0
+    assert not result.is_error
+    assert result.message == "Agents launched; 1 deferred by background capacity."
+    assert "tool_status: launched" in result.output
+    assert "requested_agent_count: 5" in result.output
+    assert "agent_count: 4" in result.output
+    assert "deferred_agent_count: 1" in result.output
+    assert "capacity_limited: true" in result.output
+    assert "name: scout-4" in result.output
+    assert len(created) == 4
+    assert approval_requests == 1
 
 
-async def test_run_agents_rejects_background_batch_when_existing_tasks_fill_slots(
-    runtime, monkeypatch
-):
+async def test_run_agents_defers_background_batch_when_some_slots_are_used(runtime, monkeypatch):
     runtime.labor_market.add_builtin_type(
         AgentTypeDefinition(
             name="explore",
@@ -719,10 +720,58 @@ async def test_run_agents_rejects_background_batch_when_existing_tasks_fill_slot
             )
         )
 
+    assert not result.is_error
+    assert result.message == "Agents launched; 1 deferred by background capacity."
+    assert "agent_count: 1" in result.output
+    assert "deferred_agent_count: 1" in result.output
+    assert "active_background_tasks: 3" in result.output
+    assert "available_background_slots: 1" in result.output
+    assert [item["description"] for item in created] == ["API scout"]
+
+
+async def test_run_agents_rejects_background_batch_when_no_slots_are_available(
+    runtime, monkeypatch
+):
+    runtime.labor_market.add_builtin_type(
+        AgentTypeDefinition(
+            name="explore",
+            description="Read-only exploration.",
+            agent_file=runtime.subagent_store.root / "explore.yaml",
+            tool_policy=ToolPolicy(mode="inherit"),
+        )
+    )
+    created: list[dict[str, object]] = []
+
+    def fake_create_agent_task(**kwargs):
+        created.append(kwargs)
+        return SimpleNamespace(
+            spec=SimpleNamespace(id=f"task-{len(created)}", kind="agent"),
+            runtime=SimpleNamespace(status="starting"),
+        )
+
+    monkeypatch.setattr(runtime.background_tasks, "active_task_count", lambda: 4)
+    monkeypatch.setattr(runtime.background_tasks, "create_agent_task", fake_create_agent_task)
+    tool = RunAgents(runtime)
+
+    with tool_call_context("RunAgents"):
+        result = await tool(
+            tool.params(
+                summary="capacity-aware scouting",
+                agents=[
+                    AgentRunConfig(
+                        name="api-scout",
+                        title="API scout",
+                        subagent_type="explore",
+                        prompt="Find API files",
+                    )
+                ],
+            )
+        )
+
     assert result.is_error
     assert result.brief == "Background task limit"
-    assert "only 1 background task slot(s) are available" in result.message
-    assert "active_background_tasks: 3" in result.output
+    assert "no background task slots are available" in result.message
+    assert "available_background_slots: 0" in result.output
     assert created == []
 
 

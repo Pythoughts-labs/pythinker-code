@@ -39,7 +39,7 @@ Recommended workflows:
 
 - Scout → Plan → Implement: run `explore`, then `plan` with the explorer's findings, then `implementer` or `coder` with the plan.
 - Implement → Review → Fix → Verify: run `implementer`, then `review`, then resume/launch `implementer` to apply feedback, then `verifier` for the relevant gate.
-- Parallel scouting: launch multiple `explore` agents for independent questions, then synthesize their findings before editing. If running them in the background, split batches that would exceed available background task slots.
+- Parallel scouting: launch multiple `explore` agents for independent questions, then synthesize their findings before editing. If a background batch exceeds available slots, RunAgents launches what fits and reports deferred children for a follow-up batch.
 - Parallel review/verification: when review and tests do not depend on each other, run `review` and `verifier` concurrently.
 
 When chaining manually, include the previous agent's summary in the next agent prompt. Newly-created

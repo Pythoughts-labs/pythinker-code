@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, override
 
@@ -107,8 +108,8 @@ class RunAgentsParams(BaseModel):
     agents: list[AgentRunConfig] = Field(
         description=(
             "Child agents to launch with shared base_prompt plus their own prompt. "
-            "For background runs, the batch must fit available background task slots; "
-            "split larger maps into smaller batches."
+            "For background runs, oversized batches launch only the fitting prefix and "
+            "report remaining children as deferred."
         ),
         min_length=1,
         max_length=8,
@@ -427,6 +428,23 @@ def _run_agents_fingerprint(params: RunAgentsParams) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+@dataclass(frozen=True, slots=True)
+class _BackgroundCapacity:
+    requested: int
+    max_running: int
+    active: int
+    available: int
+    launch_count: int
+
+    @property
+    def deferred_count(self) -> int:
+        return max(0, self.requested - self.launch_count)
+
+    @property
+    def is_limited(self) -> bool:
+        return self.deferred_count > 0
+
+
 class RunAgentsTool(CallableTool2[RunAgentsParams]):
     name: str = "RunAgents"
     params: type[RunAgentsParams] = RunAgentsParams
@@ -441,41 +459,49 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
                 "its own prompt. Background mode returns task IDs immediately; foreground "
                 "mode runs children sequentially and returns their summaries. Background "
                 f"batches share the session background-task limit ({max_background} total "
-                "slots, including running shell/background tasks); split larger maps into "
-                "batches or set run_in_background=false."
+                "slots, including running shell/background tasks); oversized background "
+                "batches launch what fits now and report the deferred children."
             )
         )
         self._runtime = runtime
         self._agent_tool = AgentTool(runtime)
 
-    def _background_capacity_error(self, params: RunAgentsParams) -> ToolError | None:
+    def _background_capacity(self, params: RunAgentsParams) -> _BackgroundCapacity | None:
         if not params.run_in_background:
             return None
-
         requested = len(params.agents)
         max_running = self._runtime.config.background.max_running_tasks
         active = self._runtime.background_tasks.active_task_count()
         available = max(0, max_running - active)
-        if requested <= available:
+        return _BackgroundCapacity(
+            requested=requested,
+            max_running=max_running,
+            active=active,
+            available=available,
+            launch_count=min(requested, available),
+        )
+
+    def _background_capacity_error(self, capacity: _BackgroundCapacity | None) -> ToolError | None:
+        if capacity is None or capacity.launch_count > 0:
             return None
 
         message = (
-            f"RunAgents requested {requested} background agent(s), but only {available} "
-            f"background task slot(s) are available (active={active}, max={max_running}). "
-            "Launch fewer background agents, wait for existing tasks to finish, or set "
-            "run_in_background=false for sequential foreground execution."
+            f"RunAgents requested {capacity.requested} background agent(s), but no background "
+            f"task slots are available (active={capacity.active}, max={capacity.max_running}). "
+            "Wait for existing tasks to finish, or set run_in_background=false for sequential "
+            "foreground execution."
         )
         output = "\n".join(
             [
                 tool_status_line(ToolResultStatus.failure),
                 "reason: background_task_limit",
-                f"requested_agents: {requested}",
-                f"active_background_tasks: {active}",
-                f"max_background_tasks: {max_running}",
-                f"available_background_slots: {available}",
+                f"requested_agents: {capacity.requested}",
+                f"active_background_tasks: {capacity.active}",
+                f"max_background_tasks: {capacity.max_running}",
+                f"available_background_slots: {capacity.available}",
                 (
-                    "next_step: Reduce the background batch size, wait for active tasks to "
-                    "finish, or use run_in_background=false to run children sequentially."
+                    "next_step: Wait for active tasks to finish, or use run_in_background=false "
+                    "to run children sequentially."
                 ),
             ]
         )
@@ -497,20 +523,32 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
             requested_type = child.subagent_type or "coder"
             if err := self._agent_tool.check_execution_policy(requested_type):
                 return err
-        if err := self._background_capacity_error(params):
+        capacity = self._background_capacity(params)
+        if err := self._background_capacity_error(capacity):
             return err
 
         fingerprint = _run_agents_fingerprint(params)
         if self._runtime.approval.is_orchestration_approved(fingerprint):
             orchestration_approval = "reused"
         else:
+            approved_count = capacity.launch_count if capacity is not None else len(params.agents)
+            deferred_count = len(params.agents) - approved_count
+            if deferred_count:
+                approval_summary = (
+                    f"Launch up to {len(params.agents)} child agent(s) for `{params.summary}` "
+                    f"with isolation={params.isolation}, background={params.run_in_background}. "
+                    f"Currently {approved_count} slot(s) are available; overflow children will "
+                    "be reported as deferred."
+                )
+            else:
+                approval_summary = (
+                    f"Launch {len(params.agents)} child agent(s) for `{params.summary}` "
+                    f"with isolation={params.isolation}, background={params.run_in_background}"
+                )
             approval = await self._runtime.approval.request(
                 self.name,
                 "run agents orchestration",
-                (
-                    f"Launch {len(params.agents)} child agent(s) for `{params.summary}` "
-                    f"with isolation={params.isolation}, background={params.run_in_background}"
-                ),
+                approval_summary,
             )
             if not approval:
                 return approval.rejection_error()
@@ -518,13 +556,20 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
             orchestration_approval = "requested"
 
         # Capacity can change while the human is considering the orchestration approval.
-        # Re-check immediately before launching children so RunAgents fails cleanly instead
-        # of partially launching a batch and then reporting a late task-limit error.
-        if err := self._background_capacity_error(params):
+        # Re-check immediately before launching children. If at least one slot is free,
+        # launch the fitting prefix and report the overflow as deferred instead of burning
+        # a model turn on a hard failure like "requested 5, available 4".
+        capacity = self._background_capacity(params)
+        if err := self._background_capacity_error(capacity):
             return err
+        agents_to_launch = params.agents
+        deferred_agents: list[AgentRunConfig] = []
+        if capacity is not None and capacity.is_limited:
+            agents_to_launch = params.agents[: capacity.launch_count]
+            deferred_agents = params.agents[capacity.launch_count :]
 
         results: list[tuple[AgentRunConfig, ToolReturnValue]] = []
-        for child in params.agents:
+        for child in agents_to_launch:
             child_params = Params(
                 description=(child.title or child.name).strip(),
                 prompt=self._child_prompt(params.base_prompt, child.prompt),
@@ -552,9 +597,29 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
             f"orchestration_fingerprint: {fingerprint[:12]}",
             f"summary: {params.summary}",
             f"mode: {mode}",
+            f"requested_agent_count: {len(params.agents)}",
             f"agent_count: {len(results)}",
-            "agents:",
+            f"deferred_agent_count: {len(deferred_agents)}",
         ]
+        if capacity is not None:
+            lines.extend(
+                [
+                    f"active_background_tasks: {capacity.active}",
+                    f"max_background_tasks: {capacity.max_running}",
+                    f"available_background_slots: {capacity.available}",
+                ]
+            )
+        if deferred_agents:
+            lines.append("capacity_limited: true")
+            lines.append("deferred_agents:")
+            for child in deferred_agents:
+                lines.append(f"- name: {child.name}")
+                lines.append(f"  subagent_type: {child.subagent_type or 'coder'}")
+                lines.append("  status: deferred")
+            lines.append(
+                "next_step: Launch deferred agents after active background tasks complete."
+            )
+        lines.append("agents:")
         for child, result in results:
             status = self._child_result_status(result, run_in_background=params.run_in_background)
             lines.append(f"- name: {child.name}")
@@ -568,16 +633,18 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
                 indented = "\n".join(f"    {line}" for line in output.splitlines())
                 lines.append("  result: |")
                 lines.append(indented)
+        if any_error:
+            message = "One or more agents failed."
+        elif deferred_agents:
+            message = f"Agents launched; {len(deferred_agents)} deferred by background capacity."
+        elif params.run_in_background:
+            message = "Agents launched."
+        else:
+            message = "Agents completed."
         return ToolReturnValue(
             is_error=any_error,
             output="\n".join(lines),
-            message=(
-                "One or more agents failed."
-                if any_error
-                else "Agents launched."
-                if params.run_in_background
-                else "Agents completed."
-            ),
+            message=message,
             display=[],
             extras={"status": tool_status.value},
         )
