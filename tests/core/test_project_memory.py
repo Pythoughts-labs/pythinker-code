@@ -109,6 +109,10 @@ def test_scan_blocks_injection_invisible_and_secrets():
     assert scan_memory_content("use ghp_0123456789abcdef0123456789abcdef0123") is not None
     assert scan_memory_content("slack xoxb-123456789012-abcdefXYZ") is not None
     assert scan_memory_content("aws AKIAIOSFODNN7EXAMPLE") is not None
+    # Modern token shapes that earlier patterns missed:
+    assert scan_memory_content("key sk-proj-abcdefABCDEF0123456789ABCD") is not None
+    assert scan_memory_content("gho_0123456789abcdef0123456789abcdef0123") is not None
+    assert scan_memory_content("ghu_0123456789abcdef0123456789abcdef0123") is not None
 
 
 async def test_write_entries_is_atomic_and_roundtrips(tmp_path, monkeypatch):

@@ -303,8 +303,8 @@ _MEMORY_THREAT_PATTERNS: list[tuple[str, str]] = [
 ]
 
 _SECRET_PATTERNS: list[tuple[str, str]] = [
-    (r"sk-[A-Za-z0-9]{20,}", "openai_key"),
-    (r"gh[ps]_[A-Za-z0-9]{30,}", "github_token"),
+    (r"sk-(?:proj-)?[A-Za-z0-9_-]{20,}", "openai_key"),
+    (r"gh[posru]_[A-Za-z0-9]{30,}", "github_token"),
     (r"xox[bp]-[A-Za-z0-9-]{10,}", "slack_token"),
     (r"AKIA[0-9A-Z]{16}", "aws_access_key"),
 ]
