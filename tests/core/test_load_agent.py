@@ -55,6 +55,25 @@ def test_system_prompt_contains_platform_info(builtin_args: BuiltinSystemPromptA
     assert builtin_args.PYTHINKER_SHELL in prompt
 
 
+def test_system_prompt_enforces_context_first_orchestration(
+    builtin_args: BuiltinSystemPromptArgs,
+):
+    """Default prompt should require evidence before codebase judgment."""
+    from pythinker_code.agentspec import DEFAULT_AGENT_FILE
+
+    prompt = _load_system_prompt(
+        DEFAULT_AGENT_FILE.parent / "system.md",
+        {"ROLE_ADDITIONAL": ""},
+        builtin_args,
+    )
+
+    assert "# Context-First Orchestration Protocol" in prompt
+    assert "No context, no judgment" in prompt
+    assert "Minimum context packet before codebase judgment" in prompt
+    assert "Plan from evidence" in prompt
+    assert "Treat subagent claims as leads, not proof" in prompt
+
+
 @pytest.mark.parametrize(
     "os_kind, shell, expect_windows_warning",
     [
