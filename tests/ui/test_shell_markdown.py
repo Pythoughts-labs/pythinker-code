@@ -37,6 +37,20 @@ def test_shell_markdown_uses_pythinker_code_block_frame() -> None:
     assert "╰" in output
 
 
+def test_shell_markdown_pads_code_block_with_blank_rows() -> None:
+    # The code block should read as a distinct section, with a blank row framing
+    # the panel above and below so it never crowds the surrounding prose.
+    output = _render_text(
+        PythinkerMarkdown("Before text.\n\n```toml\nkey = 1\n```\n\nAfter text.")
+    )
+    lines = output.splitlines()
+    top = next(i for i, line in enumerate(lines) if "╭" in line)
+    bottom = next(i for i, line in enumerate(lines) if "╰" in line)
+
+    assert lines[top - 1].strip() == ""
+    assert lines[bottom + 1].strip() == ""
+
+
 def test_shell_markdown_simplifies_report_emoji_icons() -> None:
     output = _render_text(
         PythinkerMarkdown(

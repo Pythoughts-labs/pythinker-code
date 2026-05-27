@@ -31,7 +31,7 @@ from rich.syntax import Syntax
 from rich.theme import Theme
 
 from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
-from pythinker_code.ui.shell.spacing import CODE_BLOCK_PADDING
+from pythinker_code.ui.shell.spacing import CODE_BLOCK_PADDING, blank_row
 from pythinker_code.ui.theme import ThemeName, get_markdown_colors
 from pythinker_code.utils.rich.markdown import CodeBlock, Markdown
 from pythinker_code.utils.rich.syntax import PYTHINKER_ANSI_THEME_NAME
@@ -99,6 +99,10 @@ class _BorderedCodeBlock(CodeBlock):
         highlighted.rstrip()
         lexer_name = self.lexer_name.strip()
         title = lexer_name if lexer_name and lexer_name != "text" else None
+        # Frame the code block with a blank row above and below so it reads as a
+        # distinct section instead of crowding the surrounding prose. Canonical
+        # ``blank_row()`` (an empty ``Text``) never picks up the panel's tint.
+        yield blank_row()
         yield Panel(
             highlighted,
             title=title,
@@ -109,6 +113,7 @@ class _BorderedCodeBlock(CodeBlock):
             expand=True,
             style=panel_style,
         )
+        yield blank_row()
 
 
 def _markdown_style_overrides(theme: ThemeName | None = None) -> dict[str, RichStyle]:
