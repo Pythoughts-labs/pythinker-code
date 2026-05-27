@@ -169,3 +169,68 @@ def test_completed_subagent_renders_compact_summary():
     assert "completed" in output.lower()
     assert "7 tool calls" in output
     assert output.count("ReadFile") <= 4
+
+
+def test_append_sub_output_part_accumulates_text():
+    block = _ToolCallBlock(_tool_call("Agent", '{"description":"scan"}'))
+    call = _tool_call_with_id("sub-1", "Bash", '{"command":"ls"}')
+    block.append_sub_tool_call(call)
+    block.append_sub_output_part("sub-1", "file1.py\n")
+    block.append_sub_output_part("sub-1", "file2.py\n")
+    combined = "".join(block._subagent_output_parts["sub-1"])
+    assert "file1.py" in combined
+    assert "file2.py" in combined
+
+
+def test_append_sub_output_part_discards_unknown_call_id():
+    block = _ToolCallBlock(_tool_call("Agent", '{"description":"scan"}'))
+    # no append_sub_tool_call — id is unknown
+    block.append_sub_output_part("ghost-id", "should be ignored\n")
+    assert "ghost-id" not in block._subagent_output_parts
+
+
+def test_append_sub_output_part_caps_buffer_at_200_chars():
+    block = _ToolCallBlock(_tool_call("Agent", '{"description":"scan"}'))
+    call = _tool_call_with_id("sub-1", "Bash", '{"command":"find ."}')
+    block.append_sub_tool_call(call)
+    # Fill with >200 chars in one shot
+    block.append_sub_output_part("sub-1", "x" * 300)
+    combined = "".join(block._subagent_output_parts["sub-1"])
+    assert len(combined) <= 200
+
+
+def test_append_sub_output_part_tracks_stderr():
+    block = _ToolCallBlock(_tool_call("Agent", '{"description":"scan"}'))
+    call = _tool_call_with_id("sub-1", "Bash", '{"command":"cat missing"}')
+    block.append_sub_tool_call(call)
+    block.append_sub_output_part("sub-1", "No such file\n", stream="stderr")
+    assert block._subagent_output_had_stderr.get("sub-1") is True
+
+
+def test_mark_sub_execution_started_records_id():
+    block = _ToolCallBlock(_tool_call("Agent", '{"description":"scan"}'))
+    call = _tool_call_with_id("sub-1", "Bash", '{"command":"ls"}')
+    block.append_sub_tool_call(call)
+    block.mark_sub_execution_started("sub-1")
+    assert "sub-1" in block._subagent_execution_started
+
+
+def test_mark_sub_execution_started_discards_unknown_id():
+    block = _ToolCallBlock(_tool_call("Agent", '{"description":"scan"}'))
+    block.mark_sub_execution_started("ghost-id")  # should not raise
+    assert "ghost-id" not in block._subagent_execution_started
+
+
+def test_finish_sub_tool_call_cleans_up_output_state():
+    from pythinker_code.wire.types import ToolResult
+    from pythinker_core.tooling import ToolOk
+
+    block = _ToolCallBlock(_tool_call("Agent", '{"description":"scan"}'))
+    call = _tool_call_with_id("sub-1", "Bash", '{"command":"ls"}')
+    block.append_sub_tool_call(call)
+    block.append_sub_output_part("sub-1", "output\n")
+    block.mark_sub_execution_started("sub-1")
+    block.finish_sub_tool_call(ToolResult(tool_call_id="sub-1", return_value=ToolOk(output="")))
+    assert "sub-1" not in block._subagent_output_parts
+    assert "sub-1" not in block._subagent_output_had_stderr
+    assert "sub-1" not in block._subagent_execution_started

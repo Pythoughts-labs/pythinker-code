@@ -68,6 +68,8 @@ _ELLIPSIS = "..."
 _THINKING_PREVIEW_LINES = 6
 _COMPOSING_PREVIEW_LINES = 12
 MAX_SUBAGENT_TOOL_CALLS_TO_SHOW = 4
+_MAX_RUNNING_ROWS = 2
+_MAX_SUB_OUTPUT_CHARS = 200
 
 # Background-agent statuses that mean "still running" — the tool call result
 # has arrived but the spawned agent has not yet finished.  Blocks with this
@@ -389,6 +391,9 @@ class _ToolCallBlock:
         # rather than being flushed to static scrollback, so the spinner keeps
         # animating at the Live refresh rate.
         self._is_background_pending: bool = False
+        self._subagent_output_parts: dict[str, list[str]] = {}
+        self._subagent_output_had_stderr: dict[str, bool] = {}
+        self._subagent_execution_started: set[str] = set()
 
         self._renderable: RenderableType = self._compose()
 
@@ -472,6 +477,7 @@ class _ToolCallBlock:
     def append_sub_tool_call(self, tool_call: ToolCall):
         self._ongoing_subagent_tool_calls[tool_call.id] = tool_call
         self._last_subagent_tool_call = tool_call
+        self._renderable = self._compose()
 
     def append_sub_tool_call_part(self, tool_call_part: ToolCallPart):
         if self._last_subagent_tool_call is None:
@@ -482,12 +488,16 @@ class _ToolCallBlock:
             self._last_subagent_tool_call.function.arguments = tool_call_part.arguments_part
         else:
             self._last_subagent_tool_call.function.arguments += tool_call_part.arguments_part
+        self._renderable = self._compose()
 
     def finish_sub_tool_call(self, tool_result: ToolResult):
         self._last_subagent_tool_call = None
         sub_tool_call = self._ongoing_subagent_tool_calls.pop(tool_result.tool_call_id, None)
         if sub_tool_call is None:
             return
+        self._subagent_output_parts.pop(tool_result.tool_call_id, None)
+        self._subagent_output_had_stderr.pop(tool_result.tool_call_id, None)
+        self._subagent_execution_started.discard(tool_result.tool_call_id)
 
         self._finished_subagent_tool_calls.append(
             _ToolCallBlock.FinishedSubCall(
@@ -504,6 +514,26 @@ class _ToolCallBlock:
         self._subagent_type = subagent_type
         if changed:
             self._renderable = self._compose()
+
+    def mark_sub_execution_started(self, tool_call_id: str) -> None:
+        if tool_call_id not in self._ongoing_subagent_tool_calls:
+            return
+        self._subagent_execution_started.add(tool_call_id)
+        self._renderable = self._compose()
+
+    def append_sub_output_part(
+        self, tool_call_id: str, text: str, *, stream: str = "output"
+    ) -> None:
+        if tool_call_id not in self._ongoing_subagent_tool_calls:
+            return
+        parts = self._subagent_output_parts.setdefault(tool_call_id, [])
+        parts.append(text)
+        if stream == "stderr":
+            self._subagent_output_had_stderr[tool_call_id] = True
+        combined = "".join(parts)
+        if len(combined) > _MAX_SUB_OUTPUT_CHARS:
+            self._subagent_output_parts[tool_call_id] = [combined[-_MAX_SUB_OUTPUT_CHARS:]]
+        self._renderable = self._compose()
 
     def _compose(self) -> RenderableType:
         if is_card_style():
