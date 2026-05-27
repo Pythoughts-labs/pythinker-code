@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 from pythinker_host.path import HostPath
 
@@ -33,7 +34,7 @@ def _make_tool(tmp_path, monkeypatch, role="root"):
     from pythinker_code.project_memory import ProjectMemoryStore
     from pythinker_code.tools.memory import Memory
 
-    tool = Memory(_runtime(tmp_path, role))
+    tool = Memory(cast(Any, _runtime(tmp_path, role)))
     fake = FakeGit({("rev-parse", "--show-toplevel"): GitResult(True, 0, str(tmp_path / "repo"))})
     tool._store = ProjectMemoryStore(_hp(tmp_path / "repo"), git_runner=fake)
     return tool

@@ -21,7 +21,10 @@ from typing import TYPE_CHECKING, Literal
 from pythinker_core.message import Message
 from pythinker_host.path import HostPath
 
-from pythinker_code.scratchpad import GitRunner, _default_git_runner
+from pythinker_code.scratchpad import (
+    GitRunner,
+    _default_git_runner,  # pyright: ignore[reportPrivateUsage]
+)
 from pythinker_code.share import get_share_dir
 from pythinker_code.soul.dynamic_injection import DynamicInjection, DynamicInjectionProvider
 from pythinker_code.utils.logging import logger
@@ -323,8 +326,16 @@ _SECRET_PATTERNS: list[tuple[str, str]] = [
 _INVISIBLE_CHARS = frozenset(
     chr(c)
     for c in (
-        0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF,
-        0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+        0x200B,
+        0x200C,
+        0x200D,
+        0x2060,
+        0xFEFF,
+        0x202A,
+        0x202B,
+        0x202C,
+        0x202D,
+        0x202E,
     )
 )
 

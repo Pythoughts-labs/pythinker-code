@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 from pythinker_host.path import HostPath
 
@@ -224,16 +225,16 @@ async def test_injection_provider_injects_once_and_resets_on_compaction(tmp_path
     store = ProjectMemoryStore(_hp(tmp_path / "repo"), git_runner=fake)
 
     provider = ProjectMemoryInjectionProvider(store)
-    assert await provider.get_injections([], object()) == []
+    assert await provider.get_injections([], cast(Any, object())) == []
 
     await store.add("memory", "uses pytest")
     provider2 = ProjectMemoryInjectionProvider(store)
-    first = await provider2.get_injections([], object())
+    first = await provider2.get_injections([], cast(Any, object()))
     assert len(first) == 1 and first[0].type == "project_memory"
     assert "uses pytest" in first[0].content
-    assert await provider2.get_injections([], object()) == []
+    assert await provider2.get_injections([], cast(Any, object())) == []
     await provider2.on_context_compacted()
-    again = await provider2.get_injections([], object())
+    again = await provider2.get_injections([], cast(Any, object()))
     assert len(again) == 1
 
 
@@ -248,6 +249,6 @@ async def test_end_to_end_written_fact_is_recalled(tmp_path, monkeypatch):
 
     reader = ProjectMemoryStore(_hp(tmp_path / "repo"), git_runner=fake)
     provider = ProjectMemoryInjectionProvider(reader)
-    injections = await provider.get_injections([], object())
+    injections = await provider.get_injections([], cast(Any, object()))
     assert len(injections) == 1
     assert "build with uv run" in injections[0].content
