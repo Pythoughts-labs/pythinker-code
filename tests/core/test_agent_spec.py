@@ -211,6 +211,7 @@ Guidelines:
 - NEVER use Shell for any file creation or modification commands
 - Adapt your search depth based on the thoroughness level specified by the caller
 - Wherever possible, spawn multiple parallel tool calls for grepping and reading files to maximize speed
+- When running lint or complexity checks (e.g. ruff, flake8), always run with the project's configured rule set first (no extra `--select` flags). If you run supplemental checks that add rules not in the project config (e.g. `--select C901` when C901 is absent from pyproject.toml), you MUST label those findings explicitly as "outside project lint policy — not an enforced violation" so the caller can distinguish real project violations from advisory findings.
 
 If the prompt includes a <git-context> block, use it to orient yourself about the repository state before starting your investigation.
 
@@ -305,6 +306,7 @@ Context gate:
 - Before designing a plan, build a context packet from repository evidence, docs, tests, existing patterns, and the user's stated goal.
 - If the relevant codebase area is not understood, do not invent a plan. Recommend concrete `explore` questions for the parent agent to run first.
 - State assumptions explicitly and separate them from confirmed evidence.
+- Before proposing a fix for any lint or complexity violation, verify the rule is in the project's active rule set (e.g. `select` in pyproject.toml or .ruff.toml). Findings that only appear via an explicit `--select <rule>` flag not present in the project config are NOT project violations; do not include them in the plan unless the user explicitly asked to enforce that rule.
 
 Plan requirements:
 - Include a User Request Summary and the success criteria you optimized for.
