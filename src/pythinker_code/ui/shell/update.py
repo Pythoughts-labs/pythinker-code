@@ -621,6 +621,7 @@ def _installed_linux_package_kind() -> str | None:
                 ["dpkg-query", "-W", "-f=${Status}", "pythinker-code"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 timeout=5,
                 env=env,
             )
@@ -635,6 +636,7 @@ def _installed_linux_package_kind() -> str | None:
                 ["rpm", "-q", "pythinker-code"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 timeout=5,
                 env=env,
             )
