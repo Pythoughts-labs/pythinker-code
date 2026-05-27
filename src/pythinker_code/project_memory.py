@@ -194,6 +194,41 @@ class ProjectMemoryStore:
             await self._write_entries(target, [*entries, content])
         return MemoryOpResult(True, "Entry added.")
 
+    @staticmethod
+    def _match_one(entries: list[str], old_text: str) -> int | MemoryOpResult:
+        matches = [i for i, e in enumerate(entries) if old_text in e]
+        if not matches:
+            return MemoryOpResult(False, f"No entry matched '{old_text}'.")
+        if len(matches) > 1 and len({entries[i] for i in matches}) > 1:
+            return MemoryOpResult(
+                False, f"Multiple entries matched '{old_text}'. Be more specific."
+            )
+        return matches[0]
+
+    async def replace(self, target: Target, old_text: str, new_content: str) -> MemoryOpResult:
+        old_text = old_text.strip()
+        new_content = new_content.strip()
+        if not old_text:
+            return MemoryOpResult(False, "old_text cannot be empty.")
+        if not new_content:
+            return MemoryOpResult(False, "new_content cannot be empty. Use 'remove' to delete.")
+        blocked = scan_memory_content(new_content)
+        if blocked:
+            return MemoryOpResult(False, blocked)
+        path = await self._path_for(target)
+        with self._file_lock(path):
+            entries = await self.read_entries(target)
+            idx = self._match_one(entries, old_text)
+            if isinstance(idx, MemoryOpResult):
+                return idx
+            limit = self._char_limit(target)
+            candidate = list(entries)
+            candidate[idx] = new_content
+            if len(ENTRY_DELIMITER.join(candidate)) > limit:
+                return MemoryOpResult(False, f"Replacement would exceed the {limit}-char limit.")
+            await self._write_entries(target, candidate)
+        return MemoryOpResult(True, "Entry replaced.")
+
 
 _MEMORY_THREAT_PATTERNS: list[tuple[str, str]] = [
     (r"ignore\s+(?:(?:previous|all|above|prior)\s+)+instructions", "prompt_injection"),
