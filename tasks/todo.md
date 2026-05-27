@@ -493,3 +493,17 @@ Port of the one genuinely portable concept from pythinker-x's web search
 
 ## Out of scope (observed, not changed)
 - Pre-existing pyright errors in `cli/mcp.py`, `soul/toolset.py`.
+
+## Review follow-up (2026-05-27) — context7-validated hardening
+Reviewed the allowlist against context7 (aiohttp v3.13.2, pydantic v2) + 2026 agent-tool practice.
+- [x] HIGH: redirect bypass — `fetch_with_http_get` now sets `allow_redirects=False` and follows
+      redirects manually (max 5), re-validating each hop via `_validate_fetch_url` (allowlist +
+      SSRF). Closes a pre-existing SSRF gap the allowlist had inherited. Tests: follows validated
+      redirect, blocks redirect to disallowed host (never contacted), rejects redirect loop.
+- [x] LOW: `fetch.md` / `search.md` now state the allowlist constraint to the model.
+- [x] LOW: `WebConfig` validator now rejects empty/whitespace-only entries (was silently unrestricted).
+- Confirmed-good (context7): pydantic validator matches docs exactly; `extras` TUI channel;
+  fail-closed on unparseable hosts; allowlist-before-DNS ordering.
+- Known/accepted limitation (pre-existing, not addressed): DNS-rebinding TOCTOU — `_validate_fetch_url`
+  resolves+checks IPs but aiohttp re-resolves at connect time. Out of scope; would need a pinning connector.
+- Snapshots updated: `test_default_config_dump`, `test_fetch_url_description`, `test_search_web_description`.

@@ -276,20 +276,27 @@ async def test_fetch_url_follows_validated_redirect(fetch_url_tool: FetchURL) ->
 async def test_fetch_url_blocks_redirect_to_disallowed_host(
     fetch_url_tool: FetchURL, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A redirect whose target fails validation is blocked without being fetched."""
+    """A redirect whose target fails validation is blocked *before* being fetched."""
 
-    # Override the module-wide bypass: allow the initial localhost URL, block the
-    # redirect target. The blocked host is never actually contacted.
+    # Override the module-wide bypass: allow the initial URL, block the redirect
+    # target (any URL whose path is /blocked).
     monkeypatch.setattr(
         fetch_module,
         "_validate_fetch_url",
-        lambda url, _allowed=None: ("host blocked" if "blocked.invalid" in url else None),
+        lambda url, _allowed=None: ("host blocked" if "/blocked" in url else None),
     )
 
-    async def start(request: web.Request) -> web.Response:  # noqa: ARG001
-        raise web.HTTPFound("http://blocked.invalid/secret")
+    blocked_hit = False
 
-    base, runner = await _start_redirect_server([("/start", start)])
+    async def start(request: web.Request) -> web.Response:  # noqa: ARG001
+        raise web.HTTPFound("/blocked")
+
+    async def blocked(request: web.Request) -> web.Response:  # noqa: ARG001
+        nonlocal blocked_hit
+        blocked_hit = True
+        return web.Response(text="secret", content_type="text/plain")
+
+    base, runner = await _start_redirect_server([("/start", start), ("/blocked", blocked)])
     try:
         result = await fetch_url_tool(Params(url=f"{base}/start"))
     finally:
@@ -297,6 +304,8 @@ async def test_fetch_url_blocks_redirect_to_disallowed_host(
 
     assert result.is_error
     assert "redirect" in result.message.lower()
+    # The security guarantee: the disallowed location was never contacted.
+    assert blocked_hit is False
 
 
 async def test_fetch_url_rejects_redirect_loop(fetch_url_tool: FetchURL) -> None:

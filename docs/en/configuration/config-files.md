@@ -208,7 +208,7 @@ When configuring the Pythinker platform using the `/login` command, search and f
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `allowed_domains` | `array<string>` | _unset_ | When set, web fetch and search may only touch these domains and their subdomains. `FetchURL` rejects URLs on other hosts before making any request, and `SearchWeb` drops results from other domains. Unset or empty means unrestricted. |
+| `allowed_domains` | `array<string>` | _unset_ | When set, web fetch and search may only touch these domains and their subdomains. `FetchURL` rejects URLs on other hosts before making any request — including redirect targets, which are re-validated on every hop — and `SearchWeb` drops results from other domains. Unset or empty means unrestricted. Entries must be bare hostnames (e.g. `example.com`), not URLs, paths, or `host:port`. |
 
 This is a coarse governance control layered on top of the existing SSRF protections (which always block private, loopback, link-local, multicast, and reserved addresses); it does not replace them. Matching is label-aware: `example.com` matches `example.com` and `docs.example.com`, but not `notexample.com`.
 
