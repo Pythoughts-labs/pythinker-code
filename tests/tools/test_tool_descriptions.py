@@ -47,6 +47,8 @@ instance can preserve previous findings and work.
 - Be explicit about whether the subagent should write code, only research, review, or verify.
 - Provide the subagent all required context and success criteria. New subagents do not inherit your transcript automatically.
 - Brief the agent like a capable teammate joining mid-task: state the goal, why it matters, what you already learned or ruled out, exact paths/commands when known, and the output format you need.
+- Include a prompt packet for non-trivial work: Goal, Evidence/Context, Scope and non-goals, Constraints, Expected Output, Verification, and Risks/Blockers.
+- Keep each delegated prompt to one objective. Split unrelated goals into separate agents so each result is reviewable.
 - Do not delegate synthesis with vague prompts such as "based on your findings, fix it". First understand the finding yourself, then give the subagent a concrete scoped task.
 - Spawn multiple subagents in the same turn when they can investigate independent regions concurrently, but keep background launches within available task slots.
 - Cross-check at least one load-bearing subagent finding before making changes from it.
@@ -65,6 +67,7 @@ Use subagents as focused logical roles, not just extra tool capacity:
 
 Recommended workflows:
 
+- Context → Plan → Execute → Gate: collect facts first, plan from evidence, delegate scoped implementation, then verify before reporting done.
 - Scout → Plan → Implement: run `explore`, then `plan` with the explorer's findings, then `implementer` or `coder` with the plan.
 - Implement → Review → Fix → Verify: run `implementer`, then `review`, then resume/launch `implementer` to apply feedback, then `verifier` for the relevant gate.
 - Parallel scouting: launch multiple `explore` agents for independent questions, then synthesize their findings before editing. If a background batch exceeds available slots, RunAgents launches what fits and reports deferred children for a follow-up batch.

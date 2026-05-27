@@ -30,7 +30,7 @@ def test_agent_params_schema(agent_tool: AgentTool):
                     "type": "string",
                 },
                 "prompt": {
-                    "description": "The task for the agent to perform",
+                    "description": "The task for the agent to perform. Include a single goal, relevant context/evidence, scope boundaries, constraints, expected output format, and verification criteria.",
                     "type": "string",
                 },
                 "subagent_type": {

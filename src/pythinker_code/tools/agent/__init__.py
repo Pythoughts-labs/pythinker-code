@@ -24,7 +24,12 @@ MAX_BACKGROUND_TIMEOUT = 60 * 60  # 1 hour
 
 class Params(BaseModel):
     description: str = Field(description="A short (3-5 word) description of the task")
-    prompt: str = Field(description="The task for the agent to perform")
+    prompt: str = Field(
+        description=(
+            "The task for the agent to perform. Include a single goal, relevant context/evidence, "
+            "scope boundaries, constraints, expected output format, and verification criteria."
+        )
+    )
     subagent_type: str = Field(
         default="coder",
         description="The built-in agent type to use. Defaults to `coder`.",
@@ -88,7 +93,12 @@ class Params(BaseModel):
 
 class AgentRunConfig(BaseModel):
     name: str = Field(description="Stable short name for this child agent")
-    prompt: str = Field(description="Agent-specific task prompt")
+    prompt: str = Field(
+        description=(
+            "Agent-specific task prompt. Keep it to one objective and include the child's "
+            "scope, evidence to use, expected output contract, and verification criteria."
+        )
+    )
     title: str | None = Field(
         default=None,
         description="Optional 3-5 word display title. Defaults to name.",
@@ -103,11 +113,15 @@ class RunAgentsParams(BaseModel):
     summary: str = Field(description="Short summary of the multi-agent run")
     base_prompt: str = Field(
         default="",
-        description="Shared context prepended to every child prompt.",
+        description=(
+            "Shared context prepended to every child prompt. Include the overall goal, "
+            "repo constraints, known evidence, excluded scope, and shared output requirements."
+        ),
     )
     agents: list[AgentRunConfig] = Field(
         description=(
-            "Child agents to launch with shared base_prompt plus their own prompt. "
+            "Child agents to launch with shared base_prompt plus their own prompt. Each child "
+            "should have exactly one objective; split unrelated work into separate children. "
             "For background runs, oversized batches launch only the fitting prefix and "
             "report remaining children as deferred."
         ),
@@ -455,12 +469,15 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
             description=(
                 "Launch a bounded group of focused child agents that share context. "
                 "Use this for scout/plan/implement/review/verify workflows when multiple "
-                "subtasks can be delegated together. Each child receives base_prompt, then "
-                "its own prompt. Background mode returns task IDs immediately; foreground "
-                "mode runs children sequentially and returns their summaries. Background "
-                f"batches share the session background-task limit ({max_background} total "
-                "slots, including running shell/background tasks); oversized background "
-                "batches launch what fits now and report the deferred children."
+                "independent subtasks can be delegated together. Put the shared context "
+                "packet in base_prompt: goal, repo constraints, known evidence, excluded "
+                "scope, and output requirements. Each child receives base_prompt, then "
+                "its own single-objective prompt with scope and verification criteria. "
+                "Background mode returns task IDs immediately; foreground mode runs children "
+                "sequentially and returns their summaries. Background batches share the session "
+                f"background-task limit ({max_background} total slots, including running "
+                "shell/background tasks); oversized background batches launch what fits now "
+                "and report the deferred children."
             )
         )
         self._runtime = runtime
