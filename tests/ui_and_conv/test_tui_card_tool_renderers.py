@@ -789,6 +789,33 @@ def test_ask_user_renders_question_and_options():
     assert "API key" in rendered
 
 
+def test_ask_user_streaming_empty_questions_waits_instead_of_showing_invalid():
+    rendered = _render_streaming("AskUserQuestion", {"questions": []})
+
+    assert "Preparing Ask…" in rendered
+    assert "<invalid>" not in rendered
+
+
+def test_ask_user_renders_single_question_object_without_invalid_badge():
+    rendered = _render(
+        "AskUserQuestion",
+        {
+            "questions": {
+                "question": "How should independent analyses run?",
+                "options": [
+                    {"label": "Run concurrently (Recommended)"},
+                    {"label": "Run sequentially"},
+                ],
+            }
+        },
+    )
+
+    assert "⏺ Ask(1 question)" in rendered
+    assert "<invalid>" not in rendered
+    assert "How should independent analyses run?" in rendered
+    assert "Run concurrently (Recommended)" in rendered
+
+
 # ---------------------------------------------------------------------------
 # Think
 # ---------------------------------------------------------------------------

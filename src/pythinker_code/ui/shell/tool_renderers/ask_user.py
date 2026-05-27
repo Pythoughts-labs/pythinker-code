@@ -27,13 +27,33 @@ _TOOL_NAME = "AskUserQuestion"
 _DEFAULT_COLLAPSED_LINES = 8
 
 
+def _normalized_questions(args: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """Return displayable questions for supported in-flight Ask payload shapes."""
+    questions = args.get("questions")
+    if isinstance(questions, list) and questions:
+        questions_list = cast("list[Any]", questions)
+        return [cast("dict[str, Any]", q) for q in questions_list if isinstance(q, dict)]
+    if isinstance(questions, dict):
+        return [cast("dict[str, Any]", questions)]
+    if "questions" not in args and isinstance(args.get("question"), str):
+        # Be display-compatible with singular question-shaped payloads while the
+        # tool call/result remains responsible for schema validation.
+        return [args]
+    return None
+
+
 def _render_call(ctx: ToolRenderContext) -> RenderableType:
     args = ctx.args or {}
-    questions = args.get("questions")
+    qs = _normalized_questions(args)
 
-    if not isinstance(questions, list) or not questions:
+    if not qs:
+        if not ctx.args_complete and not ctx.has_result:
+            header = pending_tool_call_header("Ask")
+            return running_spinner(
+                header, execution_started=ctx.execution_started, has_result=ctx.has_result
+            )
         summary = Text()
-        if "questions" in args:
+        if "questions" in args or "question" in args:
             summary.append_text(invalid_arg())
         elif ctx.has_result:
             summary.append_text(missing_required_arg("questions"))
@@ -42,17 +62,12 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
             return running_spinner(
                 header, execution_started=ctx.execution_started, has_result=ctx.has_result
             )
-        header = tool_call_header(
-            "Ask", summary, style_token="success" if ctx.has_result else "muted"
-        )
+        style_token = "error" if ctx.is_error else "success" if ctx.has_result else "muted"
+        header = tool_call_header("Ask", summary, style_token=style_token)
         return running_spinner(
             header, execution_started=ctx.execution_started, has_result=ctx.has_result
         )
 
-    questions_list = cast("list[Any]", questions)
-    qs: list[dict[str, Any]] = [
-        cast("dict[str, Any]", q) for q in questions_list if isinstance(q, dict)
-    ]
     count_summary = f"{len(qs)} questions" if len(qs) != 1 else "1 question"
     header = tool_call_header(
         "Ask",
