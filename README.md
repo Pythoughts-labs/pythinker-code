@@ -50,15 +50,14 @@ It speaks the [**Agent Client Protocol (ACP)**](https://github.com/agentclientpr
 
 ---
 
-## 🆕 What's New in 0.18.0
+## 🆕 What's New in 0.19.0
 
-- **Live subagent activity streaming.** Subagent tool calls now stream live into the transcript, with safe pending headers for in-flight tool calls, new transcript progress events, and a unified shimmer animation across active-work labels so long-running exploration stays legible.
-- **Smarter delegation and orchestration.** A Context-First Orchestration Protocol guides the default agent, specialist subagents receive prompt packets for single-objective delegation plus evidence and verification gates, and overflow RunAgents children are deferred instead of hard-failing.
-- **Calmer, more resilient TUI.** In-flight and singular Ask payloads no longer flash an invalid badge, MCP startup status is cleaner, and shell rendering and MCP guidance are refined.
-- **Sturdier configuration handling.** Incompatible legacy JSON config is now preserved instead of being silently reset to defaults.
-- **Security and shell hardening.** The security scan and shell execution paths were hardened against unexpected input.
+- **Central per-project agent memory.** Pythinker now keeps a durable per-project memory (`MEMORY.md` / `USER.md`) under `~/.pythinker/projects/<key>/memory/`, written through a new root-only `Memory` tool with content guards and secret-shape detection, recalled into the root agent's first wakeup prompt within a bounded budget, and inspectable with the new `/memory` command.
+- **Non-blocking update flow.** The blocking pre-start update prompt is replaced by a cached, no-network startup notice plus a triggerable `/update` command, and the native Windows installer now waits on the launching process before swapping files and cleans up its staged installer.
+- **Fully native Homebrew formula.** Brew installs are generated from the same GitHub Release tarballs as the curl installer (including macOS Intel native assets), so they no longer depend on PyPI virtualenv resources.
+- **Release pipeline hardening.** TestPyPI publishing is now non-blocking and publish steps carry timeouts, so a transient staging flake no longer fails a release.
 
-Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.18.0`, or use the native installer for your platform from the [Releases page](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest).
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.19.0`, or use the native installer for your platform from the [Releases page](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest).
 
 
 ---
@@ -148,7 +147,7 @@ matches your OS — no Python, Node, or `uv` prerequisite.
 
 | Platform | Recommended install | Artifact source |
 |---|---|---|
-| **🪟 Windows** | `irm https://pythinker.com/install.ps1 \| iex` | `PythinkerSetup-0.18.0.exe` from [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
+| **🪟 Windows** | `irm https://pythinker.com/install.ps1 \| iex` | `PythinkerSetup-0.19.0.exe` from [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
 | **<img src="https://img.shields.io/badge/-macOS-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS"> / <img src="https://img.shields.io/badge/-Linux-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux">** | `curl -fsSL https://pythinker.com/install.sh \| bash` | native tarball from [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
 | **<img src="https://img.shields.io/badge/-macOS-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS"> — Homebrew** | `brew install mohamed-elkholy95/pythinker/pythinker-code` | auto-published Homebrew tap |
 | **<img src="https://img.shields.io/badge/-Linux-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux"> — system package** | Download the `.deb` or `.rpm` for your distro below | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
@@ -173,7 +172,7 @@ pythinker                      # start the interactive TUI
 
 ### 🪟 Windows — native installer
 
-`PythinkerSetup-0.18.0.exe` is a signed* Inno Setup wizard. Installs per-user
+`PythinkerSetup-0.19.0.exe` is a signed* Inno Setup wizard. Installs per-user
 into `%LOCALAPPDATA%\Programs\Pythinker`, registers `pythinker` on your user
 PATH (`HKCU\Environment`), broadcasts `WM_SETTINGCHANGE` so new shells see
 the change. **No UAC prompt.**
@@ -184,13 +183,13 @@ irm https://pythinker.com/install.ps1 | iex
 
 # Or manually download the installer + checksum from the Releases page,
 # verify with Get-FileHash, then run:
-.\PythinkerSetup-0.18.0.exe
+.\PythinkerSetup-0.19.0.exe
 
 # Open a fresh PowerShell
 pythinker --version
 ```
 
-**Per-machine install** (IT-managed boxes): `.\PythinkerSetup-0.18.0.exe /ALLUSERS`
+**Per-machine install** (IT-managed boxes): `.\PythinkerSetup-0.19.0.exe /ALLUSERS`
 installs to `%ProgramFiles%\Pythinker` and writes PATH to HKLM (requires admin).
 
 **Upgrade:** `pythinker update` from inside the running app — it downloads
@@ -241,26 +240,26 @@ attached to every GitHub Release.
 
 ```sh
 # Debian / Ubuntu (x86_64)
-sudo dpkg -i pythinker-code_0.18.0_amd64.deb
+sudo dpkg -i pythinker-code_0.19.0_amd64.deb
 sudo apt-get install -f       # only if dpkg reports missing deps
 
 # Debian / Ubuntu (ARM64)
-sudo dpkg -i pythinker-code_0.18.0_arm64.deb
+sudo dpkg -i pythinker-code_0.19.0_arm64.deb
 
 # Fedora / RHEL / openSUSE (x86_64)
-curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.18.0/pythinker-code-0.18.0.x86_64.rpm
-curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.18.0/pythinker-code-0.18.0.x86_64.rpm.sha256
-sha256sum -c pythinker-code-0.18.0.x86_64.rpm.sha256
+curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.19.0/pythinker-code-0.19.0.x86_64.rpm
+curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.19.0/pythinker-code-0.19.0.x86_64.rpm.sha256
+sha256sum -c pythinker-code-0.19.0.x86_64.rpm.sha256
 # Fedora / RHEL:
-sudo dnf install ./pythinker-code-0.18.0.x86_64.rpm
+sudo dnf install ./pythinker-code-0.19.0.x86_64.rpm
 # openSUSE:
-sudo zypper install ./pythinker-code-0.18.0.x86_64.rpm
+sudo zypper install ./pythinker-code-0.19.0.x86_64.rpm
 
 # Fedora / RHEL (aarch64)
-curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.18.0/pythinker-code-0.18.0.aarch64.rpm
-curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.18.0/pythinker-code-0.18.0.aarch64.rpm.sha256
-sha256sum -c pythinker-code-0.18.0.aarch64.rpm.sha256
-sudo dnf install ./pythinker-code-0.18.0.aarch64.rpm
+curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.19.0/pythinker-code-0.19.0.aarch64.rpm
+curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.19.0/pythinker-code-0.19.0.aarch64.rpm.sha256
+sha256sum -c pythinker-code-0.19.0.aarch64.rpm.sha256
+sudo dnf install ./pythinker-code-0.19.0.aarch64.rpm
 ```
 
 Both packages drop a small `/usr/bin/pythinker` launcher that execs the real
@@ -269,8 +268,8 @@ binary under `/usr/lib/pythinker/`, so your `$PATH` stays tidy.
 **Verify before install:**
 
 ```sh
-sha256sum -c pythinker-code_0.18.0_amd64.deb.sha256        # Debian/Ubuntu
-sha256sum -c pythinker-code-0.18.0.x86_64.rpm.sha256       # Fedora/RHEL
+sha256sum -c pythinker-code_0.19.0_amd64.deb.sha256        # Debian/Ubuntu
+sha256sum -c pythinker-code-0.19.0.x86_64.rpm.sha256       # Fedora/RHEL
 ```
 
 **Upgrade:** download the new `.deb`/`.rpm` from Releases and `dpkg -i` /
@@ -300,7 +299,7 @@ at `~/.local/bin/pythinker`.
 curl -fsSL https://pythinker.com/install.sh | bash
 
 # Pin a specific version
-curl -fsSL https://pythinker.com/install.sh | bash -s -- --version 0.18.0
+curl -fsSL https://pythinker.com/install.sh | bash -s -- --version 0.19.0
 
 # Custom prefix (defaults to $HOME/.local)
 curl -fsSL https://pythinker.com/install.sh | bash -s -- --prefix /opt/pythinker
