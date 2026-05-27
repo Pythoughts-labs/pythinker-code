@@ -14,6 +14,7 @@ import os
 import re
 import tempfile
 from collections.abc import Generator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -74,6 +75,12 @@ async def project_key(work_dir: HostPath, *, git_runner: GitRunner | None = None
     basename = Path(identity.rstrip("/")).name or "project"
     digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
     return f"{_slug(basename)}-{digest}"
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryOpResult:
+    ok: bool
+    message: str
 
 
 class ProjectMemoryStore:
@@ -162,6 +169,30 @@ class ProjectMemoryStore:
             with contextlib.suppress(OSError):
                 os.unlink(tmp)
             raise
+
+    async def add(self, target: Target, content: str) -> MemoryOpResult:
+        content = content.strip()
+        if not content:
+            return MemoryOpResult(False, "Content cannot be empty.")
+        blocked = scan_memory_content(content)
+        if blocked:
+            return MemoryOpResult(False, blocked)
+        path = await self._path_for(target)
+        with self._file_lock(path):
+            entries = await self.read_entries(target)
+            if content in entries:
+                return MemoryOpResult(True, "Entry already exists (no duplicate added).")
+            limit = self._char_limit(target)
+            new_total = len(ENTRY_DELIMITER.join([*entries, content]))
+            if new_total > limit:
+                current = len(ENTRY_DELIMITER.join(entries))
+                return MemoryOpResult(
+                    False,
+                    f"Memory at {current}/{limit} chars; this entry ({len(content)}) "
+                    "exceeds the limit. Replace or remove entries first.",
+                )
+            await self._write_entries(target, [*entries, content])
+        return MemoryOpResult(True, "Entry added.")
 
 
 _MEMORY_THREAT_PATTERNS: list[tuple[str, str]] = [
