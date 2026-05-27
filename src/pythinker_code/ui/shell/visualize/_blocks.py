@@ -518,6 +518,8 @@ class _ToolCallBlock:
     def mark_sub_execution_started(self, tool_call_id: str) -> None:
         if tool_call_id not in self._ongoing_subagent_tool_calls:
             return
+        if tool_call_id in self._subagent_execution_started:
+            return
         self._subagent_execution_started.add(tool_call_id)
         self._renderable = self._compose()
 
@@ -525,6 +527,8 @@ class _ToolCallBlock:
         self, tool_call_id: str, text: str, *, stream: str = "output"
     ) -> None:
         if tool_call_id not in self._ongoing_subagent_tool_calls:
+            return
+        if not text:
             return
         parts = self._subagent_output_parts.setdefault(tool_call_id, [])
         parts.append(text)

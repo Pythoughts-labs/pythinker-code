@@ -199,6 +199,16 @@ def test_append_sub_output_part_caps_buffer_at_200_chars():
     assert len(combined) <= 200
 
 
+def test_append_sub_output_part_caps_buffer_across_multiple_appends():
+    block = _ToolCallBlock(_tool_call("Agent", '{"description":"scan"}'))
+    call = _tool_call_with_id("sub-1", "Bash", '{"command":"ls"}')
+    block.append_sub_tool_call(call)
+    for _ in range(30):
+        block.append_sub_output_part("sub-1", "x" * 10)  # 300 chars total, 10 at a time
+    combined = "".join(block._subagent_output_parts["sub-1"])
+    assert len(combined) <= 200
+
+
 def test_append_sub_output_part_tracks_stderr():
     block = _ToolCallBlock(_tool_call("Agent", '{"description":"scan"}'))
     call = _tool_call_with_id("sub-1", "Bash", '{"command":"cat missing"}')
@@ -222,9 +232,6 @@ def test_mark_sub_execution_started_discards_unknown_id():
 
 
 def test_finish_sub_tool_call_cleans_up_output_state():
-    from pythinker_code.wire.types import ToolResult
-    from pythinker_core.tooling import ToolOk
-
     block = _ToolCallBlock(_tool_call("Agent", '{"description":"scan"}'))
     call = _tool_call_with_id("sub-1", "Bash", '{"command":"ls"}')
     block.append_sub_tool_call(call)
