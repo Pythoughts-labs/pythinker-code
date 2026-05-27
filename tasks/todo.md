@@ -467,3 +467,29 @@ PyPI 1.0.0 of pythinker-cli stays published forever. Anyone who installed it bef
 4. **Migration text in README**: Do you want a "migrating from pythinker-cli" callout in 1.1.0's README, or just silently switch?
 
 5. **CHANGELOG framing**: Is this a breaking change that warrants 2.0.0, or a layout change that's fine at 1.1.0? PyPI users perspective: install command changed, that's user-visible breakage. Could argue 2.0.0.
+
+---
+
+# Web fetch/search domain allowlist (2026-05-27)
+
+Port of the one genuinely portable concept from pythinker-x's web search
+(`allowed_domains`) onto our self-hosted FetchURL/SearchWeb tools. Design spec:
+`docs/superpowers/specs/2026-05-27-web-allowed-domains-design.md`.
+
+- [x] `WebConfig.allowed_domains` config (+ field validator rejecting URLs/paths/host:port)
+- [x] `host_in_allowlist` helper (label-aware subdomain match, unrestricted when empty)
+- [x] FetchURL: reject out-of-allowlist hosts in `_validate_fetch_url` (no request made)
+- [x] SearchWeb: post-filter results, surface dropped count via `extras`
+- [x] TUI: muted "· N filtered to allowlist" indicator on the search result header
+- [x] Tests: helper, config validation, fetch rejection, search filter, renderer indicator
+- [x] Docs: `docs/en/configuration/config-files.md` `web` section + example
+
+## Review
+- All affected suites green (tools/core/ui = 2517 passed earlier; affected subset 100 passed).
+- ruff + ruff format clean; pyright clean on all changed files. The 8 pre-existing
+  pyright errors live in `cli/mcp.py` and `soul/toolset.py` (untouched, baseline).
+- Dropped from scope (cosmetic/redundant in our architecture): action taxonomy relabel,
+  disabled/cached/live mode gating. See design doc "Out of scope".
+
+## Out of scope (observed, not changed)
+- Pre-existing pyright errors in `cli/mcp.py`, `soul/toolset.py`.

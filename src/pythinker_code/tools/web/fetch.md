@@ -1,1 +1,1 @@
-Fetch a web page from a URL and extract main text content from it.
+Fetch a web page from a URL and extract main text content from it. Requests may be restricted to a configured set of allowed domains; fetching a disallowed host (including via a redirect) returns an error.

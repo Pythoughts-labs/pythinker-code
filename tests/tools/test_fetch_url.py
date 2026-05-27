@@ -24,7 +24,7 @@ def _bypass_ssrf_validation(monkeypatch: pytest.MonkeyPatch) -> None:
     exercises malformed-URL handling that pre-dates the validator. Disable it
     for these unit tests; production callers still get the protection.
     """
-    monkeypatch.setattr(fetch_module, "_validate_fetch_url", lambda _url: None)
+    monkeypatch.setattr(fetch_module, "_validate_fetch_url", lambda _url, _allowed=None: None)
 
 
 class MockServerFactory(Protocol):
@@ -239,6 +239,80 @@ This is a markdown document.
     assert not result.is_error
     assert result.output == snapshot(complex_markdown)
     assert result.message == "The returned content is the full content of the page."
+
+
+async def _start_redirect_server(routes) -> tuple[str, web.AppRunner]:
+    """Start a server with the given (path, handler) routes; return base URL + runner."""
+    app = web.Application()
+    for path, handler in routes:
+        app.router.add_get(path, handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host="127.0.0.1", port=0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]  # type: ignore[attr-defined]
+    return f"http://127.0.0.1:{port}", runner
+
+
+async def test_fetch_url_follows_validated_redirect(fetch_url_tool: FetchURL) -> None:
+    """A redirect to an allowed location is followed (validation is bypassed here)."""
+
+    async def start(request: web.Request) -> web.Response:  # noqa: ARG001
+        raise web.HTTPFound("/end")
+
+    async def end(request: web.Request) -> web.Response:  # noqa: ARG001
+        return web.Response(text="redirected body content", content_type="text/plain")
+
+    base, runner = await _start_redirect_server([("/start", start), ("/end", end)])
+    try:
+        result = await fetch_url_tool(Params(url=f"{base}/start"))
+    finally:
+        await runner.cleanup()
+
+    assert not result.is_error
+    assert "redirected body content" in result.output
+
+
+async def test_fetch_url_blocks_redirect_to_disallowed_host(
+    fetch_url_tool: FetchURL, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A redirect whose target fails validation is blocked without being fetched."""
+
+    # Override the module-wide bypass: allow the initial localhost URL, block the
+    # redirect target. The blocked host is never actually contacted.
+    monkeypatch.setattr(
+        fetch_module,
+        "_validate_fetch_url",
+        lambda url, _allowed=None: ("host blocked" if "blocked.invalid" in url else None),
+    )
+
+    async def start(request: web.Request) -> web.Response:  # noqa: ARG001
+        raise web.HTTPFound("http://blocked.invalid/secret")
+
+    base, runner = await _start_redirect_server([("/start", start)])
+    try:
+        result = await fetch_url_tool(Params(url=f"{base}/start"))
+    finally:
+        await runner.cleanup()
+
+    assert result.is_error
+    assert "redirect" in result.message.lower()
+
+
+async def test_fetch_url_rejects_redirect_loop(fetch_url_tool: FetchURL) -> None:
+    """A redirect loop terminates with a 'too many redirects' error."""
+
+    async def loop(request: web.Request) -> web.Response:  # noqa: ARG001
+        raise web.HTTPFound("/loop")
+
+    base, runner = await _start_redirect_server([("/loop", loop)])
+    try:
+        result = await fetch_url_tool(Params(url=f"{base}/loop"))
+    finally:
+        await runner.cleanup()
+
+    assert result.is_error
+    assert "too many redirects" in result.message.lower()
 
 
 async def test_fetch_url_with_service(runtime) -> None:

@@ -85,6 +85,9 @@ api_key = "sk-xxx"
 base_url = "https://api.pythinker.com/coding/v1/fetch"
 api_key = "sk-xxx"
 
+[web]
+allowed_domains = ["example.com", "docs.python.org"]
+
 [mcp.client]
 tool_call_timeout_ms = 60000
 ```
@@ -198,6 +201,16 @@ Configures web fetch service. When enabled, the `FetchURL` tool prioritizes usin
 ::: tip
 When configuring the Pythinker platform using the `/login` command, search and fetch services are automatically configured.
 :::
+
+### `web`
+
+`web` configures policy shared by the `FetchURL` and `SearchWeb` tools.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `allowed_domains` | `array<string>` | _unset_ | When set, web fetch and search may only touch these domains and their subdomains. `FetchURL` rejects URLs on other hosts before making any request, and `SearchWeb` drops results from other domains. Unset or empty means unrestricted. |
+
+This is a coarse governance control layered on top of the existing SSRF protections (which always block private, loopback, link-local, multicast, and reserved addresses); it does not replace them. Matching is label-aware: `example.com` matches `example.com` and `docs.example.com`, but not `notexample.com`.
 
 ### `mcp`
 

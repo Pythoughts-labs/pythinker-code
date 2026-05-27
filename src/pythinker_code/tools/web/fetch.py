@@ -2,7 +2,7 @@ import ipaddress
 import socket
 from pathlib import Path
 from typing import override
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import aiohttp
 import trafilatura
@@ -15,18 +15,24 @@ from pythinker_code.execution_profiles import resolve_execution_policy
 from pythinker_code.soul.agent import Runtime
 from pythinker_code.soul.toolset import get_current_tool_call_or_none
 from pythinker_code.tools.utils import ToolResultBuilder, load_desc
+from pythinker_code.tools.web._allowlist import host_in_allowlist
 from pythinker_code.utils.aiohttp import new_client_session
 from pythinker_code.utils.logging import logger
 
 MAX_FETCH_BYTES = 5 * 1024 * 1024
+MAX_REDIRECTS = 5
+_REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 
 
-def _validate_fetch_url(url: str) -> str | None:
+def _validate_fetch_url(url: str, allowed_domains: list[str] | None = None) -> str | None:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
         return "Only http and https URLs are supported."
     if not parsed.hostname:
         return "URL must include a host."
+
+    if not host_in_allowlist(parsed.hostname, allowed_domains):
+        return "URL host is not in the configured web allowlist."
 
     try:
         infos = socket.getaddrinfo(parsed.hostname, parsed.port, type=socket.SOCK_STREAM)
@@ -78,6 +84,7 @@ class FetchURL(CallableTool2[Params]):
         super().__init__()
         self._runtime = runtime
         self._service_config = config.services.pythinker_ai_fetch
+        self._allowed_domains = config.web.allowed_domains
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
@@ -96,65 +103,97 @@ class FetchURL(CallableTool2[Params]):
                 return ret
             logger.warning("Failed to fetch URL via service: {error}", error=ret.message)
             # fallback to local fetch if service fetch fails
-        return await self.fetch_with_http_get(params)
+        return await self.fetch_with_http_get(params, self._allowed_domains)
 
     @staticmethod
-    async def fetch_with_http_get(params: Params) -> ToolReturnValue:
+    async def fetch_with_http_get(
+        params: Params, allowed_domains: list[str] | None = None
+    ) -> ToolReturnValue:
         builder = ToolResultBuilder(max_line_length=None)
-        if reason := _validate_fetch_url(params.url):
+        if reason := _validate_fetch_url(params.url, allowed_domains):
             return builder.error(f"Failed to fetch URL: {reason}", brief="URL blocked")
+        resp_text = ""
+        current_url = params.url
         try:
             # Fetching arbitrary web pages can take a while on large/slow sites.
             fetch_timeout = aiohttp.ClientTimeout(total=180, sock_read=60, sock_connect=15)
-            async with (
-                new_client_session(timeout=fetch_timeout) as session,
-                session.get(
-                    params.url,
-                    headers={
-                        "User-Agent": (
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                            "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-                        ),
-                    },
-                ) as response,
-            ):
-                if response.status >= 400:
-                    logger.warning(
-                        "FetchURL HTTP error: status={status}, url={url}",
-                        status=response.status,
-                        url=params.url,
-                    )
-                    return builder.error(
-                        (
-                            f"Failed to fetch URL. Status: {response.status}. "
-                            f"This may indicate the page is not accessible or the server is down."
-                        ),
-                        brief=f"HTTP {response.status} error",
-                    )
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                ),
+            }
+            # Follow redirects manually so each hop is re-validated against the
+            # allowlist and SSRF guard; aiohttp's automatic redirects would only
+            # honor the checks on the initial URL.
+            async with new_client_session(timeout=fetch_timeout) as session:
+                for _ in range(MAX_REDIRECTS + 1):
+                    async with session.get(
+                        current_url, headers=headers, allow_redirects=False
+                    ) as response:
+                        if response.status in _REDIRECT_STATUSES:
+                            location = response.headers.get(aiohttp.hdrs.LOCATION)
+                            if not location:
+                                return builder.error(
+                                    "Failed to fetch URL: redirect response missing a "
+                                    "Location header.",
+                                    brief="Invalid redirect",
+                                )
+                            current_url = urljoin(current_url, location)
+                            if reason := _validate_fetch_url(current_url, allowed_domains):
+                                return builder.error(
+                                    f"Failed to fetch URL: redirect to a disallowed "
+                                    f"location: {reason}",
+                                    brief="Redirect blocked",
+                                )
+                            continue
 
-                try:
-                    resp_text = (await _read_limited(response, MAX_FETCH_BYTES)).decode(
-                        "utf-8", errors="replace"
-                    )
-                except ValueError:
-                    max_mb = MAX_FETCH_BYTES // 1024 // 1024
-                    return builder.error(
-                        f"Failed to fetch URL: response exceeds {max_mb}MB.",
-                        brief="Response too large",
-                    )
+                        if response.status >= 400:
+                            logger.warning(
+                                "FetchURL HTTP error: status={status}, url={url}",
+                                status=response.status,
+                                url=current_url,
+                            )
+                            return builder.error(
+                                (
+                                    f"Failed to fetch URL. Status: {response.status}. "
+                                    f"This may indicate the page is not accessible or the "
+                                    f"server is down."
+                                ),
+                                brief=f"HTTP {response.status} error",
+                            )
 
-                content_type = response.headers.get(aiohttp.hdrs.CONTENT_TYPE, "").lower()
-                if content_type.startswith(("text/plain", "text/markdown")):
-                    builder.write(resp_text)
-                    return builder.ok("The returned content is the full content of the page.")
+                        try:
+                            resp_text = (await _read_limited(response, MAX_FETCH_BYTES)).decode(
+                                "utf-8", errors="replace"
+                            )
+                        except ValueError:
+                            max_mb = MAX_FETCH_BYTES // 1024 // 1024
+                            return builder.error(
+                                f"Failed to fetch URL: response exceeds {max_mb}MB.",
+                                brief="Response too large",
+                            )
+
+                        content_type = response.headers.get(aiohttp.hdrs.CONTENT_TYPE, "").lower()
+                        if content_type.startswith(("text/plain", "text/markdown")):
+                            builder.write(resp_text)
+                            return builder.ok(
+                                "The returned content is the full content of the page."
+                            )
+                        break
+                else:
+                    return builder.error(
+                        "Failed to fetch URL: too many redirects.",
+                        brief="Too many redirects",
+                    )
         except TimeoutError:
-            logger.warning("FetchURL timed out: url={url}", url=params.url)
+            logger.warning("FetchURL timed out: url={url}", url=current_url)
             return builder.error(
                 "Failed to fetch URL: request timed out. The server may be slow or unreachable.",
                 brief="Request timed out",
             )
         except aiohttp.ClientError as e:
-            logger.warning("FetchURL network error: {error}, url={url}", error=e, url=params.url)
+            logger.warning("FetchURL network error: {error}, url={url}", error=e, url=current_url)
             return builder.error(
                 (
                     f"Failed to fetch URL due to network error: {e}. "
@@ -206,7 +245,7 @@ class FetchURL(CallableTool2[Params]):
                 "Fetch service is not configured. You may want to try other methods to fetch.",
                 brief="Fetch service not configured",
             )
-        if reason := _validate_fetch_url(params.url):
+        if reason := _validate_fetch_url(params.url, self._allowed_domains):
             return builder.error(f"Failed to fetch URL: {reason}", brief="URL blocked")
 
         headers = {
