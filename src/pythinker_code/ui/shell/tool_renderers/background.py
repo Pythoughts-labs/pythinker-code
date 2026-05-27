@@ -23,6 +23,7 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     format_lines_block,
     invalid_arg,
     missing_required_arg,
+    pending_tool_call_header,
     running_spinner,
     tool_call_header,
 )
@@ -80,7 +81,10 @@ def _render_call_with_id(
         elif ctx.has_result:
             summary.append_text(missing_required_arg("task_id"))
         else:
-            summary.append_text(fg("muted", "..."))
+            line = pending_tool_call_header(label)
+            return running_spinner(
+                line, execution_started=ctx.execution_started, has_result=ctx.has_result
+            )
     else:
         # Prefer the task's human description (resolved from the store at
         # call-time, or stashed from the result) over the opaque id; keep the

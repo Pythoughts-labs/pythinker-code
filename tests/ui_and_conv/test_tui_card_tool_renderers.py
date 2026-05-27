@@ -84,6 +84,15 @@ def _render_running(tool: str, args: dict, *, width: int = 100) -> str:
     return render_plain(comp.render(), width=width)
 
 
+def _render_streaming(tool: str, args: dict, *, width: int = 100) -> str:
+    defn = get_tool_renderer(tool)
+    assert defn is not None, f"renderer not registered for {tool!r}"
+    comp = ToolExecutionComponent(tool, "tc-1", definition=defn, cwd="/repo")
+    comp.update_args(args)
+    comp.mark_execution_started()
+    return render_plain(comp.render(), width=width)
+
+
 def test_loading_marker_pulses_muted_transcript_dot_then_finishes_green():
     visible = loading_marker(now=0.0)
     hidden = loading_marker(now=0.9)
@@ -511,6 +520,30 @@ def test_running_tool_headers_do_not_duplicate_status_bullets():
         assert "⏺ ⏺" not in rendered
 
 
+def test_streaming_missing_args_use_preparing_rows_not_tool_ellipsis_placeholders():
+    cases = [
+        ("Shell", "Bash"),
+        ("ReadFile", "Read"),
+        ("WriteFile", "Write"),
+        ("StrReplaceFile", "Update"),
+        ("Grep", "Search"),
+        ("Glob", "Find"),
+        ("FetchURL", "Fetch"),
+        ("SearchWeb", "WebSearch"),
+        ("Think", "Think"),
+        ("AskUserQuestion", "Ask"),
+        ("TaskOutput", "TaskOutput"),
+        ("TaskStop", "TaskStop"),
+        ("RunAgents", "RunAgents"),
+    ]
+
+    for tool, label in cases:
+        rendered = _render_streaming(tool, {}, width=80)
+        assert f"Preparing {label}…" in rendered
+        assert f"{label}(...)" not in rendered
+        assert f"{label}(…)" not in rendered
+
+
 def test_invalid_empty_shell_call_names_missing_command():
     rendered = _render(
         "Shell",
@@ -579,6 +612,28 @@ def test_generic_substantial_output_uses_single_response_gutter():
     )
     assert "⎿  line1" in rendered
     assert "⎿    ⎿" not in rendered
+
+
+def test_generic_renderer_summarizes_arg_keys_without_values():
+    rendered = _render_with_definition(
+        "UnknownTool",
+        {
+            "content": "SECRET PAYLOAD",
+            "newText": "new secret",
+            "oldText": "old secret",
+            "path": "src/config.py",
+            "token": "sk-secret",
+        },
+    )
+
+    assert "UnknownTool(5 args:" in rendered
+    assert "content" in rendered
+    assert "path" in rendered
+    assert "SECRET PAYLOAD" not in rendered
+    assert "new secret" not in rendered
+    assert "old secret" not in rendered
+    assert "src/config.py" not in rendered
+    assert "sk-secret" not in rendered
 
 
 # ---------------------------------------------------------------------------

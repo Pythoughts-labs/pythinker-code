@@ -15,6 +15,7 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     format_lines_block,
     invalid_arg,
     missing_required_arg,
+    pending_tool_call_header,
     running_spinner,
     tool_call_header,
 )
@@ -36,7 +37,7 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
                 "Think", missing_required_arg("thought"), style_token=style_token
             )
         else:
-            header = tool_call_header("Think", fg("muted", "..."), style_token=style_token)
+            header = pending_tool_call_header("Think")
         return running_spinner(
             header, execution_started=ctx.execution_started, has_result=ctx.has_result
         )

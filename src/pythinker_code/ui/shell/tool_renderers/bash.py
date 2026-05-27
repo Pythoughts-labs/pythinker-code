@@ -34,6 +34,7 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     fg,
     invalid_arg,
     missing_required_arg,
+    pending_tool_call_header,
     running_spinner,
     tool_call_header,
 )
@@ -55,7 +56,10 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType | None:
         elif ctx.has_result:
             summary.append_text(missing_required_arg("command"))
         else:
-            summary.append_text(fg("tool_output", "..."))
+            line = pending_tool_call_header("Bash")
+            return running_spinner(
+                line, execution_started=ctx.execution_started, has_result=ctx.has_result
+            )
     else:
         summary.append_text(
             fg("tool_output", format_bash_command_for_header(command, expanded=ctx.expanded))

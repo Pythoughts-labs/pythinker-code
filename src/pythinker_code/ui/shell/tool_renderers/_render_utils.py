@@ -27,7 +27,9 @@ __all__ = [
     "invalid_arg",
     "missing_required_arg",
     "loading_marker",
+    "pending_tool_call_header",
     "running_spinner",
+    "safe_arg_keys_summary",
     "shorten_path",
     "tab_to_spaces",
     "tool_call_header",
@@ -92,6 +94,48 @@ def tool_call_header(
             header.append(summary)
         header.append(")", style=paren_style)
     return header
+
+
+def pending_tool_call_header(
+    name: str,
+    *,
+    action: str = "Preparing",
+    style_token: str = "muted",
+    action_style_token: str = "muted",
+) -> Text:
+    """Return a safe pending row while streamed args are still incomplete.
+
+    This deliberately avoids ``Tool(...)`` placeholders and never renders raw
+    argument values. Once a renderer has the required safe summary field it can
+    switch to ``tool_call_header``.
+    """
+    header = Text()
+    header.append(f"{TRANSCRIPT_ASSISTANT_MARKER} ", style=tui_rich_style(style_token))
+    header.append(f"{action} ", style=tui_rich_style(action_style_token))
+    header.append_text(tool_title(name))
+    header.append("…", style=tui_rich_style(action_style_token))
+    return header
+
+
+def safe_arg_keys_summary(args: dict[str, Any], *, max_keys: int = 4) -> Text | None:
+    """Summarize unknown-tool args without echoing values.
+
+    Generic renderers cannot know which values are huge or sensitive, so they
+    show only a compact key/count summary.
+    """
+    if not args:
+        return None
+    keys = sorted(str(key) for key in args)
+    shown = keys[:max_keys]
+    hidden = len(keys) - len(shown)
+    label = "arg" if len(keys) == 1 else "args"
+    summary = Text(f"{len(keys)} {label}", style=tui_rich_style("muted"))
+    if shown:
+        summary.append(": ", style=tui_rich_style("muted"))
+        summary.append(", ".join(shown), style=tui_rich_style("tool_output"))
+    if hidden > 0:
+        summary.append(f", +{hidden} more", style=tui_rich_style("muted"))
+    return summary
 
 
 def loading_marker(

@@ -1,15 +1,12 @@
 """Generic fallback renderer used when no tool-specific renderer is registered.
 
-Mirrors the ``formatToolExecution`` shape: tool name in the header, args
-as a JSON blob, and the textual result below.
+Mirrors the ``formatToolExecution`` shape: tool name in the header, a safe
+argument-key summary, and the textual result below.
 """
 
 from __future__ import annotations
 
-import json
-
 from rich.console import Group, RenderableType
-from rich.text import Text
 
 from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
 from pythinker_code.ui.shell.render_constants import expand_hint
@@ -21,10 +18,11 @@ from pythinker_code.ui.shell.tool_renderers import (
 from pythinker_code.ui.shell.tool_renderers._render_utils import (
     fg,
     format_lines_block,
+    pending_tool_call_header,
     running_spinner,
+    safe_arg_keys_summary,
     tool_call_header,
 )
-from pythinker_code.ui.theme import tui_rich_style
 
 _GENERIC_TOOL_NAME = "__generic__"
 """Sentinel name used to register the fallback. Tools without their own
@@ -38,20 +36,14 @@ _GENERIC_COLLAPSED_LINES = 15
 def _render_call(ctx: ToolRenderContext) -> RenderableType | None:
     label = str(ctx.state.get("__tool_name__", _GENERIC_TOOL_NAME))
     style_token = "error" if ctx.is_error else "success" if ctx.has_result else "muted"
-    header = tool_call_header(label, None, style_token=style_token)
 
-    if not ctx.args:
-        return running_spinner(
-            header, execution_started=ctx.execution_started, has_result=ctx.has_result
-        )
-
-    try:
-        body = json.dumps(ctx.args, indent=2, ensure_ascii=False, sort_keys=True)
-    except (TypeError, ValueError):
-        body = repr(ctx.args)
-    rendered = Group(header, Text(body, style=tui_rich_style("muted")))
+    summary = safe_arg_keys_summary(ctx.args)
+    if summary is None and not ctx.has_result:
+        header = pending_tool_call_header(label)
+    else:
+        header = tool_call_header(label, summary, style_token=style_token)
     return running_spinner(
-        rendered, execution_started=ctx.execution_started, has_result=ctx.has_result
+        header, execution_started=ctx.execution_started, has_result=ctx.has_result
     )
 
 

@@ -20,6 +20,7 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     invalid_arg,
     loading_marker,
     missing_required_arg,
+    pending_tool_call_header,
     running_spinner,
     tool_call_header,
 )
@@ -148,7 +149,13 @@ def _render_run_agents_call(ctx: ToolRenderContext) -> RenderableType:
         if ctx.has_result:
             summary_text.append_text(missing_required_arg("agents"))
         else:
-            summary_text.append_text(fg("muted", "agents"))
+            header = pending_tool_call_header(_RUN_AGENTS_TOOL_NAME)
+            return running_spinner(
+                header,
+                execution_started=ctx.execution_started,
+                has_result=ctx.has_result,
+                marker_style_token="thinking_text",
+            )
     else:
         summary_text.append_text(fg("border_accent", _plural(len(agent_summaries), "agent")))
 

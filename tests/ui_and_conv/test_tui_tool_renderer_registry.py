@@ -99,7 +99,7 @@ def test_register_builtin_registers_generic():
     assert get_tool_renderer("__generic__") is GENERIC_RENDERER
 
 
-def test_generic_render_call_with_args():
+def test_generic_render_call_with_args_summarizes_keys_without_values():
     ctx = ToolRenderContext(args={"path": "src/foo.py"}, tool_call_id="t1")
     ctx.state["__tool_name__"] = "ReadFile"
     assert GENERIC_RENDERER.render_call is not None
@@ -107,7 +107,8 @@ def test_generic_render_call_with_args():
     assert out is not None
     rendered = render_plain(out, width=60)
     assert "ReadFile" in rendered
-    assert "src/foo.py" in rendered
+    assert "1 arg: path" in rendered
+    assert "src/foo.py" not in rendered
 
 
 def test_generic_render_call_without_args():
@@ -145,8 +146,9 @@ def test_generic_render_result_empty_returns_none():
     assert GENERIC_RENDERER.render_result(ctx, payload) is None
 
 
-def test_generic_render_result_handles_unjsonable_args():
-    # Ensures render_call doesn't raise on non-JSON-serializable args.
+def test_generic_render_result_handles_unjsonable_args_without_echoing_repr():
+    # Ensures render_call doesn't raise on non-JSON-serializable args or echo
+    # arbitrary repr output into the transcript.
     class Sentinel:
         def __repr__(self) -> str:
             return "<sentinel>"
@@ -157,7 +159,8 @@ def test_generic_render_result_handles_unjsonable_args():
     out = GENERIC_RENDERER.render_call(ctx)
     assert out is not None
     rendered = render_plain(out, width=40)
-    assert "<sentinel>" in rendered
+    assert "1 arg: obj" in rendered
+    assert "<sentinel>" not in rendered
 
 
 def test_generic_renderer_function_returns_singleton():
