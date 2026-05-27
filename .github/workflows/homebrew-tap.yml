@@ -40,66 +40,31 @@ jobs:
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for PyPI to have pythinker-code <version>
-        env:
-          PKG_VERSION: ${{ steps.ver.outputs.version }}
-        run: |
-          set -euo pipefail
-          deadline=$(( $(date +%s) + 30 * 60 ))
-          while true; do
-            status=$(curl -s -o /dev/null -w "%{http_code}" \
-              "https://pypi.org/pypi/pythinker-code/${PKG_VERSION}/json")
-            if [ "$status" = "200" ]; then
-              echo "PyPI has pythinker-code ${PKG_VERSION}"
-              break
-            fi
-            if [ "$(date +%s)" -gt "$deadline" ]; then
-              echo "::error::PyPI did not publish pythinker-code ${PKG_VERSION} within 30 minutes" >&2
-              exit 1
-            fi
-            echo "PyPI not ready yet (HTTP $status); sleeping 30s"
-            sleep 30
-          done
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
-      - name: Install pythinker-code into a fresh venv
-        env:
-          PKG_VERSION: ${{ steps.ver.outputs.version }}
-        run: |
-          set -euxo pipefail
-          # Fresh venv so `pip freeze` lists exactly pythinker-code's transitive
-          # closure, no test/build tooling. We do NOT install homebrew-pypi-poet
-          # — it's unmaintained, imports pkg_resources (gone in setuptools 81+),
-          # and crashes on modern extras. generate-formula.py reimplements the
-          # 30 lines we need.
-          python -m venv /tmp/poet-env
-          /tmp/poet-env/bin/pip install --upgrade pip
-          deadline=$(( $(date +%s) + 30 * 60 ))
-          until /tmp/poet-env/bin/pip install "pythinker-code==${PKG_VERSION}"; do
-            if [ "$(date +%s)" -gt "$deadline" ]; then
-              echo "::error::pip could not install pythinker-code ${PKG_VERSION} within 30 minutes" >&2
-              exit 1
-            fi
-            echo "pip index not ready for pythinker-code ${PKG_VERSION}; sleeping 30s"
-            sleep 30
-          done
-
-      - name: Generate formula
+      - name: Generate native formula
         env:
           PKG_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euxo pipefail
           mkdir -p out/Formula
-          /tmp/poet-env/bin/python packages/homebrew-tap/generate-formula.py \
+          deadline=$(( $(date +%s) + 30 * 60 ))
+          until python packages/homebrew-tap/generate-formula.py \
             --version "$PKG_VERSION" \
             --template packages/homebrew-tap/pythinker-code.rb.tmpl \
-            --output out/Formula/pythinker-code.rb
+            --output out/Formula/pythinker-code.rb; do
+            if [ "$(date +%s)" -gt "$deadline" ]; then
+              echo "::error::Native release assets for ${PKG_VERSION} were not ready within 30 minutes" >&2
+              exit 1
+            fi
+            echo "Native release assets not ready for ${PKG_VERSION}; sleeping 30s"
+            sleep 30
+          done
           echo "--- generated formula head ---"
-          head -30 out/Formula/pythinker-code.rb
+          head -40 out/Formula/pythinker-code.rb
 
       - name: Sync formula into tap repo (handles empty repo on first run)
         env:

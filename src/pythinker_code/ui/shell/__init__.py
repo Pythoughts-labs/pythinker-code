@@ -53,8 +53,8 @@ from pythinker_code.ui.shell.replay import replay_recent_history
 from pythinker_code.ui.shell.slash import SKILL_COMMAND_PREFIX, shell_mode_registry
 from pythinker_code.ui.shell.slash import registry as shell_slash_registry
 from pythinker_code.ui.shell.update import (
-    UpdateResult,
-    do_update,
+    pending_update_notice,
+    refresh_update_cache_if_due,
 )
 from pythinker_code.ui.shell.visualize import (
     ApprovalPromptDelegate,
@@ -1737,9 +1737,12 @@ class Shell:
         return None
 
     async def _auto_update(self) -> None:
-        result = await do_update(print=False, check_only=True)
-        if result == UpdateResult.UPDATED:
-            toast("auto updated, restart to use the new version", topic="update", duration=5.0)
+        # Background-refresh the cached latest version (throttled); never blocks startup.
+        await refresh_update_cache_if_due()
+        # Non-blocking, pythinker-x-style notice based on the cached value.
+        notice = pending_update_notice()
+        if notice:
+            toast(notice, topic="update", duration=8.0)
 
     def _start_background_task(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
         task = asyncio.create_task(coro)

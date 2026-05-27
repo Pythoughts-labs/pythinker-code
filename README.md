@@ -219,9 +219,10 @@ which pythinker          # -> /opt/homebrew/bin/pythinker (Apple Silicon)
                          #    or /usr/local/bin/pythinker (Intel)
 ```
 
-Works on **Apple Silicon and Intel** — brew picks the right Python build for
-you. The tap auto-publishes a fresh formula on every Pythinker release, so
-`brew upgrade pythinker-code` always finds the latest version.
+Works on **Apple Silicon and Intel** from the same native GitHub Release
+tarballs used by the curl installer. The tap auto-publishes a fresh formula on
+every Pythinker release, so `brew upgrade pythinker-code` always finds the
+latest version.
 
 **Upgrade:** `brew upgrade pythinker-code` (Homebrew packages don't
 auto-update; run this whenever you want the latest).
@@ -320,13 +321,13 @@ Supported targets:
 
 | `uname -s / -m`             | Tarball asset                                            |
 |---|---|
-| Linux / x86_64              | `pythinker-0.18.0-x86_64-unknown-linux-gnu.tar.gz`        |
-| Linux / aarch64             | `pythinker-0.18.0-aarch64-unknown-linux-gnu.tar.gz`       |
-| Darwin / arm64              | `pythinker-0.18.0-aarch64-apple-darwin.tar.gz`            |
+| Linux / x86_64              | `pythinker-<version>-x86_64-unknown-linux-gnu.tar.gz`        |
+| Linux / aarch64             | `pythinker-<version>-aarch64-unknown-linux-gnu.tar.gz`       |
+| Darwin / arm64              | `pythinker-<version>-aarch64-apple-darwin.tar.gz`            |
+| Darwin / x86_64             | `pythinker-<version>-x86_64-apple-darwin.tar.gz`             |
 
 The script prints PATH guidance if `~/.local/bin` isn't already on your
-`$PATH`. Intel macOS users — use Homebrew or `pip install pythinker-code`;
-no PyInstaller-built Intel Darwin binary is published.
+`$PATH`.
 
 **Uninstall:** `rm ~/.local/bin/pythinker`.
 

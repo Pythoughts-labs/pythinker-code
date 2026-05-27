@@ -1,10 +1,10 @@
 """Native-build detection + GitHub Releases lookup helpers.
 
-Native packages may drop a sentinel file ``.pythinker-native`` next to the
-PyInstaller-frozen executable. Older curl-bash onefile installs did not include
-that sentinel, so runtime detection also treats a frozen ``pythinker`` executable
-as native. Native installs update from GitHub Release assets instead of shelling
-out to ``pip`` from inside the frozen CLI.
+Native packages drop a sentinel file ``.pythinker-native`` next to the launched
+executable. Older curl-bash onefile installs did not include that sentinel, so
+runtime detection also treats a frozen ``pythinker`` executable as native.
+Native installs update from GitHub Release assets instead of shelling out to
+``pip`` or ``uv`` from inside the CLI.
 """
 
 from __future__ import annotations
@@ -18,15 +18,21 @@ SENTINEL_FILENAME = ".pythinker-native"
 
 
 def is_native_build() -> bool:
-    """True iff this process is a PyInstaller-frozen Pythinker native install."""
-    if not getattr(sys, "frozen", False):
-        return False
+    """True iff this process is a Pythinker native install."""
     try:
         exe_path = Path(sys.executable).resolve()
     except OSError:
         return False
+
+    # The installers deliberately drop this marker next to the launched
+    # executable. Trust it even if a platform-specific launcher/wrapper does
+    # not expose PyInstaller's ``sys.frozen`` flag; this keeps native installs
+    # on the native update path instead of falling back to uv/pip.
     if (exe_path.parent / SENTINEL_FILENAME).is_file():
         return True
+
+    if not getattr(sys, "frozen", False):
+        return False
     return exe_path.stem.lower() == "pythinker"
 
 
@@ -58,6 +64,9 @@ def _native_archive_target() -> str | None:
             return "x86_64-unknown-linux-gnu"
         if machine in {"aarch64", "arm64"}:
             return "aarch64-unknown-linux-gnu"
-    if system == "darwin" and machine in {"aarch64", "arm64"}:
-        return "aarch64-apple-darwin"
+    if system == "darwin":
+        if machine in {"aarch64", "arm64"}:
+            return "aarch64-apple-darwin"
+        if machine in {"x86_64", "amd64"}:
+            return "x86_64-apple-darwin"
     return None

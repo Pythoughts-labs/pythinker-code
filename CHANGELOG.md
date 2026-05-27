@@ -21,6 +21,11 @@ GitHub Releases page; `0.8.0` is the new starting line.
   `~/.pythinker/projects/<key>/memory/`, written via a new root-only `Memory`
   tool and recalled into the root agent's first wakeup prompt.
 - `/memory` command to inspect the project memory injected at session start.
+- Fully native Homebrew formula generation from GitHub Release tarballs, including
+  macOS Intel native release assets, so brew installs no longer depend on PyPI
+  virtualenv resources.
+- Blocking interactive startup update prompt now offers update, skip this session,
+  skip until next version, and exit choices before the agent starts.
 
 ## 0.18.0 (2026-05-27)
 

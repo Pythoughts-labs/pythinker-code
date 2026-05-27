@@ -42,6 +42,17 @@ def test_is_native_build_true_when_sentinel_present(tmp_path):
         assert native.is_native_build() is True
 
 
+def test_is_native_build_true_when_sentinel_present_without_frozen_flag(tmp_path):
+    fake_exe = tmp_path / "pythinker.exe"
+    fake_exe.write_bytes(b"")
+    (tmp_path / ".pythinker-native").write_text("pythinker-native-build")
+    with (
+        patch.object(sys, "frozen", False, create=True),
+        patch.object(sys, "executable", str(fake_exe)),
+    ):
+        assert native.is_native_build() is True
+
+
 def test_native_installer_release_url_latest():
     url = native.native_installer_release_url(channel="latest")
     assert url == ("https://api.github.com/repos/mohamed-elkholy95/Pythinker-Code/releases/latest")
@@ -64,4 +75,15 @@ def test_native_archive_asset_name_linux_x86_64():
         assert (
             native.native_archive_asset_name("0.14.0")
             == "pythinker-0.14.0-x86_64-unknown-linux-gnu.tar.gz"
+        )
+
+
+def test_native_archive_asset_name_macos_intel():
+    with (
+        patch.object(sys, "platform", "darwin"),
+        patch("platform.machine", return_value="x86_64"),
+    ):
+        assert (
+            native.native_archive_asset_name("0.14.0")
+            == "pythinker-0.14.0-x86_64-apple-darwin.tar.gz"
         )

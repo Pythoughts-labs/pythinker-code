@@ -3,15 +3,18 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import platform
 import re
 import shutil
 import subprocess
 import sys
 import tarfile
 import time
+from collections.abc import Mapping
 from enum import Enum, auto
 from pathlib import Path
 from shutil import which
+from typing import cast
 
 import aiohttp
 import typer
@@ -30,8 +33,8 @@ from pythinker_code.ui.shell.console import console
 from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
 from pythinker_code.utils.aiohttp import new_client_session
 from pythinker_code.utils.logging import logger
+from pythinker_code.utils.subprocess_env import get_clean_env
 
-PYPI_JSON_URL = "https://pypi.org/pypi/pythinker-code/json"
 CHANGELOG_URL_EN = "https://github.com/mohamed-elkholy95/Pythinker-Code/blob/main/CHANGELOG.md"
 
 # Default upgrade command. `_detect_upgrade_command()` overrides this when the
@@ -40,9 +43,11 @@ UPGRADE_COMMAND = ["uv", "tool", "upgrade", "pythinker-code"]
 
 LATEST_VERSION_FILE = get_share_dir() / "latest_version.txt"
 LAST_UPDATE_CHECK_FILE = get_share_dir() / "last_update_check.txt"
+DISMISSED_VERSION_FILE = get_share_dir() / "dismissed_update_version.txt"
 AUTO_UPDATE_CHECK_INTERVAL_SECONDS = 24 * 60 * 60
 
 _UPDATE_LOCK = asyncio.Lock()
+_skipped_version_this_session: str | None = None
 
 NATIVE_INSTALLER_MARKER = "__pythinker_native_installer__"
 
@@ -53,6 +58,13 @@ class UpdateResult(Enum):
     UP_TO_DATE = auto()
     FAILED = auto()
     UNSUPPORTED = auto()
+
+
+class UpdatePromptSelection(Enum):
+    UPDATE_NOW = auto()
+    SKIP = auto()
+    DISMISS_VERSION = auto()
+    EXIT = auto()
 
 
 def semver_tuple(version: str) -> tuple[int, int, int]:
@@ -70,9 +82,11 @@ def semver_tuple(version: str) -> tuple[int, int, int]:
 
 def _detect_upgrade_command() -> list[str]:
     """Pick the right upgrade argv based on how this interpreter was installed."""
+    exe = sys.executable.replace("\\", "/").lower()
+    if "/cellar/pythinker-code/" in exe or "/homebrew/cellar/pythinker-code/" in exe:
+        return ["brew", "upgrade", "pythinker-code"]
     if _is_native_build():
         return [NATIVE_INSTALLER_MARKER]
-    exe = sys.executable.replace("\\", "/").lower()
     if "/uv/tools/" in exe:
         return ["uv", "tool", "upgrade", "pythinker-code"]
     if "/pipx/venvs/" in exe:
@@ -135,18 +149,36 @@ def _spawn_detached_windows_upgrade(upgrade_command: list[str]) -> bool:
     return True
 
 
+def _version_from_release_payload(data: object) -> str | None:
+    if not isinstance(data, Mapping):
+        return None
+    payload = cast(Mapping[str, object], data)
+    tag_name = payload.get("tag_name")
+    release_name = payload.get("name")
+    raw = tag_name if isinstance(tag_name, str) else release_name
+    if not isinstance(raw, str):
+        return None
+    raw = raw.strip()
+    if raw.startswith("v"):
+        raw = raw[1:]
+    return raw if re.fullmatch(r"\d+\.\d+\.\d+", raw) else None
+
+
 async def _get_latest_version(session: aiohttp.ClientSession) -> str | None:
+    """Return the latest native release version from GitHub Releases."""
     try:
-        async with session.get(PYPI_JSON_URL) as resp:
+        async with session.get(
+            native_installer_release_url(), headers={"Accept": "application/vnd.github+json"}
+        ) as resp:
             resp.raise_for_status()
             data = await resp.json(content_type=None)
-            version = data.get("info", {}).get("version")
-            return str(version).strip() if version else None
+            version = _version_from_release_payload(data)
+            return version.strip() if version else None
     except (TimeoutError, aiohttp.ClientError):
-        logger.exception("Failed to fetch latest version from PyPI:")
+        logger.exception("Failed to fetch latest version from GitHub Releases:")
         return None
     except Exception:
-        logger.exception("Failed to parse PyPI response:")
+        logger.exception("Failed to parse GitHub release response:")
         return None
 
 
@@ -209,10 +241,10 @@ def _mark_auto_update_check_attempt() -> None:
 async def prompt_pre_start_update() -> None:
     """pythinker-x-style blocking update prompt for the interactive shell.
 
-    Runs once at startup, before the agent loop. When a newer release exists,
-    asks the user whether to update now. Accepting runs the update and exits so
-    the user relaunches the new version; declining continues the current session
-    (the 24h throttle governs how often the prompt reappears).
+    Runs once at startup, before the agent loop. When a newer native release
+    exists, asks the user whether to update now. Accepting runs the native
+    updater and exits so the user relaunches the new version; declining
+    continues the current session.
     """
     from pythinker_code.constant import VERSION as current_version
 
@@ -226,8 +258,17 @@ async def prompt_pre_start_update() -> None:
         return
     if semver_tuple(latest_version) <= semver_tuple(current_version):
         return
+    if _read_dismissed_version() == latest_version:
+        return
 
-    if not await _confirm_update_now(current_version, latest_version):
+    selection = await _prompt_update_selection(current_version, latest_version, allow_exit=True)
+    if selection is UpdatePromptSelection.EXIT:
+        raise typer.Exit(0)
+    if selection is UpdatePromptSelection.DISMISS_VERSION:
+        _dismiss_version(latest_version)
+        return
+    if selection is not UpdatePromptSelection.UPDATE_NOW:
+        _skip_version_this_session(latest_version)
         return
 
     result = await do_update(print=True)
@@ -258,34 +299,139 @@ async def _await_exit_acknowledgment() -> None:
         return
 
 
-async def _resolve_latest_version_for_prompt() -> str | None:
-    """Return the latest known release, fetching from PyPI only when the 24h
-    throttle is due; otherwise fall back to the cached value."""
-    if _should_auto_check_for_updates():
-        _mark_auto_update_check_attempt()
-        try:
-            await do_update(print=False, check_only=True)
-        except Exception:
-            logger.exception("Pre-start update check failed:")
+def _read_latest_version_cache() -> str | None:
     try:
         return LATEST_VERSION_FILE.read_text(encoding="utf-8").strip() or None
     except OSError:
         return None
 
 
-async def _confirm_update_now(current_version: str, latest_version: str) -> bool:
+def _read_dismissed_version() -> str | None:
+    try:
+        return DISMISSED_VERSION_FILE.read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def _dismiss_version(version: str) -> None:
+    try:
+        DISMISSED_VERSION_FILE.write_text(version, encoding="utf-8")
+    except OSError:
+        logger.exception("Failed to write dismissed update version:")
+
+
+def _skip_version_this_session(version: str) -> None:
+    global _skipped_version_this_session
+    _skipped_version_this_session = version
+
+
+async def refresh_update_cache_if_due() -> UpdateResult | None:
+    """Refresh the cached latest native release when the startup throttle allows it."""
+    return await _refresh_update_cache(force=False)
+
+
+async def _refresh_update_cache(*, force: bool) -> UpdateResult | None:
+    if not force and not _should_auto_check_for_updates():
+        return None
+    _mark_auto_update_check_attempt()
+    try:
+        return await do_update(print=False, check_only=True)
+    except Exception:
+        logger.exception("Update cache refresh failed:")
+        return None
+
+
+async def _resolve_latest_version_for_prompt(*, force_refresh: bool = False) -> str | None:
+    """Return the latest known native release, refreshing when due or uncached.
+
+    Used by the blocking pre-start prompt and by the explicit ``/update`` flow.
+    A missing cache forces one network check so fresh installs can be prompted
+    before the agent starts instead of seeing only a later background notice.
+    ``/update`` passes ``force_refresh=True`` so explicit user checks hit the
+    release API even when the startup throttle is not due.
+    """
+    cached = _read_latest_version_cache()
+    refresh_result = await _refresh_update_cache(force=force_refresh or not cached)
+    if refresh_result is not None:
+        return _read_latest_version_cache() or cached
+    return cached
+
+
+def pending_update_notice() -> str | None:
+    """Non-blocking cached update notice text, or None.
+
+    Reads only the cached latest version (no network). This is used by the
+    background refresher after the pre-start prompt has had first chance to
+    interrupt the session. Suppressed for source checkouts, disabled
+    auto-update, and per-version dismissals.
+    """
+    from pythinker_code.constant import VERSION as current_version
+
+    if _auto_update_disabled() or _is_running_from_source_checkout():
+        return None
+    cached = _read_latest_version_cache()
+    if not cached:
+        return None
+    if semver_tuple(cached) <= semver_tuple(current_version):
+        return None
+    if _read_dismissed_version() == cached or cached == _skipped_version_this_session:
+        return None
+    return f"Update available: {current_version} → {cached}. Run /update to install."
+
+
+async def run_update_prompt() -> UpdateResult | None:
+    """Interactive ``/update`` flow: resolve latest, show the 3-choice modal, install.
+
+    In-shell safe — unlike ``prompt_pre_start_update`` it does not block on raw
+    ``input`` or raise ``typer.Exit``; it returns the result so the caller can
+    message the user. On Windows the native-installer path still exits the
+    process to release the executable's file lock (the required behavior there).
+    """
+    from pythinker_code.constant import VERSION as current_version
+
+    latest_version = await _resolve_latest_version_for_prompt(force_refresh=True)
+    if not latest_version or semver_tuple(latest_version) <= semver_tuple(current_version):
+        console.print(f"[{_get_tui_tokens().success}]Already up to date.[/]")
+        return UpdateResult.UP_TO_DATE
+
+    selection = await _prompt_update_selection(current_version, latest_version)
+    if selection is UpdatePromptSelection.DISMISS_VERSION:
+        _dismiss_version(latest_version)
+        return None
+    if selection is not UpdatePromptSelection.UPDATE_NOW:
+        _skip_version_this_session(latest_version)
+        return None
+    return await do_update(print=True)
+
+
+async def _prompt_update_selection(
+    current_version: str, latest_version: str, *, allow_exit: bool = False
+) -> UpdatePromptSelection:
     from prompt_toolkit.shortcuts.choice_input import ChoiceInput
 
     console.print(_update_prompt_text(current_version, latest_version))
+    options = [
+        ("update", "Update now"),
+        ("skip", "Skip this session"),
+        ("dismiss", "Skip until next version"),
+    ]
+    if allow_exit:
+        options.append(("exit", "Exit Pythinker"))
     try:
         selection = await ChoiceInput(
             message="Update now?",
-            options=[("update", "Update now"), ("skip", "Skip")],
+            options=options,
             default="update",
         ).prompt_async()
     except (EOFError, KeyboardInterrupt):
-        return False
-    return selection == "update"
+        return UpdatePromptSelection.SKIP
+    if selection == "update":
+        return UpdatePromptSelection.UPDATE_NOW
+    if selection == "dismiss":
+        return UpdatePromptSelection.DISMISS_VERSION
+    if selection == "exit" and allow_exit:
+        return UpdatePromptSelection.EXIT
+    return UpdatePromptSelection.SKIP
 
 
 def _update_prompt_text(current_version: str, latest_version: str) -> Text:
@@ -347,8 +493,57 @@ async def _fetch_native_release_asset(
     return download_url, sha
 
 
+def _spawn_detached_windows_installer(installer_path: Path) -> bool:
+    """Run the native installer after this process exits and releases file locks.
+
+    Robustness over a fixed sleep: the detached console waits on *this* process's
+    PID (capped at 60s via ``Wait-Process``) so the installer only runs once the
+    running ``pythinker.exe`` has released its own-file lock, then cleans up the
+    staged installer + temp dir. The cap stops a hung process stranding the
+    installer forever.
+    """
+    if not _is_windows() or which("cmd") is None:
+        return False
+    DETACHED_PROCESS = 0x00000008
+    CREATE_NEW_PROCESS_GROUP = 0x00000200
+    pid = os.getpid()
+    tmpdir = installer_path.parent
+    installer_command = _format_upgrade_command(
+        [str(installer_path), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]
+    )
+    wait_command = (
+        "powershell -NoProfile -Command "
+        f'"Wait-Process -Id {pid} -Timeout 60 -ErrorAction SilentlyContinue"'
+    )
+    cleanup_command = (
+        f"del /q {subprocess.list2cmdline([str(installer_path)])} "
+        f"& rmdir /s /q {subprocess.list2cmdline([str(tmpdir)])}"
+    )
+    inner = (
+        f"echo Waiting for Pythinker (PID {pid}) to exit... "
+        f"& {wait_command} "
+        f"& {installer_command} "
+        f"& {cleanup_command} "
+        "& echo. "
+        "& echo Installer finished. Press any key to close this window. "
+        "& pause >nul"
+    )
+    try:
+        subprocess.Popen(
+            ["cmd", "/c", "start", "", "cmd", "/k", inner],
+            creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+            close_fds=True,
+        )
+    except OSError:
+        logger.exception("Failed to spawn detached Windows native installer:")
+        return False
+    return True
+
+
 def _run_native_installer(installer_path: Path) -> None:
-    """Spawn the downloaded installer silently and exit this process."""
+    """Spawn the downloaded native installer and exit this process."""
+    if _spawn_detached_windows_installer(installer_path):
+        sys.exit(0)
     subprocess.Popen(
         [str(installer_path), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
         creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
@@ -396,6 +591,109 @@ def _verify_sha256(path: Path, expected_sha: str) -> bool:
     return True
 
 
+def _linux_package_arches() -> tuple[str, str] | None:
+    machine = platform.machine().lower()
+    if machine in {"x86_64", "amd64"}:
+        return "amd64", "x86_64"
+    if machine in {"aarch64", "arm64"}:
+        return "arm64", "aarch64"
+    return None
+
+
+def _is_linux_system_package_executable() -> bool:
+    if not sys.platform.startswith("linux"):
+        return False
+    try:
+        executable = Path(sys.executable).resolve()
+    except OSError:
+        return False
+    return executable == Path("/usr/lib/pythinker/pythinker")
+
+
+def _installed_linux_package_kind() -> str | None:
+    """Return the native Linux package kind for the current install, if known."""
+    if not _is_linux_system_package_executable():
+        return None
+    env = get_clean_env()
+    if which("dpkg-query") is not None:
+        try:
+            result = subprocess.run(
+                ["dpkg-query", "-W", "-f=${Status}", "pythinker-code"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                env=env,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            logger.exception("Failed to query dpkg package state:")
+        else:
+            if result.returncode == 0 and "install ok installed" in result.stdout:
+                return "deb"
+    if which("rpm") is not None:
+        try:
+            result = subprocess.run(
+                ["rpm", "-q", "pythinker-code"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                env=env,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            logger.exception("Failed to query rpm package state:")
+        else:
+            if result.returncode == 0:
+                return "rpm"
+    return None
+
+
+def _linux_package_asset_name(version: str, package_kind: str) -> str | None:
+    arches = _linux_package_arches()
+    if arches is None:
+        return None
+    deb_arch, rpm_arch = arches
+    if package_kind == "deb":
+        return f"pythinker-code_{version}_{deb_arch}.deb"
+    if package_kind == "rpm":
+        return f"pythinker-code-{version}.{rpm_arch}.rpm"
+    return None
+
+
+def _with_sudo(command: list[str]) -> list[str] | None:
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        return command
+    if which("sudo") is None:
+        return None
+    return ["sudo", *command]
+
+
+def _linux_package_install_command(asset: Path, package_kind: str) -> list[str] | None:
+    if package_kind == "deb":
+        if which("dpkg") is None:
+            return None
+        return _with_sudo(["dpkg", "-i", str(asset)])
+    if package_kind == "rpm":
+        if which("dnf") is not None:
+            return _with_sudo(["dnf", "install", "-y", str(asset)])
+        if which("zypper") is not None:
+            return _with_sudo(["zypper", "--non-interactive", "install", str(asset)])
+        if which("rpm") is not None:
+            return _with_sudo(["rpm", "-Uvh", str(asset)])
+    return None
+
+
+def _install_linux_package(asset: Path, package_kind: str) -> UpdateResult:
+    command = _linux_package_install_command(asset, package_kind)
+    if command is None:
+        logger.warning("No native package install command available for {kind}", kind=package_kind)
+        return UpdateResult.FAILED
+    try:
+        result = subprocess.run(command, env=get_clean_env())
+    except OSError:
+        logger.exception("Failed to run native package installer:")
+        return UpdateResult.FAILED
+    return UpdateResult.UPDATED if result.returncode == 0 else UpdateResult.FAILED
+
+
 def _install_native_archive(archive: Path) -> UpdateResult:
     target = Path(sys.executable).resolve()
     extract_dir = archive.parent / "extract"
@@ -433,16 +731,21 @@ async def _maybe_run_native_update(latest_version: str, channel: str = "latest")
 
     import tempfile
 
-    asset_name = (
-        native_installer_asset_name(latest_version)
-        if _is_windows()
-        else native_archive_asset_name(latest_version)
-    )
+    linux_package_kind = _installed_linux_package_kind()
+    if _is_windows():
+        asset_name = native_installer_asset_name(latest_version)
+    elif linux_package_kind is not None:
+        asset_name = _linux_package_asset_name(latest_version, linux_package_kind)
+    else:
+        asset_name = native_archive_asset_name(latest_version)
     if asset_name is None:
         logger.warning("No native updater asset is published for this platform")
         return UpdateResult.FAILED
 
-    timeout = aiohttp.ClientTimeout(total=120, sock_connect=10, sock_read=60)
+    # No fixed `total`: a large installer on a slow link must not be aborted
+    # mid-download. Bound it with per-chunk `sock_read` instead (aiohttp guidance
+    # for large streamed downloads).
+    timeout = aiohttp.ClientTimeout(sock_connect=10, sock_read=60)
     async with new_client_session(timeout=timeout) as session:
         fetched = await _fetch_native_release_asset(session, asset_name, channel)
         if fetched is None:
@@ -461,6 +764,8 @@ async def _maybe_run_native_update(latest_version: str, channel: str = "latest")
     if _is_windows():
         _run_native_installer(asset)
         return UpdateResult.UPDATED  # unreachable; sys.exit fires inside _run_native_installer
+    if linux_package_kind is not None:
+        return _install_linux_package(asset, linux_package_kind)
 
     return _install_native_archive(asset)
 
@@ -509,7 +814,10 @@ async def _do_update(*, print: bool, check_only: bool) -> UpdateResult:
         return UpdateResult.UPDATE_AVAILABLE
 
     upgrade_command = _detect_upgrade_command()
-    upgrade_command_text = _format_upgrade_command(upgrade_command)
+    is_native_update = upgrade_command == [NATIVE_INSTALLER_MARKER]
+    upgrade_command_text = (
+        "native installer" if is_native_update else _format_upgrade_command(upgrade_command)
+    )
     logger.info(
         "Updating from {current_version} to {latest_version} via: {cmd}",
         current_version=current_version,
@@ -517,11 +825,16 @@ async def _do_update(*, print: bool, check_only: bool) -> UpdateResult:
         cmd=upgrade_command_text,
     )
     _print(f"Updating pythinker-code {current_version} → {latest_version}...")
-    if upgrade_command != [NATIVE_INSTALLER_MARKER]:
+    if not is_native_update:
         _print(f"[{_t.muted}]Running: {upgrade_command_text}[/]")
 
-    if upgrade_command == [NATIVE_INSTALLER_MARKER]:
-        _print(f"[{_t.muted}]Downloading native updater...[/]")
+    if is_native_update:
+        _print(f"[{_t.muted}]Downloading native installer from GitHub Releases...[/]")
+        if _is_windows():
+            _print(
+                f"[{_t.warning}]Pythinker will exit after staging the installer so "
+                "Windows can replace the running app.[/]"
+            )
         native_result = await _maybe_run_native_update(latest_version)
         if native_result is UpdateResult.UPDATE_AVAILABLE:
             _print(

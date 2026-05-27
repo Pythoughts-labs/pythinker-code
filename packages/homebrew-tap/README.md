@@ -15,7 +15,7 @@ brew install mohamed-elkholy95/pythinker/pythinker-code
 ```
 
 Works on macOS (Intel + Apple Silicon) and Linux (x86_64 + aarch64) — same
-formula, brew picks the right Python.
+formula, brew picks the matching native GitHub Release tarball.
 
 Updates are manual:
 
@@ -53,13 +53,12 @@ matches Anthropic's published advice for Claude Code's Homebrew cask.)
 
 That's it. The next `v*.*.*` tag push to `Pythinker-Code` will:
 
-1. Wait for `pythinker-code <version>` to land on PyPI.
-2. Install it into a fresh venv and run `homebrew-pypi-poet` to enumerate
-   every transitive dep with PyPI URL + SHA-256.
-3. Render `Formula/pythinker-code.rb` from `pythinker-code.rb.tmpl`.
-4. Commit + push the formula to `mohamed-elkholy95/homebrew-pythinker` on
+1. Wait for native GitHub Release tarballs to be attached.
+2. Render `Formula/pythinker-code.rb` from `pythinker-code.rb.tmpl` with the
+   release URLs and SHA-256 digests.
+3. Commit + push the formula to `mohamed-elkholy95/homebrew-pythinker` on
    `main` (creating the inaugural commit on first run).
-5. Brew users get the new release via `brew upgrade pythinker-code`.
+4. Brew users get the new release via `brew upgrade pythinker-code`.
 
 ## Manual fallback
 
@@ -67,10 +66,6 @@ If the workflow ever breaks (or the PAT expires), you can regenerate the
 formula locally and push it by hand:
 
 ```sh
-python -m venv /tmp/poet-env
-source /tmp/poet-env/bin/activate
-pip install pythinker-code==<version> homebrew-pypi-poet
-
 python packages/homebrew-tap/generate-formula.py \
   --version <version> \
   --template packages/homebrew-tap/pythinker-code.rb.tmpl \
@@ -83,6 +78,6 @@ python packages/homebrew-tap/generate-formula.py \
 ## Files
 
 - `pythinker-code.rb.tmpl` — Ruby formula template (do not hand-edit).
-- `generate-formula.py` — fetches the PyPI sdist metadata + runs
-  `homebrew-pypi-poet` + renders the template.
+- `generate-formula.py` — fetches native GitHub Release asset metadata and
+  renders the template.
 - (Workflow: `.github/workflows/homebrew-tap.yml`.)

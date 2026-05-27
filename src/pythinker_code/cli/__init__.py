@@ -987,11 +987,6 @@ def pythinker(
                         await _delete_empty_session(_latest_created_session)
             raise
 
-    if ui == "shell" and prompt is None:
-        from pythinker_code.ui.shell.update import prompt_pre_start_update
-
-        asyncio.run(prompt_pre_start_update())
-
     if _picker_mode:
         from prompt_toolkit.shortcuts.choice_input import ChoiceInput
         from rich.console import Console

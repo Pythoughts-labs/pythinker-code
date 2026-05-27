@@ -1644,6 +1644,17 @@ async def show_memory(app: Shell, args: str):
     console.print(block)
 
 
+@registry.command(name="update", aliases=["upgrade"])
+async def update_command(app: Shell, args: str):
+    """Check for and optionally install the latest Pythinker version."""
+    _ = args, app
+    from pythinker_code.ui.shell.update import UpdateResult, run_update_prompt
+
+    result = await run_update_prompt()
+    if result is UpdateResult.UPDATED:
+        console.print("Updated — restart Pythinker to use the new version.")
+
+
 @registry.command
 async def mcp(app: Shell, args: str):
     """Show MCP servers and tools"""

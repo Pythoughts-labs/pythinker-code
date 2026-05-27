@@ -18,9 +18,9 @@
 #   x86_64-unknown-linux-gnu       (Linux x86_64)
 #   aarch64-unknown-linux-gnu      (Linux ARM64)
 #   aarch64-apple-darwin           (macOS Apple Silicon)
+#   x86_64-apple-darwin            (macOS Intel)
 #
 # Windows users: download PythinkerSetup-x.y.z.exe from the Releases page.
-# Intel macOS: no native binary is published; use Homebrew or pip install.
 set -euo pipefail
 
 VERSION=""
@@ -61,15 +61,13 @@ case "$os/$arch" in
   Darwin/arm64)
     target="aarch64-apple-darwin" ;;
   Darwin/x86_64)
-    fail "No PyInstaller-built Intel macOS binary is published.
-Use Homebrew (\`brew install mohamed-elkholy95/pythinker/pythinker-code\`),
-or pip (\`pip install pythinker-code\`)." ;;
+    target="x86_64-apple-darwin" ;;
   MINGW*/*|MSYS*/*|CYGWIN*/*)
     fail "On Windows, download PythinkerSetup-x.y.z.exe from:
 https://github.com/${REPO}/releases/latest
 
 PowerShell installer:
-powershell -c \"irm https://pythinker.com/install.ps1 | iex\" ;;
+powershell -c \"irm https://pythinker.com/install.ps1 | iex\"" ;;
   *)
     fail "unsupported target: $os/$arch" ;;
 esac
@@ -127,6 +125,7 @@ mkdir -p "$bin_dir"
 tar -C "$tmpdir" -xzf "$tmpdir/$tarball"
 [ -x "$tmpdir/pythinker" ] || fail "tarball did not contain an executable named 'pythinker'"
 install -m 0755 "$tmpdir/pythinker" "$bin_dir/pythinker"
+printf 'pythinker-native-build\n' > "$bin_dir/.pythinker-native"
 ok "Installed $("$bin_dir/pythinker" --version 2>/dev/null || echo "pythinker $VERSION")"
 
 # --- PATH guidance --------------------------------------------------------

@@ -1,3 +1,5 @@
+import shutil
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -82,6 +84,23 @@ def test_quick_start_standardizes_on_hosted_native_installers() -> None:
     assert "uvx pythinker-code" not in readme
     assert "uv tool install pythinker-code" not in readme
     assert "pipx install pythinker-code" not in readme
+
+
+def test_native_shell_installers_are_parseable_when_bash_is_available() -> None:
+    bash = shutil.which("bash")
+    if bash is None:
+        return
+    subprocess.run(
+        [
+            bash,
+            "-n",
+            str(ROOT / "scripts" / "install-native.sh"),
+            str(ROOT / "docs" / "public" / "install.sh"),
+            str(ROOT / "web" / "public" / "install.sh"),
+            str(ROOT / "src" / "pythinker_code" / "web" / "static" / "install.sh"),
+        ],
+        check=True,
+    )
 
 
 def test_public_install_scripts_match_native_sources_of_truth() -> None:
