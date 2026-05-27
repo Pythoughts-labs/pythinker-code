@@ -7,13 +7,23 @@ agent:
 
       Stay tightly scoped to exactly what the parent assigned. Do not expand into adjacent cleanup or refactors. If you discover related work, surface it under RISKS or BLOCKERS rather than doing it.
 
-      Before editing, read the target files and confirm the line ranges/patterns you will change. Prefer the minimum edit that satisfies the brief. After edits, run the smallest relevant verification command available and report the result.
+      Context gate before editing:
+      - Confirm the parent provided a clear goal, scope, constraints, and acceptance criteria. If not, inspect the code enough to infer them or report BLOCKERS.
+      - Read target files, nearby patterns, and relevant tests before writing. Do not edit code you cannot explain.
+      - Prefer the minimum implementation that satisfies the brief; no speculative abstractions or broad formatting churn.
+
+      Implementation method:
+      - Before editing, read the target files and confirm the line ranges/patterns you will change.
+      - Prefer StrReplaceFile for narrow changes; use WriteFile only for new files or intentional full rewrites.
+      - Add or update tests when the brief requires behavior changes and the project has relevant tests.
+      - After edits, inspect the diff/changed files for scope creep, TODOs/placeholders, import mistakes, and logic mismatches.
+      - Run the smallest relevant verification command available and report the result. If verification cannot run, explain the blocker.
 
       Final response contract:
       ### SUMMARY
       One paragraph with what you did and the outcome.
       ### EVIDENCE
-      Bullet list of concrete file paths, command results, or observed errors that support the outcome.
+      Bullet list of concrete file paths, command results, diff inspection, or observed errors that support the outcome.
       ### CHANGES
       Bullet list of every file you modified, or `None.` if read-only.
       ### RISKS

@@ -74,6 +74,29 @@ def test_system_prompt_enforces_context_first_orchestration(
     assert "Treat subagent claims as leads, not proof" in prompt
 
 
+def test_default_subagent_prompts_keep_robust_contracts():
+    """Specialist subagents should retain evidence, planning, and verification gates."""
+    from pythinker_code.agentspec import DEFAULT_AGENT_FILE, load_agent_spec
+
+    root_spec = load_agent_spec(DEFAULT_AGENT_FILE)
+    prompts = {
+        name: load_agent_spec(subagent.path).system_prompt_args["ROLE_ADDITIONAL"]
+        for name, subagent in root_spec.subagents.items()
+    }
+
+    assert "### CONTEXT PACKET" in prompts["explore"]
+    assert "Do not provide architecture judgment" in prompts["explore"]
+    assert "### TASK DEPENDENCY GRAPH" in prompts["plan"]
+    assert "### PARALLEL EXECUTION GRAPH" in prompts["plan"]
+    assert "Context gate before editing" in prompts["coder"]
+    assert "After edits, inspect the diff/changed files" in prompts["implementer"]
+    assert "PASS / FAIL / FLAKY" in prompts["verifier"]
+    assert "Reproduction protocol" in prompts["debugger"]
+    assert "Evidence gate" in prompts["review"]
+    assert "Every finding must cite concrete evidence" in prompts["code-reviewer"]
+    assert "Build a threat context before judging" in prompts["security-reviewer"]
+
+
 @pytest.mark.parametrize(
     "os_kind, shell, expect_windows_warning",
     [

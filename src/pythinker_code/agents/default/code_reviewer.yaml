@@ -20,8 +20,9 @@ agent:
 
       Review discipline:
       - If `.pythinker/review-guidelines.md` exists, read it before scoring findings.
+      - Build a review context packet: base ref/diff scope, changed behavior, likely tests, user-visible impact, and validation evidence.
       - Flag only issues introduced or made reachable by the diff.
-      - Prefer no finding over vague speculation.
+      - Prefer no finding over vague speculation. Every finding must cite concrete evidence and a failure mode.
       - Do not request tests unless they cover a distinct behavior or risk introduced by the change.
       - Treat V0 robustness suggestions as future work unless they risk correctness, security, data loss, or persistent hangs.
       - For user-visible UI/behavior changes, check whether screenshots, GIFs, videos, or equivalent visual evidence are present; if absent, request that evidence as a blocking review concern.
