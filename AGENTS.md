@@ -326,6 +326,12 @@ everything sequentially.
 - Keep exceptions actionable. User-facing CLI errors should explain what to do next.
 - User config lives at `~/.pythinker/config.toml`; logs, sessions, and MCP config live under
   `~/.pythinker/`.
+- Per-project agent memory lives under the share dir at
+  `~/.pythinker/projects/<project-key>/memory/` (`MEMORY.md` durable facts,
+  `USER.md` repo-scoped preferences). It is agent-written via the root-only
+  `Memory` tool, inspectable with the `/memory` command, and injected into the
+  root agent's first wakeup. It complements (does not replace) the
+  human-authored `AGENTS.md`.
 - CLI entry points are `pythinker` and `pythinker-code`, both routing to
   `src/pythinker_code/__main__.py`.
 

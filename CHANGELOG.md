@@ -15,6 +15,13 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+### Added
+
+- Central per-project agent memory (`MEMORY.md` / `USER.md`) under
+  `~/.pythinker/projects/<key>/memory/`, written via a new root-only `Memory`
+  tool and recalled into the root agent's first wakeup prompt.
+- `/memory` command to inspect the project memory injected at session start.
+
 ## 0.18.0 (2026-05-27)
 
 ### What changed in this release
