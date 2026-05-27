@@ -112,6 +112,9 @@ async def test_pythinker_code_create_reports_startup_phases(session, config, mon
         def set_hook_engine(self, engine):
             pass
 
+        def add_injection_provider(self, provider) -> None:
+            pass
+
     monkeypatch.setattr(app_module, "PythinkerSoul", _FakeSoul)
 
     cli = await PythinkerCLI.create(session, config=config, startup_progress=phases.append)
@@ -171,6 +174,9 @@ async def test_pythinker_code_create_forwards_scratchpad_section(
             pass
 
         def set_hook_engine(self, engine):
+            pass
+
+        def add_injection_provider(self, provider) -> None:
             pass
 
     monkeypatch.setattr(app_module, "PythinkerSoul", _FakeSoul)
@@ -242,6 +248,9 @@ async def test_pythinker_code_create_refreshes_restored_scratchpad_section(
         def set_hook_engine(self, engine):
             pass
 
+        def add_injection_provider(self, provider) -> None:
+            pass
+
     monkeypatch.setattr(app_module, "PythinkerSoul", _FakeSoul)
 
     await PythinkerCLI.create(session, config=config, scratchpad_section=guard)
@@ -302,6 +311,9 @@ async def test_pythinker_code_create_cleans_stale_running_foreground_subagents(
             pass
 
         def set_hook_engine(self, engine):
+            pass
+
+        def add_injection_provider(self, provider) -> None:
             pass
 
     monkeypatch.setattr(app_module, "PythinkerSoul", _FakeSoul)

@@ -44,6 +44,9 @@ def _patch_create_deps(monkeypatch, *, session_plan_mode: bool = False):
         def set_hook_engine(self, engine):
             pass
 
+        def add_injection_provider(self, provider) -> None:
+            pass
+
     # Reset class-level tracker
     FakeSoul.instances = []
 
