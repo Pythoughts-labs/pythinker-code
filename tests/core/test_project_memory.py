@@ -109,3 +109,19 @@ def test_scan_blocks_injection_invisible_and_secrets():
     assert scan_memory_content("use ghp_0123456789abcdef0123456789abcdef0123") is not None
     assert scan_memory_content("slack xoxb-123456789012-abcdefXYZ") is not None
     assert scan_memory_content("aws AKIAIOSFODNN7EXAMPLE") is not None
+
+
+async def test_write_entries_is_atomic_and_roundtrips(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path / "share"))
+    from pythinker_code.project_memory import ProjectMemoryStore
+
+    fake = FakeGit({("rev-parse", "--show-toplevel"): GitResult(True, 0, str(tmp_path / "repo"))})
+    store = ProjectMemoryStore(_hp(tmp_path / "repo"), git_runner=fake)
+
+    await store._write_entries("memory", ["alpha", "beta"])
+    assert await store.read_entries("memory") == ["alpha", "beta"]
+
+    await store._write_entries("memory", ["only"])
+    assert await store.read_entries("memory") == ["only"]
+    mem_dir = (await store._ensure_dir()) / "memory"
+    assert not list(mem_dir.glob(".mem_*"))

@@ -8,8 +8,12 @@ to per-project. Local-host only in v1.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import os
 import re
+import tempfile
+from collections.abc import Generator
 from pathlib import Path
 from typing import Literal
 
@@ -122,6 +126,42 @@ class ProjectMemoryStore:
         except OSError:
             logger.debug("project memory read failed for {t}", t=target)
             return []
+
+    @staticmethod
+    @contextlib.contextmanager
+    def _file_lock(path: Path) -> Generator[None]:
+        lock_path = path.with_name(path.name + ".lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        fh = lock_path.open("a+", encoding="utf-8")
+        try:
+            try:
+                import fcntl
+            except ImportError:
+                yield
+            else:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    with contextlib.suppress(OSError):
+                        fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        finally:
+            fh.close()
+
+    async def _write_entries(self, target: Target, entries: list[str]) -> None:
+        path = await self._path_for(target)
+        content = ENTRY_DELIMITER.join(entries) if entries else ""
+        fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".mem_", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(content)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, path)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
 
 
 _MEMORY_THREAT_PATTERNS: list[tuple[str, str]] = [
