@@ -1627,6 +1627,23 @@ def vis(app: Shell, args: str):
     raise SwitchToVis(session_id=session_id)
 
 
+@registry.command(name="memory", aliases=["mem"])
+async def show_memory(app: Shell, args: str):
+    """Show the durable project memory injected at session start."""
+    _ = args
+    soul = ensure_pythinker_soul(app)
+    if soul is None:
+        return
+    from pythinker_code.project_memory import ProjectMemoryStore
+
+    store = ProjectMemoryStore(soul.runtime.session.work_dir)
+    block = await store.snapshot()
+    if not block.strip():
+        console.print("No project memory recorded yet. The agent records it with the Memory tool.")
+        return
+    console.print(block)
+
+
 @registry.command
 async def mcp(app: Shell, args: str):
     """Show MCP servers and tools"""
