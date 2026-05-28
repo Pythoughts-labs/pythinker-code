@@ -14,7 +14,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-16a34a.svg?style=for-the-badge)](https://github.com/mohamed-elkholy95/Pythinker-Code/blob/main/LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/mohamed-elkholy95/Pythinker-Code/ci-pythinker-cli.yml?branch=main&label=CI&style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/mohamed-elkholy95/Pythinker-Code/actions/workflows/ci-pythinker-cli.yml?query=branch%3Amain)
 
-[![Downloads](https://img.shields.io/pepy/dt/pythinker-code?cacheSeconds=300)](https://pepy.tech/projects/pythinker-code)
+[![PyPI downloads](https://img.shields.io/pypi/dm/pythinker-code?label=PyPI%20downloads&cacheSeconds=300)](https://pypistats.org/packages/pythinker-code)
 [![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-f59e0b.svg?style=flat-square&logo=ruff&logoColor=white)](https://docs.astral.sh/ruff/)
 [![ACP ready](https://img.shields.io/badge/ACP-ready-7c3aed.svg?style=flat-square)](https://github.com/agentclientprotocol/agent-client-protocol)
 [![MCP tools](https://img.shields.io/badge/MCP-tools-0891b2.svg?style=flat-square)](https://modelcontextprotocol.io/)

@@ -106,6 +106,7 @@ Context gate before editing:
 
 Implementation method:
 - Before editing, read the target files and confirm the line ranges/patterns you will change.
+- Before writing against a third-party library, SDK, cloud service, or framework, pull its current API docs first. Prefer a context7 MCP query (e.g. `mcp__context7__query-docs` with the library id) when registered with the parent runtime; otherwise use `SearchWeb` to find the official docs and `FetchURL` to read the current page. Do NOT write API calls from training-cutoff memory for surfaces that move (LLM SDKs, cloud SDKs, web frameworks, ORM/migration tools, anything < 2 years old). Cite the doc URL or context7 result in EVIDENCE.
 - Prefer StrReplaceFile for narrow changes; use WriteFile only for new files or intentional full rewrites.
 - Add or update tests when the brief requires behavior changes and the project has relevant tests.
 - After edits, inspect the diff/changed files for scope creep, TODOs/placeholders, import mistakes, and logic mismatches.
@@ -321,6 +322,12 @@ Plan requirements:
 - Provide a Parallel Execution Graph: which tasks can run together, which must be sequential, and the critical path.
 - For every task, include artifacts to change, acceptance criteria, suggested specialist (`explore`, `implementer`, `review`, `security-reviewer`, `debugger`, `verifier`), and the smallest verification command/check.
 - Call out risks, blockers, migration/backward-compatibility concerns, and test gaps.
+
+Library/API freshness (run BEFORE recommending an external dependency or API surface):
+- For every third-party library, SDK, framework, or cloud service the plan turns on (new dep, version bump, non-trivial API surface, security-sensitive primitive), pull the current docs first. Prefer a context7 MCP query (e.g. `mcp__context7__query-docs` with the library id) when registered with the parent runtime; otherwise use `SearchWeb` to find the official docs and `FetchURL` to read the current page.
+- Do NOT plan around an API from training-cutoff memory if it has moved (LLM SDKs, cloud SDKs, web frameworks, ORM/migration tools). Verify the call shape, supported versions, and any documented migration path.
+- Cite the doc reference inline next to the task that depends on it, in EVIDENCE.
+- When the freshness check changes the plan (e.g. an API was removed, a new auth flow is mandated), call it out in RISKS as a constraint the implementer must honor.
 
 Ground the plan in evidence. Read enough files to avoid guessing, name the trade-offs, and choose one path with a reason. Each step should name the artifact it changes and the verification that proves it worked. Order steps by dependency first, then by risk reduced per effort.
 

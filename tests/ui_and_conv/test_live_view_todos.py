@@ -97,16 +97,16 @@ def test_todo_update_pins_current_task_under_activity_line(monkeypatch) -> None:
     rendered = _render(view._working_indicator())
 
     assert "✶ Implement pinned todos… (7m 40s · ↓ 10k tokens)" in rendered
-    assert rendered.count("Implement pinned todos") == 1
-    assert "⎿  ◼ Implement pinned todos" not in rendered
-    assert "⎿  ✔ Explore UI" in rendered
-    assert "✔ Write tests" in rendered
-    assert "… +1 completed" not in rendered
+    assert rendered.count("Implement pinned todos") == 2
+    assert "⎿  ■ Implement pinned todos" in rendered
+    assert "✓ Explore UI" in rendered
+    assert "✓ Write tests" in rendered
+    assert "… +1 completed" in rendered
     assert "todos(" not in rendered
     assert "Accomplishing" not in rendered
 
 
-def test_active_todo_activity_line_alternates_with_spinner_verb(monkeypatch) -> None:
+def test_active_todo_activity_line_does_not_alternate_with_spinner_verb(monkeypatch) -> None:
     now = 1000.0
     monkeypatch.setattr(_live_view_module.time, "monotonic", lambda: now)
     monkeypatch.setenv("PYTHINKER_REDUCED_MOTION", "1")
@@ -118,21 +118,62 @@ def test_active_todo_activity_line_alternates_with_spinner_verb(monkeypatch) -> 
     now = 1465.0
     rendered = _render(view._working_indicator())
 
+    assert "✶ Implement pinned todos… (7m 45s · ↓ 10k tokens)" in rendered
+    assert _live_view_module.spinner_message(now) not in rendered
+    assert "⎿  ■ Implement pinned todos" in rendered
+    assert "✓ Explore UI" in rendered
+
+
+def test_spinner_verb_shows_until_next_todo_becomes_active(monkeypatch) -> None:
+    now = 1000.0
+    monkeypatch.setattr(_live_view_module.time, "monotonic", lambda: now)
+    monkeypatch.setenv("PYTHINKER_REDUCED_MOTION", "1")
+    view = _LiveView(StatusUpdate(context_tokens=10_000))
+    view.dispatch_wire_message(TurnBegin(user_input="work"))
+    view._latest_todos = (
+        TodoDisplayItem(title="Finished task", status="done"),
+        TodoDisplayItem(title="Next task", status="pending"),
+    )
+
+    now = 1465.0
+    rendered = _render(view._working_indicator())
+
     assert f"✶ {_live_view_module.spinner_message(now)} (7m 45s · ↓ 10k tokens)" in rendered
-    assert "⎿  ◼ Implement pinned todos" in rendered
-    assert "✔ Explore UI" in rendered
+    assert "⎿  □ Next task" in rendered
+    assert "✓ Finished task" in rendered
 
 
-def test_active_todo_activity_line_uses_muted_orange() -> None:
+def test_finished_todos_move_to_bottom_of_menu(monkeypatch) -> None:
+    now = 1000.0
+    monkeypatch.setattr(_live_view_module.time, "monotonic", lambda: now)
+    monkeypatch.setenv("PYTHINKER_REDUCED_MOTION", "1")
+    view = _LiveView(StatusUpdate(context_tokens=10_000))
+    view.dispatch_wire_message(TurnBegin(user_input="work"))
+    view._latest_todos = (
+        TodoDisplayItem(title="Active task", status="in_progress"),
+        TodoDisplayItem(title="Finished first", status="done"),
+        TodoDisplayItem(title="Pending first", status="pending"),
+        TodoDisplayItem(title="Finished second", status="done"),
+        TodoDisplayItem(title="Pending second", status="pending"),
+    )
+
+    rendered = _render(view._working_indicator())
+
+    assert rendered.index("■ Active task") < rendered.index("□ Pending first")
+    assert rendered.index("□ Pending first") < rendered.index("□ Pending second")
+    assert rendered.index("□ Pending second") < rendered.index("✓ Finished first")
+    assert rendered.index("✓ Finished first") < rendered.index("✓ Finished second")
+
+
+def test_active_todo_activity_line_uses_coral_accent() -> None:
     view = _LiveView(StatusUpdate(context_tokens=10_000))
 
     line = view._todo_activity_line("Implement pinned todos", elapsed_s=0.88, width=100)
 
-    assert _span_colors_for(line, "Implement pinned todos") == {"#e6b450"}
+    assert _span_colors_for(line, "Implement pinned todos") == {"#c9795a"}
 
 
-def test_active_pinned_todo_row_uses_shimmer_palette(monkeypatch) -> None:
-    monkeypatch.delenv("PYTHINKER_REDUCED_MOTION", raising=False)
+def test_active_pinned_todo_row_uses_accent_icon_and_white_title() -> None:
     view = _LiveView(StatusUpdate())
 
     row = view._pinned_todo_row(
@@ -141,12 +182,11 @@ def test_active_pinned_todo_row_uses_shimmer_palette(monkeypatch) -> None:
         width=100,
         elapsed_s=0.88,
     )
+    title_style = _style_for(row, "Implement pinned todos")
 
-    assert _span_colors_for(row, "Implement pinned todos") >= {
-        "#e6b450",
-        "#ebc46e",
-        "#f3d89a",
-    }
+    assert _span_colors_for(row, "■") == {"#c9795a"}
+    assert title_style.color == tui_rich_style("activity_label").color
+    assert title_style.bold is True
 
 
 def test_non_first_pinned_rows_indent_under_first_title() -> None:
@@ -166,9 +206,9 @@ def test_non_first_pinned_rows_indent_under_first_title() -> None:
 
     # First row carries the ⎿ gutter; later rows indent so their checkbox sits
     # under the first row's title (icons intentionally not aligned).
-    assert first.plain.startswith("  ⎿  ◼ ")
-    assert later.plain.startswith("       ◻ ")
-    assert later.plain.index("◻") == first.plain.index("Lead task")
+    assert first.plain.startswith("  ⎿  ■ ")
+    assert later.plain.startswith("       □ ")
+    assert later.plain.index("□") == first.plain.index("Lead task")
 
 
 def test_successful_todo_tool_card_is_suppressed() -> None:

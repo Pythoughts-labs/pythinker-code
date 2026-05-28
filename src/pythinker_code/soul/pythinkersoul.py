@@ -1640,15 +1640,24 @@ class PythinkerSoul:
     ) -> None:
         try:
             prepared = self._compaction.prepare(history, custom_instruction=custom_instruction)
-            dropped_count = max(0, len(history) - len(prepared.to_preserve))
-            dropped = list(history[:dropped_count])
-            if not dropped:
-                return
+        except Exception as exc:
+            logger.warning("compaction prepare failed during harvest: {!r}", exc)
+            return
+        dropped_count = max(0, len(history) - len(prepared.to_preserve))
+        dropped = list(history[:dropped_count])
+        if not dropped:
+            return
+        try:
             from pythinker_code.memory.harvest import CompactionHarvester
             from pythinker_code.scratchpad import append_scratch_note
 
             notes = CompactionHarvester().harvest(dropped)
-            for note in notes:
+        except Exception as exc:
+            logger.warning("compaction harvester crashed: {!r}", exc)
+            return
+        persisted = 0
+        for note in notes:
+            try:
                 await append_scratch_note(
                     self._runtime.session.work_dir,
                     kind=note.kind,
@@ -1657,10 +1666,14 @@ class PythinkerSoul:
                     session_title=self._runtime.session.title,
                     labels=["source:compaction"],
                 )
-            if notes:
+                persisted += 1
+            except Exception as exc:
+                logger.warning("append_scratch_note failed for kind={!r}: {!r}", note.kind, exc)
+        if persisted:
+            try:
                 self.rearm_injection("project_memory")
-        except Exception:
-            logger.debug("compaction memory harvest failed")
+            except Exception as exc:
+                logger.warning("rearm_injection(project_memory) failed: {!r}", exc)
 
     @staticmethod
     def _is_retryable_error(exception: BaseException) -> bool:

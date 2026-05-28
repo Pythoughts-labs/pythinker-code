@@ -139,16 +139,15 @@ def test_working_indicator_pins_todos_under_spinner(monkeypatch):
     rendered = _render(view._working_indicator())
 
     assert "✶ Explore project context — blogs page and image components… (1m 0s)" in rendered
-    assert "⎿  ✔ Gather requirements" in rendered
-    assert "✔ Inspect UI" in rendered
-    # Dedup: when the spinner header shows the active todo title, the body hides it.
-    assert "◼ Explore project context" not in rendered
-    assert rendered.count("Explore project context") == 1
-    assert "◻ Ask clarifying questions one at a time" in rendered
-    assert "◻ Propose 2–3 approaches with trade-offs" in rendered
-    assert "… +2 pending" in rendered
+    # Active todo now appears both in the spinner header and the pinned list;
+    # done todos sort to the bottom and are dropped by the 5-row cap when
+    # active + pending already fill the rows.
+    assert "⎿  ■ Explore project context" in rendered
+    assert rendered.count("Explore project context") == 2
+    assert "□ Ask clarifying questions one at a time" in rendered
+    assert "□ Propose 2–3 approaches with trade-offs" in rendered
+    assert "… +3 more" in rendered
     assert "todos(" not in rendered
-    assert "Run final checks" not in rendered
     assert "Tip:" not in rendered
 
 
@@ -165,9 +164,9 @@ def test_working_indicator_keeps_done_todos_pinned(monkeypatch):
     rendered = _render(view._working_indicator())
 
     assert "todos(" not in rendered
-    assert "⎿  ✔ Done task" in rendered
-    assert "◼" not in rendered
-    assert "◻" not in rendered
+    assert "⎿  ✓ Done task" in rendered
+    assert "■" not in rendered
+    assert "□" not in rendered
 
 
 def test_ctrl_t_toggles_pinned_todos(monkeypatch):

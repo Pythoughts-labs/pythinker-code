@@ -38,7 +38,6 @@ from pythinker_code.ui.shell.motion import (
     active_marker_frame,
     activity_status_line,
     reduced_motion_enabled,
-    shimmer_text,
 )
 from pythinker_code.ui.shell.spacing import BLANK_ROW
 from pythinker_code.ui.shell.spinner_words import spinner_message
@@ -112,7 +111,7 @@ _ACTION_SPACER = BLANK_ROW
 # running long enough that a quick turn won't flash it.
 _WORKING_TIP_MIN_ELAPSED_S = 4.0
 _MAX_PINNED_TODO_ROWS = 5
-_TODO_ACTIVITY_LABEL_INTERVAL_S = 5.0
+_ACTIVE_TODO_ACCENT = Style(color="#C9795A")
 
 
 def _todo_activity_label(label: str) -> str:
@@ -536,12 +535,10 @@ class _LiveView:
             self._active_todo_title() if getattr(self, "_pinned_todos_visible", True) else None
         )
         label = active_todo_title or spinner_message(now)
-        if active_todo_title is not None and int(elapsed / _TODO_ACTIVITY_LABEL_INTERVAL_S) % 2:
-            label = spinner_message(now)
         todo_block = self._pinned_todo_block(
             width=width,
             elapsed_s=elapsed,
-            hide_active=label == active_todo_title,
+            hide_active=False,
         )
         if active_todo_title is not None or todo_block is not None:
             line = self._todo_activity_line(
@@ -579,8 +576,8 @@ class _LiveView:
         suffix = f" {metadata}"
         label_width = max(1, width - cell_width(prefix) - cell_width(suffix))
 
-        line = Text(prefix, style=tui_rich_style("accent"))
-        line.append(truncate_to_width(label, label_width), style=tui_rich_style("warning"))
+        line = Text(prefix, style=_ACTIVE_TODO_ACCENT)
+        line.append(truncate_to_width(label, label_width), style=_ACTIVE_TODO_ACCENT)
         line.append(suffix, style=tui_rich_style("muted"))
         return line
 
@@ -602,7 +599,16 @@ class _LiveView:
             if todo.status in ("done", "in_progress", "pending") and todo.title.strip()
         )
         active_todo = next((todo for todo in latest_todos if todo.status == "in_progress"), None)
-        todos = tuple(todo for todo in latest_todos if not (hide_active and todo is active_todo))
+        status_order = {"in_progress": 0, "pending": 1, "done": 2}
+        ordered_todos = tuple(
+            sorted(
+                enumerate(latest_todos),
+                key=lambda item: (status_order[item[1].status], item[0]),
+            )
+        )
+        todos = tuple(
+            todo for _, todo in ordered_todos if not (hide_active and todo is active_todo)
+        )
         if not todos:
             return None
 
@@ -633,7 +639,7 @@ class _LiveView:
                 if hidden_done == len(hidden)
                 else "more"
             )
-            row = Text("       … ", style=tui_rich_style("muted"))
+            row = Text("      … ", style=tui_rich_style("muted"))
             row.append(f"+{len(hidden)} {label}", style=tui_rich_style("muted"))
             rows.append(row)
         return Group(*rows)
@@ -647,17 +653,17 @@ class _LiveView:
         elapsed_s: float | None = None,
     ) -> Text:
         if todo.status == "done":
-            icon = "✔"
+            icon = "✓"
             icon_token = "success"
             title_style = tui_rich_style("muted") + Style(strike=True)
         elif todo.status == "in_progress":
-            icon = "◼"
-            icon_token = "accent"
+            icon = "■"
+            icon_token = None
             title_style = tui_rich_style("activity_label") + Style(bold=True)
         else:
-            icon = "◻"
+            icon = "□"
             icon_token = "muted"
-            title_style = tui_rich_style("tool_output")
+            title_style = tui_rich_style("muted")
         # The first row carries the ``⎿`` gutter; later rows indent two extra
         # columns so their checkbox sits under the first task's title, giving the
         # list the nested look of the reference design instead of a flat column.
@@ -666,15 +672,13 @@ class _LiveView:
         title = truncate_to_width(todo.title.strip(), title_budget)
         row = Text(prefix, style=tui_rich_style("muted"))
         if todo.status == "in_progress":
-            if elapsed_s is None:
-                now = time.monotonic()
-                elapsed_s = 0.0 if self._turn_start_time is None else now - self._turn_start_time
-            row.append_text(shimmer_text(icon, elapsed_s))
+            row.append(icon, style=_ACTIVE_TODO_ACCENT)
             row.append(" ")
-            title_text = shimmer_text(title, elapsed_s)
-            title_text.stylize(Style(bold=True))
-            row.append_text(title_text)
+            row.append(title, style=title_style)
             return row
+        # icon_token is only None on the in_progress branch above, which
+        # early-returned. Narrow for pyright with an explicit assert.
+        assert icon_token is not None
         row.append(icon, style=tui_rich_style(icon_token))
         row.append(" ")
         row.append(title, style=title_style)

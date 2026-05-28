@@ -70,6 +70,9 @@ def test_active_marker_frame_animates_through_star_frames():
         active_marker_frame(i * STAR_SPINNER_FRAME_INTERVAL_S)
         for i in range(len(STAR_SPINNER_FRAMES))
     }
+    assert len(STAR_SPINNER_FRAMES) == 10
+    assert "✷" in STAR_SPINNER_FRAMES
+    assert STAR_SPINNER_FRAME_INTERVAL_S == 0.08
     assert seen == set(STAR_SPINNER_FRAMES)
     assert all(len(frame) == 1 for frame in STAR_SPINNER_FRAMES)
 

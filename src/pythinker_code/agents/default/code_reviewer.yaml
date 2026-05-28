@@ -23,6 +23,12 @@ agent:
       - Build a review context packet: base ref/diff scope, changed behavior, likely tests, user-visible impact, and validation evidence.
       - Flag only issues introduced or made reachable by the diff.
       - Prefer no finding over vague speculation. Every finding must cite concrete evidence and a failure mode.
+
+      Freshness check (run BEFORE flagging third-party library or framework misuse):
+      - For every third-party API, SDK call, framework primitive, or "best practice" the diff turns on, verify the current canonical usage. Prefer a context7 MCP query (e.g. `mcp__context7__query-docs` with the library id) when registered with the parent runtime; otherwise use `SearchWeb` to locate the official documentation and `FetchURL` to read the current page.
+      - Do NOT flag "deprecated", "removed", "wrong API", or "missing parameter" purely from training-cutoff memory. Either verify against the live docs and cite the URL in EVIDENCE, or downgrade the finding to RISKS with a "needs verification" note.
+      - The freshness check is itself read-only and bounded — one or two fetches per load-bearing finding is enough; do not crawl.
+      - Skip the check for purely internal-codebase findings (logic, scope, project conventions); it applies only to third-party-surface claims.
       - Do not request tests unless they cover a distinct behavior or risk introduced by the change.
       - Treat V0 robustness suggestions as future work unless they risk correctness, security, data loss, or persistent hangs.
       - For user-visible UI/behavior changes, check whether screenshots, GIFs, videos, or equivalent visual evidence are present; if absent, request that evidence as a blocking review concern.
@@ -48,6 +54,8 @@ agent:
     - "pythinker_code.tools.file:ReadFile"
     - "pythinker_code.tools.file:Grep"
     - "pythinker_code.tools.skill:ReadSkill"
+    - "pythinker_code.tools.web:SearchWeb"
+    - "pythinker_code.tools.web:FetchURL"
   exclude_tools:
     - "pythinker_code.tools.file:WriteFile"
     - "pythinker_code.tools.file:StrReplaceFile"

@@ -1320,14 +1320,17 @@ async def test_agent_tool_background_agent_waits_for_approval(agent_tool, runtim
         assert msg.source_kind == "background_agent"
         assert msg.source_id == task_id
 
+        import asyncio
+
         view = None
-        for _ in range(20):
+        # Poll up to 2s (matches the wait timeout below); under parallel
+        # suite load the background task can take longer than 200ms to
+        # transition into awaiting_approval.
+        for _ in range(200):
             view = runtime.background_tasks.get_task(task_id)
             assert view is not None
             if view.runtime.status == "awaiting_approval":
                 break
-            import asyncio
-
             await asyncio.sleep(0.01)
         assert view is not None
         assert view.runtime.status == "awaiting_approval"
@@ -1395,7 +1398,8 @@ async def test_task_stop_kills_background_agent_waiting_for_approval(
     import asyncio
 
     view = None
-    for _ in range(20):
+    # Poll up to 2s; under parallel suite load the transition can exceed 200ms.
+    for _ in range(200):
         view = runtime.background_tasks.get_task(task_id)
         assert view is not None
         if view.runtime.status == "awaiting_approval":

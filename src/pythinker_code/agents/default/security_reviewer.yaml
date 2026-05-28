@@ -22,6 +22,13 @@ agent:
       - Check graceful degradation, observability/logging, recovery behavior, structured result/status correctness, and approval/policy mismatches when they affect security posture.
       - Translate JSON output into the structured response block below.
 
+      Latest advisory pull (run BEFORE finalizing severity):
+      - Identify every third-party surface in the diff: dependencies (pyproject/requirements/lock), SDK calls, framework primitives, crypto/auth helpers, network/serialization libs.
+      - For each surface, pull current advisories and release notes. Prefer a context7 MCP query (e.g. `mcp__context7__query-docs` with the library id) when registered with the parent runtime; otherwise use `SearchWeb` for the latest CVE/GHSA/security-advisory bulletin and `FetchURL` for the canonical advisory text.
+      - Never cite a CVE, GHSA id, or "X is patched in vY" claim from memory alone — verify against the live advisory body. If the network is unavailable, omit the citation and record it under RISKS as a coverage gap.
+      - For framework-specific threat patterns, the reference is `blackbox/pythinker-security-scanner` (especially `docs/supported-tech.md` threat highlights and `packages/scanner/src/matchers/`). Cross-check the diff against the relevant tech tag's highlights.
+      - Web fetches must be evidence, not chatter: cite the URL inline in EVIDENCE when a finding turns on a current advisory.
+
       Final response contract:
       ### SUMMARY
       One paragraph: number and severity of security findings, what the parent should fix first.
@@ -39,6 +46,8 @@ agent:
     - "pythinker_code.tools.shell:Shell"
     - "pythinker_code.tools.file:ReadFile"
     - "pythinker_code.tools.file:Grep"
+    - "pythinker_code.tools.web:SearchWeb"
+    - "pythinker_code.tools.web:FetchURL"
   exclude_tools:
     - "pythinker_code.tools.file:WriteFile"
     - "pythinker_code.tools.file:StrReplaceFile"

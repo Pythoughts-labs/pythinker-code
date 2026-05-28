@@ -6,6 +6,7 @@ import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from loguru import logger
 from pythinker_host.path import HostPath
 
 from pythinker_code.memory.recall import gather_candidates
@@ -41,7 +42,8 @@ async def list_inbox_candidates(store: ProjectMemoryStore) -> list[InboxCandidat
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             out.append(InboxCandidate(**data))
-        except Exception:
+        except Exception as exc:
+            logger.debug("inbox candidate {} dropped during listing: {!r}", path.name, exc)
             continue
     return out
 
@@ -87,8 +89,16 @@ async def approve_inbox_candidate(store: ProjectMemoryStore, candidate_id: str) 
     path = directory / f"{_safe_id(candidate_id)}.json"
     if not path.is_file():
         return "Candidate not found."
-    data = json.loads(path.read_text(encoding="utf-8"))
-    candidate = InboxCandidate(**data)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        candidate = InboxCandidate(**data)
+    except Exception as exc:
+        logger.warning(
+            "inbox candidate {} rejected on approve due to parse error: {!r}",
+            path.name,
+            exc,
+        )
+        return "Candidate file is corrupt and cannot be approved."
     result = await store.add("memory", candidate.content)
     if not result.ok:
         return result.message

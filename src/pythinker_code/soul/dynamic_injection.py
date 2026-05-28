@@ -83,6 +83,7 @@ def collect_within_budget(
     ordered = sorted(enumerate(candidates), key=lambda item: (-item[1].priority, item[0]))
     out: list[InjectionCandidate] = []
     used = 0
+    truncation_used = False
     for _index, candidate in ordered:
         estimate = candidate.token_estimate or estimate_injection_tokens(candidate.content)
         if estimate <= 0:
@@ -91,18 +92,24 @@ def collect_within_budget(
             out.append(replace(candidate, token_estimate=estimate))
             used += estimate
             continue
+        # Whole-fit failed. Truncate at most once per call, for the first
+        # (highest-priority) candidate that didn't whole-fit. Lower-priority
+        # candidates further down the loop may still whole-fit in remaining
+        # budget; don't break — keep scanning.
+        if truncation_used:
+            continue
+        truncation_used = True
         remaining = budget_tokens - used
         if remaining <= 0:
-            break
+            continue
         truncated = _truncate_to_tokens(candidate.content, remaining)
         if not truncated:
             continue
         truncated_estimate = estimate_injection_tokens(truncated)
-        if used + truncated_estimate > budget_tokens:
+        if truncated_estimate <= 0 or used + truncated_estimate > budget_tokens:
             continue
         out.append(replace(candidate, content=truncated, token_estimate=truncated_estimate))
         used += truncated_estimate
-        break
     return out
 
 
@@ -162,7 +169,15 @@ class DynamicInjectionProvider(ABC):
         return None
 
     def rearm(self, key: str) -> bool:
-        """Re-arm provider throttling for ``key``. Return True when handled."""
+        """Re-arm provider throttling for ``key``.
+
+        Return ``True`` when the provider recognized ``key`` and reset its
+        throttle, ``False`` otherwise. The base implementation always returns
+        ``False`` so a parent ``rearm_injection`` call can fan out across many
+        providers without each one having to override; callers MUST treat
+        ``False`` as "this provider does not own ``key``" rather than "rearm
+        failed silently".
+        """
         _ = key
         return False
 

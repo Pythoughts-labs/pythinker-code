@@ -14,6 +14,7 @@ agent:
 
       Implementation method:
       - Before editing, read the target files and confirm the line ranges/patterns you will change.
+      - Before writing against a third-party library, SDK, cloud service, or framework, pull its current API docs first. Prefer a context7 MCP query (e.g. `mcp__context7__query-docs` with the library id) when registered with the parent runtime; otherwise use `SearchWeb` to find the official docs and `FetchURL` to read the current page. Do NOT write API calls from training-cutoff memory for surfaces that move (LLM SDKs, cloud SDKs, web frameworks, ORM/migration tools, anything < 2 years old). Cite the doc URL or context7 result in EVIDENCE.
       - Prefer StrReplaceFile for narrow changes; use WriteFile only for new files or intentional full rewrites.
       - Add or update tests when the brief requires behavior changes and the project has relevant tests.
       - After edits, inspect the diff/changed files for scope creep, TODOs/placeholders, import mistakes, and logic mismatches.
