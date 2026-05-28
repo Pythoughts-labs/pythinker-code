@@ -19,6 +19,15 @@ reviews:
   related_issues: true
   related_prs: true
   suggested_labels: true
+  labeling_instructions:
+    - label: "enhancement"
+      instructions: "Apply when the PR title starts with 'feat:' or adds new user-visible functionality."
+    - label: "bug"
+      instructions: "Apply when the PR title starts with 'fix:' or resolves a defect."
+    - label: "documentation"
+      instructions: "Apply when the PR title starts with 'docs:' or only changes documentation files."
+    - label: "dependencies"
+      instructions: "Apply when the PR updates package versions or modifies dependency declarations in pyproject.toml or uv.lock."
   auto_apply_labels: false
   suggested_reviewers: true
   poem: false
@@ -135,6 +144,11 @@ knowledge_base:
   opt_out: false
   web_search:
     enabled: true
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "CONTRIBUTING.md"
+      - "AGENTS.md"
   learnings:
     scope: "local"
   issues:
