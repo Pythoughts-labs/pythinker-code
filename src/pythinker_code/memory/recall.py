@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 from pathlib import Path
@@ -201,7 +202,7 @@ async def gather_candidates(store: ProjectMemoryStore, work_dir: HostPath) -> li
         source_path="JOURNAL.md",
         mtime=now,
     )
-    blocks += _scratch_note_blocks(work_dir)
+    blocks += await asyncio.to_thread(_scratch_note_blocks, work_dir)
     return blocks
 
 
@@ -237,8 +238,10 @@ class RecallInjectionProvider(DynamicInjectionProvider):
             open_todos: list[tuple[str, list[str]]] = []
             try:
                 sessions_dir = cast(Path, self._session.work_dir_meta.sessions_dir)
-                open_todos = find_recent_open_root_todos(
-                    sessions_dir, current_session_id=str(self._session.id)
+                open_todos = await asyncio.to_thread(
+                    find_recent_open_root_todos,
+                    sessions_dir,
+                    current_session_id=str(self._session.id),
                 )
             except Exception:
                 logger.debug("recall: open-todo discovery failed")
