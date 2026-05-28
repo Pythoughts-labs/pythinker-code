@@ -693,7 +693,7 @@ are used automatically unless you turn telemetry off.
 
 ```sh
 git clone https://github.com/TechMatrix-labs/pythinker-code.git
-cd Pythinker-Code
+cd pythinker-code
 make prepare
 ```
 
