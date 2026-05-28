@@ -1,0 +1,151 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+tone_instructions: "Be direct and specific. Prefer concise, actionable feedback. Skip style notes already handled by ruff or pyright."
+early_access: false
+
+reviews:
+  profile: "assertive"
+  # Set request_changes_workflow: true once the team is comfortable with assertive reviews
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_in_walkthrough: false
+  commit_status: true
+  fail_commit_status: false
+  collapse_walkthrough: true
+  changed_files_summary: true
+  sequence_diagrams: true
+  estimate_code_review_effort: true
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  suggested_labels: true
+  auto_apply_labels: false
+  suggested_reviewers: true
+  poem: false
+  slop_detection:
+    enabled: true
+    label: "ai-slop"
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+    base_branches:
+      - "main"
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT MERGE"
+
+  path_filters:
+    - "!dist/**"
+    - "!build/**"
+    - "!graphify-out/**"
+    - "!**/*.pyc"
+    - "!**/__pycache__/**"
+
+  path_instructions:
+    - path: "src/pythinker_code/telemetry/**"
+      instructions: |
+        Flag any changes that could inadvertently capture PII, secrets, or sensitive user data.
+        Verify that all telemetry events respect the PYTHINKER_DISABLE_TELEMETRY opt-out path.
+    - path: "src/**/*.py"
+      instructions: |
+        Flag missing type annotations on public functions and methods.
+        Flag use of eval, exec, subprocess with shell=True, or os.system.
+        Flag exception handlers that silently swallow errors without logging or re-raising.
+    - path: "tests/**/*.py"
+      instructions: |
+        Flag tests that mock internal implementation details rather than observable behavior.
+        Flag tests missing assertions, or with trivially-true assertions.
+    - path: ".github/workflows/**"
+      instructions: |
+        Flag third-party actions that are not pinned to a full commit SHA.
+        Flag pull_request_target triggers without explicit permission restrictions.
+        Flag hardcoded secrets, tokens, or sensitive values.
+    - path: "pyproject.toml"
+      instructions: |
+        Flag any new entries under [project].dependencies — new runtime dependencies require explicit justification per the zero-new-bundled-deps policy.
+        Flag version pins that downgrade or remove security constraints.
+
+  finishing_touches:
+    docstrings:
+      enabled: true
+    unit_tests:
+      enabled: true
+    simplify:
+      enabled: false
+
+  # Pre-merge checks — all in warning mode to gather signal before tightening.
+  # Promote individual checks to mode: "error" + request_changes_workflow: true
+  # once the team has calibrated expectations.
+  pre_merge_checks:
+    title:
+      mode: "warning"
+      requirements: "Follow conventional commits: type(scope): description. Valid types: feat, fix, chore, docs, refactor, test, ci, perf."
+    description:
+      mode: "warning"
+    issue_assessment:
+      mode: "warning"
+    docstrings:
+      mode: "warning"
+      threshold: 70
+
+  tools:
+    # Python — ruff covers pycodestyle, flake8-bugbear, isort, etc.
+    # Disable flake8/pylint to eliminate duplicate noise.
+    ruff:
+      enabled: true
+    flake8:
+      enabled: false
+    pylint:
+      enabled: false
+    # Security
+    semgrep:
+      enabled: true
+    trufflehog:
+      enabled: true
+    gitleaks:
+      enabled: true
+    trivy:
+      enabled: true
+    osvScanner:
+      enabled: true
+    zizmor:
+      enabled: true
+    # Infrastructure / CI
+    actionlint:
+      enabled: true
+    hadolint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    yamllint:
+      enabled: true
+    # Docs
+    markdownlint:
+      enabled: true
+    # Language tool adds noise in code-heavy repos; leave off by default
+    languagetool:
+      enabled: false
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  opt_out: false
+  web_search:
+    enabled: true
+  learnings:
+    scope: "local"
+  issues:
+    scope: "local"
+  pull_requests:
+    scope: "local"
+
+code_generation:
+  docstrings:
+    language: "en-US"
+  unit_tests:
+    path_instructions:
+      - path: "src/**/*.py"
+        instructions: "Use pytest. Follow patterns in tests/. Mock external HTTP calls. Avoid patching internals."
