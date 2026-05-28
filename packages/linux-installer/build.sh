@@ -87,7 +87,7 @@ FPM_COMMON=(
   -v "$VERSION"
   --license "Apache-2.0"
   --maintainer "Pythinker <moelkholy1995@gmail.com>"
-  --url "https://github.com/mohamed-elkholy95/Pythinker-Code"
+  --url "https://github.com/TechMatrix-labs/pythinker-code"
   --description "Pythinker Code: terminal-native review-first AI engineering agent."
   --vendor "Pythinker"
 )

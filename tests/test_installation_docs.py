@@ -24,7 +24,7 @@ def test_windows_readme_documents_powershell_one_liner() -> None:
 
     assert "irm https://pythinker.com/install.ps1 \\| iex" in readme
     assert (
-        "raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/scripts/install.ps1"
+        "raw.githubusercontent.com/TechMatrix-labs/pythinker-code/main/scripts/install.ps1"
         not in readme
     )
     assert "-File $installer" not in readme
@@ -38,8 +38,7 @@ def test_getting_started_uses_canonical_native_installer_url() -> None:
     assert "curl -fsSL https://pythinker.com/install.sh | bash" in guide
     assert "irm https://pythinker.com/install.ps1 | iex" in guide
     assert (
-        "https://raw.githubusercontent.com/mohamed-elkholy95/"
-        "Pythinker-Code/main/scripts/install.ps1"
+        "https://raw.githubusercontent.com/TechMatrix-labs/pythinker-code/main/scripts/install.ps1"
     ) not in guide
 
 
@@ -59,9 +58,7 @@ def test_readme_downloads_rpm_before_local_install() -> None:
 
     rpm = f"pythinker-code-{version}.x86_64.rpm"
     checksum = f"{rpm}.sha256"
-    release_url = (
-        f"https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v{version}"
-    )
+    release_url = f"https://github.com/TechMatrix-labs/pythinker-code/releases/download/v{version}"
 
     assert f"curl -LO {release_url}/{rpm}" in readme
     assert f"curl -LO {release_url}/{checksum}" in readme
@@ -189,3 +186,48 @@ def test_readme_references_existing_terminal_demo_asset() -> None:
     assert "docs/media/pythinker-code.gif" not in readme
     assert "docs/media/pythinker-cli.gif" in readme
     assert (ROOT / "docs" / "media" / "pythinker-cli.gif").exists()
+
+
+def test_no_old_repo_owner_references() -> None:
+    """Regression guard: old repo owner must not reappear in tracked files."""
+    # Split so this file's own source doesn't self-trigger.
+    old_owner = "mohamed-elkholy95"
+    forbidden = [
+        old_owner + "/Pythinker-Code",
+        old_owner + "/pythinker-code",
+        old_owner + ".github.io/Pythinker-Code",
+    ]
+    skip_dirs = {
+        "graphify-out",
+        ".git",
+        "dist",
+        ".vitepress",
+        ".venv",
+        ".pythinker-review",
+        ".claude",
+        "__pycache__",
+        ".pytest_cache",
+    }
+    # Excluded paths that legitimately reference old owner for non-main-repo projects
+    # (pythinker-home, pythinker-agent-rs, zsh-pythinker-code) or are this guard itself.
+    skip_files = {
+        ROOT / "tests" / "test_installation_docs.py",
+        ROOT / ".github" / "workflows" / "dispatch-pythinker-home-sync.yml",
+        ROOT / "docs" / "en" / "customization" / "wire-mode.md",
+        ROOT / "docs" / "en" / "guides" / "integrations.md",
+    }
+    violations: list[str] = []
+    for path in ROOT.rglob("*"):
+        if (
+            path.is_file()
+            and path not in skip_files
+            and not any(p in skip_dirs for p in path.parts)
+        ):
+            try:
+                text = path.read_text(errors="replace")
+            except OSError:
+                continue
+            for pattern in forbidden:
+                if pattern in text:
+                    violations.append(f"{path.relative_to(ROOT)}: contains '{pattern}'")
+    assert not violations, "Old repo owner references found:\n" + "\n".join(violations)

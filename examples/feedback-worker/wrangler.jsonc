@@ -10,7 +10,7 @@
     }
   ],
   "vars": {
-    "GITHUB_REPO": "mohamed-elkholy95/Pythinker-Code",
+    "GITHUB_REPO": "TechMatrix-labs/pythinker-code",
     "GITHUB_LABELS": "feedback,pythinker-cli",
     "SUPPORT_EMAIL": "support@pythinker.com",
     "FROM_EMAIL": "Pythinker Feedback <feedback@pythinker.com>"

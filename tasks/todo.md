@@ -421,7 +421,7 @@ To do later, in a separate PR after we know 1.1.0 is healthy:
 ## Out of scope
 
 - Renaming `pythinker-core`, `pythinker-host`, `pythinker-sdk` packages (their names are already fine)
-- Renaming the GitHub repo itself (`mohamed-elkholy95/Pythinker-Code`) — name is already correct
+- Renaming the GitHub repo itself (`TechMatrix-labs/pythinker-code`) — name is already correct
 - Breaking the public Python API (we're keeping `import pythinker_code` ergonomic; the *internal* import path changes but the module's public API surface stays the same)
 - Migrating user data directories (the rename creates a new path, but no existing user data exists yet — by user statement)
 

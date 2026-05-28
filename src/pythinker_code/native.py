@@ -13,7 +13,7 @@ import platform
 import sys
 from pathlib import Path
 
-GITHUB_REPO = "mohamed-elkholy95/Pythinker-Code"
+GITHUB_REPO = "TechMatrix-labs/pythinker-code"
 SENTINEL_FILENAME = ".pythinker-native"
 
 

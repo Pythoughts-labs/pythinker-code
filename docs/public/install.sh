@@ -38,7 +38,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-REPO="mohamed-elkholy95/Pythinker-Code"
+REPO="TechMatrix-labs/pythinker-code"
 
 if [ -t 1 ] && [ -z "$NO_COLOR" ] && [ "${TERM:-}" != "dumb" ]; then
   NAVY=$'\033[38;5;24m'; FACE=$'\033[38;5;255m'

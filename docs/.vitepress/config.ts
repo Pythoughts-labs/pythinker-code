@@ -105,7 +105,7 @@ export default withMermaid(defineConfig({
     outline: [2, 3],
     search: { provider: 'local' },
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/mohamed-elkholy95/Pythinker-Code' },
+      { icon: 'github', link: 'https://github.com/TechMatrix-labs/pythinker-code' },
     ],
   },
 

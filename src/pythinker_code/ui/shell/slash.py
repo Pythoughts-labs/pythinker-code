@@ -633,7 +633,7 @@ async def feedback(app: Shell, args: str):
 
     _t_fb = _get_tok_fb()
 
-    ISSUE_URL = "https://github.com/mohamed-elkholy95/Pythinker-Code/issues"
+    ISSUE_URL = "https://github.com/TechMatrix-labs/pythinker-code/issues"
 
     def _fallback_to_issues():
         if not webbrowser.open(ISSUE_URL):
@@ -790,7 +790,7 @@ async def report_error(app: Shell, args: str):
 
     _t_re = _get_tok_re()
 
-    ISSUE_URL = "https://github.com/mohamed-elkholy95/Pythinker-Code/issues"
+    ISSUE_URL = "https://github.com/TechMatrix-labs/pythinker-code/issues"
 
     def _fallback_to_issues():
         if not webbrowser.open(ISSUE_URL):

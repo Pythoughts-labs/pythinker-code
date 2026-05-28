@@ -55,7 +55,7 @@ def test_is_native_build_true_when_sentinel_present_without_frozen_flag(tmp_path
 
 def test_native_installer_release_url_latest():
     url = native.native_installer_release_url(channel="latest")
-    assert url == ("https://api.github.com/repos/mohamed-elkholy95/Pythinker-Code/releases/latest")
+    assert url == ("https://api.github.com/repos/TechMatrix-labs/pythinker-code/releases/latest")
 
 
 def test_native_installer_release_url_stable():

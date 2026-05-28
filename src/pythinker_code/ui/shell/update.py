@@ -36,10 +36,10 @@ from pythinker_code.utils.aiohttp import new_client_session
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.subprocess_env import get_clean_env
 
-CHANGELOG_URL_EN = "https://github.com/mohamed-elkholy95/Pythinker-Code/blob/main/CHANGELOG.md"
+CHANGELOG_URL_EN = "https://github.com/TechMatrix-labs/pythinker-code/blob/main/CHANGELOG.md"
 PYPI_VERSION_URL = "https://pypi.org/pypi/pythinker-code/{version}/json"
 HOMEBREW_FORMULA_URL = (
-    "https://raw.githubusercontent.com/mohamed-elkholy95/homebrew-pythinker/"
+    "https://raw.githubusercontent.com/TechMatrix-labs/homebrew-pythinker/"
     "main/Formula/pythinker-code.rb"
 )
 
@@ -1127,7 +1127,7 @@ async def _do_update(*, print: bool, check_only: bool) -> UpdateResult:
             _print(
                 f"[{_t.warning}]Auto-update disabled. "
                 "Download the new installer manually from "
-                "https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest[/]"
+                "https://github.com/TechMatrix-labs/pythinker-code/releases/latest[/]"
             )
             return UpdateResult.UPDATE_AVAILABLE
         if native_result is UpdateResult.FAILED:

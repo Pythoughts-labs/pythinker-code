@@ -236,7 +236,7 @@ class FeedbackConfig(BaseModel):
         ),
     )
     github_repo: str = Field(
-        default="mohamed-elkholy95/Pythinker-Code",
+        default="TechMatrix-labs/pythinker-code",
         description="GitHub owner/repo used by /feedback GitHub OAuth submissions.",
     )
 

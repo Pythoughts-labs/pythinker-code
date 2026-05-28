@@ -1,7 +1,7 @@
 # Pythinker Native Windows Installer — Design
 
 **Status:** Approved (2026-05-22)
-**Owner:** mohamed-elkholy95
+**Owner:** TechMatrix-labs
 **Tracking:** Brings parity with Claude Code's native installer for the Windows distribution surface.
 
 ---

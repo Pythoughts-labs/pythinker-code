@@ -71,7 +71,7 @@ def test_default_config_dump():
                 "api_key": None,
                 "custom_headers": None,
                 "github_client_id": "",
-                "github_repo": "mohamed-elkholy95/Pythinker-Code",
+                "github_repo": "TechMatrix-labs/pythinker-code",
             },
             "hooks": [],
             "merge_all_available_skills": True,

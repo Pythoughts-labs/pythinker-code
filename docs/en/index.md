@@ -10,5 +10,5 @@ hero:
       link: /en/guides/getting-started
     - theme: alt
       text: GitHub
-      link: https://github.com/mohamed-elkholy95/Pythinker-Code
+      link: https://github.com/TechMatrix-labs/pythinker-code
 ---

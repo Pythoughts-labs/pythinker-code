@@ -1,6 +1,6 @@
 <div align="center">
 
-# <img src="https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/docs/media/logo.png" alt="Pythinker logo" width="42" align="top"> Pythinker Code
+# <img src="https://raw.githubusercontent.com/TechMatrix-labs/pythinker-code/main/docs/media/logo.png" alt="Pythinker logo" width="42" align="top"> Pythinker Code
 
 ### *Think first, then code. Your terminal-native review-first AI engineering agent.*
 
@@ -10,9 +10,9 @@
 <br />
 
 [![PyPI](https://img.shields.io/pypi/v/pythinker-code?style=for-the-badge&logo=pypi&logoColor=white&color=2563eb&label=pythinker-code&cacheSeconds=60)](https://pypi.org/project/pythinker-code/)
-[![Python](https://img.shields.io/badge/Python-3.12%2B-3776ab?style=for-the-badge&logo=python&logoColor=white)](https://github.com/mohamed-elkholy95/Pythinker-Code/blob/main/pyproject.toml)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-16a34a.svg?style=for-the-badge)](https://github.com/mohamed-elkholy95/Pythinker-Code/blob/main/LICENSE)
-[![CI](https://img.shields.io/github/actions/workflow/status/mohamed-elkholy95/Pythinker-Code/ci-pythinker-cli.yml?branch=main&label=CI&style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/mohamed-elkholy95/Pythinker-Code/actions/workflows/ci-pythinker-cli.yml?query=branch%3Amain)
+[![Python](https://img.shields.io/badge/Python-3.12%2B-3776ab?style=for-the-badge&logo=python&logoColor=white)](https://github.com/TechMatrix-labs/pythinker-code/blob/main/pyproject.toml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-16a34a.svg?style=for-the-badge)](https://github.com/TechMatrix-labs/pythinker-code/blob/main/LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/TechMatrix-labs/pythinker-code/ci-pythinker-cli.yml?branch=main&label=CI&style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/TechMatrix-labs/pythinker-code/actions/workflows/ci-pythinker-cli.yml?query=branch%3Amain)
 
 [![PyPI downloads](https://assets.piptrends.com/get-last-month-downloads-badge/pythinker-code.svg)](https://piptrends.com/package/pythinker-code)
 [![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-f59e0b.svg?style=flat-square&logo=ruff&logoColor=white)](https://docs.astral.sh/ruff/)
@@ -32,7 +32,7 @@
 
 <br /><br />
 
-<img src="https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/docs/media/pythinker-cli.gif" alt="Pythinker Code terminal demo" width="860">
+<img src="https://raw.githubusercontent.com/TechMatrix-labs/pythinker-code/main/docs/media/pythinker-cli.gif" alt="Pythinker Code terminal demo" width="860">
 
 </div>
 
@@ -54,7 +54,7 @@ It speaks the [**Agent Client Protocol (ACP)**](https://github.com/agentclientpr
 
 - **Fetch works again in native installers.** Homebrew, `.deb`, `.rpm`, and `PythinkerSetup-*.exe` binaries shipped without `trafilatura/settings.cfg`, so the first `Fetch` call crashed with `No option 'min_extracted_size' in section: 'DEFAULT'`. The PyInstaller spec now bundles trafilatura's data files. PyPI / `pip install` was unaffected.
 
-Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.23.0`, or use the native installer for your platform from the [Releases page](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest).
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.23.0`, or use the native installer for your platform from the [Releases page](https://github.com/TechMatrix-labs/pythinker-code/releases/latest).
 
 
 ---
@@ -132,7 +132,7 @@ Swap providers and models per-session: `--model openai/gpt-5.5`, hosted Pythinke
 > Built-in shell commands such as `cd` are not yet supported in shell command mode.
 
 <div align="center">
-<img src="https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/docs/media/shell-mode.gif" alt="Shell command mode demo" width="860">
+<img src="https://raw.githubusercontent.com/TechMatrix-labs/pythinker-code/main/docs/media/shell-mode.gif" alt="Shell command mode demo" width="860">
 </div>
 
 ---
@@ -144,10 +144,10 @@ matches your OS — no Python, Node, or `uv` prerequisite.
 
 | Platform | Recommended install | Artifact source |
 |---|---|---|
-| **🪟 Windows** | `irm https://pythinker.com/install.ps1 \| iex` | `PythinkerSetup-0.23.0.exe` from [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
-| **<img src="https://img.shields.io/badge/-macOS-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS"> / <img src="https://img.shields.io/badge/-Linux-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux">** | `curl -fsSL https://pythinker.com/install.sh \| bash` | native tarball from [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
-| **<img src="https://img.shields.io/badge/-macOS-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS"> — Homebrew** | `brew install mohamed-elkholy95/pythinker/pythinker-code` | auto-published Homebrew tap |
-| **<img src="https://img.shields.io/badge/-Linux-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux"> — system package** | Download the `.deb` or `.rpm` for your distro below | [Releases](https://github.com/mohamed-elkholy95/Pythinker-Code/releases/latest) |
+| **🪟 Windows** | `irm https://pythinker.com/install.ps1 \| iex` | `PythinkerSetup-0.23.0.exe` from [Releases](https://github.com/TechMatrix-labs/pythinker-code/releases/latest) |
+| **<img src="https://img.shields.io/badge/-macOS-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS"> / <img src="https://img.shields.io/badge/-Linux-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux">** | `curl -fsSL https://pythinker.com/install.sh \| bash` | native tarball from [Releases](https://github.com/TechMatrix-labs/pythinker-code/releases/latest) |
+| **<img src="https://img.shields.io/badge/-macOS-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS"> — Homebrew** | `brew install TechMatrix-labs/pythinker/pythinker-code` | auto-published Homebrew tap |
+| **<img src="https://img.shields.io/badge/-Linux-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux"> — system package** | Download the `.deb` or `.rpm` for your distro below | [Releases](https://github.com/TechMatrix-labs/pythinker-code/releases/latest) |
 | **🐍 Python fallback** | `pip install pythinker-code` | PyPI |
 
 Every artifact ships with a matching `.sha256` file — verify before install on
@@ -207,7 +207,7 @@ the files and the PATH edit.
 
 ```sh
 # 1. Install
-brew install mohamed-elkholy95/pythinker/pythinker-code
+brew install TechMatrix-labs/pythinker/pythinker-code
 
 # 2. Verify
 pythinker --version
@@ -223,9 +223,9 @@ latest version.
 **Upgrade:** `brew upgrade pythinker-code` (Homebrew packages don't
 auto-update; run this whenever you want the latest).
 
-**Uninstall:** `brew uninstall pythinker-code && brew untap mohamed-elkholy95/pythinker`.
+**Uninstall:** `brew uninstall pythinker-code && brew untap TechMatrix-labs/pythinker`.
 
-> The tap repo is [mohamed-elkholy95/homebrew-pythinker](https://github.com/mohamed-elkholy95/homebrew-pythinker)
+> The tap repo is [TechMatrix-labs/homebrew-pythinker](https://github.com/TechMatrix-labs/homebrew-pythinker)
 > — auto-maintained, do not hand-edit.
 
 ---
@@ -244,8 +244,8 @@ sudo apt-get install -f       # only if dpkg reports missing deps
 sudo dpkg -i pythinker-code_0.23.0_arm64.deb
 
 # Fedora / RHEL / openSUSE (x86_64)
-curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.23.0/pythinker-code-0.23.0.x86_64.rpm
-curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.23.0/pythinker-code-0.23.0.x86_64.rpm.sha256
+curl -LO https://github.com/TechMatrix-labs/pythinker-code/releases/download/v0.23.0/pythinker-code-0.23.0.x86_64.rpm
+curl -LO https://github.com/TechMatrix-labs/pythinker-code/releases/download/v0.23.0/pythinker-code-0.23.0.x86_64.rpm.sha256
 sha256sum -c pythinker-code-0.23.0.x86_64.rpm.sha256
 # Fedora / RHEL:
 sudo dnf install ./pythinker-code-0.23.0.x86_64.rpm
@@ -253,8 +253,8 @@ sudo dnf install ./pythinker-code-0.23.0.x86_64.rpm
 sudo zypper install ./pythinker-code-0.23.0.x86_64.rpm
 
 # Fedora / RHEL (aarch64)
-curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.23.0/pythinker-code-0.23.0.aarch64.rpm
-curl -LO https://github.com/mohamed-elkholy95/Pythinker-Code/releases/download/v0.23.0/pythinker-code-0.23.0.aarch64.rpm.sha256
+curl -LO https://github.com/TechMatrix-labs/pythinker-code/releases/download/v0.23.0/pythinker-code-0.23.0.aarch64.rpm
+curl -LO https://github.com/TechMatrix-labs/pythinker-code/releases/download/v0.23.0/pythinker-code-0.23.0.aarch64.rpm.sha256
 sha256sum -c pythinker-code-0.23.0.aarch64.rpm.sha256
 sudo dnf install ./pythinker-code-0.23.0.aarch64.rpm
 ```
@@ -537,7 +537,7 @@ The ACP server provides:
 | 🔄 **Hot model swap** | Change models for a running ACP session |
 
 <div align="center">
-<img src="https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/docs/media/acp-integration.gif" alt="ACP IDE integration demo" width="860">
+<img src="https://raw.githubusercontent.com/TechMatrix-labs/pythinker-code/main/docs/media/acp-integration.gif" alt="ACP IDE integration demo" width="860">
 </div>
 
 ---
@@ -612,7 +612,7 @@ Pythinker is a small, extensible runtime — not a monolith. Build on it.
 ## 🏗️ Architecture
 
 <div align="center">
-<img src="https://raw.githubusercontent.com/mohamed-elkholy95/Pythinker-Code/main/docs/media/Architecture.webp" alt="Pythinker Code architecture diagram" width="860">
+<img src="https://raw.githubusercontent.com/TechMatrix-labs/pythinker-code/main/docs/media/Architecture.webp" alt="Pythinker Code architecture diagram" width="860">
 </div>
 
 ---
@@ -692,7 +692,7 @@ are used automatically unless you turn telemetry off.
 ### 🏁 Prepare the workspace
 
 ```sh
-git clone https://github.com/mohamed-elkholy95/Pythinker-Code.git
+git clone https://github.com/TechMatrix-labs/pythinker-code.git
 cd Pythinker-Code
 make prepare
 ```
@@ -773,9 +773,9 @@ pythinker-code/
 
 Contributions are warmly welcome — bug reports, PRs, plugins, skills, and docs all help.
 
-- 📖 Start with [`CONTRIBUTING.md`](https://github.com/mohamed-elkholy95/Pythinker-Code/blob/main/CONTRIBUTING.md)
-- 🔐 See [`SECURITY.md`](https://github.com/mohamed-elkholy95/Pythinker-Code/blob/main/SECURITY.md) for responsible disclosure
-- 📜 Skim [`AGENTS.md`](https://github.com/mohamed-elkholy95/Pythinker-Code/blob/main/AGENTS.md) for the agent design notes
+- 📖 Start with [`CONTRIBUTING.md`](https://github.com/TechMatrix-labs/pythinker-code/blob/main/CONTRIBUTING.md)
+- 🔐 See [`SECURITY.md`](https://github.com/TechMatrix-labs/pythinker-code/blob/main/SECURITY.md) for responsible disclosure
+- 📜 Skim [`AGENTS.md`](https://github.com/TechMatrix-labs/pythinker-code/blob/main/AGENTS.md) for the agent design notes
 
 If Pythinker helps you, **a ⭐ on GitHub goes a long way.**
 
@@ -783,7 +783,7 @@ If Pythinker helps you, **a ⭐ on GitHub goes a long way.**
 
 ## 📜 License
 
-Distributed under the **Apache-2.0 License**. See [`LICENSE`](https://github.com/mohamed-elkholy95/Pythinker-Code/blob/main/LICENSE) for the full text and [`NOTICE`](https://github.com/mohamed-elkholy95/Pythinker-Code/blob/main/NOTICE) for attributions.
+Distributed under the **Apache-2.0 License**. See [`LICENSE`](https://github.com/TechMatrix-labs/pythinker-code/blob/main/LICENSE) for the full text and [`NOTICE`](https://github.com/TechMatrix-labs/pythinker-code/blob/main/NOTICE) for attributions.
 
 <br />
 
@@ -793,7 +793,7 @@ Distributed under the **Apache-2.0 License**. See [`LICENSE`](https://github.com
 
 [🌐 pythinker.com](https://pythinker.com) &nbsp;·&nbsp;
 [📦 PyPI](https://pypi.org/project/pythinker-code/) &nbsp;·&nbsp;
-[🐙 GitHub](https://github.com/mohamed-elkholy95/Pythinker-Code) &nbsp;·&nbsp;
+[🐙 GitHub](https://github.com/TechMatrix-labs/pythinker-code) &nbsp;·&nbsp;
 [🧩 ACP](https://github.com/agentclientprotocol/agent-client-protocol) &nbsp;·&nbsp;
 [🔌 MCP](https://modelcontextprotocol.io/)
 
