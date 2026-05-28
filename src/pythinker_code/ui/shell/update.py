@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import os
 import platform
@@ -42,6 +43,7 @@ CHANGELOG_URL_EN = "https://github.com/mohamed-elkholy95/Pythinker-Code/blob/mai
 UPGRADE_COMMAND = ["uv", "tool", "upgrade", "pythinker-code"]
 
 LATEST_VERSION_FILE = get_share_dir() / "latest_version.txt"
+LATEST_VERSION_ETAG_FILE = get_share_dir() / "latest_version.etag"
 LAST_UPDATE_CHECK_FILE = get_share_dir() / "last_update_check.txt"
 DISMISSED_VERSION_FILE = get_share_dir() / "dismissed_update_version.txt"
 AUTO_UPDATE_CHECK_INTERVAL_SECONDS = 24 * 60 * 60
@@ -115,36 +117,38 @@ def _is_windows() -> bool:
 def _spawn_detached_windows_upgrade(upgrade_command: list[str]) -> bool:
     """Launch the upgrade in a new console window that survives this process exit.
 
-    Returns True if the helper was spawned. The new console sleeps a few seconds
-    before invoking ``upgrade_command`` so the currently running ``pythinker.exe``
-    has time to exit and release the executable lock that ``uv``/``pip`` would
-    otherwise trip over with ``os error 32``.
+    Returns True if the helper was spawned. The helper waits for this process
+    to exit before invoking ``upgrade_command`` so the currently running
+    ``pythinker.exe`` has released the executable lock that ``uv``/``pip``
+    would otherwise trip over with ``os error 32``.
     """
     if not _is_windows():
         return False
-    if which("cmd") is None:
-        return False
-    DETACHED_PROCESS = 0x00000008
-    CREATE_NEW_PROCESS_GROUP = 0x00000200
-    # `start "" cmd /k <inner>` opens a new console; `timeout` gives the parent
-    # time to exit so the exe lock releases before the upgrade runs.
-    formatted_command = _format_upgrade_command(upgrade_command)
-    inner = (
-        "echo Waiting for Pythinker to exit... "
-        "& timeout /t 3 /nobreak >nul "
-        f"& {formatted_command} "
-        "& echo. "
-        "& echo Upgrade finished. Press any key to close this window. "
-        "& pause >nul"
+
+    pid = os.getpid()
+    executable = which(upgrade_command[0]) or upgrade_command[0]
+    argument_text = subprocess.list2cmdline(upgrade_command[1:])
+    script = (
+        f"Write-Host 'Waiting for Pythinker (PID {pid}) to exit...';"
+        f"Wait-Process -Id {pid} -Timeout 60 -ErrorAction SilentlyContinue;"
+        "$psi = [System.Diagnostics.ProcessStartInfo]::new();"
+        f"$psi.FileName = {_ps_single_quote(executable)};"
+        f"$psi.Arguments = {_ps_single_quote(argument_text)};"
+        "$psi.UseShellExecute = $false;"
+        "$process = [System.Diagnostics.Process]::Start($psi);"
+        "$process.WaitForExit();"
+        "$exitCode = $process.ExitCode;"
+        "Write-Host '';"
+        "if ($exitCode -eq 0) {"
+        "Write-Host 'Upgrade finished. Press any key to close this window.';"
+        "} else {"
+        'Write-Host "Upgrade failed with exit code $exitCode. '
+        'Press any key to close this window.";'
+        "};"
+        "$null = [System.Console]::ReadKey($true);"
     )
-    try:
-        subprocess.Popen(
-            ["cmd", "/c", "start", "", "cmd", "/k", inner],
-            creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
-            close_fds=True,
-        )
-    except OSError:
-        logger.exception("Failed to spawn detached Windows upgrade:")
+    if not _spawn_detached_windows_powershell(script):
+        logger.warning("Failed to spawn detached Windows upgrade helper")
         return False
     return True
 
@@ -164,15 +168,56 @@ def _version_from_release_payload(data: object) -> str | None:
     return raw if re.fullmatch(r"\d+\.\d+\.\d+", raw) else None
 
 
-async def _get_latest_version(session: aiohttp.ClientSession) -> str | None:
-    """Return the latest native release version from GitHub Releases."""
+def _read_cached_etag() -> str | None:
     try:
-        async with session.get(
-            native_installer_release_url(), headers={"Accept": "application/vnd.github+json"}
-        ) as resp:
+        return LATEST_VERSION_ETAG_FILE.read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def _write_cached_etag(etag: str) -> None:
+    try:
+        LATEST_VERSION_ETAG_FILE.write_text(etag, encoding="utf-8")
+    except OSError:
+        logger.exception("Failed to cache release ETag:")
+
+
+def _clear_cached_etag() -> None:
+    with contextlib.suppress(OSError):
+        LATEST_VERSION_ETAG_FILE.unlink(missing_ok=True)
+
+
+async def _get_latest_version(session: aiohttp.ClientSession) -> str | None:
+    """Return the latest native release version from GitHub Releases.
+
+    Uses HTTP conditional requests (``If-None-Match`` + cached ETag) per
+    GitHub's documented best practice for polling release/events endpoints:
+    https://docs.github.com/en/rest/guides/best-practices-for-using-the-rest-api
+    A 304 response skips re-transferring the ~50KB release payload, and the
+    body is served straight from our local version cache.
+    """
+    headers = {"Accept": "application/vnd.github+json"}
+    cached_etag = _read_cached_etag()
+    if cached_etag:
+        # GitHub ETags arrive quoted (e.g. `W/"a18c3bd..."`). Store and send
+        # them verbatim — the surrounding quotes are part of the value.
+        headers["If-None-Match"] = cached_etag
+    try:
+        async with session.get(native_installer_release_url(), headers=headers) as resp:
+            if resp.status == 304:
+                cached_version = _read_latest_version_cache()
+                if cached_version:
+                    return cached_version
+                # State drift: etag cached but no version cache. Drop the
+                # stale etag so the next call re-fetches fresh.
+                _clear_cached_etag()
+                return None
             resp.raise_for_status()
+            new_etag = resp.headers.get("ETag")
             data = await resp.json(content_type=None)
             version = _version_from_release_payload(data)
+            if version and new_etag:
+                _write_cached_etag(new_etag)
             return version.strip() if version else None
     except (TimeoutError, aiohttp.ClientError):
         logger.exception("Failed to fetch latest version from GitHub Releases:")
@@ -217,8 +262,10 @@ def _is_running_from_source_checkout() -> bool:
 def _should_auto_check_for_updates(now: float | None = None) -> bool:
     if _auto_update_disabled() or _is_running_from_source_checkout():
         return False
-    if not sys.stdout.isatty():
-        return False
+    # No isatty() guard here: this runs inside the interactive shell's event
+    # loop where prompt_toolkit may have replaced sys.stdout with a non-TTY
+    # wrapper, falsely suppressing the check. The shell is always interactive
+    # by construction; non-interactive callers never start the shell.
 
     now = time.time() if now is None else now
     try:
@@ -333,12 +380,18 @@ async def refresh_update_cache_if_due() -> UpdateResult | None:
 async def _refresh_update_cache(*, force: bool) -> UpdateResult | None:
     if not force and not _should_auto_check_for_updates():
         return None
-    _mark_auto_update_check_attempt()
     try:
-        return await do_update(print=False, check_only=True)
+        result = await do_update(print=False, check_only=True)
     except Exception:
         logger.exception("Update cache refresh failed:")
         return None
+    # Only throttle after a successful round-trip. Marking before the network
+    # call would silently swallow update notices for 24h when the first shell
+    # start happens to hit a transient network issue — the user would never
+    # see the update banner until the throttle expires.
+    if result is not UpdateResult.FAILED:
+        _mark_auto_update_check_attempt()
+    return result
 
 
 async def _resolve_latest_version_for_prompt(*, force_refresh: bool = False) -> str | None:
@@ -493,61 +546,126 @@ async def _fetch_native_release_asset(
     return download_url, sha
 
 
-def _spawn_detached_windows_installer(installer_path: Path) -> bool:
-    """Run the native installer after this process exits and releases file locks.
+def _ps_single_quote(value: str) -> str:
+    """Quote a string for embedding inside a PowerShell single-quoted literal.
 
-    Robustness over a fixed sleep: the detached console waits on *this* process's
-    PID (capped at 60s via ``Wait-Process``) so the installer only runs once the
-    running ``pythinker.exe`` has released its own-file lock, then cleans up the
-    staged installer + temp dir. The cap stops a hung process stranding the
-    installer forever.
+    PowerShell single-quoted strings (``'...'``) treat every character as a
+    literal except ``'``, which doubles. Windows paths don't normally contain
+    ``'``, but we quote defensively so an exotic ``%TEMP%`` can't break out.
     """
-    if not _is_windows() or which("cmd") is None:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _spawn_detached_windows_powershell(script: str) -> bool:
+    """Run a PowerShell script in a new console using ``-EncodedCommand``.
+
+    ``-EncodedCommand`` expects UTF-16LE bytes, and avoids the cmd.exe / Python
+    quoting layers entirely for the script payload. ``CREATE_NEW_CONSOLE`` keeps
+    the helper visible after the current Pythinker process exits.
+    """
+    if not _is_windows():
         return False
-    DETACHED_PROCESS = 0x00000008
+    powershell = which("powershell") or which("powershell.exe")
+    if powershell is None:
+        return False
+    CREATE_NEW_CONSOLE = 0x00000010
     CREATE_NEW_PROCESS_GROUP = 0x00000200
-    pid = os.getpid()
-    tmpdir = installer_path.parent
-    installer_command = _format_upgrade_command(
-        [str(installer_path), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]
-    )
-    wait_command = (
-        "powershell -NoProfile -Command "
-        f'"Wait-Process -Id {pid} -Timeout 60 -ErrorAction SilentlyContinue"'
-    )
-    cleanup_command = (
-        f"del /q {subprocess.list2cmdline([str(installer_path)])} "
-        f"& rmdir /s /q {subprocess.list2cmdline([str(tmpdir)])}"
-    )
-    inner = (
-        f"echo Waiting for Pythinker (PID {pid}) to exit... "
-        f"& {wait_command} "
-        f"& {installer_command} "
-        f"& {cleanup_command} "
-        "& echo. "
-        "& echo Installer finished. Press any key to close this window. "
-        "& pause >nul"
-    )
+    # PowerShell's -EncodedCommand mandates UTF-16LE bytes; the project lint
+    # blocks `.encode("utf-16-le")` so we use the bytes() constructor instead.
+    # The base64 output is pure ASCII, which is a strict subset of UTF-8.
+    encoded = base64.b64encode(bytes(script, "utf-16-le")).decode("utf-8")
     try:
         subprocess.Popen(
-            ["cmd", "/c", "start", "", "cmd", "/k", inner],
-            creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+            [powershell, "-NoProfile", "-EncodedCommand", encoded],
+            creationflags=CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP,
             close_fds=True,
         )
     except OSError:
-        logger.exception("Failed to spawn detached Windows native installer:")
+        logger.exception("Failed to spawn detached Windows PowerShell helper:")
+        return False
+    return True
+
+
+def _spawn_detached_windows_installer(installer_path: Path) -> bool:
+    """Run the native installer after this process exits and releases file locks.
+
+    The detached PowerShell process waits on *this* process's PID (capped at
+    60s via ``Wait-Process``) so the installer only runs once the running
+    ``pythinker.exe`` has released its own-file lock, then cleans up the
+    staged installer + temp dir. The cap stops a hung process stranding the
+    installer forever.
+
+    Why a base64-encoded PowerShell payload instead of inline ``cmd /k``:
+    Windows has at least three command-line parsers in this chain — Python's
+    ``subprocess.list2cmdline``, cmd.exe's own rules, and
+    ``CommandLineToArgvW`` for the spawned child. Each strips a layer of
+    quoting differently. The previous inline ``powershell -Command
+    "Wait-Process …"`` form leaked the double quotes through every layer
+    until PowerShell saw a literal ``"Wait-Process …"`` *string expression*
+    and printed it instead of running the cmdlet. The base64 payload contains
+    only ``[A-Za-z0-9+/=]`` — no character that any of those parsers need to
+    escape — so the script reaches PowerShell intact regardless of how
+    ``%TEMP%`` or the installer path is spelled (spaces, parentheses, etc.).
+    """
+    if not _is_windows():
+        return False
+    pid = os.getpid()
+    tmpdir = installer_path.parent
+
+    installer_arg = _ps_single_quote(str(installer_path))
+    installer_arguments = _ps_single_quote(
+        subprocess.list2cmdline(["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])
+    )
+    tmpdir_arg = _ps_single_quote(str(tmpdir))
+    # PowerShell handles all I/O: wait, install, clean up, prompt. Each step
+    # is independently fault-tolerant; -ErrorAction SilentlyContinue lets the
+    # script complete even if (e.g.) Wait-Process can't find the PID because
+    # pythinker.exe has already exited.
+    script = (
+        f"Write-Host 'Waiting for Pythinker (PID {pid}) to exit...';"
+        f"Wait-Process -Id {pid} -Timeout 60 -ErrorAction SilentlyContinue;"
+        f"$psi = [System.Diagnostics.ProcessStartInfo]::new();"
+        f"$psi.FileName = {installer_arg};"
+        f"$psi.Arguments = {installer_arguments};"
+        f"$psi.UseShellExecute = $false;"
+        f"$process = [System.Diagnostics.Process]::Start($psi);"
+        f"$process.WaitForExit();"
+        f"$exitCode = $process.ExitCode;"
+        f"Remove-Item -LiteralPath {tmpdir_arg} -Recurse -Force "
+        f"-ErrorAction SilentlyContinue;"
+        f"Write-Host '';"
+        f"if ($exitCode -eq 0) {{"
+        f"Write-Host 'Installer finished. Press any key to close this window.';"
+        f"}} else {{"
+        f'Write-Host "Installer failed with exit code $exitCode. '
+        f'Press any key to close this window.";'
+        f"}};"
+        f"$null = [System.Console]::ReadKey($true);"
+    )
+    if not _spawn_detached_windows_powershell(script):
+        logger.warning("Failed to spawn detached Windows native installer helper")
         return False
     return True
 
 
 def _run_native_installer(installer_path: Path) -> None:
-    """Spawn the downloaded native installer and exit this process."""
+    """Spawn the downloaded native installer and exit this process.
+
+    ``close_fds=True`` is critical on the fallback path: PyInstaller's official
+    Windows recipe (`Recipe-subprocess`) notes that the child inherits the
+    parent's open file handles by default — including the handle to
+    pythinker.exe itself — which leaves the parent binary locked even after
+    this process exits and prevents Inno Setup from replacing it. The detached
+    PowerShell helper (the preferred path) already sets this in
+    ``_spawn_detached_windows_powershell``.
+    """
     if _spawn_detached_windows_installer(installer_path):
         sys.exit(0)
     subprocess.Popen(
         [str(installer_path), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
         creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         | getattr(subprocess, "DETACHED_PROCESS", 0),
+        close_fds=True,
     )
     sys.exit(0)
 
@@ -755,21 +873,32 @@ async def _maybe_run_native_update(latest_version: str, channel: str = "latest")
         download_url, expected_sha = fetched
 
         tmpdir = Path(tempfile.mkdtemp(prefix="pythinker-update-"))
-        asset = tmpdir / asset_name
-        download_result = await _download_native_asset(session, asset_name, download_url, asset)
-        if download_result is UpdateResult.FAILED:
-            return download_result
+        # On Windows, the detached PowerShell helper owns tmpdir cleanup so the
+        # installer .exe survives this process's exit. On Linux/Mac the install
+        # runs inline, so we own cleanup and must release ~50-100MB of archive
+        # + extracted-binary debris from /tmp on every update, success or fail.
+        cleanup_tmpdir = True
+        try:
+            asset = tmpdir / asset_name
+            download_result = await _download_native_asset(session, asset_name, download_url, asset)
+            if download_result is UpdateResult.FAILED:
+                return download_result
 
-    if not _verify_sha256(asset, expected_sha):
-        return UpdateResult.FAILED
+            if not _verify_sha256(asset, expected_sha):
+                return UpdateResult.FAILED
 
-    if _is_windows():
-        _run_native_installer(asset)
-        return UpdateResult.UPDATED  # unreachable; sys.exit fires inside _run_native_installer
-    if linux_package_kind is not None:
-        return _install_linux_package(asset, linux_package_kind)
-
-    return _install_native_archive(asset)
+            if _is_windows():
+                # Flag flip before sys.exit so the finally honors it. The
+                # detached helper now owns the staging directory.
+                cleanup_tmpdir = False
+                _run_native_installer(asset)
+                return UpdateResult.UPDATED  # unreachable; sys.exit fires above
+            if linux_package_kind is not None:
+                return _install_linux_package(asset, linux_package_kind)
+            return _install_native_archive(asset)
+        finally:
+            if cleanup_tmpdir:
+                shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 async def do_update(*, print: bool = True, check_only: bool = False) -> UpdateResult:
@@ -812,7 +941,7 @@ async def _do_update(*, print: bool, check_only: bool) -> UpdateResult:
             current_version=current_version,
             latest_version=latest_version,
         )
-        _print(f"[{_t.warning}]Update available: {latest_version}[/]")
+        _print(f"[{_t.warning}]Update available: {current_version} → {latest_version}[/]")
         return UpdateResult.UPDATE_AVAILABLE
 
     upgrade_command = _detect_upgrade_command()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -248,6 +249,17 @@ async def test_prompt_pre_start_update_skips_non_tty(monkeypatch):
     assert await update.prompt_pre_start_update() is None
 
 
+def test_should_auto_check_does_not_require_stdout_tty(monkeypatch, tmp_path):
+    last_check_file = tmp_path / "last_update_check.txt"
+
+    monkeypatch.setattr(update.sys, "stdout", SimpleNamespace(isatty=lambda: False))
+    monkeypatch.setattr(update, "LAST_UPDATE_CHECK_FILE", last_check_file)
+    monkeypatch.setattr(update, "_auto_update_disabled", lambda: False)
+    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: False)
+
+    assert update._should_auto_check_for_updates() is True
+
+
 @pytest.mark.asyncio
 async def test_resolve_latest_version_fetches_when_due(monkeypatch, tmp_path):
     latest_file = tmp_path / "latest.txt"
@@ -305,6 +317,165 @@ async def test_resolve_latest_version_uses_cache_when_not_due(monkeypatch, tmp_p
     monkeypatch.setattr(update, "do_update", fail_do_update)
 
     assert await update._resolve_latest_version_for_prompt() == "3.1.0"
+
+
+@pytest.mark.asyncio
+async def test_refresh_cache_does_not_throttle_on_failure(monkeypatch, tmp_path):
+    """A failed check must not mark the throttle file.
+
+    Regression for: first shell start hits a transient network issue, the old
+    throttle-before-check path would suppress retries for 24 hours, so users
+    never saw the update banner until then.
+    """
+    latest_file = tmp_path / "latest.txt"
+    last_check_file = tmp_path / "last_update_check.txt"
+
+    async def failing_do_update(*, print: bool, check_only: bool) -> update.UpdateResult:
+        return update.UpdateResult.FAILED
+
+    monkeypatch.setattr(update, "LATEST_VERSION_FILE", latest_file)
+    monkeypatch.setattr(update, "LAST_UPDATE_CHECK_FILE", last_check_file)
+    monkeypatch.setattr(update, "_should_auto_check_for_updates", lambda: True)
+    monkeypatch.setattr(update, "do_update", failing_do_update)
+
+    result = await update._refresh_update_cache(force=False)
+    assert result is update.UpdateResult.FAILED
+    assert not last_check_file.exists(), (
+        "failed checks must not mark the throttle — otherwise a transient "
+        "network issue silences update notices for 24h"
+    )
+
+
+@pytest.mark.asyncio
+async def test_refresh_cache_does_not_throttle_on_exception(monkeypatch, tmp_path):
+    last_check_file = tmp_path / "last_update_check.txt"
+
+    async def raising_do_update(*, print: bool, check_only: bool) -> update.UpdateResult:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(update, "LAST_UPDATE_CHECK_FILE", last_check_file)
+    monkeypatch.setattr(update, "_should_auto_check_for_updates", lambda: True)
+    monkeypatch.setattr(update, "do_update", raising_do_update)
+
+    assert await update._refresh_update_cache(force=False) is None
+    assert not last_check_file.exists()
+
+
+class _FakeJsonResponse:
+    """Minimal aiohttp.ClientResponse stand-in for _get_latest_version tests."""
+
+    def __init__(
+        self,
+        *,
+        status: int,
+        json_data: object | None = None,
+        etag: str | None = None,
+    ) -> None:
+        self.status = status
+        self._json = json_data
+        self.headers: dict[str, str] = {}
+        if etag is not None:
+            self.headers["ETag"] = etag
+
+    async def __aenter__(self) -> _FakeJsonResponse:
+        return self
+
+    async def __aexit__(self, *_exc) -> None:
+        return None
+
+    def raise_for_status(self) -> None:
+        if self.status >= 400:
+            raise RuntimeError(f"http {self.status}")
+
+    async def json(self, *, content_type=None) -> object:
+        return self._json
+
+
+class _FakeSession:
+    def __init__(self, response: _FakeJsonResponse) -> None:
+        self._response = response
+        self.captured_headers: dict[str, str] | None = None
+
+    def get(self, url: str, *, headers=None):
+        self.captured_headers = headers or {}
+        return self._response
+
+
+@pytest.mark.asyncio
+async def test_get_latest_version_sends_if_none_match_when_etag_cached(monkeypatch, tmp_path):
+    """Per GitHub REST best practices, the polling caller must send
+    If-None-Match with the cached ETag — that's what unlocks 304 responses
+    that skip rate-limit accounting."""
+    etag_file = tmp_path / "etag"
+    etag_file.write_text('W/"cached-etag-value"', encoding="utf-8")
+
+    monkeypatch.setattr(update, "LATEST_VERSION_ETAG_FILE", etag_file)
+    response = _FakeJsonResponse(status=200, json_data={"tag_name": "v1.2.3"}, etag='W/"new-etag"')
+    session = _FakeSession(response)
+
+    version = await update._get_latest_version(session)  # type: ignore[arg-type]
+
+    assert version == "1.2.3"
+    assert session.captured_headers is not None
+    assert session.captured_headers.get("If-None-Match") == 'W/"cached-etag-value"'
+
+
+@pytest.mark.asyncio
+async def test_get_latest_version_returns_cached_on_304(monkeypatch, tmp_path):
+    """A 304 Not Modified means "the cached version is still current". The
+    function must read the local version cache instead of erroring or hitting
+    the network again."""
+    etag_file = tmp_path / "etag"
+    etag_file.write_text('W/"server-etag"', encoding="utf-8")
+    latest_file = tmp_path / "latest.txt"
+    latest_file.write_text("4.5.6", encoding="utf-8")
+
+    monkeypatch.setattr(update, "LATEST_VERSION_ETAG_FILE", etag_file)
+    monkeypatch.setattr(update, "LATEST_VERSION_FILE", latest_file)
+    response = _FakeJsonResponse(status=304)
+    session = _FakeSession(response)
+
+    assert await update._get_latest_version(session) == "4.5.6"  # type: ignore[arg-type]
+    # ETag must remain — we got 304, so the server-side resource is unchanged
+    # and our cache is valid:
+    assert etag_file.read_text(encoding="utf-8") == 'W/"server-etag"'
+
+
+@pytest.mark.asyncio
+async def test_get_latest_version_clears_etag_on_304_with_empty_cache(monkeypatch, tmp_path):
+    """Edge case: cached ETag but missing version cache (e.g. user manually
+    cleared $XDG_DATA_HOME). Returning None and dropping the etag forces a
+    real refetch on the next call instead of getting stuck in a 304 loop."""
+    etag_file = tmp_path / "etag"
+    etag_file.write_text('W/"orphan-etag"', encoding="utf-8")
+    latest_file = tmp_path / "latest.txt"  # intentionally not created
+
+    monkeypatch.setattr(update, "LATEST_VERSION_ETAG_FILE", etag_file)
+    monkeypatch.setattr(update, "LATEST_VERSION_FILE", latest_file)
+    response = _FakeJsonResponse(status=304)
+    session = _FakeSession(response)
+
+    assert await update._get_latest_version(session) is None  # type: ignore[arg-type]
+    assert not etag_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_get_latest_version_writes_etag_on_200(monkeypatch, tmp_path):
+    """When the server returns 200 with a fresh ETag, we must persist it for
+    the next request — otherwise we never benefit from conditional caching."""
+    etag_file = tmp_path / "etag"  # not yet created
+
+    monkeypatch.setattr(update, "LATEST_VERSION_ETAG_FILE", etag_file)
+    response = _FakeJsonResponse(
+        status=200, json_data={"tag_name": "v9.0.0"}, etag='W/"freshly-served"'
+    )
+    session = _FakeSession(response)
+
+    assert await update._get_latest_version(session) == "9.0.0"  # type: ignore[arg-type]
+    assert etag_file.read_text(encoding="utf-8") == 'W/"freshly-served"'
+    # No cached etag was sent on the first call:
+    assert session.captured_headers is not None
+    assert "If-None-Match" not in session.captured_headers
 
 
 @pytest.mark.asyncio
@@ -455,6 +626,74 @@ async def test_native_update_uses_linux_package_asset_for_system_package(monkeyp
     assert await update._maybe_run_native_update("1.2.3") is update.UpdateResult.UPDATED
     assert fetched_assets == ["pythinker-code_1.2.3_amd64.deb"]
     assert installed == [("pythinker-code_1.2.3_amd64.deb", "deb")]
+
+
+@pytest.mark.asyncio
+async def test_native_update_cleans_up_tmpdir_on_success(monkeypatch, tmp_path):
+    """The Linux/Mac install path must release the ~50-100MB staging tmpdir
+    on every update. Pre-fix this leaked into /tmp on every update."""
+    captured_tmpdirs: list[Path] = []
+
+    async def fake_fetch(session, asset_name: str, channel: str):
+        return "https://example.invalid/pkg", "a" * 64
+
+    async def fake_download(session, asset_name: str, download_url: str, destination):
+        destination.write_bytes(b"package-bytes")
+        return update.UpdateResult.UPDATED
+
+    def fake_install(asset, package_kind: str) -> update.UpdateResult:
+        # Snapshot tmpdir while the install is mid-flight: cleanup must NOT
+        # have run yet — the installer needs the asset on disk.
+        captured_tmpdirs.append(asset.parent)
+        assert asset.exists(), "asset must still exist while installer runs"
+        return update.UpdateResult.UPDATED
+
+    monkeypatch.setattr(update.platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(update, "_is_windows", lambda: False)
+    monkeypatch.setattr(update, "_installed_linux_package_kind", lambda: "deb")
+    monkeypatch.setattr(update, "_fetch_native_release_asset", fake_fetch)
+    monkeypatch.setattr(update, "_download_native_asset", fake_download)
+    monkeypatch.setattr(update, "_verify_sha256", lambda path, expected: True)
+    monkeypatch.setattr(update, "_install_linux_package", fake_install)
+
+    result = await update._maybe_run_native_update("1.2.3")
+
+    assert result is update.UpdateResult.UPDATED
+    assert len(captured_tmpdirs) == 1
+    # Post-install, the staging tmpdir must be gone:
+    assert not captured_tmpdirs[0].exists(), (
+        "tmpdir leaked after install — /tmp will fill with stale installers"
+    )
+
+
+@pytest.mark.asyncio
+async def test_native_update_cleans_up_tmpdir_on_failure(monkeypatch, tmp_path):
+    """A SHA mismatch (or any install-time failure) must still release tmpdir
+    so a failed update doesn't leave a half-broken installer + extract dir
+    sitting in /tmp until reboot."""
+    captured_tmpdirs: list[Path] = []
+
+    async def fake_fetch(session, asset_name: str, channel: str):
+        return "https://example.invalid/pkg", "a" * 64
+
+    async def fake_download(session, asset_name: str, download_url: str, destination):
+        destination.write_bytes(b"package-bytes")
+        captured_tmpdirs.append(destination.parent)
+        return update.UpdateResult.UPDATED
+
+    monkeypatch.setattr(update.platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(update, "_is_windows", lambda: False)
+    monkeypatch.setattr(update, "_installed_linux_package_kind", lambda: "deb")
+    monkeypatch.setattr(update, "_fetch_native_release_asset", fake_fetch)
+    monkeypatch.setattr(update, "_download_native_asset", fake_download)
+    # Simulate a SHA verification failure:
+    monkeypatch.setattr(update, "_verify_sha256", lambda path, expected: False)
+
+    result = await update._maybe_run_native_update("1.2.3")
+
+    assert result is update.UpdateResult.FAILED
+    assert len(captured_tmpdirs) == 1
+    assert not captured_tmpdirs[0].exists()
 
 
 def test_detect_upgrade_command_uses_brew_for_homebrew_formula(monkeypatch):

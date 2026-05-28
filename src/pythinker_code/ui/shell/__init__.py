@@ -1742,7 +1742,13 @@ class Shell:
         # Non-blocking, pythinker-x-style notice based on the cached value.
         notice = pending_update_notice()
         if notice:
-            toast(notice, topic="update", duration=8.0)
+            # Make version notices easy to see on macOS/Linux terminals too:
+            # put them at the front of the toast queue, keep them around long
+            # enough to survive startup redraws, and force a repaint if the
+            # prompt is already active.
+            toast(notice, topic="update", duration=30.0, immediate=True)
+            if self._prompt_session is not None:
+                self._prompt_session.invalidate()
 
     def _start_background_task(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
         task = asyncio.create_task(coro)
