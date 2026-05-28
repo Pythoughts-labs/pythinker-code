@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# yaml-language-server: $schema=https://www.coderabbit.ai/integrations/schema.v2.json
 language: "en-US"
 tone_instructions: "Be direct and specific. Prefer concise, actionable feedback. Skip style notes already handled by ruff or pyright."
 early_access: false
