@@ -139,7 +139,7 @@ export OPENAI_ADMIN_KEY="sk-admin-xxx"
 | Environment Variable | Description |
 | --- | --- |
 | `PYTHINKER_SHARE_DIR` | Customize the share directory path (default: `~/.pythinker`) |
-| `PYTHINKER_CLI_NO_AUTO_UPDATE` | Disable all update-related features |
+| `PYTHINKER_CLI_NO_AUTO_UPDATE` | Disable proactive update checks and startup update notices |
 | `PYTHINKER_CLI_PASTE_CHAR_THRESHOLD` | Character threshold for folding pasted text (default: `1000`) |
 | `PYTHINKER_CLI_PASTE_LINE_THRESHOLD` | Line threshold for folding pasted text (default: `15`) |
 
@@ -159,7 +159,7 @@ See [Data Locations](./data-locations.md) for details.
 
 ### `PYTHINKER_CLI_NO_AUTO_UPDATE`
 
-When set to `1`, `true`, `t`, `yes`, or `y` (case-insensitive), disables all update-related features, including background auto-update check, the blocking update gate on startup, and the version hint in the welcome panel.
+When set to `1`, `true`, `t`, `yes`, or `y` (case-insensitive), disables proactive update checks and startup update notices. Pythinker startup remains non-blocking; run `pythinker update` or `/update` when you want to check manually.
 
 ```sh
 export PYTHINKER_CLI_NO_AUTO_UPDATE="1"

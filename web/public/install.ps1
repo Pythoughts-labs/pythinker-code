@@ -199,7 +199,7 @@ try {
   }
 
   Write-Host ""
-  Write-Host "  $BOLD$IRIS`pythinker$RESET is ready. Open a fresh PowerShell and run $BOLD$IRIS`pythinker$RESET to start."
+  Write-Host "  $BOLD$IRIS`pythinker$RESET is ready. Open a fresh PowerShell and run $BOLD$IRIS`pythinker$RESET to launch."
   Write-Host ""
 } finally {
   Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue

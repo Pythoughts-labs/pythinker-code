@@ -217,27 +217,32 @@ def test_update_command_registered():
 
 async def test_run_update_prompt_reports_up_to_date(monkeypatch):
     monkeypatch.setattr(constant, "VERSION", "2.0.0")
-    force_refresh_values: list[bool] = []
+    calls: list[tuple[bool, bool]] = []
 
-    async def fake_resolve(*, force_refresh: bool = False):
-        force_refresh_values.append(force_refresh)
-        return "1.0.0"
+    async def fake_do_update(*, print: bool, check_only: bool):
+        calls.append((print, check_only))
+        return update.UpdateResult.UP_TO_DATE
 
-    monkeypatch.setattr(update, "_resolve_latest_version_for_prompt", fake_resolve)
+    monkeypatch.setattr(update, "do_update", fake_do_update)
+
     assert await update.run_update_prompt() is update.UpdateResult.UP_TO_DATE
-    assert force_refresh_values == [True]
+    assert calls == [(True, True)]
 
 
 async def test_run_update_prompt_skip_returns_none(monkeypatch):
     monkeypatch.setattr(constant, "VERSION", "1.0.0")
 
-    async def fake_resolve(*, force_refresh: bool = False):
-        assert force_refresh is True
-        return "1.2.0"
+    async def fake_do_update(*, print: bool, check_only: bool):
+        assert (print, check_only) == (True, True)
+        return update.UpdateResult.UPDATE_AVAILABLE
 
     async def fake_prompt(current, latest):
+        assert current == "1.0.0"
+        assert latest == "1.2.0"
         return update.UpdatePromptSelection.SKIP
 
-    monkeypatch.setattr(update, "_resolve_latest_version_for_prompt", fake_resolve)
+    monkeypatch.setattr(update, "do_update", fake_do_update)
+    monkeypatch.setattr(update, "_read_latest_version_cache", lambda: "1.2.0")
     monkeypatch.setattr(update, "_prompt_update_selection", fake_prompt)
+
     assert await update.run_update_prompt() is None

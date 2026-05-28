@@ -126,7 +126,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
+          # Never flip "latest" from here: if this job wins the create race,
+          # GitHub would default a new release to latest with only the Linux
+          # packages present. dispatch-pythinker-home-sync.yml marks the release
+          # latest only after every platform's assets are attached.
           fail_on_unmatched_files: false
+          make_latest: "false"
           files: |
             dist/pythinker-code_*.deb
             dist/pythinker-code_*.deb.sha256

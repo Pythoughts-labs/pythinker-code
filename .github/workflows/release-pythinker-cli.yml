@@ -544,9 +544,12 @@ jobs:
           name: ${{ github.ref_name }}
           generate_release_notes: true
           # Tolerate missing matrix targets so the Release still publishes
-          # when (e.g.) a single Windows runner crashed mid-build.
+          # when (e.g.) a single Windows runner crashed mid-build). Keep the
+          # release out of /releases/latest until the native installer workflows
+          # have attached their assets; dispatch-pythinker-home-sync.yml marks it
+          # latest only after the expected macOS/Linux/Windows update assets exist.
           fail_on_unmatched_files: false
-          make_latest: "true"
+          make_latest: "false"
           files: |
             downloads/*.tar.gz
             downloads/*.zip

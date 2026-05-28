@@ -37,6 +37,11 @@ from pythinker_code.utils.logging import logger
 from pythinker_code.utils.subprocess_env import get_clean_env
 
 CHANGELOG_URL_EN = "https://github.com/mohamed-elkholy95/Pythinker-Code/blob/main/CHANGELOG.md"
+PYPI_VERSION_URL = "https://pypi.org/pypi/pythinker-code/{version}/json"
+HOMEBREW_FORMULA_URL = (
+    "https://raw.githubusercontent.com/mohamed-elkholy95/homebrew-pythinker/"
+    "main/Formula/pythinker-code.rb"
+)
 
 # Default upgrade command. `_detect_upgrade_command()` overrides this when the
 # install method is recognizable from `sys.executable`.
@@ -353,6 +358,11 @@ def _read_latest_version_cache() -> str | None:
         return None
 
 
+def _clear_latest_version_cache() -> None:
+    with contextlib.suppress(OSError):
+        LATEST_VERSION_FILE.unlink(missing_ok=True)
+
+
 def _read_dismissed_version() -> str | None:
     try:
         return DISMISSED_VERSION_FILE.read_text(encoding="utf-8").strip() or None
@@ -433,7 +443,7 @@ def pending_update_notice() -> str | None:
 
 
 async def run_update_prompt() -> UpdateResult | None:
-    """Interactive ``/update`` flow: resolve latest, show the 3-choice modal, install.
+    """Interactive ``/update`` flow: refresh, show the 3-choice modal, install.
 
     In-shell safe — unlike ``prompt_pre_start_update`` it does not block on raw
     ``input`` or raise ``typer.Exit``; it returns the result so the caller can
@@ -442,8 +452,17 @@ async def run_update_prompt() -> UpdateResult | None:
     """
     from pythinker_code.constant import VERSION as current_version
 
-    latest_version = await _resolve_latest_version_for_prompt(force_refresh=True)
-    if not latest_version or semver_tuple(latest_version) <= semver_tuple(current_version):
+    refresh_result = await do_update(print=True, check_only=True)
+    if refresh_result is UpdateResult.UP_TO_DATE:
+        return UpdateResult.UP_TO_DATE
+    if refresh_result is UpdateResult.FAILED:
+        return UpdateResult.FAILED
+
+    latest_version = _read_latest_version_cache()
+    if not latest_version:
+        console.print(f"[{_get_tui_tokens().error}]Failed to check for updates.[/]")
+        return UpdateResult.FAILED
+    if semver_tuple(latest_version) <= semver_tuple(current_version):
         console.print(f"[{_get_tui_tokens().success}]Already up to date.[/]")
         return UpdateResult.UP_TO_DATE
 
@@ -504,6 +523,122 @@ def _update_prompt_text(current_version: str, latest_version: str) -> Text:
         (update_method, "bold"),
         ("\n", ""),
     )
+
+
+def _is_homebrew_upgrade_command(command: list[str]) -> bool:
+    return len(command) >= 3 and command[:2] == ["brew", "upgrade"]
+
+
+def _native_update_asset_name(version: str) -> str | None:
+    linux_package_kind = _installed_linux_package_kind()
+    if _is_windows():
+        return native_installer_asset_name(version)
+    if linux_package_kind is not None:
+        return _linux_package_asset_name(version, linux_package_kind)
+    return native_archive_asset_name(version)
+
+
+async def _release_has_asset_pair(
+    session: aiohttp.ClientSession, version: str, asset_name: str
+) -> bool:
+    url = native_installer_release_url(channel=f"v{version}")
+    try:
+        async with session.get(url, headers={"Accept": "application/vnd.github+json"}) as resp:
+            if resp.status != 200:
+                logger.warning(
+                    "GitHub release asset readiness check returned {status}", status=resp.status
+                )
+                return False
+            payload = await resp.json(content_type=None)
+    except Exception:
+        logger.exception("Failed to check GitHub release asset readiness:")
+        return False
+
+    if not isinstance(payload, Mapping):
+        return False
+    payload_map = cast(Mapping[str, object], payload)
+    assets = payload_map.get("assets")
+    if not isinstance(assets, list):
+        return False
+    assets_list = cast(list[object], assets)
+    names: set[str] = set()
+    for asset_obj in assets_list:
+        if not isinstance(asset_obj, Mapping):
+            continue
+        asset = cast(Mapping[str, object], asset_obj)
+        name = asset.get("name")
+        if isinstance(name, str):
+            names.add(name)
+    return asset_name in names and f"{asset_name}.sha256" in names
+
+
+async def _pypi_version_available(session: aiohttp.ClientSession, version: str) -> bool:
+    try:
+        async with session.get(
+            PYPI_VERSION_URL.format(version=version),
+            headers={"Accept": "application/json"},
+        ) as resp:
+            if resp.status == 200:
+                return True
+            if resp.status == 404:
+                return False
+            logger.warning("PyPI version readiness check returned {status}", status=resp.status)
+            return False
+    except Exception:
+        logger.exception("Failed to check PyPI version readiness:")
+        return False
+
+
+async def _homebrew_formula_version_available(session: aiohttp.ClientSession, version: str) -> bool:
+    try:
+        async with session.get(HOMEBREW_FORMULA_URL) as resp:
+            if resp.status != 200:
+                logger.warning(
+                    "Homebrew formula readiness check returned {status}", status=resp.status
+                )
+                return False
+            formula = await resp.text()
+    except Exception:
+        logger.exception("Failed to check Homebrew formula readiness:")
+        return False
+    return f'version "{version}"' in formula
+
+
+async def _update_candidate_unavailable_reason(
+    session: aiohttp.ClientSession, latest_version: str, upgrade_command: list[str]
+) -> str | None:
+    """Return a user-facing reason when the latest release cannot be installed yet.
+
+    The GitHub Release is created before every downstream channel necessarily
+    finishes publishing. Without these readiness gates, startup can advertise a
+    version whose native asset, Homebrew formula, or PyPI wheel is still in
+    flight; `/update` then either fails or exits 0 without changing anything.
+    """
+    if upgrade_command == [NATIVE_INSTALLER_MARKER]:
+        asset_name = _native_update_asset_name(latest_version)
+        if asset_name is None:
+            return "No native updater asset is published for this platform."
+        if not await _release_has_asset_pair(session, latest_version, asset_name):
+            return (
+                f"Pythinker {latest_version} is released, but {asset_name} is still "
+                "publishing. Try /update again in a few minutes."
+            )
+        return None
+
+    if _is_homebrew_upgrade_command(upgrade_command):
+        if not await _homebrew_formula_version_available(session, latest_version):
+            return (
+                f"Pythinker {latest_version} is released, but the Homebrew formula is still "
+                "publishing. Try /update again in a few minutes."
+            )
+        return None
+
+    if not await _pypi_version_available(session, latest_version):
+        return (
+            f"Pythinker {latest_version} is released, but the PyPI package is still "
+            "publishing. Try /update again in a few minutes."
+        )
+    return None
 
 
 async def _fetch_native_release_asset(
@@ -788,9 +923,11 @@ def _with_sudo(command: list[str]) -> list[str] | None:
 
 def _linux_package_install_command(asset: Path, package_kind: str) -> list[str] | None:
     if package_kind == "deb":
-        if which("dpkg") is None:
-            return None
-        return _with_sudo(["dpkg", "-i", str(asset)])
+        if which("apt-get") is not None:
+            return _with_sudo(["apt-get", "install", "-y", str(asset)])
+        if which("dpkg") is not None:
+            return _with_sudo(["dpkg", "-i", str(asset)])
+        return None
     if package_kind == "rpm":
         if which("dnf") is not None:
             return _with_sudo(["dnf", "install", "-y", str(asset)])
@@ -835,6 +972,9 @@ def _install_native_archive(archive: Path) -> UpdateResult:
         shutil.copyfile(extracted, replacement)
         replacement.chmod(target.stat().st_mode | 0o755)
         os.replace(replacement, target)
+        (target.parent / ".pythinker-native").write_text(
+            "pythinker-native-build\n", encoding="utf-8"
+        )
     except OSError:
         logger.exception("Failed to replace native executable:")
         with contextlib.suppress(OSError):
@@ -844,11 +984,7 @@ def _install_native_archive(archive: Path) -> UpdateResult:
 
 
 async def _maybe_run_native_update(latest_version: str, channel: str = "latest") -> UpdateResult:
-    """Native-build update path. Returns UPDATED on success; UPDATE_AVAILABLE if skipped."""
-    if _auto_update_disabled():
-        logger.info("PYTHINKER_CLI_NO_AUTO_UPDATE set; skipping native auto-update")
-        return UpdateResult.UPDATE_AVAILABLE
-
+    """Native-build update path for an explicit user-requested update."""
     import tempfile
 
     linux_package_kind = _installed_linux_package_kind()
@@ -924,16 +1060,37 @@ async def _do_update(*, print: bool, check_only: bool) -> UpdateResult:
             _print(f"[{_t.error}]Failed to check for updates.[/]")
             return UpdateResult.FAILED
 
-    logger.debug("Latest version: {latest_version}", latest_version=latest_version)
+        logger.debug("Latest version: {latest_version}", latest_version=latest_version)
+        if semver_tuple(current_version) >= semver_tuple(latest_version):
+            try:
+                LATEST_VERSION_FILE.write_text(latest_version, encoding="utf-8")
+            except OSError:
+                logger.exception("Failed to cache latest version:")
+            logger.debug("Already up to date: {current_version}", current_version=current_version)
+            _print(f"[{_t.success}]Already up to date.[/]")
+            return UpdateResult.UP_TO_DATE
+
+        upgrade_command = _detect_upgrade_command()
+        unavailable_reason = await _update_candidate_unavailable_reason(
+            session, latest_version, upgrade_command
+        )
+        if unavailable_reason:
+            logger.info(
+                "Latest version is not installable yet: {reason}", reason=unavailable_reason
+            )
+            # The latest GitHub Release can appear before channel-specific
+            # assets/formulae/PyPI files are live. Do not cache that version;
+            # otherwise the background notifier will keep advertising an
+            # update that cannot be installed yet.
+            _clear_latest_version_cache()
+            _clear_cached_etag()
+            _print(f"[{_t.warning}]{unavailable_reason}[/]")
+            return UpdateResult.FAILED
+
     try:
         LATEST_VERSION_FILE.write_text(latest_version, encoding="utf-8")
     except OSError:
         logger.exception("Failed to cache latest version:")
-
-    if semver_tuple(current_version) >= semver_tuple(latest_version):
-        logger.debug("Already up to date: {current_version}", current_version=current_version)
-        _print(f"[{_t.success}]Already up to date.[/]")
-        return UpdateResult.UP_TO_DATE
 
     if check_only:
         logger.info(
@@ -944,7 +1101,6 @@ async def _do_update(*, print: bool, check_only: bool) -> UpdateResult:
         _print(f"[{_t.warning}]Update available: {current_version} → {latest_version}[/]")
         return UpdateResult.UPDATE_AVAILABLE
 
-    upgrade_command = _detect_upgrade_command()
     is_native_update = upgrade_command == [NATIVE_INSTALLER_MARKER]
     upgrade_command_text = (
         "native installer" if is_native_update else _format_upgrade_command(upgrade_command)

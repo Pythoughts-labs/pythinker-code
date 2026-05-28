@@ -25,12 +25,37 @@ def test_detect_upgrade_command_pypi_path_when_not_native():
 
 
 @pytest.mark.asyncio
-async def test_native_update_skipped_when_auto_disabled(monkeypatch):
+async def test_native_update_runs_when_proactive_checks_are_disabled(monkeypatch):
     monkeypatch.setenv("PYTHINKER_CLI_NO_AUTO_UPDATE", "1")
-    with patch("pythinker_code.ui.shell.update._run_native_installer") as run_native:
-        result = await upd._maybe_run_native_update(latest_version="9.9.9")
-    run_native.assert_not_called()
-    assert result is upd.UpdateResult.UPDATE_AVAILABLE
+    installed: list[str] = []
+
+    async def fake_fetch(session, asset_name: str, channel: str):
+        return "https://example.invalid/asset", "a" * 64
+
+    async def fake_download(session, asset_name: str, download_url: str, destination):
+        destination.write_bytes(b"archive")
+        return upd.UpdateResult.UPDATED
+
+    def fake_install_native_archive(asset) -> upd.UpdateResult:
+        installed.append(asset.name)
+        return upd.UpdateResult.UPDATED
+
+    monkeypatch.setattr(upd, "_is_windows", lambda: False)
+    monkeypatch.setattr(upd, "_installed_linux_package_kind", lambda: None)
+    monkeypatch.setattr(
+        upd,
+        "native_archive_asset_name",
+        lambda version: f"pythinker-{version}.tar.gz",
+    )
+    monkeypatch.setattr(upd, "_fetch_native_release_asset", fake_fetch)
+    monkeypatch.setattr(upd, "_download_native_asset", fake_download)
+    monkeypatch.setattr(upd, "_verify_sha256", lambda path, expected: True)
+    monkeypatch.setattr(upd, "_install_native_archive", fake_install_native_archive)
+
+    result = await upd._maybe_run_native_update(latest_version="9.9.9")
+
+    assert result is upd.UpdateResult.UPDATED
+    assert installed == ["pythinker-9.9.9.tar.gz"]
 
 
 def test_native_prompt_does_not_leak_marker(monkeypatch):
@@ -59,3 +84,6 @@ def test_install_native_archive_replaces_current_executable(monkeypatch, tmp_pat
     assert upd._install_native_archive(archive) is upd.UpdateResult.UPDATED
     assert current.read_text(encoding="utf-8") == "new"
     assert current.stat().st_mode & 0o111
+    assert (tmp_path / ".pythinker-native").read_text(encoding="utf-8") == (
+        "pythinker-native-build\n"
+    )

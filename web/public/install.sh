@@ -256,5 +256,5 @@ case ":$PATH:" in
     ;;
 esac
 
-printf '\n  %s%spythinker%s is ready. Run %s%spythinker%s to start.\n\n' \
+printf '\n  %s%spythinker%s is ready. Run %s%spythinker%s to launch.\n\n' \
   "$BOLD" "$IRIS" "$RESET" "$BOLD" "$IRIS" "$RESET"

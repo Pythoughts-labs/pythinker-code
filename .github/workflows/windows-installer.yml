@@ -92,11 +92,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          # The existing release-pythinker-cli.yml workflow also runs on this
-          # tag and uses softprops with `make_latest: true`. Both jobs are
-          # idempotent — whichever wins the race creates the Release, the
-          # other one just uploads its assets.
+          # All release workflows run on this tag and may race to create the
+          # Release. Keep make_latest=false: if this job wins the create race,
+          # softprops omits make_latest and GitHub would default a brand-new
+          # release to "latest" with only the Windows asset present, 404ing the
+          # curl installer's .tar.gz. dispatch-pythinker-home-sync.yml flips
+          # make_latest=true only after every platform's assets are attached.
           fail_on_unmatched_files: false
+          make_latest: "false"
           files: |
             dist/PythinkerSetup-*.exe
             dist/PythinkerSetup-*.exe.sha256

@@ -131,28 +131,24 @@ macOS's Gatekeeper security mechanism checks new programs on first run, causing 
 
 ### How to upgrade Pythinker Code
 
-Use uv to upgrade to the latest version:
+Run the built-in updater from any install method:
 
 ```sh
-uv tool upgrade pythinker-code --no-cache
+pythinker update
 ```
 
-Adding `--no-cache` ensures you get the latest version.
+Inside the interactive shell, use `/update`. Pythinker checks the matching channel for your install (native installer, Homebrew, or PyPI) before offering the update.
 
-### Update prompt on startup
+### Update notice on startup
 
-When a newer version is detected by the background check, Pythinker Code shows a blocking update prompt before the shell loads, displaying the current and latest version information. You can choose an action with the following keys:
-
-- `Enter`: Upgrade to the latest version immediately
-- `q`: Skip for now; you will be reminded on next startup
-- `s`: Skip this version and suppress future reminders (until a newer version is released)
+Startup is non-blocking. When a newer installable version is detected by the background check, Pythinker Code shows a short update notice in the shell; run `/update` when you are ready.
 
 ### How to disable update reminders
 
-If you don't want Pythinker Code to check for updates or show update prompts on startup, set the environment variable:
+If you don't want Pythinker Code to check for updates or show startup update notices, set the environment variable:
 
 ```sh
 export PYTHINKER_CLI_NO_AUTO_UPDATE=1
 ```
 
-This disables background update checks, the blocking update gate on startup, and the version hint in the welcome panel. You can add this line to your shell configuration file (like `~/.zshrc` or `~/.bashrc`).
+This disables background update checks and startup update notices. You can add this line to your shell configuration file (like `~/.zshrc` or `~/.bashrc`).

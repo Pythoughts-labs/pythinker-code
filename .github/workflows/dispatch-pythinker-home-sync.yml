@@ -17,7 +17,7 @@ jobs:
   dispatch:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       # When triggered by release: published, the linux-installer and
       # windows-installer workflows are still uploading .deb/.rpm/.exe assets
@@ -30,7 +30,17 @@ jobs:
           TAG: ${{ github.event.release.tag_name }}
           REPO: ${{ github.repository }}
         run: |
-          required=("PythinkerSetup-" "_amd64.deb" "_arm64.deb" ".x86_64.rpm" ".aarch64.rpm")
+          required=(
+            "PythinkerSetup-"
+            "_amd64.deb"
+            "_arm64.deb"
+            ".x86_64.rpm"
+            ".aarch64.rpm"
+            "x86_64-unknown-linux-gnu.tar.gz"
+            "aarch64-unknown-linux-gnu.tar.gz"
+            "aarch64-apple-darwin.tar.gz"
+            "x86_64-apple-darwin.tar.gz"
+          )
           echo "Polling for all release assets on $TAG..."
           all_present=false
           for i in $(seq 1 40); do
@@ -53,6 +63,18 @@ jobs:
             echo "::error::Release assets not fully uploaded after 20 minutes"
             exit 1
           fi
+
+      - name: Mark release latest after assets are ready
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          release_id=$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.id')
+          gh api -X PATCH "repos/$REPO/releases/$release_id" -f make_latest=true
+          echo "Marked $TAG as the latest release after all update assets were present."
 
       - name: Trigger pythinker-home sync
         env:

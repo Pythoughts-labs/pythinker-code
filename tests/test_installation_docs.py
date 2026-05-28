@@ -93,6 +93,7 @@ def test_native_curl_installer_shows_robot_logo() -> None:
     assert "print_logo_animated()" in installer
     assert "\nprint_logo\n\n# --- detect target" in installer
     assert "pythinker code" in installer
+    assert "is ready. Run %s%spythinker%s to launch." in installer
 
 
 def test_native_powershell_installer_shows_robot_logo() -> None:
@@ -102,6 +103,8 @@ def test_native_powershell_installer_shows_robot_logo() -> None:
     assert "function Write-LogoAnimated" in installer
     assert "function Write-Logo" in installer
     assert "pythinker code" in installer
+    assert "is ready. Open a fresh PowerShell and run" in installer
+    assert "to launch." in installer
 
 
 def test_native_powershell_installer_is_parseable_when_pwsh_is_available() -> None:

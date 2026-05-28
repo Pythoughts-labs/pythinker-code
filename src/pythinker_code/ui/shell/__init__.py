@@ -54,7 +54,6 @@ from pythinker_code.ui.shell.slash import SKILL_COMMAND_PREFIX, shell_mode_regis
 from pythinker_code.ui.shell.slash import registry as shell_slash_registry
 from pythinker_code.ui.shell.update import (
     pending_update_notice,
-    prompt_pre_start_update,
     refresh_update_cache_if_due,
 )
 from pythinker_code.ui.shell.visualize import (
@@ -578,14 +577,9 @@ class Shell:
             finally:
                 self._cancel_background_tasks()
 
-        # Blocking pre-start update prompt. Must run before _auto_update so the
-        # same upgrade isn't shown as both a blocking menu and a background
-        # toast; if the user picks "Skip this session" the toast is suppressed
-        # by _skipped_version_this_session. May raise typer.Exit on "Update now"
-        # or "Exit" — that's the documented behavior.
-        await prompt_pre_start_update()
-
-        # Start auto-update background task if not disabled
+        # Start the update check in the background only. Startup must never be
+        # blocked by version polling; users get a cached toast and can run
+        # /update when they are ready.
         if get_env_bool("PYTHINKER_CLI_NO_AUTO_UPDATE"):
             logger.info("Auto-update disabled by PYTHINKER_CLI_NO_AUTO_UPDATE environment variable")
         else:

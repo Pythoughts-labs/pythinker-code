@@ -362,7 +362,7 @@ async def test_refresh_cache_does_not_throttle_on_exception(monkeypatch, tmp_pat
 
 
 class _FakeJsonResponse:
-    """Minimal aiohttp.ClientResponse stand-in for _get_latest_version tests."""
+    """Minimal aiohttp.ClientResponse stand-in for update-check tests."""
 
     def __init__(
         self,
@@ -370,9 +370,11 @@ class _FakeJsonResponse:
         status: int,
         json_data: object | None = None,
         etag: str | None = None,
+        text_data: str = "",
     ) -> None:
         self.status = status
         self._json = json_data
+        self._text = text_data
         self.headers: dict[str, str] = {}
         if etag is not None:
             self.headers["ETag"] = etag
@@ -390,6 +392,9 @@ class _FakeJsonResponse:
     async def json(self, *, content_type=None) -> object:
         return self._json
 
+    async def text(self) -> str:
+        return self._text
+
 
 class _FakeSession:
     def __init__(self, response: _FakeJsonResponse) -> None:
@@ -399,6 +404,113 @@ class _FakeSession:
     def get(self, url: str, *, headers=None):
         self.captured_headers = headers or {}
         return self._response
+
+
+class _FakeSessionContext:
+    def __init__(self, session: object) -> None:
+        self.session = session
+
+    async def __aenter__(self) -> object:
+        return self.session
+
+    async def __aexit__(self, *_exc) -> None:
+        return None
+
+
+@pytest.mark.asyncio
+async def test_update_candidate_waits_for_native_asset_pair(monkeypatch):
+    response = _FakeJsonResponse(
+        status=200,
+        json_data={"assets": [{"name": "pythinker-9.0.0-x86_64-unknown-linux-gnu.tar.gz"}]},
+    )
+    session = _FakeSession(response)
+
+    monkeypatch.setattr(
+        update,
+        "_native_update_asset_name",
+        lambda version: "pythinker-9.0.0-x86_64-unknown-linux-gnu.tar.gz",
+    )
+
+    reason = await update._update_candidate_unavailable_reason(
+        session,  # type: ignore[arg-type]
+        "9.0.0",
+        [update.NATIVE_INSTALLER_MARKER],
+    )
+
+    assert reason is not None
+    assert "still publishing" in reason
+    assert "pythinker-9.0.0-x86_64-unknown-linux-gnu.tar.gz" in reason
+
+
+@pytest.mark.asyncio
+async def test_update_candidate_accepts_ready_native_asset_pair(monkeypatch):
+    asset = "pythinker-9.0.0-x86_64-unknown-linux-gnu.tar.gz"
+    response = _FakeJsonResponse(
+        status=200,
+        json_data={"assets": [{"name": asset}, {"name": f"{asset}.sha256"}]},
+    )
+    session = _FakeSession(response)
+
+    monkeypatch.setattr(update, "_native_update_asset_name", lambda version: asset)
+
+    assert (
+        await update._update_candidate_unavailable_reason(
+            session,  # type: ignore[arg-type]
+            "9.0.0",
+            [update.NATIVE_INSTALLER_MARKER],
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_candidate_waits_for_homebrew_formula_version():
+    response = _FakeJsonResponse(
+        status=200,
+        text_data='class PythinkerCode\n  version "8.0.0"\nend',
+    )
+    session = _FakeSession(response)
+
+    reason = await update._update_candidate_unavailable_reason(
+        session,  # type: ignore[arg-type]
+        "9.0.0",
+        ["brew", "upgrade", "pythinker-code"],
+    )
+
+    assert reason is not None
+    assert "Homebrew formula is still publishing" in reason
+
+
+@pytest.mark.asyncio
+async def test_do_update_does_not_cache_uninstallable_latest(monkeypatch, tmp_path):
+    latest_file = tmp_path / "latest.txt"
+    latest_file.write_text("8.0.0", encoding="utf-8")
+    etag_file = tmp_path / "etag"
+    etag_file.write_text('W/"unready"', encoding="utf-8")
+
+    async def fake_get_latest(session) -> str:
+        return "9.0.0"
+
+    async def fake_unavailable(session, latest_version: str, upgrade_command: list[str]) -> str:
+        assert latest_version == "9.0.0"
+        return "Pythinker 9.0.0 is still publishing."
+
+    monkeypatch.setattr(update, "LATEST_VERSION_FILE", latest_file)
+    monkeypatch.setattr(update, "LATEST_VERSION_ETAG_FILE", etag_file)
+    monkeypatch.setattr(update, "_get_latest_version", fake_get_latest)
+    monkeypatch.setattr(
+        update,
+        "_detect_upgrade_command",
+        lambda: ["uv", "tool", "upgrade", "pythinker-code"],
+    )
+    monkeypatch.setattr(update, "_update_candidate_unavailable_reason", fake_unavailable)
+    monkeypatch.setattr(update, "new_client_session", lambda timeout: _FakeSessionContext(object()))
+
+    result = await update.do_update(print=False, check_only=True)
+
+    assert result is update.UpdateResult.FAILED
+    assert not latest_file.exists()
+    assert not etag_file.exists()
 
 
 @pytest.mark.asyncio
@@ -507,8 +619,12 @@ async def test_do_update_on_windows_spawns_detached_and_exits(monkeypatch, tmp_p
     async def fake_get_latest(session):
         return "999.0.0"
 
+    async def fake_unavailable(session, latest_version: str, upgrade_command: list[str]):
+        return None
+
     monkeypatch.setattr(update, "LATEST_VERSION_FILE", tmp_path / "latest.txt")
     monkeypatch.setattr(update, "_get_latest_version", fake_get_latest)
+    monkeypatch.setattr(update, "_update_candidate_unavailable_reason", fake_unavailable)
     monkeypatch.setattr(update, "_is_windows", lambda: True)
 
     def fake_spawn(cmd: list[str]) -> bool:
@@ -548,8 +664,12 @@ async def test_do_update_uses_native_installer_marker(monkeypatch, tmp_path):
     def fake_run(*args, **kwargs):
         raise AssertionError("native updates must not invoke uv/pip subprocesses")
 
+    async def fake_unavailable(session, latest_version: str, upgrade_command: list[str]):
+        return None
+
     monkeypatch.setattr(update, "LATEST_VERSION_FILE", tmp_path / "latest.txt")
     monkeypatch.setattr(update, "_get_latest_version", fake_get_latest)
+    monkeypatch.setattr(update, "_update_candidate_unavailable_reason", fake_unavailable)
     monkeypatch.setattr(update, "_detect_upgrade_command", lambda: [update.NATIVE_INSTALLER_MARKER])
     monkeypatch.setattr(update, "_maybe_run_native_update", fake_native_update)
     monkeypatch.setattr(update.subprocess, "run", fake_run)
@@ -586,7 +706,19 @@ def test_linux_package_asset_names(monkeypatch):
     assert update._linux_package_asset_name("1.2.3", "rpm") == "pythinker-code-1.2.3.x86_64.rpm"
 
 
-def test_linux_package_install_command_prefers_sudo_for_deb(monkeypatch, tmp_path):
+def test_linux_package_install_command_prefers_apt_get_for_deb(monkeypatch, tmp_path):
+    def fake_which(name: str) -> str | None:
+        return f"/usr/bin/{name}" if name in {"apt-get", "dpkg", "sudo"} else None
+
+    monkeypatch.setattr(update, "which", fake_which)
+    monkeypatch.setattr(update.os, "geteuid", lambda: 1000, raising=False)
+
+    command = update._linux_package_install_command(tmp_path / "pkg.deb", "deb")
+
+    assert command == ["sudo", "apt-get", "install", "-y", str(tmp_path / "pkg.deb")]
+
+
+def test_linux_package_install_command_falls_back_to_dpkg_for_deb(monkeypatch, tmp_path):
     def fake_which(name: str) -> str | None:
         return f"/usr/bin/{name}" if name in {"dpkg", "sudo"} else None
 
