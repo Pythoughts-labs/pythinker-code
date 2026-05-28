@@ -42,4 +42,5 @@ datas = (
         "fastmcp",
         includes=["../fastmcp-*.dist-info/*"],
     )
+    + collect_data_files("trafilatura")
 )

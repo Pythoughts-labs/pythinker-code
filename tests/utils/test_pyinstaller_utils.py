@@ -61,6 +61,18 @@ def test_pyinstaller_datas():
             f"fastmcp/../{fastmcp_dist}/licenses",
         ),
         (
+            f"{site_packages}/trafilatura/data/tei_corpus.dtd",
+            "trafilatura/data",
+        ),
+        (
+            f"{site_packages}/trafilatura/py.typed",
+            "trafilatura",
+        ),
+        (
+            f"{site_packages}/trafilatura/settings.cfg",
+            "trafilatura",
+        ),
+        (
             "src/pythinker_code/CHANGELOG.md",
             "pythinker_code",
         ),
