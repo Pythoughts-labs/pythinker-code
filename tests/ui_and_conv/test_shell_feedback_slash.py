@@ -22,10 +22,6 @@ class TestFeedbackRegistration:
 
 
 class TestFeedbackOpensIssue:
-    def _run(self, fn, *args):
-        ret = fn(*args)
-        return ret  # sync now; no Awaitable
-
     def test_opens_new_issue_url(self, monkeypatch) -> None:
         open_mock = Mock(return_value=True)
         monkeypatch.setattr("webbrowser.open", open_mock)
