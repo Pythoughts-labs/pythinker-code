@@ -6,6 +6,7 @@ import signal
 import sys
 from collections.abc import Generator
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import Any
 
 import pytest
 
@@ -238,7 +239,12 @@ async def test_kill_signals_running_process(local_host: LocalHost, monkeypatch: 
     process = await local_host.exec(*_python_code_args("import time; time.sleep(30)"))
     assert process.returncode is None
 
-    real_killpg = local_module.os.killpg
+    # os.killpg / signal.SIGKILL are POSIX-only; this test is skipped on Windows
+    # but pyright still type-checks the body, so route them through Any holders
+    # to keep the strict host gate green on the win32 platform stubs.
+    os_any: Any = local_module.os
+    signal_any: Any = signal
+    real_killpg = os_any.killpg
     sent: list[int] = []
 
     def _record_killpg(pgid: int, sig: int) -> None:
@@ -250,4 +256,4 @@ async def test_kill_signals_running_process(local_host: LocalHost, monkeypatch: 
     await process.kill()
     await process.wait()
 
-    assert sent and sent[0] == signal.SIGKILL
+    assert sent and sent[0] == signal_any.SIGKILL
