@@ -15,6 +15,30 @@ def set_todo_list_tool(runtime: Runtime) -> SetTodoList:
     return SetTodoList(runtime)
 
 
+class TestParamsJsonStringCoercion:
+    """Regression: LLM occasionally passes todos as a JSON-encoded string instead of a list."""
+
+    def test_todos_as_json_string_is_parsed(self):
+        """Params must accept todos as a JSON string and coerce it to a list."""
+        import json
+
+        raw = json.dumps([{"title": "Explore agent", "status": "pending"}])
+        params = Params(todos=raw)  # type: ignore[arg-type]
+        assert params.todos is not None
+        assert len(params.todos) == 1
+        assert params.todos[0].title == "Explore agent"
+        assert params.todos[0].status == "pending"
+
+    def test_todos_as_normal_list_still_works(self):
+        params = Params(todos=[Todo(title="Normal task", status="done")])
+        assert params.todos is not None
+        assert params.todos[0].title == "Normal task"
+
+    def test_todos_none_still_works(self):
+        params = Params(todos=None)
+        assert params.todos is None
+
+
 class TestSetTodoListOutputNotEmpty:
     """Regression test for issue #1710: SetTodoList storm.
 

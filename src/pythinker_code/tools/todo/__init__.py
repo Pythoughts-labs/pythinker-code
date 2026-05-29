@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Any, Literal, cast, override
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pythinker_core.tooling import CallableTool2, ToolReturnValue
 
 from pythinker_code.session_state import TodoItemState
@@ -25,6 +25,17 @@ class Params(BaseModel):
             "If not provided, returns the current todo list without making changes."
         ),
     )
+
+    @field_validator("todos", mode="before")
+    @classmethod
+    def _parse_todos_string(cls, v: Any) -> Any:
+        # LLMs occasionally pass the list as a JSON-encoded string; parse it transparently.
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                pass
+        return v
 
 
 class SetTodoList(CallableTool2[Params]):
