@@ -17,6 +17,7 @@ Styling reuses the existing theme tokens (:func:`tui_rich_style`), so the
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Literal, cast, get_args
@@ -29,6 +30,8 @@ from rich.text import Text
 
 from pythinker_code.ui.shell.components.markdown import pythinker_markdown
 from pythinker_code.ui.theme import ThemeName, tui_rich_style
+
+_log = logging.getLogger(__name__)
 
 __all__ = [
     "Report",
@@ -170,7 +173,13 @@ def parse_report_block(payload: str) -> Report | None:
     """
     try:
         parsed = json.loads(payload)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as exc:
+        _log.debug(
+            "parse_report_block: JSON decode failed (type=%s len=%d)",
+            type(payload).__name__,
+            len(payload) if isinstance(payload, (str, bytes)) else -1,
+            exc_info=exc,
+        )
         return None
     if not isinstance(parsed, dict):
         return None

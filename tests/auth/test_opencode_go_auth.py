@@ -43,9 +43,7 @@ def test_opencode_go_model_catalog_contains_all_current_models():
     # Anthropic-shaped models (models.dev @ai-sdk/anthropic): both MiniMax and
     # all three Qwen models. Everything else is OpenAI-compatible.
     anthropic_ids = {
-        m.model_id
-        for m in OPENCODE_GO_MODELS
-        if m.provider_key == "managed:opencode-go-anthropic"
+        m.model_id for m in OPENCODE_GO_MODELS if m.provider_key == "managed:opencode-go-anthropic"
     }
     assert anthropic_ids == {
         "minimax-m2.5",

@@ -175,5 +175,7 @@ reviewr = "reviewr"
 fnd = "fnd"
 edn = "edn"
 Encrypter = "Encrypter"
+# Hex session IDs (e.g. 06ba6c38) contain "ba".
+ba = "ba"
 uest = "uest"
 

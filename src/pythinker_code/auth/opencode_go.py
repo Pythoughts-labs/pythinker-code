@@ -158,8 +158,10 @@ def _resolve_provider_key(
     Anthropic-shaped, which only models.dev (or the corrected catalog) knows.
     """
     if meta is not None and meta.is_anthropic is not None:
-        return OPENCODE_GO_ANTHROPIC_PROVIDER_KEY if meta.is_anthropic else (
-            OPENCODE_GO_OPENAI_PROVIDER_KEY
+        return (
+            OPENCODE_GO_ANTHROPIC_PROVIDER_KEY
+            if meta.is_anthropic
+            else (OPENCODE_GO_OPENAI_PROVIDER_KEY)
         )
     if catalog is not None:
         return catalog.provider_key
