@@ -46,6 +46,7 @@ def _render(
     is_error: bool = False,
     expanded: bool = False,
     width: int = 100,
+    details: dict | None = None,
 ) -> str:
     defn = get_tool_renderer(tool)
     assert defn is not None, f"renderer not registered for {tool!r}"
@@ -53,7 +54,7 @@ def _render(
     comp.update_args(args)
     comp.set_args_complete()
     comp.mark_execution_started()
-    comp.set_result(ToolResultPayload(text=output, is_error=is_error))
+    comp.set_result(ToolResultPayload(text=output, is_error=is_error, details=details or {}))
     comp.set_expanded(expanded)
     return render_plain(comp.render(), width=width)
 
@@ -905,6 +906,43 @@ def test_search_counts_structured_result_blocks():
         ),
     )
     assert "Found 2 results" in rendered
+
+
+def test_search_shows_allowlist_filtered_indicator():
+    rendered = _render(
+        "SearchWeb",
+        {"query": "python"},
+        output="Title: One\nDate: \nURL: https://example.com/1\nSummary: A\n\n",
+        details={"extras": {"allowlist_filtered": 2}},
+    )
+    assert "Found 1 result" in rendered
+    assert "2 filtered to allowlist" in rendered
+
+
+def test_search_no_allowlist_indicator_when_not_filtered():
+    rendered = _render(
+        "SearchWeb",
+        {"query": "python"},
+        output="Title: One\nDate: \nURL: https://example.com/1\nSummary: A\n\n",
+    )
+    assert "filtered to allowlist" not in rendered
+
+
+def test_search_all_results_filtered_reports_zero():
+    # When every result is dropped by the allowlist, SearchWeb emits prose plus a
+    # structured returned_results=0 signal; the renderer must prefer that count
+    # instead of misreading the one-line prose as a single result.
+    rendered = _render(
+        "SearchWeb",
+        {"query": "python"},
+        output=(
+            "All 2 search result(s) were outside the configured web allowlist "
+            "and have been omitted."
+        ),
+        details={"extras": {"allowlist_filtered": 2, "returned_results": 0}},
+    )
+    assert "Found 0 results" in rendered
+    assert "2 filtered to allowlist" in rendered
 
 
 # ---------------------------------------------------------------------------

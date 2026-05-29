@@ -76,6 +76,11 @@ _PRIORITY_MATRIX_ROW_RE = re.compile(
 )
 _PRIORITY_MATRIX_SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
 _TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$")
+# A GFM table delimiter run, e.g. ``|---|:--:|---|``. Two or more dashes per
+# cell keeps stray inline ``|-|`` out of the match.
+_DELIM_RUN_RE = re.compile(r"\|(?:\s*:?-{2,}:?\s*\|)+")
+# A header line: optional prose prefix, then a trailing run of pipe cells.
+_HEADER_RE = re.compile(r"^(?P<prefix>.*?)(?P<cells>(?:\|[^\n|]*)+\|)\s*$")
 
 
 __all__ = [
@@ -344,6 +349,168 @@ def _simplify_markdown_report_icons(markup: str) -> str:
     return "".join(lines)
 
 
+def _split_pipe_cells(segment: str) -> list[str]:
+    """Split a ``| a | b |`` run into stripped inner cells (drops the frame)."""
+    parts = re.split(r"(?<!\\)\|", segment)
+    if parts and parts[0].strip() == "":
+        parts = parts[1:]
+    if parts and parts[-1].strip() == "":
+        parts = parts[:-1]
+    return [part.strip() for part in parts]
+
+
+def _is_pipe_row(line: str) -> bool:
+    stripped = line.strip()
+    return stripped.startswith("|") and stripped.count("|") >= 2
+
+
+def _delimiter_markers(run: str) -> list[str]:
+    """Return per-column alignment markers (``---``, ``:---``, ``---:``, ``:---:``)."""
+    markers: list[str] = []
+    for cell in _split_pipe_cells(run):
+        left = cell.startswith(":")
+        right = cell.endswith(":")
+        if left and right:
+            markers.append(":---:")
+        elif right:
+            markers.append("---:")
+        elif left:
+            markers.append(":---")
+        else:
+            markers.append("---")
+    return markers
+
+
+def _normalize_table_block(text: str) -> str:
+    """Repair malformed GFM tables in a fence-free block of markdown.
+
+    Models occasionally glue a table header onto preceding prose, drop the
+    newline between the header and the ``|---|`` delimiter, or cram data rows
+    onto the delimiter line — markdown-it then renders the whole thing as raw
+    text. Anchored on the delimiter run, this rebuilds each region it is
+    *confident* is a table (delimiter at line start, header and data cell counts
+    both equal to the delimiter's column count) and passes everything else
+    through untouched. Well-formed tables are rebuilt to identical-rendering
+    markdown, so the pass is safe to apply unconditionally.
+    """
+    out = ""
+    while True:
+        match = _DELIM_RUN_RE.search(text)
+        if match is None:
+            return out + text
+        markers = _delimiter_markers(match.group(0))
+        n_cols = len(markers)
+        head = text[: match.start()]
+        tail = text[match.end() :]
+
+        # The delimiter must start its own line — guards against inline ``|-|``.
+        # Any leading whitespace is the table's indentation (e.g. nested under a
+        # list item); preserve it when re-emitting so we never promote an
+        # indented table to top level.
+        indent = head[head.rfind("\n") + 1 :]
+        if n_cols < 2 or indent.strip() != "":
+            out += text[: match.end()]
+            text = tail
+            continue
+
+        head_lines = head.split("\n")
+        while head_lines and head_lines[-1] == "":
+            head_lines.pop()
+        header_match = _HEADER_RE.match(head_lines[-1]) if head_lines else None
+        header_cells = _split_pipe_cells(header_match.group("cells")) if header_match else []
+        if header_match is None or len(header_cells) != n_cols:
+            out += text[: match.end()]
+            text = tail
+            continue
+
+        # Data rows: the same-line remainder after the delimiter plus any
+        # following pipe rows, re-chunked into rows of ``n_cols`` cells.
+        tail_lines = tail.split("\n")
+        data_segments = [tail_lines[0]] if tail_lines[0].strip() else []
+        consumed = 1
+        for line in tail_lines[1:]:
+            if _is_pipe_row(line):
+                data_segments.append(line)
+                consumed += 1
+            else:
+                break
+        data_rows: list[list[str]] = []
+        bail = False
+        for segment in data_segments:
+            cells = _split_pipe_cells(segment)
+            if not cells:
+                continue
+            if len(cells) % n_cols != 0:
+                bail = True  # ambiguous (e.g. glued rows with empty cells) — leave as-is
+                break
+            for i in range(0, len(cells), n_cols):
+                data_rows.append(cells[i : i + n_cols])
+        if bail:
+            out += text[: match.end()]
+            text = tail
+            continue
+
+        preamble = head_lines[:-1]
+        prose = header_match.group("prefix").rstrip()
+        if preamble:
+            out += "\n".join(preamble) + "\n"
+        if prose:
+            out += prose + "\n"
+        # A GFM table must be preceded by a blank line (it cannot interrupt a
+        # paragraph), so ensure one before emitting the header.
+        if out and not out.endswith("\n\n"):
+            out += "\n" if out.endswith("\n") else "\n\n"
+        out += f"{indent}| " + " | ".join(header_cells) + " |\n"
+        out += f"{indent}| " + " | ".join(markers) + " |\n"
+        for row in data_rows:
+            out += f"{indent}| " + " | ".join(row) + " |\n"
+
+        remainder = "\n".join(tail_lines[consumed:])
+        if not remainder.strip():
+            return out
+        text = remainder if remainder.startswith("\n") else "\n" + remainder
+
+
+def _normalize_markdown_tables(markup: str) -> str:
+    """Apply :func:`_normalize_table_block` to every fence-free span of markup."""
+    if "|" not in markup or "-" not in markup:
+        return markup
+
+    out: list[str] = []
+    buffer: list[str] = []
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+
+    def flush() -> None:
+        if buffer:
+            out.append(_normalize_table_block("\n".join(buffer)))
+            buffer.clear()
+
+    for line in markup.splitlines():
+        match = _FENCE_RE.match(line)
+        if in_fence:
+            fence = match.group("fence") if match else ""
+            if fence and fence[0] == fence_char and len(fence) >= fence_len:
+                in_fence = False
+            out.append(line)
+            continue
+        if match:
+            flush()
+            in_fence = True
+            fence_char = match.group("fence")[0]
+            fence_len = len(match.group("fence"))
+            out.append(line)
+            continue
+        buffer.append(line)
+    flush()
+
+    result = "\n".join(out)
+    if markup.endswith("\n") and not result.endswith("\n"):
+        result += "\n"
+    return result
+
+
 class PythinkerMarkdown(Markdown):
     """Drop-in replacement for ``rich.markdown.Markdown`` with the Pythinker palette.
 
@@ -358,7 +525,8 @@ class PythinkerMarkdown(Markdown):
     def __init__(self, markup: str, *args: Any, **kwargs: Any) -> None:
         safe_markup = sanitize_ansi(markup)
         repaired_markup = _repair_crammed_markdown_tables(safe_markup)
-        super().__init__(_simplify_markdown_report_icons(repaired_markup), *args, **kwargs)
+        normalized_markup = _normalize_markdown_tables(repaired_markup)
+        super().__init__(_simplify_markdown_report_icons(normalized_markup), *args, **kwargs)
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         overrides = _markdown_style_overrides()

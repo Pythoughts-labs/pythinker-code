@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from rich.console import Group, RenderableType
 from rich.text import Text
 
@@ -173,6 +175,24 @@ def _search_result_count(text: str) -> int:
     return len([line for line in text.splitlines() if line.strip()])
 
 
+def _allowlist_filtered_count(result: ToolResultPayload) -> int:
+    """Number of search results dropped by the domain allowlist, if any."""
+    extras_raw = result.details.get("extras")
+    extras = cast("dict[str, object]", extras_raw) if isinstance(extras_raw, dict) else {}
+    value = extras.get("allowlist_filtered")
+    if isinstance(value, int) and value > 0:
+        return value
+    return 0
+
+
+def _explicit_result_count(result: ToolResultPayload) -> int | None:
+    """The tool's own result count, if it emitted one (preferred over text)."""
+    extras_raw = result.details.get("extras")
+    extras = cast("dict[str, object]", extras_raw) if isinstance(extras_raw, dict) else {}
+    value = extras.get("returned_results")
+    return value if isinstance(value, int) and value >= 0 else None
+
+
 def _render_search_result(
     ctx: ToolRenderContext, result: ToolResultPayload
 ) -> RenderableType | None:
@@ -191,11 +211,14 @@ def _render_search_result(
             return Group(body, fg("muted", f"... ({remaining} more lines, ctrl+o to expand)"))
         return body
 
-    count = _search_result_count(result.text)
+    explicit = _explicit_result_count(result)
+    count = explicit if explicit is not None else _search_result_count(result.text)
     summary = Text()
     summary.append("Found ", style=tui_rich_style("tool_output"))
     summary.append(str(count), style=tui_rich_style("tool_title"))
     summary.append(f" {_plural(count, 'result')}", style=tui_rich_style("tool_output"))
+    if filtered := _allowlist_filtered_count(result):
+        summary.append(f" · {filtered} filtered to allowlist", style=tui_rich_style("muted"))
     ctx.state["__suppress_generic_expand_hint__"] = True
     if count and not ctx.expanded:
         summary.append(" ")

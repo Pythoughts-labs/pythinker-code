@@ -55,6 +55,24 @@ def test_system_prompt_contains_platform_info(builtin_args: BuiltinSystemPromptA
     assert builtin_args.PYTHINKER_SHELL in prompt
 
 
+def test_system_prompt_treats_injected_date_as_authoritative(
+    builtin_args: BuiltinSystemPromptArgs,
+):
+    """The injected date must be framed as authoritative so the model anchors
+    its sense of 'now' to it instead of a training-era year."""
+    from pythinker_code.agentspec import DEFAULT_AGENT_FILE
+
+    prompt = _load_system_prompt(
+        DEFAULT_AGENT_FILE.parent / "system.md",
+        {"ROLE_ADDITIONAL": ""},
+        builtin_args,
+    )
+
+    assert builtin_args.PYTHINKER_NOW in prompt
+    assert "authoritative present" in prompt
+    assert "do not fall back on an earlier year" in prompt
+
+
 def test_system_prompt_enforces_context_first_orchestration(
     builtin_args: BuiltinSystemPromptArgs,
 ):
@@ -72,6 +90,27 @@ def test_system_prompt_enforces_context_first_orchestration(
     assert "Minimum context packet before codebase judgment" in prompt
     assert "Plan from evidence" in prompt
     assert "Treat subagent claims as leads, not proof" in prompt
+
+
+def test_system_prompt_includes_markdown_table_formatting_guidance(
+    builtin_args: BuiltinSystemPromptArgs,
+):
+    """Default prompt must reach the model with table-formatting rules so it
+    stops emitting headers glued to prose (which render as raw text)."""
+    from pythinker_code.agentspec import DEFAULT_AGENT_FILE
+
+    prompt = _load_system_prompt(
+        DEFAULT_AGENT_FILE.parent / "system.md",
+        {"ROLE_ADDITIONAL": ""},
+        builtin_args,
+    )
+
+    assert "# Output Formatting" in prompt
+    assert "glue a table onto adjacent prose" in prompt
+    # Reports must not be wrapped in code fences (that is what preserves raw
+    # emoji and breaks column alignment), and status icons should be sparing.
+    assert "Code fences are for code only" in prompt
+    assert "Status icons sparingly" in prompt
 
 
 def test_default_subagent_prompts_keep_robust_contracts():

@@ -467,3 +467,43 @@ PyPI 1.0.0 of pythinker-cli stays published forever. Anyone who installed it bef
 4. **Migration text in README**: Do you want a "migrating from pythinker-cli" callout in 1.1.0's README, or just silently switch?
 
 5. **CHANGELOG framing**: Is this a breaking change that warrants 2.0.0, or a layout change that's fine at 1.1.0? PyPI users perspective: install command changed, that's user-visible breakage. Could argue 2.0.0.
+
+---
+
+# Web fetch/search domain allowlist (2026-05-27)
+
+Port of the one genuinely portable concept from pythinker-x's web search
+(`allowed_domains`) onto our self-hosted FetchURL/SearchWeb tools. Design spec:
+`docs/superpowers/specs/2026-05-27-web-allowed-domains-design.md`.
+
+- [x] `WebConfig.allowed_domains` config (+ field validator rejecting URLs/paths/host:port)
+- [x] `host_in_allowlist` helper (label-aware subdomain match, unrestricted when empty)
+- [x] FetchURL: reject out-of-allowlist hosts in `_validate_fetch_url` (no request made)
+- [x] SearchWeb: post-filter results, surface dropped count via `extras`
+- [x] TUI: muted "· N filtered to allowlist" indicator on the search result header
+- [x] Tests: helper, config validation, fetch rejection, search filter, renderer indicator
+- [x] Docs: `docs/en/configuration/config-files.md` `web` section + example
+
+## Review
+- All affected suites green (tools/core/ui = 2517 passed earlier; affected subset 100 passed).
+- ruff + ruff format clean; pyright clean on all changed files. The 8 pre-existing
+  pyright errors live in `cli/mcp.py` and `soul/toolset.py` (untouched, baseline).
+- Dropped from scope (cosmetic/redundant in our architecture): action taxonomy relabel,
+  disabled/cached/live mode gating. See design doc "Out of scope".
+
+## Out of scope (observed, not changed)
+- Pre-existing pyright errors in `cli/mcp.py`, `soul/toolset.py`.
+
+## Review follow-up (2026-05-27) — context7-validated hardening
+Reviewed the allowlist against context7 (aiohttp v3.13.2, pydantic v2) + 2026 agent-tool practice.
+- [x] HIGH: redirect bypass — `fetch_with_http_get` now sets `allow_redirects=False` and follows
+      redirects manually (max 5), re-validating each hop via `_validate_fetch_url` (allowlist +
+      SSRF). Closes a pre-existing SSRF gap the allowlist had inherited. Tests: follows validated
+      redirect, blocks redirect to disallowed host (never contacted), rejects redirect loop.
+- [x] LOW: `fetch.md` / `search.md` now state the allowlist constraint to the model.
+- [x] LOW: `WebConfig` validator now rejects empty/whitespace-only entries (was silently unrestricted).
+- Confirmed-good (context7): pydantic validator matches docs exactly; `extras` TUI channel;
+  fail-closed on unparsable hosts; allowlist-before-DNS ordering.
+- Known/accepted limitation (pre-existing, not addressed): DNS-rebinding TOCTOU — `_validate_fetch_url`
+  resolves+checks IPs but aiohttp re-resolves at connect time. Out of scope; would need a pinning connector.
+- Snapshots updated: `test_default_config_dump`, `test_fetch_url_description`, `test_search_web_description`.

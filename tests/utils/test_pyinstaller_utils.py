@@ -284,6 +284,7 @@ def test_pyinstaller_hiddenimports():
             "pythinker_code.tools.todo",
             "pythinker_code.tools.utils",
             "pythinker_code.tools.web",
+            "pythinker_code.tools.web._allowlist",
             "pythinker_code.tools.web.fetch",
             "pythinker_code.tools.web.search",
             "setproctitle",

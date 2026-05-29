@@ -15,6 +15,7 @@ from pythinker_code.execution_profiles import resolve_execution_policy
 from pythinker_code.soul.agent import Runtime
 from pythinker_code.soul.toolset import get_current_tool_call_or_none
 from pythinker_code.tools.utils import ToolResultBuilder, load_desc
+from pythinker_code.tools.web._allowlist import host_in_allowlist
 from pythinker_code.utils.aiohttp import new_client_session
 from pythinker_code.utils.logging import logger
 
@@ -23,12 +24,15 @@ MAX_FETCH_REDIRECTS = 10  # matches aiohttp's default redirect cap
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
-def _validate_fetch_url(url: str) -> str | None:
+def _validate_fetch_url(url: str, allowed_domains: list[str] | None = None) -> str | None:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
         return "Only http and https URLs are supported."
     if not parsed.hostname:
         return "URL must include a host."
+
+    if not host_in_allowlist(parsed.hostname, allowed_domains):
+        return "URL host is not in the configured web allowlist."
 
     try:
         infos = socket.getaddrinfo(parsed.hostname, parsed.port, type=socket.SOCK_STREAM)
@@ -76,7 +80,10 @@ class _FetchBlocked(Exception):
 
 
 async def _get_revalidating_redirects(
-    session: aiohttp.ClientSession, url: str, headers: dict[str, str]
+    session: aiohttp.ClientSession,
+    url: str,
+    headers: dict[str, str],
+    allowed_domains: list[str] | None = None,
 ) -> aiohttp.ClientResponse:
     """GET ``url``, following redirects manually and re-validating every hop.
 
@@ -84,15 +91,18 @@ async def _get_revalidating_redirects(
     a public URL that 30x-redirects to a private/link-local address (e.g. a cloud
     metadata endpoint at 169.254.169.254) would otherwise sail past
     ``_validate_fetch_url``. We disable automatic redirects and validate each
-    ``Location`` before following it.
+    ``Location`` against both the SSRF guard and the configured domain allowlist
+    before following it.
 
     Returns the final, open, non-redirect response (the caller owns closing it).
     Raises ``_FetchBlocked`` if any hop is blocked or the redirect limit is hit.
     """
     current = url
-    for _ in range(MAX_FETCH_REDIRECTS + 1):
-        if reason := _validate_fetch_url(current):
-            raise _FetchBlocked(reason)
+    for hop in range(MAX_FETCH_REDIRECTS + 1):
+        if reason := _validate_fetch_url(current, allowed_domains):
+            if hop == 0:
+                raise _FetchBlocked(reason)
+            raise _FetchBlocked(f"redirect to a disallowed location: {reason}")
         response = await session.get(current, headers=headers, allow_redirects=False)
         location = response.headers.get(aiohttp.hdrs.LOCATION)
         if response.status in _REDIRECT_STATUSES and location:
@@ -116,6 +126,7 @@ class FetchURL(CallableTool2[Params]):
         super().__init__()
         self._runtime = runtime
         self._service_config = config.services.pythinker_ai_fetch
+        self._allowed_domains = config.web.allowed_domains
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
@@ -134,11 +145,18 @@ class FetchURL(CallableTool2[Params]):
                 return ret
             logger.warning("Failed to fetch URL via service: {error}", error=ret.message)
             # fallback to local fetch if service fetch fails
-        return await self.fetch_with_http_get(params)
+        return await self.fetch_with_http_get(params, self._allowed_domains)
 
     @staticmethod
-    async def fetch_with_http_get(params: Params) -> ToolReturnValue:
+    async def fetch_with_http_get(
+        params: Params, allowed_domains: list[str] | None = None
+    ) -> ToolReturnValue:
         builder = ToolResultBuilder(max_line_length=None)
+        # Validate the initial URL up front so a disallowed host is rejected
+        # before any network session is opened; the redirect helper below
+        # re-validates every subsequent hop.
+        if reason := _validate_fetch_url(params.url, allowed_domains):
+            return builder.error(f"Failed to fetch URL: {reason}", brief="URL blocked")
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -150,7 +168,9 @@ class FetchURL(CallableTool2[Params]):
             fetch_timeout = aiohttp.ClientTimeout(total=180, sock_read=60, sock_connect=15)
             async with new_client_session(timeout=fetch_timeout) as session:
                 try:
-                    response = await _get_revalidating_redirects(session, params.url, headers)
+                    response = await _get_revalidating_redirects(
+                        session, params.url, headers, allowed_domains
+                    )
                 except _FetchBlocked as blocked:
                     return builder.error(
                         f"Failed to fetch URL: {blocked.reason}", brief="URL blocked"
@@ -245,7 +265,7 @@ class FetchURL(CallableTool2[Params]):
                 "Fetch service is not configured. You may want to try other methods to fetch.",
                 brief="Fetch service not configured",
             )
-        if reason := _validate_fetch_url(params.url):
+        if reason := _validate_fetch_url(params.url, self._allowed_domains):
             return builder.error(f"Failed to fetch URL: {reason}", brief="URL blocked")
 
         headers = {

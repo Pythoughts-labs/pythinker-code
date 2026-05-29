@@ -68,6 +68,7 @@ def test_default_config_dump():
                 "journal_recaps": False,
                 "consolidation": False,
             },
+            "web": {"allowed_domains": None},
             "feedback": {
                 "endpoint_url": "",
                 "api_key": None,
