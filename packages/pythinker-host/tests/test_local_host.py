@@ -231,9 +231,7 @@ async def test_kill_skips_signal_after_process_exit(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signal path")
-async def test_kill_signals_running_process(
-    local_host: LocalHost, monkeypatch: pytest.MonkeyPatch
-):
+async def test_kill_signals_running_process(local_host: LocalHost, monkeypatch: pytest.MonkeyPatch):
     """A still-running process is killed via its process group."""
     import pythinker_host.local as local_module
 
