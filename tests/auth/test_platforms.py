@@ -584,3 +584,161 @@ async def test_refresh_managed_models_skips_lm_studio_and_ollama(monkeypatch):
     assert config.models["lm-studio/qwen"].max_context_size == 262144
     assert config.models["lm-studio/qwen"].display_name == "qwen3 (Q4_K_M)"
     assert config.models["ollama/llama3.1:8b"].max_context_size == 131072
+
+
+def _make_opencode_go_config() -> Config:
+    """A config with OpenCode Go configured but a stale model list: Qwen on the
+    wrong (OpenAI) provider and no qwen3.7-max, as written by an older binary."""
+    from pythinker_code.auth.opencode_go import (
+        OPENCODE_GO_ANTHROPIC_BASE_URL,
+        OPENCODE_GO_ANTHROPIC_PROVIDER_KEY,
+        OPENCODE_GO_BASE_URL,
+        OPENCODE_GO_OPENAI_PROVIDER_KEY,
+    )
+
+    config = Config(
+        default_model="opencode-go/kimi-k2.6",
+        default_thinking=True,
+        providers={
+            OPENCODE_GO_OPENAI_PROVIDER_KEY: LLMProvider(
+                type="openai_legacy",
+                base_url=OPENCODE_GO_BASE_URL,
+                api_key=SecretStr("ocgo-test"),
+            ),
+            OPENCODE_GO_ANTHROPIC_PROVIDER_KEY: LLMProvider(
+                type="anthropic",
+                base_url=OPENCODE_GO_ANTHROPIC_BASE_URL,
+                api_key=SecretStr("ocgo-test"),
+            ),
+        },
+        models={
+            "opencode-go/kimi-k2.6": LLMModel(
+                provider=OPENCODE_GO_OPENAI_PROVIDER_KEY,
+                model="kimi-k2.6",
+                max_context_size=262_000,
+            ),
+            "opencode-go/qwen3.5-plus": LLMModel(
+                provider=OPENCODE_GO_OPENAI_PROVIDER_KEY,
+                model="qwen3.5-plus",
+                max_context_size=262_000,
+            ),
+        },
+        services=Services(),
+    )
+    config.is_from_default_location = True
+    return config
+
+
+@pytest.mark.asyncio
+async def test_refresh_managed_models_refreshes_opencode_go_without_relogin():
+    """The every-startup refresh must update OpenCode Go's two-provider catalog
+    via its own discovery — surfacing new models (qwen3.7-max) and correcting
+    Qwen's shape — without a manual re-login and without resetting user prefs."""
+    from pythinker_code.auth.opencode_go import (
+        OPENCODE_GO_ANTHROPIC_PROVIDER_KEY,
+        OPENCODE_GO_OPENAI_PROVIDER_KEY,
+        OpenCodeGoModel,
+    )
+
+    config = _make_opencode_go_config()
+    discovered = (
+        OpenCodeGoModel("kimi-k2.6", "Kimi K2.6", OPENCODE_GO_OPENAI_PROVIDER_KEY, 262_000),
+        OpenCodeGoModel(
+            "qwen3.5-plus", "Qwen3.5 Plus", OPENCODE_GO_ANTHROPIC_PROVIDER_KEY, 262_000
+        ),
+        OpenCodeGoModel(
+            "qwen3.7-max", "Qwen3.7 Max", OPENCODE_GO_ANTHROPIC_PROVIDER_KEY, 1_000_000
+        ),
+    )
+    saved: list[Config] = []
+
+    with (
+        patch(
+            "pythinker_code.auth.opencode_go._discover_opencode_go_models",
+            new=AsyncMock(return_value=discovered),
+        ),
+        patch("pythinker_code.auth.platforms.list_models", new=AsyncMock()) as list_models_mock,
+        patch(
+            "pythinker_code.auth.platforms.load_config",
+            return_value=_make_opencode_go_config(),
+        ),
+        patch(
+            "pythinker_code.auth.platforms.save_config",
+            side_effect=lambda cfg, *a, **k: saved.append(cfg),
+        ),
+    ):
+        changed = await refresh_managed_models(config)
+
+    assert changed is True
+    # OpenCode Go must not be routed through the generic single-provider path.
+    assert list_models_mock.await_count == 0
+    # New model now selectable on the Anthropic-shaped provider, no re-login.
+    assert config.models["opencode-go/qwen3.7-max"].provider == OPENCODE_GO_ANTHROPIC_PROVIDER_KEY
+    # Existing Qwen's shape corrected OpenAI → Anthropic.
+    assert config.models["opencode-go/qwen3.5-plus"].provider == OPENCODE_GO_ANTHROPIC_PROVIDER_KEY
+    # User preferences preserved across the refresh.
+    assert config.default_model == "opencode-go/kimi-k2.6"
+    assert config.default_thinking is True
+    # Persisted to disk for subsequent launches.
+    assert len(saved) == 1
+    assert "opencode-go/qwen3.7-max" in saved[0].models
+
+
+@pytest.mark.asyncio
+async def test_refresh_managed_models_isolates_opencode_go_discovery_failure():
+    """An OpenCode Go discovery failure must not abort other providers' refresh
+    or mangle the saved OpenCode Go list."""
+    from pythinker_code.auth.opencode_go import OPENCODE_GO_OPENAI_PROVIDER_KEY
+
+    def _config_with_generic_provider() -> Config:
+        cfg = _make_opencode_go_config()
+        cfg.providers["managed:pythinker-code"] = LLMProvider(
+            type="pythinker", base_url="https://api.test/v1", api_key=SecretStr("k")
+        )
+        cfg.models["pythinker-code/pythinker-for-coding"] = LLMModel(
+            provider="managed:pythinker-code",
+            model="pythinker-for-coding",
+            max_context_size=100_000,
+        )
+        return cfg
+
+    config = _config_with_generic_provider()
+    generic_models = [
+        ModelInfo(
+            id="pythinker-for-coding",
+            context_length=200_000,  # differs from saved 100_000 → real update
+            supports_reasoning=False,
+            supports_image_in=False,
+            supports_video_in=False,
+            display_name=None,
+        )
+    ]
+    saved: list[Config] = []
+
+    with (
+        patch(
+            "pythinker_code.auth.opencode_go._discover_opencode_go_models",
+            new=AsyncMock(side_effect=aiohttp.ClientConnectionError("offline")),
+        ),
+        patch(
+            "pythinker_code.auth.platforms.list_models",
+            new=AsyncMock(return_value=generic_models),
+        ),
+        patch(
+            "pythinker_code.auth.platforms.load_config",
+            side_effect=_config_with_generic_provider,
+        ),
+        patch(
+            "pythinker_code.auth.platforms.save_config",
+            side_effect=lambda cfg, *a, **k: saved.append(cfg),
+        ),
+    ):
+        changed = await refresh_managed_models(config)
+
+    # The generic provider's refresh still succeeds and persists.
+    assert changed is True
+    assert len(saved) == 1
+    assert saved[0].models["pythinker-code/pythinker-for-coding"].max_context_size == 200_000
+    # OpenCode Go list is left exactly as-is (not wiped, not half-applied).
+    assert "opencode-go/qwen3.7-max" not in config.models
+    assert config.models["opencode-go/qwen3.5-plus"].provider == OPENCODE_GO_OPENAI_PROVIDER_KEY

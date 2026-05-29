@@ -6,7 +6,7 @@ from multidict import CIMultiDict, CIMultiDictProxy
 from pydantic import SecretStr
 from yarl import URL
 
-from pythinker_code.config import Config
+from pythinker_code.config import Config, LLMModel, LLMProvider
 
 
 def _request_info(url: str) -> aiohttp.RequestInfo:
@@ -446,3 +446,157 @@ async def test_logout_opencode_go_rejects_non_default_config_location():
     # No mutation must have occurred.
     assert config.providers == {}
     assert config.models == {}
+
+
+# ── refresh-on-update: apply_opencode_go_models / refresh_opencode_go_models ──
+
+
+def _stale_opencode_go_config() -> Config:
+    """A config resembling an OpenCode Go login from an older binary: Qwen on the
+    wrong (OpenAI) provider, no qwen3.7-max, kimi as the default, and the user's
+    own thinking preference set to True."""
+    from pythinker_code.auth.opencode_go import (
+        OPENCODE_GO_OPENAI_PROVIDER_KEY,
+        OpenCodeGoModel,
+        _apply_opencode_go_config,
+    )
+
+    stale_models = (
+        OpenCodeGoModel("kimi-k2.6", "Kimi K2.6", OPENCODE_GO_OPENAI_PROVIDER_KEY),
+        # Pre-fix login put Qwen on the OpenAI-shaped provider.
+        OpenCodeGoModel("qwen3.5-plus", "Qwen3.5 Plus", OPENCODE_GO_OPENAI_PROVIDER_KEY, 262_000),
+    )
+    config = Config(is_from_default_location=True)
+    _apply_opencode_go_config(config, SecretStr("ocgo-test"), models=stale_models)
+    # User's own preferences that a refresh must not clobber.
+    config.default_model = "opencode-go/kimi-k2.6"
+    config.default_thinking = True
+    return config
+
+
+def test_apply_opencode_go_models_adds_new_and_corrects_shape_preserving_user_prefs():
+    from pythinker_code.auth.opencode_go import (
+        OPENCODE_GO_ANTHROPIC_PROVIDER_KEY,
+        OPENCODE_GO_OPENAI_PROVIDER_KEY,
+        OpenCodeGoModel,
+        apply_opencode_go_models,
+    )
+
+    config = _stale_opencode_go_config()
+    assert "opencode-go/qwen3.7-max" not in config.models
+
+    discovered = (
+        OpenCodeGoModel("kimi-k2.6", "Kimi K2.6", OPENCODE_GO_OPENAI_PROVIDER_KEY),
+        OpenCodeGoModel(
+            "qwen3.5-plus", "Qwen3.5 Plus", OPENCODE_GO_ANTHROPIC_PROVIDER_KEY, 262_000
+        ),
+        OpenCodeGoModel(
+            "qwen3.7-max", "Qwen3.7 Max", OPENCODE_GO_ANTHROPIC_PROVIDER_KEY, 1_000_000
+        ),
+    )
+
+    changed = apply_opencode_go_models(config, discovered)
+
+    assert changed is True
+    # New model now present on the Anthropic-shaped provider.
+    assert config.models["opencode-go/qwen3.7-max"].provider == OPENCODE_GO_ANTHROPIC_PROVIDER_KEY
+    assert config.models["opencode-go/qwen3.7-max"].max_context_size == 1_000_000
+    # Existing Qwen corrected from OpenAI → Anthropic shape.
+    assert config.models["opencode-go/qwen3.5-plus"].provider == OPENCODE_GO_ANTHROPIC_PROVIDER_KEY
+    # User preferences untouched.
+    assert config.default_model == "opencode-go/kimi-k2.6"
+    assert config.default_thinking is True
+
+
+def test_apply_opencode_go_models_prunes_stale_only_and_reassigns_default_when_removed():
+    from pythinker_code.auth.opencode_go import (
+        OPENCODE_GO_ANTHROPIC_PROVIDER_KEY,
+        OPENCODE_GO_OPENAI_PROVIDER_KEY,
+        OpenCodeGoModel,
+        apply_opencode_go_models,
+    )
+
+    config = _stale_opencode_go_config()
+    # A non-OpenCode-Go model the refresh must never touch.
+    config.providers["managed:other"] = LLMProvider(
+        type="openai_legacy", base_url="https://x/v1", api_key=SecretStr("k")
+    )
+    config.models["other/keep-me"] = LLMModel(
+        provider="managed:other", model="keep-me", max_context_size=100_000
+    )
+    # Default points at a model that discovery will no longer return.
+    config.default_model = "opencode-go/qwen3.5-plus"
+
+    discovered = (
+        OpenCodeGoModel("kimi-k2.6", "Kimi K2.6", OPENCODE_GO_OPENAI_PROVIDER_KEY),
+        OpenCodeGoModel(
+            "qwen3.7-max", "Qwen3.7 Max", OPENCODE_GO_ANTHROPIC_PROVIDER_KEY, 1_000_000
+        ),
+    )
+
+    changed = apply_opencode_go_models(config, discovered)
+
+    assert changed is True
+    # Stale OpenCode Go model pruned.
+    assert "opencode-go/qwen3.5-plus" not in config.models
+    # Unrelated provider's model preserved.
+    assert "other/keep-me" in config.models
+    # Default was pruned → reassigned to a still-present OpenCode Go model.
+    assert config.default_model in {"opencode-go/kimi-k2.6", "opencode-go/qwen3.7-max"}
+
+
+def test_apply_opencode_go_models_no_change_returns_false():
+    from pythinker_code.auth.opencode_go import (
+        OPENCODE_GO_ANTHROPIC_PROVIDER_KEY,
+        OPENCODE_GO_OPENAI_PROVIDER_KEY,
+        OpenCodeGoModel,
+        apply_opencode_go_models,
+    )
+
+    config = Config(is_from_default_location=True)
+    from pythinker_code.auth.opencode_go import _apply_opencode_go_config
+
+    current = (
+        OpenCodeGoModel("kimi-k2.6", "Kimi K2.6", OPENCODE_GO_OPENAI_PROVIDER_KEY),
+        OpenCodeGoModel(
+            "qwen3.7-max", "Qwen3.7 Max", OPENCODE_GO_ANTHROPIC_PROVIDER_KEY, 1_000_000
+        ),
+    )
+    _apply_opencode_go_config(config, SecretStr("ocgo-test"), models=current)
+
+    # Applying the identical discovered set is a no-op.
+    assert apply_opencode_go_models(config, current) is False
+
+
+@pytest.mark.asyncio
+async def test_refresh_opencode_go_models_returns_none_when_not_configured():
+    from pythinker_code.auth.opencode_go import refresh_opencode_go_models
+
+    config = Config(is_from_default_location=True)
+    assert await refresh_opencode_go_models(config) is None
+
+
+@pytest.mark.asyncio
+async def test_refresh_opencode_go_models_discovers_using_saved_key(monkeypatch):
+    from pythinker_code.auth.opencode_go import (
+        OPENCODE_GO_OPENAI_PROVIDER_KEY,
+        OpenCodeGoModel,
+        refresh_opencode_go_models,
+    )
+
+    config = _stale_opencode_go_config()
+    seen_keys: list[str] = []
+
+    async def fake_discover(api_key):
+        seen_keys.append(api_key)
+        return (OpenCodeGoModel("kimi-k2.6", "Kimi K2.6", OPENCODE_GO_OPENAI_PROVIDER_KEY),)
+
+    monkeypatch.setattr(
+        "pythinker_code.auth.opencode_go._discover_opencode_go_models", fake_discover
+    )
+
+    result = await refresh_opencode_go_models(config)
+
+    assert seen_keys == ["ocgo-test"]
+    assert result is not None
+    assert result[0].model_id == "kimi-k2.6"

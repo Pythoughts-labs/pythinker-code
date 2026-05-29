@@ -21,6 +21,10 @@ OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1"
 OPENCODE_GO_ANTHROPIC_BASE_URL = "https://opencode.ai/zen/go"
 OPENCODE_GO_OPENAI_PROVIDER_KEY = "managed:opencode-go-openai"
 OPENCODE_GO_ANTHROPIC_PROVIDER_KEY = "managed:opencode-go-anthropic"
+OPENCODE_GO_PROVIDER_KEYS = (
+    OPENCODE_GO_OPENAI_PROVIDER_KEY,
+    OPENCODE_GO_ANTHROPIC_PROVIDER_KEY,
+)
 OPENCODE_GO_DEFAULT_MODEL_ALIAS = "opencode-go/kimi-k2.6"
 OPENCODE_GO_DEFAULT_CONTEXT = 262_000
 
@@ -295,6 +299,94 @@ async def _discover_opencode_go_models(api_key: str) -> tuple[OpenCodeGoModel, .
     # catalog drifts. Falls back to the catalog when models.dev is unreachable.
     metadata = await _fetch_models_dev_metadata()
     return _build_models(model_ids, metadata)
+
+
+def _opencode_go_api_key(config: Config) -> str | None:
+    """The saved OpenCode Go key (both providers share it), or None if absent."""
+    for provider_key in OPENCODE_GO_PROVIDER_KEYS:
+        provider = config.providers.get(provider_key)
+        if provider is None:
+            continue
+        value = provider.api_key.get_secret_value().strip()
+        if value:
+            return value
+    return None
+
+
+def apply_opencode_go_models(config: Config, models: tuple[OpenCodeGoModel, ...]) -> bool:
+    """Upsert discovered OpenCode Go models and prune ones no longer offered,
+    across both shape providers.
+
+    Unlike ``_apply_opencode_go_config`` (the login path), this preserves the
+    user's ``default_model`` and ``default_thinking`` — it only reassigns the
+    default when the currently selected model was pruned. This mirrors
+    ``platforms._apply_models`` for the two-provider OpenCode Go split, so the
+    background refresh can keep the catalog current without resetting choices.
+
+    Returns True if ``config.models`` (or the default) changed.
+    """
+    changed = False
+    aliases: list[str] = []
+    for model in models:
+        alias = model.alias
+        aliases.append(alias)
+        existing = config.models.get(alias)
+        if existing is None:
+            config.models[alias] = LLMModel(
+                provider=model.provider_key,
+                model=model.model_id,
+                max_context_size=model.max_context_size,
+                display_name=model.display_name,
+            )
+            changed = True
+            continue
+        if existing.provider != model.provider_key:
+            existing.provider = model.provider_key
+            changed = True
+        if existing.model != model.model_id:
+            existing.model = model.model_id
+            changed = True
+        if existing.max_context_size != model.max_context_size:
+            existing.max_context_size = model.max_context_size
+            changed = True
+        if existing.display_name != model.display_name:
+            existing.display_name = model.display_name
+            changed = True
+
+    alias_set = set(aliases)
+    removed_default = False
+    for alias, model_cfg in list(config.models.items()):
+        if model_cfg.provider not in OPENCODE_GO_PROVIDER_KEYS:
+            continue
+        if alias in alias_set:
+            continue
+        del config.models[alias]
+        if config.default_model == alias:
+            removed_default = True
+        changed = True
+
+    if removed_default:
+        config.default_model = aliases[0] if aliases else next(iter(config.models), "")
+        changed = True
+    elif config.default_model and config.default_model not in config.models:
+        config.default_model = next(iter(config.models), "")
+        changed = True
+    return changed
+
+
+async def refresh_opencode_go_models(config: Config) -> tuple[OpenCodeGoModel, ...] | None:
+    """Re-discover the live OpenCode Go model list for the startup managed-model
+    refresh, reusing the saved API key.
+
+    Returns the discovered models to apply, or None when OpenCode Go isn't
+    configured or discovery yields nothing (so callers leave the saved list
+    untouched). Network/HTTP errors propagate to the caller.
+    """
+    api_key = _opencode_go_api_key(config)
+    if api_key is None:
+        return None
+    discovered = await _discover_opencode_go_models(api_key)
+    return discovered or None
 
 
 async def login_opencode_go_api_key(

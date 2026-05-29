@@ -212,6 +212,13 @@ async def refresh_managed_models(config: Config) -> bool:
     if not config.is_from_default_location:
         return False
 
+    from pythinker_code.auth.opencode_go import (
+        OPENCODE_GO_PROVIDER_KEYS,
+        OpenCodeGoModel,
+        apply_opencode_go_models,
+        refresh_opencode_go_models,
+    )
+
     managed_providers = {
         key: provider for key, provider in config.providers.items() if is_managed_provider_key(key)
     }
@@ -222,6 +229,11 @@ async def refresh_managed_models(config: Config) -> bool:
     updates: list[tuple[str, str, list[ModelInfo]]] = []
     oauth_manager = None
     for provider_key, provider in managed_providers.items():
+        # OpenCode Go uses a two-shape (OpenAI- + Anthropic-compatible) provider
+        # split that the generic single-provider path below can't express, so it
+        # is refreshed via its own discovery after this loop.
+        if provider_key in OPENCODE_GO_PROVIDER_KEYS:
+            continue
         platform_id = parse_managed_provider_key(provider_key)
         if not platform_id:
             continue
@@ -341,12 +353,22 @@ async def refresh_managed_models(config: Config) -> bool:
         if _apply_models(config, provider_key, platform_id, models):
             changed = True
 
+    opencode_go_models: tuple[OpenCodeGoModel, ...] | None = None
+    try:
+        opencode_go_models = await refresh_opencode_go_models(config)
+    except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+        logger.warning("Failed to refresh OpenCode Go models: {error}", error=exc)
+    if opencode_go_models and apply_opencode_go_models(config, opencode_go_models):
+        changed = True
+
     if changed:
         config_for_save = load_config()
         save_changed = False
         for provider_key, platform_id, models in updates:
             if _apply_models(config_for_save, provider_key, platform_id, models):
                 save_changed = True
+        if opencode_go_models and apply_opencode_go_models(config_for_save, opencode_go_models):
+            save_changed = True
         if save_changed:
             save_config(config_for_save)
     return changed
