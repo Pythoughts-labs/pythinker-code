@@ -503,7 +503,7 @@ Reviewed the allowlist against context7 (aiohttp v3.13.2, pydantic v2) + 2026 ag
 - [x] LOW: `fetch.md` / `search.md` now state the allowlist constraint to the model.
 - [x] LOW: `WebConfig` validator now rejects empty/whitespace-only entries (was silently unrestricted).
 - Confirmed-good (context7): pydantic validator matches docs exactly; `extras` TUI channel;
-  fail-closed on unparseable hosts; allowlist-before-DNS ordering.
+  fail-closed on unparsable hosts; allowlist-before-DNS ordering.
 - Known/accepted limitation (pre-existing, not addressed): DNS-rebinding TOCTOU — `_validate_fetch_url`
   resolves+checks IPs but aiohttp re-resolves at connect time. Out of scope; would need a pinning connector.
 - Snapshots updated: `test_default_config_dump`, `test_fetch_url_description`, `test_search_web_description`.
