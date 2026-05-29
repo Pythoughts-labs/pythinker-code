@@ -523,14 +523,49 @@ def _session_marker(session_id: str) -> str:
     return f"<!-- pythinker-session:{_clean_event_text(session_id, max_len=80)} -->"
 
 
+# Label keys that carry a single current value (latest wins). Everything else
+# (e.g. ``kind``) accumulates as a unique-value set: multiple kinds in one
+# session is meaningful recall signal, two ``source`` values is just noise.
+_SINGLE_VALUED_LABEL_KEYS = frozenset({"session", "workspace", "ui", "source", "scope"})
+
+
+def _label_key(label: str) -> str:
+    return label.split(":", 1)[0]
+
+
+def _collapse_labels(labels: Sequence[str]) -> list[str]:
+    """Dedup labels by key, preserving first-seen key order.
+
+    Single-valued keys keep their latest value; multi-valued keys keep all
+    unique values. Prevents duplicate-key noise like ``source:startup |
+    source:resume`` while retaining a meaningful ``kind:todo | kind:agent``.
+    """
+    order: list[str] = []
+    single: dict[str, str] = {}
+    multi: dict[str, list[str]] = {}
+    for label in labels:
+        key = _label_key(label)
+        if key not in order:
+            order.append(key)
+        if key in _SINGLE_VALUED_LABEL_KEYS:
+            single[key] = label
+        else:
+            bucket = multi.setdefault(key, [])
+            if label not in bucket:
+                bucket.append(label)
+    result: list[str] = []
+    for key in order:
+        if key in single:
+            result.append(single[key])
+        else:
+            result.extend(multi[key])
+    return result
+
+
 def _normalize_labels(labels: Sequence[object] | None, *, short_id: str) -> list[str]:
     raw = (f"session:{short_id}", *(labels or ()))
-    result: list[str] = []
-    for label in raw:
-        clean = _clean_event_text(label, max_len=80)
-        if clean and clean not in result:
-            result.append(clean)
-    return result
+    clean = [c for c in (_clean_event_text(label, max_len=80) for label in raw) if c]
+    return _collapse_labels(clean)
 
 
 def _merge_session_labels(existing: str, marker: str, labels: Sequence[str]) -> str:
@@ -545,10 +580,7 @@ def _merge_session_labels(existing: str, marker: str, labels: Sequence[str]) -> 
     if label_index < len(lines) and lines[label_index].startswith("labels:"):
         current = [part.strip() for part in lines[label_index][len("labels:") :].split("|")]
         current = [part for part in current if part]
-    merged = list(current)
-    for label in labels:
-        if label not in merged:
-            merged.append(label)
+    merged = _collapse_labels([*current, *labels])
     label_line = f"labels: {' | '.join(merged)}"
     if label_index < len(lines) and lines[label_index].startswith("labels:"):
         lines[label_index] = label_line
@@ -556,6 +588,20 @@ def _merge_session_labels(existing: str, marker: str, labels: Sequence[str]) -> 
         lines.insert(label_index, label_line)
     trailing_newline = "\n" if existing.endswith("\n") else ""
     return "\n".join(lines) + trailing_newline
+
+
+def _session_block_text(text: str, marker: str) -> str:
+    """Return the lines belonging to one session block (marker → next session)."""
+    lines = text.splitlines()
+    start = next((i for i, line in enumerate(lines) if line.strip() == marker), -1)
+    if start == -1:
+        return ""
+    end = len(lines)
+    for j in range(start + 1, len(lines)):
+        if lines[j].startswith("## Session "):
+            end = j
+            break
+    return "\n".join(lines[start:end])
 
 
 def _cap_scratch_text(text: str) -> str:
@@ -655,7 +701,9 @@ def _append_scratch_event_to_file(
     title: str,
     details: Sequence[object] | None = None,
     labels: Sequence[object] | None = None,
-) -> None:
+    dedup_signature: str | None = None,
+) -> bool:
+    """Append one milestone. Returns ``True`` if written, ``False`` if deduped."""
     try:
         with path.open("r+", encoding="utf-8") as fh, _scratch_file_lock(fh):
             fh.seek(0)
@@ -681,6 +729,11 @@ def _append_scratch_event_to_file(
                         fh.write(merged_existing)
                         fh.truncate()
                         existing = merged_existing
+                    # Idempotency guard: if this exact milestone already exists in
+                    # the session block (e.g. a duplicate "session start" from a
+                    # relaunch), keep any merged labels but skip the event line.
+                    if dedup_signature and dedup_signature in _session_block_text(existing, marker):
+                        return False
 
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
             clean_title = _clean_event_text(title, max_len=_MAX_EVENT_TITLE)
@@ -697,6 +750,7 @@ def _append_scratch_event_to_file(
             fh.seek(0)
             fh.write(capped_text)
             fh.truncate()
+            return True
     except OSError as exc:
         if is_transient_oserror(exc):
             raise TransientScratchpadError(str(exc)) from exc
@@ -712,8 +766,14 @@ def append_scratch_event_sync(
     session_id: str | None = None,
     session_title: str | None = None,
     create: bool = False,
+    dedup_signature: str | None = None,
 ) -> ScratchpadAppendResult:
-    """Append one compact milestone to a local scratchpad. Never raises."""
+    """Append one compact milestone to a local scratchpad. Never raises.
+
+    When *dedup_signature* is given and already present in the session block,
+    the milestone is suppressed (idempotent) and the result reason is
+    ``"deduped"`` instead of ``"appended"``.
+    """
     if not _is_local_host():
         return ScratchpadAppendResult(False, "remote_host")
     path = session_scratch_path(
@@ -740,14 +800,15 @@ def append_scratch_event_sync(
                 fh.write(_DEFAULT_SCRATCHPAD_FILE)
         if not path.is_file():
             return ScratchpadAppendResult(False, "not_a_file")
-        _append_scratch_event_to_file(
+        appended = _append_scratch_event_to_file(
             path,
             session_id=session_id,
             title=title,
             details=details,
             labels=labels,
+            dedup_signature=dedup_signature,
         )
-        return ScratchpadAppendResult(True, "appended")
+        return ScratchpadAppendResult(appended, "appended" if appended else "deduped")
     except FileExistsError:
         return append_scratch_event_sync(
             work_dir,
@@ -756,6 +817,7 @@ def append_scratch_event_sync(
             labels=labels,
             session_id=session_id,
             session_title=session_title,
+            dedup_signature=dedup_signature,
             create=False,
         )
     except TransientScratchpadError:

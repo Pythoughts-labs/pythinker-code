@@ -39,6 +39,7 @@ agent:
     Use this agent for read-only code review after changes are made or when the parent needs severity-scored findings before deciding what to fix.
   allowed_tools:
     - "pythinker_code.tools.shell:Shell"
+    - "pythinker_code.tools.todo:SetTodoList"
     - "pythinker_code.tools.file:ReadFile"
     - "pythinker_code.tools.file:ReadMediaFile"
     - "pythinker_code.tools.file:Glob"
@@ -50,7 +51,6 @@ agent:
   exclude_tools:
     - "pythinker_code.tools.agent:Agent"
     - "pythinker_code.tools.ask_user:AskUserQuestion"
-    - "pythinker_code.tools.todo:SetTodoList"
     - "pythinker_code.tools.plan:ExitPlanMode"
     - "pythinker_code.tools.plan.enter:EnterPlanMode"
     - "pythinker_code.tools.file:WriteFile"

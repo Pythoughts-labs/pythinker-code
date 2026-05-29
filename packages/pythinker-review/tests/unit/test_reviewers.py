@@ -88,6 +88,48 @@ async def test_security_review_retries_once_on_malformed_then_succeeds() -> None
 
 
 @pytest.mark.asyncio
+async def test_retry_prompt_surfaces_previous_validation_error() -> None:
+    # The retry must relay the concrete parser error so the model can
+    # self-correct, not just repeat a generic "reply with valid JSON".
+    llm = FakeReviewLLM(scripted=["not valid json at all", '{"findings": []}'])
+    result = await run_code_review_pass(chunk=_chunk(), llm=llm, timeout_s=10.0)
+    assert result.ok
+    assert len(llm.calls) == 2
+    retry_prompt = llm.calls[1][1]
+    assert "Validation error from your previous attempt" in retry_prompt
+    assert retry_prompt != llm.calls[0][1]
+
+
+@pytest.mark.asyncio
+async def test_overlong_title_is_truncated_not_dropped() -> None:
+    # A single finding with an over-long title used to fail the whole chunk.
+    # It must now survive (truncated) rather than discard sibling findings.
+    payload = json.dumps(
+        {
+            "findings": [
+                {
+                    "rule_id": "review.x",
+                    "title": "T" * 200,
+                    "rationale": "...",
+                    "category": "correctness",
+                    "severity": "low",
+                    "file": "x.py",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "confidence": 0.6,
+                }
+            ]
+        }
+    )
+    llm = FakeReviewLLM(scripted=[payload])
+    result = await run_code_review_pass(chunk=_chunk(), llm=llm, timeout_s=10.0)
+    assert result.ok
+    assert len(result.findings) == 1
+    assert len(result.findings[0].title) == 80
+    assert len(llm.calls) == 1  # parsed on the first attempt, no retry needed
+
+
+@pytest.mark.asyncio
 async def test_reviewer_accepts_json_inside_markdown_fence() -> None:
     llm = FakeReviewLLM(scripted=['```json\n{"findings": []}\n```'])
     result = await run_code_review_pass(chunk=_chunk(), llm=llm, timeout_s=10.0)

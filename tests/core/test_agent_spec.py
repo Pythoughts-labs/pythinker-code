@@ -133,6 +133,7 @@ Bullet list of anything that stopped completion, or `None.`.
     assert subagent_specs["coder"].allowed_tools == snapshot(
         [
             "pythinker_code.tools.shell:Shell",
+            "pythinker_code.tools.todo:SetTodoList",
             "pythinker_code.tools.file:ReadFile",
             "pythinker_code.tools.file:ReadMediaFile",
             "pythinker_code.tools.file:Glob",
@@ -148,7 +149,6 @@ Bullet list of anything that stopped completion, or `None.`.
         [
             "pythinker_code.tools.agent:Agent",
             "pythinker_code.tools.ask_user:AskUserQuestion",
-            "pythinker_code.tools.todo:SetTodoList",
             "pythinker_code.tools.plan:ExitPlanMode",
             "pythinker_code.tools.plan.enter:EnterPlanMode",
         ]
@@ -245,6 +245,7 @@ Bullet list of missing context/capabilities or `None.`.
     assert subagent_specs["explore"].allowed_tools == snapshot(
         [
             "pythinker_code.tools.shell:Shell",
+            "pythinker_code.tools.todo:SetTodoList",
             "pythinker_code.tools.file:ReadFile",
             "pythinker_code.tools.file:ReadMediaFile",
             "pythinker_code.tools.file:Glob",
@@ -259,7 +260,6 @@ Bullet list of missing context/capabilities or `None.`.
         [
             "pythinker_code.tools.agent:Agent",
             "pythinker_code.tools.ask_user:AskUserQuestion",
-            "pythinker_code.tools.todo:SetTodoList",
             "pythinker_code.tools.plan:ExitPlanMode",
             "pythinker_code.tools.plan.enter:EnterPlanMode",
             "pythinker_code.tools.file:WriteFile",
@@ -359,6 +359,7 @@ Bullet list of questions that must be answered before execution, or `None.`.
     assert subagent_specs["plan"].model == snapshot(None)
     assert subagent_specs["plan"].allowed_tools == snapshot(
         [
+            "pythinker_code.tools.todo:SetTodoList",
             "pythinker_code.tools.file:ReadFile",
             "pythinker_code.tools.file:ReadMediaFile",
             "pythinker_code.tools.file:Glob",
@@ -373,7 +374,6 @@ Bullet list of questions that must be answered before execution, or `None.`.
         [
             "pythinker_code.tools.agent:Agent",
             "pythinker_code.tools.ask_user:AskUserQuestion",
-            "pythinker_code.tools.todo:SetTodoList",
             "pythinker_code.tools.plan:ExitPlanMode",
             "pythinker_code.tools.plan.enter:EnterPlanMode",
             "pythinker_code.tools.shell:Shell",

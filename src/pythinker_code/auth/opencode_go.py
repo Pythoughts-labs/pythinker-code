@@ -13,10 +13,26 @@ from pythinker_code.auth.oauth import OAuthEvent
 from pythinker_code.config import Config, LLMModel, LLMProvider, save_config
 from pythinker_code.utils.aiohttp import new_client_session
 
+# OpenAI-compatible base: the OpenAI SDK appends "/chat/completions" (and the
+# "/models" discovery path), so it includes the "/v1" segment.
 OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1"
+# Anthropic-compatible base: the Anthropic SDK appends "/v1/messages" itself, so
+# this base must NOT include "/v1" or requests 404 at ".../go/v1/v1/messages".
+OPENCODE_GO_ANTHROPIC_BASE_URL = "https://opencode.ai/zen/go"
 OPENCODE_GO_OPENAI_PROVIDER_KEY = "managed:opencode-go-openai"
 OPENCODE_GO_ANTHROPIC_PROVIDER_KEY = "managed:opencode-go-anthropic"
 OPENCODE_GO_DEFAULT_MODEL_ALIAS = "opencode-go/kimi-k2.6"
+OPENCODE_GO_DEFAULT_CONTEXT = 262_000
+
+# models.dev is OpenCode's own source of truth for model metadata (context
+# window, display name). The Go /models endpoint returns ids only, so we
+# enrich ids not in the curated catalog below from this catalog.
+MODELS_DEV_API_URL = "https://models.dev/api.json"
+MODELS_DEV_PROVIDER_ID = "opencode-go"
+# The models.dev fetch is best-effort enrichment, so it must not stall login on
+# the 120s default. A tight cap means a slow/partial endpoint degrades quickly
+# to the curated catalog instead of holding the user for up to two minutes.
+MODELS_DEV_TIMEOUT = aiohttp.ClientTimeout(total=15, sock_connect=8, sock_read=10)
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,8 +58,12 @@ OPENCODE_GO_MODELS: tuple[OpenCodeGoModel, ...] = (
     OpenCodeGoModel("mimo-v2-omni", "MiMo-V2-Omni", OPENCODE_GO_OPENAI_PROVIDER_KEY),
     OpenCodeGoModel("mimo-v2.5-pro", "MiMo-V2.5-Pro", OPENCODE_GO_OPENAI_PROVIDER_KEY, 1_000_000),
     OpenCodeGoModel("mimo-v2.5", "MiMo-V2.5", OPENCODE_GO_OPENAI_PROVIDER_KEY, 1_000_000),
-    OpenCodeGoModel("qwen3.5-plus", "Qwen3.5 Plus", OPENCODE_GO_OPENAI_PROVIDER_KEY, 262_000),
-    OpenCodeGoModel("qwen3.6-plus", "Qwen3.6 Plus", OPENCODE_GO_OPENAI_PROVIDER_KEY, 262_000),
+    # Qwen models speak the Anthropic-shaped endpoint (models.dev routes them
+    # via @ai-sdk/anthropic); the OpenAI-shaped endpoint rejects them with
+    # "not supported for format oa-compat".
+    OpenCodeGoModel("qwen3.5-plus", "Qwen3.5 Plus", OPENCODE_GO_ANTHROPIC_PROVIDER_KEY, 262_000),
+    OpenCodeGoModel("qwen3.6-plus", "Qwen3.6 Plus", OPENCODE_GO_ANTHROPIC_PROVIDER_KEY, 262_000),
+    OpenCodeGoModel("qwen3.7-max", "Qwen3.7 Max", OPENCODE_GO_ANTHROPIC_PROVIDER_KEY, 1_000_000),
     OpenCodeGoModel("minimax-m2.5", "MiniMax M2.5", OPENCODE_GO_ANTHROPIC_PROVIDER_KEY, 205_000),
     OpenCodeGoModel("minimax-m2.7", "MiniMax M2.7", OPENCODE_GO_ANTHROPIC_PROVIDER_KEY, 205_000),
 )
@@ -69,7 +89,7 @@ def _apply_opencode_go_config(
     )
     config.providers[OPENCODE_GO_ANTHROPIC_PROVIDER_KEY] = LLMProvider(
         type="anthropic",
-        base_url=OPENCODE_GO_BASE_URL,
+        base_url=OPENCODE_GO_ANTHROPIC_BASE_URL,
         api_key=api_key,
     )
 
@@ -98,36 +118,154 @@ def _model_by_id() -> dict[str, OpenCodeGoModel]:
     return {model.model_id: model for model in OPENCODE_GO_MODELS}
 
 
-def _parse_discovered_models(data: object) -> tuple[OpenCodeGoModel, ...]:
-    if not isinstance(data, dict):
-        return ()
-    payload = cast(dict[str, Any], data)
-    raw_items = payload.get("data")
-    if not isinstance(raw_items, list):
-        return ()
+@dataclass(frozen=True, slots=True)
+class _ModelsDevMeta:
+    """The slice of models.dev metadata we consume for a single model id.
 
+    ``is_anthropic`` is the authoritative API-shape signal: models.dev marks
+    Anthropic-shaped models with ``provider.npm == "@ai-sdk/anthropic"`` and
+    leaves the rest on the provider default (``@ai-sdk/openai-compatible``).
+    ``None`` means models.dev had no entry to derive a shape from.
+    """
+
+    display_name: str | None
+    max_context: int | None
+    is_anthropic: bool | None
+
+
+MODELS_DEV_ANTHROPIC_NPM = "@ai-sdk/anthropic"
+
+
+def _heuristic_provider_key(model_id: str) -> str:
+    """Last-ditch shape guess when models.dev and the catalog are both silent.
+
+    OpenAI-compatible is the safe default (most Go models use it); only the
+    stable ``minimax-`` family is reliably Anthropic-shaped by name.
+    """
+    if model_id.startswith("minimax-"):
+        return OPENCODE_GO_ANTHROPIC_PROVIDER_KEY
+    return OPENCODE_GO_OPENAI_PROVIDER_KEY
+
+
+def _resolve_provider_key(
+    model_id: str, meta: _ModelsDevMeta | None, catalog: OpenCodeGoModel | None
+) -> str:
+    """Pick the provider (API shape) for a model.
+
+    models.dev is authoritative; the curated catalog is the offline fallback;
+    the name heuristic is the last resort. This is the fix for Qwen models
+    being rejected as ``not supported for format oa-compat`` — they are
+    Anthropic-shaped, which only models.dev (or the corrected catalog) knows.
+    """
+    if meta is not None and meta.is_anthropic is not None:
+        return OPENCODE_GO_ANTHROPIC_PROVIDER_KEY if meta.is_anthropic else (
+            OPENCODE_GO_OPENAI_PROVIDER_KEY
+        )
+    if catalog is not None:
+        return catalog.provider_key
+    return _heuristic_provider_key(model_id)
+
+
+def _derive_display_name(model_id: str) -> str:
+    return model_id.replace("-", " ").title()
+
+
+def _extract_model_ids(data: object) -> list[str]:
+    """Pull the ordered list of model ids from the /models payload."""
+    if not isinstance(data, dict):
+        return []
+    raw_items = cast(dict[str, Any], data).get("data")
+    if not isinstance(raw_items, list):
+        return []
+    ids: list[str] = []
+    for item in cast(list[Any], raw_items):
+        if not isinstance(item, dict):
+            continue
+        model_id = item.get("id")
+        if isinstance(model_id, str) and model_id:
+            ids.append(model_id)
+    return ids
+
+
+def _parse_models_dev_metadata(data: object) -> dict[str, _ModelsDevMeta]:
+    """Extract display name, context, and API shape per opencode-go model id."""
+    if not isinstance(data, dict):
+        return {}
+    provider = cast(dict[str, Any], data).get(MODELS_DEV_PROVIDER_ID)
+    if not isinstance(provider, dict):
+        return {}
+    models = provider.get("models")
+    if not isinstance(models, dict):
+        return {}
+    default_npm = provider.get("npm")
+    result: dict[str, _ModelsDevMeta] = {}
+    for model_id, entry in cast(dict[str, Any], models).items():
+        if not isinstance(model_id, str) or not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        display_name = name if isinstance(name, str) and name else None
+        limit = entry.get("limit")
+        context = limit.get("context") if isinstance(limit, dict) else None
+        max_context = context if isinstance(context, int) and context > 0 else None
+        model_provider = entry.get("provider")
+        npm = model_provider.get("npm") if isinstance(model_provider, dict) else None
+        effective_npm = npm or default_npm
+        is_anthropic = (
+            effective_npm == MODELS_DEV_ANTHROPIC_NPM if isinstance(effective_npm, str) else None
+        )
+        result[model_id] = _ModelsDevMeta(display_name, max_context, is_anthropic)
+    return result
+
+
+def _build_models(
+    model_ids: list[str],
+    metadata: dict[str, _ModelsDevMeta],
+) -> tuple[OpenCodeGoModel, ...]:
+    """Turn discovered ids into models.
+
+    The /models list is authoritative for *which* models exist. For each id,
+    properties resolve in order: models.dev → curated catalog → default. This
+    lets the live path self-correct shape/context even if the catalog drifts.
+    """
     known = _model_by_id()
     result: list[OpenCodeGoModel] = []
-    for item in cast(list[dict[str, Any]], raw_items):
-        model_id = item.get("id")
-        if not isinstance(model_id, str) or model_id not in known:
-            continue
-        current = known[model_id]
-        context_length = item.get("context_length")
-        max_context_size = current.max_context_size
-        if isinstance(context_length, int) and context_length > 0:
-            max_context_size = context_length
-        display_name_raw = item.get("display_name")
-        display_name = str(display_name_raw) if display_name_raw else current.display_name
+    for model_id in model_ids:
+        catalog = known.get(model_id)
+        meta = metadata.get(model_id)
+        display_name = (
+            (meta.display_name if meta else None)
+            or (catalog.display_name if catalog else None)
+            or _derive_display_name(model_id)
+        )
+        max_context = (
+            (meta.max_context if meta else None)
+            or (catalog.max_context_size if catalog else None)
+            or OPENCODE_GO_DEFAULT_CONTEXT
+        )
         result.append(
             OpenCodeGoModel(
-                current.model_id,
+                model_id,
                 display_name,
-                current.provider_key,
-                max_context_size,
+                _resolve_provider_key(model_id, meta, catalog),
+                max_context,
             )
         )
     return tuple(result)
+
+
+async def _fetch_models_dev_metadata() -> dict[str, _ModelsDevMeta]:
+    """Best-effort metadata fetch. Returns {} on any failure so login still
+    succeeds (falling back to the curated catalog) when models.dev is
+    unreachable."""
+    try:
+        async with (
+            new_client_session(timeout=MODELS_DEV_TIMEOUT) as session,
+            session.get(MODELS_DEV_API_URL, raise_for_status=True) as response,
+        ):
+            payload = await response.json(content_type=None)
+    except (TimeoutError, aiohttp.ClientError, ValueError):
+        return {}
+    return _parse_models_dev_metadata(payload)
 
 
 async def _discover_opencode_go_models(api_key: str) -> tuple[OpenCodeGoModel, ...]:
@@ -140,7 +278,16 @@ async def _discover_opencode_go_models(api_key: str) -> tuple[OpenCodeGoModel, .
         ) as response,
     ):
         payload = await response.json(content_type=None)
-    return _parse_discovered_models(payload)
+
+    model_ids = _extract_model_ids(payload)
+    if not model_ids:
+        return ()
+
+    # models.dev is the authority for API shape + context; fetch it on every
+    # login (best-effort) so the live list self-corrects even when our curated
+    # catalog drifts. Falls back to the catalog when models.dev is unreachable.
+    metadata = await _fetch_models_dev_metadata()
+    return _build_models(model_ids, metadata)
 
 
 async def login_opencode_go_api_key(

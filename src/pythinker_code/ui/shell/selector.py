@@ -259,11 +259,16 @@ class _SelectorState[T]:
     def visible_window(self) -> tuple[int, int]:
         if not self.visible:
             return (0, 0)
-        max_visible = max(1, self.config.max_visible)
-        if len(self.visible) <= max_visible:
+        budget = max(1, self.config.max_visible)
+        if len(self.visible) <= budget:
             return (0, len(self.visible))
-        start = max(0, min(self.selected_idx - max_visible // 2, len(self.visible) - max_visible))
-        end = min(start + max_visible, len(self.visible))
+        # When the list overflows, items_text appends a scroll-indicator row,
+        # so the rendered content is one row taller than the slice. Reserve a
+        # row for it; otherwise the selected row can scroll under the indicator
+        # and off the bottom of the (budget-tall) window.
+        span = max(1, budget - 1)
+        start = max(0, min(self.selected_idx - span // 2, len(self.visible) - span))
+        end = min(start + span, len(self.visible))
         return (start, end)
 
 
@@ -411,7 +416,10 @@ def _build_application[T](state: _SelectorState[T]) -> Application[None]:
                 ),
                 Window(
                     FormattedTextControl(items_text),
-                    height=Dimension(preferred=min(max(1, config.max_visible), 12), min=1),
+                    # Render as many rows as the slice may produce (max_visible,
+                    # which already includes the reserved scroll-indicator row).
+                    # Capping below max_visible would clip the selected row.
+                    height=Dimension(preferred=max(1, config.max_visible), min=1),
                     style="class:slash-completion-menu",
                 ),
                 Window(
@@ -434,6 +442,9 @@ def _build_application[T](state: _SelectorState[T]) -> Application[None]:
         full_screen=False,
         style=get_prompt_style(),
         mouse_support=False,
+        # Erase the selector chrome on exit (commit or cancel) so it doesn't
+        # linger in the scrollback as a ghost menu after Esc/Enter.
+        erase_when_done=True,
     )
 
 

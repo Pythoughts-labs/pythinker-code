@@ -12,10 +12,29 @@ from pythinker_review.llm.protocol import ReviewLLM
 from pythinker_review.reviewers.schema import RawFinding, ReviewerOutput
 from pythinker_review.store.models import ChunkFailureReason
 
-_RETRY_SUFFIX = (
-    "\n\nIMPORTANT: Your previous response was not valid JSON for the given schema. "
-    "Reply with strict JSON only, no prose, no markdown fences."
-)
+_RETRY_ERROR_BUDGET = 600
+
+
+def _retry_suffix(last_error: str) -> str:
+    """Build the retry instruction, surfacing the concrete validation error.
+
+    The first version only said "reply with valid JSON", which is useless when
+    the failure is a *content* violation (e.g. a title over the length cap) on
+    otherwise-valid JSON — the model has no signal about what to change. We now
+    relay the actual parser/validation error so the model can self-correct.
+    """
+    suffix = (
+        "\n\nIMPORTANT: Your previous response could not be parsed into the required "
+        "schema. Reply with strict JSON only — no prose, no markdown fences — and make "
+        "every field satisfy the schema (in particular keep each finding 'title' to 80 "
+        "characters or fewer)."
+    )
+    detail = " ".join(last_error.split())
+    if detail:
+        if len(detail) > _RETRY_ERROR_BUDGET:
+            detail = f"{detail[:_RETRY_ERROR_BUDGET]} …"
+        suffix += f"\n\nValidation error from your previous attempt: {detail}"
+    return suffix
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +108,7 @@ async def complete_typed_json[T: BaseModel](
             return TypedReviewerResult(
                 False, failure_reason="malformed_output", failure_message=last_error
             )
-        prompt = prompt + _RETRY_SUFFIX
+        prompt = user + _retry_suffix(last_error)
     return TypedReviewerResult(False, failure_reason="malformed_output")
 
 

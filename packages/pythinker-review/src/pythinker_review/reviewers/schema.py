@@ -4,16 +4,18 @@ from __future__ import annotations
 
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from pythinker_review.store.models import Category, Severity, Suggestion
+
+_MAX_TITLE_LEN = 80
 
 
 class RawFinding(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     rule_id: str
-    title: str = Field(max_length=80)
+    title: str
     rationale: str
     category: Category
     severity: Severity
@@ -29,6 +31,16 @@ class RawFinding(BaseModel):
     test_analysis: str | None = None
     suggested_regression_test: str | None = None
     minimum_fix_scope: str | None = None
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def _truncate_title(cls, value: object) -> object:
+        # Models (especially smaller ones) routinely exceed the title budget.
+        # Truncate rather than hard-fail: a length violation used to fail the
+        # whole ReviewerOutput parse, discarding *every* finding in the chunk.
+        if isinstance(value, str) and len(value) > _MAX_TITLE_LEN:
+            return value[: _MAX_TITLE_LEN - 1].rstrip() + "…"
+        return value
 
     @model_validator(mode="after")
     def validate_range(self) -> Self:

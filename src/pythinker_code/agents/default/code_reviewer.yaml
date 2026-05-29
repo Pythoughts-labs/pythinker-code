@@ -51,6 +51,7 @@ agent:
     Use to run a read-only diff-focused code review or code-reviewr-derived PR artifact workflow on the current branch.
   allowed_tools:
     - "pythinker_code.tools.shell:Shell"
+    - "pythinker_code.tools.todo:SetTodoList"
     - "pythinker_code.tools.file:ReadFile"
     - "pythinker_code.tools.file:Grep"
     - "pythinker_code.tools.skill:ReadSkill"

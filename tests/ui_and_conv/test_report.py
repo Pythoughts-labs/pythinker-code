@@ -1,0 +1,197 @@
+"""Tests for the standardized report renderer."""
+
+from __future__ import annotations
+
+import pytest
+from rich.console import Console
+
+from pythinker_code.ui.shell.components.report import (
+    Report,
+    ReportFinding,
+    parse_report_block,
+    render_agent_body,
+    render_report,
+)
+
+
+def _plain(renderable, *, width: int = 80) -> str:
+    console = Console(width=width, no_color=True, legacy_windows=False)
+    with console.capture() as cap:
+        console.print(renderable)
+    return cap.get()
+
+
+# ---------------------------------------------------------------------------
+# rendering
+# ---------------------------------------------------------------------------
+
+
+def _sample_report() -> Report:
+    return Report(
+        title="Code Review Results",
+        scope="Reviewed 17 files across 3 clusters",
+        findings=(
+            ReportFinding(
+                "Inconsistent scroll-indicator fix",
+                "medium",
+                location="settings_list.py:177-180",
+                body="The off-by-one scroll bug is unfixed in the sibling.",
+            ),
+            ReportFinding("Slow optional fetch blocks login", "medium"),
+            ReportFinding("Missing test for erase_when_done", "low", location="selector.py:447"),
+            ReportFinding("Fallback chain is well-tested", "info"),
+        ),
+        note="Most actionable — fix the settings_list scroll bug.",
+    )
+
+
+@pytest.mark.parametrize("theme", ["dark", "light"])
+def test_render_report_includes_title_sections_and_locations(theme):
+    out = _plain(render_report(_sample_report(), theme=theme))
+    assert "Code Review Results" in out
+    assert "Reviewed 17 files across 3 clusters" in out
+    # section headers for each present severity, omitted for absent ones
+    assert "Medium" in out
+    assert "Low" in out
+    assert "Info" in out
+    assert "Critical" not in out
+    assert "High" not in out
+    # findings + locations
+    assert "Inconsistent scroll-indicator fix" in out
+    assert "settings_list.py:177-180" in out
+    assert "Most actionable" in out
+
+
+def test_render_report_summary_tally_and_no_critical_high():
+    out = _plain(render_report(_sample_report()))
+    assert "2 medium" in out
+    assert "1 low" in out
+    assert "1 info" in out
+    assert "no critical or high" in out
+
+
+def test_render_report_groups_in_severity_order_regardless_of_input():
+    report = Report(
+        title="t",
+        findings=(
+            ReportFinding("i", "info"),
+            ReportFinding("c", "critical"),
+            ReportFinding("m", "medium"),
+        ),
+    )
+    out = _plain(render_report(report))
+    # Critical section must appear before Medium, which appears before Info.
+    assert out.index("Critical") < out.index("Medium") < out.index("Info")
+    assert "no critical or high" not in out  # critical present
+
+
+def test_render_report_empty_findings_is_safe():
+    out = _plain(render_report(Report(title="Empty report")))
+    assert "Empty report" in out
+    assert "no critical or high" in out
+
+
+# ---------------------------------------------------------------------------
+# parse_report_block
+# ---------------------------------------------------------------------------
+
+
+def test_parse_report_block_valid():
+    payload = """
+    {
+      "title": "R",
+      "scope": "s",
+      "note": "n",
+      "findings": [
+        {"title": "f1", "severity": "high", "location": "a.py:1", "body": "b"},
+        {"title": "f2", "severity": "low"}
+      ]
+    }
+    """
+    report = parse_report_block(payload)
+    assert report is not None
+    assert report.title == "R"
+    assert report.scope == "s"
+    assert report.note == "n"
+    assert len(report.findings) == 2
+    assert report.findings[0].severity == "high"
+    assert report.findings[0].location == "a.py:1"
+    assert report.findings[1].location is None
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "not json",
+        "[]",  # not an object
+        '{"scope": "x"}',  # missing title
+        '{"title": ""}',  # empty title
+        '{"title": "t", "findings": "nope"}',  # findings not a list
+        '{"title": "t", "findings": [{"title": "f"}]}',  # finding missing severity
+        '{"title": "t", "findings": [{"title": "f", "severity": "bogus"}]}',  # bad severity
+        '{"title": "t", "findings": ["nope"]}',  # finding not an object
+    ],
+)
+def test_parse_report_block_malformed_returns_none(payload):
+    assert parse_report_block(payload) is None
+
+
+# ---------------------------------------------------------------------------
+# render_agent_body — the fenced-block bridge
+# ---------------------------------------------------------------------------
+
+
+def test_render_agent_body_promotes_report_fence():
+    text = (
+        "Here is the review.\n\n"
+        "```report\n"
+        '{"title": "My Report", "findings": [{"title": "bug", "severity": "medium"}]}\n'
+        "```\n\n"
+        "Done."
+    )
+    out = _plain(render_agent_body(text))
+    assert "Here is the review." in out
+    assert "My Report" in out
+    assert "1 medium" in out  # rendered as a report, not raw JSON
+    assert "Done." in out
+    assert '"severity"' not in out  # JSON payload not shown verbatim
+
+
+def test_render_agent_body_invalid_fence_falls_back_to_markdown():
+    text = "```report\nthis is not json\n```"
+    out = _plain(render_agent_body(text))
+    # Left as an ordinary fenced code block — content preserved, not swallowed.
+    assert "this is not json" in out
+
+
+def test_render_agent_body_plain_markdown_unchanged():
+    out = _plain(render_agent_body("# Heading\n\nSome **text**."))
+    assert "Heading" in out
+    assert "text" in out
+
+
+def test_streaming_commit_keeps_report_fence_atomic_and_renders():
+    """Integration contract for the live shell: the incremental renderer
+    (_blocks._flush_committed) commits at markdown_commit_boundary and renders
+    the committed slice via render_agent_body. A complete report fence must
+    commit whole (not split mid-JSON) so it renders as a report, not raw text.
+    """
+    from pythinker_code.ui.shell.components.markdown import markdown_commit_boundary
+
+    text = (
+        "Here is the review.\n\n"
+        "```report\n"
+        '{"title": "Code Review Results", "findings": '
+        '[{"title": "Slow fetch", "severity": "medium", "location": "x.py:1"}]}\n'
+        "```\n\n"
+        "Trailing paragraph.\n"
+    )
+    boundary = markdown_commit_boundary(text)
+    assert boundary is not None
+    committed = text[:boundary]
+    # The closed fence (open + close) is fully inside the committed slice.
+    assert committed.count("```") == 2
+    out = _plain(render_agent_body(committed))
+    assert "Code Review Results" in out
+    assert "1 medium" in out
+    assert '"severity"' not in out  # rendered as a report, not raw JSON

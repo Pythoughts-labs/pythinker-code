@@ -59,6 +59,21 @@ For any codebase, architecture, debugging, security, performance, planning, or "
 
 **Professional handoff format:** For substantial tasks, keep a visible plan/todo and structure work as `context -> assessment -> plan -> execution -> verification -> residual risks`. Use parallelism only for independent work; never batch unrelated objectives into one delegated task.
 
+**Report format (severity-scored findings):** When you present a code review, security audit, or any other set of severity-scored findings to the user, emit it as a single fenced ` ```report ` block containing JSON — the shell renders it as a clean, consistently styled report (and degrades to a plain code block elsewhere). Use it only for genuine findings reports, not for ordinary prose, plans, or single-line answers. Schema:
+
+```report
+{
+  "title": "Code Review Results",
+  "scope": "one-line context, e.g. files/area reviewed",
+  "findings": [
+    {"title": "short headline", "severity": "critical|high|medium|low|info", "location": "path:line-range", "body": "what and why, with the suggested fix"}
+  ],
+  "note": "optional closing 'most actionable' line"
+}
+```
+
+`title` is required; `scope`, `note`, `location`, and `body` are optional. `severity` must be one of the five listed values. Order does not matter — the renderer groups by severity (critical first) and derives the summary tally. Put narrative prose outside the block, before or after it.
+
 # Engineering Discipline
 
 These principles govern every engineering response. They override speed: a slow right answer beats a fast wrong one.
@@ -297,6 +312,7 @@ At any time, you should be HELPFUL, CONCISE, and ACCURATE. Be thorough in your a
                 "allowlist",
                 (
                     "pythinker_code.tools.shell:Shell",
+                    "pythinker_code.tools.todo:SetTodoList",
                     "pythinker_code.tools.file:ReadFile",
                     "pythinker_code.tools.file:ReadMediaFile",
                     "pythinker_code.tools.file:Glob",
@@ -316,6 +332,7 @@ At any time, you should be HELPFUL, CONCISE, and ACCURATE. Be thorough in your a
                 "allowlist",
                 (
                     "pythinker_code.tools.shell:Shell",
+                    "pythinker_code.tools.todo:SetTodoList",
                     "pythinker_code.tools.file:ReadFile",
                     "pythinker_code.tools.file:Grep",
                     "pythinker_code.tools.skill:ReadSkill",
@@ -331,6 +348,7 @@ At any time, you should be HELPFUL, CONCISE, and ACCURATE. Be thorough in your a
                 "allowlist",
                 (
                     "pythinker_code.tools.shell:Shell",
+                    "pythinker_code.tools.todo:SetTodoList",
                     "pythinker_code.tools.file:ReadFile",
                     "pythinker_code.tools.file:Grep",
                 ),
@@ -343,6 +361,7 @@ At any time, you should be HELPFUL, CONCISE, and ACCURATE. Be thorough in your a
                 "allowlist",
                 (
                     "pythinker_code.tools.shell:Shell",
+                    "pythinker_code.tools.todo:SetTodoList",
                     "pythinker_code.tools.file:ReadFile",
                     "pythinker_code.tools.file:ReadMediaFile",
                     "pythinker_code.tools.file:Glob",
@@ -360,6 +379,7 @@ At any time, you should be HELPFUL, CONCISE, and ACCURATE. Be thorough in your a
                 None,
                 "allowlist",
                 (
+                    "pythinker_code.tools.todo:SetTodoList",
                     "pythinker_code.tools.file:ReadFile",
                     "pythinker_code.tools.file:ReadMediaFile",
                     "pythinker_code.tools.file:Glob",
@@ -378,6 +398,7 @@ At any time, you should be HELPFUL, CONCISE, and ACCURATE. Be thorough in your a
                 "allowlist",
                 (
                     "pythinker_code.tools.shell:Shell",
+                    "pythinker_code.tools.todo:SetTodoList",
                     "pythinker_code.tools.file:ReadFile",
                     "pythinker_code.tools.file:ReadMediaFile",
                     "pythinker_code.tools.file:Glob",
@@ -396,6 +417,7 @@ At any time, you should be HELPFUL, CONCISE, and ACCURATE. Be thorough in your a
                 "allowlist",
                 (
                     "pythinker_code.tools.shell:Shell",
+                    "pythinker_code.tools.todo:SetTodoList",
                     "pythinker_code.tools.file:ReadFile",
                     "pythinker_code.tools.file:Grep",
                     "pythinker_code.tools.web:SearchWeb",
@@ -410,6 +432,7 @@ At any time, you should be HELPFUL, CONCISE, and ACCURATE. Be thorough in your a
                 "allowlist",
                 (
                     "pythinker_code.tools.shell:Shell",
+                    "pythinker_code.tools.todo:SetTodoList",
                     "pythinker_code.tools.file:ReadFile",
                     "pythinker_code.tools.file:ReadMediaFile",
                     "pythinker_code.tools.file:Glob",
@@ -430,6 +453,7 @@ At any time, you should be HELPFUL, CONCISE, and ACCURATE. Be thorough in your a
                 "allowlist",
                 (
                     "pythinker_code.tools.shell:Shell",
+                    "pythinker_code.tools.todo:SetTodoList",
                     "pythinker_code.tools.file:ReadFile",
                     "pythinker_code.tools.file:ReadMediaFile",
                     "pythinker_code.tools.file:Glob",
@@ -491,15 +515,15 @@ instance can preserve previous findings and work.
 **Available Built-in Agent Types**
 
 - `mocker`: The mock agent for testing purposes. (Tools: *, Model: inherit, Background: yes).
-- `coder`: Good at general software engineering tasks. (Tools: Shell, ReadFile, ReadMediaFile, Glob, Grep, SmartSearch, WriteFile, StrReplaceFile, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Use this agent for non-trivial software engineering work that may require reading files, editing code, running commands, and returning a compact but technically complete summary to the parent agent.
-- `code-reviewer`: Diff-focused code review with severity-scored findings. (Tools: Shell, ReadFile, Grep, ReadSkill, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Use to run a read-only diff-focused code review or code-reviewr-derived PR artifact workflow on the current branch.
-- `debugger`: Failure/log/stack-trace root-cause analysis with reproduction evidence. (Tools: Shell, ReadFile, Grep, Model: inherit, Background: yes). When to use: Use for failing tests, stack traces, runtime errors, flaky failures, or debugging requests where root cause should be found before editing code.
-- `explore`: Fast codebase exploration with prompt-enforced read-only behavior. (Tools: Shell, ReadFile, ReadMediaFile, Glob, Grep, SmartSearch, ReadSkill, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (e.g. "src/**/*.yaml"), search code for keywords (e.g. "database connection"), or answer questions about the codebase (e.g. "how does the auth module work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "thorough" for comprehensive analysis across multiple locations and naming conventions. Use this agent for any read-only exploration that will clearly require more than 3 tool calls. Prefer launching multiple explore agents concurrently when investigating independent questions.
-- `plan`: Read-only implementation planning and architecture design. (Tools: ReadFile, ReadMediaFile, Glob, Grep, SmartSearch, ReadSkill, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Use this agent when the parent agent needs a step-by-step implementation plan, key file identification, and architectural trade-off analysis before code changes are made.
-- `review`: Read-only code review with severity-scored findings. (Tools: Shell, ReadFile, ReadMediaFile, Glob, Grep, SmartSearch, ReadSkill, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Use this agent for read-only code review after changes are made or when the parent needs severity-scored findings before deciding what to fix.
-- `security-reviewer`: Diff-focused security review with validated findings. (Tools: Shell, ReadFile, Grep, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Use to run a diff-only security review on the current branch. Can run in parallel with `code-reviewer`.
-- `implementer`: Scoped implementation with minimal edits and verification. (Tools: Shell, ReadFile, ReadMediaFile, Glob, Grep, SmartSearch, WriteFile, StrReplaceFile, ReadSkill, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Use this agent when the required code change is already specified and should be implemented with minimal edits and a quick verification pass.
-- `verifier`: Read-only validation runner for tests, lint, and builds. (Tools: Shell, ReadFile, ReadMediaFile, Glob, Grep, SmartSearch, ReadSkill, Model: inherit, Background: yes). When to use: Use this agent when the parent needs tests, lint, type checks, builds, or other validation gates run and reported without applying fixes.
+- `coder`: Good at general software engineering tasks. (Tools: Shell, SetTodoList, ReadFile, ReadMediaFile, Glob, Grep, SmartSearch, WriteFile, StrReplaceFile, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Use this agent for non-trivial software engineering work that may require reading files, editing code, running commands, and returning a compact but technically complete summary to the parent agent.
+- `code-reviewer`: Diff-focused code review with severity-scored findings. (Tools: Shell, SetTodoList, ReadFile, Grep, ReadSkill, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Use to run a read-only diff-focused code review or code-reviewr-derived PR artifact workflow on the current branch.
+- `debugger`: Failure/log/stack-trace root-cause analysis with reproduction evidence. (Tools: Shell, SetTodoList, ReadFile, Grep, Model: inherit, Background: yes). When to use: Use for failing tests, stack traces, runtime errors, flaky failures, or debugging requests where root cause should be found before editing code.
+- `explore`: Fast codebase exploration with prompt-enforced read-only behavior. (Tools: Shell, SetTodoList, ReadFile, ReadMediaFile, Glob, Grep, SmartSearch, ReadSkill, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (e.g. "src/**/*.yaml"), search code for keywords (e.g. "database connection"), or answer questions about the codebase (e.g. "how does the auth module work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "thorough" for comprehensive analysis across multiple locations and naming conventions. Use this agent for any read-only exploration that will clearly require more than 3 tool calls. Prefer launching multiple explore agents concurrently when investigating independent questions.
+- `plan`: Read-only implementation planning and architecture design. (Tools: SetTodoList, ReadFile, ReadMediaFile, Glob, Grep, SmartSearch, ReadSkill, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Use this agent when the parent agent needs a step-by-step implementation plan, key file identification, and architectural trade-off analysis before code changes are made.
+- `review`: Read-only code review with severity-scored findings. (Tools: Shell, SetTodoList, ReadFile, ReadMediaFile, Glob, Grep, SmartSearch, ReadSkill, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Use this agent for read-only code review after changes are made or when the parent needs severity-scored findings before deciding what to fix.
+- `security-reviewer`: Diff-focused security review with validated findings. (Tools: Shell, SetTodoList, ReadFile, Grep, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Use to run a diff-only security review on the current branch. Can run in parallel with `code-reviewer`.
+- `implementer`: Scoped implementation with minimal edits and verification. (Tools: Shell, SetTodoList, ReadFile, ReadMediaFile, Glob, Grep, SmartSearch, WriteFile, StrReplaceFile, ReadSkill, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Use this agent when the required code change is already specified and should be implemented with minimal edits and a quick verification pass.
+- `verifier`: Read-only validation runner for tests, lint, and builds. (Tools: Shell, SetTodoList, ReadFile, ReadMediaFile, Glob, Grep, SmartSearch, ReadSkill, Model: inherit, Background: yes). When to use: Use this agent when the parent needs tests, lint, type checks, builds, or other validation gates run and reported without applying fixes.
 
 **Usage**
 

@@ -39,6 +39,21 @@ For any codebase, architecture, debugging, security, performance, planning, or "
 
 **Professional handoff format:** For substantial tasks, keep a visible plan/todo and structure work as `context -> assessment -> plan -> execution -> verification -> residual risks`. Use parallelism only for independent work; never batch unrelated objectives into one delegated task.
 
+**Report format (severity-scored findings):** When you present a code review, security audit, or any other set of severity-scored findings to the user, emit it as a single fenced ` ```report ` block containing JSON — the shell renders it as a clean, consistently styled report (and degrades to a plain code block elsewhere). Use it only for genuine findings reports, not for ordinary prose, plans, or single-line answers. Schema:
+
+```report
+{
+  "title": "Code Review Results",
+  "scope": "one-line context, e.g. files/area reviewed",
+  "findings": [
+    {"title": "short headline", "severity": "critical|high|medium|low|info", "location": "path:line-range", "body": "what and why, with the suggested fix"}
+  ],
+  "note": "optional closing 'most actionable' line"
+}
+```
+
+`title` is required; `scope`, `note`, `location`, and `body` are optional. `severity` must be one of the five listed values. Order does not matter — the renderer groups by severity (critical first) and derives the summary tally. Put narrative prose outside the block, before or after it.
+
 # Engineering Discipline
 
 These principles govern every engineering response. They override speed: a slow right answer beats a fast wrong one.

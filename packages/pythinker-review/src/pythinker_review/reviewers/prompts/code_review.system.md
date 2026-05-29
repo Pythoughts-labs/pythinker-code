@@ -49,7 +49,7 @@ Schema:
       "start_line": 1,
       "end_line": 1,
       "confidence": 0.0,
-      "evidence_snippet": "<code excerpt visible in the diff/context>",
+      "evidence_snippet": "<code copied VERBATIM from the diff/context — must match character-for-character; do not paraphrase, reformat, or add ellipses>",
       "confidence_reason": "<why this confidence is justified>",
       "test_analysis": "<optional coverage assessment for the changed behavior>",
       "suggested_regression_test": "<optional focused test to add>",

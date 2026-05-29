@@ -778,6 +778,10 @@ def pythinker(
                         "scratch: named per-session history retained",
                     ],
                     create=True,
+                    # Idempotent: relaunching the same session must not append a
+                    # second identical "session start" milestone (a genuine
+                    # startup→resume transition has a different source/signature).
+                    dedup_signature=f"source: {session_source}",
                 )
             scratchpad_section = render_scratchpad_section(
                 scratchpad_status,

@@ -24,6 +24,7 @@ from rich.style import Style as RichStyle
 from rich.text import Text
 
 from pythinker_code.ui.shell.components.markdown import pythinker_markdown
+from pythinker_code.ui.shell.components.report import render_agent_body
 from pythinker_code.ui.theme import tui_rich_style
 
 __all__ = [
@@ -96,7 +97,7 @@ def render_assistant_message(
     for i, item in enumerate(items):
         next_visible = i + 1 < len(items)
         if item.kind == "text":
-            blocks.append(pythinker_markdown(item.text.strip()))
+            blocks.append(render_agent_body(item.text.strip()))
         elif item.kind == "thinking":
             if hide_thinking:
                 blocks.append(Text(hidden_thinking_label, style=thinking_style))

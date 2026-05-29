@@ -136,4 +136,31 @@ def test_settings_list_visible_window_centers_selected_item():
     )
 
     state.move(3)
-    assert state.visible_window() == (2, 5)
+    # An overflowing list reserves one row of the budget for the scroll
+    # indicator, so the slice spans budget-1 = 2 rows: (start, start+2).
+    assert state.visible_window() == (2, 4)
+
+
+def test_settings_list_overflow_keeps_selected_row_within_window():
+    """Regression: navigating an overflowing settings list must not scroll the
+    highlighted row under the scroll indicator and off the bottom of the
+    (max_visible-tall) window. Mirrors the selector.py viewport guarantee.
+    """
+    budget = 10
+    state = _SettingsListState(
+        SettingsListConfig(
+            title="Settings",
+            max_visible=budget,
+            items=[
+                SettingItem(id=str(i), label=f"Item {i:02}", current_value="x") for i in range(25)
+            ],
+        )
+    )
+
+    for target in range(len(state.visible)):
+        state.selected_idx = target
+        start, end = state.visible_window()
+        has_scroll_row = start > 0 or end < len(state.visible)
+        content_rows = (end - start) + (1 if has_scroll_row else 0)
+        assert start <= target < end, f"selected {target} fell outside window {(start, end)}"
+        assert content_rows <= budget, f"content {content_rows} exceeds budget {budget}"

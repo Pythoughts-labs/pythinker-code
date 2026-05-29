@@ -138,8 +138,22 @@ class FinalOnlyTextPrinter(Printer):
         message = Message(role="assistant", content=self._content_buffer)
         text = message.extract_text()
         if text:
-            print(text, flush=True)
+            _print_final_text(text)
         self._content_buffer.clear()
+
+
+def _print_final_text(text: str) -> None:
+    """Print the final assistant text, rendering any ` ```report ` block as a
+    clean report. Plain prose is printed verbatim so non-report output is
+    byte-identical (and pipe-safe — Rich drops colour on a non-TTY stdout)."""
+    from pythinker_code.ui.shell.components.report import has_report_block, render_agent_body
+
+    if not has_report_block(text):
+        print(text, flush=True)
+        return
+    from rich.console import Console
+
+    Console().print(render_agent_body(text))
 
 
 class FinalOnlyJsonPrinter(Printer):

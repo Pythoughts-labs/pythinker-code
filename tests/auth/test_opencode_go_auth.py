@@ -35,21 +35,29 @@ def test_opencode_go_model_catalog_contains_all_current_models():
         "opencode-go/mimo-v2.5",
         "opencode-go/qwen3.5-plus",
         "opencode-go/qwen3.6-plus",
+        "opencode-go/qwen3.7-max",
         "opencode-go/minimax-m2.5",
         "opencode-go/minimax-m2.7",
     }
 
-    minimax = {
-        m.model_id: m.provider_key for m in OPENCODE_GO_MODELS if m.model_id.startswith("minimax-")
+    # Anthropic-shaped models (models.dev @ai-sdk/anthropic): both MiniMax and
+    # all three Qwen models. Everything else is OpenAI-compatible.
+    anthropic_ids = {
+        m.model_id
+        for m in OPENCODE_GO_MODELS
+        if m.provider_key == "managed:opencode-go-anthropic"
     }
-    assert minimax == {
-        "minimax-m2.5": "managed:opencode-go-anthropic",
-        "minimax-m2.7": "managed:opencode-go-anthropic",
+    assert anthropic_ids == {
+        "minimax-m2.5",
+        "minimax-m2.7",
+        "qwen3.5-plus",
+        "qwen3.6-plus",
+        "qwen3.7-max",
     }
     assert all(
         m.provider_key == "managed:opencode-go-openai"
         for m in OPENCODE_GO_MODELS
-        if not m.model_id.startswith("minimax-")
+        if m.model_id not in anthropic_ids
     )
 
 
@@ -72,6 +80,7 @@ def test_opencode_go_env_key_precedence(monkeypatch):
 
 def test_apply_opencode_go_config_writes_two_providers_and_default():
     from pythinker_code.auth.opencode_go import (
+        OPENCODE_GO_ANTHROPIC_BASE_URL,
         OPENCODE_GO_ANTHROPIC_PROVIDER_KEY,
         OPENCODE_GO_BASE_URL,
         OPENCODE_GO_OPENAI_PROVIDER_KEY,
@@ -91,7 +100,9 @@ def test_apply_opencode_go_config_writes_two_providers_and_default():
     assert openai_provider.type == "openai_legacy"
     assert anthropic_provider.type == "anthropic"
     assert openai_provider.base_url == OPENCODE_GO_BASE_URL
-    assert anthropic_provider.base_url == OPENCODE_GO_BASE_URL
+    # Anthropic base must omit "/v1" (the SDK appends "/v1/messages").
+    assert anthropic_provider.base_url == OPENCODE_GO_ANTHROPIC_BASE_URL
+    assert anthropic_provider.base_url == "https://opencode.ai/zen/go"
     assert openai_provider.api_key.get_secret_value() == "ocgo-test"
     assert anthropic_provider.api_key.get_secret_value() == "ocgo-test"
     assert config.models["opencode-go/kimi-k2.6"].provider == OPENCODE_GO_OPENAI_PROVIDER_KEY
@@ -217,39 +228,146 @@ async def test_login_opencode_go_falls_back_on_non_auth_response_error(monkeypat
     assert config.default_model == "opencode-go/kimi-k2.6"
 
 
+@pytest.mark.asyncio
+async def test_fetch_models_dev_metadata_uses_short_best_effort_timeout(monkeypatch):
+    """The best-effort enrichment fetch must use a tight timeout so a slow
+    models.dev cannot block login for up to the 120s default."""
+    from pythinker_code.auth import opencode_go
+
+    captured: dict[str, aiohttp.ClientTimeout | None] = {}
+
+    def fake_session(*, timeout=None):
+        captured["timeout"] = timeout
+        raise aiohttp.ClientError("unreachable")
+
+    monkeypatch.setattr(opencode_go, "new_client_session", fake_session)
+
+    result = await opencode_go._fetch_models_dev_metadata()
+
+    assert result == {}  # degrades gracefully to the curated catalog
+    assert captured["timeout"] is opencode_go.MODELS_DEV_TIMEOUT
+    assert opencode_go.MODELS_DEV_TIMEOUT.total is not None
+    assert opencode_go.MODELS_DEV_TIMEOUT.total <= 15
+
+
 @pytest.mark.parametrize(
-    "payload, expected_aliases",
+    "payload, expected_ids",
     [
-        (None, set()),
-        ({}, set()),
-        ({"data": "not a list"}, set()),
-        ({"data": [{"context_length": 1000}]}, set()),  # missing id
-        ({"data": [{"id": "unknown-model"}]}, set()),  # unknown id dropped
-        ({"data": [{"id": "kimi-k2.6"}]}, {"opencode-go/kimi-k2.6"}),
+        (None, []),
+        ({}, []),
+        ({"data": "not a list"}, []),
+        ({"data": [{"context_length": 1000}]}, []),  # missing id
+        ({"data": [{"id": ""}]}, []),  # empty id skipped
+        ({"data": [{"id": "kimi-k2.6"}, "bogus", {"id": "new-model"}]}, ["kimi-k2.6", "new-model"]),
     ],
 )
-def test_parse_discovered_models_handles_malformed_payloads(payload, expected_aliases):
-    from pythinker_code.auth.opencode_go import _parse_discovered_models
+def test_extract_model_ids_handles_malformed_payloads(payload, expected_ids):
+    from pythinker_code.auth.opencode_go import _extract_model_ids
 
-    result = _parse_discovered_models(payload)
-    assert {m.alias for m in result} == expected_aliases
+    assert _extract_model_ids(payload) == expected_ids
 
 
-def test_parse_discovered_models_overrides_context_length_only_for_positive_int():
-    from pythinker_code.auth.opencode_go import _parse_discovered_models
+def test_build_models_uses_models_dev_shape_for_known_ids():
+    from pythinker_code.auth.opencode_go import (
+        OPENCODE_GO_ANTHROPIC_PROVIDER_KEY,
+        OPENCODE_GO_OPENAI_PROVIDER_KEY,
+        _build_models,
+        _ModelsDevMeta,
+    )
+
+    # models.dev is authoritative for shape + context, even for known ids:
+    # the Qwen catalog drift that routed them to OpenAI must self-correct.
+    result = _build_models(
+        ["kimi-k2.6", "qwen3.6-plus"],
+        {
+            "kimi-k2.6": _ModelsDevMeta("Kimi K2.6", 262_144, False),
+            "qwen3.6-plus": _ModelsDevMeta("Qwen3.6 Plus", 262_144, True),
+        },
+    )
+    by_id = {m.model_id: m for m in result}
+    assert by_id["kimi-k2.6"].provider_key == OPENCODE_GO_OPENAI_PROVIDER_KEY
+    assert by_id["qwen3.6-plus"].provider_key == OPENCODE_GO_ANTHROPIC_PROVIDER_KEY
+    assert by_id["qwen3.6-plus"].max_context_size == 262_144
+
+
+def test_build_models_surfaces_unknown_id_enriched_from_models_dev():
+    from pythinker_code.auth.opencode_go import (
+        OPENCODE_GO_ANTHROPIC_PROVIDER_KEY,
+        _build_models,
+        _ModelsDevMeta,
+    )
+
+    # A brand-new model the catalog has never heard of must still appear,
+    # carrying the context + Anthropic shape models.dev reports for it.
+    result = _build_models(
+        ["qwen3.8-max"], {"qwen3.8-max": _ModelsDevMeta("Qwen3.8 Max", 1_000_000, True)}
+    )
+    by_id = {m.model_id: m for m in result}
+    assert by_id["qwen3.8-max"].alias == "opencode-go/qwen3.8-max"
+    assert by_id["qwen3.8-max"].display_name == "Qwen3.8 Max"
+    assert by_id["qwen3.8-max"].max_context_size == 1_000_000
+    assert by_id["qwen3.8-max"].provider_key == OPENCODE_GO_ANTHROPIC_PROVIDER_KEY
+
+
+def test_build_models_falls_back_to_catalog_then_heuristic_without_metadata():
+    from pythinker_code.auth.opencode_go import (
+        OPENCODE_GO_ANTHROPIC_PROVIDER_KEY,
+        OPENCODE_GO_DEFAULT_CONTEXT,
+        OPENCODE_GO_OPENAI_PROVIDER_KEY,
+        _build_models,
+    )
+
+    # No models.dev metadata at all (e.g. unreachable): known ids fall back to
+    # the corrected catalog, unknown ids to the name heuristic.
+    result = _build_models(["qwen3.7-max", "future-model", "minimax-m9.9"], {})
+    by_id = {m.model_id: m for m in result}
+    # Known Qwen keeps its (corrected) catalog Anthropic shape.
+    assert by_id["qwen3.7-max"].provider_key == OPENCODE_GO_ANTHROPIC_PROVIDER_KEY
+    # Unknown, unguessable → OpenAI default + derived name + default context.
+    assert by_id["future-model"].display_name == "Future Model"
+    assert by_id["future-model"].max_context_size == OPENCODE_GO_DEFAULT_CONTEXT
+    assert by_id["future-model"].provider_key == OPENCODE_GO_OPENAI_PROVIDER_KEY
+    # Unknown minimax-* heuristically routed to the Anthropic-shaped provider.
+    assert by_id["minimax-m9.9"].provider_key == OPENCODE_GO_ANTHROPIC_PROVIDER_KEY
+
+
+def test_parse_models_dev_metadata_extracts_name_context_and_shape():
+    from pythinker_code.auth.opencode_go import _ModelsDevMeta, _parse_models_dev_metadata
 
     payload = {
-        "data": [
-            {"id": "kimi-k2.6", "context_length": "bogus"},  # wrong type, ignored
-            {"id": "glm-5", "context_length": -5},  # non-positive, ignored
-            {"id": "deepseek-v4-pro", "context_length": 999_000},  # valid override
-        ]
+        "opencode-go": {
+            "npm": "@ai-sdk/openai-compatible",
+            "models": {
+                # Anthropic shape via per-model provider override.
+                "qwen3.7-max": {
+                    "name": "Qwen3.7 Max",
+                    "limit": {"context": 1_000_000},
+                    "provider": {"npm": "@ai-sdk/anthropic"},
+                },
+                # Inherits the OpenAI-compatible provider default.
+                "kimi-k2.6": {"name": "Kimi K2.6", "limit": {"context": 262_144}},
+                "glm-5": {"name": "GLM-5", "limit": {"context": -1}},  # bad context dropped
+                "bad": "not a dict",
+            },
+        },
+        "opencode": {"models": {"gpt-5": {"name": "GPT-5"}}},  # other provider ignored
     }
-    result = _parse_discovered_models(payload)
-    by_id = {m.model_id: m for m in result}
-    assert by_id["kimi-k2.6"].max_context_size == 262_000  # default preserved
-    assert by_id["glm-5"].max_context_size == 262_000
-    assert by_id["deepseek-v4-pro"].max_context_size == 999_000
+    result = _parse_models_dev_metadata(payload)
+    assert result == {
+        "qwen3.7-max": _ModelsDevMeta("Qwen3.7 Max", 1_000_000, True),
+        "kimi-k2.6": _ModelsDevMeta("Kimi K2.6", 262_144, False),
+        "glm-5": _ModelsDevMeta("GLM-5", None, False),
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [None, {}, {"opencode-go": "not a dict"}, {"opencode-go": {"models": "not a dict"}}],
+)
+def test_parse_models_dev_metadata_handles_malformed_payloads(payload):
+    from pythinker_code.auth.opencode_go import _parse_models_dev_metadata
+
+    assert _parse_models_dev_metadata(payload) == {}
 
 
 @pytest.mark.asyncio

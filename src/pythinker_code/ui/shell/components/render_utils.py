@@ -16,8 +16,9 @@ from pythinker_code.ui.theme import tui_rich_style
 _ELLIPSIS = "…"
 _ANSI_CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _ANSI_OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+_ANSI_APC_RE = re.compile(r"\x1b_[^\x07\x1b]*(?:\x07|\x1b\\)")
 _ANSI_ST_RE = re.compile(r"\x1b\\")
-_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x0d\x0e-\x1f\x7f]")
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,16 +112,25 @@ def cell_width(text: str) -> int:
     return cell_len(text)
 
 
-def truncate_to_width(text: str, max_width: int, *, ellipsis: str = _ELLIPSIS) -> str:
+def truncate_to_width(
+    text: str,
+    max_width: int,
+    *,
+    ellipsis: str = _ELLIPSIS,
+    pad: bool = False,
+) -> str:
     """Truncate *text* so its terminal cell width fits within *max_width*.
 
     If *max_width* is too small to hold the ellipsis, returns the leading
-    cells of *text* without an ellipsis.
+    cells of *text* without an ellipsis. When *pad* is true, right-pad the
+    result to exactly *max_width* terminal cells.
     """
     if max_width <= 0:
         return ""
     if cell_len(text) <= max_width:
-        return text
+        if not pad:
+            return text
+        return text + " " * max(0, max_width - cell_len(text))
     ellipsis_w = cell_len(ellipsis)
     if max_width <= ellipsis_w:
         # No room for the marker — fall back to plain truncation.
@@ -132,7 +142,10 @@ def truncate_to_width(text: str, max_width: int, *, ellipsis: str = _ELLIPSIS) -
                 break
             out.append(ch)
             used += w
-        return "".join(out)
+        result = "".join(out)
+        if pad:
+            result += " " * max(0, max_width - cell_len(result))
+        return result
     budget = max_width - ellipsis_w
     used = 0
     cut = 0
@@ -143,7 +156,10 @@ def truncate_to_width(text: str, max_width: int, *, ellipsis: str = _ELLIPSIS) -
             break
         used += w
         cut = i + 1
-    return text[:cut] + ellipsis
+    result = text[:cut] + ellipsis
+    if pad:
+        result += " " * max(0, max_width - cell_len(result))
+    return result
 
 
 def render_message_response(renderable: RenderableType) -> RenderableType:
@@ -172,13 +188,14 @@ def dim(text: str | Text) -> Text:
 def sanitize_ansi(text: str) -> str:
     """Strip ANSI escape sequences and other unsafe control bytes from *text*.
 
-    Keeps newlines, carriage returns, and tabs. Use before feeding raw shell
-    output into a Rich renderable to avoid cursor-movement and color leaks
+    Keeps newlines and tabs, but strips carriage returns. Use before feeding raw
+    shell output into a Rich renderable to avoid cursor-movement and color leaks
     that break layout.
     """
     no_csi = _ANSI_CSI_RE.sub("", text)
     no_osc = _ANSI_OSC_RE.sub("", no_csi)
-    no_st = _ANSI_ST_RE.sub("", no_osc)
+    no_apc = _ANSI_APC_RE.sub("", no_osc)
+    no_st = _ANSI_ST_RE.sub("", no_apc)
     return _CONTROL_RE.sub("", no_st)
 
 

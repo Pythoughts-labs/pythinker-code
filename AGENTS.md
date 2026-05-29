@@ -32,6 +32,11 @@ subagents, skills, web/visualization UIs, and multi-provider LLM authentication.
   and agent spec semantics need tests/docs when changed.
 - **Do not modify git config, skip hooks, force-push, reset hard, or delete branches/worktrees**
   unless the user explicitly asks and confirms the destructive action.
+- **Always check the CodeRabbit review before merging a PR.** Before merging (`gh pr merge` or the
+  GitHub UI), confirm CodeRabbit has finished reviewing the PR's head commit — its `CodeRabbit`
+  commit status is `success`, not `pending`/`failure` or absent — and read the review summary and
+  any "Actionable comments posted: N" findings. Do not merge while CodeRabbit is still reviewing or
+  on an unreviewed commit; surface unresolved actionable findings instead of merging past them.
 
 ## Quick commands
 

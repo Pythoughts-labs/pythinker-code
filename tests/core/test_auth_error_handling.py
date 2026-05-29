@@ -341,6 +341,26 @@ async def test_403_propagates_as_api_status_error(runtime: Runtime, tmp_path: Pa
     assert exc_info.value.status_code == 403
 
 
+def test_insufficient_credits_error_detected_from_401_body_text() -> None:
+    """A 401 carrying an OpenCode Go CreditsError is a billing issue, not a
+    stale credential, so it must not route the user to /login."""
+    from pythinker_code.ui.shell import _is_insufficient_credits_error
+
+    credits = APIStatusError(
+        401,
+        "Error code: 401 - {'type': 'error', 'error': {'type': 'CreditsError', "
+        "'message': 'Insufficient balance. Manage your billing here: "
+        "https://opencode.ai/workspace/x/billing'}}",
+    )
+    assert _is_insufficient_credits_error(credits) is True
+
+
+def test_stale_credential_401_not_treated_as_insufficient_credits() -> None:
+    from pythinker_code.ui.shell import _is_insufficient_credits_error
+
+    assert _is_insufficient_credits_error(APIStatusError(401, "incorrect API KEY")) is False
+
+
 # ---------------------------------------------------------------------------
 # Tests: wire server _handle_prompt
 # ---------------------------------------------------------------------------
