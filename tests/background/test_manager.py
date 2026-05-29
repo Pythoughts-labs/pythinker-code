@@ -851,6 +851,71 @@ def test_reconcile_prunes_aged_terminal_tasks(runtime):
     assert fresh_spec.id in task_ids
 
 
+@pytest.mark.asyncio
+async def test_recover_does_not_clobber_resumed_background_instance(runtime):
+    # An agent_id can be reused: an old background task is terminal while the
+    # SAME agent_id has been resumed as a new, live background task whose record
+    # is (correctly) running_background. recover() must not reconcile the old
+    # terminal task's view onto the live agent's record.
+    manager = runtime.background_tasks
+    store = manager.store
+    runtime.subagent_store.create_instance(
+        agent_id="aresumebg",
+        description="resumed background agent",
+        launch_spec=AgentLaunchSpec(
+            agent_id="aresumebg",
+            subagent_type="coder",
+            model_override=None,
+            effective_model=None,
+        ),
+    )
+    runtime.subagent_store.update_instance("aresumebg", status="running_background")
+
+    def _agent_spec(task_id: str) -> TaskSpec:
+        return TaskSpec(
+            id=task_id,
+            kind="agent",
+            session_id=runtime.session.id,
+            description="agent run",
+            tool_call_id=f"tool-{task_id}",
+            owner_role="root",
+            kind_payload={
+                "agent_id": "aresumebg",
+                "subagent_type": "coder",
+                "prompt": "p",
+                "model_override": None,
+                "launch_mode": "background",
+            },
+        )
+
+    old_spec = _agent_spec("aoldresume1")
+    store.create_task(old_spec)
+    store.write_runtime(
+        old_spec.id,
+        TaskRuntime(status="failed", finished_at=time.time(), updated_at=time.time()),
+    )
+    new_spec = _agent_spec("anewresume1")
+    store.create_task(new_spec)
+    store.write_runtime(
+        new_spec.id,
+        TaskRuntime(status="running", updated_at=time.time(), heartbeat_at=time.time()),
+    )
+
+    async def _alive() -> None:
+        await asyncio.sleep(3600)
+
+    live = asyncio.create_task(_alive())
+    manager._live_agent_tasks[new_spec.id] = live
+    try:
+        manager.recover()
+        assert runtime.subagent_store.require_instance("aresumebg").status == "running_background"
+    finally:
+        live.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await live
+        manager._live_agent_tasks.pop(new_spec.id, None)
+
+
 def test_mark_task_running_does_not_overwrite_terminal_state(runtime):
     manager = runtime.background_tasks
     store = manager.store

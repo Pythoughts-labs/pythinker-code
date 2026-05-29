@@ -558,14 +558,24 @@ class BackgroundTaskManager:
     def recover(self) -> None:
         now = time.time()
         stale_after = self._config.worker_stale_after_ms / 1000
-        for view in self._store.list_views():
+        views = self._store.list_views()
+        # agent_ids owned by a live in-process task. A terminal task that reused
+        # the same agent_id (e.g. a prior run before a background resume) must
+        # not reconcile its status onto the *live* agent's record.
+        live_agent_ids = {
+            agent_id
+            for view in views
+            if view.spec.id in self._live_agent_tasks
+            and isinstance(agent_id := (view.spec.kind_payload or {}).get("agent_id"), str)
+        }
+        for view in views:
             if view.spec.kind == "agent":
                 # Agent tasks are handled before the terminal-skip below so a
                 # terminal task whose subagent record is still stuck at
                 # running_background (crash after the authoritative TaskRuntime
                 # write, or after kill() but before the runner's cancel handler)
                 # still gets reconciled.
-                self._recover_agent_view(view, now=now)
+                self._recover_agent_view(view, now=now, live_agent_ids=live_agent_ids)
                 continue
             if is_terminal_status(view.runtime.status):
                 continue
@@ -610,7 +620,7 @@ class BackgroundTaskManager:
                     )
                 self._store._write_runtime_unlocked(view.spec.id, runtime)  # pyright: ignore[reportPrivateUsage]
 
-    def _recover_agent_view(self, view: TaskView, *, now: float) -> None:
+    def _recover_agent_view(self, view: TaskView, *, now: float, live_agent_ids: set[str]) -> None:
         """Recover an in-process agent task and reconcile its subagent record.
 
         An orphaned task (non-terminal, no live asyncio task) gets an
@@ -638,19 +648,27 @@ class BackgroundTaskManager:
             )
             self._store.write_runtime(view.spec.id, runtime)
             runtime_status = runtime.status
-        self._reconcile_subagent_status(agent_id, runtime_status)
+        self._reconcile_subagent_status(agent_id, runtime_status, live_agent_ids)
 
-    def _reconcile_subagent_status(self, agent_id: str | None, runtime_status: TaskStatus) -> None:
+    def _reconcile_subagent_status(
+        self, agent_id: str | None, runtime_status: TaskStatus, live_agent_ids: set[str]
+    ) -> None:
         """Bring a subagent instance record into agreement with the authoritative
         agent ``TaskStatus``.
 
-        Only a record still parked at ``running_background`` is touched, so a
-        record that has since been resumed in the foreground (``running_foreground``)
-        or already settled to a terminal status is never clobbered. This is safe
-        precisely because a background agent's record stays ``running_background``
-        for the whole run, so an interrupted finalize always leaves it there.
+        Skipped when ``agent_id`` is owned by a live in-process task — the same
+        agent_id may have been reused by a newer, currently-running task (e.g. a
+        background resume), so the ``running_background`` record belongs to that
+        live run, not to this (older, terminal) view. Otherwise only a record
+        still parked at ``running_background`` is touched, so a record resumed in
+        the foreground (``running_foreground``) or already settled to a terminal
+        status is never clobbered. This is safe because a background agent's
+        record stays ``running_background`` for the whole run, so an interrupted
+        finalize always leaves it there.
         """
-        if agent_id is None or self._runtime is None or self._runtime.subagent_store is None:
+        if agent_id is None or agent_id in live_agent_ids:
+            return
+        if self._runtime is None or self._runtime.subagent_store is None:
             return
         target = _subagent_status_for_task_status(runtime_status)
         if target is None:
