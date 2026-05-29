@@ -63,6 +63,37 @@ def test_shell_markdown_renders_priority_matrix_as_grouped_rows() -> None:
     assert "────────────────" not in output
 
 
+def test_shell_markdown_repairs_glued_table_header() -> None:
+    # The model sometimes glues the header onto preceding prose and drops the
+    # newline before the |---| delimiter; markdown-it then renders it as raw
+    # text. The normalizer should rebuild a real table.
+    output = _render_text(
+        PythinkerMarkdown(
+            "● LOW — Various| Category | Issue | Locations |\n\n"
+            "|----------|-------|-----------| | Error handling | Bare except | 12 files |\n"
+        )
+    )
+    # Header text on its own line, no raw delimiter pipes left in the output.
+    assert "Category" in output and "Locations" in output
+    assert "Error handling" in output and "12 files" in output
+    assert "---" not in output
+    assert "|----------|" not in output
+
+
+def test_shell_markdown_leaves_inline_pipes_alone() -> None:
+    # A stray inline |-| in prose must not be mistaken for a table delimiter.
+    text = "Use the `a | b` operator. See |--| inline here."
+    output = _render_text(PythinkerMarkdown(text))
+    assert "operator" in output and "inline here" in output
+
+
+def test_shell_markdown_keeps_table_like_pipes_in_code_fence() -> None:
+    output = _render_text(PythinkerMarkdown("```\n| not | a | table |\n|-----|---|-------|\n```\n"))
+    # Inside a fence the pipes and delimiter survive verbatim.
+    assert "| not | a | table |" in output
+    assert "|-----|---|-------|" in output
+
+
 def test_shell_markdown_pads_code_block_with_blank_rows() -> None:
     # The code block should read as a distinct section, with a blank row framing
     # the panel above and below so it never crowds the surrounding prose.

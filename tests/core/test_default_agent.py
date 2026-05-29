@@ -204,7 +204,7 @@ The operating environment is not in a sandbox. Any actions you do will immediate
 
 ## Date and Time
 
-The current date and time in ISO format is `1970-01-01T00:00:00+00:00`. This is only a reference for you when searching the web, or checking file modification time, etc. If you need the exact time, use Shell tool with proper command.
+The current date and time in ISO format is `1970-01-01T00:00:00+00:00`. Treat this as the authoritative present — it reflects the real "now", which is later than your training data suggests. Anchor all reasoning about the current date, the year, recency, and what counts as the "latest" version or release to `1970-01-01T00:00:00+00:00`; do not fall back on an earlier year you might assume from training. Use it as your reference when searching the web or checking file modification times. If you need the exact time, use the Shell tool with a proper command.
 
 ## Working Directory
 
@@ -268,6 +268,15 @@ No skills found.
 Identify the skills that are likely to be useful for the tasks you are currently working on, read the `SKILL.md` file for detailed instructions, guidelines, scripts and more. If a skill `<name>` has a companion `<name>-local`, treat `<name>-local` as local project specialization and apply it after the core skill.
 
 Only read skill details when needed to conserve the context window.
+
+# Output Formatting
+
+Your responses are rendered as Markdown in a terminal. Emit well-formed Markdown so it renders cleanly:
+
+- **Tables:** put the header row on its own line, the `|---|---|` delimiter row on the immediately following line (no blank line between them), and one row per line. Never glue a table onto adjacent prose (e.g. `Findings| Col |`) and never cram multiple rows onto one line. Leave a blank line before and after the table.
+- Prefer a short bullet list over a table when there are only a few items or any cell is long; reserve tables for genuinely tabular data with short cells.
+- **Code fences are for code only.** Use triple-backtick blocks (tagged with the language, e.g. ```python, ```toml) solely for source, config, or commands — one snippet per block. Never wrap a prose report, finding list, checklist, or ASCII box in a fence to align or frame it; write it as normal Markdown (headings, bullets, tables) so it renders cleanly.
+- **Status icons sparingly.** A check/cross/dot can mark a single headline result, but do not prefix every line with one. Use plain words for severity and outcomes (e.g. `High`, `PASS`, `0 findings`). The terminal renders icons as calm monochrome glyphs only outside code fences — another reason not to box reports.
 
 # Ultimate Reminders
 
