@@ -37,14 +37,15 @@ def test_native_homebrew_formula_renders_release_tarballs() -> None:
 
     assert "include Language::Python::Virtualenv" not in formula
     assert 'version "1.2.3"' in formula
-    assert "pythinker-1.2.3-aarch64-apple-darwin.tar.gz" in formula
-    assert "pythinker-1.2.3-x86_64-apple-darwin.tar.gz" in formula
-    assert "pythinker-1.2.3-aarch64-unknown-linux-gnu.tar.gz" in formula
-    assert "pythinker-1.2.3-x86_64-unknown-linux-gnu.tar.gz" in formula
+    assert "pythinker-1.2.3-aarch64-apple-darwin-onedir.tar.gz" in formula
+    assert "pythinker-1.2.3-x86_64-apple-darwin-onedir.tar.gz" in formula
+    assert "pythinker-1.2.3-aarch64-unknown-linux-gnu-onedir.tar.gz" in formula
+    assert "pythinker-1.2.3-x86_64-unknown-linux-gnu-onedir.tar.gz" in formula
     assert "on_macos do" in formula
     assert "on_linux do" in formula
     assert "on_arm do" in formula
     assert "on_intel do" in formula
+    assert 'libexec.install Dir["*"]' in formula
     assert '(libexec/".pythinker-native").write "pythinker-native-build\\n"' in formula
     assert 'bin.write_exec_script libexec/"pythinker"' in formula
 
