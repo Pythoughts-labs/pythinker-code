@@ -8,7 +8,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from pythinker_host.local import local_host
 
@@ -19,6 +19,7 @@ from pythinker_code.utils.logging import logger
 
 if TYPE_CHECKING:
     from pythinker_code.soul.agent import Runtime
+    from pythinker_code.subagents.models import SubagentStatus
 
 from .ids import generate_task_id
 from .models import (
@@ -31,6 +32,25 @@ from .models import (
     is_terminal_status,
 )
 from .store import BackgroundTaskStore
+
+AgentTaskOutcome = Literal["completed", "failed", "timed_out", "killed"]
+
+
+def _subagent_status_for_task_status(status: TaskStatus) -> SubagentStatus | None:
+    """Map an authoritative agent ``TaskStatus`` to the subagent instance status
+    it implies, for crash-recovery reconciliation.
+
+    Returns ``None`` for statuses that imply no reconciliation. ``recoverable``
+    and ``completed`` park the instance at ``idle`` (resumable / done-clean);
+    ``killed`` and the failure family (``failed``/``lost``) map straight through.
+    """
+    if status in ("completed", "recoverable"):
+        return "idle"
+    if status == "killed":
+        return "killed"
+    if status in ("failed", "lost"):
+        return "failed"
+    return None
 
 
 class BackgroundTaskManager:
@@ -539,31 +559,15 @@ class BackgroundTaskManager:
         now = time.time()
         stale_after = self._config.worker_stale_after_ms / 1000
         for view in self._store.list_views():
-            if is_terminal_status(view.runtime.status):
-                continue
             if view.spec.kind == "agent":
-                if view.spec.id in self._live_agent_tasks:
-                    continue
-                runtime = view.runtime.model_copy()
-                runtime.finished_at = now
-                runtime.updated_at = now
-                agent_id = (view.spec.kind_payload or {}).get("agent_id")
-                runtime.status = "recoverable" if isinstance(agent_id, str) else "lost"
-                runtime.failure_reason = (
-                    "In-process background agent is no longer running; resume the stored agent "
-                    f"instance {agent_id} to continue."
-                    if isinstance(agent_id, str)
-                    else "In-process background agent is no longer running"
-                )
-                self._store.write_runtime(view.spec.id, runtime)
-                if (
-                    isinstance(agent_id, str)
-                    and self._runtime is not None
-                    and self._runtime.subagent_store is not None
-                ):
-                    record = self._runtime.subagent_store.get_instance(agent_id)
-                    if record is not None and record.status == "running_background":
-                        self._runtime.subagent_store.update_instance(agent_id, status="idle")
+                # Agent tasks are handled before the terminal-skip below so a
+                # terminal task whose subagent record is still stuck at
+                # running_background (crash after the authoritative TaskRuntime
+                # write, or after kill() but before the runner's cancel handler)
+                # still gets reconciled.
+                self._recover_agent_view(view, now=now)
+                continue
+            if is_terminal_status(view.runtime.status):
                 continue
             last_progress_at = (
                 view.runtime.heartbeat_at
@@ -606,9 +610,68 @@ class BackgroundTaskManager:
                     )
                 self._store._write_runtime_unlocked(view.spec.id, runtime)  # pyright: ignore[reportPrivateUsage]
 
+    def _recover_agent_view(self, view: TaskView, *, now: float) -> None:
+        """Recover an in-process agent task and reconcile its subagent record.
+
+        An orphaned task (non-terminal, no live asyncio task) gets an
+        authoritative terminal status re-derived here. Either way the subagent
+        instance record is reconciled to agree with the authoritative
+        ``TaskRuntime`` — closing the window where a process crash between
+        :meth:`finalize_agent_task`'s two writes, or between :meth:`kill` and the
+        runner's cancellation handler, left the two records divergent.
+        """
+        agent_id_raw = (view.spec.kind_payload or {}).get("agent_id")
+        agent_id = agent_id_raw if isinstance(agent_id_raw, str) else None
+        runtime_status: TaskStatus = view.runtime.status
+        if not is_terminal_status(runtime_status):
+            if view.spec.id in self._live_agent_tasks:
+                return
+            runtime = view.runtime.model_copy()
+            runtime.finished_at = now
+            runtime.updated_at = now
+            runtime.status = "recoverable" if agent_id is not None else "lost"
+            runtime.failure_reason = (
+                "In-process background agent is no longer running; resume the stored agent "
+                f"instance {agent_id} to continue."
+                if agent_id is not None
+                else "In-process background agent is no longer running"
+            )
+            self._store.write_runtime(view.spec.id, runtime)
+            runtime_status = runtime.status
+        self._reconcile_subagent_status(agent_id, runtime_status)
+
+    def _reconcile_subagent_status(self, agent_id: str | None, runtime_status: TaskStatus) -> None:
+        """Bring a subagent instance record into agreement with the authoritative
+        agent ``TaskStatus``.
+
+        Only a record still parked at ``running_background`` is touched, so a
+        record that has since been resumed in the foreground (``running_foreground``)
+        or already settled to a terminal status is never clobbered. This is safe
+        precisely because a background agent's record stays ``running_background``
+        for the whole run, so an interrupted finalize always leaves it there.
+        """
+        if agent_id is None or self._runtime is None or self._runtime.subagent_store is None:
+            return
+        target = _subagent_status_for_task_status(runtime_status)
+        if target is None:
+            return
+        record = self._runtime.subagent_store.get_instance(agent_id)
+        if record is None or record.status != "running_background":
+            return
+        self._runtime.subagent_store.update_instance(agent_id, status=target)
+
     def reconcile(self, *, limit: int | None = None) -> list[str]:
         self.recover()
-        return self.publish_terminal_notifications(limit=limit)
+        published = self.publish_terminal_notifications(limit=limit)
+        # Opportunistic housekeeping: prune aged terminal task directories so the
+        # store does not grow unbounded. Best-effort and bounded — cleanup skips
+        # non-terminal tasks and any whose worker is still alive, and no-ops when
+        # task_retention_days == 0. A failure here must never break reconcile.
+        try:
+            self._store.cleanup_old_tasks(self._config.task_retention_days)
+        except Exception:
+            logger.warning("Background task cleanup failed during reconcile")
+        return published
 
     def publish_terminal_notifications(self, *, limit: int | None = None) -> list[str]:
         published: list[str] = []
@@ -683,6 +746,45 @@ class BackgroundTaskManager:
             if limit is not None and len(published) >= limit:
                 break
         return published
+
+    def finalize_agent_task(
+        self,
+        task_id: str,
+        agent_id: str | None,
+        *,
+        outcome: AgentTaskOutcome,
+        reason: str | None = None,
+    ) -> None:
+        """Apply an in-process agent task's terminal outcome to both stores.
+
+        The authoritative ``TaskRuntime`` is written FIRST and the derived
+        subagent instance record LAST, in one fixed order, so different call
+        sites can never interleave the pair in conflicting orders (the bug this
+        replaces: ``run()`` wrote the record first, ``_run_core`` wrote the task
+        first). A process crash between the two writes leaves the instance record
+        at ``running_background``; :meth:`recover` then reconciles it to the
+        status implied by the authoritative ``TaskRuntime``
+        (see :func:`_subagent_status_for_task_status`). Callers must route every
+        terminal agent update through here.
+        """
+        if outcome == "completed":
+            self._mark_task_completed(task_id)
+        elif outcome == "timed_out":
+            self._mark_task_timed_out(task_id, reason or "Agent task timed out")
+        elif outcome == "killed":
+            self._mark_task_killed(task_id, reason or "Agent task stopped")
+        else:
+            self._mark_task_failed(task_id, reason or "Agent task failed")
+
+        if (
+            agent_id is not None
+            and self._runtime is not None
+            and self._runtime.subagent_store is not None
+        ):
+            subagent_status: SubagentStatus = (
+                "idle" if outcome == "completed" else "killed" if outcome == "killed" else "failed"
+            )
+            self._runtime.subagent_store.update_instance(agent_id, status=subagent_status)
 
     def _mark_task_running(self, task_id: str) -> None:
         with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]

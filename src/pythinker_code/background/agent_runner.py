@@ -99,9 +99,11 @@ class BackgroundAgentRunner:
                     id=self._task_id,
                     t=self._timeout_s,
                 )
-                self._runtime.subagent_store.update_instance(self._agent_id, status="failed")
-                self._manager._mark_task_timed_out(
-                    self._task_id, f"Agent task timed out after {self._timeout_s}s"
+                self._manager.finalize_agent_task(
+                    self._task_id,
+                    self._agent_id,
+                    outcome="timed_out",
+                    reason=f"Agent task timed out after {self._timeout_s}s",
                 )
                 output.error(
                     _timeout_recovery_message(timeout_s=self._timeout_s, agent_id=self._agent_id)
@@ -109,25 +111,29 @@ class BackgroundAgentRunner:
             else:
                 # Internal timeout (e.g. aiohttp request) — treat as generic failure
                 logger.exception("Background agent runner failed")
-                self._runtime.subagent_store.update_instance(self._agent_id, status="failed")
-                self._manager._mark_task_failed(self._task_id, str(exc))
+                self._manager.finalize_agent_task(
+                    self._task_id, self._agent_id, outcome="failed", reason=str(exc)
+                )
                 output.error(str(exc))
         except asyncio.CancelledError:
-            self._runtime.subagent_store.update_instance(self._agent_id, status="killed")
-            self._manager._mark_task_killed(self._task_id, "Stopped by TaskStop")
+            self._manager.finalize_agent_task(
+                self._task_id, self._agent_id, outcome="killed", reason="Stopped by TaskStop"
+            )
             output.stage("cancelled")
             raise
         except RunCancelled:
             # RunCancelled is Exception (not BaseException), so re-raising it from
             # an asyncio.create_task would trigger "Task exception was never retrieved".
             # Just mark killed and return — cleanup is already done.
-            self._runtime.subagent_store.update_instance(self._agent_id, status="killed")
-            self._manager._mark_task_killed(self._task_id, "Run was cancelled")
+            self._manager.finalize_agent_task(
+                self._task_id, self._agent_id, outcome="killed", reason="Run was cancelled"
+            )
             output.stage("cancelled")
         except Exception as exc:
             logger.exception("Background agent runner failed")
-            self._runtime.subagent_store.update_instance(self._agent_id, status="failed")
-            self._manager._mark_task_failed(self._task_id, str(exc))
+            self._manager.finalize_agent_task(
+                self._task_id, self._agent_id, outcome="failed", reason=str(exc)
+            )
             output.error(str(exc))
         finally:
             # Whatever happens in approval cleanup below, the dict pop must
@@ -197,22 +203,24 @@ class BackgroundAgentRunner:
             ),
         )
         if failure is not None:
-            self._manager._mark_task_failed(self._task_id, failure.message)
-            self._runtime.subagent_store.update_instance(self._agent_id, status="failed")
+            self._manager.finalize_agent_task(
+                self._task_id, self._agent_id, outcome="failed", reason=failure.message
+            )
             output.stage(f"failed: {failure.brief}")
             return
         output.stage("run_soul_finished")
 
         if final_response is None:
-            self._manager._mark_task_failed(
-                self._task_id, "Agent completed but produced no output."
+            self._manager.finalize_agent_task(
+                self._task_id,
+                self._agent_id,
+                outcome="failed",
+                reason="Agent completed but produced no output.",
             )
-            self._runtime.subagent_store.update_instance(self._agent_id, status="failed")
             output.stage("failed: empty output")
             return
         output.summary(final_response)
-        self._runtime.subagent_store.update_instance(self._agent_id, status="idle")
-        self._manager._mark_task_completed(self._task_id)
+        self._manager.finalize_agent_task(self._task_id, self._agent_id, outcome="completed")
 
     def _on_approval_runtime_event(self, event: ApprovalRuntimeEvent) -> None:
         request = event.request

@@ -206,3 +206,80 @@ def test_list_views_uses_spec_created_at_when_runtime_is_corrupted(runtime):
     views = store.list_views()
 
     assert [view.spec.id for view in views] == ["b9999995", "b9999994"]
+
+
+def _make_spec(runtime, task_id: str) -> TaskSpec:
+    return TaskSpec(
+        id=task_id,
+        kind="bash",
+        session_id=runtime.session.id,
+        description="cleanup candidate",
+        tool_call_id=f"call-{task_id}",
+        command="echo ok",
+        shell_name="bash",
+        shell_path="/bin/bash",
+        cwd=str(runtime.session.work_dir),
+        timeout_s=60,
+    )
+
+
+def test_cleanup_old_tasks(runtime):
+    import os
+
+    from pythinker_code.background.models import TaskRuntime
+
+    store = BackgroundTaskStore(runtime.session.context_file.parent / "tasks")
+    now = 1_000_000.0
+    day = 86_400.0
+
+    cases = {
+        # (a) terminal + old -> removed
+        "boldterm01": TaskRuntime(
+            status="completed",
+            updated_at=now - 30 * day,
+            finished_at=now - 30 * day,
+        ),
+        # (b) terminal + recent -> kept
+        "bnewterm01": TaskRuntime(
+            status="failed",
+            updated_at=now - 1 * day,
+            finished_at=now - 1 * day,
+        ),
+        # (c) non-terminal (running) + old -> kept
+        "boldrun001": TaskRuntime(
+            status="running",
+            updated_at=now - 30 * day,
+        ),
+        # (d) terminal + old but worker_pid is a live pid -> kept
+        "boldalive1": TaskRuntime(
+            status="killed",
+            updated_at=now - 30 * day,
+            finished_at=now - 30 * day,
+            worker_pid=os.getpid(),
+        ),
+    }
+    for task_id, rt in cases.items():
+        store.create_task(_make_spec(runtime, task_id))
+        store.write_runtime(task_id, rt)
+
+    removed = store.cleanup_old_tasks(max_age_days=7, now=now)
+
+    assert removed == ["boldterm01"]
+    assert not store.task_path("boldterm01").exists()
+    assert store.task_path("bnewterm01").exists()
+    assert store.task_path("boldrun001").exists()
+    assert store.task_path("boldalive1").exists()
+
+
+def test_cleanup_old_tasks_disabled_returns_empty(runtime):
+    from pythinker_code.background.models import TaskRuntime
+
+    store = BackgroundTaskStore(runtime.session.context_file.parent / "tasks")
+    store.create_task(_make_spec(runtime, "boldterm02"))
+    store.write_runtime(
+        "boldterm02",
+        TaskRuntime(status="completed", updated_at=0.0, finished_at=0.0),
+    )
+
+    assert store.cleanup_old_tasks(max_age_days=0, now=1_000_000.0) == []
+    assert store.task_path("boldterm02").exists()

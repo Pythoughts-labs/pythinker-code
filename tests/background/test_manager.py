@@ -693,6 +693,164 @@ def test_recover_marks_stale_agent_task_lost_and_clears_instance_running_state(r
     assert instance.status == "idle"
 
 
+def _seed_agent_task(
+    runtime,
+    *,
+    task_id: str,
+    agent_id: str,
+    task_status: TaskStatus,
+    instance_status: str = "running_background",
+    updated_offset: float = 0.0,
+):
+    """Create a paired (subagent instance, agent TaskRuntime) for recovery tests."""
+    store = runtime.background_tasks.store
+    runtime.subagent_store.create_instance(
+        agent_id=agent_id,
+        description="background agent",
+        launch_spec=AgentLaunchSpec(
+            agent_id=agent_id,
+            subagent_type="coder",
+            model_override=None,
+            effective_model=None,
+        ),
+    )
+    runtime.subagent_store.update_instance(agent_id, status=instance_status)
+    spec = TaskSpec(
+        id=task_id,
+        kind="agent",
+        session_id=runtime.session.id,
+        description="background agent task",
+        tool_call_id=f"tool-{task_id}",
+        owner_role="root",
+        kind_payload={
+            "agent_id": agent_id,
+            "subagent_type": "coder",
+            "prompt": "do work",
+            "model_override": None,
+            "launch_mode": "background",
+        },
+    )
+    store.create_task(spec)
+    now = time.time() - updated_offset
+    store.write_runtime(
+        spec.id,
+        TaskRuntime(status=task_status, updated_at=now, finished_at=now),
+    )
+    return spec
+
+
+def test_recover_reconciles_subagent_record_for_terminal_agent_task(runtime):
+    # Simulates a crash after finalize wrote the authoritative TaskRuntime
+    # (failed) but before the subagent record write: the instance is left
+    # running_background. recover() must bring the two into agreement.
+    manager = runtime.background_tasks
+    _seed_agent_task(runtime, task_id="acrashtask", agent_id="acrashagent", task_status="failed")
+    assert runtime.subagent_store.require_instance("acrashagent").status == "running_background"
+
+    manager.recover()
+
+    assert runtime.subagent_store.require_instance("acrashagent").status == "failed"
+    assert manager.store.merged_view("acrashtask").runtime.status == "failed"
+
+
+def test_recover_reconciles_subagent_record_for_killed_agent_task(runtime):
+    # kill() marks TaskRuntime killed first, then cancels the asyncio task. A
+    # crash before the runner's cancel handler writes the instance leaves it
+    # running_background; recover() maps killed -> killed.
+    manager = runtime.background_tasks
+    _seed_agent_task(runtime, task_id="akilltask", agent_id="akillagent", task_status="killed")
+
+    manager.recover()
+
+    assert runtime.subagent_store.require_instance("akillagent").status == "killed"
+
+
+def test_recover_does_not_clobber_resumed_foreground_instance(runtime):
+    # An old terminal task whose agent instance has since been resumed in the
+    # foreground must not be reset by recovery reconciliation.
+    manager = runtime.background_tasks
+    _seed_agent_task(
+        runtime,
+        task_id="aresumetask",
+        agent_id="aresumeagent",
+        task_status="recoverable",
+        instance_status="running_foreground",
+    )
+
+    manager.recover()
+
+    assert runtime.subagent_store.require_instance("aresumeagent").status == "running_foreground"
+
+
+def test_finalize_agent_task_updates_both_records_consistently(runtime):
+    manager = runtime.background_tasks
+    spec = _seed_agent_task(
+        runtime, task_id="afintask", agent_id="afinagent", task_status="running"
+    )
+
+    manager.finalize_agent_task("afintask", "afinagent", outcome="failed", reason="boom")
+
+    assert manager.store.merged_view(spec.id).runtime.status == "failed"
+    assert manager.store.read_runtime(spec.id).failure_reason == "boom"
+    assert runtime.subagent_store.require_instance("afinagent").status == "failed"
+
+
+def test_finalize_agent_task_completed_parks_instance_idle(runtime):
+    manager = runtime.background_tasks
+    _seed_agent_task(runtime, task_id="adonetask", agent_id="adoneagent", task_status="running")
+
+    manager.finalize_agent_task("adonetask", "adoneagent", outcome="completed")
+
+    assert manager.store.merged_view("adonetask").runtime.status == "completed"
+    assert runtime.subagent_store.require_instance("adoneagent").status == "idle"
+
+
+def test_reconcile_prunes_aged_terminal_tasks(runtime):
+    manager = runtime.background_tasks
+    store = manager.store
+    runtime.config.background.task_retention_days = 1
+    aged = time.time() - 3 * 86_400
+    old_spec = TaskSpec(
+        id="aoldbash1",
+        kind="bash",
+        session_id=runtime.session.id,
+        description="aged completed task",
+        tool_call_id="tool-old",
+        command="echo hi",
+        shell_name="bash",
+        shell_path="/bin/bash",
+        cwd=str(runtime.session.work_dir),
+        timeout_s=10,
+    )
+    store.create_task(old_spec)
+    store.write_runtime(
+        old_spec.id, TaskRuntime(status="completed", finished_at=aged, updated_at=aged)
+    )
+    fresh_spec = TaskSpec(
+        id="afreshbash1",
+        kind="bash",
+        session_id=runtime.session.id,
+        description="fresh completed task",
+        tool_call_id="tool-fresh",
+        command="echo hi",
+        shell_name="bash",
+        shell_path="/bin/bash",
+        cwd=str(runtime.session.work_dir),
+        timeout_s=10,
+    )
+    store.create_task(fresh_spec)
+    store.write_runtime(
+        fresh_spec.id,
+        TaskRuntime(status="completed", finished_at=time.time(), updated_at=time.time()),
+    )
+
+    manager.reconcile()
+
+    task_ids = store.list_task_ids()
+    assert old_spec.id not in task_ids
+    assert fresh_spec.id in task_ids
+
+
 def test_mark_task_running_does_not_overwrite_terminal_state(runtime):
     manager = runtime.background_tasks
     store = manager.store

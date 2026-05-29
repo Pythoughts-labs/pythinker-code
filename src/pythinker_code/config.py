@@ -109,6 +109,9 @@ class BackgroundConfig(BaseModel):
     """Background task runtime configuration."""
 
     max_running_tasks: int = Field(default=4, ge=1)
+    task_retention_days: int = Field(default=7, ge=0)
+    """Terminal background tasks older than this many days are pruned on
+    reconcile. ``0`` disables cleanup."""
     read_max_bytes: int = Field(default=30_000, ge=1024)
     notification_tail_lines: int = Field(default=20, ge=1)
     notification_tail_chars: int = Field(default=3_000, ge=256)
