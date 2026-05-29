@@ -177,7 +177,7 @@ def parse_report_block(payload: str) -> Report | None:
         _log.debug(
             "parse_report_block: JSON decode failed (type=%s len=%d)",
             type(payload).__name__,
-            len(payload) if isinstance(payload, (str, bytes)) else -1,
+            len(payload),
             exc_info=exc,
         )
         return None

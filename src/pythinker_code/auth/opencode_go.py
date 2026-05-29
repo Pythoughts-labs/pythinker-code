@@ -183,7 +183,7 @@ def _extract_model_ids(data: object) -> list[str]:
     for item in cast(list[Any], raw_items):
         if not isinstance(item, dict):
             continue
-        model_id = item.get("id")
+        model_id = cast(dict[str, Any], item).get("id")
         if isinstance(model_id, str) and model_id:
             ids.append(model_id)
     return ids
@@ -196,21 +196,22 @@ def _parse_models_dev_metadata(data: object) -> dict[str, _ModelsDevMeta]:
     provider = cast(dict[str, Any], data).get(MODELS_DEV_PROVIDER_ID)
     if not isinstance(provider, dict):
         return {}
-    models = provider.get("models")
+    models = cast(dict[str, Any], provider).get("models")
     if not isinstance(models, dict):
         return {}
-    default_npm = provider.get("npm")
+    default_npm = cast(dict[str, Any], provider).get("npm")
     result: dict[str, _ModelsDevMeta] = {}
     for model_id, entry in cast(dict[str, Any], models).items():
-        if not isinstance(model_id, str) or not isinstance(entry, dict):
+        if not isinstance(entry, dict):
             continue
-        name = entry.get("name")
+        entry_d = cast(dict[str, Any], entry)
+        name = entry_d.get("name")
         display_name = name if isinstance(name, str) and name else None
-        limit = entry.get("limit")
-        context = limit.get("context") if isinstance(limit, dict) else None
+        limit = entry_d.get("limit")
+        context = cast(dict[str, Any], limit).get("context") if isinstance(limit, dict) else None
         max_context = context if isinstance(context, int) and context > 0 else None
-        model_provider = entry.get("provider")
-        npm = model_provider.get("npm") if isinstance(model_provider, dict) else None
+        model_provider = entry_d.get("provider")
+        npm = cast(dict[str, Any], model_provider).get("npm") if isinstance(model_provider, dict) else None
         effective_npm = npm or default_npm
         is_anthropic = (
             effective_npm == MODELS_DEV_ANTHROPIC_NPM if isinstance(effective_npm, str) else None
