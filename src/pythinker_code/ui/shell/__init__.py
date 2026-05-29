@@ -795,11 +795,17 @@ class Shell:
                         resume_prompt.set()
                         active_running = 0
                         if isinstance(self.soul, PythinkerSoul):
-                            with contextlib.suppress(Exception):
+                            try:
                                 active_running = len(
                                     list_task_views(
                                         self.soul.runtime.background_tasks, active_only=True
                                     )
+                                )
+                            except Exception:
+                                logger.debug(
+                                    "Failed to compute active background task count for "
+                                    "idle reminder",
+                                    exc_info=True,
                                 )
                         ok = await self.run_soul_command(_background_idle_reminder(active_running))
                         console.print()
