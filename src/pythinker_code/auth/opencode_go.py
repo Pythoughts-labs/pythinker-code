@@ -211,7 +211,11 @@ def _parse_models_dev_metadata(data: object) -> dict[str, _ModelsDevMeta]:
         context = cast(dict[str, Any], limit).get("context") if isinstance(limit, dict) else None
         max_context = context if isinstance(context, int) and context > 0 else None
         model_provider = entry_d.get("provider")
-        npm = cast(dict[str, Any], model_provider).get("npm") if isinstance(model_provider, dict) else None
+        npm = (
+            cast(dict[str, Any], model_provider).get("npm")
+            if isinstance(model_provider, dict)
+            else None
+        )
         effective_npm = npm or default_npm
         is_anthropic = (
             effective_npm == MODELS_DEV_ANTHROPIC_NPM if isinstance(effective_npm, str) else None
