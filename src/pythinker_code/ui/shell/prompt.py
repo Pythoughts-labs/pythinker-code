@@ -2647,12 +2647,11 @@ class CustomPromptSession:
         detail_text = detail
         if _display_width(frame_text + detail_text) > columns:
             detail_text = _truncate_right(detail_text, columns - _display_width(frame_text))
-        fragments = FormattedText([(muted_style, frame_text + detail_text)])
-        todo_rows = self._render_background_todo_rows(columns)
-        if todo_rows:
-            ensure_prompt_newline(fragments)
-            fragments.extend(todo_rows)
-        return fragments
+        # ``show_verb=False`` means an in-flight turn's pinned status tail is already
+        # rendering the todo list under its verb spinner. Repeating the rows here
+        # would print the same todo list twice while the agent works, so this branch
+        # shows only the background-task count line.
+        return FormattedText([(muted_style, frame_text + detail_text)])
 
     def _background_task_counts(self) -> BgTaskCounts:
         provider = getattr(self, "_background_task_count_provider", None)
