@@ -109,7 +109,7 @@ def _todo_tool_result(items: list[TodoDisplayItem]) -> ToolResult:
 def test_working_indicator_pins_todos_under_spinner(monkeypatch):
     now = 1000.0
     monkeypatch.setattr(live_view_module.time, "monotonic", lambda: now)
-    # Pin the animated star marker to its static ``✶`` frame so this
+    # Pin the animated braille marker to its static dot so this
     # structure-focused assertion does not depend on the animation phase.
     monkeypatch.setenv("PYTHINKER_REDUCED_MOTION", "1")
     view = _LiveView(StatusUpdate())
@@ -138,7 +138,7 @@ def test_working_indicator_pins_todos_under_spinner(monkeypatch):
     now = 1060.0
     rendered = _render(view._working_indicator())
 
-    assert "✶ Explore project context — blogs page and image components… (1m 0s)" in rendered
+    assert "● Explore project context — blogs page and image components… (1m 0s)" in rendered
     # Active todo now appears both in the spinner header and the pinned list;
     # done todos sort to the bottom and are dropped by the 5-row cap when
     # active + pending already fill the rows.

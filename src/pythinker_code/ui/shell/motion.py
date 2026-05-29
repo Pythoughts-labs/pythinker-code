@@ -14,13 +14,13 @@ from pythinker_code.soul import format_token_count
 from pythinker_code.ui.shell.components.render_utils import cell_width
 from pythinker_code.ui.shell.design_system import ShellTone, shell_style
 from pythinker_code.ui.shell.glyphs import (
+    ACTIVE_MARKER_FRAME_INTERVAL_S,
+    ACTIVE_MARKER_FRAMES,
     REDUCED_MOTION_GLYPH,
     SHAPE_FRAME_INTERVAL_S,
     SHAPE_FRAMES,
     SPINNER_FRAME_INTERVAL_S,
     SPINNER_FRAMES,
-    STAR_SPINNER_FRAME_INTERVAL_S,
-    STAR_SPINNER_FRAMES,
     TRANSCRIPT_ACTIVE_MARKER,
 )
 from pythinker_code.ui.theme import tui_rich_style
@@ -155,14 +155,17 @@ def spinner_frame_at(
 
 
 def active_marker_frame(elapsed_s: float, *, reduced_motion: bool = False) -> str:
-    """Return the current pulsing-star frame for the active task marker (``✶``).
+    """Return the current braille dotted frame for the active task marker.
 
-    Reduced motion pins to the static ``✶`` so the marker stays calm.
+    Reduced motion pins to the static dot so the marker stays calm.
     """
     if reduced_motion or reduced_motion_enabled():
         return TRANSCRIPT_ACTIVE_MARKER
-    idx = int(max(0.0, elapsed_s) / STAR_SPINNER_FRAME_INTERVAL_S) % len(STAR_SPINNER_FRAMES)
-    return STAR_SPINNER_FRAMES[idx]
+    return spinner_frame_at(
+        elapsed_s,
+        frames=ACTIVE_MARKER_FRAMES,
+        interval_s=ACTIVE_MARKER_FRAME_INTERVAL_S,
+    )
 
 
 def _candidate_parts(snapshot: ActivitySnapshot) -> list[str]:

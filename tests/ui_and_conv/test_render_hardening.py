@@ -30,7 +30,9 @@ def test_spinner_frames_have_single_source() -> None:
     # All three modules must reference the same frames object — no copies.
     assert motion._FRAMES is glyphs.SPINNER_FRAMES
     assert spinner_words.SPINNER_FRAMES is glyphs.SPINNER_FRAMES
+    assert glyphs.ACTIVE_MARKER_FRAMES is glyphs.SPINNER_FRAMES
     assert motion._FRAME_INTERVAL_S == glyphs.SPINNER_FRAME_INTERVAL_S
+    assert glyphs.ACTIVE_MARKER_FRAME_INTERVAL_S == glyphs.SPINNER_FRAME_INTERVAL_S
 
 
 def test_reduced_motion_glyph_centralized() -> None:

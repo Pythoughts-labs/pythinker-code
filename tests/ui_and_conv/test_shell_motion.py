@@ -5,10 +5,12 @@ from rich.console import Console
 from rich.style import Style
 
 from pythinker_code.ui.shell.glyphs import (
+    ACTIVE_MARKER_FRAME_INTERVAL_S,
+    ACTIVE_MARKER_FRAMES,
+    REDUCED_MOTION_GLYPH,
     SHAPE_FRAME_INTERVAL_S,
-    STAR_SPINNER_FRAME_INTERVAL_S,
-    STAR_SPINNER_FRAMES,
-    TRANSCRIPT_ACTIVE_MARKER,
+    SPINNER_FRAME_INTERVAL_S,
+    SPINNER_FRAMES,
 )
 from pythinker_code.ui.shell.motion import (
     ActivitySnapshot,
@@ -65,20 +67,20 @@ def test_reduced_motion_uses_static_glyph():
     assert spinner_frame_at(0.2, reduced_motion=True) == "●"
 
 
-def test_active_marker_frame_animates_through_star_frames():
+def test_active_marker_frame_animates_through_braille_dot_frames():
     seen = {
-        active_marker_frame(i * STAR_SPINNER_FRAME_INTERVAL_S)
-        for i in range(len(STAR_SPINNER_FRAMES))
+        active_marker_frame(i * ACTIVE_MARKER_FRAME_INTERVAL_S)
+        for i in range(len(ACTIVE_MARKER_FRAMES))
     }
-    assert len(STAR_SPINNER_FRAMES) == 10
-    assert "✷" in STAR_SPINNER_FRAMES
-    assert STAR_SPINNER_FRAME_INTERVAL_S == 0.08
-    assert seen == set(STAR_SPINNER_FRAMES)
-    assert all(len(frame) == 1 for frame in STAR_SPINNER_FRAMES)
+    assert ACTIVE_MARKER_FRAMES is SPINNER_FRAMES
+    assert ACTIVE_MARKER_FRAME_INTERVAL_S == SPINNER_FRAME_INTERVAL_S
+    assert "⠸" in ACTIVE_MARKER_FRAMES
+    assert seen == set(ACTIVE_MARKER_FRAMES)
+    assert all(len(frame) == 1 for frame in ACTIVE_MARKER_FRAMES)
 
 
-def test_active_marker_frame_reduced_motion_pins_static_star():
-    assert active_marker_frame(0.5, reduced_motion=True) == TRANSCRIPT_ACTIVE_MARKER
+def test_active_marker_frame_reduced_motion_pins_static_dot():
+    assert active_marker_frame(0.5, reduced_motion=True) == REDUCED_MOTION_GLYPH
 
 
 def test_activity_status_line_contains_label_elapsed_tokens_and_interrupt_hint():

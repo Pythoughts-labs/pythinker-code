@@ -85,7 +85,7 @@ def _todo_result(call_id: str = "todo-1") -> ToolResult:
 def test_todo_update_pins_current_task_under_activity_line(monkeypatch) -> None:
     now = 1000.0
     monkeypatch.setattr(_live_view_module.time, "monotonic", lambda: now)
-    # Pin the animated star marker to its static ``✶`` frame for a deterministic
+    # Pin the animated braille marker to its static dot for a deterministic
     # assertion on the activity-line content.
     monkeypatch.setenv("PYTHINKER_REDUCED_MOTION", "1")
     view = _LiveView(StatusUpdate(context_tokens=10_000))
@@ -96,7 +96,7 @@ def test_todo_update_pins_current_task_under_activity_line(monkeypatch) -> None:
     now = 1460.0
     rendered = _render(view._working_indicator())
 
-    assert "✶ Implement pinned todos… (7m 40s · ↓ 10k tokens)" in rendered
+    assert "● Implement pinned todos… (7m 40s · ↓ 10k tokens)" in rendered
     assert rendered.count("Implement pinned todos") == 2
     assert "⎿  ■ Implement pinned todos" in rendered
     assert "✓ Explore UI" in rendered
@@ -118,7 +118,7 @@ def test_active_todo_activity_line_does_not_alternate_with_spinner_verb(monkeypa
     now = 1465.0
     rendered = _render(view._working_indicator())
 
-    assert "✶ Implement pinned todos… (7m 45s · ↓ 10k tokens)" in rendered
+    assert "● Implement pinned todos… (7m 45s · ↓ 10k tokens)" in rendered
     assert _live_view_module.spinner_message(now) not in rendered
     assert "⎿  ■ Implement pinned todos" in rendered
     assert "✓ Explore UI" in rendered
@@ -138,7 +138,7 @@ def test_spinner_verb_shows_until_next_todo_becomes_active(monkeypatch) -> None:
     now = 1465.0
     rendered = _render(view._working_indicator())
 
-    assert f"✶ {_live_view_module.spinner_message(now)} (7m 45s · ↓ 10k tokens)" in rendered
+    assert f"● {_live_view_module.spinner_message(now)} (7m 45s · ↓ 10k tokens)" in rendered
     assert "⎿  □ Next task" in rendered
     assert "✓ Finished task" in rendered
 

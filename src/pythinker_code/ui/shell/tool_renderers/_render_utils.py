@@ -148,8 +148,8 @@ def loading_marker(
     """Return the app-wide task marker.
 
     Running tasks pulse the transcript marker in muted grey; completed tasks
-    show the same marker as a static green dot. The animated braille spinner is
-    reserved for the bottom thinking-word status.
+    show the same marker as a static green dot. The animated braille spinner stays
+    reserved for activity/status lines such as the pinned todo header.
     """
     if done:
         return Text(f"{TRANSCRIPT_ASSISTANT_MARKER} ", style=tui_rich_style("success"))
