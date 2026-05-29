@@ -1,17 +1,12 @@
 name: CI (pythinker-code)
 
 on:
+  # No path filter on pull_request: check / test / release-validate are required
+  # status checks, so they must run on every PR. Path-filtering them left
+  # docs-only (and sdks/examples-only) PRs permanently blocked — the required
+  # contexts never reported. Running the real checks on every PR keeps one check
+  # run per context (no duplicate-context false-greens) and gives real signal.
   pull_request:
-    paths:
-      - ".github/workflows/**"
-      - "packages/**"
-      - "src/**"
-      - "tests/**"
-      - "tests_e2e/**"
-      - "tests_ai/**"
-      - "web/**"
-      - "pyproject.toml"
-      - "uv.lock"
   push:
     branches:
       - main
