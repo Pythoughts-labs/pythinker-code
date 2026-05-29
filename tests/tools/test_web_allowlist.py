@@ -30,6 +30,9 @@ from pythinker_code.tools.web._allowlist import host_in_allowlist
         ("DOCS.Example.COM", ["  .Example.com "], True),
         # Trailing-dot FQDN host.
         ("docs.example.com.", ["example.com"], True),
+        # Trailing-dot allowlist *entry* matches a plain host.
+        ("docs.example.com", ["example.com."], True),
+        ("example.com", ["example.com."], True),
         # Multiple entries: match any.
         ("foo.org", ["example.com", "foo.org"], True),
         # Empty / None host with a non-empty allowlist is rejected.
@@ -53,6 +56,9 @@ def test_web_config_accepts_bare_hostnames() -> None:
         "example.com/path",  # path
         "example.com:8080",  # port
         "two words.com",  # whitespace
+        ".",  # dots-only would normalize to empty (unrestricted) — reject
+        "..",  # dots-only
+        "ex\nample.com",  # newline whitespace must be rejected too
     ],
 )
 def test_web_config_rejects_malformed_entries(bad_entry: str) -> None:

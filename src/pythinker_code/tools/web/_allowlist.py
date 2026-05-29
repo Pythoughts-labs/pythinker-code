@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 def _normalize(entry: str) -> str:
-    return entry.strip().lstrip(".").lower()
+    return entry.strip().strip(".").lower()
 
 
 def host_in_allowlist(host: str | None, allowed: list[str] | None) -> bool:

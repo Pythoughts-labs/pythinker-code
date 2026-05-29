@@ -404,8 +404,11 @@ def _normalize_table_block(text: str) -> str:
         tail = text[match.end() :]
 
         # The delimiter must start its own line — guards against inline ``|-|``.
-        line_prefix = head[head.rfind("\n") + 1 :]
-        if n_cols < 2 or line_prefix.strip() != "":
+        # Any leading whitespace is the table's indentation (e.g. nested under a
+        # list item); preserve it when re-emitting so we never promote an
+        # indented table to top level.
+        indent = head[head.rfind("\n") + 1 :]
+        if n_cols < 2 or indent.strip() != "":
             out += text[: match.end()]
             text = tail
             continue
@@ -457,10 +460,10 @@ def _normalize_table_block(text: str) -> str:
         # paragraph), so ensure one before emitting the header.
         if out and not out.endswith("\n\n"):
             out += "\n" if out.endswith("\n") else "\n\n"
-        out += "| " + " | ".join(header_cells) + " |\n"
-        out += "| " + " | ".join(markers) + " |\n"
+        out += f"{indent}| " + " | ".join(header_cells) + " |\n"
+        out += f"{indent}| " + " | ".join(markers) + " |\n"
         for row in data_rows:
-            out += "| " + " | ".join(row) + " |\n"
+            out += f"{indent}| " + " | ".join(row) + " |\n"
 
         remainder = "\n".join(tail_lines[consumed:])
         if not remainder.strip():

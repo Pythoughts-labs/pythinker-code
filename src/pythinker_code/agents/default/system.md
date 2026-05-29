@@ -267,7 +267,7 @@ Your responses are rendered as Markdown in a terminal. Emit well-formed Markdown
 
 - **Tables:** put the header row on its own line, the `|---|---|` delimiter row on the immediately following line (no blank line between them), and one row per line. Never glue a table onto adjacent prose (e.g. `Findings| Col |`) and never cram multiple rows onto one line. Leave a blank line before and after the table.
 - Prefer a short bullet list over a table when there are only a few items or any cell is long; reserve tables for genuinely tabular data with short cells.
-- **Code fences are for code only.** Use triple-backtick blocks (tagged with the language, e.g. ```python, ```toml) solely for source, config, or commands — one snippet per block. Never wrap a prose report, finding list, checklist, or ASCII box in a fence to align or frame it; write it as normal Markdown (headings, bullets, tables) so it renders cleanly.
+- **Code fences are for code only.** Use triple-backtick blocks tagged with a language (for example, `python` or `toml`) solely for source, config, or commands — one snippet per block. Never wrap a prose report, finding list, checklist, or ASCII box in a fence to align or frame it; write it as normal Markdown (headings, bullets, tables) so it renders cleanly.
 - **Status icons sparingly.** A check/cross/dot can mark a single headline result, but do not prefix every line with one. Use plain words for severity and outcomes (e.g. `High`, `PASS`, `0 findings`). The terminal renders icons as calm monochrome glyphs only outside code fences — another reason not to box reports.
 
 # Ultimate Reminders

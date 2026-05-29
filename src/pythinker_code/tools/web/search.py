@@ -159,6 +159,9 @@ class SearchWeb(CallableTool2[Params]):
             if dropped:
                 builder.extras(allowlist_filtered=dropped)
             if not results:
+                # Structured zero-result signal so the renderer reports "0
+                # results" instead of misreading the prose below as one result.
+                builder.extras(returned_results=0)
                 return builder.ok(
                     f"All {dropped} search result(s) were outside the configured "
                     "web allowlist and have been omitted.",

@@ -928,6 +928,23 @@ def test_search_no_allowlist_indicator_when_not_filtered():
     assert "filtered to allowlist" not in rendered
 
 
+def test_search_all_results_filtered_reports_zero():
+    # When every result is dropped by the allowlist, SearchWeb emits prose plus a
+    # structured returned_results=0 signal; the renderer must prefer that count
+    # instead of misreading the one-line prose as a single result.
+    rendered = _render(
+        "SearchWeb",
+        {"query": "python"},
+        output=(
+            "All 2 search result(s) were outside the configured web allowlist "
+            "and have been omitted."
+        ),
+        details={"extras": {"allowlist_filtered": 2, "returned_results": 0}},
+    )
+    assert "Found 0 results" in rendered
+    assert "2 filtered to allowlist" in rendered
+
+
 # ---------------------------------------------------------------------------
 # Background tasks
 # ---------------------------------------------------------------------------

@@ -240,7 +240,12 @@ class WebConfig(BaseModel):
                     "Remove it, or omit allowed_domains entirely to leave web access "
                     "unrestricted."
                 )
-            if any(char in cleaned for char in "/: \t"):
+            if cleaned.strip(".") == "":
+                raise ValueError(
+                    f"Invalid allowed_domains entry {entry!r}: hostname must contain "
+                    "domain labels, not only dots."
+                )
+            if any(char.isspace() for char in cleaned) or any(char in cleaned for char in "/:"):
                 raise ValueError(
                     f"Invalid allowed_domains entry {entry!r}: use a bare hostname "
                     "like 'example.com', not a URL, path, or host:port."
