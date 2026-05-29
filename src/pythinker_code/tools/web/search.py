@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import override
+from urllib.parse import urlparse
 
 import aiohttp
 from pydantic import BaseModel, Field, ValidationError
@@ -12,6 +13,7 @@ from pythinker_code.soul.agent import Runtime
 from pythinker_code.soul.toolset import get_current_tool_call_or_none
 from pythinker_code.tools import SkipThisTool
 from pythinker_code.tools.utils import ToolResultBuilder, load_desc
+from pythinker_code.tools.web._allowlist import host_in_allowlist
 from pythinker_code.utils.aiohttp import new_client_session
 from pythinker_code.utils.logging import logger
 
@@ -53,6 +55,7 @@ class SearchWeb(CallableTool2[Params]):
         self._api_key = config.services.pythinker_ai_search.api_key
         self._oauth_ref = config.services.pythinker_ai_search.oauth
         self._custom_headers = config.services.pythinker_ai_search.custom_headers or {}
+        self._allowed_domains = config.web.allowed_domains
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
@@ -144,6 +147,23 @@ class SearchWeb(CallableTool2[Params]):
                 f"Search request failed: {e}. The search service may be unavailable.",
                 brief="Search request failed",
             )
+
+        if self._allowed_domains:
+            kept = [
+                result
+                for result in results
+                if host_in_allowlist(urlparse(result.url).hostname, self._allowed_domains)
+            ]
+            dropped = len(results) - len(kept)
+            results = kept
+            if dropped:
+                builder.extras(allowlist_filtered=dropped)
+            if not results:
+                return builder.ok(
+                    f"All {dropped} search result(s) were outside the configured "
+                    "web allowlist and have been omitted.",
+                    brief="Filtered by allowlist",
+                )
 
         for i, result in enumerate(results):
             if i > 0:

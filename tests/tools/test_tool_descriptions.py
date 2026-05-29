@@ -375,12 +375,12 @@ Replace specific strings within a specified file.
 def test_search_web_description(search_web_tool: SearchWeb):
     """Test the description of PythinkerAISearch tool."""
     assert search_web_tool.base.description == snapshot(
-        "WebSearch tool allows you to search on the internet to get latest information, including news, documents, release notes, blog posts, papers, etc.\n"
+        "WebSearch tool allows you to search on the internet to get latest information, including news, documents, release notes, blog posts, papers, etc. Results may be limited to a configured set of allowed domains.\n"
     )
 
 
 def test_fetch_url_description(fetch_url_tool: FetchURL):
     """Test the description of FetchURL tool."""
     assert fetch_url_tool.base.description == snapshot(
-        "Fetch a web page from a URL and extract main text content from it.\n"
+        "Fetch a web page from a URL and extract main text content from it. Requests may be restricted to a configured set of allowed domains; fetching a disallowed host (including via a redirect) returns an error.\n"
     )

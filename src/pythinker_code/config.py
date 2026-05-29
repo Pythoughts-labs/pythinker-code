@@ -14,6 +14,7 @@ from pydantic import (
     SecretStr,
     ValidationError,
     field_serializer,
+    field_validator,
     model_validator,
 )
 from tomlkit.exceptions import TOMLKitError
@@ -217,6 +218,36 @@ class Services(BaseModel):
     """Pythinker AI Fetch configuration."""
 
 
+class WebConfig(BaseModel):
+    """Web fetch/search policy."""
+
+    allowed_domains: list[str] | None = Field(
+        default=None,
+        description=(
+            "If set, web fetch and search may only touch these domains and their "
+            "subdomains. None or empty means unrestricted (default)."
+        ),
+    )
+
+    @field_validator("allowed_domains")
+    @classmethod
+    def _validate_allowed_domains(cls, value: list[str] | None) -> list[str] | None:
+        for entry in value or []:
+            cleaned = entry.strip()
+            if not cleaned:
+                raise ValueError(
+                    "Invalid allowed_domains entry: empty or whitespace-only hostname. "
+                    "Remove it, or omit allowed_domains entirely to leave web access "
+                    "unrestricted."
+                )
+            if any(char in cleaned for char in "/: \t"):
+                raise ValueError(
+                    f"Invalid allowed_domains entry {entry!r}: use a bare hostname "
+                    "like 'example.com', not a URL, path, or host:port."
+                )
+        return value
+
+
 class FeedbackConfig(BaseModel):
     """User-submitted feedback endpoint configuration."""
 
@@ -364,6 +395,7 @@ class Config(BaseModel):
     )
     services: Services = Field(default_factory=Services, description="Services configuration")
     memory: MemoryConfig = Field(default_factory=MemoryConfig, description="Memory configuration")
+    web: WebConfig = Field(default_factory=WebConfig, description="Web fetch/search policy")
     feedback: FeedbackConfig = Field(
         default_factory=FeedbackConfig,
         description="User-submitted feedback endpoint configuration",

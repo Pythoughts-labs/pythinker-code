@@ -1,1 +1,1 @@
-WebSearch tool allows you to search on the internet to get latest information, including news, documents, release notes, blog posts, papers, etc.
+WebSearch tool allows you to search on the internet to get latest information, including news, documents, release notes, blog posts, papers, etc. Results may be limited to a configured set of allowed domains.
