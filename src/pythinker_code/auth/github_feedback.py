@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-import webbrowser
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -150,7 +149,9 @@ async def login_github_feedback(
     )
     if open_browser:
         try:
-            webbrowser.open(auth.verification_uri)
+            from pythinker_code.utils.term import open_url_in_browser
+
+            open_url_in_browser(auth.verification_uri)
         except Exception as exc:
             logger.warning("Failed to open browser: {error}", error=exc)
     yield OAuthEvent("waiting", "Waiting for GitHub authorization...")

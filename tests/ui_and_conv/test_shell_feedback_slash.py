@@ -24,7 +24,7 @@ class TestFeedbackRegistration:
 class TestFeedbackOpensIssue:
     def test_opens_new_issue_url(self, monkeypatch) -> None:
         open_mock = Mock(return_value=True)
-        monkeypatch.setattr("webbrowser.open", open_mock)
+        monkeypatch.setattr("pythinker_code.utils.term.open_url_in_browser", open_mock)
         monkeypatch.setattr(shell_slash.console, "print", Mock())
 
         shell = Mock()
@@ -37,7 +37,7 @@ class TestFeedbackOpensIssue:
         assert "new" in url
 
     def test_prints_success_when_browser_opens(self, monkeypatch) -> None:
-        monkeypatch.setattr("webbrowser.open", Mock(return_value=True))
+        monkeypatch.setattr("pythinker_code.utils.term.open_url_in_browser", Mock(return_value=True))
         print_mock = Mock()
         monkeypatch.setattr(shell_slash.console, "print", print_mock)
 
@@ -47,7 +47,7 @@ class TestFeedbackOpensIssue:
         assert "Opening" in output or "browser" in output.lower()
 
     def test_prints_url_when_browser_fails(self, monkeypatch) -> None:
-        monkeypatch.setattr("webbrowser.open", Mock(return_value=False))
+        monkeypatch.setattr("pythinker_code.utils.term.open_url_in_browser", Mock(return_value=False))
         print_mock = Mock()
         monkeypatch.setattr(shell_slash.console, "print", print_mock)
 

@@ -5,6 +5,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -158,6 +159,8 @@ class BackgroundTaskManager:
                 str(self._config.wait_poll_interval_ms),
                 "--kill-grace-period-ms",
                 str(self._config.kill_grace_period_ms),
+                "--max-output-bytes",
+                str(self._config.max_output_bytes),
             ]
         return [
             sys.executable,
@@ -172,6 +175,8 @@ class BackgroundTaskManager:
             str(self._config.wait_poll_interval_ms),
             "--kill-grace-period-ms",
             str(self._config.kill_grace_period_ms),
+            "--max-output-bytes",
+            str(self._config.max_output_bytes),
         ]
 
     def _launch_worker(self, task_dir: Path) -> int:
@@ -417,7 +422,9 @@ class BackgroundTaskManager:
                 return view
             await asyncio.sleep(self._config.wait_poll_interval_ms / 1000)
 
-    def _best_effort_kill(self, runtime: TaskRuntime) -> None:
+    _SIGKILL_ESCALATION_DELAY_S = 5.0
+
+    def _best_effort_kill(self, task_id: str, runtime: TaskRuntime) -> None:
         try:
             if os.name == "nt":
                 pid = runtime.child_pid or runtime.worker_pid
@@ -433,13 +440,51 @@ class BackgroundTaskManager:
 
             if runtime.child_pgid is not None:
                 os.killpg(runtime.child_pgid, signal.SIGTERM)
+                self._schedule_sigkill(task_id, pgid=runtime.child_pgid)
                 return
             if runtime.child_pid is not None:
                 os.kill(runtime.child_pid, signal.SIGTERM)
+                self._schedule_sigkill(task_id, pid=runtime.child_pid)
         except ProcessLookupError:
             pass
         except Exception:
             logger.exception("Failed to send best-effort kill signal")
+
+    def _schedule_sigkill(
+        self, task_id: str, *, pgid: int | None = None, pid: int | None = None
+    ) -> None:
+        """Escalate to SIGKILL after a grace delay if the task is still running."""
+        t = threading.Timer(
+            self._SIGKILL_ESCALATION_DELAY_S,
+            self._escalate_sigkill,
+            kwargs={"task_id": task_id, "pgid": pgid, "pid": pid},
+        )
+        t.daemon = True
+        t.start()
+
+    def _escalate_sigkill(
+        self, task_id: str, *, pgid: int | None = None, pid: int | None = None
+    ) -> None:
+        """SIGKILL the process group/pid, but only if the task is still running.
+
+        Re-reading the task status first avoids two problems with a blind timer:
+        (a) sending a needless SIGKILL on the common path where SIGTERM already
+        worked, and (b) signaling a pgid/pid the OS may have recycled once the
+        original child exited and was reaped by its parent worker. The worker
+        owns the child and runs its own SIGTERM->SIGKILL escalation, so this is
+        only a fallback for when the worker itself is gone.
+        """
+        try:
+            if is_terminal_status(self._store.read_runtime(task_id).status):
+                return
+            if pgid is not None:
+                os.killpg(pgid, signal.SIGKILL)
+            elif pid is not None:
+                os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except Exception:
+            logger.warning("Failed to escalate kill signal to SIGKILL")
 
     def kill(self, task_id: str, *, reason: str = "Killed by user") -> TaskView:
         self._ensure_root()
@@ -471,7 +516,7 @@ class BackgroundTaskManager:
             }
         )
         self._store.write_control(task_id, control)
-        self._best_effort_kill(view.runtime)
+        self._best_effort_kill(task_id, view.runtime)
         return self._store.merged_view(task_id)
 
     def kill_all_active(self, *, reason: str = "CLI session ended") -> list[str]:
@@ -529,34 +574,37 @@ class BackgroundTaskManager:
             if now - last_progress_at <= stale_after:
                 continue
 
-            # Re-read runtime to narrow the race window with the worker process.
-            fresh_runtime = self._store.read_runtime(view.spec.id)
-            if is_terminal_status(fresh_runtime.status):
-                continue
-            fresh_progress = (
-                fresh_runtime.heartbeat_at
-                or fresh_runtime.started_at
-                or fresh_runtime.updated_at
-                or view.spec.created_at
-            )
-            if now - fresh_progress <= stale_after:
-                continue
-
-            runtime = fresh_runtime.model_copy()
-            runtime.finished_at = now
-            runtime.updated_at = now
-            if view.control.kill_requested_at is not None:
-                runtime.status = "killed"
-                runtime.interrupted = True
-                runtime.failure_reason = view.control.kill_reason or "Killed during recovery"
-            else:
-                runtime.status = "lost"
-                runtime.failure_reason = (
-                    "Background worker never heartbeat after startup"
-                    if fresh_runtime.heartbeat_at is None
-                    else "Background worker heartbeat expired"
+            # Hold the cross-process lock for the read-then-write to eliminate
+            # the race with a worker that heartbeats between our staleness check
+            # and the status write.
+            with self._store._runtime_lock(view.spec.id):  # pyright: ignore[reportPrivateUsage]
+                fresh_runtime = self._store.read_runtime(view.spec.id)
+                if is_terminal_status(fresh_runtime.status):
+                    continue
+                fresh_progress = (
+                    fresh_runtime.heartbeat_at
+                    or fresh_runtime.started_at
+                    or fresh_runtime.updated_at
+                    or view.spec.created_at
                 )
-            self._store.write_runtime(view.spec.id, runtime)
+                if now - fresh_progress <= stale_after:
+                    continue
+
+                runtime = fresh_runtime.model_copy()
+                runtime.finished_at = now
+                runtime.updated_at = now
+                if view.control.kill_requested_at is not None:
+                    runtime.status = "killed"
+                    runtime.interrupted = True
+                    runtime.failure_reason = view.control.kill_reason or "Killed during recovery"
+                else:
+                    runtime.status = "lost"
+                    runtime.failure_reason = (
+                        "Background worker never heartbeat after startup"
+                        if fresh_runtime.heartbeat_at is None
+                        else "Background worker heartbeat expired"
+                    )
+                self._store._write_runtime_unlocked(view.spec.id, runtime)  # pyright: ignore[reportPrivateUsage]
 
     def reconcile(self, *, limit: int | None = None) -> list[str]:
         self.recover()
@@ -637,33 +685,36 @@ class BackgroundTaskManager:
         return published
 
     def _mark_task_running(self, task_id: str) -> None:
-        runtime = self._store.read_runtime(task_id)
-        if is_terminal_status(runtime.status):
-            return
-        runtime.status = "running"
-        runtime.updated_at = time.time()
-        runtime.heartbeat_at = runtime.updated_at
-        runtime.failure_reason = None
-        self._store.write_runtime(task_id, runtime)
+        with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
+            runtime = self._store.read_runtime(task_id)
+            if is_terminal_status(runtime.status):
+                return
+            runtime.status = "running"
+            runtime.updated_at = time.time()
+            runtime.heartbeat_at = runtime.updated_at
+            runtime.failure_reason = None
+            self._store._write_runtime_unlocked(task_id, runtime)  # pyright: ignore[reportPrivateUsage]
 
     def _mark_task_awaiting_approval(self, task_id: str, reason: str) -> None:
-        runtime = self._store.read_runtime(task_id)
-        if is_terminal_status(runtime.status):
-            return
-        runtime.status = "awaiting_approval"
-        runtime.updated_at = time.time()
-        runtime.failure_reason = reason
-        self._store.write_runtime(task_id, runtime)
+        with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
+            runtime = self._store.read_runtime(task_id)
+            if is_terminal_status(runtime.status):
+                return
+            runtime.status = "awaiting_approval"
+            runtime.updated_at = time.time()
+            runtime.failure_reason = reason
+            self._store._write_runtime_unlocked(task_id, runtime)  # pyright: ignore[reportPrivateUsage]
 
     def _mark_task_completed(self, task_id: str) -> None:
-        runtime = self._store.read_runtime(task_id)
-        if is_terminal_status(runtime.status):
-            return
-        runtime.status = "completed"
-        runtime.updated_at = time.time()
-        runtime.finished_at = runtime.updated_at
-        runtime.failure_reason = None
-        self._store.write_runtime(task_id, runtime)
+        with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
+            runtime = self._store.read_runtime(task_id)
+            if is_terminal_status(runtime.status):
+                return
+            runtime.status = "completed"
+            runtime.updated_at = time.time()
+            runtime.finished_at = runtime.updated_at
+            runtime.failure_reason = None
+            self._store._write_runtime_unlocked(task_id, runtime)  # pyright: ignore[reportPrivateUsage]
         from pythinker_code.telemetry import track
 
         if runtime.started_at and runtime.finished_at:
@@ -671,14 +722,15 @@ class BackgroundTaskManager:
             track("background_task_completed", success=True, duration_s=duration)
 
     def _mark_task_failed(self, task_id: str, reason: str) -> None:
-        runtime = self._store.read_runtime(task_id)
-        if is_terminal_status(runtime.status):
-            return
-        runtime.status = "failed"
-        runtime.updated_at = time.time()
-        runtime.finished_at = runtime.updated_at
-        runtime.failure_reason = reason
-        self._store.write_runtime(task_id, runtime)
+        with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
+            runtime = self._store.read_runtime(task_id)
+            if is_terminal_status(runtime.status):
+                return
+            runtime.status = "failed"
+            runtime.updated_at = time.time()
+            runtime.finished_at = runtime.updated_at
+            runtime.failure_reason = reason
+            self._store._write_runtime_unlocked(task_id, runtime)  # pyright: ignore[reportPrivateUsage]
         from pythinker_code.telemetry import track
 
         if runtime.started_at and runtime.finished_at:
@@ -691,16 +743,17 @@ class BackgroundTaskManager:
             )
 
     def _mark_task_timed_out(self, task_id: str, reason: str) -> None:
-        runtime = self._store.read_runtime(task_id)
-        if is_terminal_status(runtime.status):
-            return
-        runtime.status = "failed"
-        runtime.updated_at = time.time()
-        runtime.finished_at = runtime.updated_at
-        runtime.interrupted = True
-        runtime.timed_out = True
-        runtime.failure_reason = reason
-        self._store.write_runtime(task_id, runtime)
+        with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
+            runtime = self._store.read_runtime(task_id)
+            if is_terminal_status(runtime.status):
+                return
+            runtime.status = "failed"
+            runtime.updated_at = time.time()
+            runtime.finished_at = runtime.updated_at
+            runtime.interrupted = True
+            runtime.timed_out = True
+            runtime.failure_reason = reason
+            self._store._write_runtime_unlocked(task_id, runtime)  # pyright: ignore[reportPrivateUsage]
         from pythinker_code.telemetry import track
 
         if runtime.started_at and runtime.finished_at:
@@ -713,15 +766,16 @@ class BackgroundTaskManager:
             )
 
     def _mark_task_killed(self, task_id: str, reason: str) -> None:
-        runtime = self._store.read_runtime(task_id)
-        if is_terminal_status(runtime.status):
-            return
-        runtime.status = "killed"
-        runtime.updated_at = time.time()
-        runtime.finished_at = runtime.updated_at
-        runtime.interrupted = True
-        runtime.failure_reason = reason
-        self._store.write_runtime(task_id, runtime)
+        with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
+            runtime = self._store.read_runtime(task_id)
+            if is_terminal_status(runtime.status):
+                return
+            runtime.status = "killed"
+            runtime.updated_at = time.time()
+            runtime.finished_at = runtime.updated_at
+            runtime.interrupted = True
+            runtime.failure_reason = reason
+            self._store._write_runtime_unlocked(task_id, runtime)  # pyright: ignore[reportPrivateUsage]
         from pythinker_code.telemetry import track
 
         if runtime.started_at and runtime.finished_at:

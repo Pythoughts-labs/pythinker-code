@@ -34,6 +34,7 @@ async def run_background_task_worker(
     heartbeat_interval_ms: int = 5000,
     control_poll_interval_ms: int = 500,
     kill_grace_period_ms: int = 2000,
+    max_output_bytes: int = 0,
 ) -> None:
     task_dir = task_dir.expanduser().resolve()
     task_id = task_dir.name
@@ -74,6 +75,8 @@ async def run_background_task_worker(
     kill_sent_at: float | None = None
     timed_out = False
     timeout_reason: str | None = None
+    output_limit_exceeded = False
+    output_limit_reason: str | None = None
 
     async def _heartbeat_loop() -> None:
         while not stop_event.is_set():
@@ -104,10 +107,54 @@ async def run_background_task_worker(
         except ProcessLookupError:
             pass
 
+    output_path = store.output_path(task_id)
+
+    async def _check_output_limit() -> None:
+        """Terminate the task if its output.log grew past ``max_output_bytes``.
+
+        Writes a single marker line and records a failure the first time the
+        limit is hit; the ``output_limit_exceeded`` guard keeps it from
+        re-marking on subsequent polls or once the process is already exiting.
+        """
+        nonlocal output_limit_exceeded, output_limit_reason
+        if max_output_bytes <= 0 or output_limit_exceeded:
+            return
+        if process is None or process.returncode is not None:
+            return
+        try:
+            size = output_path.stat().st_size
+        except OSError:
+            return
+        if size <= max_output_bytes:
+            return
+
+        output_limit_exceeded = True
+        output_limit_reason = f"Output exceeded max_output_bytes ({max_output_bytes})"
+        marker = f"\n... output limit exceeded ({size} bytes); task terminated ...\n"
+        with contextlib.suppress(OSError), output_path.open("ab") as marker_file:
+            marker_file.write(marker.encode("utf-8"))
+        with store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
+            current = store.read_runtime(task_id)
+            if not current.finished_at:
+                current.status = "failed"
+                current.interrupted = True
+                current.failure_reason = output_limit_reason
+                current.updated_at = time.time()
+                store._write_runtime_unlocked(task_id, current)  # pyright: ignore[reportPrivateUsage]
+        await _terminate_process(force=False)
+
     async def _control_loop() -> None:
         nonlocal kill_sent_at
         while not stop_event.is_set():
             await asyncio.sleep(control_poll_interval_ms / 1000)
+            await _check_output_limit()
+            if output_limit_exceeded and (
+                kill_sent_at is not None
+                and process is not None
+                and process.returncode is None
+                and time.time() - kill_sent_at >= kill_grace_period_ms / 1000
+            ):
+                await _terminate_process(force=True)
             current_control: TaskControl = store.read_control(task_id)
             if current_control.kill_requested_at is not None:
                 await _terminate_process(force=current_control.force)
@@ -137,7 +184,6 @@ async def run_background_task_worker(
                     return
 
     try:
-        output_path = store.output_path(task_id)
         with output_path.open("ab") as output_file:
             spawn_kwargs: dict[str, Any] = {
                 "stdin": asyncio.subprocess.PIPE,
@@ -214,7 +260,11 @@ async def run_background_task_worker(
     runtime.updated_at = runtime.finished_at
     runtime.exit_code = returncode
     runtime.heartbeat_at = runtime.finished_at
-    if timed_out:
+    if output_limit_exceeded:
+        runtime.status = "failed"
+        runtime.interrupted = True
+        runtime.failure_reason = output_limit_reason
+    elif timed_out:
         runtime.status = "failed"
         runtime.interrupted = True
         runtime.timed_out = True

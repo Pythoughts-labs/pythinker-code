@@ -2,7 +2,7 @@ import ipaddress
 import socket
 from pathlib import Path
 from typing import override
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import aiohttp
 import trafilatura
@@ -19,6 +19,8 @@ from pythinker_code.utils.aiohttp import new_client_session
 from pythinker_code.utils.logging import logger
 
 MAX_FETCH_BYTES = 5 * 1024 * 1024
+MAX_FETCH_REDIRECTS = 10  # matches aiohttp's default redirect cap
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
 def _validate_fetch_url(url: str) -> str | None:
@@ -65,6 +67,42 @@ async def _read_limited(response: aiohttp.ClientResponse, max_bytes: int) -> byt
     return b"".join(chunks)
 
 
+class _FetchBlocked(Exception):
+    """Raised when a URL or one of its redirect targets fails SSRF validation."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+async def _get_revalidating_redirects(
+    session: aiohttp.ClientSession, url: str, headers: dict[str, str]
+) -> aiohttp.ClientResponse:
+    """GET ``url``, following redirects manually and re-validating every hop.
+
+    aiohttp follows redirects internally without re-checking the destination, so
+    a public URL that 30x-redirects to a private/link-local address (e.g. a cloud
+    metadata endpoint at 169.254.169.254) would otherwise sail past
+    ``_validate_fetch_url``. We disable automatic redirects and validate each
+    ``Location`` before following it.
+
+    Returns the final, open, non-redirect response (the caller owns closing it).
+    Raises ``_FetchBlocked`` if any hop is blocked or the redirect limit is hit.
+    """
+    current = url
+    for _ in range(MAX_FETCH_REDIRECTS + 1):
+        if reason := _validate_fetch_url(current):
+            raise _FetchBlocked(reason)
+        response = await session.get(current, headers=headers, allow_redirects=False)
+        location = response.headers.get(aiohttp.hdrs.LOCATION)
+        if response.status in _REDIRECT_STATUSES and location:
+            await response.release()
+            current = urljoin(str(response.url), location)
+            continue
+        return response
+    raise _FetchBlocked("too many redirects")
+
+
 class Params(BaseModel):
     url: str = Field(description="The URL to fetch content from.")
 
@@ -101,52 +139,53 @@ class FetchURL(CallableTool2[Params]):
     @staticmethod
     async def fetch_with_http_get(params: Params) -> ToolReturnValue:
         builder = ToolResultBuilder(max_line_length=None)
-        if reason := _validate_fetch_url(params.url):
-            return builder.error(f"Failed to fetch URL: {reason}", brief="URL blocked")
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            ),
+        }
         try:
             # Fetching arbitrary web pages can take a while on large/slow sites.
             fetch_timeout = aiohttp.ClientTimeout(total=180, sock_read=60, sock_connect=15)
-            async with (
-                new_client_session(timeout=fetch_timeout) as session,
-                session.get(
-                    params.url,
-                    headers={
-                        "User-Agent": (
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                            "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-                        ),
-                    },
-                ) as response,
-            ):
-                if response.status >= 400:
-                    logger.warning(
-                        "FetchURL HTTP error: status={status}, url={url}",
-                        status=response.status,
-                        url=params.url,
-                    )
-                    return builder.error(
-                        (
-                            f"Failed to fetch URL. Status: {response.status}. "
-                            f"This may indicate the page is not accessible or the server is down."
-                        ),
-                        brief=f"HTTP {response.status} error",
-                    )
-
+            async with new_client_session(timeout=fetch_timeout) as session:
                 try:
-                    resp_text = (await _read_limited(response, MAX_FETCH_BYTES)).decode(
-                        "utf-8", errors="replace"
-                    )
-                except ValueError:
-                    max_mb = MAX_FETCH_BYTES // 1024 // 1024
+                    response = await _get_revalidating_redirects(session, params.url, headers)
+                except _FetchBlocked as blocked:
                     return builder.error(
-                        f"Failed to fetch URL: response exceeds {max_mb}MB.",
-                        brief="Response too large",
+                        f"Failed to fetch URL: {blocked.reason}", brief="URL blocked"
                     )
+                async with response:
+                    if response.status >= 400:
+                        logger.warning(
+                            "FetchURL HTTP error: status={status}, url={url}",
+                            status=response.status,
+                            url=params.url,
+                        )
+                        return builder.error(
+                            (
+                                f"Failed to fetch URL. Status: {response.status}. "
+                                "This may indicate the page is not accessible or "
+                                "the server is down."
+                            ),
+                            brief=f"HTTP {response.status} error",
+                        )
 
-                content_type = response.headers.get(aiohttp.hdrs.CONTENT_TYPE, "").lower()
-                if content_type.startswith(("text/plain", "text/markdown")):
-                    builder.write(resp_text)
-                    return builder.ok("The returned content is the full content of the page.")
+                    try:
+                        resp_text = (await _read_limited(response, MAX_FETCH_BYTES)).decode(
+                            "utf-8", errors="replace"
+                        )
+                    except ValueError:
+                        max_mb = MAX_FETCH_BYTES // 1024 // 1024
+                        return builder.error(
+                            f"Failed to fetch URL: response exceeds {max_mb}MB.",
+                            brief="Response too large",
+                        )
+
+                    content_type = response.headers.get(aiohttp.hdrs.CONTENT_TYPE, "").lower()
+                    if content_type.startswith(("text/plain", "text/markdown")):
+                        builder.write(resp_text)
+                        return builder.ok("The returned content is the full content of the page.")
         except TimeoutError:
             logger.warning("FetchURL timed out: url={url}", url=params.url)
             return builder.error(

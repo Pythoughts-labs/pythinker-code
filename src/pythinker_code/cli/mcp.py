@@ -214,7 +214,7 @@ def _oauth_token_storage(server_url: str) -> Any:
     file_token_storage = getattr(fastmcp_oauth, "FileTokenStorage", None)
     if file_token_storage is not None:
         return file_token_storage(server_url=server_url)
-    provider = fastmcp_oauth.OAuth(mcp_url=server_url)
+    provider: Any = fastmcp_oauth.OAuth(mcp_url=server_url)
     return provider.token_storage_adapter
 
 

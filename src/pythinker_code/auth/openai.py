@@ -7,7 +7,6 @@ import hashlib
 import json
 import secrets
 import time
-import webbrowser
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, cast
@@ -329,7 +328,9 @@ async def _wait_for_browser_code(open_browser: bool = True) -> tuple[str, str, s
 
     auth_url = _build_authorize_url(redirect_uri=redirect_uri, pkce=pkce, state=state)
     if open_browser:
-        webbrowser.open(auth_url)
+        from pythinker_code.utils.term import open_url_in_browser
+
+        open_url_in_browser(auth_url)
 
     try:
         code, error = await asyncio.wait_for(result, timeout=15 * 60)

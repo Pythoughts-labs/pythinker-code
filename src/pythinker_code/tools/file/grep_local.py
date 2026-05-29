@@ -12,6 +12,7 @@ import shutil
 import stat
 import tarfile
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 from typing import override
@@ -528,7 +529,17 @@ def _python_grep(params: Params, unavailable_reason: str) -> ToolReturnValue:
     matched_lines: list[str] = []
     filtered_paths: list[str] = []
 
+    # Bound the total wall-clock spent here, mirroring the ripgrep path's
+    # RG_TIMEOUT. This caps runaway many-file scans; it cannot interrupt a
+    # single catastrophic-backtracking regex mid-file (stdlib `re` has no
+    # timeout and the zero-dependency policy rules out a regex engine that does).
+    deadline = time.monotonic() + RG_TIMEOUT
+    timed_out = False
+
     for file_path in _iter_python_search_files(params):
+        if time.monotonic() > deadline:
+            timed_out = True
+            break
         rel_path = _relative_output_path(file_path, search_base)
         if is_sensitive_file(rel_path):
             filtered_paths.append(rel_path)
@@ -576,6 +587,8 @@ def _python_grep(params: Params, unavailable_reason: str) -> ToolReturnValue:
 
     matched_lines, pagination_message = _apply_python_pagination(matched_lines, params)
     messages = [f"ripgrep unavailable ({unavailable_reason}); used Python fallback."]
+    if timed_out:
+        messages.append(f"Search exceeded {RG_TIMEOUT}s; returning partial results.")
     if filtered_paths:
         messages.append(sensitive_file_warning(filtered_paths))
     if pagination_message:

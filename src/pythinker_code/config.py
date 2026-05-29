@@ -116,6 +116,10 @@ class BackgroundConfig(BaseModel):
     worker_heartbeat_interval_ms: int = Field(default=5_000, ge=100)
     worker_stale_after_ms: int = Field(default=15_000, ge=1000)
     kill_grace_period_ms: int = Field(default=2_000, ge=100)
+    max_output_bytes: int = Field(default=50 * 1024 * 1024, ge=0)
+    """Maximum size of a bash task's output.log in bytes. When a task's output
+    grows past this, the worker terminates it and marks it failed, preventing a
+    chatty task from exhausting disk. ``0`` means unlimited. Default: 50 MiB."""
     keep_alive_on_exit: bool = Field(
         default=False,
         description="Keep background tasks alive when CLI exits. Default: kill on exit.",

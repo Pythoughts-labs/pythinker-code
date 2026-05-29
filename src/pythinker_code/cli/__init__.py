@@ -1041,6 +1041,26 @@ def pythinker(
 
         session_id = asyncio.run(_pick_session())
 
+    # Ensure the terminal is restored to a sane state if the process is killed
+    # by SIGTERM or SIGQUIT while the keyboard listener has raw mode active.
+    # atexit covers SystemExit/normal exits; the signal handlers cover signals
+    # whose default action would bypass atexit entirely.
+    import atexit
+    import signal as _signal
+
+    from pythinker_code.utils.term import ensure_tty_sane
+
+    atexit.register(ensure_tty_sane)
+
+    def _restore_term_and_exit(signum: int, frame: object) -> None:
+        ensure_tty_sane()
+        _signal.signal(signum, _signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+
+    for _sig in (_signal.SIGTERM, _signal.SIGQUIT):
+        with contextlib.suppress(OSError, ValueError):
+            _signal.signal(_sig, _restore_term_and_exit)
+
     try:
         switch_target, exit_code = asyncio.run(_reload_loop(session_id))
     except (typer.BadParameter, typer.Exit):
@@ -1336,6 +1356,7 @@ def background_task_worker(
     heartbeat_interval_ms: Annotated[int, typer.Option("--heartbeat-interval-ms")] = 5000,
     control_poll_interval_ms: Annotated[int, typer.Option("--control-poll-interval-ms")] = 500,
     kill_grace_period_ms: Annotated[int, typer.Option("--kill-grace-period-ms")] = 2000,
+    max_output_bytes: Annotated[int, typer.Option("--max-output-bytes")] = 0,
 ) -> None:
     """Run background task worker subprocess (internal)."""
     import asyncio
@@ -1354,6 +1375,7 @@ def background_task_worker(
             heartbeat_interval_ms=heartbeat_interval_ms,
             control_poll_interval_ms=control_poll_interval_ms,
             kill_grace_period_ms=kill_grace_period_ms,
+            max_output_bytes=max_output_bytes,
         )
     )
 

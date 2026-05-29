@@ -68,6 +68,11 @@ class LocalHost:
             return await self._process.wait()
 
         async def kill(self) -> None:
+            # If the process has already exited (and been reaped), its pid/pgid
+            # may have been recycled by the OS; signaling it could hit an
+            # unrelated process group. Skip the group-kill in that case.
+            if self._process.returncode is not None:
+                return
             if os.name != "nt":
                 try:
                     os.killpg(os.getpgid(self._process.pid), signal.SIGKILL)

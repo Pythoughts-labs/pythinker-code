@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
+from contextlib import contextmanager
 from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
@@ -108,7 +110,35 @@ class BackgroundTaskStore:
     def read_spec(self, task_id: str) -> TaskSpec:
         return TaskSpec.model_validate_json(self.spec_path(task_id).read_text(encoding="utf-8"))
 
+    @contextmanager
+    def _runtime_lock(self, task_id: str):
+        """Exclusive cross-process lock for the task's runtime file.
+
+        Serialises concurrent reads and writes between the manager and worker
+        processes, eliminating the race between heartbeat updates and stale-task
+        recovery.  Falls back to a no-op on platforms where fcntl is unavailable
+        (Windows).
+        """
+        lock_path = self.task_path(task_id) / "runtime.lock"
+        try:
+            import fcntl
+        except ImportError:
+            yield
+            return
+        with open(lock_path, "a") as lock_fd:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                with contextlib.suppress(OSError):
+                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
+
     def write_runtime(self, task_id: str, runtime: TaskRuntime) -> None:
+        with self._runtime_lock(task_id):
+            self._write_runtime_unlocked(task_id, runtime)
+
+    def _write_runtime_unlocked(self, task_id: str, runtime: TaskRuntime) -> None:
+        """Write runtime without acquiring the per-task lock (caller holds it)."""
         path = self.runtime_path(task_id)
         if path.exists():
             current = self.read_runtime(task_id)

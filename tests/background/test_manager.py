@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import signal
 import time
 
 import pytest
@@ -13,7 +14,8 @@ from pythinker_code.approval_runtime import (
     ApprovalRuntimeEvent,
     ApprovalSource,
 )
-from pythinker_code.background import TaskRuntime, TaskSpec
+from pythinker_code.background import TaskRuntime, TaskSpec, TaskStatus
+from pythinker_code.background import manager as manager_module
 from pythinker_code.background.agent_runner import BackgroundAgentRunner
 from pythinker_code.notifications import NotificationDelivery, NotificationEvent, NotificationView
 from pythinker_code.soul.agent import Agent as SoulAgent
@@ -1166,3 +1168,114 @@ async def test_manager_surfaces_timeout_failure(runtime):
     assert waited.runtime.interrupted is True
     assert waited.runtime.timed_out is True
     assert waited.runtime.failure_reason == "Command timed out after 1s"
+
+
+def _make_kill_task(runtime, task_id: str, status: TaskStatus):
+    store = runtime.background_tasks.store
+    spec = TaskSpec(
+        id=task_id,
+        kind="bash",
+        session_id=runtime.session.id,
+        description="escalation target",
+        tool_call_id=f"tool-{task_id}",
+        command="true",
+        shell_name="bash",
+        shell_path="/bin/bash",
+        cwd=str(runtime.session.work_dir),
+        timeout_s=60,
+    )
+    store.create_task(spec)
+    store.write_runtime(spec.id, TaskRuntime(status=status, updated_at=time.time()))
+    return spec.id
+
+
+def test_escalate_sigkill_skips_when_task_terminal(runtime, monkeypatch):
+    """The delayed SIGKILL escalation must not fire once the task is terminal:
+    SIGTERM already worked, and the pid/pgid may have been recycled by the OS."""
+    manager = runtime.background_tasks
+    task_id = _make_kill_task(runtime, "bkill001", "completed")
+
+    calls: list = []
+    monkeypatch.setattr(manager_module.os, "killpg", lambda *a: calls.append(a))
+    monkeypatch.setattr(manager_module.os, "kill", lambda *a: calls.append(a))
+
+    manager._escalate_sigkill(task_id, pgid=999999)
+    manager._escalate_sigkill(task_id, pid=999999)
+
+    assert calls == []
+
+
+def test_escalate_sigkill_fires_when_task_still_running(runtime, monkeypatch):
+    """If the task is still running after the grace delay, escalate to SIGKILL."""
+    manager = runtime.background_tasks
+    task_id = _make_kill_task(runtime, "bkill002", "running")
+
+    calls: list = []
+    monkeypatch.setattr(manager_module.os, "killpg", lambda pgid, sig: calls.append((pgid, sig)))
+
+    manager._escalate_sigkill(task_id, pgid=999999)
+
+    assert calls == [(999999, signal.SIGKILL)]
+
+
+def test_mark_task_completed_is_lock_protected(runtime, monkeypatch):
+    """The terminal-transition read-modify-write must run inside the
+    cross-process runtime lock and write via the unlocked writer.
+
+    Without the lock, a concurrent recover()/heartbeat could read a stale
+    runtime between this method's read and write, clobbering the terminal
+    status. We assert the operation order lock_enter -> read -> write_unlocked
+    -> lock_exit, and that the *locking* wrapper write_runtime is never used
+    inside the lock (which would self-deadlock on the same-thread fcntl lock).
+    """
+    manager = runtime.background_tasks
+    store = manager.store
+    task_id = _make_kill_task(runtime, "block001", "running")
+
+    events: list[str] = []
+
+    real_lock = store._runtime_lock
+    real_read = store.read_runtime
+    real_write_unlocked = store._write_runtime_unlocked
+
+    # _write_runtime_unlocked re-reads the runtime internally for its
+    # terminal-clobber guard. Suppress recording reads while inside the writer
+    # so the asserted sequence reflects only the manager's own read-modify-write.
+    in_writer = False
+
+    @contextlib.contextmanager
+    def spy_lock(tid):
+        events.append("lock_enter")
+        with real_lock(tid):
+            try:
+                yield
+            finally:
+                events.append("lock_exit")
+
+    def spy_read(tid):
+        if not in_writer:
+            events.append("read")
+        return real_read(tid)
+
+    def spy_write_unlocked(tid, rt):
+        nonlocal in_writer
+        events.append("write_unlocked")
+        in_writer = True
+        try:
+            return real_write_unlocked(tid, rt)
+        finally:
+            in_writer = False
+
+    def fail_write_runtime(*_a, **_k):
+        raise AssertionError("_mark_task_* must not use the locking write_runtime wrapper")
+
+    monkeypatch.setattr(store, "_runtime_lock", spy_lock)
+    monkeypatch.setattr(store, "read_runtime", spy_read)
+    monkeypatch.setattr(store, "_write_runtime_unlocked", spy_write_unlocked)
+    monkeypatch.setattr(store, "write_runtime", fail_write_runtime)
+
+    manager._mark_task_completed(task_id)
+
+    assert events == ["lock_enter", "read", "write_unlocked", "lock_exit"]
+    # The mutation still landed: state reflects the terminal status.
+    assert real_read(task_id).status == "completed"

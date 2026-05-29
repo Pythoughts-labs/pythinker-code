@@ -10,7 +10,6 @@ import sys
 import tempfile
 import time
 import uuid
-import webbrowser
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
@@ -660,7 +659,9 @@ async def login_pythinker_code(
         )
         if open_browser:
             try:
-                webbrowser.open(auth.verification_uri_complete)
+                from pythinker_code.utils.term import open_url_in_browser
+
+                open_url_in_browser(auth.verification_uri_complete)
             except Exception as exc:
                 logger.warning("Failed to open browser: {error}", error=exc)
 

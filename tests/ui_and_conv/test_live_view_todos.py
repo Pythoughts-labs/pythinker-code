@@ -165,12 +165,14 @@ def test_finished_todos_move_to_bottom_of_menu(monkeypatch) -> None:
     assert rendered.index("✓ Finished first") < rendered.index("✓ Finished second")
 
 
-def test_active_todo_activity_line_uses_coral_accent() -> None:
+def test_active_todo_activity_line_uses_warning_accent() -> None:
     view = _LiveView(StatusUpdate(context_tokens=10_000))
 
     line = view._todo_activity_line("Implement pinned todos", elapsed_s=0.88, width=100)
 
-    assert _span_colors_for(line, "Implement pinned todos") == {"#c9795a"}
+    assert _span_colors_for(line, "Implement pinned todos") == {
+        _color_hex(tui_rich_style("warning").color)
+    }
 
 
 def test_active_pinned_todo_row_uses_accent_icon_and_white_title() -> None:
@@ -184,7 +186,7 @@ def test_active_pinned_todo_row_uses_accent_icon_and_white_title() -> None:
     )
     title_style = _style_for(row, "Implement pinned todos")
 
-    assert _span_colors_for(row, "■") == {"#c9795a"}
+    assert _span_colors_for(row, "■") == {_color_hex(tui_rich_style("warning").color)}
     assert title_style.color == tui_rich_style("activity_label").color
     assert title_style.bold is True
 

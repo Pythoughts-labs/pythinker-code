@@ -580,15 +580,14 @@ def _feedback_destination(soul: PythinkerSoul) -> tuple[str, dict[str, str]] | N
 @shell_mode_registry.command
 def feedback(app: Shell, args: str):
     """Open a GitHub issue to submit feedback or report a bug"""
-    import webbrowser
-
     from pythinker_code.ui.theme import get_tui_tokens as _get_tok_fb
+    from pythinker_code.utils.term import open_url_in_browser
 
     _t_fb = _get_tok_fb()
 
     ISSUE_URL = "https://github.com/TechMatrix-labs/pythinker-code/issues/new/choose"
 
-    if webbrowser.open(ISSUE_URL):
+    if open_url_in_browser(ISSUE_URL):
         console.print(f"[{_t_fb.success}]Opening GitHub issues in your browser...[/]")
     else:
         console.print(f"Please open: [underline]{ISSUE_URL}[/underline]")
@@ -599,7 +598,6 @@ def feedback(app: Shell, args: str):
 async def report_error(app: Shell, args: str):
     """Submit a report about an error you hit, with a snapshot of recent failures."""
     import platform
-    import webbrowser
 
     import aiohttp
 
@@ -608,13 +606,14 @@ async def report_error(app: Shell, args: str):
     from pythinker_code.ui.shell.oauth import current_model_key
     from pythinker_code.ui.theme import get_tui_tokens as _get_tok_re
     from pythinker_code.utils.aiohttp import new_client_session
+    from pythinker_code.utils.term import open_url_in_browser
 
     _t_re = _get_tok_re()
 
     ISSUE_URL = "https://github.com/TechMatrix-labs/pythinker-code/issues"
 
     def _fallback_to_issues():
-        if not webbrowser.open(ISSUE_URL):
+        if not open_url_in_browser(ISSUE_URL):
             console.print(f"Please file the report at [underline]{ISSUE_URL}[/underline].")
 
     soul = ensure_pythinker_soul(app)

@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Protocol
 
 import pytest
@@ -307,3 +307,93 @@ async def test_fetch_url_with_service(runtime) -> None:
 
     finally:
         await runner.cleanup()
+
+
+@pytest_asyncio.fixture
+async def serve_app() -> AsyncIterator[Callable[[web.Application], Awaitable[str]]]:
+    """Serve an arbitrary aiohttp app on a random loopback port and clean up."""
+    runners: list[web.AppRunner] = []
+
+    async def _serve(app: web.Application) -> str:
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, host="127.0.0.1", port=0)
+        await site.start()
+        runners.append(runner)
+        sockets = site._server.sockets  # type: ignore[attr-defined]
+        assert sockets, "Server failed to bind to a port."
+        return f"http://127.0.0.1:{sockets[0].getsockname()[1]}"
+
+    try:
+        yield _serve
+    finally:
+        for runner in runners:
+            await runner.cleanup()
+
+
+async def test_fetch_url_redirect_to_blocked_target_is_rejected(
+    fetch_url_tool: FetchURL,
+    serve_app: Callable[[web.Application], Awaitable[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 30x redirect whose target fails SSRF validation must be rejected, not
+    silently followed (aiohttp would otherwise follow it without re-checking)."""
+
+    def _validator(url: str) -> str | None:
+        return "internal address blocked" if "blocked.invalid" in url else None
+
+    monkeypatch.setattr(fetch_module, "_validate_fetch_url", _validator)
+
+    async def handler(request: web.Request) -> web.Response:  # noqa: ARG001
+        return web.Response(status=302, headers={"Location": "http://blocked.invalid/secret"})
+
+    app = web.Application()
+    app.router.add_get("/", handler)
+    base = await serve_app(app)
+
+    result = await fetch_url_tool(Params(url=base))
+
+    assert result.is_error
+    assert "internal address blocked" in result.message
+
+
+async def test_fetch_url_follows_safe_redirect(
+    fetch_url_tool: FetchURL,
+    serve_app: Callable[[web.Application], Awaitable[str]],
+) -> None:
+    """Legitimate redirects to allowed targets are still followed end to end."""
+
+    async def start(request: web.Request) -> web.Response:  # noqa: ARG001
+        return web.Response(status=302, headers={"Location": "/dest"})
+
+    async def dest(request: web.Request) -> web.Response:  # noqa: ARG001
+        return web.Response(text="redirected body", content_type="text/markdown")
+
+    app = web.Application()
+    app.router.add_get("/start", start)
+    app.router.add_get("/dest", dest)
+    base = await serve_app(app)
+
+    result = await fetch_url_tool(Params(url=f"{base}/start"))
+
+    assert not result.is_error
+    assert "redirected body" in result.output
+
+
+async def test_fetch_url_redirect_loop_is_capped(
+    fetch_url_tool: FetchURL,
+    serve_app: Callable[[web.Application], Awaitable[str]],
+) -> None:
+    """A redirect loop terminates with an error instead of looping forever."""
+
+    async def loop(request: web.Request) -> web.Response:  # noqa: ARG001
+        return web.Response(status=302, headers={"Location": "/loop"})
+
+    app = web.Application()
+    app.router.add_get("/loop", loop)
+    base = await serve_app(app)
+
+    result = await fetch_url_tool(Params(url=f"{base}/loop"))
+
+    assert result.is_error
+    assert "too many redirects" in result.message
