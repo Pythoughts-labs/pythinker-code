@@ -9,6 +9,7 @@ import pytest
 import pytest_asyncio
 from inline_snapshot import snapshot
 
+import pythinker_code.tools.file.grep_local as grep_module
 from pythinker_code.tools.file.grep_local import (
     Grep,
     Params,
@@ -1037,3 +1038,35 @@ async def test_grep_allows_env_example(grep_tool: Grep):
         )
         assert not result.is_error
         assert ".env.example" in result.output
+
+
+async def test_python_fallback_bounds_wall_clock(monkeypatch, tmp_path):
+    """The Python fallback caps total wall-clock like the ripgrep path, and
+    surfaces a partial-results notice when it does."""
+
+    async def fail_rg_path() -> str:
+        raise RuntimeError("Failed to download ripgrep binary")
+
+    monkeypatch.setattr("pythinker_code.tools.file.grep_local._ensure_rg_path", fail_rg_path)
+
+    (tmp_path / "a.txt").write_text("needle\n")
+    (tmp_path / "b.txt").write_text("needle\n")
+
+    # A strictly increasing clock: the first reading inside the fallback sets the
+    # deadline, and the next reading (during the file walk) is far enough ahead to
+    # blow it immediately. The +1e9 step keeps that true regardless of any other
+    # monotonic() calls made elsewhere on the public Grep() path.
+    ticks = [0.0]
+
+    def _fake_monotonic() -> float:
+        value = ticks[0]
+        ticks[0] += 1e9
+        return value
+
+    monkeypatch.setattr(grep_module.time, "monotonic", _fake_monotonic)
+
+    result = await Grep()(
+        Params(pattern="needle", path=str(tmp_path), output_mode="files_with_matches")
+    )
+
+    assert f"Search exceeded {grep_module.RG_TIMEOUT}s" in result.message

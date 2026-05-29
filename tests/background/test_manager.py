@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import signal
 import time
 
 import pytest
@@ -13,7 +14,8 @@ from pythinker_code.approval_runtime import (
     ApprovalRuntimeEvent,
     ApprovalSource,
 )
-from pythinker_code.background import TaskRuntime, TaskSpec
+from pythinker_code.background import TaskRuntime, TaskSpec, TaskStatus
+from pythinker_code.background import manager as manager_module
 from pythinker_code.background.agent_runner import BackgroundAgentRunner
 from pythinker_code.notifications import NotificationDelivery, NotificationEvent, NotificationView
 from pythinker_code.soul.agent import Agent as SoulAgent
@@ -691,6 +693,229 @@ def test_recover_marks_stale_agent_task_lost_and_clears_instance_running_state(r
     assert instance.status == "idle"
 
 
+def _seed_agent_task(
+    runtime,
+    *,
+    task_id: str,
+    agent_id: str,
+    task_status: TaskStatus,
+    instance_status: str = "running_background",
+    updated_offset: float = 0.0,
+):
+    """Create a paired (subagent instance, agent TaskRuntime) for recovery tests."""
+    store = runtime.background_tasks.store
+    runtime.subagent_store.create_instance(
+        agent_id=agent_id,
+        description="background agent",
+        launch_spec=AgentLaunchSpec(
+            agent_id=agent_id,
+            subagent_type="coder",
+            model_override=None,
+            effective_model=None,
+        ),
+    )
+    runtime.subagent_store.update_instance(agent_id, status=instance_status)
+    spec = TaskSpec(
+        id=task_id,
+        kind="agent",
+        session_id=runtime.session.id,
+        description="background agent task",
+        tool_call_id=f"tool-{task_id}",
+        owner_role="root",
+        kind_payload={
+            "agent_id": agent_id,
+            "subagent_type": "coder",
+            "prompt": "do work",
+            "model_override": None,
+            "launch_mode": "background",
+        },
+    )
+    store.create_task(spec)
+    now = time.time() - updated_offset
+    store.write_runtime(
+        spec.id,
+        TaskRuntime(status=task_status, updated_at=now, finished_at=now),
+    )
+    return spec
+
+
+def test_recover_reconciles_subagent_record_for_terminal_agent_task(runtime):
+    # Simulates a crash after finalize wrote the authoritative TaskRuntime
+    # (failed) but before the subagent record write: the instance is left
+    # running_background. recover() must bring the two into agreement.
+    manager = runtime.background_tasks
+    _seed_agent_task(runtime, task_id="acrashtask", agent_id="acrashagent", task_status="failed")
+    assert runtime.subagent_store.require_instance("acrashagent").status == "running_background"
+
+    manager.recover()
+
+    assert runtime.subagent_store.require_instance("acrashagent").status == "failed"
+    assert manager.store.merged_view("acrashtask").runtime.status == "failed"
+
+
+def test_recover_reconciles_subagent_record_for_killed_agent_task(runtime):
+    # kill() marks TaskRuntime killed first, then cancels the asyncio task. A
+    # crash before the runner's cancel handler writes the instance leaves it
+    # running_background; recover() maps killed -> killed.
+    manager = runtime.background_tasks
+    _seed_agent_task(runtime, task_id="akilltask", agent_id="akillagent", task_status="killed")
+
+    manager.recover()
+
+    assert runtime.subagent_store.require_instance("akillagent").status == "killed"
+
+
+def test_recover_does_not_clobber_resumed_foreground_instance(runtime):
+    # An old terminal task whose agent instance has since been resumed in the
+    # foreground must not be reset by recovery reconciliation.
+    manager = runtime.background_tasks
+    _seed_agent_task(
+        runtime,
+        task_id="aresumetask",
+        agent_id="aresumeagent",
+        task_status="recoverable",
+        instance_status="running_foreground",
+    )
+
+    manager.recover()
+
+    assert runtime.subagent_store.require_instance("aresumeagent").status == "running_foreground"
+
+
+def test_finalize_agent_task_updates_both_records_consistently(runtime):
+    manager = runtime.background_tasks
+    spec = _seed_agent_task(
+        runtime, task_id="afintask", agent_id="afinagent", task_status="running"
+    )
+
+    manager.finalize_agent_task("afintask", "afinagent", outcome="failed", reason="boom")
+
+    assert manager.store.merged_view(spec.id).runtime.status == "failed"
+    assert manager.store.read_runtime(spec.id).failure_reason == "boom"
+    assert runtime.subagent_store.require_instance("afinagent").status == "failed"
+
+
+def test_finalize_agent_task_completed_parks_instance_idle(runtime):
+    manager = runtime.background_tasks
+    _seed_agent_task(runtime, task_id="adonetask", agent_id="adoneagent", task_status="running")
+
+    manager.finalize_agent_task("adonetask", "adoneagent", outcome="completed")
+
+    assert manager.store.merged_view("adonetask").runtime.status == "completed"
+    assert runtime.subagent_store.require_instance("adoneagent").status == "idle"
+
+
+def test_reconcile_prunes_aged_terminal_tasks(runtime):
+    manager = runtime.background_tasks
+    store = manager.store
+    runtime.config.background.task_retention_days = 1
+    aged = time.time() - 3 * 86_400
+    old_spec = TaskSpec(
+        id="aoldbash1",
+        kind="bash",
+        session_id=runtime.session.id,
+        description="aged completed task",
+        tool_call_id="tool-old",
+        command="echo hi",
+        shell_name="bash",
+        shell_path="/bin/bash",
+        cwd=str(runtime.session.work_dir),
+        timeout_s=10,
+    )
+    store.create_task(old_spec)
+    store.write_runtime(
+        old_spec.id, TaskRuntime(status="completed", finished_at=aged, updated_at=aged)
+    )
+    fresh_spec = TaskSpec(
+        id="afreshbash1",
+        kind="bash",
+        session_id=runtime.session.id,
+        description="fresh completed task",
+        tool_call_id="tool-fresh",
+        command="echo hi",
+        shell_name="bash",
+        shell_path="/bin/bash",
+        cwd=str(runtime.session.work_dir),
+        timeout_s=10,
+    )
+    store.create_task(fresh_spec)
+    store.write_runtime(
+        fresh_spec.id,
+        TaskRuntime(status="completed", finished_at=time.time(), updated_at=time.time()),
+    )
+
+    manager.reconcile()
+
+    task_ids = store.list_task_ids()
+    assert old_spec.id not in task_ids
+    assert fresh_spec.id in task_ids
+
+
+@pytest.mark.asyncio
+async def test_recover_does_not_clobber_resumed_background_instance(runtime):
+    # An agent_id can be reused: an old background task is terminal while the
+    # SAME agent_id has been resumed as a new, live background task whose record
+    # is (correctly) running_background. recover() must not reconcile the old
+    # terminal task's view onto the live agent's record.
+    manager = runtime.background_tasks
+    store = manager.store
+    runtime.subagent_store.create_instance(
+        agent_id="aresumebg",
+        description="resumed background agent",
+        launch_spec=AgentLaunchSpec(
+            agent_id="aresumebg",
+            subagent_type="coder",
+            model_override=None,
+            effective_model=None,
+        ),
+    )
+    runtime.subagent_store.update_instance("aresumebg", status="running_background")
+
+    def _agent_spec(task_id: str) -> TaskSpec:
+        return TaskSpec(
+            id=task_id,
+            kind="agent",
+            session_id=runtime.session.id,
+            description="agent run",
+            tool_call_id=f"tool-{task_id}",
+            owner_role="root",
+            kind_payload={
+                "agent_id": "aresumebg",
+                "subagent_type": "coder",
+                "prompt": "p",
+                "model_override": None,
+                "launch_mode": "background",
+            },
+        )
+
+    old_spec = _agent_spec("aoldresume1")
+    store.create_task(old_spec)
+    store.write_runtime(
+        old_spec.id,
+        TaskRuntime(status="failed", finished_at=time.time(), updated_at=time.time()),
+    )
+    new_spec = _agent_spec("anewresume1")
+    store.create_task(new_spec)
+    store.write_runtime(
+        new_spec.id,
+        TaskRuntime(status="running", updated_at=time.time(), heartbeat_at=time.time()),
+    )
+
+    async def _alive() -> None:
+        await asyncio.sleep(3600)
+
+    live = asyncio.create_task(_alive())
+    manager._live_agent_tasks[new_spec.id] = live
+    try:
+        manager.recover()
+        assert runtime.subagent_store.require_instance("aresumebg").status == "running_background"
+    finally:
+        live.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await live
+        manager._live_agent_tasks.pop(new_spec.id, None)
+
+
 def test_mark_task_running_does_not_overwrite_terminal_state(runtime):
     manager = runtime.background_tasks
     store = manager.store
@@ -1166,3 +1391,114 @@ async def test_manager_surfaces_timeout_failure(runtime):
     assert waited.runtime.interrupted is True
     assert waited.runtime.timed_out is True
     assert waited.runtime.failure_reason == "Command timed out after 1s"
+
+
+def _make_kill_task(runtime, task_id: str, status: TaskStatus):
+    store = runtime.background_tasks.store
+    spec = TaskSpec(
+        id=task_id,
+        kind="bash",
+        session_id=runtime.session.id,
+        description="escalation target",
+        tool_call_id=f"tool-{task_id}",
+        command="true",
+        shell_name="bash",
+        shell_path="/bin/bash",
+        cwd=str(runtime.session.work_dir),
+        timeout_s=60,
+    )
+    store.create_task(spec)
+    store.write_runtime(spec.id, TaskRuntime(status=status, updated_at=time.time()))
+    return spec.id
+
+
+def test_escalate_sigkill_skips_when_task_terminal(runtime, monkeypatch):
+    """The delayed SIGKILL escalation must not fire once the task is terminal:
+    SIGTERM already worked, and the pid/pgid may have been recycled by the OS."""
+    manager = runtime.background_tasks
+    task_id = _make_kill_task(runtime, "bkill001", "completed")
+
+    calls: list = []
+    monkeypatch.setattr(manager_module.os, "killpg", lambda *a: calls.append(a))
+    monkeypatch.setattr(manager_module.os, "kill", lambda *a: calls.append(a))
+
+    manager._escalate_sigkill(task_id, pgid=999999)
+    manager._escalate_sigkill(task_id, pid=999999)
+
+    assert calls == []
+
+
+def test_escalate_sigkill_fires_when_task_still_running(runtime, monkeypatch):
+    """If the task is still running after the grace delay, escalate to SIGKILL."""
+    manager = runtime.background_tasks
+    task_id = _make_kill_task(runtime, "bkill002", "running")
+
+    calls: list = []
+    monkeypatch.setattr(manager_module.os, "killpg", lambda pgid, sig: calls.append((pgid, sig)))
+
+    manager._escalate_sigkill(task_id, pgid=999999)
+
+    assert calls == [(999999, signal.SIGKILL)]
+
+
+def test_mark_task_completed_is_lock_protected(runtime, monkeypatch):
+    """The terminal-transition read-modify-write must run inside the
+    cross-process runtime lock and write via the unlocked writer.
+
+    Without the lock, a concurrent recover()/heartbeat could read a stale
+    runtime between this method's read and write, clobbering the terminal
+    status. We assert the operation order lock_enter -> read -> write_unlocked
+    -> lock_exit, and that the *locking* wrapper write_runtime is never used
+    inside the lock (which would self-deadlock on the same-thread fcntl lock).
+    """
+    manager = runtime.background_tasks
+    store = manager.store
+    task_id = _make_kill_task(runtime, "block001", "running")
+
+    events: list[str] = []
+
+    real_lock = store._runtime_lock
+    real_read = store.read_runtime
+    real_write_unlocked = store._write_runtime_unlocked
+
+    # _write_runtime_unlocked re-reads the runtime internally for its
+    # terminal-clobber guard. Suppress recording reads while inside the writer
+    # so the asserted sequence reflects only the manager's own read-modify-write.
+    in_writer = False
+
+    @contextlib.contextmanager
+    def spy_lock(tid):
+        events.append("lock_enter")
+        with real_lock(tid):
+            try:
+                yield
+            finally:
+                events.append("lock_exit")
+
+    def spy_read(tid):
+        if not in_writer:
+            events.append("read")
+        return real_read(tid)
+
+    def spy_write_unlocked(tid, rt):
+        nonlocal in_writer
+        events.append("write_unlocked")
+        in_writer = True
+        try:
+            return real_write_unlocked(tid, rt)
+        finally:
+            in_writer = False
+
+    def fail_write_runtime(*_a, **_k):
+        raise AssertionError("_mark_task_* must not use the locking write_runtime wrapper")
+
+    monkeypatch.setattr(store, "_runtime_lock", spy_lock)
+    monkeypatch.setattr(store, "read_runtime", spy_read)
+    monkeypatch.setattr(store, "_write_runtime_unlocked", spy_write_unlocked)
+    monkeypatch.setattr(store, "write_runtime", fail_write_runtime)
+
+    manager._mark_task_completed(task_id)
+
+    assert events == ["lock_enter", "read", "write_unlocked", "lock_exit"]
+    # The mutation still landed: state reflects the terminal status.
+    assert real_read(task_id).status == "completed"

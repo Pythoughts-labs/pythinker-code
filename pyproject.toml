@@ -178,4 +178,13 @@ Encrypter = "Encrypter"
 # Hex session IDs (e.g. 06ba6c38) contain "ba".
 ba = "ba"
 uest = "uest"
+# Verb stems in the unfinished-intent detection regex (soul/pythinkersoul.py)
+# match word prefixes ("prepar" → prepare/preparing); kept as bare stems on
+# purpose so they cover every inflection.
+prepar = "prepar"
+generat = "generat"
+provid = "provid"
+updat = "updat"
+examin = "examin"
+continu = "continu"
 

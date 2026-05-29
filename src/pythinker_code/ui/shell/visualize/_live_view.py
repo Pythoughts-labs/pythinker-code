@@ -111,7 +111,6 @@ _ACTION_SPACER = BLANK_ROW
 # running long enough that a quick turn won't flash it.
 _WORKING_TIP_MIN_ELAPSED_S = 4.0
 _MAX_PINNED_TODO_ROWS = 5
-_ACTIVE_TODO_ACCENT = Style(color="#C9795A")
 
 
 def _todo_activity_label(label: str) -> str:
@@ -576,8 +575,9 @@ class _LiveView:
         suffix = f" {metadata}"
         label_width = max(1, width - cell_width(prefix) - cell_width(suffix))
 
-        line = Text(prefix, style=_ACTIVE_TODO_ACCENT)
-        line.append(truncate_to_width(label, label_width), style=_ACTIVE_TODO_ACCENT)
+        accent = tui_rich_style("warning")
+        line = Text(prefix, style=accent)
+        line.append(truncate_to_width(label, label_width), style=accent)
         line.append(suffix, style=tui_rich_style("muted"))
         return line
 
@@ -672,7 +672,7 @@ class _LiveView:
         title = truncate_to_width(todo.title.strip(), title_budget)
         row = Text(prefix, style=tui_rich_style("muted"))
         if todo.status == "in_progress":
-            row.append(icon, style=_ACTIVE_TODO_ACCENT)
+            row.append(icon, style=tui_rich_style("warning"))
             row.append(" ")
             row.append(title, style=title_style)
             return row

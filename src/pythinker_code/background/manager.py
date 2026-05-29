@@ -5,9 +5,10 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from pythinker_host.local import local_host
 
@@ -18,6 +19,7 @@ from pythinker_code.utils.logging import logger
 
 if TYPE_CHECKING:
     from pythinker_code.soul.agent import Runtime
+    from pythinker_code.subagents.models import SubagentStatus
 
 from .ids import generate_task_id
 from .models import (
@@ -30,6 +32,25 @@ from .models import (
     is_terminal_status,
 )
 from .store import BackgroundTaskStore
+
+AgentTaskOutcome = Literal["completed", "failed", "timed_out", "killed"]
+
+
+def _subagent_status_for_task_status(status: TaskStatus) -> SubagentStatus | None:
+    """Map an authoritative agent ``TaskStatus`` to the subagent instance status
+    it implies, for crash-recovery reconciliation.
+
+    Returns ``None`` for statuses that imply no reconciliation. ``recoverable``
+    and ``completed`` park the instance at ``idle`` (resumable / done-clean);
+    ``killed`` and the failure family (``failed``/``lost``) map straight through.
+    """
+    if status in ("completed", "recoverable"):
+        return "idle"
+    if status == "killed":
+        return "killed"
+    if status in ("failed", "lost"):
+        return "failed"
+    return None
 
 
 class BackgroundTaskManager:
@@ -158,6 +179,8 @@ class BackgroundTaskManager:
                 str(self._config.wait_poll_interval_ms),
                 "--kill-grace-period-ms",
                 str(self._config.kill_grace_period_ms),
+                "--max-output-bytes",
+                str(self._config.max_output_bytes),
             ]
         return [
             sys.executable,
@@ -172,6 +195,8 @@ class BackgroundTaskManager:
             str(self._config.wait_poll_interval_ms),
             "--kill-grace-period-ms",
             str(self._config.kill_grace_period_ms),
+            "--max-output-bytes",
+            str(self._config.max_output_bytes),
         ]
 
     def _launch_worker(self, task_dir: Path) -> int:
@@ -417,7 +442,9 @@ class BackgroundTaskManager:
                 return view
             await asyncio.sleep(self._config.wait_poll_interval_ms / 1000)
 
-    def _best_effort_kill(self, runtime: TaskRuntime) -> None:
+    _SIGKILL_ESCALATION_DELAY_S = 5.0
+
+    def _best_effort_kill(self, task_id: str, runtime: TaskRuntime) -> None:
         try:
             if os.name == "nt":
                 pid = runtime.child_pid or runtime.worker_pid
@@ -433,13 +460,51 @@ class BackgroundTaskManager:
 
             if runtime.child_pgid is not None:
                 os.killpg(runtime.child_pgid, signal.SIGTERM)
+                self._schedule_sigkill(task_id, pgid=runtime.child_pgid)
                 return
             if runtime.child_pid is not None:
                 os.kill(runtime.child_pid, signal.SIGTERM)
+                self._schedule_sigkill(task_id, pid=runtime.child_pid)
         except ProcessLookupError:
             pass
         except Exception:
             logger.exception("Failed to send best-effort kill signal")
+
+    def _schedule_sigkill(
+        self, task_id: str, *, pgid: int | None = None, pid: int | None = None
+    ) -> None:
+        """Escalate to SIGKILL after a grace delay if the task is still running."""
+        t = threading.Timer(
+            self._SIGKILL_ESCALATION_DELAY_S,
+            self._escalate_sigkill,
+            kwargs={"task_id": task_id, "pgid": pgid, "pid": pid},
+        )
+        t.daemon = True
+        t.start()
+
+    def _escalate_sigkill(
+        self, task_id: str, *, pgid: int | None = None, pid: int | None = None
+    ) -> None:
+        """SIGKILL the process group/pid, but only if the task is still running.
+
+        Re-reading the task status first avoids two problems with a blind timer:
+        (a) sending a needless SIGKILL on the common path where SIGTERM already
+        worked, and (b) signaling a pgid/pid the OS may have recycled once the
+        original child exited and was reaped by its parent worker. The worker
+        owns the child and runs its own SIGTERM->SIGKILL escalation, so this is
+        only a fallback for when the worker itself is gone.
+        """
+        try:
+            if is_terminal_status(self._store.read_runtime(task_id).status):
+                return
+            if pgid is not None:
+                os.killpg(pgid, signal.SIGKILL)
+            elif pid is not None:
+                os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except Exception:
+            logger.warning("Failed to escalate kill signal to SIGKILL")
 
     def kill(self, task_id: str, *, reason: str = "Killed by user") -> TaskView:
         self._ensure_root()
@@ -471,7 +536,7 @@ class BackgroundTaskManager:
             }
         )
         self._store.write_control(task_id, control)
-        self._best_effort_kill(view.runtime)
+        self._best_effort_kill(task_id, view.runtime)
         return self._store.merged_view(task_id)
 
     def kill_all_active(self, *, reason: str = "CLI session ended") -> list[str]:
@@ -493,32 +558,26 @@ class BackgroundTaskManager:
     def recover(self) -> None:
         now = time.time()
         stale_after = self._config.worker_stale_after_ms / 1000
-        for view in self._store.list_views():
-            if is_terminal_status(view.runtime.status):
-                continue
+        views = self._store.list_views()
+        # agent_ids owned by a live in-process task. A terminal task that reused
+        # the same agent_id (e.g. a prior run before a background resume) must
+        # not reconcile its status onto the *live* agent's record.
+        live_agent_ids = {
+            agent_id
+            for view in views
+            if view.spec.id in self._live_agent_tasks
+            and isinstance(agent_id := (view.spec.kind_payload or {}).get("agent_id"), str)
+        }
+        for view in views:
             if view.spec.kind == "agent":
-                if view.spec.id in self._live_agent_tasks:
-                    continue
-                runtime = view.runtime.model_copy()
-                runtime.finished_at = now
-                runtime.updated_at = now
-                agent_id = (view.spec.kind_payload or {}).get("agent_id")
-                runtime.status = "recoverable" if isinstance(agent_id, str) else "lost"
-                runtime.failure_reason = (
-                    "In-process background agent is no longer running; resume the stored agent "
-                    f"instance {agent_id} to continue."
-                    if isinstance(agent_id, str)
-                    else "In-process background agent is no longer running"
-                )
-                self._store.write_runtime(view.spec.id, runtime)
-                if (
-                    isinstance(agent_id, str)
-                    and self._runtime is not None
-                    and self._runtime.subagent_store is not None
-                ):
-                    record = self._runtime.subagent_store.get_instance(agent_id)
-                    if record is not None and record.status == "running_background":
-                        self._runtime.subagent_store.update_instance(agent_id, status="idle")
+                # Agent tasks are handled before the terminal-skip below so a
+                # terminal task whose subagent record is still stuck at
+                # running_background (crash after the authoritative TaskRuntime
+                # write, or after kill() but before the runner's cancel handler)
+                # still gets reconciled.
+                self._recover_agent_view(view, now=now, live_agent_ids=live_agent_ids)
+                continue
+            if is_terminal_status(view.runtime.status):
                 continue
             last_progress_at = (
                 view.runtime.heartbeat_at
@@ -529,38 +588,109 @@ class BackgroundTaskManager:
             if now - last_progress_at <= stale_after:
                 continue
 
-            # Re-read runtime to narrow the race window with the worker process.
-            fresh_runtime = self._store.read_runtime(view.spec.id)
-            if is_terminal_status(fresh_runtime.status):
-                continue
-            fresh_progress = (
-                fresh_runtime.heartbeat_at
-                or fresh_runtime.started_at
-                or fresh_runtime.updated_at
-                or view.spec.created_at
-            )
-            if now - fresh_progress <= stale_after:
-                continue
+            # Hold the cross-process lock for the read-then-write to eliminate
+            # the race with a worker that heartbeats between our staleness check
+            # and the status write.
+            with self._store._runtime_lock(view.spec.id):  # pyright: ignore[reportPrivateUsage]
+                fresh_runtime = self._store.read_runtime(view.spec.id)
+                fresh_control = self._store.read_control(view.spec.id)
+                if is_terminal_status(fresh_runtime.status):
+                    continue
+                fresh_progress = (
+                    fresh_runtime.heartbeat_at
+                    or fresh_runtime.started_at
+                    or fresh_runtime.updated_at
+                    or view.spec.created_at
+                )
+                if now - fresh_progress <= stale_after:
+                    continue
 
-            runtime = fresh_runtime.model_copy()
+                runtime = fresh_runtime.model_copy()
+                runtime.finished_at = now
+                runtime.updated_at = now
+                if fresh_control.kill_requested_at is not None:
+                    runtime.status = "killed"
+                    runtime.interrupted = True
+                    runtime.failure_reason = fresh_control.kill_reason or "Killed during recovery"
+                else:
+                    runtime.status = "lost"
+                    runtime.failure_reason = (
+                        "Background worker never heartbeat after startup"
+                        if fresh_runtime.heartbeat_at is None
+                        else "Background worker heartbeat expired"
+                    )
+                self._store._write_runtime_unlocked(view.spec.id, runtime)  # pyright: ignore[reportPrivateUsage]
+
+    def _recover_agent_view(self, view: TaskView, *, now: float, live_agent_ids: set[str]) -> None:
+        """Recover an in-process agent task and reconcile its subagent record.
+
+        An orphaned task (non-terminal, no live asyncio task) gets an
+        authoritative terminal status re-derived here. Either way the subagent
+        instance record is reconciled to agree with the authoritative
+        ``TaskRuntime`` — closing the window where a process crash between
+        :meth:`finalize_agent_task`'s two writes, or between :meth:`kill` and the
+        runner's cancellation handler, left the two records divergent.
+        """
+        agent_id_raw = (view.spec.kind_payload or {}).get("agent_id")
+        agent_id = agent_id_raw if isinstance(agent_id_raw, str) else None
+        runtime_status: TaskStatus = view.runtime.status
+        if not is_terminal_status(runtime_status):
+            if view.spec.id in self._live_agent_tasks:
+                return
+            runtime = view.runtime.model_copy()
             runtime.finished_at = now
             runtime.updated_at = now
-            if view.control.kill_requested_at is not None:
-                runtime.status = "killed"
-                runtime.interrupted = True
-                runtime.failure_reason = view.control.kill_reason or "Killed during recovery"
-            else:
-                runtime.status = "lost"
-                runtime.failure_reason = (
-                    "Background worker never heartbeat after startup"
-                    if fresh_runtime.heartbeat_at is None
-                    else "Background worker heartbeat expired"
-                )
+            runtime.status = "recoverable" if agent_id is not None else "lost"
+            runtime.failure_reason = (
+                "In-process background agent is no longer running; resume the stored agent "
+                f"instance {agent_id} to continue."
+                if agent_id is not None
+                else "In-process background agent is no longer running"
+            )
             self._store.write_runtime(view.spec.id, runtime)
+            runtime_status = runtime.status
+        self._reconcile_subagent_status(agent_id, runtime_status, live_agent_ids)
+
+    def _reconcile_subagent_status(
+        self, agent_id: str | None, runtime_status: TaskStatus, live_agent_ids: set[str]
+    ) -> None:
+        """Bring a subagent instance record into agreement with the authoritative
+        agent ``TaskStatus``.
+
+        Skipped when ``agent_id`` is owned by a live in-process task — the same
+        agent_id may have been reused by a newer, currently-running task (e.g. a
+        background resume), so the ``running_background`` record belongs to that
+        live run, not to this (older, terminal) view. Otherwise only a record
+        still parked at ``running_background`` is touched, so a record resumed in
+        the foreground (``running_foreground``) or already settled to a terminal
+        status is never clobbered. This is safe because a background agent's
+        record stays ``running_background`` for the whole run, so an interrupted
+        finalize always leaves it there.
+        """
+        if agent_id is None or agent_id in live_agent_ids:
+            return
+        if self._runtime is None or self._runtime.subagent_store is None:
+            return
+        target = _subagent_status_for_task_status(runtime_status)
+        if target is None:
+            return
+        record = self._runtime.subagent_store.get_instance(agent_id)
+        if record is None or record.status != "running_background":
+            return
+        self._runtime.subagent_store.update_instance(agent_id, status=target)
 
     def reconcile(self, *, limit: int | None = None) -> list[str]:
         self.recover()
-        return self.publish_terminal_notifications(limit=limit)
+        published = self.publish_terminal_notifications(limit=limit)
+        # Opportunistic housekeeping: prune aged terminal task directories so the
+        # store does not grow unbounded. Best-effort and bounded — cleanup skips
+        # non-terminal tasks and any whose worker is still alive, and no-ops when
+        # task_retention_days == 0. A failure here must never break reconcile.
+        try:
+            self._store.cleanup_old_tasks(self._config.task_retention_days)
+        except Exception:
+            logger.warning("Background task cleanup failed during reconcile")
+        return published
 
     def publish_terminal_notifications(self, *, limit: int | None = None) -> list[str]:
         published: list[str] = []
@@ -636,34 +766,81 @@ class BackgroundTaskManager:
                 break
         return published
 
+    def finalize_agent_task(
+        self,
+        task_id: str,
+        agent_id: str | None,
+        *,
+        outcome: AgentTaskOutcome,
+        reason: str | None = None,
+    ) -> None:
+        """Apply an in-process agent task's terminal outcome to both stores.
+
+        The authoritative ``TaskRuntime`` is written FIRST and the derived
+        subagent instance record LAST, in one fixed order, so different call
+        sites can never interleave the pair in conflicting orders (the bug this
+        replaces: ``run()`` wrote the record first, ``_run_core`` wrote the task
+        first). A process crash between the two writes leaves the instance record
+        at ``running_background``; :meth:`recover` then reconciles it to the
+        status implied by the authoritative ``TaskRuntime``
+        (see :func:`_subagent_status_for_task_status`). Callers must route every
+        terminal agent update through here.
+        """
+        if outcome == "completed":
+            self._mark_task_completed(task_id)
+        elif outcome == "timed_out":
+            self._mark_task_timed_out(task_id, reason or "Agent task timed out")
+        elif outcome == "killed":
+            self._mark_task_killed(task_id, reason or "Agent task stopped")
+        else:
+            self._mark_task_failed(task_id, reason or "Agent task failed")
+
+        if (
+            agent_id is not None
+            and self._runtime is not None
+            and self._runtime.subagent_store is not None
+        ):
+            # _mark_task_*() returns early when the task is already terminal, so a
+            # kill/timeout race can leave the authoritative TaskRuntime at a
+            # different terminal status than this call's `outcome`. Derive the
+            # subagent status from the runtime that actually won (matching
+            # recover()'s reconciliation) so the two records never diverge.
+            final_status = self._store.read_runtime(task_id).status
+            subagent_status = _subagent_status_for_task_status(final_status)
+            if subagent_status is not None:
+                self._runtime.subagent_store.update_instance(agent_id, status=subagent_status)
+
     def _mark_task_running(self, task_id: str) -> None:
-        runtime = self._store.read_runtime(task_id)
-        if is_terminal_status(runtime.status):
-            return
-        runtime.status = "running"
-        runtime.updated_at = time.time()
-        runtime.heartbeat_at = runtime.updated_at
-        runtime.failure_reason = None
-        self._store.write_runtime(task_id, runtime)
+        with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
+            runtime = self._store.read_runtime(task_id)
+            if is_terminal_status(runtime.status):
+                return
+            runtime.status = "running"
+            runtime.updated_at = time.time()
+            runtime.heartbeat_at = runtime.updated_at
+            runtime.failure_reason = None
+            self._store._write_runtime_unlocked(task_id, runtime)  # pyright: ignore[reportPrivateUsage]
 
     def _mark_task_awaiting_approval(self, task_id: str, reason: str) -> None:
-        runtime = self._store.read_runtime(task_id)
-        if is_terminal_status(runtime.status):
-            return
-        runtime.status = "awaiting_approval"
-        runtime.updated_at = time.time()
-        runtime.failure_reason = reason
-        self._store.write_runtime(task_id, runtime)
+        with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
+            runtime = self._store.read_runtime(task_id)
+            if is_terminal_status(runtime.status):
+                return
+            runtime.status = "awaiting_approval"
+            runtime.updated_at = time.time()
+            runtime.failure_reason = reason
+            self._store._write_runtime_unlocked(task_id, runtime)  # pyright: ignore[reportPrivateUsage]
 
     def _mark_task_completed(self, task_id: str) -> None:
-        runtime = self._store.read_runtime(task_id)
-        if is_terminal_status(runtime.status):
-            return
-        runtime.status = "completed"
-        runtime.updated_at = time.time()
-        runtime.finished_at = runtime.updated_at
-        runtime.failure_reason = None
-        self._store.write_runtime(task_id, runtime)
+        with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
+            runtime = self._store.read_runtime(task_id)
+            if is_terminal_status(runtime.status):
+                return
+            runtime.status = "completed"
+            runtime.updated_at = time.time()
+            runtime.finished_at = runtime.updated_at
+            runtime.failure_reason = None
+            self._store._write_runtime_unlocked(task_id, runtime)  # pyright: ignore[reportPrivateUsage]
         from pythinker_code.telemetry import track
 
         if runtime.started_at and runtime.finished_at:
@@ -671,14 +848,15 @@ class BackgroundTaskManager:
             track("background_task_completed", success=True, duration_s=duration)
 
     def _mark_task_failed(self, task_id: str, reason: str) -> None:
-        runtime = self._store.read_runtime(task_id)
-        if is_terminal_status(runtime.status):
-            return
-        runtime.status = "failed"
-        runtime.updated_at = time.time()
-        runtime.finished_at = runtime.updated_at
-        runtime.failure_reason = reason
-        self._store.write_runtime(task_id, runtime)
+        with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
+            runtime = self._store.read_runtime(task_id)
+            if is_terminal_status(runtime.status):
+                return
+            runtime.status = "failed"
+            runtime.updated_at = time.time()
+            runtime.finished_at = runtime.updated_at
+            runtime.failure_reason = reason
+            self._store._write_runtime_unlocked(task_id, runtime)  # pyright: ignore[reportPrivateUsage]
         from pythinker_code.telemetry import track
 
         if runtime.started_at and runtime.finished_at:
@@ -691,16 +869,17 @@ class BackgroundTaskManager:
             )
 
     def _mark_task_timed_out(self, task_id: str, reason: str) -> None:
-        runtime = self._store.read_runtime(task_id)
-        if is_terminal_status(runtime.status):
-            return
-        runtime.status = "failed"
-        runtime.updated_at = time.time()
-        runtime.finished_at = runtime.updated_at
-        runtime.interrupted = True
-        runtime.timed_out = True
-        runtime.failure_reason = reason
-        self._store.write_runtime(task_id, runtime)
+        with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
+            runtime = self._store.read_runtime(task_id)
+            if is_terminal_status(runtime.status):
+                return
+            runtime.status = "failed"
+            runtime.updated_at = time.time()
+            runtime.finished_at = runtime.updated_at
+            runtime.interrupted = True
+            runtime.timed_out = True
+            runtime.failure_reason = reason
+            self._store._write_runtime_unlocked(task_id, runtime)  # pyright: ignore[reportPrivateUsage]
         from pythinker_code.telemetry import track
 
         if runtime.started_at and runtime.finished_at:
@@ -713,15 +892,16 @@ class BackgroundTaskManager:
             )
 
     def _mark_task_killed(self, task_id: str, reason: str) -> None:
-        runtime = self._store.read_runtime(task_id)
-        if is_terminal_status(runtime.status):
-            return
-        runtime.status = "killed"
-        runtime.updated_at = time.time()
-        runtime.finished_at = runtime.updated_at
-        runtime.interrupted = True
-        runtime.failure_reason = reason
-        self._store.write_runtime(task_id, runtime)
+        with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
+            runtime = self._store.read_runtime(task_id)
+            if is_terminal_status(runtime.status):
+                return
+            runtime.status = "killed"
+            runtime.updated_at = time.time()
+            runtime.finished_at = runtime.updated_at
+            runtime.interrupted = True
+            runtime.failure_reason = reason
+            self._store._write_runtime_unlocked(task_id, runtime)  # pyright: ignore[reportPrivateUsage]
         from pythinker_code.telemetry import track
 
         if runtime.started_at and runtime.finished_at:

@@ -323,6 +323,33 @@ def test_background_status_drops_verb_when_working_indicator_pinned() -> None:
     assert "…" not in text
 
 
+def test_background_status_omits_todos_when_verb_pinned() -> None:
+    """When the pinned status tail is active (show_verb=False) it already renders
+    the todo list under the verb spinner; the background-task line must NOT repeat
+    it, or the same todo list renders twice while the agent works."""
+    session = object.__new__(CustomPromptSession)
+    session._background_task_count_provider = lambda: BgTaskCounts(agent=3)
+    session._status_block_provider = None
+    session._latest_todos = (
+        TodoDisplayItem(title="Security vulnerability scan", status="in_progress"),
+        TodoDisplayItem(title="Code quality review", status="pending"),
+    )
+
+    # show_verb=False ⟺ an in-flight turn's pinned tail is already showing todos.
+    pinned = CustomPromptSession._render_background_working_status(session, 100, show_verb=False)
+    pinned_text = "".join(item[1] for item in pinned)
+    assert "3 background agents" in pinned_text
+    assert "Security vulnerability scan" not in pinned_text
+    assert "Code quality review" not in pinned_text
+
+    # Between turns (no pinned tail) the background line is the only surface, so
+    # it must still carry the todos.
+    standalone = CustomPromptSession._render_background_working_status(session, 100, show_verb=True)
+    standalone_text = "".join(item[1] for item in standalone)
+    assert "Security vulnerability scan" in standalone_text
+    assert "Code quality review" in standalone_text
+
+
 def test_running_prompt_hides_placeholder() -> None:
     view = object.__new__(_PromptLiveView)
     view._turn_ended = False

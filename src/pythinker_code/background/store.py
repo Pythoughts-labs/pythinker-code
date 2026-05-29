@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
+import shutil
+import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
@@ -108,7 +112,35 @@ class BackgroundTaskStore:
     def read_spec(self, task_id: str) -> TaskSpec:
         return TaskSpec.model_validate_json(self.spec_path(task_id).read_text(encoding="utf-8"))
 
+    @contextmanager
+    def _runtime_lock(self, task_id: str):
+        """Exclusive cross-process lock for the task's runtime file.
+
+        Serialises concurrent reads and writes between the manager and worker
+        processes, eliminating the race between heartbeat updates and stale-task
+        recovery.  Falls back to a no-op on platforms where fcntl is unavailable
+        (Windows).
+        """
+        lock_path = self.task_path(task_id) / "runtime.lock"
+        try:
+            import fcntl
+        except ImportError:
+            yield
+            return
+        with open(lock_path, "a") as lock_fd:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                with contextlib.suppress(OSError):
+                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
+
     def write_runtime(self, task_id: str, runtime: TaskRuntime) -> None:
+        with self._runtime_lock(task_id):
+            self._write_runtime_unlocked(task_id, runtime)
+
+    def _write_runtime_unlocked(self, task_id: str, runtime: TaskRuntime) -> None:
+        """Write runtime without acquiring the per-task lock (caller holds it)."""
         path = self.runtime_path(task_id)
         if path.exists():
             current = self.read_runtime(task_id)
@@ -261,6 +293,55 @@ class BackgroundTaskStore:
         if len(lines) > max_lines:
             lines = lines[-max_lines:]
         return "\n".join(lines)
+
+    def cleanup_old_tasks(self, max_age_days: int, *, now: float | None = None) -> list[str]:
+        """Prune terminal task directories older than ``max_age_days``.
+
+        Returns the list of removed task ids. ``max_age_days <= 0`` disables
+        cleanup and returns ``[]``. Non-terminal tasks, and terminal tasks whose
+        recorded worker process is still alive, are never removed.
+        """
+        if max_age_days <= 0:
+            return []
+
+        current = time.time() if now is None else now
+        max_age_seconds = max_age_days * 86_400.0
+        removed: list[str] = []
+
+        for task_id in self.list_task_ids():
+            runtime = self.read_runtime(task_id)
+            if not is_terminal_status(runtime.status):
+                continue
+            if runtime.worker_pid is not None and _pid_alive(runtime.worker_pid):
+                continue
+            reference = runtime.finished_at or runtime.updated_at
+            if current - reference < max_age_seconds:
+                continue
+            try:
+                shutil.rmtree(self.task_path(task_id), ignore_errors=False)
+            except OSError as exc:
+                logger.warning(
+                    "Failed to remove old background task {task_id} at {path}: {error}",
+                    task_id=task_id,
+                    path=self.task_path(task_id),
+                    error=exc,
+                )
+                continue
+            removed.append(task_id)
+
+        return removed
+
+
+def _pid_alive(pid: int) -> bool:
+    """Return True if a process with ``pid`` appears to be running."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        # e.g. PermissionError: the process exists but we cannot signal it.
+        return True
+    return True
 
 
 def _read_json_model[T: BaseModel](path: Path, model: type[T], *, fallback: T, artifact: str) -> T:

@@ -112,6 +112,49 @@ async def test_worker_marks_timeout_as_failed(runtime):
     assert view.runtime.failure_reason == "Command timed out after 1s"
 
 
+@pytest.mark.asyncio
+async def test_worker_bounds_output_log_growth(runtime):
+    store = BackgroundTaskStore(runtime.session.context_file.parent / "tasks")
+    spec = TaskSpec(
+        id="b6664444",
+        kind="bash",
+        session_id=runtime.session.id,
+        description="flood task",
+        tool_call_id="tool-7",
+        command="for i in $(seq 1 1000000); do echo aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; done",
+        shell_name="bash",
+        shell_path="/bin/bash",
+        cwd=str(runtime.session.work_dir),
+        timeout_s=60,
+    )
+    store.create_task(spec)
+
+    cap = 2000
+    await run_background_task_worker(
+        store.task_dir(spec.id),
+        heartbeat_interval_ms=50,
+        control_poll_interval_ms=20,
+        kill_grace_period_ms=50,
+        max_output_bytes=cap,
+    )
+
+    view = store.merged_view(spec.id)
+    assert view.runtime.status == "failed"
+    assert view.runtime.interrupted is True
+    assert view.runtime.failure_reason is not None
+    assert "max_output_bytes" in view.runtime.failure_reason
+
+    output_path = store.output_path(spec.id)
+    text = output_path.read_text(encoding="utf-8")
+    assert "output limit exceeded" in text
+    # The cap is enforced by a poll loop, not per-write, so the file overshoots
+    # the cap by whatever the child flushes between polls (and that window
+    # stretches under CPU contention). The guarantee is that growth is
+    # *bounded* far below the ~30 MB this command writes uncapped; a few MB of
+    # overshoot still proves the limiter fired and terminated the task.
+    assert output_path.stat().st_size <= 5 * 1024 * 1024
+
+
 def test_terminate_process_tree_windows_uses_taskkill_tree(monkeypatch):
     calls: list[list[str]] = []
 

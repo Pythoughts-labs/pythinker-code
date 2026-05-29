@@ -3,8 +3,37 @@ from __future__ import annotations
 import contextlib
 import os
 import re
+import subprocess
 import sys
 import time
+
+
+def open_url_in_browser(url: str) -> bool:
+    """Open a URL in the default browser, detached from the terminal.
+
+    Unlike webbrowser.open(), the launched process does not inherit
+    stdin/stdout/stderr, so browser startup chatter cannot corrupt the
+    terminal and the subprocess cannot consume key presses meant for the TUI.
+    """
+    if sys.platform == "win32":
+        import webbrowser
+
+        return webbrowser.open(url)
+
+    cmd = ["open", url] if sys.platform == "darwin" else ["xdg-open", url]
+    try:
+        subprocess.Popen(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return True
+    except OSError:
+        import webbrowser
+
+        return webbrowser.open(url)
 
 
 def ensure_new_line() -> None:

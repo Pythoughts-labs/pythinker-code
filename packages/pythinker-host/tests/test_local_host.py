@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import os
+import signal
 import sys
 from collections.abc import Generator
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import Any
 
 import pytest
 
@@ -196,3 +198,62 @@ async def test_exec_wait_timeout(local_host: LocalHost):
         if process.returncode is None:
             await process.kill()
         await process.wait()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signal path")
+async def test_kill_skips_signal_after_process_exit(
+    local_host: LocalHost, monkeypatch: pytest.MonkeyPatch
+):
+    """Once a process has exited (and been reaped), its pid/pgid may be recycled
+    by the OS, so kill() must not send a process-group signal."""
+    import pythinker_host.local as local_module
+
+    process = await local_host.exec(*_python_code_args("import sys; sys.exit(0)"))
+    await process.wait()
+    assert process.returncode is not None
+
+    # Fail loudly if kill() reaches the signal path at all: with the returncode
+    # guard it must short-circuit before even resolving the process group.
+    calls: list[str] = []
+
+    def _record_getpgid(pid: int) -> int:
+        calls.append("getpgid")
+        return 0
+
+    def _record_killpg(pgid: int, sig: int) -> None:
+        calls.append("killpg")
+
+    monkeypatch.setattr(local_module.os, "getpgid", _record_getpgid)
+    monkeypatch.setattr(local_module.os, "killpg", _record_killpg)
+
+    await process.kill()
+
+    assert calls == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signal path")
+async def test_kill_signals_running_process(local_host: LocalHost, monkeypatch: pytest.MonkeyPatch):
+    """A still-running process is killed via its process group."""
+    import pythinker_host.local as local_module
+
+    process = await local_host.exec(*_python_code_args("import time; time.sleep(30)"))
+    assert process.returncode is None
+
+    # os.killpg / signal.SIGKILL are POSIX-only; this test is skipped on Windows
+    # but pyright still type-checks the body, so route them through Any holders
+    # to keep the strict host gate green on the win32 platform stubs.
+    os_any: Any = local_module.os
+    signal_any: Any = signal
+    real_killpg = os_any.killpg
+    sent: list[int] = []
+
+    def _record_killpg(pgid: int, sig: int) -> None:
+        sent.append(sig)
+        real_killpg(pgid, sig)  # actually terminate so the process is not leaked
+
+    monkeypatch.setattr(local_module.os, "killpg", _record_killpg)
+
+    await process.kill()
+    await process.wait()
+
+    assert sent and sent[0] == signal_any.SIGKILL

@@ -536,7 +536,7 @@ class PythinkerToolset:
                 if file_token_storage is not None:
                     storage: Any = file_token_storage(server_url=server_url)
                 else:
-                    provider = fastmcp_oauth.OAuth(mcp_url=server_url)
+                    provider: Any = fastmcp_oauth.OAuth(mcp_url=server_url)
                     storage = provider.token_storage_adapter
                 tokens = await storage.get_tokens()
                 return tokens is not None
