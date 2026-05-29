@@ -50,6 +50,7 @@ agent:
     Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (e.g. "src/**/*.yaml"), search code for keywords (e.g. "database connection"), or answer questions about the codebase (e.g. "how does the auth module work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "thorough" for comprehensive analysis across multiple locations and naming conventions. Use this agent for any read-only exploration that will clearly require more than 3 tool calls. Prefer launching multiple explore agents concurrently when investigating independent questions.
   allowed_tools:
     - "pythinker_code.tools.shell:Shell"
+    - "pythinker_code.tools.todo:SetTodoList"
     - "pythinker_code.tools.file:ReadFile"
     - "pythinker_code.tools.file:ReadMediaFile"
     - "pythinker_code.tools.file:Glob"
@@ -61,7 +62,6 @@ agent:
   exclude_tools:
     - "pythinker_code.tools.agent:Agent"
     - "pythinker_code.tools.ask_user:AskUserQuestion"
-    - "pythinker_code.tools.todo:SetTodoList"
     - "pythinker_code.tools.plan:ExitPlanMode"
     - "pythinker_code.tools.plan.enter:EnterPlanMode"
     - "pythinker_code.tools.file:WriteFile"

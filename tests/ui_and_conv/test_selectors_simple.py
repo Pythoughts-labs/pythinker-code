@@ -264,3 +264,45 @@ def test_oauth_selector_logout_title():
         action="logout",
     )
     assert "log out" in config.title.lower() or "logout" in config.title.lower()
+
+
+# ---------------------------------------------------------------------------
+# scroll viewport — selected row must stay visible past the window edge
+# ---------------------------------------------------------------------------
+
+
+def test_selector_app_erases_chrome_on_exit():
+    """The selector must erase its chrome on commit/cancel so it doesn't linger
+    in the scrollback as a ghost menu."""
+    from pythinker_code.ui.shell.selector import (
+        SelectorConfig,
+        _build_application,  # type: ignore[reportPrivateUsage]
+    )
+
+    config = SelectorConfig(title="t", items=[SelectorItem("a", "Alpha")])
+    app = _build_application(_SelectorState(config))
+    assert app.erase_when_done is True
+
+
+def test_overflowing_selector_keeps_selected_row_within_window():
+    """Regression: navigating down an overflowing list must not scroll the
+    highlighted row under the scroll indicator and off the bottom.
+
+    visible_window() must, for every selectable index, (a) include that index
+    and (b) produce no more content rows (slice + scroll indicator) than the
+    max_visible budget the item window is sized to.
+    """
+    from pythinker_code.ui.shell.selector import SelectorConfig, SelectorHeader
+
+    budget = 14
+    items: list[SelectorItem[str] | SelectorHeader] = [SelectorHeader("Group")]
+    items += [SelectorItem(f"v{i}", f"Model {i:02}") for i in range(20)]
+    state = _SelectorState(SelectorConfig(title="t", items=items, max_visible=budget))
+
+    for target in state._selectable_indices():  # type: ignore[reportPrivateUsage]
+        state.selected_idx = target
+        start, end = state.visible_window()
+        has_scroll_row = start > 0 or end < len(state.visible)
+        content_rows = (end - start) + (1 if has_scroll_row else 0)
+        assert start <= target < end, f"selected {target} fell outside window {(start, end)}"
+        assert content_rows <= budget, f"content {content_rows} exceeds budget {budget}"

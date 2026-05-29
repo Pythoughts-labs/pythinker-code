@@ -25,7 +25,7 @@ Schema:
       "start_line": 1,
       "end_line": 1,
       "confidence": 0.0,
-      "evidence_snippet": "<optional excerpt>",
+      "evidence_snippet": "<optional; if given, copy code VERBATIM from the diff/context — character-for-character, no paraphrase or ellipses>",
       "confidence_reason": "<optional why this is likely the root cause>",
       "reproduction": "<optional command/log evidence>",
       "test_analysis": "<optional failing/passing test interpretation>",

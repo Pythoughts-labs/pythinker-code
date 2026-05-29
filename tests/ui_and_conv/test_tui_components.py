@@ -52,6 +52,18 @@ def test_truncate_to_width_handles_cjk():
     assert cell_width(out) <= 5
 
 
+def test_truncate_to_width_can_pad_to_exact_width():
+    out = truncate_to_width("hi", 5, pad=True)
+    assert out == "hi   "
+    assert cell_width(out) == 5
+
+
+def test_truncate_to_width_pads_truncated_output_to_exact_width():
+    out = truncate_to_width("hello world", 8, pad=True)
+    assert out.endswith("…") or out.rstrip().endswith("…")
+    assert cell_width(out) == 8
+
+
 def test_truncate_middle_to_visual_lines_preserves_head_and_tail():
     result = truncate_middle_to_visual_lines(
         "\n".join(f"line {i}" for i in range(8)),
@@ -116,8 +128,13 @@ def test_sanitize_ansi_strips_osc_with_st():
     assert "linkafter" in cleaned
 
 
-def test_sanitize_ansi_keeps_newlines_tabs():
-    raw = "line 1\n\tline 2"
+def test_sanitize_ansi_strips_apc_with_bel():
+    raw = "before\x1b_pi:c\x07after"
+    assert sanitize_ansi(raw) == "beforeafter"
+
+
+def test_sanitize_ansi_keeps_newlines_tabs_and_strips_carriage_returns():
+    raw = "line 1\r\n\tline 2\r"
     assert sanitize_ansi(raw) == "line 1\n\tline 2"
 
 

@@ -31,7 +31,12 @@ class PythinkerCode < Formula
   end
 
   def install
-    libexec.install "pythinker"
+    # Onedir PyInstaller build: a "pythinker" launcher next to an "_internal"
+    # directory. Homebrew chdirs into the tarball's single "pythinker/" root,
+    # so Dir["*"] is the launcher plus _internal. Install the whole tree into
+    # libexec and put an exec wrapper on PATH so the launcher resolves
+    # _internal next to its real location.
+    libexec.install Dir["*"]
     (libexec/".pythinker-native").write "pythinker-native-build\n"
     bin.write_exec_script libexec/"pythinker"
   end

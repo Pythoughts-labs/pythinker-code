@@ -32,7 +32,7 @@ Schema:
       "start_line": 1,
       "end_line": 1,
       "confidence": 0.0,
-      "evidence_snippet": "<optional code excerpt>",
+      "evidence_snippet": "<optional; if given, copy code VERBATIM from the diff/context — character-for-character, no paraphrase or ellipses>",
       "confidence_reason": "<optional validation reasoning>",
       "exploitability": "<optional attacker path and preconditions>",
       "minimum_fix_scope": "<optional smallest safe mitigation scope>",

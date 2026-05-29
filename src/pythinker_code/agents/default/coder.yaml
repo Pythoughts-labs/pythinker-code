@@ -35,6 +35,7 @@ agent:
     Use this agent for non-trivial software engineering work that may require reading files, editing code, running commands, and returning a compact but technically complete summary to the parent agent.
   allowed_tools:
     - "pythinker_code.tools.shell:Shell"
+    - "pythinker_code.tools.todo:SetTodoList"
     - "pythinker_code.tools.file:ReadFile"
     - "pythinker_code.tools.file:ReadMediaFile"
     - "pythinker_code.tools.file:Glob"
@@ -47,7 +48,6 @@ agent:
   exclude_tools:
     - "pythinker_code.tools.agent:Agent"
     - "pythinker_code.tools.ask_user:AskUserQuestion"
-    - "pythinker_code.tools.todo:SetTodoList"
     - "pythinker_code.tools.plan:ExitPlanMode"
     - "pythinker_code.tools.plan.enter:EnterPlanMode"
   subagents:

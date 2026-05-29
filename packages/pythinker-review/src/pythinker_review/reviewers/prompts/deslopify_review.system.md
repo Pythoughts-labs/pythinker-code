@@ -10,6 +10,6 @@ Rules:
 - Output strict JSON only.
 
 Schema:
-{"findings":[{"rule_id":"deslopify.<dotted id>","title":"<≤80 chars>","rationale":"<markdown>","category":"readability|performance|test_coverage|api_design|correctness","severity":"medium|low|info","file":"<repo-relative POSIX path>","start_line":1,"end_line":1,"confidence":0.0,"evidence_snippet":"<optional code excerpt>","minimum_fix_scope":"<smallest deletion/consolidation/reuse scope>","test_analysis":"<why tests preserve or should cover this>","suggestion":{"summary":"<one sentence>","patch":"<optional unified diff>"}}]}
+{"findings":[{"rule_id":"deslopify.<dotted id>","title":"<≤80 chars>","rationale":"<markdown>","category":"readability|performance|test_coverage|api_design|correctness","severity":"medium|low|info","file":"<repo-relative POSIX path>","start_line":1,"end_line":1,"confidence":0.0,"evidence_snippet":"<optional; if given, copy code VERBATIM from the diff/context — character-for-character, no paraphrase or ellipses>","minimum_fix_scope":"<smallest deletion/consolidation/reuse scope>","test_analysis":"<why tests preserve or should cover this>","suggestion":{"summary":"<one sentence>","patch":"<optional unified diff>"}}]}
 
 If you find no issues, return {"findings": []}. Output JSON only, no prose.

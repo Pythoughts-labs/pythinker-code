@@ -37,11 +37,15 @@ class NativeTarget:
         return self.asset_name_template.format(version=version)
 
 
+# Use the onedir PyInstaller artifacts: a onefile binary re-extracts its full
+# ~70MB payload to a temp dir on every launch, which makes macOS cold starts
+# take 10+ seconds (Gatekeeper re-validates every extracted file each run) and
+# is fragile. The onedir build extracts nothing at runtime.
 NATIVE_TARGETS = (
-    NativeTarget("MACOS_ARM", "pythinker-{version}-aarch64-apple-darwin.tar.gz"),
-    NativeTarget("MACOS_INTEL", "pythinker-{version}-x86_64-apple-darwin.tar.gz"),
-    NativeTarget("LINUX_ARM", "pythinker-{version}-aarch64-unknown-linux-gnu.tar.gz"),
-    NativeTarget("LINUX_X86_64", "pythinker-{version}-x86_64-unknown-linux-gnu.tar.gz"),
+    NativeTarget("MACOS_ARM", "pythinker-{version}-aarch64-apple-darwin-onedir.tar.gz"),
+    NativeTarget("MACOS_INTEL", "pythinker-{version}-x86_64-apple-darwin-onedir.tar.gz"),
+    NativeTarget("LINUX_ARM", "pythinker-{version}-aarch64-unknown-linux-gnu-onedir.tar.gz"),
+    NativeTarget("LINUX_X86_64", "pythinker-{version}-x86_64-unknown-linux-gnu-onedir.tar.gz"),
 )
 
 

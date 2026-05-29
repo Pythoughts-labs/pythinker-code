@@ -44,6 +44,7 @@ agent:
     Use to run a diff-only security review on the current branch. Can run in parallel with `code-reviewer`.
   allowed_tools:
     - "pythinker_code.tools.shell:Shell"
+    - "pythinker_code.tools.todo:SetTodoList"
     - "pythinker_code.tools.file:ReadFile"
     - "pythinker_code.tools.file:Grep"
     - "pythinker_code.tools.web:SearchWeb"

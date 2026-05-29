@@ -312,6 +312,27 @@ def _extract_429_detail(exc: BaseException) -> dict[str, str]:
     return {"summary": summary, "hint": hint}
 
 
+def _is_insufficient_credits_error(exc: BaseException) -> bool:
+    """Detect an out-of-credits / billing failure.
+
+    OpenCode Go (and similar gateways) return ``401`` with a
+    ``{"error": {"type": "CreditsError", "message": "Insufficient balance ..."}}``
+    body when the account has run out of credits. That is a billing problem, not
+    a stale credential, so we must not tell the user to ``/login`` again.
+    """
+    err_type = ""
+    message = ""
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        err = cast(dict[str, object], body).get("error")
+        if isinstance(err, dict):
+            typed_err = cast(dict[str, object], err)
+            err_type = str(typed_err.get("type") or "")
+            message = str(typed_err.get("message") or "")
+    haystack = f"{err_type} {message} {exc}".lower()
+    return "creditserror" in haystack or "insufficient balance" in haystack
+
+
 class Shell:
     def __init__(
         self,
@@ -1197,11 +1218,19 @@ class Shell:
             _t = _get_tui_tokens()
             logger.exception("LLM provider error:")
             if isinstance(e, APIStatusError) and e.status_code == 401:
-                console.print(
-                    f"[{_t.error}]Authorization failed. Your session may have expired.[/]\n"
-                    "[dim]Type [bold]/login[/bold] to re-authenticate.[/dim]\n"
-                    f"[dim]Server: {e}[/dim]"
-                )
+                if _is_insufficient_credits_error(e):
+                    console.print(
+                        f"[{_t.error}]Insufficient balance — your account is out of credits.[/]\n"
+                        "[dim]This is a billing issue, not a login problem. Top up or manage "
+                        "billing (see the link in the server message below), then retry.[/dim]\n"
+                        f"[dim]Server: {e}[/dim]"
+                    )
+                else:
+                    console.print(
+                        f"[{_t.error}]Authorization failed. Your session may have expired.[/]\n"
+                        "[dim]Type [bold]/login[/bold] to re-authenticate.[/dim]\n"
+                        f"[dim]Server: {e}[/dim]"
+                    )
             elif isinstance(e, APIStatusError) and e.status_code == 402:
                 console.print(
                     f"[{_t.error}]Membership expired, please renew your plan[/]\n"

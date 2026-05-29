@@ -27,6 +27,7 @@ from pythinker_code.ui.shell.components.markdown import (
 from pythinker_code.ui.shell.components.markdown import (
     markdown_commit_boundary,
 )
+from pythinker_code.ui.shell.components.report import render_agent_body
 from pythinker_code.ui.shell.console import console, current_console_width
 from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ASSISTANT_MARKER, TRANSCRIPT_STATUS_MARKER
 from pythinker_code.ui.shell.mcp_status import mcp_startup_header
@@ -231,7 +232,7 @@ class _ContentBlock:
         remaining = self._pending_text()
         if not remaining:
             return Text("")
-        return self._wrap_bullet(Markdown(remaining))
+        return self._wrap_bullet(render_agent_body(remaining))
 
     def has_pending(self) -> bool:
         """Whether there is uncommitted content to flush."""
@@ -282,7 +283,7 @@ class _ContentBlock:
         if not self._has_printed_bullet:
             # Leading blank row separates this step from the previous block.
             console.print()
-        console.print(self._wrap_bullet(Markdown(committed_text)))
+        console.print(self._wrap_bullet(render_agent_body(committed_text)))
         self._committed_len += boundary
 
     def _activity_snapshot(

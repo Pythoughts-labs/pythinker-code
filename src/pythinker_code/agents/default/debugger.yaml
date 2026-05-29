@@ -36,6 +36,7 @@ agent:
     Use for failing tests, stack traces, runtime errors, flaky failures, or debugging requests where root cause should be found before editing code.
   allowed_tools:
     - "pythinker_code.tools.shell:Shell"
+    - "pythinker_code.tools.todo:SetTodoList"
     - "pythinker_code.tools.file:ReadFile"
     - "pythinker_code.tools.file:Grep"
   exclude_tools:

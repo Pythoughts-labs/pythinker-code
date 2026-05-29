@@ -459,10 +459,70 @@ async def test_append_scratch_event_does_not_duplicate_session_heading(tmp_path)
     assert "— second" in text
 
 
+def test_session_labels_collapse_single_valued_keys(tmp_path):
+    wd = _hp(tmp_path)
+    sid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    append_scratch_event_sync(
+        wd,
+        session_id=sid,
+        title="a",
+        labels=["source:startup", "kind:todo"],
+        create=True,
+    )
+    append_scratch_event_sync(
+        wd,
+        session_id=sid,
+        title="b",
+        labels=["source:resume", "kind:agent"],
+        create=True,
+    )
+    text = session_scratch_path(wd, session_id=sid).read_text(encoding="utf-8")
+    label_line = next(line for line in text.splitlines() if line.startswith("labels:"))
+    # Single-valued 'source' keeps only the latest value...
+    assert "source:resume" in label_line
+    assert "source:startup" not in label_line
+    # ...while multi-valued 'kind' accumulates both.
+    assert "kind:todo" in label_line
+    assert "kind:agent" in label_line
+
+
 def test_append_scratch_event_sync_missing_is_noop(tmp_path):
     result = append_scratch_event_sync(_hp(tmp_path), title="missing")
     assert result.appended is False
     assert result.reason == "missing"
+
+
+def test_session_start_event_is_idempotent_per_signature(tmp_path):
+    wd = _hp(tmp_path)
+    sid = "11111111-2222-3333-4444-555555555555"
+
+    def emit(source: str):
+        return append_scratch_event_sync(
+            wd,
+            session_id=sid,
+            title="session start",
+            details=[f"source: {source}"],
+            dedup_signature=f"source: {source}",
+            create=True,
+        )
+
+    first = emit("startup")
+    assert first.appended is True
+    assert first.reason == "appended"
+
+    # A relaunch of the same session re-runs the startup path; the duplicate
+    # "session start / source: startup" milestone must be suppressed.
+    second = emit("startup")
+    assert second.appended is False
+    assert second.reason == "deduped"
+
+    # A genuinely different transition (resume) is still recorded.
+    third = emit("resume")
+    assert third.appended is True
+    assert third.reason == "appended"
+
+    text = session_scratch_path(wd, session_id=sid).read_text(encoding="utf-8")
+    assert text.count("— session start") == 2
 
 
 async def test_append_verifies_git_once_per_session(tmp_path):
