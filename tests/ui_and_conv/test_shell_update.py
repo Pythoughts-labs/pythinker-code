@@ -855,3 +855,47 @@ def test_update_prompt_text_shows_version_and_command(monkeypatch):
     assert "✨ Update available! 1.2.0 -> 1.3.0" in output
     assert "Release notes:" in output
     assert "uv tool upgrade pythinker-code" in output
+
+
+@pytest.mark.asyncio
+async def test_run_awaits_pre_start_update_before_auto_update(runtime, tmp_path, monkeypatch):
+    """Regression (efe101c/#63): Shell.run() must await prompt_pre_start_update()
+    — the blocking update menu — before scheduling the _auto_update background
+    toast. The menu was silently unwired while its unit tests stayed green; this
+    pins the wiring so it can't regress again unnoticed.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    from pythinker_core.tooling.empty import EmptyToolset
+
+    from pythinker_code.soul.agent import Agent
+    from pythinker_code.soul.context import Context
+    from pythinker_code.soul.pythinkersoul import PythinkerSoul
+    from pythinker_code.ui.shell import Shell
+
+    monkeypatch.delenv("PYTHINKER_CLI_NO_AUTO_UPDATE", raising=False)
+
+    agent = Agent(name="Test", system_prompt="test", toolset=EmptyToolset(), runtime=runtime)
+    soul = PythinkerSoul(agent, context=Context(file_backend=tmp_path / "h.jsonl"))
+    shell = Shell(soul)
+
+    class _PromptReached(Exception):
+        pass
+
+    # Patch the name where run() looks it up (imported into the ui.shell module).
+    prompt_mock = AsyncMock(side_effect=_PromptReached)
+    monkeypatch.setattr("pythinker_code.ui.shell.prompt_pre_start_update", prompt_mock)
+    # If auto_update were scheduled before the prompt, this spy would be called.
+    auto_update_mock = MagicMock(name="_auto_update")
+    monkeypatch.setattr(shell, "_auto_update", auto_update_mock)
+
+    # The sentinel is the real guard: _PromptReached is only reachable if run()
+    # actually awaits the (patched) prompt, so it pins prompt-before-auto_update.
+    # If the wiring were removed, run() would instead schedule the un-awaited
+    # MagicMock _auto_update and fail at create_task (TypeError) — still a failure,
+    # just a noisier one.
+    with pytest.raises(_PromptReached):
+        await shell.run()
+
+    prompt_mock.assert_awaited_once()
+    auto_update_mock.assert_not_called()
