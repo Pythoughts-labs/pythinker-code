@@ -17,6 +17,7 @@ from pythinker_code.soul import MaxStepsReached, RunCancelled
 from pythinker_code.soul.agent import Agent as SoulAgent
 from pythinker_code.soul.approval import ApprovalResult
 from pythinker_code.subagents import AgentLaunchSpec, AgentTypeDefinition, ToolPolicy
+from pythinker_code.subagents.core import SUBAGENT_OUTPUT_LANGUAGE_INSTRUCTION
 from pythinker_code.tools.agent import AgentRunConfig, RunAgents
 from pythinker_code.wire.types import ApprovalRequest, TextPart
 from tests.conftest import tool_call_context
@@ -75,7 +76,7 @@ async def test_agent_tool_creates_instance_and_returns_agent_id(agent_tool, runt
     assert "actual_subagent_type: coder" in result.output
     assert runtime.subagent_store.require_instance(agent_id).subagent_type == "coder"
     assert runtime.subagent_store.prompt_path(agent_id).read_text(encoding="utf-8") == (
-        "look into parser issue"
+        f"{SUBAGENT_OUTPUT_LANGUAGE_INSTRUCTION}\n\nlook into parser issue"
     )
 
 

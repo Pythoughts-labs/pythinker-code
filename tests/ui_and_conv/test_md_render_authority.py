@@ -13,7 +13,9 @@ from pathlib import Path
 
 import pytest
 
-_SRC = Path(__file__).resolve().parents[2] / "src" / "pythinker_code" / "ui" / "shell" / "components"
+_SRC = (
+    Path(__file__).resolve().parents[2] / "src" / "pythinker_code" / "ui" / "shell" / "components"
+)
 _GUARDED = ["report.py", "markdown.py"]
 
 
