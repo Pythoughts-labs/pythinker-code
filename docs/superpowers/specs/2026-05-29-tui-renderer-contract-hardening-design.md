@@ -197,10 +197,14 @@ Each area gets **one row**, not a sub-spec. Sequence = recommended build order a
 ## 12. Risks & open questions
 
 - **R1 — characterization brittleness:** pinning the regex pipeline locks current behavior, including any current *wrong* output. Mitigation: review each characterization snapshot at creation; mark known-imperfect ones with a `# pinned: imperfect` note and a follow-up test.
-- **R2 — raw→Report transform location:** must locate the existing transform (CLI `security_scan`/`secscan` path) or specify it in the plan; tests depend on it.
+- **R2 — raw→Report transform location:** RESOLVED during execution — **no in-repo transform exists**; the external scanner emits canonical ` ```report ` JSON directly, and `parse_report_block` rejects any non-canonical severity. So the test-local adapter in `test_report_realdata.py` *is* the documented contract. The raw fixture (`security-scan-findings.json`, 92 findings) carries scanner-native severities including two outside the canonical five — `BUG` (4) and `HIGH_BUG` (3); the adapter folds them (`HIGH_BUG→high`, `BUG→medium`) with a documented map.
 - **R3 — H2 may not reproduce:** acceptable; the methodology records non-reproduction rather than inventing a fix.
 - **OQ1:** Should `/copy` actually be built (turns §6.5 from guard into feature)? Default: no.
 - **OQ2:** Tier-2 pty harness — adopt `pexpect` (test-only dev dep) or extend existing `tests_e2e` subprocess approach? Lead phase is Tier 1, so this is deferred to roadmap seq 4.
+
+### Deferred defects (found during execution — tracked, not fixed in lead phase)
+
+- **D1 — narrow stacked-table mid-word fold + missing continuation indent.** Location: `src/pythinker_code/utils/rich/markdown.py` → `TableElement` stacked-record path (triggered for ≥4 columns or any cell >48 chars). At viewport widths < ~40 a long cell value folds **mid-word** (`theta` → `t\nheta`) and continuation lines lose the leading `  ` indent. **No data loss** — every character survives, it only looks ragged; `test_table_long_cell_wraps_without_dropping_content` guards the data-integrity contract (whitespace-insensitive survival), not the cosmetics. Deferred fix: word-wrap the cell value with a hanging/`subsequent_indent` (e.g. `rich.text.Text.wrap` or a `textwrap` pass) in the cell-emission loop. Roadmap polish, not lead phase.
 
 ## 13. Working method
 

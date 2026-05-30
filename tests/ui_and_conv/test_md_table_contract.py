@@ -8,11 +8,13 @@ failure is a real regression to surface, not to silence.
 
 from __future__ import annotations
 
+import pytest
+
 from pythinker_code.ui.shell.components.markdown import (
     _escape_code_span_pipes,
     pythinker_markdown,
 )
-from tests.ui_and_conv._md_contract_helpers import render_plain
+from tests.ui_and_conv._md_contract_helpers import WIDTHS, render_plain
 
 
 def test_table_with_piped_inline_code_keeps_columns():
@@ -65,3 +67,37 @@ def test_prose_inline_code_pipe_is_not_corrupted_with_backslash():
     out = render_plain(pythinker_markdown("Use `a | b` for bitwise or.\n"), width=80)
     assert "a | b" in out
     assert "\\|" not in out
+
+
+def test_table_empty_header_cell_does_not_mislabel():
+    """Bug class: 'empty header cells mislabeled in narrow stacked layout'."""
+    md = "| | Value |\n| --- | --- |\n| key | 42 |\n"
+    out = render_plain(pythinker_markdown(md), width=30)
+    assert "Value" in out
+    assert "key" in out
+    assert "42" in out
+
+
+@pytest.mark.parametrize("width", WIDTHS)
+def test_table_long_cell_wraps_without_dropping_content(width):
+    """Bug class: very long cells at narrow widths must wrap, not truncate.
+
+    This pins the *data-integrity* contract the bug class names ("wrap, not
+    truncate"): every character of the long cell survives in order, regardless
+    of how the narrow stacked-record layout wraps it. We compare with all
+    whitespace removed so a wrap (whether at a word boundary or, at very narrow
+    widths, mid-word) still counts as survival — wrapping is not data loss.
+
+    Known deferred renderer-polish defect (NOT data loss, so not guarded here):
+    at widths < ~40 the stacked-record table path folds cell text mid-word
+    (``theta`` -> ``t\\nheta``) and omits the continuation-line indent. Tracked
+    in tests/ui_and_conv/README_contract_registry.md and the design spec's
+    deferred-defects note.
+    """
+    long_cell = "alpha beta gamma delta epsilon zeta eta theta iota kappa"
+    md = f"| Name | Note |\n| --- | --- |\n| item | {long_cell} |\n"
+    out = render_plain(pythinker_markdown(md), width=width)
+    # No character of the long cell is dropped (truncation), independent of wrap.
+    stripped_cell = "".join(long_cell.split())
+    stripped_out = "".join(out.split())
+    assert stripped_cell in stripped_out, f"long cell content truncated at width={width}"
