@@ -349,8 +349,9 @@ def _simplify_markdown_report_icons(markup: str) -> str:
     return "".join(lines)
 
 
-# Inline code spans: a run of N backticks, lazily-matched body, a closing run of
-# exactly N backticks (GFM balanced-backtick rule, single-line scope — table rows).
+# Inline code-span repair for table rows: a run of N backticks, lazily-matched
+# body, then the first later run containing those same N backticks. This is a
+# tolerant LLM-output repair heuristic, not a complete GFM code-span parser.
 _CODE_SPAN_RE = re.compile(r"(?P<ticks>`+)(?P<body>.*?)(?P=ticks)")
 
 

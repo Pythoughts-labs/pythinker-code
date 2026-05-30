@@ -21,11 +21,16 @@ def test_table_with_piped_inline_code_keeps_columns():
     """Bug class: 'tables breaking on piped inline code'."""
     md = "| Expr | Meaning |\n| --- | --- |\n| `a | b` | bitwise or |\n| plain | text |\n"
     out = render_plain(pythinker_markdown(md), width=80)
-    # Both data rows survive as a table (cell contents present, not collapsed
-    # into a single prose paragraph).
-    assert "bitwise or" in out
-    assert "plain" in out
-    assert "text" in out
+    lines = [line for line in out.splitlines() if line.strip()]
+
+    # Both data rows survive as distinct table rows; this is stronger than
+    # checking content presence, which could also pass for a collapsed paragraph.
+    assert any("Expr" in line and "Meaning" in line for line in lines)
+    code_row = [line for line in lines if "a | b" in line and "bitwise or" in line]
+    plain_row = [line for line in lines if "plain" in line and "text" in line]
+    assert code_row
+    assert plain_row
+    assert code_row[0] != plain_row[0]
 
 
 def test_table_with_escaped_pipes_keeps_literal_pipe():
@@ -58,6 +63,13 @@ def test_escape_code_span_pipes_leaves_lone_backtick_delimiters_alone():
     # A single unbalanced backtick is not a code span, so the real '|' delimiters
     # must be preserved (no closing run -> no match -> no escaping).
     assert _escape_code_span_pipes("| a ` b | c |") == "| a ` b | c |"
+
+
+def test_escape_code_span_pipes_characterizes_mismatched_longer_closing_run():
+    # This helper is an LLM-output repair heuristic for table rows, not a full
+    # GFM code-span parser. Keep the current tolerant behavior explicit: a
+    # longer closing run still protects the pipe before markdown-it sees the row.
+    assert _escape_code_span_pipes("| `a | b`` | target |") == "| `a \\| b`` | target |"
 
 
 def test_prose_inline_code_pipe_is_not_corrupted_with_backslash():

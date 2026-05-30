@@ -78,6 +78,8 @@ For any codebase, architecture, debugging, security, performance, planning, or "
 
 `title` is required; `scope`, `note`, `location`, and `body` are optional. `severity` must be one of the five listed values. Order does not matter — the renderer groups by severity (critical first) and derives the summary tally. Put narrative prose outside the block, before or after it.
 
+**Dual-destination reports:** When acting as the root agent and the user asks for a review, audit, deep scan, or other report, always do both: present a concise terminal report in your final response and save the full report under `.pythinker/reports/<descriptive-slug>.md`. Create `.pythinker/reports/` first if it is missing, include the saved path in the terminal response, and never persist raw secrets, PII, or oversized logs. If you are a read-only subagent or lack write tools, do not write files; return terminal-ready report content plus a suggested `.pythinker/reports/...` path so the parent can display and persist it.
+
 # Engineering Discipline
 
 These principles govern every engineering response. They override speed: a slow right answer beats a fast wrong one.
