@@ -9,7 +9,11 @@ from pythinker_code.soul.agent import Agent as SoulAgent
 from pythinker_code.soul.context import Context
 from pythinker_code.subagents import AgentLaunchSpec, AgentTypeDefinition, ToolPolicy
 from pythinker_code.subagents.builder import SubagentBuilder
-from pythinker_code.subagents.core import SubagentRunSpec, prepare_soul
+from pythinker_code.subagents.core import (
+    SUBAGENT_OUTPUT_LANGUAGE_INSTRUCTION,
+    SubagentRunSpec,
+    prepare_soul,
+)
 
 
 def _register_coder(runtime):
@@ -78,7 +82,7 @@ async def test_prepare_soul_writes_prompt_file(runtime, monkeypatch):
     await prepare_soul(spec, runtime, builder, runtime.subagent_store)
 
     written = runtime.subagent_store.prompt_path("aprompt1").read_text(encoding="utf-8")
-    assert written == "my prompt text"
+    assert written == f"{SUBAGENT_OUTPUT_LANGUAGE_INSTRUCTION}\n\nmy prompt text"
 
 
 @pytest.mark.asyncio
@@ -113,7 +117,7 @@ async def test_prepare_soul_persists_system_prompt_on_first_run(runtime, monkeyp
     soul, prompt = await prepare_soul(spec, runtime, builder, runtime.subagent_store)
 
     assert soul.agent.system_prompt == "fresh system prompt"
-    assert prompt == "do the work"
+    assert prompt == f"{SUBAGENT_OUTPUT_LANGUAGE_INSTRUCTION}\n\ndo the work"
 
     # Verify it was persisted — a second restore should see it
     ctx2 = Context(runtime.subagent_store.context_path("afresh01"))
@@ -143,4 +147,4 @@ async def test_prepare_soul_stage_callback(runtime, monkeypatch):
         spec2, runtime, builder, runtime.subagent_store, on_stage=None
     )
     assert soul is not None
-    assert prompt == "test prompt"
+    assert prompt == f"{SUBAGENT_OUTPUT_LANGUAGE_INSTRUCTION}\n\ntest prompt"

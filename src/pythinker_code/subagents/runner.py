@@ -51,7 +51,9 @@ _SUMMARY_MIN_LENGTH_BY_TYPE: dict[str, int] = {
     "plan": 300,
 }
 SUMMARY_CONTINUATION_PROMPT = """
-Your previous response was too brief. Please provide a more comprehensive summary that includes:
+Your previous response was too brief. Please provide a more comprehensive summary.
+Keep the same natural-language output language as the original task/user request; do not switch
+to a model/provider default language. Include:
 
 1. Specific technical details and implementations
 2. Detailed findings and analysis

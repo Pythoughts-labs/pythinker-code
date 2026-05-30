@@ -664,10 +664,9 @@ class _LiveView:
             icon = "□"
             icon_token = "muted"
             title_style = tui_rich_style("muted")
-        # The first row carries the ``⎿`` gutter; later rows indent two extra
-        # columns so their checkbox sits under the first task's title, giving the
-        # list the nested look of the reference design instead of a flat column.
-        prefix = f"  {TRANSCRIPT_TOOL_GUTTER}  " if is_first else "       "
+        # The first row carries the ``⎿`` gutter; continuation rows omit it but
+        # keep the same checkbox/title columns for a stable todo list alignment.
+        prefix = f"  {TRANSCRIPT_TOOL_GUTTER}    " if is_first else "       "
         title_budget = max(1, width - cell_width(prefix) - 2)
         title = truncate_to_width(todo.title.strip(), title_budget)
         row = Text(prefix, style=tui_rich_style("muted"))
