@@ -73,9 +73,19 @@ jobs:
             "aarch64-apple-darwin.tar.gz"
             "x86_64-apple-darwin.tar.gz"
           )
-          echo "Polling for all release assets on $TAG..."
+          # The budget must comfortably exceed the slowest platform build, since
+          # this job runs on the tag push in parallel with them. The long pole is
+          # linux-installer's emulated arm64 .deb/.rpm step: on the 0.26.0 release
+          # it finished at ~21m, 45s after the old 40x30s=20m budget had already
+          # timed out — leaving the release stuck as a prerelease. 80x30s=40m
+          # gives ~2x margin; a genuinely stuck build still surfaces as a failed
+          # build workflow, and workflow_dispatch allows a manual re-promote.
+          max_attempts=80
+          poll_interval=30
+          budget_min=$(( max_attempts * poll_interval / 60 ))
+          echo "Polling for all release assets on $TAG (up to ${budget_min}m)..."
           all_present=false
-          for i in $(seq 1 40); do
+          for i in $(seq 1 "$max_attempts"); do
             assets=$(gh api "repos/$REPO/releases/tags/$TAG" --jq '[.assets[].name] | join(" ")' 2>/dev/null || echo "")
             all_present=true
             for p in "${required[@]}"; do
@@ -88,11 +98,11 @@ jobs:
               echo "All assets present (attempt $i)"
               break
             fi
-            echo "Attempt $i/40: assets not ready, retrying in 30s..."
-            sleep 30
+            echo "Attempt $i/$max_attempts: assets not ready, retrying in ${poll_interval}s..."
+            sleep "$poll_interval"
           done
           if [[ "$all_present" != "true" ]]; then
-            echo "::error::Release assets not fully uploaded after 20 minutes"
+            echo "::error::Release assets not fully uploaded after ${budget_min} minutes"
             exit 1
           fi
 
