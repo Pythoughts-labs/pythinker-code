@@ -17,6 +17,19 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.26.0 (2026-05-30)
+
+### What changed in this release
+
+- **Install and update no longer 404 on a freshly published release.** The 0.24.0 "atomic latest" gate turned out to be dead code — it ran only on a `release: published` event that a token-created release never fires, and did not affect `/releases/latest` anyway. The GitHub Release is now created as a **prerelease**, and a new `promote-release.yml` runs on the tag push, waits for every platform asset to finish uploading, then clears the prerelease flag and marks the release latest — the single point at which a version becomes resolvable by installers and the in-app updater. As defense-in-depth, the curl and PowerShell installers now resolve the newest release that actually carries their platform asset (skipping drafts and prereleases) and wait for the archive plus checksum before downloading, so `irm | iex` / `curl | bash` run during the publish window no longer fail on a missing `PythinkerSetup-<ver>.exe` or archive.
+- **OpenCode Go model catalog refreshes on every startup without a re-login.** Bundled catalog changes — new models, corrected provider shapes — previously reached an existing install only after a manual `pythinker login --opencode-go`. OpenCode Go is now wired into the every-startup `refresh_managed_models` task with its own discovery and a dedicated apply that upserts and prunes across both its OpenAI- and Anthropic-shaped providers while preserving your `default_model` and `default_thinking`. Discovery failures are isolated so they cannot abort other providers' saves; provider `base_url` repairs still require a re-login.
+- **Homebrew install shows the logo and fails fast on a missing tap token.** `brew install` now prints the robot-head banner via a formula `caveats` block — the banner previously lived only in the curl and PowerShell installers, which Homebrew never runs. The tap auto-update workflow now detects an empty `HOMEBREW_TAP_TOKEN` (lost in the org migration, which had frozen the tap at 0.23.0) and fails with an actionable error instead of an opaque git exit-128.
+- **Markdown and report rendering hardened against real model output.** Code-span pipes inside Markdown tables are now protected so a `|` inside backticks no longer fractures the table, and a `report` block nested inside an outer documentation fence is no longer wrongly promoted to a report — report fences are extracted via a markdown-it AST walk instead of a flat regex. Backed by a new TUI markdown/report contract test suite grounded in a real security-scan fixture.
+- **Steadier agent editing and a restored update prompt.** File-replace edit handling is hardened, subagent prompt persistence and the agent's working language are preserved across turns, and the todo list stays aligned during a turn. The blocking pre-start update prompt — wired in 0.24.0 but again left unwired by a later refactor — is restored so it runs before every interactive session.
+- **CI runs required checks on every pull request.** The `check`, `test`, and `release-validate` contexts were path-filtered off docs-only (and `sdks/`/`examples/`-only) PRs, so the required statuses never reported and those PRs stayed BLOCKED under branch protection with no clean override. The `pull_request` path filter is dropped so every PR runs each required context exactly once; the `push` trigger keeps its filter unchanged.
+
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.26.0`, or use the native installer for your OS (see the README install table).
+
 ## 0.25.0 (2026-05-29)
 
 ### What changed in this release

@@ -50,16 +50,15 @@ It speaks the [**Agent Client Protocol (ACP)**](https://github.com/agentclientpr
 
 ---
 
-## 🆕 What's New in 0.25.0
+## 🆕 What's New in 0.26.0
 
-- **`Fetch` re-checks every redirect hop against the SSRF guard.** Redirects were followed without re-validating the destination, so a public URL could redirect to a link-local address (e.g. a cloud metadata endpoint) and slip past the guard. Every hop is now re-validated, closing the public→link-local bypass.
-- **Web domain allowlist for `Fetch` and `Search`.** Set `web.allowed_domains` to restrict which hosts the web tools may reach — `Fetch` (every redirect hop included) and `Search` reject anything off the list. Leave it unset to keep web access unrestricted.
-- **Crash-consistent background tasks.** Task state is serialised under a cross-process lock, terminal updates route through a single finalizer, and recovery reconciles records left divergent by a crash or kill without clobbering a live agent. Bash output is capped (default 50 MiB), kills escalate SIGTERM→SIGKILL, and aged terminal tasks are pruned (default 7 days).
-- **Calmer TUI with live tool feedback.** Tool calls show a "preparing" row during approval, stream shell output as a running tail, and render a live Markdown preview as the model writes. The todo list no longer renders twice mid-turn, links open through a detached launcher, and the terminal is restored to a sane state on `SIGTERM`/`SIGQUIT` and at exit.
-- **Steadier agent loop.** The model is nudged when a turn ends on a bare statement of intent, steered away from blocking on one background task while siblings run, and a `SetTodoList` whose todos arrive as a JSON string is parsed transparently instead of failing validation.
-- **Unified report rendering.** Code review, verify, and security-review output share one standardized renderer, including `report` blocks emitted by skills and agents.
+- **Install and update no longer 404 on a freshly published release.** Releases are now published as a prerelease and promoted to "latest" only once every platform asset has uploaded, and the curl/PowerShell installers wait for their archive + checksum before downloading — so `irm | iex` / `curl | bash` run mid-publish no longer fail on a missing installer.
+- **OpenCode Go model catalog refreshes on startup without a re-login.** Bundled catalog changes (new models, corrected provider shapes) now reach existing installs through the every-startup refresh, across both OpenAI- and Anthropic-shaped providers, while preserving your default model and thinking settings.
+- **Homebrew install shows the logo and fails fast on a missing tap token.** `brew install` now prints the robot-head banner via formula caveats, and the tap workflow reports an actionable error when `HOMEBREW_TAP_TOKEN` is missing instead of an opaque git failure.
+- **Markdown and report rendering hardened against real model output.** Code-span pipes inside tables no longer fracture the table, and a `report` block nested inside a documentation fence is no longer wrongly promoted — report fences are now extracted via a markdown-it AST walk.
+- **Steadier agent editing and a restored update prompt.** File-replace edit handling is hardened, subagent prompt persistence and the agent's working language are preserved, and the blocking pre-start update prompt is restored so it runs before every interactive session.
 
-Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.25.0`, or use the native installer for your platform from the [Releases page](https://github.com/TechMatrix-labs/pythinker-code/releases/latest).
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.26.0`, or use the native installer for your platform from the [Releases page](https://github.com/TechMatrix-labs/pythinker-code/releases/latest).
 
 
 ---
@@ -149,7 +148,7 @@ matches your OS — no Python, Node, or `uv` prerequisite.
 
 | Platform | Recommended install | Artifact source |
 |---|---|---|
-| **🪟 Windows** | `irm https://pythinker.com/install.ps1 \| iex` | `PythinkerSetup-0.25.0.exe` from [Releases](https://github.com/TechMatrix-labs/pythinker-code/releases/latest) |
+| **🪟 Windows** | `irm https://pythinker.com/install.ps1 \| iex` | `PythinkerSetup-0.26.0.exe` from [Releases](https://github.com/TechMatrix-labs/pythinker-code/releases/latest) |
 | **<img src="https://img.shields.io/badge/-macOS-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS"> / <img src="https://img.shields.io/badge/-Linux-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux">** | `curl -fsSL https://pythinker.com/install.sh \| bash` | native tarball from [Releases](https://github.com/TechMatrix-labs/pythinker-code/releases/latest) |
 | **<img src="https://img.shields.io/badge/-macOS-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS"> — Homebrew** | `brew install TechMatrix-labs/pythinker/pythinker-code` | auto-published Homebrew tap |
 | **<img src="https://img.shields.io/badge/-Linux-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux"> — system package** | Download the `.deb` or `.rpm` for your distro below | [Releases](https://github.com/TechMatrix-labs/pythinker-code/releases/latest) |
@@ -174,7 +173,7 @@ pythinker                      # start the interactive TUI
 
 ### 🪟 Windows — native installer
 
-`PythinkerSetup-0.25.0.exe` is a signed* Inno Setup wizard. Installs per-user
+`PythinkerSetup-0.26.0.exe` is a signed* Inno Setup wizard. Installs per-user
 into `%LOCALAPPDATA%\Programs\Pythinker`, registers `pythinker` on your user
 PATH (`HKCU\Environment`), broadcasts `WM_SETTINGCHANGE` so new shells see
 the change. **No UAC prompt.**
@@ -185,13 +184,13 @@ irm https://pythinker.com/install.ps1 | iex
 
 # Or manually download the installer + checksum from the Releases page,
 # verify with Get-FileHash, then run:
-.\PythinkerSetup-0.25.0.exe
+.\PythinkerSetup-0.26.0.exe
 
 # Open a fresh PowerShell
 pythinker --version
 ```
 
-**Per-machine install** (IT-managed boxes): `.\PythinkerSetup-0.25.0.exe /ALLUSERS`
+**Per-machine install** (IT-managed boxes): `.\PythinkerSetup-0.26.0.exe /ALLUSERS`
 installs to `%ProgramFiles%\Pythinker` and writes PATH to HKLM (requires admin).
 
 **Upgrade:** `pythinker update` from inside the running app — it downloads
@@ -242,26 +241,26 @@ attached to every GitHub Release.
 
 ```sh
 # Debian / Ubuntu (x86_64)
-sudo dpkg -i pythinker-code_0.25.0_amd64.deb
+sudo dpkg -i pythinker-code_0.26.0_amd64.deb
 sudo apt-get install -f       # only if dpkg reports missing deps
 
 # Debian / Ubuntu (ARM64)
-sudo dpkg -i pythinker-code_0.25.0_arm64.deb
+sudo dpkg -i pythinker-code_0.26.0_arm64.deb
 
 # Fedora / RHEL / openSUSE (x86_64)
-curl -LO https://github.com/TechMatrix-labs/pythinker-code/releases/download/v0.25.0/pythinker-code-0.25.0.x86_64.rpm
-curl -LO https://github.com/TechMatrix-labs/pythinker-code/releases/download/v0.25.0/pythinker-code-0.25.0.x86_64.rpm.sha256
-sha256sum -c pythinker-code-0.25.0.x86_64.rpm.sha256
+curl -LO https://github.com/TechMatrix-labs/pythinker-code/releases/download/v0.26.0/pythinker-code-0.26.0.x86_64.rpm
+curl -LO https://github.com/TechMatrix-labs/pythinker-code/releases/download/v0.26.0/pythinker-code-0.26.0.x86_64.rpm.sha256
+sha256sum -c pythinker-code-0.26.0.x86_64.rpm.sha256
 # Fedora / RHEL:
-sudo dnf install ./pythinker-code-0.25.0.x86_64.rpm
+sudo dnf install ./pythinker-code-0.26.0.x86_64.rpm
 # openSUSE:
-sudo zypper install ./pythinker-code-0.25.0.x86_64.rpm
+sudo zypper install ./pythinker-code-0.26.0.x86_64.rpm
 
 # Fedora / RHEL (aarch64)
-curl -LO https://github.com/TechMatrix-labs/pythinker-code/releases/download/v0.25.0/pythinker-code-0.25.0.aarch64.rpm
-curl -LO https://github.com/TechMatrix-labs/pythinker-code/releases/download/v0.25.0/pythinker-code-0.25.0.aarch64.rpm.sha256
-sha256sum -c pythinker-code-0.25.0.aarch64.rpm.sha256
-sudo dnf install ./pythinker-code-0.25.0.aarch64.rpm
+curl -LO https://github.com/TechMatrix-labs/pythinker-code/releases/download/v0.26.0/pythinker-code-0.26.0.aarch64.rpm
+curl -LO https://github.com/TechMatrix-labs/pythinker-code/releases/download/v0.26.0/pythinker-code-0.26.0.aarch64.rpm.sha256
+sha256sum -c pythinker-code-0.26.0.aarch64.rpm.sha256
+sudo dnf install ./pythinker-code-0.26.0.aarch64.rpm
 ```
 
 Both packages drop a small `/usr/bin/pythinker` launcher that execs the real
@@ -270,8 +269,8 @@ binary under `/usr/lib/pythinker/`, so your `$PATH` stays tidy.
 **Verify before install:**
 
 ```sh
-sha256sum -c pythinker-code_0.25.0_amd64.deb.sha256        # Debian/Ubuntu
-sha256sum -c pythinker-code-0.25.0.x86_64.rpm.sha256       # Fedora/RHEL
+sha256sum -c pythinker-code_0.26.0_amd64.deb.sha256        # Debian/Ubuntu
+sha256sum -c pythinker-code-0.26.0.x86_64.rpm.sha256       # Fedora/RHEL
 ```
 
 **Upgrade:** download the new `.deb`/`.rpm` from Releases and `dpkg -i` /
@@ -301,7 +300,7 @@ at `~/.local/bin/pythinker`.
 curl -fsSL https://pythinker.com/install.sh | bash
 
 # Pin a specific version
-curl -fsSL https://pythinker.com/install.sh | bash -s -- --version 0.25.0
+curl -fsSL https://pythinker.com/install.sh | bash -s -- --version 0.26.0
 
 # Custom prefix (defaults to $HOME/.local)
 curl -fsSL https://pythinker.com/install.sh | bash -s -- --prefix /opt/pythinker
