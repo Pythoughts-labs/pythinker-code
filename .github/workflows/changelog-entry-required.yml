@@ -28,6 +28,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Read-only job (git show/diff on already-fetched history, no push);
+          # do not leave the token in .git/config on the runner.
+          persist-credentials: false
 
       - name: Require a CHANGELOG entry for shipped-code changes
         env:
