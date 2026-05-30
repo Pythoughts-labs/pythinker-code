@@ -20,16 +20,22 @@ def load_generator() -> ModuleType:
     return module
 
 
-def test_native_homebrew_formula_renders_release_tarballs() -> None:
-    generator = load_generator()
-    version = "1.2.3"
-    assets = {}
+def _fake_assets(generator: ModuleType, version: str) -> dict[str, dict[str, str]]:
+    """Build a fake GitHub release-asset map covering every native target."""
+    assets: dict[str, dict[str, str]] = {}
     for target in generator.NATIVE_TARGETS:
         name = target.asset_name(version)
         assets[name] = {
             "browser_download_url": f"https://example.invalid/{name}",
             "digest": "sha256:" + ("a" * 64),
         }
+    return assets
+
+
+def test_native_homebrew_formula_renders_release_tarballs() -> None:
+    generator = load_generator()
+    version = "1.2.3"
+    assets = _fake_assets(generator, version)
 
     formula = generator.render_formula(
         TEMPLATE.read_text(encoding="utf-8"), generator.native_replacements(version, assets)
@@ -59,3 +65,20 @@ def test_native_homebrew_formula_fails_when_asset_missing() -> None:
         assert "release asset missing" in str(exc)
     else:
         raise AssertionError("expected missing native asset to fail formula generation")
+
+
+def test_native_homebrew_formula_caveats_show_logo() -> None:
+    generator = load_generator()
+    version = "1.2.3"
+    assets = _fake_assets(generator, version)
+
+    formula = generator.render_formula(
+        TEMPLATE.read_text(encoding="utf-8"), generator.native_replacements(version, assets)
+    )
+
+    # Homebrew prints `caveats` after install — this is where the static robot
+    # logo (parity with install.sh / install.ps1) must live.
+    assert "def caveats" in formula
+    assert "pythinker code · your next CLI agent" in formula
+    # The robot-head mouth row is the most distinctive line of the art.
+    assert "▙▄▄▄≡▄▄▄▟" in formula
