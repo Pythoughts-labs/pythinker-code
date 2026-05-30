@@ -35,8 +35,14 @@ def test_code_block_border_does_not_use_inline_code_color():
     # The rounded frame characters must not carry the inline-code foreground.
     inline_fg = _sgr_fg(colors.inline_code)
     for frame_char in ("╭", "╰", "─"):
-        idx = coloured.find(frame_char)
-        if idx == -1:
-            continue
-        window = coloured[max(0, idx - 24) : idx]
-        assert inline_fg not in window, "border frame inherited inline-code color"
+        found_count = 0
+        start = 0
+        while True:
+            idx = coloured.find(frame_char, start)
+            if idx == -1:
+                break
+            found_count += 1
+            window = coloured[max(0, idx - 24) : idx]
+            assert inline_fg not in window, "border frame inherited inline-code color"
+            start = idx + 1
+        assert found_count > 0, f"missing expected frame glyph {frame_char!r}"

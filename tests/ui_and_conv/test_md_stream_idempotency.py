@@ -32,12 +32,10 @@ def test_streaming_table_is_not_committed_mid_row():
     # stream character-by-character to maximize the chance of a mid-table commit
     committed = _drain(list(full))
     # No committed slice may end in the middle of the table (i.e. contain the
-    # delimiter row but not the closing blank line + following block).
+    # delimiter row but not the data row that completes this fixture's table).
     for slice_ in committed[:-1]:
         if "---" in slice_:
-            assert slice_.rstrip().endswith("|") is False or "After" in "".join(committed), (
-                "a partial table row was committed before the table closed"
-            )
+            assert "| 1 | 2 |" in slice_, "a header-only table was committed before data arrived"
     # Reassembled stream equals the original (no loss, no duplication).
     assert "".join(committed) == full
 

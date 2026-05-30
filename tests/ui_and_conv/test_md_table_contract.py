@@ -37,7 +37,8 @@ def test_table_with_escaped_pipes_keeps_literal_pipe():
     """Bug class: escaped pipe must render as a literal '|', not split a cell."""
     md = "| Col |\n| --- |\n| a \\| b |\n"
     out = render_plain(pythinker_markdown(md), width=80)
-    assert "a | b" in out or "a \\| b" not in out  # literal pipe preserved
+    assert "a | b" in out  # literal pipe preserved
+    assert "a \\| b" not in out
     assert "Col" in out
 
 

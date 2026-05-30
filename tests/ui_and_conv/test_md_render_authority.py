@@ -28,11 +28,11 @@ def test_no_direct_terminal_writes_in_renderer(filename):
             func = node.func
             if isinstance(func, ast.Name) and func.id == "print":
                 offenders.append(f"print() at line {node.lineno}")
-            if (
-                isinstance(func, ast.Attribute)
-                and func.attr == "write"
-                and isinstance(func.value, ast.Attribute)
-                and func.value.attr in {"stdout", "stderr"}
-            ):
-                offenders.append(f"std*.write at line {node.lineno}")
+            if isinstance(func, ast.Attribute) and func.attr == "write":
+                target = func.value
+                is_std_stream = (
+                    isinstance(target, ast.Attribute) and target.attr in {"stdout", "stderr"}
+                ) or (isinstance(target, ast.Name) and target.id in {"stdout", "stderr"})
+                if is_std_stream:
+                    offenders.append(f"std*.write at line {node.lineno}")
     assert not offenders, f"{filename} bypasses the screen model: {offenders}"

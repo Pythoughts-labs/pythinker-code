@@ -6,7 +6,7 @@
 
 **Architecture:** Lead phase of `docs/superpowers/specs/2026-05-29-tui-renderer-contract-hardening-design.md`. We do **not** build a renderer. We add Tier-1 contract tests (capture + assertion) under `tests/ui_and_conv/`, characterize the existing regex repair pipeline (pin, don't refactor), ground report tests in the real 92-finding fixture, and apply exactly one source fix (AST-based report-fence extraction in `report.py`) gated by a failing test.
 
-**Tech Stack:** Python 3.12+, Rich 15, prompt_toolkit 3, markdown-it-py, pytest (`asyncio_mode = auto`), `uv`. Run tests with `uv run pytest …` (fallback: `.venv/bin/python -m pytest …`).
+**Tech Stack:** Python 3.12+, Rich 15, prompt_toolkit 3, markdown-it-py, pytest (`asyncio_mode = auto`), `uv`. Run tests with `uv run pytest …`.
 
 **Spec reference:** `docs/superpowers/specs/2026-05-29-tui-renderer-contract-hardening-design.md` §6–§8.
 
@@ -748,14 +748,16 @@ def render_agent_body(text: str, *, theme: ThemeName | None = None) -> Renderabl
     report block renders via :func:`render_report`; an invalid or nested block is
     left in place so the surrounding markdown shows it as an ordinary code block.
     """
-    lines = text.splitlines(keepends=True)
+    # Split on "\n" only: markdown-it's token.map counts only "\n", so
+    # splitlines() can desync fence delimiter indices on other line separators.
+    lines = text.split("\n")
     segments: list[RenderableType] = []
     cursor = 0  # line index
     for start, end, payload in _iter_report_payloads(text):
         report = parse_report_block(payload)
         if report is None:
             continue  # malformed — leave it for the markdown renderer
-        before = "".join(lines[cursor:start]).strip("\n")
+        before = "\n".join(lines[cursor:start]).strip("\n")
         if before:
             segments.append(pythinker_markdown(before))
         segments.append(render_report(report, theme=theme))
@@ -764,7 +766,7 @@ def render_agent_body(text: str, *, theme: ThemeName | None = None) -> Renderabl
     if not segments:
         return pythinker_markdown(text)
 
-    rest = "".join(lines[cursor:]).strip("\n")
+    rest = "\n".join(lines[cursor:]).strip("\n")
     if rest:
         segments.append(pythinker_markdown(rest))
 
