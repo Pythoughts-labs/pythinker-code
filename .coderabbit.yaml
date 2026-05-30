@@ -53,6 +53,13 @@ reviews:
     - "!**/__pycache__/**"
 
   path_instructions:
+    - path: "**/*.py"
+      instructions: |
+        Python uses snake_case for variables, functions, and methods per PEP 8; this is the
+        established convention across the entire codebase. Do NOT suggest renaming Python
+        identifiers to camelCase — such suggestions contradict the repo standard and are out of
+        scope. The camelCase convention applies only to TypeScript/JavaScript sources, never to
+        .py files.
     - path: "src/pythinker_code/telemetry/**"
       instructions: |
         Flag any changes that could inadvertently capture PII, secrets, or sensitive user data.
