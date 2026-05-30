@@ -76,6 +76,10 @@ jobs:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           set -euxo pipefail
+          if [ -z "${TAP_TOKEN:-}" ]; then
+            echo "::error::HOMEBREW_TAP_TOKEN secret is empty or unset — cannot push to ${TAP_OWNER}/${TAP_REPO}. Add a fine-grained PAT (Contents: Read and write on the tap repo) as the HOMEBREW_TAP_TOKEN secret, then re-run this workflow." >&2
+            exit 1
+          fi
           # We do NOT use actions/checkout for the tap repo because on the
           # very first run the tap is empty and has no refs/heads/main yet.
           # `git init` + `git fetch || true` + `git push -u origin main`

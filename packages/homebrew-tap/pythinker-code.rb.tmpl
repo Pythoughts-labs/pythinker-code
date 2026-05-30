@@ -41,6 +41,23 @@ class PythinkerCode < Formula
     bin.write_exec_script libexec/"pythinker"
   end
 
+  def caveats
+    # Static settled frame of the curl/PowerShell installers' "Tetris" logo
+    # (install.sh / install.ps1). Homebrew renders caveats as plain text, so
+    # this is the uncoloured robot-head. The squiggly heredoc strips the common
+    # leading indent, so the art sits one column left of the curl banner.
+    <<~EOS
+
+            ●
+            │
+        ▛▀▀▀▀▀▀▀▜
+       ◖█ ◉   ◉ █◗
+        ▙▄▄▄≡▄▄▄▟
+
+        pythinker code · your next CLI agent
+    EOS
+  end
+
   test do
     assert_path_exists libexec/".pythinker-native"
     assert_match version.to_s, shell_output("#{bin}/pythinker --version")
