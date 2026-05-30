@@ -18,6 +18,16 @@ from pythinker_code.subagents.builder import SubagentBuilder
 from pythinker_code.subagents.models import AgentLaunchSpec, AgentTypeDefinition
 from pythinker_code.subagents.store import SubagentStore
 
+SUBAGENT_OUTPUT_LANGUAGE_INSTRUCTION = """\
+<output-language>
+Write natural-language output in the same language as the original user request or task
+prompt, unless that request explicitly asks for another language. Do not switch to a
+model/provider default language (for example Chinese from Qwen). Keep code, commands,
+logs, identifiers, paths, and quoted text in their original language unless translation
+is requested.
+</output-language>
+""".strip()
+
 if TYPE_CHECKING:
     from pythinker_code.soul.agent import Runtime
 
@@ -31,6 +41,12 @@ class SubagentRunSpec:
     launch_spec: AgentLaunchSpec
     prompt: str
     resumed: bool
+
+
+def _prepend_output_language_instruction(prompt: str) -> str:
+    if not prompt.strip():
+        return SUBAGENT_OUTPUT_LANGUAGE_INSTRUCTION
+    return f"{SUBAGENT_OUTPUT_LANGUAGE_INSTRUCTION}\n\n{prompt}"
 
 
 async def prepare_soul(
@@ -77,6 +93,7 @@ async def prepare_soul(
         git_ctx = await collect_git_context(runtime.builtin_args.PYTHINKER_WORK_DIR)
         if git_ctx:
             prompt = f"{git_ctx}\n\n{prompt}"
+    prompt = _prepend_output_language_instruction(prompt)
 
     # 5. Write prompt snapshot (debugging aid)
     store.prompt_path(spec.agent_id).write_text(prompt, encoding="utf-8")

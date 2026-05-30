@@ -98,7 +98,7 @@ def test_todo_update_pins_current_task_under_activity_line(monkeypatch) -> None:
 
     assert "● Implement pinned todos… (7m 40s · ↓ 10k tokens)" in rendered
     assert rendered.count("Implement pinned todos") == 2
-    assert "⎿  ■ Implement pinned todos" in rendered
+    assert "⎿    ■ Implement pinned todos" in rendered
     assert "✓ Explore UI" in rendered
     assert "✓ Write tests" in rendered
     assert "… +1 completed" in rendered
@@ -120,7 +120,7 @@ def test_active_todo_activity_line_does_not_alternate_with_spinner_verb(monkeypa
 
     assert "● Implement pinned todos… (7m 45s · ↓ 10k tokens)" in rendered
     assert _live_view_module.spinner_message(now) not in rendered
-    assert "⎿  ■ Implement pinned todos" in rendered
+    assert "⎿    ■ Implement pinned todos" in rendered
     assert "✓ Explore UI" in rendered
 
 
@@ -139,7 +139,7 @@ def test_spinner_verb_shows_until_next_todo_becomes_active(monkeypatch) -> None:
     rendered = _render(view._working_indicator())
 
     assert f"● {_live_view_module.spinner_message(now)} (7m 45s · ↓ 10k tokens)" in rendered
-    assert "⎿  □ Next task" in rendered
+    assert "⎿    □ Next task" in rendered
     assert "✓ Finished task" in rendered
 
 
@@ -191,7 +191,7 @@ def test_active_pinned_todo_row_uses_accent_icon_and_white_title() -> None:
     assert title_style.bold is True
 
 
-def test_non_first_pinned_rows_indent_under_first_title() -> None:
+def test_pinned_todo_rows_align_icons_and_titles() -> None:
     view = _LiveView(StatusUpdate())
 
     first = view._pinned_todo_row(
@@ -206,11 +206,12 @@ def test_non_first_pinned_rows_indent_under_first_title() -> None:
         width=100,
     )
 
-    # First row carries the ⎿ gutter; later rows indent so their checkbox sits
-    # under the first row's title (icons intentionally not aligned).
-    assert first.plain.startswith("  ⎿  ■ ")
+    # First row carries the ⎿ gutter; later rows omit it but keep the same
+    # checkbox and title columns.
+    assert first.plain.startswith("  ⎿    ■ ")
     assert later.plain.startswith("       □ ")
-    assert later.plain.index("□") == first.plain.index("Lead task")
+    assert later.plain.index("□") == first.plain.index("■")
+    assert later.plain.index("Next task") == first.plain.index("Lead task")
 
 
 def test_successful_todo_tool_card_is_suppressed() -> None:

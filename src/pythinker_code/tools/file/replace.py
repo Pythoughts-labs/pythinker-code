@@ -1,8 +1,9 @@
+import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import override
+from typing import Any, cast, override
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pythinker_core.tooling import CallableTool2, ToolError, ToolReturnValue
 from pythinker_host.path import HostPath
 
@@ -40,6 +41,69 @@ class Params(BaseModel):
             "You can provide a single edit or a list of edits here."
         )
     )
+
+    @staticmethod
+    def _json_string_to_edit(value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+        try:
+            parsed: Any = json.loads(value)
+        except json.JSONDecodeError:
+            return value
+        return (
+            cast(dict[str, Any] | list[Any], parsed) if isinstance(parsed, (dict, list)) else value
+        )
+
+    @classmethod
+    def _normalize_edit_aliases(cls, value: Any) -> Any:
+        value = cls._json_string_to_edit(value)
+        if isinstance(value, list):
+            return [cls._normalize_edit_aliases(item) for item in cast(list[Any], value)]
+        if not isinstance(value, dict):
+            return value
+
+        normalized: dict[str, Any] = dict(cast(dict[str, Any], value))
+        if "old" not in normalized and "oldText" in normalized:
+            normalized["old"] = normalized["oldText"]
+        if "new" not in normalized and "newText" in normalized:
+            normalized["new"] = normalized["newText"]
+        if "replace_all" not in normalized and "replaceAll" in normalized:
+            normalized["replace_all"] = normalized["replaceAll"]
+        return normalized
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_common_edit_shapes(cls, data: Any) -> Any:
+        """Accept common model-generated StrReplaceFile argument shapes.
+
+        Agents occasionally pass the nested ``edit`` payload as a JSON string, or
+        flatten ``old``/``new`` at the top level after seeing the UI label this
+        tool as "Update". Normalize those shapes before Pydantic validates the
+        canonical schema.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        values: dict[str, Any] = dict(cast(dict[str, Any], data))
+        if "edit" in values:
+            values["edit"] = cls._normalize_edit_aliases(values["edit"])
+            return values
+        if "edits" in values:
+            values["edit"] = cls._normalize_edit_aliases(values["edits"])
+            return values
+
+        old_key = "old" if "old" in values else "oldText" if "oldText" in values else None
+        new_key = "new" if "new" in values else "newText" if "newText" in values else None
+        if old_key is not None and new_key is not None:
+            edit: dict[str, Any] = {"old": values[old_key], "new": values[new_key]}
+            if "replace_all" in values:
+                edit["replace_all"] = values["replace_all"]
+            elif "replaceAll" in values:
+                edit["replace_all"] = values["replaceAll"]
+            values["edit"] = edit
+            return values
+
+        return values
 
 
 class StrReplaceFile(CallableTool2[Params]):

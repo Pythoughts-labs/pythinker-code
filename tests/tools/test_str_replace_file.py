@@ -75,6 +75,70 @@ async def test_replace_multiple_edits(
     assert await file_path.read_text() == "Hi world! See you world!"
 
 
+async def test_replace_accepts_json_string_edit(
+    str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+):
+    """Accept the edit object when a model passes it as a JSON string."""
+    file_path = temp_work_dir / "test.txt"
+    await file_path.write_text("old content")
+
+    result = await str_replace_file_tool.call(
+        {
+            "path": str(file_path),
+            "edit": '{"old": "old", "new": "new"}',
+        }
+    )
+
+    assert not result.is_error
+    assert await file_path.read_text() == "new content"
+
+
+async def test_replace_accepts_json_string_edit_list(
+    str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+):
+    """Accept multiple edits when a model passes the list as a JSON string."""
+    file_path = temp_work_dir / "test.txt"
+    await file_path.write_text("alpha beta gamma")
+
+    result = await str_replace_file_tool.call(
+        {
+            "path": str(file_path),
+            "edit": '[{"old": "alpha", "new": "one"}, {"old": "beta", "new": "two"}]',
+        }
+    )
+
+    assert not result.is_error
+    assert await file_path.read_text() == "one two gamma"
+
+
+async def test_replace_accepts_flattened_edit_fields(
+    str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+):
+    """Accept top-level old/new fields from malformed model tool calls."""
+    file_path = temp_work_dir / "test.txt"
+    await file_path.write_text("old content")
+
+    result = await str_replace_file_tool.call({"path": str(file_path), "old": "old", "new": "new"})
+
+    assert not result.is_error
+    assert await file_path.read_text() == "new content"
+
+
+async def test_replace_accepts_edit_aliases(
+    str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+):
+    """Accept oldText/newText aliases from edit-tool-shaped calls."""
+    file_path = temp_work_dir / "test.txt"
+    await file_path.write_text("old content")
+
+    result = await str_replace_file_tool.call(
+        {"path": str(file_path), "edits": [{"oldText": "old", "newText": "new"}]}
+    )
+
+    assert not result.is_error
+    assert await file_path.read_text() == "new content"
+
+
 async def test_replace_multiline_content(
     str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
 ):
