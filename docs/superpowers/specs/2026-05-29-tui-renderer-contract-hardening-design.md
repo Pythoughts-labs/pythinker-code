@@ -198,7 +198,7 @@ Each area gets **one row**, not a sub-spec. Sequence = recommended build order a
 
 - **R1 — characterization brittleness:** pinning the regex pipeline locks current behavior, including any current *wrong* output. Mitigation: review each characterization snapshot at creation; mark known-imperfect ones with a `# pinned: imperfect` note and a follow-up test.
 - **R2 — raw→Report transform location:** RESOLVED during execution — **no in-repo transform exists**; the external scanner emits canonical ` ```report ` JSON directly, and `parse_report_block` rejects any non-canonical severity. So the test-local adapter in `test_report_realdata.py` *is* the documented contract. The raw fixture (`security-scan-findings.json`, 92 findings) carries scanner-native severities including two outside the canonical five — `BUG` (4) and `HIGH_BUG` (3); the adapter folds them (`HIGH_BUG→high`, `BUG→medium`) with a documented map.
-- **R3 — H2 may not reproduce:** acceptable; the methodology records non-reproduction rather than inventing a fix.
+- **R3 — H2 may not reproduce:** acceptable; the methodology records non-reproduction rather than inventing a fix. **Execution result: H2 did NOT reproduce** (the glued prose+table case reassembles with each row rendered exactly once); kept as a guard. H3 (idempotency) also passed.
 - **OQ1:** Should `/copy` actually be built (turns §6.5 from guard into feature)? Default: no.
 - **OQ2:** Tier-2 pty harness — adopt `pexpect` (test-only dev dep) or extend existing `tests_e2e` subprocess approach? Lead phase is Tier 1, so this is deferred to roadmap seq 4.
 
