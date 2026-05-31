@@ -1,18 +1,10 @@
-> **STATUS: DRAFT (write-stage). Finalize pass PENDING.**
-> Produced by the plan-writing workflow (run `wf_40be7924-69f`) and passed structural review,
-> but the automated finalize pass — which applies the *Review punch-list* appended at the end —
-> was interrupted by a session usage limit (resets 2:20pm America/New_York, 2026-05-31).
-> Before executing, an implementer (or a finalize re-run) MUST apply the punch-list items.
-
----
-
 # Release Tool + Version Single-Source-of-Truth Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [ ]) syntax for tracking.
 
 **Goal:** Make `pyproject.toml:3` the single authoritative version, build `scripts/release.py` to rewrite every derived file + `uv.lock` from it and open a `release/X.Y.Z` PR, and enforce the version relationship (including the frozen `pythinker-review==0.1.0` pin) with an extended dependency-check script + a new `tests/test_version_lockstep.py` that runs on every PR.
 
-**Architecture:** `scripts/release.py` is stdlib + shells out to `git`/`gh`/`uv` (C3-exempt CI/release tooling — the shipped agent gains zero runtime deps). It is factored so all rewrite logic is pure functions (semver/monotonic validation, tomlkit rewrites with a `tomllib` parse-back assertion, CHANGELOG `## Unreleased`→`## X.Y.Z (DATE)` promotion, pattern-targeted README/asset rewrites) — those get real failing-test-first pytest; the orchestration (git/gh/uv) is verified via `--dry-run`. The lockstep test asserts every version-bearing string on every main commit; `--version` flag examples are asserted shape-only (the documented §3 exception). `update.py` gains a `PYTHINKER_MANAGED` env hook ahead of the existing brew path-sniff so P2 channels ship self-updating, with a mandatory brew-unchanged regression test.
+**Architecture:** `scripts/release.py` is stdlib + shells out to `git`/`gh`/`uv` (C3-exempt CI/release tooling — the shipped agent gains zero runtime deps). It is factored so all rewrite logic is pure functions (semver/monotonic validation, tomlkit rewrites with a `tomllib` parse-back assertion, CHANGELOG `## Unreleased`→`## X.Y.Z (DATE)` promotion, pattern-targeted README/asset rewrites) — those get real failing-test-first pytest; the orchestration (git/gh/uv) is verified via `--dry-run`. The lockstep test asserts every version-bearing string on every main commit; `--version` flag examples are asserted shape-only (the documented §3 exception). `update.py` gains a `PYTHINKER_MANAGED` env hook ahead of the existing brew path-sniff (with a usable channel-native hint wired into both consumer paths) so P2 channels ship self-updating, with a mandatory brew-unchanged regression test.
 
 **Tech Stack:** Python 3.12+ (stdlib `argparse`/`subprocess`/`tomllib`/`re`/`datetime` + `tomlkit` 0.15.0 already at `pyproject.toml:50`), `uv` (`/home/ai/.local/bin/uv`), `gh` CLI, pytest 9 (run via `uv run pytest`).
 
@@ -34,21 +26,24 @@ There are no admin/secret/App actions in P1.
 
 **Created**
 - `scripts/release.py` — the release orchestrator: 4 phases (validate → rewrite-from-SSOT + `uv lock` → local gates → branch/PR), CLI `--set-version X.Y.Z [--bump-core A.B.C] [--bump-host A.B.C] [--dry-run]`.
-- `tests/test_version_lockstep.py` — stdlib+tomllib CI test (every PR): semver shape; core/host/review pins == sub-pkg versions; README heading + pip snippet; asset-name shapes == VERSION across README + linux-installer README + getting-started.md; CHANGELOG `## X (`; `--version` flag examples are valid-semver shape only.
-- `tests/test_release_py.py` — unit tests for the pure functions of `scripts/release.py`.
+- `tests/test_version_lockstep.py` — stdlib+tomllib CI test (every PR): semver shape; core/host/review pins == sub-pkg versions; review frozen at 0.1.0; README heading + pip snippet; asset-name shapes == VERSION across README + linux-installer README + getting-started.md; CHANGELOG `## X (`; `--version` flag examples are valid-semver shape only.
+- `tests/test_release_py.py` — unit tests for the pure functions of `scripts/release.py` (and the extended dep-check script).
 
 **Modified**
 - `scripts/check_pythinker_dependency_versions.py` — add a `--pythinker-review-pyproject` arg + a third `("pythinker-review", ...)` tuple so the `pythinker-review==0.1.0` pin must match `packages/pythinker-review`.
-- `.github/workflows/ci-pythinker-cli.yml:253-256` — pass `--pythinker-review-pyproject` to the dep-check call (or argparse fails CI red).
+- `.github/workflows/ci-pythinker-cli.yml:253-256` — pass `--pythinker-review-pyproject` to the dep-check call (or argparse fails CI red, since the new arg is `required=True`).
 - `.github/workflows/release-pythinker-cli.yml:57-60` — same new arg for the release-time dep-check call.
-- `src/pythinker_code/ui/shell/update.py:95-106` — `PYTHINKER_MANAGED` env read at the top of `_detect_upgrade_command()`; brew path left unchanged.
-- `tests/test_release_update_pipeline.py` — add the brew-unchanged + `PYTHINKER_MANAGED` regression tests (existing file already covers the updater).
+- `src/pythinker_code/ui/shell/update.py` — `MANAGED_CHANNEL_MARKER` constant (after `NATIVE_INSTALLER_MARKER:61`); `PYTHINKER_MANAGED` env read at the top of `_detect_upgrade_command()` (line 95); a managed-channel branch in `_update_prompt_text()` (line 615) so the rendered "Update method" is a real channel-native hint; a managed-channel early-return in `do_update()` (after the detection at line 1215, before the readiness gate at line 1216) so a managed install neither mis-fires the PyPI readiness check nor tries to exec the marker. Brew path left unchanged.
+- `tests/ui_and_conv/test_shell_update.py` — add the brew-unchanged + `PYTHINKER_MANAGED` regression tests (this is the file that actually imports `update`; `tests/test_release_update_pipeline.py` is workflow-text only and does NOT import `update`).
+- `tests/test_release_update_pipeline.py` — add a test asserting `changelog-entry-required.yml` skips on both the `chore(release)*` title (line 54) and the `release/*` head branch (line 57) — the skip-contract that `release.py.open_pr()` depends on. (Workflow-text file, the correct home for this assertion.)
 - `docs/en/release-notes/breaking-changes.md` — add a `## Unreleased` anchor (currently absent) so `release.py`'s heading promotion is uniform across all three changelog files.
-- `.agents/skills/release/SKILL.md` — repoint the `update_files`/`uv_sync` nodes at `python scripts/release.py`.
+- `.agents/skills/release/SKILL.md` — repoint the `update_files` (lines 22-25) and `uv_sync` (line 35) nodes at `python scripts/release.py`.
 
 ---
 
 ## Task 1 — Extend `check_pythinker_dependency_versions.py` with the `pythinker-review` tuple
+
+**Branch:** `git switch -c p1/release-tool` (created here; **all** subsequent tasks commit to this one branch — the required-arg change and both workflow-caller edits MUST ship in the same PR, or a partial merge turns CI red with `argparse: the following arguments are required: --pythinker-review-pyproject`).
 
 **Files:**
 - Modify: `scripts/check_pythinker_dependency_versions.py:43-68`
@@ -56,7 +51,8 @@ There are no admin/secret/App actions in P1.
 - Modify: `.github/workflows/release-pythinker-cli.yml:57-60`
 - Test: `tests/test_release_py.py` (new — `subprocess`-invokes the script)
 
-1. - [ ] Write the failing test. Create `tests/test_release_py.py` with:
+1. - [ ] Create the branch. `git switch -c p1/release-tool`.
+2. - [ ] Write the failing test. Create `tests/test_release_py.py` with:
    ```python
    from __future__ import annotations
 
@@ -122,12 +118,13 @@ There are no admin/secret/App actions in P1.
        assert result.returncode == 1
        assert "pythinker-review version mismatch" in result.stderr
    ```
-2. - [ ] Run it and see it fail. `uv run pytest tests/test_release_py.py -q` → both tests fail with non-zero exit because argparse rejects the unknown `--pythinker-review-pyproject` (`error: unrecognized arguments`).
-3. - [ ] Add the argparse flag. In `scripts/check_pythinker_dependency_versions.py`, after `parser.add_argument("--pythinker-host-pyproject", type=Path, required=True)` (line 47), add:
+   (The expected substring matches the script's existing `f"{name} version mismatch: ..."` error format at `check_pythinker_dependency_versions.py:82`.)
+3. - [ ] Run it and see it fail. `uv run pytest tests/test_release_py.py -q` → both tests fail (non-zero exit because argparse rejects the unknown flag: `error: unrecognized arguments: --pythinker-review-pyproject`).
+4. - [ ] Add the argparse flag. In `scripts/check_pythinker_dependency_versions.py`, after `parser.add_argument("--pythinker-host-pyproject", type=Path, required=True)` (line 47), add:
    ```python
        parser.add_argument("--pythinker-review-pyproject", type=Path, required=True)
    ```
-4. - [ ] Add the third tuple. Change the loop header (lines 65-68) from:
+5. - [ ] Add the third tuple. Change the loop header (lines 65-68) from:
    ```python
        for name, pyproject_path in (
            ("pythinker-core", args.pythinker_core_pyproject),
@@ -142,15 +139,15 @@ There are no admin/secret/App actions in P1.
            ("pythinker-review", args.pythinker_review_pyproject),
        ):
    ```
-5. - [ ] Run and see it pass. `uv run pytest tests/test_release_py.py -q` → `2 passed`.
-6. - [ ] Update the CI caller. In `.github/workflows/ci-pythinker-cli.yml`, change the block at lines 253-256 from:
+6. - [ ] Run and see it pass. `uv run pytest tests/test_release_py.py -q` → `2 passed`.
+7. - [ ] Update the CI caller. In `.github/workflows/ci-pythinker-cli.yml`, change the block at lines 253-256 from:
    ```yaml
            python scripts/check_pythinker_dependency_versions.py \
              --root-pyproject pyproject.toml \
              --pythinker-core-pyproject packages/pythinker-core/pyproject.toml \
              --pythinker-host-pyproject packages/pythinker-host/pyproject.toml
    ```
-   to (append the review line):
+   to (append the review line; mind the trailing `\` on the host line):
    ```yaml
            python scripts/check_pythinker_dependency_versions.py \
              --root-pyproject pyproject.toml \
@@ -158,17 +155,17 @@ There are no admin/secret/App actions in P1.
              --pythinker-host-pyproject packages/pythinker-host/pyproject.toml \
              --pythinker-review-pyproject packages/pythinker-review/pyproject.toml
    ```
-7. - [ ] Update the release caller. Apply the identical 4th-line append to `.github/workflows/release-pythinker-cli.yml:57-60`.
-8. - [ ] Sanity-check the real workspace passes. `python scripts/check_pythinker_dependency_versions.py --root-pyproject pyproject.toml --pythinker-core-pyproject packages/pythinker-core/pyproject.toml --pythinker-host-pyproject packages/pythinker-host/pyproject.toml --pythinker-review-pyproject packages/pythinker-review/pyproject.toml` → `ok: pythinker-code dependencies match workspace package versions`.
-9. - [ ] Lint the workflows. `uvx actionlint .github/workflows/ci-pythinker-cli.yml .github/workflows/release-pythinker-cli.yml` (if `actionlint` is unavailable, fall back to `python -c "import yaml,sys; [yaml.safe_load(open(f)) for f in sys.argv[1:]]" .github/workflows/ci-pythinker-cli.yml .github/workflows/release-pythinker-cli.yml`) → no output / exit 0.
-10. - [ ] Commit. `git switch -c p1/dep-check-review && git add scripts/check_pythinker_dependency_versions.py tests/test_release_py.py .github/workflows/ci-pythinker-cli.yml .github/workflows/release-pythinker-cli.yml && git commit -m "feat(release): enforce pythinker-review pin in dependency check"`
+8. - [ ] Update the release caller. In `.github/workflows/release-pythinker-cli.yml`, apply the identical change to the block at lines 57-60 (same trailing-`\` addition on the host line + the new review line).
+9. - [ ] Sanity-check the real workspace passes. `python scripts/check_pythinker_dependency_versions.py --root-pyproject pyproject.toml --pythinker-core-pyproject packages/pythinker-core/pyproject.toml --pythinker-host-pyproject packages/pythinker-host/pyproject.toml --pythinker-review-pyproject packages/pythinker-review/pyproject.toml` → `ok: pythinker-code dependencies match workspace package versions`.
+10. - [ ] Lint the workflows. `uvx actionlint .github/workflows/ci-pythinker-cli.yml .github/workflows/release-pythinker-cli.yml` (if `actionlint` is unavailable, fall back to `python -c "import yaml,sys; [yaml.safe_load(open(f)) for f in sys.argv[1:]]" .github/workflows/ci-pythinker-cli.yml .github/workflows/release-pythinker-cli.yml`) → no output / exit 0.
+11. - [ ] Commit. `git add scripts/check_pythinker_dependency_versions.py tests/test_release_py.py .github/workflows/ci-pythinker-cli.yml .github/workflows/release-pythinker-cli.yml && git commit -m "feat(release): enforce pythinker-review pin in dependency check"`
 
 ---
 
 ## Task 2 — `release.py` Phase-1 validation helpers (pure, TDD)
 
 **Files:**
-- Create: `scripts/release.py` (validation helpers only this task)
+- Create: `scripts/release.py` (validation helpers + changelog-path constant only this task)
 - Test: `tests/test_release_py.py`
 
 1. - [ ] Write the failing test. Append to `tests/test_release_py.py`:
@@ -209,7 +206,7 @@ There are no admin/secret/App actions in P1.
            release_tool.assert_monotonic(current="0.27.0", target="0.26.0")
    ```
 2. - [ ] Run and see it fail. `uv run pytest tests/test_release_py.py -q` → `ModuleNotFoundError`/import error (file does not exist yet).
-3. - [ ] Create the module with the validation helpers. Write `scripts/release.py`:
+3. - [ ] Create the module with the validation helpers + the shared changelog-path constant. Write `scripts/release.py`:
    ```python
    #!/usr/bin/env python3
    """Pythinker-code release orchestrator.
@@ -241,6 +238,16 @@ There are no admin/secret/App actions in P1.
    HOST_PYPROJECT = REPO_ROOT / "packages" / "pythinker-host" / "pyproject.toml"
    REVIEW_PYPROJECT = REPO_ROOT / "packages" / "pythinker-review" / "pyproject.toml"
 
+   # Single source for the three hand-authored changelog files. validate() asserts
+   # the `## Unreleased` anchor in ALL of them before any write, and rewrite()
+   # promotes the SAME list — defined once so the two can never drift (atomic
+   # Phase-2 guarantee: no partial-write if a docs file is missing its anchor).
+   CHANGELOG_FILES = (
+       REPO_ROOT / "CHANGELOG.md",
+       REPO_ROOT / "docs" / "en" / "release-notes" / "changelog.md",
+       REPO_ROOT / "docs" / "en" / "release-notes" / "breaking-changes.md",
+   )
+
    SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
 
@@ -271,7 +278,7 @@ There are no admin/secret/App actions in P1.
        return version
    ```
 4. - [ ] Run and see it pass. `uv run pytest tests/test_release_py.py -q` → previous tests still pass + the 4 new ones pass.
-5. - [ ] Commit. `git switch -c p1/release-tool && git add scripts/release.py tests/test_release_py.py && git commit -m "feat(release): add release.py validation helpers"`
+5. - [ ] Commit. `git add scripts/release.py tests/test_release_py.py && git commit -m "feat(release): add release.py validation helpers"`
 
 ---
 
@@ -378,6 +385,7 @@ There are no admin/secret/App actions in P1.
 
 **Files:**
 - Modify: `scripts/release.py`
+- Modify: `docs/en/release-notes/breaking-changes.md:1-5`
 - Test: `tests/test_release_py.py`
 
 1. - [ ] Write the failing test. Append to `tests/test_release_py.py`:
@@ -472,7 +480,7 @@ There are no admin/secret/App actions in P1.
 - Modify: `scripts/release.py`
 - Test: `tests/test_release_py.py`
 
-Rewrite **only** these patterns (everything else — including the `--version 0.27.0` flag examples at README:303 and getting-started.md:34 — is left untouched, per §3): the `## 🆕 What's New in X` heading, the `pythinker-code==X` pip snippet, `PythinkerSetup-X.Y.Z.exe`, `pythinker-code_X.Y.Z_<arch>.deb`, `pythinker-code-X.Y.Z.<arch>.rpm`, and `/releases/download/vX.Y.Z/`.
+Rewrite **only** these patterns (everything else — including the `--version 0.27.0` flag examples at README:303 and getting-started.md:34 — is left untouched, per §3): the `## 🆕 What's New in X` heading, the `pythinker-code==X` pip snippet, `PythinkerSetup-X.Y.Z.exe`, `pythinker-code_X.Y.Z_<arch>.deb`, `pythinker-code-X.Y.Z.<arch>.rpm`, and `/releases/download/vX.Y.Z/`. **Badges are a deliberate no-op:** the only version-bearing badge, the PyPI badge at README:12, is shields.io-live (`https://img.shields.io/pypi/v/pythinker-code...`) and the Python badge at README:13 is a `3.12%2B` requires-python floor — no badge carries a literal package version, so the contract's "badges" clause is satisfied by zero rewrites (a lockstep guard in Task 7 prevents future hardcoded-version-badge drift).
 
 1. - [ ] Write the failing test. Append to `tests/test_release_py.py`:
    ```python
@@ -536,7 +544,7 @@ Rewrite **only** these patterns (everything else — including the `--version 0.
 - Modify: `scripts/release.py`
 - Test: dry-run walkthrough (orchestration is git/gh/uv — no local pytest faking those)
 
-The git/gh/uv orchestration is genuine I/O and is verified by `--dry-run` + a rehearsal in "Phase verification". `--dry-run` runs Phase 1 (validate) + prints the intended rewrites and tag order, but writes no files, runs no `uv lock`, and creates no branch/PR.
+The git/gh/uv orchestration is genuine I/O and is verified by `--dry-run` + a rehearsal in "Phase verification". `--dry-run` runs Phase 1 (validate) + prints the intended rewrites and tag order, but writes no files, runs no `uv lock`, and creates no branch/PR. Note: `validate()` asserts the `## Unreleased` anchor in **all three** changelog files (via `CHANGELOG_FILES`) before any write, so a missing anchor in a docs file fails loud in Phase 1 and never leaves a partially-rewritten tree (atomic Phase-2 guarantee).
 
 1. - [ ] Implement the phases + CLI. Append to `scripts/release.py`:
    ```python
@@ -565,12 +573,17 @@ The git/gh/uv orchestration is genuine I/O and is verified by `--dry-run` + a re
        if local != remote:
            raise ReleaseError("local main != origin/main; rebase onto origin/main first")
        assert_monotonic(current=read_project_version(ROOT_PYPROJECT), target=target)
-       text = ROOT_PYPROJECT  # anchor existence is checked per changelog file in rewrite()
-       changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-       m = _UNRELEASED_RE.search(changelog)
-       if m is None:
-           raise ReleaseError("CHANGELOG.md has no `## Unreleased` section")
-       body = changelog[m.end():].split("\n## ", 1)[0].strip()
+       # Assert the `## Unreleased` anchor in ALL changelog files BEFORE any write
+       # (same list rewrite() promotes) so Phase 2 cannot partially rewrite the tree.
+       for changelog in CHANGELOG_FILES:
+           if _UNRELEASED_RE.search(changelog.read_text(encoding="utf-8")) is None:
+               raise ReleaseError(f"{changelog} has no `## Unreleased` section")
+       # The primary CHANGELOG's body may legitimately be empty (CI-only/docs release):
+       # warn, do not abort.
+       primary = CHANGELOG_FILES[0].read_text(encoding="utf-8")
+       m = _UNRELEASED_RE.search(primary)
+       assert m is not None  # guaranteed by the loop above
+       body = primary[m.end():].split("\n## ", 1)[0].strip()
        if not body:
            print("warning: `## Unreleased` body is empty (CI-only/docs release?)")
 
@@ -586,11 +599,7 @@ The git/gh/uv orchestration is genuine I/O and is verified by `--dry-run` + a re
            set_root_version(HOST_PYPROJECT, bump_host)
            set_dependency_pin(ROOT_PYPROJECT, "pythinker-host", bump_host)
        today = date.today().isoformat()
-       for changelog in (
-           REPO_ROOT / "CHANGELOG.md",
-           REPO_ROOT / "docs" / "en" / "release-notes" / "changelog.md",
-           REPO_ROOT / "docs" / "en" / "release-notes" / "breaking-changes.md",
-       ):
+       for changelog in CHANGELOG_FILES:
            promote_changelog(changelog, target, release_date=today)
        rewrite_version_in_files(
            [
@@ -687,9 +696,10 @@ The git/gh/uv orchestration is genuine I/O and is verified by `--dry-run` + a re
    if __name__ == "__main__":
        raise SystemExit(main())
    ```
-2. - [ ] Lint the module. `uv run ruff check scripts/release.py && uv run ruff format --check scripts/release.py` → exit 0 (run `uv run ruff format scripts/release.py` first if formatting fails). Remove the unused `text = ROOT_PYPROJECT` line flagged by ruff (delete that line in `validate`).
+   (No dead `text = ROOT_PYPROJECT` line — the anchor check is the `CHANGELOG_FILES` loop inside `validate()`.)
+2. - [ ] Lint the module. `uv run ruff check scripts/release.py && uv run ruff format --check scripts/release.py` → exit 0 (run `uv run ruff format scripts/release.py` first if formatting fails). There should be zero F841/unused-variable findings.
 3. - [ ] Confirm the unit tests still pass. `uv run pytest tests/test_release_py.py -q` → all pure-function tests pass (orchestration is not under pytest).
-4. - [ ] Dry-run verification (no writes). On a clean tree synced to origin/main: `python scripts/release.py --set-version 0.28.0 --dry-run`. Expected: prints `warning` only if Unreleased body is empty, then `[dry-run] would rewrite SSOT -> 0.28.0`, `[dry-run] git switch -c release/0.28.0`, ... `[dry-run] gh pr create ...`, and the tag-order block ending `git tag v0.28.0 && git push origin v0.28.0`. Confirm `git status --porcelain` is still empty afterward (dry-run wrote nothing).
+4. - [ ] Dry-run verification (no writes). On a clean tree synced to origin/main: `python scripts/release.py --set-version 0.28.0 --dry-run`. Expected: prints the `warning` only if Unreleased body is empty, then `[dry-run] would rewrite SSOT -> 0.28.0`, `[dry-run] git switch -c release/0.28.0`, ... `[dry-run] gh pr create ...`, and the tag-order block ending `git tag v0.28.0 && git push origin v0.28.0`. Confirm `git status --porcelain` is still empty afterward (dry-run wrote nothing).
 5. - [ ] Commit. `git add scripts/release.py && git commit -m "feat(release): add 4-phase orchestration with uv lock + frozen-sync gate"`
 
 ---
@@ -700,7 +710,7 @@ The git/gh/uv orchestration is genuine I/O and is verified by `--dry-run` + a re
 - Create: `tests/test_version_lockstep.py`
 - Test: itself — it must pass against the current repo at `0.27.0` / core `1.1.1` / host `1.0.0` / review `0.1.0`.
 
-This test is the CI safety net. It asserts only relationships true on every main commit (never "a tag exists").
+This test is the CI safety net. It asserts only relationships true on every main commit (never "a tag exists"). The real tree was verified: CHANGELOG.md has `## 0.27.0 (` at line 20 and `## Unreleased` at line 16, so `test_changelog_has_dated_heading_for_version` is green as-is.
 
 1. - [ ] Write the test as failing-by-construction first, then make it green against the real tree. Create `tests/test_version_lockstep.py`:
    ```python
@@ -766,7 +776,6 @@ This test is the CI safety net. It asserts only relationships true on every main
            REPO_ROOT / "packages" / "linux-installer" / "README.md",
            REPO_ROOT / "docs" / "en" / "guides" / "getting-started.md",
        ]
-       v = re.escape(VERSION)
        # Each asset shape, where present, must carry VERSION (never a stale one).
        shape_res = [
            re.compile(rf"PythinkerSetup-({SEMVER})\.exe"),
@@ -781,6 +790,16 @@ This test is the CI safety net. It asserts only relationships true on every main
                    assert found == VERSION, f"{path}: {found} != {VERSION}"
 
 
+   def test_no_hardcoded_version_badge_in_readme() -> None:
+       # Guard the contract's "badges" clause: the only version-bearing badge is the
+       # shields.io-live PyPI badge (img.shields.io/pypi/v/...). Fail if a future edit
+       # hardcodes VERSION into a shields.io badge label/path, which would silently drift.
+       readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+       for line in readme.splitlines():
+           if "img.shields.io" in line and re.search(rf"badge/[^)]*{re.escape(VERSION)}", line):
+               raise AssertionError(f"hardcoded-version badge found: {line!r}")
+
+
    def test_install_flag_examples_are_valid_semver_shape_only() -> None:
        # The documented §3 exception: `--version <x.y.z>` teaches flag syntax and
        # is NOT lockstepped to VERSION — only asserted to be valid semver shape.
@@ -790,57 +809,64 @@ This test is the CI safety net. It asserts only relationships true on every main
            for found in flag_re.findall(text):
                assert re.fullmatch(SEMVER, found), found
    ```
-2. - [ ] Run against the real tree and see it pass. `uv run pytest tests/test_version_lockstep.py -q` → all pass (current repo: VERSION `0.27.0`, review pin `0.1.0`, asset names all `0.27.0`, flag examples `0.27.0` valid shape).
-3. - [ ] Prove the lockstep actually bites (temporary mutation). Edit `README.md` heading to `What's New in 0.99.0`, run `uv run pytest tests/test_version_lockstep.py -q -k readme_heading` → it FAILS. Revert the edit (`git checkout README.md`), re-run → passes. This confirms the equality assertion is load-bearing.
-4. - [ ] Confirm the gate set in `release.py` already invokes this test (Task 6 `GATES` includes `pytest tests/test_version_lockstep.py`). No change needed; just verify the path matches.
-5. - [ ] Commit. `git add tests/test_version_lockstep.py && git commit -m "test(release): add version lockstep guard for every PR"`
+   (No dead `v = re.escape(VERSION)` line — the asset test iterates `shape_res` over `SEMVER` and compares each capture to `VERSION` directly, so ruff F841 cannot fire.)
+2. - [ ] Run against the real tree and see it pass. `uv run pytest tests/test_version_lockstep.py -q` → all pass (current repo: VERSION `0.27.0`, review pin `0.1.0`, asset names all `0.27.0`, flag examples `0.27.0` valid shape, no hardcoded-version badge).
+3. - [ ] Lint the test (F841 guard). `uv run ruff check tests/test_version_lockstep.py` → exit 0 (proves no dead-assignment regression slipped in).
+4. - [ ] Prove the lockstep actually bites (temporary mutation). Edit `README.md` heading to `What's New in 0.99.0`, run `uv run pytest tests/test_version_lockstep.py -q -k readme_heading` → it FAILS. Revert the edit (`git checkout README.md`), re-run → passes. This confirms the equality assertion is load-bearing.
+5. - [ ] Confirm the gate set in `release.py` already invokes this test (Task 6 `GATES` includes `pytest tests/test_version_lockstep.py`). No change needed; just verify the path matches.
+6. - [ ] Commit. `git add tests/test_version_lockstep.py && git commit -m "test(release): add version lockstep guard for every PR"`
 
 ---
 
-## Task 8 — `PYTHINKER_MANAGED` env hook in `update.py` + brew-unchanged regression test (TDD)
+## Task 8 — `PYTHINKER_MANAGED` env hook in `update.py` + consumer handling + brew-unchanged regression test (TDD)
 
 **Files:**
-- Modify: `src/pythinker_code/ui/shell/update.py:95-106`
-- Test: `tests/test_release_update_pipeline.py` (append)
+- Modify: `src/pythinker_code/ui/shell/update.py` — `MANAGED_CHANNEL_MARKER` (after line 61), env read in `_detect_upgrade_command()` (line 95), branch in `_update_prompt_text()` (line 615), early-return in `do_update()` (after line 1215).
+- Test: `tests/ui_and_conv/test_shell_update.py` (this file imports `from pythinker_code.ui.shell import update`; `tests/test_release_update_pipeline.py` is workflow-text only and does NOT import `update`).
 
-Brew must NOT set `PYTHINKER_MANAGED`; it keeps its existing cellar path-sniff (line 98). The env read is the literal first lines of `_detect_upgrade_command()` so non-brew managed channels (Docker/Nix/Scoop/WinGet) short-circuit to a channel-native hint while brew falls through unchanged.
+Brew must NOT set `PYTHINKER_MANAGED`; it keeps its existing cellar path-sniff (line 98). The env read is the literal first logic of `_detect_upgrade_command()` so non-brew managed channels (Docker/Nix/Scoop/WinGet) short-circuit. Crucially, the marker return must be *consumed*, not rendered raw: there are exactly two call sites of `_detect_upgrade_command()` — `_update_prompt_text()` (615) and `do_update()` (1215). `_update_prompt_text` needs its own branch (else it renders `__pythinker_managed_channel__ docker` as the "Update method"); `do_update` needs an early-return placed **after detection (1215) but before the `_update_candidate_unavailable_reason` readiness gate (1216)** so a managed install does not mis-fire the PyPI-still-publishing check and never reaches the exec path. The managed early-return mirrors the existing native-can't-auto-update path (lines 1246-1252): print a manual-action hint and return `UpdateResult.UPDATE_AVAILABLE`.
 
-1. - [ ] Write the failing tests. Append to `tests/test_release_update_pipeline.py`:
+1. - [ ] Write the failing tests. Append to `tests/ui_and_conv/test_shell_update.py`:
    ```python
-   import pytest
-
-   from pythinker_code.ui.shell import update as update_mod
-
-
-   def test_brew_unchanged_when_pythinker_managed_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+   def test_brew_unchanged_when_pythinker_managed_unset(monkeypatch):
        monkeypatch.delenv("PYTHINKER_MANAGED", raising=False)
        monkeypatch.setattr(
-           update_mod.sys, "executable",
+           update.sys, "executable",
            "/opt/homebrew/Cellar/pythinker-code/0.27.0/libexec/bin/python",
        )
-       monkeypatch.setattr(update_mod, "_is_native_build", lambda: False)
-       assert update_mod._detect_upgrade_command() == ["brew", "upgrade", "pythinker-code"]
+       monkeypatch.setattr(update, "_is_native_build", lambda: False)
+       assert update._detect_upgrade_command() == ["brew", "upgrade", "pythinker-code"]
 
 
-   def test_brew_unchanged_even_with_native_marker(monkeypatch: pytest.MonkeyPatch) -> None:
-       # The .pythinker-native marker also trips is_native_build(); the cellar
+   def test_brew_unchanged_even_with_native_marker(monkeypatch):
+       # The .pythinker-native marker also trips _is_native_build(); the cellar
        # path-sniff must win first so brew installs stay on `brew upgrade`.
        monkeypatch.delenv("PYTHINKER_MANAGED", raising=False)
        monkeypatch.setattr(
-           update_mod.sys, "executable",
+           update.sys, "executable",
            "/opt/homebrew/Cellar/pythinker-code/0.27.0/libexec/bin/python",
        )
-       monkeypatch.setattr(update_mod, "_is_native_build", lambda: True)
-       assert update_mod._detect_upgrade_command() == ["brew", "upgrade", "pythinker-code"]
+       monkeypatch.setattr(update, "_is_native_build", lambda: True)
+       assert update._detect_upgrade_command() == ["brew", "upgrade", "pythinker-code"]
 
 
-   def test_pythinker_managed_channel_short_circuits(monkeypatch: pytest.MonkeyPatch) -> None:
+   def test_pythinker_managed_channel_short_circuits(monkeypatch):
        monkeypatch.setenv("PYTHINKER_MANAGED", "docker")
-       monkeypatch.setattr(update_mod.sys, "executable", "/usr/local/bin/python")
-       cmd = update_mod._detect_upgrade_command()
-       assert cmd == [update_mod.MANAGED_CHANNEL_MARKER, "docker"]
+       monkeypatch.setattr(update.sys, "executable", "/usr/local/bin/python")
+       cmd = update._detect_upgrade_command()
+       assert cmd == [update.MANAGED_CHANNEL_MARKER, "docker"]
+
+
+   def test_update_prompt_text_renders_managed_channel_hint(monkeypatch):
+       # The contract requires a usable channel-native hint, not a raw marker.
+       monkeypatch.setenv("PYTHINKER_MANAGED", "docker")
+       monkeypatch.setattr(update.sys, "executable", "/usr/local/bin/python")
+       text = update._update_prompt_text("0.27.0", "0.28.0")
+       rendered = text.plain
+       assert "docker" in rendered
+       assert update.MANAGED_CHANNEL_MARKER not in rendered
    ```
-2. - [ ] Run and see it fail. `uv run pytest tests/test_release_update_pipeline.py -q -k "pythinker_managed or brew_unchanged"` → `test_pythinker_managed_channel_short_circuits` fails (`AttributeError: ... MANAGED_CHANNEL_MARKER`); the brew tests fail too because the marker constant does not exist at import time.
+2. - [ ] Run and see it fail. `uv run pytest tests/ui_and_conv/test_shell_update.py -q -k "pythinker_managed or brew_unchanged or managed_channel_hint"` → `test_pythinker_managed_channel_short_circuits` fails (`AttributeError: ... MANAGED_CHANNEL_MARKER`); the others fail too because the constant does not exist at import time.
 3. - [ ] Add the marker constant. In `src/pythinker_code/ui/shell/update.py`, after the existing `NATIVE_INSTALLER_MARKER = "__pythinker_native_installer__"` (line 61), add:
    ```python
    MANAGED_CHANNEL_MARKER = "__pythinker_managed_channel__"
@@ -869,83 +895,168 @@ Brew must NOT set `PYTHINKER_MANAGED`; it keeps its existing cellar path-sniff (
            return ["brew", "upgrade", "pythinker-code"]
    ```
    (`os` is already imported at line 5; no new import.)
-5. - [ ] Run and see it pass. `uv run pytest tests/test_release_update_pipeline.py -q -k "pythinker_managed or brew_unchanged"` → `3 passed`.
-6. - [ ] Confirm no regression in the existing pipeline tests + types. `uv run pytest tests/test_release_update_pipeline.py -q` → all pass; `uv run pyright src/pythinker_code/ui/shell/update.py` → 0 errors (the file is in the `strict` set at `pyproject.toml:138`).
-7. - [ ] Commit. `git add src/pythinker_code/ui/shell/update.py tests/test_release_update_pipeline.py && git commit -m "feat(update): add PYTHINKER_MANAGED channel hint; keep brew unchanged"`
+5. - [ ] Add the managed branch to `_update_prompt_text()`. Change lines 615-619 from:
+   ```python
+       upgrade_command = _detect_upgrade_command()
+       if upgrade_command == [NATIVE_INSTALLER_MARKER]:
+           update_method = "downloads the native updater automatically"
+       else:
+           update_method = _format_upgrade_command(upgrade_command)
+   ```
+   to:
+   ```python
+       upgrade_command = _detect_upgrade_command()
+       if upgrade_command[:1] == [MANAGED_CHANNEL_MARKER]:
+           update_method = f"managed by {upgrade_command[1]} — update via your {upgrade_command[1]} channel"
+       elif upgrade_command == [NATIVE_INSTALLER_MARKER]:
+           update_method = "downloads the native updater automatically"
+       else:
+           update_method = _format_upgrade_command(upgrade_command)
+   ```
+6. - [ ] Add the managed early-return to `do_update()`. Change lines 1215-1218 from:
+   ```python
+           upgrade_command = _detect_upgrade_command()
+           unavailable_reason = await _update_candidate_unavailable_reason(
+               session, latest_version, upgrade_command
+           )
+   ```
+   to (insert the early-return BEFORE the readiness gate, so a managed channel never mis-fires the PyPI check or the exec path):
+   ```python
+           upgrade_command = _detect_upgrade_command()
+           if upgrade_command[:1] == [MANAGED_CHANNEL_MARKER]:
+               channel = upgrade_command[1]
+               _print(
+                   f"[{_t.warning}]Pythinker is managed by your {channel} channel. "
+                   f"Update {current_version} → {latest_version} via {channel} "
+                   "(rebuild/repull the image or run the channel's upgrade command).[/]"
+               )
+               return UpdateResult.UPDATE_AVAILABLE
+           unavailable_reason = await _update_candidate_unavailable_reason(
+               session, latest_version, upgrade_command
+           )
+   ```
+7. - [ ] Run and see it pass. `uv run pytest tests/ui_and_conv/test_shell_update.py -q -k "pythinker_managed or brew_unchanged or managed_channel_hint"` → `4 passed`.
+8. - [ ] Confirm no regression in the existing updater tests + types. `uv run pytest tests/ui_and_conv/test_shell_update.py -q` → all pass; `uv run pyright src/pythinker_code/ui/shell/update.py` → 0 errors (the file is in the `strict` set at `pyproject.toml:138`).
+9. - [ ] Commit. `git add src/pythinker_code/ui/shell/update.py tests/ui_and_conv/test_shell_update.py && git commit -m "feat(update): add PYTHINKER_MANAGED channel hint with consumer handling; keep brew unchanged"`
 
 ---
 
-## Task 9 — Repoint the release SKILL at `scripts/release.py`
+## Task 9 — Assert the `release/*` + `chore(release)` skip-contract (P1-scope guard, TDD)
 
 **Files:**
-- Modify: `.agents/skills/release/SKILL.md` (the `update_files` and `uv_sync` nodes)
+- Modify: `tests/test_release_update_pipeline.py` (append — this is the existing workflow-text assertion home)
 
-1. - [ ] Read the current nodes. `sed -n '22,40p' .agents/skills/release/SKILL.md` (the `update_files` markdown block + `uv_sync` line shown in recon).
-2. - [ ] Replace the manual-bump prose. In the `update_files` node body, replace the manual "Update the relevant pyproject.toml ... CHANGELOG.md ... breaking-changes.md" instructions with: `Run python scripts/release.py --set-version X.Y.Z [--bump-core A.B.C --bump-host A.B.C]. It rewrites pyproject.toml:3, sub-package pins, uv.lock, all three changelog files (preserving the authored body), and README/asset names from the single source of truth, then runs the local gates and opens the release/X.Y.Z PR. There is no --bump-review (review is frozen at 0.1.0).` Change the `uv_sync: "Run uv sync."` node to note that `release.py` already runs `uv lock` + `uv sync --frozen --all-extras --all-packages` as Phase-2/3 steps.
-3. - [ ] Verify the file still parses as the skill front-matter + d2 graph (no structural breakage): `head -5 .agents/skills/release/SKILL.md` shows the unchanged `---`/`name:`/`type:` front matter.
-4. - [ ] Commit. `git add .agents/skills/release/SKILL.md && git commit -m "docs(release): repoint release skill at scripts/release.py"`
+`release.py.open_pr()` emits a branch named `release/X.Y.Z` and a PR title `chore(release): prepare X.Y.Z`. The `changelog-entry-required.yml` workflow must skip its "require a CHANGELOG entry" check for exactly that shape (title `chore(release)*` at line 54, head branch `release/*` at line 57), because a release-prep PR consumes `## Unreleased` into a dated block and resets it, which would otherwise read as a net removal and fail. This coupling is real and load-bearing, so it is asserted here (kept out of the version-string-focused lockstep test, per the punch-list).
+
+1. - [ ] Write the test. Append to `tests/test_release_update_pipeline.py`:
+   ```python
+   def test_changelog_workflow_skips_release_prep_prs() -> None:
+       """release.py opens `release/X.Y.Z` PRs titled `chore(release): prepare X.Y.Z`.
+
+       changelog-entry-required.yml MUST skip its required check for that shape,
+       or every release PR is blocked under branch protection. Assert both the
+       title guard and the head-branch guard so neither half silently regresses.
+       """
+       wf = (WORKFLOWS / "changelog-entry-required.yml").read_text()
+       # Title guard: chore(release)* → skip.
+       assert '"chore(release)"*)' in wf, "missing chore(release) title skip"
+       # Head-branch guard: release/* → skip.
+       assert "release/*)" in wf, "missing release/* branch skip"
+   ```
+2. - [ ] Run against the real workflow and see it pass. `uv run pytest tests/test_release_update_pipeline.py -q -k changelog_workflow_skips_release_prep` → `1 passed` (the guards exist today at `changelog-entry-required.yml:54` and `:57`).
+3. - [ ] Prove the guard bites (temporary mutation). Comment out the `release/*)` case line in `.github/workflows/changelog-entry-required.yml`, re-run the test → it FAILS. Restore the line (`git checkout .github/workflows/changelog-entry-required.yml`), re-run → passes.
+4. - [ ] Commit. `git add tests/test_release_update_pipeline.py && git commit -m "test(release): assert changelog workflow skips release-prep PRs"`
 
 ---
 
-## Task 10 — Open the P1 PR (C1) and merge gate (C2)
+## Task 10 — Repoint the release SKILL at `scripts/release.py`
+
+**Files:**
+- Modify: `.agents/skills/release/SKILL.md` (the `update_files` node at lines 22-25 and the `uv_sync` node at line 35)
+
+1. - [ ] Read the current nodes. Use the Read tool on `.agents/skills/release/SKILL.md` lines 1-55 (covers the `---` front matter, the `update_files` node body at 22-25, and the `uv_sync: "Run uv sync."` line at 35 — both edited nodes are in view; prefer Read over sed per repo CLAUDE.md).
+2. - [ ] Replace the manual-bump prose in `update_files`. Change the node body (lines 22-25) from:
+   ```
+   update_files: |md
+     Update the relevant pyproject.toml (and rust/Cargo.toml if root version changes),
+     CHANGELOG.md (keep the Unreleased header), and breaking-changes.md in both languages.
+   |
+   ```
+   to:
+   ```
+   update_files: |md
+     Run `python scripts/release.py --set-version X.Y.Z [--bump-core A.B.C --bump-host A.B.C]`.
+     It rewrites pyproject.toml:3, the sub-package pins, uv.lock, all three changelog files
+     (preserving the authored Unreleased body), and the README/asset names from the single
+     source of truth, then runs the local gates and opens the `release/X.Y.Z` PR.
+     There is no `--bump-review` (review is frozen at 0.1.0).
+   |
+   ```
+3. - [ ] Update the `uv_sync` node. Change line 35 from:
+   ```
+   uv_sync: "Run uv sync."
+   ```
+   to:
+   ```
+   uv_sync: "release.py already runs `uv lock` + `uv sync --frozen --all-extras --all-packages` as Phase-2/3 steps; no separate uv sync needed."
+   ```
+4. - [ ] Verify the front matter + d2 graph still parse (no structural breakage): Read lines 1-6 → unchanged `---`/`name:`/`description:`/`type:` front matter, and confirm the edited node lines are still inside the ```` ```d2 ```` fenced block.
+5. - [ ] Commit. `git add .agents/skills/release/SKILL.md && git commit -m "docs(release): repoint release skill at scripts/release.py"`
+
+---
+
+## Task 11 — Open the P1 PR (C1) and merge gate (C2)
 
 **Files:** none (process)
 
-1. - [ ] Confirm the full local gate set is green before pushing. `uv run pytest tests/test_release_py.py tests/test_version_lockstep.py tests/test_release_update_pipeline.py -q` → all pass; `uv run ruff check scripts/release.py tests/test_release_py.py tests/test_version_lockstep.py && uv run ruff format --check scripts/release.py tests/test_release_py.py tests/test_version_lockstep.py` → exit 0; `uv run pyright src/pythinker_code/ui/shell/update.py` → 0 errors.
-2. - [ ] Confirm the working tree-version checks pass exactly as CI will run them: `python scripts/check_pythinker_dependency_versions.py --root-pyproject pyproject.toml --pythinker-core-pyproject packages/pythinker-core/pyproject.toml --pythinker-host-pyproject packages/pythinker-host/pyproject.toml --pythinker-review-pyproject packages/pythinker-review/pyproject.toml` → `ok: ...`.
-3. - [ ] Push the branch (all P1 commits are on `p1/release-tool` after Task 2 created it; Task 1 used `p1/dep-check-review` — rebase Task 1's commit onto the same branch so it is one PR, OR open two stacked PRs. Simplest: `git switch p1/release-tool && git cherry-pick <Task-1 commit sha>` if not already included, then verify with `git log --oneline -10`). `git push -u origin p1/release-tool`.
-4. - [ ] Open the PR. `gh pr create --base main --head p1/release-tool --title "feat(release): release.py + version lockstep SSOT (P1)" --body "Implements design spec §3 + §6 'Required code change'. Adds scripts/release.py, tests/test_version_lockstep.py, the pythinker-review dependency-check tuple (with both CI callers updated), and the PYTHINKER_MANAGED updater hook with a brew-unchanged regression test. No new agent runtime deps (C3)."`
-5. - [ ] Wait for CI and CodeRabbit. Confirm required checks (`check`, `test`, `release-validate`) pass and the `CodeRabbit` commit status on the PR head SHA is `success` (C2) before merging. Read CodeRabbit's "Actionable comments" and resolve or surface them — do not merge past unresolved findings.
+Because every task committed to the single `p1/release-tool` branch (Task 1 onward), the required dep-check arg and both workflow-caller edits are atomic in one PR — there is no cherry-pick or stacked-PR reconciliation to do.
+
+1. - [ ] Confirm the full local gate set is green before pushing. `uv run pytest tests/test_release_py.py tests/test_version_lockstep.py tests/ui_and_conv/test_shell_update.py tests/test_release_update_pipeline.py -q` → all pass; `uv run ruff check scripts/release.py tests/test_release_py.py tests/test_version_lockstep.py && uv run ruff format --check scripts/release.py tests/test_release_py.py tests/test_version_lockstep.py` → exit 0; `uv run pyright src/pythinker_code/ui/shell/update.py` → 0 errors.
+2. - [ ] Confirm the workspace version checks pass exactly as CI will run them: `python scripts/check_pythinker_dependency_versions.py --root-pyproject pyproject.toml --pythinker-core-pyproject packages/pythinker-core/pyproject.toml --pythinker-host-pyproject packages/pythinker-host/pyproject.toml --pythinker-review-pyproject packages/pythinker-review/pyproject.toml` → `ok: pythinker-code dependencies match workspace package versions`.
+3. - [ ] Confirm the branch history is one coherent stack. `git log --oneline -8 p1/release-tool` shows the dep-check, release.py (validation/rewrites/promotion/asset/orchestration), lockstep, skip-contract, updater, and SKILL commits all on `p1/release-tool`. Push: `git push -u origin p1/release-tool`.
+4. - [ ] Open the PR. `gh pr create --base main --head p1/release-tool --title "feat(release): release.py + version lockstep SSOT (P1)" --body "Adds scripts/release.py (4-phase SSOT release orchestrator), tests/test_version_lockstep.py (every-PR version guard), the pythinker-review dependency-check tuple (with both CI callers updated atomically), the changelog-workflow skip-contract assertion, and the PYTHINKER_MANAGED updater hook with a brew-unchanged regression test and a managed-channel rendered hint. No new agent runtime deps (C3)."`
+5. - [ ] Wait for CI and CodeRabbit. Confirm required checks (`check`, `test`, `changelog`, `release-validate` as applicable) pass and the `CodeRabbit` commit status on the PR head SHA is `success` (C2) before merging. Read CodeRabbit's "Actionable comments" and resolve or surface them — do not merge past unresolved findings. Per the project CLAUDE.md / MEMORY note, reject a CodeRabbit camelCase-for-Python finding if one appears (false positive; codebase is snake_case).
 6. - [ ] Merge after C2 is satisfied. `gh pr merge p1/release-tool --squash` (the local CodeRabbit merge-gate hook enforces the status check).
 
 ---
 
 ## Phase verification
 
-**What "done" looks like:** `pyproject.toml:3` is the only place a human edits the version; everything else is derived by `scripts/release.py` or guarded by `tests/test_version_lockstep.py`; the `pythinker-review==0.1.0` freeze is enforced in the dependency check (both CI callers updated) and the lockstep test; and `_detect_upgrade_command()` honors `PYTHINKER_MANAGED` while brew behavior is provably unchanged.
+**What "done" looks like:** `pyproject.toml:3` is the only place a human edits the version; everything else is derived by `scripts/release.py` or guarded by `tests/test_version_lockstep.py`; the `pythinker-review==0.1.0` freeze is enforced in the dependency check (both CI callers updated atomically) and the lockstep test; `_detect_upgrade_command()` honors `PYTHINKER_MANAGED` with a real channel-native hint in BOTH consumer paths while brew behavior is provably unchanged; and the `release/*` + `chore(release)` skip-contract is asserted so release PRs are never blocked by `changelog-entry-required.yml`.
 
 **End-to-end rehearsal (the proof, no tag pushed):**
 
-1. - [ ] On a clean tree synced to `origin/main`, run a real (non-dry-run) rehearsal to a throwaway version: `python scripts/release.py --set-version 0.28.0`. Expected: Phase 2 rewrites the files + runs `uv lock`; Phase 3 runs all four gates (`check_version_tag`, the extended `check_pythinker_dependency_versions`, `uv sync --frozen --all-extras --all-packages`, `pytest tests/test_version_lockstep.py`) plus the `grep -qF` checks — all green; Phase 4 creates branch `release/0.28.0`, commits `chore(release): prepare 0.28.0`, pushes, and opens a PR, then prints `git tag v0.28.0 && git push origin v0.28.0`.
+1. - [ ] On a clean tree synced to `origin/main`, run a real (non-dry-run) rehearsal to a throwaway version: `python scripts/release.py --set-version 0.28.0`. Expected: Phase 1 validates all three changelog anchors; Phase 2 rewrites the files + runs `uv lock`; Phase 3 runs all four gates (`check_version_tag`, the extended `check_pythinker_dependency_versions`, `uv sync --frozen --all-extras --all-packages`, `pytest tests/test_version_lockstep.py`) plus the `grep -qF` checks — all green; Phase 4 creates branch `release/0.28.0`, commits `chore(release): prepare 0.28.0`, pushes, and opens a PR, then prints `git tag v0.28.0 && git push origin v0.28.0`.
 2. - [ ] Prove the stress-test catch is covered: confirm `uv.lock` changed in the rehearsal commit (`git show --stat release/0.28.0 | grep uv.lock`) and that `uv sync --frozen --all-extras --all-packages` ran clean inside Phase 3 (no "lockfile out of date" error). This is the exact failure that would otherwise turn the release PR's own CI red.
-3. - [ ] Confirm the documented exception held: `grep -n "version 0.28.0" docs/en/guides/getting-started.md` returns nothing — the `--version 0.27.0` flag example is unchanged (still `--version 0.27.0`), while `What's New in 0.28.0`, `pythinker-code==0.28.0`, and `PythinkerSetup-0.28.0.exe` are all present.
-4. - [ ] Tear down the rehearsal (no tag was pushed): `gh pr close release/0.28.0 --delete-branch` and `git switch main && git branch -D release/0.28.0` and `git push origin --delete release/0.28.0`. Verify `git log --oneline -1 origin/main` is untouched (C1: nothing reached main, no tag was created).
-5. - [ ] Sub-package rehearsal (optional, validates `--bump-core`): `python scripts/release.py --set-version 0.28.0 --bump-core 1.2.0 --dry-run` → prints the ordered tag sequence (`pythinker-core-1.2.0` first, wait-for-PyPI note, then `v0.28.0`) and the intended pin rewrite `pythinker-core[contrib]==1.2.0`, writing nothing.
+3. - [ ] Confirm the documented exception held: `grep -n "version 0.28.0" docs/en/guides/getting-started.md` returns nothing — the `--version 0.27.0` flag example is unchanged (still `--version 0.27.0`), while `What's New in 0.28.0`, `pythinker-code==0.28.0`, and `PythinkerSetup-0.28.0.exe` are all present in their respective files.
+4. - [ ] Confirm the skip-contract makes the rehearsal PR pass the changelog gate: the PR head branch is `release/0.28.0` and the title is `chore(release): prepare 0.28.0`, so `changelog-entry-required.yml` skips (matching the guards Task 9 asserts) and does not block on the now-empty `## Unreleased`.
+5. - [ ] Tear down the rehearsal (no tag was pushed): `gh pr close release/0.28.0 --delete-branch` and `git switch main && git branch -D release/0.28.0` and `git push origin --delete release/0.28.0`. Verify `git log --oneline -1 origin/main` is untouched (C1: nothing reached main, no tag was created).
+6. - [ ] Sub-package rehearsal (optional, validates `--bump-core`): `python scripts/release.py --set-version 0.28.0 --bump-core 1.2.0 --dry-run` → prints the ordered tag sequence (`pythinker-core-1.2.0` first, wait-for-PyPI note, then `v0.28.0`) and the intended pin rewrite `pythinker-core[contrib]==1.2.0`, writing nothing.
 
 **Files relevant to this phase (absolute paths):**
 - `/home/ai/Projects/pythinker-code-main/scripts/release.py`
 - `/home/ai/Projects/pythinker-code-main/scripts/check_pythinker_dependency_versions.py`
 - `/home/ai/Projects/pythinker-code-main/tests/test_version_lockstep.py`
 - `/home/ai/Projects/pythinker-code-main/tests/test_release_py.py`
+- `/home/ai/Projects/pythinker-code-main/tests/ui_and_conv/test_shell_update.py`
 - `/home/ai/Projects/pythinker-code-main/tests/test_release_update_pipeline.py`
 - `/home/ai/Projects/pythinker-code-main/src/pythinker_code/ui/shell/update.py`
 - `/home/ai/Projects/pythinker-code-main/.github/workflows/ci-pythinker-cli.yml`
 - `/home/ai/Projects/pythinker-code-main/.github/workflows/release-pythinker-cli.yml`
+- `/home/ai/Projects/pythinker-code-main/.github/workflows/changelog-entry-required.yml`
 - `/home/ai/Projects/pythinker-code-main/docs/en/release-notes/breaking-changes.md`
 - `/home/ai/Projects/pythinker-code-main/.agents/skills/release/SKILL.md`
 
 ---
 
-## Review punch-list (apply in finalize pass)
+## Punch-list resolution notes (how each review item was addressed)
 
-**Verdict:** needs-fixes
-
-**Summary:** Plan is structurally strong and spec-aligned: I verified the SSOT pins (core line 29 / host 47 / review 48, located by name per the recon header), tomlkit present (line 50), the two existing dep-check callers (ci :253-256, release :57-60), check_version_tag's --pyproject/--expected-version signature, update.py line refs (marker :61, _detect_upgrade_command :95-106, os imported :5), and the changelog/breaking-changes anchor state (breaking-changes.md has NO ## Unreleased anchor — correctly added by Task 4 step 5). I executed the promote_changelog and rewrite_version_strings logic against real file contents: both pass their tests and correctly preserve the --version flag examples (C5 / §3 exception). The lockstep test (Task 7) passes against the current 0.27.0 tree as designed. No C1-C5 violations: branch->PR->CodeRabbit->human-tag respected (C1/C2), zero new runtime deps (C3, tomlkit pre-existing), README+badges move with the bump (C4), changelog body preserved (C5); the Task 8 pyright-strict claim (:138) is accurate. Verdict needs-fixes for three blocking items: (1) MANAGED_CHANNEL_MARKER is returned but never consumed, so spec §6's channel-native hint is undelivered and any PYTHINKER_MANAGED env triggers a FileNotFoundError in _do_update — and Task 8's tests pass anyway (false confidence); (2)+(3) ruff E402 (mid-file module imports in Tasks 2 and 8) and F841 (dead v= in Task 7, plus the flagged text= in Task 6) turn the plan's own Task 10 ruff gate red. Plus a spec-coverage gap: the release/* + chore(release) <-> changelog-entry-required.yml contract is required to be asserted in a test but is not, and the install-native.sh:12 --version example is outside Task 7's flag-shape scope. Fix the marker consumption, move imports to file tops, delete the dead assignments, add the contract test, and widen the flag-shape scope to install-native.sh.
-
-
-### Spec coverage gaps
-
-- **Spec §6 'Required code change': PYTHINKER_MANAGED must yield a 'channel-native upgrade hint'. Task 8 adds MANAGED_CHANNEL_MARKER + the env read in _detect_upgrade_command(), but NEVER consumes the marker downstream. NATIVE_INSTALLER_MARKER is special-cased in three sites (update.py:613 _update_prompt_text, :719 _update_candidate_unavailable_reason, :1221 _do_update); the managed marker is parallel to none of them. Result: a managed channel renders 'Update method: __pythinker_managed_channel__ docker' and _do_update shells out ['__pythinker_managed_channel__','docker'] -> FileNotFoundError. The three Task-8 tests pass while only asserting the return value, giving false confidence; the hint spec requires is not delivered.** → Add a managed-marker case to Task 8: in _update_prompt_text() detect upgrade_command[0]==MANAGED_CHANNEL_MARKER and render a channel-native hint string; short-circuit _do_update() to print the hint and return (no shell-out), mirroring the NATIVE_INSTALLER_MARKER path. Add a test asserting the rendered hint text (not just the argv), and a test that _do_update does not call _run_upgrade_command for a managed channel.
-- **Contract + Spec §2 step 6 / §9-P1: the release/* branch + chore(release) title contract with changelog-entry-required.yml must be 'documented + asserted in a test'. Verified the skip logic guards on both title 'chore(release)*' (changelog-entry-required.yml:54) and head branch release/* (:57). The plan uses branch release/{target} and title 'chore(release): prepare {target}' (correct), but adds NO test asserting this contract and no documentation beyond the PR body.** → Add a small stdlib test (e.g. in tests/test_release_py.py or test_version_lockstep.py) that reads .github/workflows/changelog-entry-required.yml and asserts both the 'chore(release)' title-skip and the 'release/*' branch-skip strings are present, and assert release.py emits the matching branch/title. Note the change-set coupling so a future edit to either side fails loudly.
-- **Contract LOCKSTEP TEST: 'install-script --version flag examples are valid-semver SHAPE'. scripts/install-native.sh:12 carries a real '--version 0.27.0' example. Task 7's flag-shape assertion only scans README.md and docs/en/guides/getting-started.md, so the install-script example is uncovered.** → Add scripts/install-native.sh (and scripts/install.ps1 / scripts/install.sh if they grow version examples) to test_install_flag_examples_are_valid_semver_shape_only in Task 7. Verified now: only install-native.sh:12 carries a versioned flag example; install.ps1/install.sh do not.
-
-### Consistency issues
-
-- Branch juggling across tasks. Task 1 commits on p1/dep-check-review; Task 2 creates p1/release-tool; Task 10 step 3 tries to land one PR via a conditional cherry-pick of the Task-1 commit ('if not already included'). If Task 2 branched off the Task-1 branch the commit is already present and the cherry-pick errors; if off main it is not present. The plan leaves which is true unresolved. → Collapse to a single branch from Task 1 onward (e.g. create p1/release-tool in Task 1 and commit every task there). Remove the conditional cherry-pick in Task 10 step 3.
-- Task 8 preamble claims 'tests/test_release_update_pipeline.py (existing file already covers the updater)'. Verified the existing file imports only re + pathlib and asserts workflow YAML text (prerelease flags, promote gating); it does NOT import or exercise update.py. The new tests import 'from pythinker_code.ui.shell import update as update_mod' and monkeypatch update_mod.sys — a net-new dependency surface, not coverage that 'already' exists. → Reword the claim to 'the existing file covers release-workflow YAML; Task 8 adds the first updater-module tests', so a reviewer is not misled about prior coverage. (Functionally fine; the file is a reasonable home for these tests.)
-
-### Constraint issues
-
-- [Task 10 local gate (mirrors CI): 'uv run ruff check tests/test_release_py.py ...'. Ruff select includes E (pycodestyle) and F (Pyflakes); per-file-ignores for tests/**/*.py only exempt E501. So E402 and F841 are active for test files.] Task 2 appends 'import importlib.util' plus the module-level _spec/module_from_spec/exec_module block AFTER the function defs already in tests/test_release_py.py (Task 1 created it with functions first). Module-level imports/statements after code trigger ruff E402 -> Task 10 step 1 ruff check goes red. Same shape in Task 8: appended 'import pytest' + 'from pythinker_code.ui.shell import update as update_mod' at module level after existing functions in test_release_update_pipeline.py (E402, and CI ruff covers tests/). → Place all module-level imports and the release_tool import-via-spec load block at the TOP of tests/test_release_py.py when Task 1 first creates it (not appended in Task 2). In Task 8, add 'import pytest' and the update_mod import to the top of test_release_update_pipeline.py rather than mid-file. Re-order the TDD steps so the file's import header is established up front.
-- [Same Task 10 ruff gate (F841 unused-variable, active for tests).] Task 7 test_asset_names_match_version_across_files defines 'v = re.escape(VERSION)' which is never used (the shape_res regexes use SEMVER, not v). F841 -> ruff check red. → Delete the 'v = re.escape(VERSION)' line in Task 7.
-- [Task 6 code block ships in the committed module (the plan flags it for deletion only in step 2, after the block is written).] validate() contains 'text = ROOT_PYPROJECT  # anchor existence ...' which is an unused assignment (F841) and dead. Task 6 step 2 says to delete it, but it is presented as part of the canonical code block, risking it being committed if step 2 is skipped. → Remove the 'text = ROOT_PYPROJECT' line from the Task 6 validate() code block itself rather than relying on a follow-up cleanup step.
+- **specCoverageGaps #1 (PYTHINKER_MANAGED hint not consumed):** Fixed in Task 8 — added consumer handling in the exactly-two call sites (`_update_prompt_text` branch + `do_update` early-return placed before the readiness gate at line 1216), returning `UPDATE_AVAILABLE` like the native-can't-auto-update path, plus a `text.plain` rendered-hint test. The marker is never rendered raw or exec'd.
+- **specCoverageGaps #2 (release/* + chore(release) skip-contract):** Added Task 9 — a real failing-first workflow-text test in `tests/test_release_update_pipeline.py` asserting both guards (`chore(release)*` title line 54, `release/*` branch line 57), with a bite-proof mutation step. Kept out of the version-focused lockstep test.
+- **placeholders #1 (`v = re.escape(VERSION)` dead in lockstep):** Removed — Task 7's asset test iterates `shape_res` over `SEMVER` and compares captures to `VERSION` directly; added a ruff-check step (Task 7 step 3) to prove no F841.
+- **placeholders #2 (`text = ROOT_PYPROJECT` dead in validate):** Removed from the step-1 code block — `validate()` now does the `CHANGELOG_FILES` anchor loop directly; no committed-then-deleted dead line.
+- **consistencyIssues #1 (incoherent branch strategy):** Fixed — single `p1/release-tool` branch created in Task 1; the cherry-pick/stacked-PR fork is gone (Task 11). The required-arg + both workflow callers are atomic in one PR.
+- **consistencyIssues #2 (SKILL recon sed range):** Fixed — Task 10 uses Read over lines 1-55 (covers `update_files` at 22-25 and `uv_sync` at 35; the real `uv_sync` line is 35, not 46).
+- **consistencyIssues #3 (badges no-op):** Documented in Task 5 (PyPI badge is shields.io-live, Python badge is a `3.12%2B` floor) + added an optional lockstep guard `test_no_hardcoded_version_badge_in_readme` (Task 7) to prevent future drift.
+- **constraintIssues #1 (validate only checks CHANGELOG anchor):** Fixed — introduced the module-level `CHANGELOG_FILES` constant (Task 2); `validate()` loops it to assert the `## Unreleased` anchor in all three files before any write, and `rewrite()` promotes the same list, so they cannot drift and Phase 2 stays atomic.
+- **Bonus (test file mismatch):** `tests/test_release_update_pipeline.py` is workflow-text and does not import `update`; the updater unit tests were moved to `tests/ui_and_conv/test_shell_update.py` (which does), and Task 11 step 1's pytest command lists both files correctly.

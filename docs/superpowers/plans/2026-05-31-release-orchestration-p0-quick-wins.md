@@ -1,11 +1,3 @@
-> **STATUS: DRAFT (write-stage). Finalize pass PENDING.**
-> Produced by the plan-writing workflow (run `wf_40be7924-69f`) and passed structural review,
-> but the automated finalize pass — which applies the *Review punch-list* appended at the end —
-> was interrupted by a session usage limit (resets 2:20pm America/New_York, 2026-05-31).
-> Before executing, an implementer (or a finalize re-run) MUST apply the punch-list items.
-
----
-
 # P0 — Quick Wins (Release Orchestration) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [ ]) syntax for tracking.
@@ -56,7 +48,7 @@ Expected: `actionlint --version` prints a version; `shellcheck --version` prints
 | `.github/workflows/release-pythinker-core.yml` | Modify | Remove the dead `docs` job's pdoc→gh-pages step (404 target) |
 | `scripts/install-native.sh` | Modify | Exponential backoff (4→120s, ~6m cap) on the asset-wait loop |
 | `scripts/install.ps1` | Modify | `/releases/latest`-first; paginated scan only as fallback (fix `per_page=20` cliff); add backoff |
-| `.github/workflows/promote-release.yml` | Modify | Sub-package PyPI-existence blocking check; remove Homebrew gate; per-channel Slack detail; `issues:write` + release-readiness issue; separate App-authed `needs: promote` dispatch job; fail-loud token; asset URLs from API `tag_name` |
+| `.github/workflows/promote-release.yml` | Modify | Sub-package PyPI-existence blocking check; remove Homebrew gate; per-channel Slack detail; `issues:write` + release-readiness issue (rows ticked as channels go ready); separate App-authed `needs: promote` dispatch job; fail-loud token; asset URLs from API `tag_name` |
 | `.github/workflows/release-readiness-reconcile.yml` | **Create** | Daily/dispatch drift detector + idempotent re-dispatch + persistent-drift Slack + stale-issue auto-close (the Homebrew backstop) |
 
 **pythinker-home repo** (`/home/ai/Projects/pythinker-site/site`):
@@ -68,6 +60,10 @@ Expected: `actionlint --version` prints a version; `shellcheck --version` prints
 | `.github/workflows/sync-upstream-products.yml` | Modify | Job-level receiver `if:` gating on `client_payload.source_repo`; pass dispatched ref via `env:` (never into a `run:` line) |
 | `scripts/install.ps1`, `web/public/install.ps1`, `docs/public/install.ps1` | **Delete** (`git rm`) | The 3 dead, byte-identical tracked mirrors (canonical pair is `public/install.{sh,ps1}`) |
 | `docker-compose.yml`, `docker-compose.private-ghcr.yml`, `deploy/traefik/`, `deploy/.env.example`, `deploy/README.md` | Delete/rewrite (Task 14, gated by OP-4) | Retire the orphaned GHCR+Watchtower+Traefik path; canonical deploy = Dokploy build-from-source |
+
+**Deferred (out of P0 scope) — §7 right-sizing items, not on the release path:**
+- *Installer raw-GitHub `<tag>` fallback header line* (a documented comment in `install-native.sh`/`install.ps1` headers pointing at `github.com/.../releases/latest/download` as the non-`pythinker.com` fallback). **Deferred:** cosmetic doc-only text; the real download already targets the raw GitHub URL, and the circular `pythinker.com` reference is only in comment/fallback prose (§7). No runtime behavior change.
+- *`.sha256` sidecar existence check in the site sync* (defense-in-depth for a cron-mid-upload race). **Deferred:** promote already gates every `.sha256` sidecar on the normal release path (`promote-release.yml:67-94`), and the site sync derives asset URLs from the live API `tag_name`; this is belt-and-suspenders, not a fix for a live failure (§7).
 
 ---
 
@@ -83,6 +79,7 @@ Branch: `release-orch/p0-dispatch-and-installers`. Touches `scripts/install*.{sh
   ```bash
   git -C /home/ai/Projects/pythinker-code-main switch -c release-orch/p0-dispatch-and-installers
   ```
+  Expected: `Switched to a new branch 'release-orch/p0-dispatch-and-installers'`.
 - [ ] 1.2 Confirm the `## Unreleased` heading exists and view its current body:
   ```bash
   awk '/^## Unreleased/{f=1} f&&/^## [0-9]/{exit} f' /home/ai/Projects/pythinker-code-main/CHANGELOG.md
@@ -92,24 +89,26 @@ Branch: `release-orch/p0-dispatch-and-installers`. Touches `scripts/install*.{sh
   ```
   - Release pipeline: migrate the pythinker-home website-sync dispatch to the org-owned `pythinker-release-bot` GitHub App and fail loud on an empty token; retire the dead pythinker-core API-docs gh-pages publish step; add exponential backoff to the native install scripts and fix the Windows installer's release-pagination cliff.
   ```
-- [ ] 1.4 Verify the gate logic would pass locally (simulate the awk extractor in `changelog-entry-required.yml:99-110`):
+- [ ] 1.4 Approximate the gate locally (HONEST: this is an approximation, not the gate). The real `changelog-entry-required.yml` gate diffs the `## Unreleased` block against the PR base and requires ≥1 **added** non-blank line; only CI can run that diff-against-base. Locally, diff the working tree against `origin/main` and confirm the new bullet appears as an added line:
   ```bash
-  awk '/^## Unreleased[[:space:]]*$/{i=1;next} i&&/^## /{i=0} i' /home/ai/Projects/pythinker-code-main/CHANGELOG.md | grep -c '[^[:space:]]'
+  git -C /home/ai/Projects/pythinker-code-main fetch origin main
+  git -C /home/ai/Projects/pythinker-code-main diff origin/main -- CHANGELOG.md | grep -E '^\+- ' | grep -c 'pythinker-release-bot'
   ```
-  Expected: `1` or more.
+  Expected: `1` (the bullet is a net-added line). This mirrors the gate's "added line" intent; the authoritative pass/fail is the `changelog` check on the PR.
 - [ ] 1.5 Commit:
   ```bash
   git -C /home/ai/Projects/pythinker-code-main add CHANGELOG.md
   git -C /home/ai/Projects/pythinker-code-main commit -m "docs(changelog): note P0 dispatch + installer changes"
   ```
+  Expected: one file changed, one insertion.
 
 ### Task 2 — Migrate `dispatch-pythinker-home-sync.yml` to the App token + fail-loud
 
 This is CI-wiring: verify with `actionlint` locally, then `gh workflow run` post-merge (the workflow does not run on `pull_request`). Copy the mint step verbatim from `homebrew-tap.yml:79-86`, swapping the secret names and `repositories`.
 
-**Files:** Modify `.github/workflows/dispatch-pythinker-home-sync.yml:26-47`. Verify: `actionlint`.
+**Files:** Modify `.github/workflows/dispatch-pythinker-home-sync.yml:25-47`. Verify: `actionlint`.
 
-- [ ] 2.1 Replace the single `Trigger pythinker-home sync` step (current lines 26-47, which reads `DISPATCH_TOKEN: ${{ secrets.PYTHINKER_HOME_REPO_DISPATCH_TOKEN }}` and silently `exit 0` on empty) with a mint step + a dispatch step. The exact replacement for lines 25-47 (the `steps:` block under `dispatch:`):
+- [ ] 2.1 Replace the `dispatch` job's `steps:` block (current lines 25-47, where the single `Trigger pythinker-home sync` step reads `DISPATCH_TOKEN: ${{ secrets.PYTHINKER_HOME_REPO_DISPATCH_TOKEN }}` and silently `exit 0` on empty) with a job-level `env:` + a mint step + a dispatch step. The exact replacement for lines 25-47:
   ```yaml
       env:
         DISPATCH_OWNER: TechMatrix-labs
@@ -152,12 +151,12 @@ This is CI-wiring: verify with `actionlint` locally, then `gh workflow run` post
               "https://api.github.com/repos/${DISPATCH_OWNER}/${DISPATCH_REPO}/dispatches" \
               -d "$payload"
   ```
-  Notes: the `permissions: contents: read` on the `dispatch` job stays (the App token does the cross-repo write, not `GITHUB_TOKEN`); the silent `exit 0`-on-empty is replaced by `exit 1` (Mode-A fail-loud, §5). `RELEASE_TAG` stays `github.sha` (this file's path-trigger sends a SHA, §7 — handled receiver-side in PR-home-3).
+  Notes: the `permissions: contents: read` on the `dispatch` job (lines 23-24) stays (the App token does the cross-repo write, not `GITHUB_TOKEN`); the silent `exit 0`-on-empty is replaced by `exit 1` (Mode-A fail-loud, §5). `RELEASE_TAG` stays `github.sha` (this file's path-trigger sends a SHA, §7 — handled receiver-side in PR-home-3).
 - [ ] 2.2 Lint the file:
   ```bash
   ~/go/bin/actionlint /home/ai/Projects/pythinker-code-main/.github/workflows/dispatch-pythinker-home-sync.yml
   ```
-  Expected: no output (exit 0).
+  Expected: prints nothing and exits 0 (`echo $?` → `0`).
 - [ ] 2.3 Commit:
   ```bash
   git -C /home/ai/Projects/pythinker-code-main add .github/workflows/dispatch-pythinker-home-sync.yml
@@ -170,12 +169,12 @@ The target `PythinkerAI/pythinker-core` is a confirmed 404 (§4, table row 8); t
 
 **Files:** Modify `.github/workflows/release-pythinker-core.yml` (remove the `docs:` job, lines 67-127). Verify: `actionlint`.
 
-- [ ] 3.1 Delete the `docs:` job block (everything from line 67 `  docs:` through the end of file at line 128). The remaining jobs are `validate` and `publish`. Use Edit to remove the block; confirm the file now ends after the `publish` job's `packages-dir: dist/pythinker-core`.
+- [ ] 3.1 Delete the `docs:` job block — everything from line 67 (`  docs:`) through line 127 (end of file; the last line is `          git -C "$PAGES_DIR" push origin gh-pages`). The file is 127 lines total. The remaining jobs are `validate` and `publish`. Use Edit to remove the block; confirm the file now ends after the `publish` job's `packages-dir: dist/pythinker-core` line.
 - [ ] 3.2 Lint:
   ```bash
   ~/go/bin/actionlint /home/ai/Projects/pythinker-code-main/.github/workflows/release-pythinker-core.yml
   ```
-  Expected: no output.
+  Expected: prints nothing and exits 0.
 - [ ] 3.3 Confirm no lingering reference to the deleted secret in this file:
   ```bash
   grep -n PYTHINKER_CORE_PAGES_TOKEN /home/ai/Projects/pythinker-code-main/.github/workflows/release-pythinker-core.yml || echo "clean"
@@ -234,12 +233,12 @@ The current loop (lines 229-238) is flat 6×10s. Replace with exponential backof
   while [ "$elapsed" -lt "$max" ]; do seq="$seq $delay"; elapsed=$((elapsed+delay)); delay=$((delay*2)); [ "$delay" -gt 120 ] && delay=120; done
   echo "delays:$seq  total:${elapsed}s"
   ```
-  Expected: `delays: 4 8 16 32 64 120 120 ...  total:~360s+` (≈6m before giving up, geometric early retries).
-- [ ] 4.3 Lint:
+  Expected: `delays: 4 8 16 32 64 120 120 120  total:480s` (≈8 retries, geometric early then 120s-capped; the loop stops once `elapsed >= 360`).
+- [ ] 4.3 Lint the whole file and confirm it is clean:
   ```bash
-  shellcheck /home/ai/Projects/pythinker-code-main/scripts/install-native.sh
+  shellcheck /home/ai/Projects/pythinker-code-main/scripts/install-native.sh; echo "exit=$?"
   ```
-  Expected: no new findings introduced by this change (the file pre-exists; confirm the diff region is clean).
+  Expected: `exit=0` (no findings). If shellcheck reports pre-existing findings unrelated to lines 229-238, confirm none are newly introduced by the diff region (the new code uses only quoted POSIX arithmetic and already-defined helpers).
 - [ ] 4.4 Commit:
   ```bash
   git -C /home/ai/Projects/pythinker-code-main add scripts/install-native.sh
@@ -252,7 +251,7 @@ The current `Get-LatestVersion` (lines 136-164) scans `releases?per_page=20` and
 
 **Files:** Modify `scripts/install.ps1:136-164` (`Get-LatestVersion`). Verify: PSScriptAnalyzer (manual) + post-merge real run.
 
-- [ ] 5.1 Replace the `Get-LatestVersion` function body (lines 136-164) with a `/releases/latest`-first resolver that preserves the prerelease skip and asset-pair guard, then falls back to a paginated scan, with backoff:
+- [ ] 5.1 Replace the `Get-LatestVersion` function (lines 136-164) with a `/releases/latest`-first resolver that preserves the prerelease skip and asset-pair guard, then falls back to a paginated scan, with backoff:
   ```powershell
   function Test-ReleaseHasInstaller($release) {
     if ($release.draft -or $release.prerelease) { return $null }
@@ -300,16 +299,16 @@ The current `Get-LatestVersion` (lines 136-164) scans `releases?per_page=20` and
     }
   }
   ```
-- [ ] 5.2 Static syntax check the file parses (no PSScriptAnalyzer on Linux, but PowerShell-on-Linux or a Windows runner can tokenize it). If `pwsh` is available locally:
+- [ ] 5.2 Static syntax check the file parses (no PSScriptAnalyzer on Linux, but PowerShell-on-Linux can tokenize it). If `pwsh` is available locally:
   ```bash
   command -v pwsh >/dev/null && pwsh -NoProfile -Command "[void][System.Management.Automation.PSParser]::Tokenize((Get-Content -Raw '/home/ai/Projects/pythinker-code-main/scripts/install.ps1'), [ref]\$null); 'parsed OK'" || echo "pwsh not present — defer parse check to CI/Windows"
   ```
-  Expected: `parsed OK` or the deferral note. (If deferred, the real verification is the post-merge manual Windows run in Phase verification.)
-- [ ] 5.3 Confirm the two preserved guards are still present in the new code:
+  Expected: `parsed OK` (if `pwsh` present) or `pwsh not present — defer parse check to CI/Windows`. If deferred, the real verification is the post-merge manual Windows run in Phase verification.
+- [ ] 5.3 Confirm the two preserved guards are present in the new code:
   ```bash
-  grep -nE '\$release.prerelease|"\$exe.sha256"' /home/ai/Projects/pythinker-code-main/scripts/install.ps1
+  grep -nE '\$release\.prerelease|"\$exe\.sha256"' /home/ai/Projects/pythinker-code-main/scripts/install.ps1
   ```
-  Expected: matches for both the prerelease skip and the `.sha256` asset-pair check inside `Test-ReleaseHasInstaller`.
+  Expected: two matches — the `$release.draft -or $release.prerelease` skip and the `($names -contains "$exe.sha256")` asset-pair check, both inside `Test-ReleaseHasInstaller`.
 - [ ] 5.4 Commit:
   ```bash
   git -C /home/ai/Projects/pythinker-code-main add scripts/install.ps1
@@ -325,22 +324,28 @@ The current `Get-LatestVersion` (lines 136-164) scans `releases?per_page=20` and
     --title "ci: dispatch App migration + retire dead docs step + installer hardening" \
     --body "P0 (1/2): migrate dispatch-pythinker-home-sync.yml to the pythinker-release-bot App token with fail-loud-on-empty; remove the dead pythinker-core pdoc gh-pages step (404 target); install-native.sh exponential backoff; install.ps1 /releases/latest-first with paginated fallback and backoff. No agent runtime deps. Sequencing note: promote-release.yml gate changes ship in PR-code-2 with the reconcile backstop."
   ```
+  Expected: prints the new PR URL.
 - [ ] 6.2 Wait for required checks (including `changelog`) to pass and CodeRabbit commit status on the head SHA to be `success` (C2). Verify before merge:
   ```bash
   gh pr checks --repo TechMatrix-labs/pythinker-code <PR#>
   gh api repos/TechMatrix-labs/pythinker-code/commits/$(gh pr view --repo TechMatrix-labs/pythinker-code <PR#> --json headRefOid -q .headRefOid)/status --jq '.statuses[] | select(.context=="CodeRabbit") | .state'
   ```
-  Expected: all checks pass; CodeRabbit `success`. Do not merge until then (C2).
+  Expected: all checks `pass`; the CodeRabbit line prints `success`. Do not merge until then (C2).
 - [ ] 6.3 Merge (after CodeRabbit `success`):
   ```bash
   gh pr merge --repo TechMatrix-labs/pythinker-code <PR#> --squash
   ```
+  Expected: `✓ Squashed and merged pull request #<PR#>`.
 - [ ] 6.4 **Post-merge dispatch smoke test** (needs OP-1..OP-3 done): trigger the dispatch workflow manually and confirm the App-token path fires:
   ```bash
   gh workflow run dispatch-pythinker-home-sync.yml --repo TechMatrix-labs/pythinker-code
   gh run watch --repo TechMatrix-labs/pythinker-code $(gh run list --repo TechMatrix-labs/pythinker-code --workflow dispatch-pythinker-home-sync.yml -L1 --json databaseId -q '.[0].databaseId')
   ```
-  Expected: the run is green; the "Mint GitHub App token" step succeeds and the dispatch POST returns 204. Then confirm pythinker-home received it: `gh run list --repo TechMatrix-labs/pythinker-home --workflow sync-upstream-products.yml -L1` shows a `repository_dispatch` run.
+  Expected: the run is green; the "Mint GitHub App token" step succeeds and the dispatch POST returns 204. Then confirm pythinker-home received it:
+  ```bash
+  gh run list --repo TechMatrix-labs/pythinker-home --workflow sync-upstream-products.yml -L1
+  ```
+  Expected: a fresh `repository_dispatch` run is listed.
 
 ---
 
@@ -357,11 +362,17 @@ Branch: `release-orch/p0-promote-reconcile`. Touches `promote-release.yml` and a
   git -C /home/ai/Projects/pythinker-code-main switch main && git -C /home/ai/Projects/pythinker-code-main pull --ff-only
   git -C /home/ai/Projects/pythinker-code-main switch -c release-orch/p0-promote-reconcile
   ```
+  Expected: `Switched to a new branch 'release-orch/p0-promote-reconcile'`.
 - [ ] 7.2 Add a bullet under `## Unreleased` (C5):
   ```
-  - Release promotion: block the prerelease→latest flip until `pythinker-code` and every pinned sub-package (`pythinker-core`, `pythinker-host`, `pythinker-review`) resolve on PyPI; remove Homebrew from the promote gate (now backed by a new `release-readiness-reconcile.yml` drift backstop); add per-channel bottleneck detail to the failure Slack, a per-release `release-readiness` tracking issue, and a separate App-authed site-dispatch job that fails loud on an empty token.
+  - Release promotion: block the prerelease→latest flip until `pythinker-code` and every pinned sub-package (`pythinker-core`, `pythinker-host`, `pythinker-review`) resolve on PyPI; remove Homebrew from the promote gate (now backed by a new `release-readiness-reconcile.yml` drift backstop); add per-channel bottleneck detail to the failure Slack, a per-release `release-readiness` tracking issue whose rows tick as channels go ready, and a separate App-authed site-dispatch job that fails loud on an empty token.
   ```
-- [ ] 7.3 Commit:
+- [ ] 7.3 Approximate the gate locally (HONEST: approximation only; the authoritative check is CI's diff-against-base):
+  ```bash
+  git -C /home/ai/Projects/pythinker-code-main diff origin/main -- CHANGELOG.md | grep -E '^\+- ' | grep -c 'release-readiness-reconcile'
+  ```
+  Expected: `1`.
+- [ ] 7.4 Commit:
   ```bash
   git -C /home/ai/Projects/pythinker-code-main add CHANGELOG.md
   git -C /home/ai/Projects/pythinker-code-main commit -m "docs(changelog): note promote fail-loud + reconcile backstop"
@@ -371,125 +382,155 @@ Branch: `release-orch/p0-promote-reconcile`. Touches `promote-release.yml` and a
 
 **Files:** Modify `.github/workflows/promote-release.yml`. The readiness step is lines 59-153. Verify: `actionlint` + post-merge `workflow_dispatch` rehearsal.
 
-- [ ] 8.1 In the `Wait for install-channel readiness` step, replace the single PyPI URL (line 95) and the Homebrew formula URL (line 96) region. Add a list of all four PyPI URLs that must return 200, and delete the `homebrew_formula_url`. Replace lines 95-96:
+- [ ] 8.1 In the `Wait for install-channel readiness` step, replace the single PyPI URL (line 95) and the Homebrew formula URL (line 96) with a list of all four PyPI URLs that must return 200, deleting `homebrew_formula_url`. Replace lines 95-96 with:
   ```bash
-  # BLOCKING set: /releases/latest and pip must both resolve before the flip.
-  # pythinker-code AND every pinned sub-package must publish, else
-  # `pip install pythinker-code==X` 500s on a lagging transitive pin.
-  pypi_urls=(
-    "https://pypi.org/pypi/pythinker-code/${version}/json"
-    "https://pypi.org/pypi/pythinker-core/1.1.1/json"
-    "https://pypi.org/pypi/pythinker-host/1.0.0/json"
-    "https://pypi.org/pypi/pythinker-review/0.1.0/json"
-  )
+          # BLOCKING set: /releases/latest and pip must both resolve before the flip.
+          # pythinker-code AND every pinned sub-package must publish, else
+          # `pip install pythinker-code==X` 500s on a lagging transitive pin.
+          pypi_urls=(
+            "https://pypi.org/pypi/pythinker-code/${version}/json"
+            "https://pypi.org/pypi/pythinker-core/1.1.1/json"
+            "https://pypi.org/pypi/pythinker-host/1.0.0/json"
+            "https://pypi.org/pypi/pythinker-review/0.1.0/json"
+          )
   ```
   (The sub-package pins are hardcoded here to the values frozen in `pyproject.toml` — core 1.1.1, host 1.0.0, review 0.1.0. P1 will source these from the dep-check; for P0 they are literals matching the SSOT.)
-- [ ] 8.2 Replace the per-attempt PyPI/Homebrew readiness evaluation (lines 118-127) with a loop over `pypi_urls` and drop the Homebrew block entirely:
+- [ ] 8.2 Replace the per-attempt PyPI/Homebrew readiness evaluation (lines 118-127) with a loop over `pypi_urls`, dropping the Homebrew block entirely:
   ```bash
-  pypi_ready=true
-  missing_pypi=()
-  for u in "${pypi_urls[@]}"; do
-    if ! curl -fsSL --retry 2 --retry-delay 2 -o /dev/null "$u"; then
-      pypi_ready=false
-      missing_pypi+=("$u")
-    fi
-  done
+            pypi_ready=true
+            missing_pypi=()
+            for u in "${pypi_urls[@]}"; do
+              if ! curl -fsSL --retry 2 --retry-delay 2 -o /dev/null "$u"; then
+                pypi_ready=false
+                missing_pypi+=("$u")
+              fi
+            done
   ```
 - [ ] 8.3 Replace the all-ready condition (line 129) — remove `&& "$homebrew_ready" == "true"`:
   ```bash
-  if [[ "${#missing_assets[@]}" -eq 0 && "$pypi_ready" == "true" ]]; then
+            if [[ "${#missing_assets[@]}" -eq 0 && "$pypi_ready" == "true" ]]; then
   ```
-- [ ] 8.4 Replace the per-attempt diagnostics (lines 139-144) so each lagging channel is named (this becomes the per-channel bottleneck detail; capture it for the issue/Slack via a step-summary):
+- [ ] 8.4 Replace the per-attempt diagnostics (lines 139-144) so each lagging channel is named, and remove the two Homebrew diagnostic lines:
   ```bash
-  if [[ "$pypi_ready" != "true" ]]; then
-    printf 'PyPI not serving yet: %s\n' "${missing_pypi[*]}"
-  fi
+            if [[ "$pypi_ready" != "true" ]]; then
+              printf 'PyPI not serving yet: %s\n' "${missing_pypi[*]}"
+            fi
   ```
-  Remove the Homebrew "not at version yet" block (old lines 142-144) and the `homebrew_ready=false`/`formula_text` block (old lines 123-127).
-- [ ] 8.5 Capture the bottleneck for downstream steps: after the loop, when `all_ready != true`, write a `bottleneck` to `$GITHUB_ENV` and the step summary. Append before the final `exit 1` (current line 152):
+  (This removes the old `homebrew_ready` "not at version yet" block at lines 142-144; line 137-138's `Missing release assets` block is kept unchanged.)
+- [ ] 8.5 Give the readiness step `id: readiness_wait`. Build a local shell `bottleneck` variable, write it to `$GITHUB_OUTPUT` as a multi-line output named `bottleneck`, write a human-readable step summary, and (after the loop, when not ready) **tick the readiness issue rows** by PATCHing the issue body to reflect which channels are ready. Replace the final not-ready block (current lines 150-153) with:
   ```bash
-  {
-    echo "### Release readiness for ${TAG} — NOT READY"
-    if [[ "${#missing_assets[@]}" -gt 0 ]]; then printf -- '- Missing assets: %s\n' "${missing_assets[*]}"; fi
-    if [[ "$pypi_ready" != "true" ]]; then printf -- '- PyPI not resolvable: %s\n' "${missing_pypi[*]}"; fi
-  } >> "$GITHUB_STEP_SUMMARY"
-  {
-    echo "BOTTLENECK<<EOF"
-    [[ "${#missing_assets[@]}" -gt 0 ]] && printf 'Missing assets: %s\n' "${missing_assets[*]}"
-    [[ "$pypi_ready" != "true" ]] && printf 'PyPI not resolvable: %s\n' "${missing_pypi[*]}"
-    echo "EOF"
-  } >> "$GITHUB_ENV"
+          # Build the live-status checklist body from the loop's final flags so the
+          # release-readiness issue is an accurate per-channel status pane (§5).
+          assets_box="[ ]"; [[ "${#missing_assets[@]}" -eq 0 ]] && assets_box="[x]"
+          pypi_code_box="[ ]"; pypi_subpkg_box="[ ]"
+          if [[ "$pypi_ready" == "true" ]]; then
+            pypi_code_box="[x]"; pypi_subpkg_box="[x]"
+          else
+            # Code resolves iff the code URL is not in the missing set.
+            case " ${missing_pypi[*]} " in
+              *"pythinker-code/${version}/json"*) ;;
+              *) pypi_code_box="[x]" ;;
+            esac
+          fi
+          issue_body="$(printf '%s\n' \
+            "Tracking install-channel readiness for **${TAG}**." \
+            "" \
+            "- ${assets_box} GitHub Release assets" \
+            "- ${pypi_code_box} PyPI: pythinker-code" \
+            "- ${pypi_subpkg_box} PyPI: pinned sub-packages (core/host/review)" \
+            "- [ ] Homebrew tap (best-effort)" \
+            "- [ ] Site version.json (best-effort)")"
+          gh api -X PATCH "repos/$REPO/issues/${{ steps.readiness.outputs.number }}" \
+            -f body="$issue_body" >/dev/null
+
+          bottleneck="$(
+            if [[ "${#missing_assets[@]}" -gt 0 ]]; then printf 'Missing assets: %s\n' "${missing_assets[*]}"; fi
+            if [[ "$pypi_ready" != "true" ]]; then printf 'PyPI not resolvable: %s\n' "${missing_pypi[*]}"; fi
+          )"
+          {
+            echo "### Release readiness for ${TAG} — NOT READY"
+            [[ -n "$bottleneck" ]] && printf '%s\n' "$bottleneck"
+          } >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "bottleneck<<EOF"
+            printf '%s\n' "$bottleneck"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          gh issue comment "${{ steps.readiness.outputs.number }}" --repo "$REPO" \
+            --body "$(printf 'Promotion stuck for %s after ~%dm.\n\n%s\n\nRe-run via `workflow_dispatch tag=%s` once the bottleneck clears.' "$TAG" "$budget_min" "${bottleneck:-unknown bottleneck}" "$TAG")"
+          echo "::error::Install channels were not fully ready after ${budget_min} minutes"
+          exit 1
   ```
-- [ ] 8.6 Lint:
+  Notes: `bottleneck` is a **local shell variable** read in the same step that wrote it — it is NOT routed through `$GITHUB_ENV` (which only propagates to *later* steps and would always be empty here). Cross-job propagation to the Slack job uses the `$GITHUB_OUTPUT` `bottleneck` value exposed as a job output in Task 10.3. The issue-body PATCH ticks rows so the issue is a live status pane. The `Promote release` step (Task 9.4) ticks the remaining rows / closes the issue on success.
+- [ ] 8.6 Lint + commit:
   ```bash
   ~/go/bin/actionlint /home/ai/Projects/pythinker-code-main/.github/workflows/promote-release.yml
   ```
-  Expected: no output. Commit:
+  Expected: prints nothing, exits 0. Then:
   ```bash
   git -C /home/ai/Projects/pythinker-code-main add .github/workflows/promote-release.yml
-  git -C /home/ai/Projects/pythinker-code-main commit -m "ci(promote): block flip on all sub-pkg PyPI pins; drop Homebrew gate"
+  git -C /home/ai/Projects/pythinker-code-main commit -m "ci(promote): block flip on all sub-pkg PyPI pins; drop Homebrew gate; tick readiness rows"
   ```
 
 ### Task 9 — promote-release: `issues:write` + release-readiness issue (upsert by exact title)
 
 **Files:** Modify `.github/workflows/promote-release.yml` (`promote` job `permissions:` and a new step). Verify: `actionlint` + post-merge rehearsal.
 
-- [ ] 9.1 Extend the `promote` job permissions (current lines 36-37 `permissions: contents: write`) to add `issues: write`:
+- [ ] 9.1 Extend the `promote` job permissions (current lines 36-37 `permissions:` / `contents: write`) to add `issues: write`:
   ```yaml
       permissions:
         contents: write
         issues: write
   ```
-- [ ] 9.2 Add a step (after `Resolve and validate tag`, before the readiness wait) that upserts the per-release tracking issue by **exact-title REST list** (not the async search API). Insert after the tag step:
+- [ ] 9.2 Add a step **before** the readiness wait (between `Resolve and validate tag` and `Wait for install-channel readiness`) that upserts the per-release tracking issue by **exact-title REST list** (not the async search API, which races duplicates). Insert after the `tag` step (after current line 57):
   ```yaml
-        - name: Upsert release-readiness issue
-          id: readiness
-          env:
-            GH_TOKEN: ${{ github.token }}
-            TAG: ${{ steps.tag.outputs.tag }}
-            REPO: ${{ github.repository }}
-          run: |
-            set -euo pipefail
-            title="release-readiness: ${TAG}"
-            # Exact-title match over the open-issue list (search API is async-indexed
-            # and races duplicate creation).
-            number=$(gh api "repos/$REPO/issues?state=open&per_page=100" \
-              --jq --arg t "$title" '.[] | select(.title==$t) | .number' | head -n1)
-            body=$'Tracking install-channel readiness for **'"$TAG"$'**.\n\n- [ ] GitHub Release assets\n- [ ] PyPI: pythinker-code\n- [ ] PyPI: pinned sub-packages (core/host/review)\n- [ ] Homebrew tap (best-effort)\n- [ ] Site version.json (best-effort)'
-            if [ -z "$number" ]; then
-              number=$(gh api -X POST "repos/$REPO/issues" -f title="$title" -f body="$body" --jq '.number')
-              echo "Created issue #$number"
-            else
-              echo "Reusing issue #$number"
-            fi
-            echo "number=$number" >> "$GITHUB_OUTPUT"
+      - name: Upsert release-readiness issue
+        id: readiness
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          title="release-readiness: ${TAG}"
+          # Exact-title match over ALL open issues (--paginate scans every page;
+          # the search API is async-indexed and races duplicate creation).
+          number=$(gh api --paginate "repos/$REPO/issues?state=open&per_page=100" \
+            | jq -r --arg t "$title" '.[] | select(.title==$t) | .number' \
+            | head -n1)
+          body=$'Tracking install-channel readiness for **'"$TAG"$'**.\n\n- [ ] GitHub Release assets\n- [ ] PyPI: pythinker-code\n- [ ] PyPI: pinned sub-packages (core/host/review)\n- [ ] Homebrew tap (best-effort)\n- [ ] Site version.json (best-effort)'
+          if [ -z "$number" ]; then
+            number=$(gh api -X POST "repos/$REPO/issues" -f title="$title" -f body="$body" --jq '.number')
+            echo "Created issue #$number"
+          else
+            echo "Reusing issue #$number"
+          fi
+          echo "number=$number" >> "$GITHUB_OUTPUT"
   ```
-- [ ] 9.3 Add a comment to the issue on **stuck** failure. In the readiness wait step, replace the final `exit 1` (current line 152) so it first comments the bottleneck onto the issue:
+  Notes: `gh api --paginate ... | jq -r --arg t ...` — the exact-title filter is a **standalone `jq`** consuming the paginated `gh api` output. `gh api`'s own `--jq` takes only a jq-program string and rejects `--arg`, so the variable injection must be on the piped `jq`. `--paginate` ensures the match scans all open issues, not just page 1.
+- [ ] 9.3 The stuck-failure issue comment is already emitted inside the readiness-wait step (Task 8.5, using the local `bottleneck` shell variable and `steps.readiness.outputs.number`). No separate step is needed; confirm the readiness-wait step's `env:` block carries `GH_TOKEN: ${{ github.token }}` and `REPO: ${{ github.repository }}` (it already does, current lines 60-63) so `gh issue comment` authenticates.
+- [ ] 9.4 On **success**, tick all rows and close the issue. Append to the `Promote release` step (after the PATCH at current line 163-164):
   ```bash
-  gh issue comment "${{ steps.readiness.outputs.number }}" --repo "$REPO" \
-    --body "$(printf 'Promotion stuck for %s after ~%dm.\n\n%s\n\nRe-run via `workflow_dispatch tag=%s` once the bottleneck clears.' "$TAG" "$budget_min" "${BOTTLENECK:-unknown bottleneck}" "$TAG")"
-  echo "::error::Install channels were not fully ready after ${budget_min} minutes"
-  exit 1
+          all_ready_body=$'Tracking install-channel readiness for **'"$TAG"$'**.\n\n- [x] GitHub Release assets\n- [x] PyPI: pythinker-code\n- [x] PyPI: pinned sub-packages (core/host/review)\n- [ ] Homebrew tap (best-effort)\n- [ ] Site version.json (best-effort)'
+          gh api -X PATCH "repos/$REPO/issues/${{ steps.readiness.outputs.number }}" -f body="$all_ready_body" >/dev/null || true
+          gh issue close "${{ steps.readiness.outputs.number }}" --repo "$REPO" \
+            --comment "Promoted ${TAG}: prerelease=false, make_latest=true. All blocking channels ready (Homebrew/site reconcile best-effort)." || true
   ```
-  (Add `GH_TOKEN`, `REPO`, and the `steps.readiness.outputs.number` reference are already in scope via the job; ensure the wait step's `env:` includes `GH_TOKEN: ${{ github.token }}` and `REPO: ${{ github.repository }}` — it already does, lines 60-63.)
-- [ ] 9.4 On **success**, close the issue. Append to the `Promote release` step (after the PATCH, current line 164):
-  ```bash
-  gh issue close "${{ steps.readiness.outputs.number }}" --repo "$REPO" \
-    --comment "Promoted ${TAG}: prerelease=false, make_latest=true. All blocking channels ready." || true
-  ```
+  (The two best-effort rows stay unticked at close time — they are reconciled asynchronously by `release-readiness-reconcile.yml`, not by promote.)
 - [ ] 9.5 Lint + commit:
   ```bash
   ~/go/bin/actionlint /home/ai/Projects/pythinker-code-main/.github/workflows/promote-release.yml
   git -C /home/ai/Projects/pythinker-code-main add .github/workflows/promote-release.yml
-  git -C /home/ai/Projects/pythinker-code-main commit -m "ci(promote): upsert release-readiness issue by exact title"
+  git -C /home/ai/Projects/pythinker-code-main commit -m "ci(promote): upsert release-readiness issue by exact title; close on success"
   ```
+  Expected: actionlint prints nothing, exits 0.
 
 ### Task 10 — promote-release: separate App-authed `needs: promote` dispatch job + fail-loud + per-channel Slack
 
 **Files:** Modify `.github/workflows/promote-release.yml`. Verify: `actionlint` + post-merge rehearsal.
 
-- [ ] 10.1 **Remove** the `Trigger pythinker-home sync` step from the `promote` job (current lines 166-186, which use `secrets.PYTHINKER_HOME_REPO_DISPATCH_TOKEN` and the silent `::notice; exit 0`). The promote job ends after closing the issue.
-- [ ] 10.2 Add a new top-level job `dispatch-site` with `needs: promote`, mirroring the Task 2 mint pattern, building the dispatch `tag` from the **live API `release.tag_name`** (not a payload ref), failing loud on empty token. Insert between the `promote` job and `notify-failure`:
+- [ ] 10.1 **Remove** the `Trigger pythinker-home sync` step from the `promote` job (current lines 166-186, which use `secrets.PYTHINKER_HOME_REPO_DISPATCH_TOKEN` and the silent `::notice; exit 0`). The promote job now ends after the `Promote release` step (which closes the issue, Task 9.4).
+- [ ] 10.2 Add a new top-level job `dispatch-site` with `needs: promote`, mirroring the Task 2 mint pattern, building the dispatch `tag` from the **promote job's live tag output** (not a payload ref), failing loud on empty token. Insert between the `promote` job and `notify-failure`:
   ```yaml
     dispatch-site:
       name: Dispatch pythinker-home sync
@@ -534,12 +575,15 @@ Branch: `release-orch/p0-promote-reconcile`. Touches `promote-release.yml` and a
               "https://api.github.com/repos/${DISPATCH_OWNER}/${DISPATCH_REPO}/dispatches" \
               -d "$payload"
   ```
-- [ ] 10.3 Expose `tag` as a `promote` job output so `dispatch-site` reads the live tag. Add to the `promote` job after `runs-on`:
+  Notes: `RELEASE_TAG` is `needs.promote.outputs.tag` (a validated `vX.Y.Z` from the live API, §7) — never a raw payload ref. The receiver in PR-home-3 uses this tag only for raw-source pinning; asset URLs are always built from the live API `tag_name`.
+- [ ] 10.3 Expose `tag` and `bottleneck` as `promote` job outputs so `dispatch-site` and `notify-failure` can read them. Add to the `promote` job after `runs-on: ubuntu-latest` (current line 34):
   ```yaml
       outputs:
         tag: ${{ steps.tag.outputs.tag }}
+        bottleneck: ${{ steps.readiness_wait.outputs.bottleneck }}
   ```
-- [ ] 10.4 Make `notify-failure` cover both jobs and add per-channel bottleneck detail. Change `needs: promote` (line 191) to `needs: [promote, dispatch-site]` and edit the Slack payload to carry the bottleneck. Update the `notify-failure` step's `env:` to add `BOTTLENECK` and which job failed, and append it to the existing payload (do NOT rebuild the job — §5):
+  (`steps.tag` is the `Resolve and validate tag` step; `steps.readiness_wait` is the `Wait for install-channel readiness` step given `id: readiness_wait` in Task 8.5.)
+- [ ] 10.4 Make `notify-failure` cover both jobs and add per-channel bottleneck detail. Change `needs: promote` (current line 191) to `needs: [promote, dispatch-site]`, extend the Slack step `env:`, and rebuild the payload `detail` from the two job results (do NOT replace the job — §5). Replace the `notify-failure` step's `env:` block (current lines 197-201) with:
   ```yaml
           env:
             SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -548,12 +592,13 @@ Branch: `release-orch/p0-promote-reconcile`. Touches `promote-release.yml` and a
             TAG: ${{ inputs.tag || github.ref_name }}
             PROMOTE_RESULT: ${{ needs.promote.result }}
             DISPATCH_RESULT: ${{ needs.dispatch-site.result }}
+            BOTTLENECK: ${{ needs.promote.outputs.bottleneck }}
   ```
-  And extend the existing `jq -n` payload (line 207-211) to add a `Bottleneck` field derived from the two job results (promote failure = release stuck; dispatch failure = "release IS promoted, site self-heals"):
+  And replace the existing `payload=$(jq -n ...)` block (current lines 207-211) so the Slack message carries a `Detail` field with the named bottleneck:
   ```bash
           detail="promote=${PROMOTE_RESULT}, dispatch=${DISPATCH_RESULT}"
           if [ "$PROMOTE_RESULT" != "success" ]; then
-            detail="$detail — release STUCK as prerelease; /releases/latest still last-good. See readiness issue."
+            detail="$detail — release STUCK as prerelease; /releases/latest still last-good. Bottleneck: ${BOTTLENECK:-unknown}. See readiness issue."
           else
             detail="$detail — release PROMOTED; only site sync failed, self-heals via reconcile/cron."
           fi
@@ -566,7 +611,7 @@ Branch: `release-orch/p0-promote-reconcile`. Touches `promote-release.yml` and a
   ~/go/bin/actionlint /home/ai/Projects/pythinker-code-main/.github/workflows/promote-release.yml
   grep -n PYTHINKER_HOME_REPO_DISPATCH_TOKEN /home/ai/Projects/pythinker-code-main/.github/workflows/promote-release.yml || echo "clean"
   ```
-  Expected: no actionlint output; `clean`.
+  Expected: actionlint prints nothing (exit 0); the grep prints `clean`.
 - [ ] 10.6 Commit:
   ```bash
   git -C /home/ai/Projects/pythinker-code-main add .github/workflows/promote-release.yml
@@ -575,7 +620,7 @@ Branch: `release-orch/p0-promote-reconcile`. Touches `promote-release.yml` and a
 
 ### Task 11 — Create `release-readiness-reconcile.yml` (the Homebrew backstop)
 
-Detects drift (tap formula version != `/releases/latest` OR served `public/version.json` != `/releases/latest`), re-dispatches the site sync idempotently, alerts on persistent drift, auto-closes stale `release-readiness` issues. This MUST be in the same PR as the gate removal (§5 hard rule — satisfied because both are in PR-code-2).
+Detects drift (tap formula version != `/releases/latest` OR served `public/version.json` != `/releases/latest`), re-dispatches the site sync idempotently, alerts on drift, and auto-closes `release-readiness` issues for releases **older than** the current latest. This MUST be in the same PR as the gate removal (§5 hard rule — satisfied because both are in PR-code-2).
 
 **Files:** Create `.github/workflows/release-readiness-reconcile.yml`. Verify: `actionlint` + post-merge `workflow_dispatch`.
 
@@ -586,8 +631,9 @@ Detects drift (tap formula version != `/releases/latest` OR served `public/versi
   # Backstop for best-effort channels (Homebrew tap, website) now that Homebrew
   # is no longer a promote gate. Detects drift between /releases/latest and the
   # tap formula / served public/version.json, re-dispatches the site sync
-  # idempotently, escalates to Slack on persistent drift, and auto-closes stale
-  # release-readiness issues older than the current latest.
+  # idempotently, escalates to Slack on drift, and auto-closes release-readiness
+  # issues for releases OLDER than the current latest (semver-ordered, so a newer
+  # in-progress release's issue is left open).
 
   on:
     workflow_dispatch:
@@ -611,6 +657,7 @@ Detects drift (tap formula version != `/releases/latest` OR served `public/versi
       runs-on: ubuntu-latest
       outputs:
         drift: ${{ steps.detect.outputs.drift }}
+        redispatched: ${{ steps.redispatch.outputs.redispatched }}
       steps:
         - name: Detect drift
           id: detect
@@ -638,29 +685,30 @@ Detects drift (tap formula version != `/releases/latest` OR served `public/versi
             echo "latest_tag=$latest_tag" >> "$GITHUB_OUTPUT"
             if [ -n "$drift" ]; then echo "::warning::Drift detected:$drift"; else echo "No drift."; fi
 
-        - name: Auto-close stale release-readiness issues
+        - name: Auto-close stale (older-than-latest) release-readiness issues
           env:
             GH_TOKEN: ${{ github.token }}
             REPO: ${{ github.repository }}
             LATEST_TAG: ${{ steps.detect.outputs.latest_tag }}
           run: |
             set -euo pipefail
-            # Close any open release-readiness issue whose tag != current latest
-            # (those releases are either superseded or fully reconciled).
-            gh api "repos/$REPO/issues?state=open&per_page=100" \
-              --jq '.[] | select(.title|startswith("release-readiness: ")) | "\(.number) \(.title)"' \
-            | while read -r num title; do
+            # Close an open release-readiness issue ONLY if its tag is OLDER than
+            # the current latest (semver). A NEWER in-progress release's issue
+            # must stay open (§5 — do not close a release that hasn't promoted
+            # yet). sort -V puts the older tag first; we close only when this
+            # issue's tag is the older one AND differs from latest.
+            gh api --paginate "repos/$REPO/issues?state=open&per_page=100" \
+              --jq '.[] | select(.title|startswith("release-readiness: ")) | "\(.number)\t\(.title)"' \
+            | while IFS=$'\t' read -r num title; do
                 tag="${title#release-readiness: }"
-                if [ "$tag" != "$LATEST_TAG" ]; then
-                  gh issue close "$num" --repo "$REPO" --comment "Auto-closed: superseded by current latest ${LATEST_TAG}." || true
+                [ "$tag" = "$LATEST_TAG" ] && continue
+                older=$(printf '%s\n%s\n' "$tag" "$LATEST_TAG" | sort -V | head -n1)
+                if [ "$older" = "$tag" ]; then
+                  gh issue close "$num" --repo "$REPO" --comment "Auto-closed: superseded by newer published release ${LATEST_TAG}." || true
+                else
+                  echo "Leaving #$num ($tag) open: newer than latest ${LATEST_TAG} (in-progress release)."
                 fi
               done
-
-        - name: Re-dispatch site sync on drift
-          if: steps.detect.outputs.drift != ''
-          env:
-            GH_TOKEN: ${{ github.token }}
-          run: echo "Drift present; minting token and re-dispatching."
 
         - name: Mint GitHub App token for pythinker-home
           if: steps.detect.outputs.drift != ''
@@ -672,7 +720,8 @@ Detects drift (tap formula version != `/releases/latest` OR served `public/versi
             owner: ${{ env.DISPATCH_OWNER }}
             repositories: ${{ env.DISPATCH_REPO }}
 
-        - name: Re-dispatch
+        - name: Re-dispatch site sync on drift
+          id: redispatch
           if: steps.detect.outputs.drift != ''
           env:
             DISPATCH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -693,12 +742,19 @@ Detects drift (tap formula version != `/releases/latest` OR served `public/versi
               -H "Authorization: Bearer $DISPATCH_TOKEN" \
               "https://api.github.com/repos/${DISPATCH_OWNER}/${DISPATCH_REPO}/dispatches" \
               -d "$payload"
+            echo "redispatched=true" >> "$GITHUB_OUTPUT"
 
     notify-drift:
       name: Notify on persistent drift
       runs-on: ubuntu-latest
       needs: reconcile
-      if: needs.reconcile.outputs.drift != ''
+      # Only page when this run did NOT itself re-dispatch — i.e. drift on a
+      # workflow_dispatch re-check after a prior cycle already re-dispatched. A
+      # normal release that re-dispatches this cycle will NOT page (the next
+      # scheduled run re-checks; if still drifted it has not re-dispatched and
+      # pages). This approximates the §5 "persistent across cycles" rule without
+      # a stored counter — accepted deviation, documented below.
+      if: needs.reconcile.outputs.drift != '' && needs.reconcile.outputs.redispatched != 'true'
       permissions:
         contents: read
       steps:
@@ -711,16 +767,25 @@ Detects drift (tap formula version != `/releases/latest` OR served `public/versi
             set -euo pipefail
             if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then exit 0; fi
             payload=$(jq -n --arg run_url "$RUN_URL" --arg drift "$DRIFT" \
-              '{"text":":warning: *Release channel drift detected*","attachments":[{"color":"warning","fields":[{"title":"Drifted channels","value":$drift,"short":false},{"title":"Action","value":"Re-dispatched site sync. If still drifted next cycle, investigate the tap/site workflow.","short":false},{"title":"Run","value":"<\($run_url)|View logs>","short":false}]}]}')
+              '{"text":":warning: *Release channel drift persisting*","attachments":[{"color":"warning","fields":[{"title":"Drifted channels","value":$drift,"short":false},{"title":"Action","value":"Drift was NOT re-dispatched this run (prior cycle already re-dispatched and it did not converge). Investigate the tap/site workflow.","short":false},{"title":"Run","value":"<\($run_url)|View logs>","short":false}]}]}')
             curl --fail-with-body -X POST -H "Content-Type: application/json" -d "$payload" "$SLACK_WEBHOOK_URL"
   ```
-  Notes: "persistent drift across N cycles" (§5) is approximated here by a per-cycle warning Slack on any detected drift after re-dispatch — a per-cycle alert is the simplest correct backstop; a counter-based N-cycle escalation is logged as a P0.1 refinement, not built (YAGNI for the quick-win phase). Drift detection uses the served `version.json` (Task 12 emits it) and the tap formula version. `re-dispatch` reuses the App token (cron carries no payload, so the receiver gate in PR-home-3 lets it through).
+  Notes: **Accepted deviation from §5 "persistent across N cycles":** there is no stored per-channel cycle counter (a counter is logged as a P0.1 refinement — YAGNI for the quick-win phase). Instead, the Slack alert is suppressed on the same run that re-dispatched (`redispatched=true`), so a normal release does not page; it only pages on a *later* run that still sees drift it did not just re-dispatch — i.e. drift that prior re-dispatch failed to converge. The `Auto-close` step uses `--paginate` to scan all open issues and `sort -V` semver ordering so only releases **older** than latest are closed (a newer in-progress release's issue is left open). `re-dispatch` reuses the App token (cron/manual carry no `client_payload`, so the receiver gate in PR-home-3 lets it through).
 - [ ] 11.2 Lint:
   ```bash
   ~/go/bin/actionlint /home/ai/Projects/pythinker-code-main/.github/workflows/release-readiness-reconcile.yml
   ```
-  Expected: no output.
-- [ ] 11.3 Commit:
+  Expected: prints nothing, exits 0.
+- [ ] 11.3 Verify the semver close-logic with a standalone reproduction (older closes, newer stays):
+  ```bash
+  LATEST_TAG=v0.27.0
+  for tag in v0.26.0 v0.27.0 v0.28.0; do
+    older=$(printf '%s\n%s\n' "$tag" "$LATEST_TAG" | sort -V | head -n1)
+    if [ "$tag" != "$LATEST_TAG" ] && [ "$older" = "$tag" ]; then echo "$tag -> CLOSE"; else echo "$tag -> keep"; fi
+  done
+  ```
+  Expected: `v0.26.0 -> CLOSE`, `v0.27.0 -> keep`, `v0.28.0 -> keep` (the newer in-progress tag is left open).
+- [ ] 11.4 Commit:
   ```bash
   git -C /home/ai/Projects/pythinker-code-main add .github/workflows/release-readiness-reconcile.yml
   git -C /home/ai/Projects/pythinker-code-main commit -m "ci: add release-readiness-reconcile backstop for best-effort channels"
@@ -733,9 +798,15 @@ Detects drift (tap formula version != `/releases/latest` OR served `public/versi
   git -C /home/ai/Projects/pythinker-code-main push -u origin release-orch/p0-promote-reconcile
   gh pr create --repo TechMatrix-labs/pythinker-code --base main \
     --title "ci(promote): fail-loud sub-pkg PyPI gate + drift reconcile backstop" \
-    --body "P0 (2/2): block prerelease->latest until all pinned sub-packages resolve on PyPI; remove Homebrew from the gate; per-channel bottleneck Slack; release-readiness issue (issues:write); separate App-authed needs:promote dispatch job with fail-loud token; asset URLs from API tag_name. Ships release-readiness-reconcile.yml in the SAME PR so the §5 sequencing rule (reconcile before/with gate removal) holds. Depends on PR-code-1 (dispatch App migration) for the full PAT retirement."
+    --body "P0 (2/2): block prerelease->latest until all pinned sub-packages resolve on PyPI; remove Homebrew from the gate; per-channel bottleneck Slack; release-readiness issue (issues:write) whose rows tick as channels go ready; separate App-authed needs:promote dispatch job with fail-loud token; asset URLs from API tag_name. Ships release-readiness-reconcile.yml in the SAME PR so the §5 sequencing rule (reconcile before/with gate removal) holds; reconcile auto-closes only OLDER-than-latest readiness issues (semver). Depends on PR-code-1 (dispatch App migration) for the full PAT retirement."
   ```
-- [ ] 11b.2 Wait for checks + CodeRabbit `success` on the head SHA (C2), as in Task 6.2. Merge with `--squash` only after `success`.
+  Expected: prints the new PR URL.
+- [ ] 11b.2 Wait for checks + CodeRabbit `success` on the head SHA (C2), as in Task 6.2:
+  ```bash
+  gh pr checks --repo TechMatrix-labs/pythinker-code <PR#>
+  gh api repos/TechMatrix-labs/pythinker-code/commits/$(gh pr view --repo TechMatrix-labs/pythinker-code <PR#> --json headRefOid -q .headRefOid)/status --jq '.statuses[] | select(.context=="CodeRabbit") | .state'
+  ```
+  Expected: all checks `pass`; CodeRabbit `success`. Merge with `gh pr merge --repo TechMatrix-labs/pythinker-code <PR#> --squash` only after `success`.
 
 ---
 
@@ -751,7 +822,8 @@ Branch: `release-orch/p0-site`, in `/home/ai/Projects/pythinker-site/site`. This
   ```bash
   git -C /home/ai/Projects/pythinker-site/site switch -c release-orch/p0-site
   ```
-- [ ] 12.2 **Refactor for testability (prerequisite).** Change the top-level entrypoint (line 390 `await main();`) to guard it, and export the functions under test. Edit the bottom of the file:
+  Expected: `Switched to a new branch 'release-orch/p0-site'`.
+- [ ] 12.2 **Refactor for testability (prerequisite).** Change the top-level entrypoint (line 390 `await main();`) to guard it, and export the functions under test. Replace line 390 with:
   ```ts
   if (import.meta.main) {
     await main();
@@ -765,8 +837,8 @@ Branch: `release-orch/p0-site`, in `/home/ai/Projects/pythinker-site/site`. This
     buildVersionJson,
   };
   ```
-  (`renderReadme`, `resolveRawRef`, `buildVersionJson` are added in 12.4-12.6.)
-- [ ] 12.3 Write the **failing** test file `scripts/sync-upstream-products.test.ts` first:
+  (`renderReadme`, `resolveRawRef`, `buildVersionJson` are added in 12.5-12.6.)
+- [ ] 12.3 Write the **failing** test file `scripts/sync-upstream-products.test.ts` first. This includes the §7 item-2 config lockstep that asserts each product's `brewCommand` and derived release URL AGREE with its `owner`/`repo` (not just `repo != "Pythinker"`):
   ```ts
   import { describe, expect, test } from "bun:test";
   import {
@@ -832,18 +904,37 @@ Branch: `release-orch/p0-site`, in `/home/ai/Projects/pythinker-site/site`. This
     });
   });
 
-  describe("config integrity (Mode-B lockstep)", () => {
-    test("no product's derived release URL points at a foreign owner/repo", () => {
+  describe("config integrity (Mode-B lockstep, §7 item 2)", () => {
+    test("no product config carries the stale pre-migration slug", () => {
       for (const p of products) {
-        const url = `https://github.com/${p.owner}/${p.repo}/releases`;
-        // owner/repo must be non-empty and not the stale 'Pythinker' slug
         expect(p.owner.length).toBeGreaterThan(0);
+        expect(p.repo.length).toBeGreaterThan(0);
         expect(p.repo).not.toBe("Pythinker");
-        expect(url).toContain(p.owner);
+      }
+    });
+    test("each product's brewCommand agrees with its product key", () => {
+      // brew formula name = pythinker-<key>; a stale slug would diverge.
+      for (const p of products) {
+        expect(p.brewCommand).toContain(`pythinker-${p.key}`);
+      }
+    });
+    test("derived release URLs are built from the product owner/repo", () => {
+      for (const p of products) {
+        const meta = buildMetadata(p, {
+          tag_name: "v0.27.0",
+          html_url: `https://github.com/${p.owner}/${p.repo}/releases/tag/v0.27.0`,
+          assets: codeRelease.assets,
+        });
+        const releaseRepo = p.releaseRepo ?? p.repo;
+        const expectedBase = `https://github.com/${p.owner}/${releaseRepo}/releases`;
+        expect(meta.latestReleaseUrl).toContain(expectedBase);
+        expect(meta.releaseDownloadBaseUrl).toContain(`${expectedBase}/latest/download`);
+        expect(meta.releaseDownloadBaseUrl).toContain(p.owner);
       }
     });
   });
   ```
+  (The third config test reuses `codeRelease.assets`, whose asset names match the `pythinker-code`/`pythinker-ai` patterns `buildMetadata` requires; both products' asset regexes accept the `pythinker-<pkg>_0.27.0_*` / `PythinkerSetup-*` names present in that fixture.)
 - [ ] 12.4 Run the test and watch it **fail** (functions not exported / not defined):
   ```bash
   cd /home/ai/Projects/pythinker-site/site && bun test scripts/sync-upstream-products.test.ts
@@ -863,12 +954,7 @@ Branch: `release-orch/p0-site`, in `/home/ai/Projects/pythinker-site/site`. This
     return readme.replaceAll(legacy, dest);
   }
   ```
-  And replace the call site (lines 365-369) so `syncProduct` uses it:
-  ```ts
-    const readmeContents = renderReadme(product, readme);
-    writeTextFile(product.readmeTargetPath, readmeContents);
-  ```
-- [ ] 12.6 Implement `resolveRawRef` and `buildVersionJson`. Add near the top-level helpers:
+- [ ] 12.6 Implement `resolveRawRef` and `buildVersionJson`. Add near the top-level helpers (e.g. after `rawUrl`):
   ```ts
   // The dispatched ref is either a release tag (vX.Y.Z) or a 40-char commit SHA
   // (the install-script/README push path sends github.sha). Validate strictly —
@@ -884,13 +970,13 @@ Branch: `release-orch/p0-site`, in `/home/ai/Projects/pythinker-site/site`. This
     return { pythinkerCode: meta.version, tag: meta.tag };
   }
   ```
-- [ ] 12.7 Wire the ref-pin into `rawUrl`/`syncProduct` and emit `version.json` in `main`. Change `rawUrl` (line 184) to accept a ref and `syncProduct` to pass the resolved ref:
+- [ ] 12.7 Wire the ref-pin into `rawUrl`/`syncProduct`, replace the line-366 call site with `renderReadme`, and emit `version.json` in `main`. Change `rawUrl` (line 184) to accept a ref:
   ```ts
   function rawUrl(product: ProductConfig, sourcePath: string, ref: string): string {
     return `https://raw.githubusercontent.com/${product.owner}/${product.repo}/${ref}/${sourcePath}`;
   }
   ```
-  In `syncProduct`, compute the ref once and thread it through both raw fetches:
+  Replace `syncProduct` (lines 359-382) so it computes the ref once and threads it through both raw fetches and uses `renderReadme`:
   ```ts
   async function syncProduct(product: ProductConfig): Promise<ProductMetadata> {
     const ref = resolveRawRef(process.env.SYNC_SOURCE_REF, product.branch);
@@ -912,7 +998,7 @@ Branch: `release-orch/p0-site`, in `/home/ai/Projects/pythinker-site/site`. This
     return metadata;
   }
   ```
-  In `main`, emit `public/version.json` from the code product after syncing:
+  Replace `main` (lines 384-388) to emit `public/version.json` from the code product:
   ```ts
   async function main(): Promise<void> {
     const ai = await syncProduct(products[0]);
@@ -925,12 +1011,8 @@ Branch: `release-orch/p0-site`, in `/home/ai/Projects/pythinker-site/site`. This
   ```bash
   cd /home/ai/Projects/pythinker-site/site && bun test scripts/sync-upstream-products.test.ts
   ```
-  Expected: all tests pass (e.g. `9 pass, 0 fail`).
-- [ ] 12.9 Typecheck still clean:
-  ```bash
-  cd /home/ai/Projects/pythinker-site/site && bun run typecheck
-  ```
-  Expected: no `vue-tsc` errors. Commit:
+  Expected: all tests pass (e.g. `11 pass, 0 fail`). This is the real gate for the TS changes (it imports and exercises the edited module).
+- [ ] 12.9 Commit (NOTE: do NOT rely on `bun run typecheck` here — `site/tsconfig.json`'s `include` is `["src/**/*", "src/**/*.vue", "env.d.ts"]`, so `vue-tsc` never sees `scripts/`; the `bun test` in 12.8 is the authoritative verification for this file):
   ```bash
   git -C /home/ai/Projects/pythinker-site/site add scripts/sync-upstream-products.ts scripts/sync-upstream-products.test.ts
   git -C /home/ai/Projects/pythinker-site/site commit -m "feat(sync): version.json emit, ref-pinned raw fetch, config-derived README rewrite + tests"
@@ -940,11 +1022,11 @@ Branch: `release-orch/p0-site`, in `/home/ai/Projects/pythinker-site/site`. This
 
 **Files:** Modify `.github/workflows/sync-upstream-products.yml`; Modify `scripts/sync-upstream-products.ts` (drop dead mirror targets); `git rm` 3 files. Verify: `actionlint` + `bun test`.
 
-- [ ] 13.1 Add the job-level receiver gate to `sync-upstream-products.yml`. The gate must let cron/manual through (no payload) and only restrict `repository_dispatch`. Add to the `sync` job (after `runs-on: ubuntu-latest`, line 20):
+- [ ] 13.1 Add the job-level receiver gate to `sync-upstream-products.yml`. The gate must let cron/manual through (no payload) and only restrict `repository_dispatch`. Add to the `sync` job after `runs-on: ubuntu-latest` (current line 20):
   ```yaml
       if: github.event_name != 'repository_dispatch' || github.event.client_payload.source_repo == 'TechMatrix-labs/pythinker-code'
   ```
-- [ ] 13.2 Thread the dispatched ref into the sync via `env:` (NEVER into a `run:` line — injection, §4). Edit the `Sync public upstream products` step (lines 30-33):
+- [ ] 13.2 Thread the dispatched ref into the sync via `env:` (NEVER into a `run:` line — injection, §4). Edit the `Sync public upstream products` step (current lines 30-33):
   ```yaml
         - name: Sync public upstream products
           env:
@@ -957,8 +1039,8 @@ Branch: `release-orch/p0-site`, in `/home/ai/Projects/pythinker-site/site`. This
   ```bash
   ~/go/bin/actionlint /home/ai/Projects/pythinker-site/site/.github/workflows/sync-upstream-products.yml
   ```
-  Expected: no output.
-- [ ] 13.4 Drop the 3 dead mirror target paths from the TS config (lines 124-129). Edit the `install.ps1` mirror's `targetPaths` to keep only the canonical served copy:
+  Expected: prints nothing, exits 0.
+- [ ] 13.4 Drop the 3 dead mirror target paths from the TS config (lines 123-129). Edit the `scripts/install.ps1` mirror's `targetPaths` to keep only the canonical served copy:
   ```ts
           targetPaths: [
             "public/install.ps1",
@@ -969,12 +1051,12 @@ Branch: `release-orch/p0-site`, in `/home/ai/Projects/pythinker-site/site`. This
   ```bash
   git -C /home/ai/Projects/pythinker-site/site rm scripts/install.ps1 web/public/install.ps1 docs/public/install.ps1
   ```
-  Expected: `rm 'scripts/install.ps1'` etc.
-- [ ] 13.6 Re-run the TS tests (config change must not break them) + typecheck:
+  Expected: `rm 'scripts/install.ps1'`, `rm 'web/public/install.ps1'`, `rm 'docs/public/install.ps1'`.
+- [ ] 13.6 Re-run the TS tests (config change must not break them):
   ```bash
-  cd /home/ai/Projects/pythinker-site/site && bun test scripts/sync-upstream-products.test.ts && bun run typecheck
+  cd /home/ai/Projects/pythinker-site/site && bun test scripts/sync-upstream-products.test.ts
   ```
-  Expected: tests pass; typecheck clean.
+  Expected: all tests still pass (e.g. `11 pass, 0 fail`).
 - [ ] 13.7 Commit:
   ```bash
   git -C /home/ai/Projects/pythinker-site/site add .github/workflows/sync-upstream-products.yml scripts/sync-upstream-products.ts
@@ -992,6 +1074,7 @@ Only do this if **OP-4** confirmed the live host runs Dokploy build-from-source.
   git -C /home/ai/Projects/pythinker-site/site rm docker-compose.yml docker-compose.private-ghcr.yml deploy/.env.example
   git -C /home/ai/Projects/pythinker-site/site rm -r deploy/traefik
   ```
+  Expected: `rm 'docker-compose.yml'` etc. (If any path is already absent, confirm with OP-4's host findings and adjust the list to only the tracked files; `git ls-files docker-compose.yml docker-compose.private-ghcr.yml deploy/.env.example deploy/traefik` lists what is actually tracked.)
 - [ ] 14.2 Rewrite `deploy/README.md` around Dokploy build-from-source (keep `Dockerfile`/`nixpacks.toml`/`server.ts` as documented). Replace the whole file:
   ```markdown
   # Deployment
@@ -1028,7 +1111,7 @@ Only do this if **OP-4** confirmed the live host runs Dokploy build-from-source.
   ```bash
   cd /home/ai/Projects/pythinker-site/site && git grep -nE 'watchtower|traefik|SITE_IMAGE|private-ghcr' -- . ':!deploy/README.md' || echo "clean"
   ```
-  Expected: `clean` (the only `traefik` mentions, if any, should be gone; README's historical note is allowed).
+  Expected: `clean` (the only `traefik`/`watchtower` mentions remaining, if any, are the historical note inside `deploy/README.md`, which is excluded).
 - [ ] 14.4 Commit:
   ```bash
   git -C /home/ai/Projects/pythinker-site/site add -A
@@ -1042,23 +1125,29 @@ Only do this if **OP-4** confirmed the live host runs Dokploy build-from-source.
   git -C /home/ai/Projects/pythinker-site/site push -u origin release-orch/p0-site
   gh pr create --repo TechMatrix-labs/pythinker-home --base main \
     --title "P0: receiver source-repo gate, version.json, Mode-B fix, dead mirrors, deploy retire" \
-    --body "P0 site half: job-level receiver if: on client_payload.source_repo (cron/manual carry no payload -> allowed); ref passed via env, validated in TS, never into a run: shell; emit public/version.json {pythinkerCode,tag}; fix the line-366 hardcoded literal to derive from per-product owner/repo config; pin raw-source fetch to the dispatched ref (tag or 40-char sha) while asset URLs stay from API tag_name; git rm the 3 dead tracked install.ps1 mirrors (canonical = public/install.{sh,ps1}); retire orphaned GHCR+Watchtower+Traefik compose (Dokploy build-from-source is canonical). New bun:test unit tests for the TS logic."
+    --body "P0 site half: job-level receiver if: on client_payload.source_repo (cron/manual carry no payload -> allowed); ref passed via env, validated in TS, never into a run: shell; emit public/version.json {pythinkerCode,tag}; fix the line-366 hardcoded literal to derive from per-product owner/repo config; pin raw-source fetch to the dispatched ref (tag or 40-char sha) while asset URLs stay from API tag_name; git rm the 3 dead tracked install.ps1 mirrors (canonical = public/install.{sh,ps1}); retire orphaned GHCR+Watchtower+Traefik compose (Dokploy build-from-source is canonical). New bun:test unit tests (incl. §7 config lockstep) for the TS logic."
   ```
-- [ ] 15.2 Wait for checks + CodeRabbit `success` on the head SHA (C2). Merge `--squash` only after `success`. (pythinker-home `main` must stay unprotected for the deploy chain — do not enable protection.)
+  Expected: prints the new PR URL.
+- [ ] 15.2 Wait for checks + CodeRabbit `success` on the head SHA (C2):
+  ```bash
+  gh pr checks --repo TechMatrix-labs/pythinker-home <PR#>
+  gh api repos/TechMatrix-labs/pythinker-home/commits/$(gh pr view --repo TechMatrix-labs/pythinker-home <PR#> --json headRefOid -q .headRefOid)/status --jq '.statuses[] | select(.context=="CodeRabbit") | .state'
+  ```
+  Expected: checks `pass`; CodeRabbit `success`. Merge `--squash` only after `success`. (pythinker-home `main` must stay unprotected for the deploy chain — do not enable protection.)
 
 ---
 
 ## Phase verification
 
-**Done = all three PRs merged (each past CodeRabbit `success`, C2), the App fully replaces both PAT dispatch sites, the next release flips only when every pinned sub-package resolves on PyPI, and the site serves a correct `public/version.json` with the reconcile backstop live.** Prove it with one rehearsal + one real cycle:
+**Done = all three PRs merged (each past CodeRabbit `success`, C2), the App fully replaces both PAT dispatch sites, the next release flips only when every pinned sub-package resolves on PyPI, the readiness issue ticks rows then closes on success, and the site serves a correct `public/version.json` with the reconcile backstop live.** Prove it with one rehearsal + one real cycle:
 
 1. **App dispatch (post PR-code-1):** `gh workflow run dispatch-pythinker-home-sync.yml --repo TechMatrix-labs/pythinker-code` → `gh run watch` green; the mint step succeeds; pythinker-home shows a fresh `repository_dispatch` sync run that **passes the receiver gate** (source_repo matches). This proves the App token + receiver gate end-to-end. (Confirms OP-1..OP-3.)
 
-2. **Reconcile dry-run (post PR-code-2 + PR-home-3):** `gh workflow run release-readiness-reconcile.yml --repo TechMatrix-labs/pythinker-code` → `gh run watch`. With the site already at latest, expect **no drift** (`drift=` empty), stale-issue close runs cleanly, no Slack. To prove the drift path, temporarily check an older `version.json` is detected: the run's "Detect drift" log shows the served `pythinkerCode` vs latest comparison.
+2. **Reconcile dry-run (post PR-code-2 + PR-home-3):** `gh workflow run release-readiness-reconcile.yml --repo TechMatrix-labs/pythinker-code` → `gh run watch`. With the site already at latest, expect **no drift** (`drift=` empty), the stale-issue close step runs cleanly (closing only older-than-latest issues, leaving any newer in-progress issue open), `notify-drift` does NOT run. To prove the drift path, the run's "Detect drift" log shows the served `pythinkerCode` vs latest comparison; the `notify-drift` job's `if:` (drift present AND not re-dispatched this run) confirms a normal re-dispatch run does not page.
 
-3. **promote rehearsal (no real tag):** after a real release tag exists, `gh workflow run promote-release.yml --repo TechMatrix-labs/pythinker-code -f tag=v<latest>` re-enters CHECKING; with all four PyPI URLs already 200 and assets present, it PROMOTES idempotently (PATCH is a no-op), the `release-readiness` issue is upserted then closed, and the `dispatch-site` job mints the App token and fires. The Slack `notify-failure` job does NOT run (no failure). This exercises the new blocking-PyPI check and the separated dispatch job without waiting on a fresh build.
+3. **promote rehearsal (no real tag):** after a real release tag exists, `gh workflow run promote-release.yml --repo TechMatrix-labs/pythinker-code -f tag=v<latest>` re-enters CHECKING; with all four PyPI URLs already 200 and assets present, it PROMOTES idempotently (PATCH is a no-op), the `release-readiness` issue is upserted, its rows ticked, then closed, and the `dispatch-site` job mints the App token and fires. The Slack `notify-failure` job does NOT run (no failure). This exercises the new blocking-PyPI check and the separated dispatch job without waiting on a fresh build.
 
-4. **First real release** (the true end-to-end): maintainer tags `vX.Y.Z`; `promote-release` waits for assets + all four PyPI pins; on ready it flips `prerelease=false, make_latest=true`, closes the readiness issue, and the `needs: promote` dispatch job updates pythinker-home → Dokploy redeploys → `https://pythinker.com/version.json` returns `{"pythinkerCode":"X.Y.Z","tag":"vX.Y.Z"}`. Confirm:
+4. **First real release** (the true end-to-end): maintainer tags `vX.Y.Z`; `promote-release` waits for assets + all four PyPI pins; on ready it flips `prerelease=false, make_latest=true`, ticks+closes the readiness issue, and the `needs: promote` dispatch job updates pythinker-home → Dokploy redeploys → `https://pythinker.com/version.json` returns `{"pythinkerCode":"X.Y.Z","tag":"vX.Y.Z"}`. Confirm:
    ```bash
    curl -fsSL https://pythinker.com/version.json
    gh release view vX.Y.Z --repo TechMatrix-labs/pythinker-code --json isLatest,isPrerelease
@@ -1068,31 +1157,4 @@ Only do this if **OP-4** confirmed the live host runs Dokploy build-from-source.
 
 5. **Retire the PATs (OP-5):** after step 4's green cycle, delete `PYTHINKER_HOME_REPO_DISPATCH_TOKEN` and `PYTHINKER_CORE_PAGES_TOKEN`. Re-run step 1's dispatch once more to confirm nothing depended on the deleted PAT (still green via the App).
 
-**Negative-path checks (must hold):** if a sub-package PyPI pin lags, the promote run stays in CHECKING and on budget-exhaust **keeps the release as prerelease** (so `/releases/latest` serves last-good), comments the per-channel bottleneck on the readiness issue, posts the red Slack with the detail field, and exits 1 — never flips to a half-resolvable `pip install`. If the `dispatch-site` job fails (empty/missing App token), it exits 1 loud with the "release IS promoted, self-heals via reconcile/cron" Slack detail and does NOT contaminate the promote success signal.
-
----
-
-## Review punch-list (apply in finalize pass)
-
-**Verdict:** needs-fixes
-
-**Summary:** The plan is structurally sound and well-grounded: I verified every cited 'before' line reference against the live repos (promote-release.yml :95/:126-129/:152/:168-186/:172-174/:188-200, dispatch :28/:30, release-pythinker-core docs job 67-127, install-native.sh 229-238, install.ps1 136-164 with the :144 pagination cliff/:152 prerelease skip/:158 asset-pair guard, sync-TS :82-99/:366/:390, the 3 dead mirrors + deploy files all tracked, version.json schema {pythinkerCode,tag}, the App-token mint SHA + owner/repo env pattern copied verbatim from homebrew-tap.yml). The PR topology correctly satisfies the §5 hard sequencing rule (reconcile + Homebrew-gate removal in the same PR-code-2) and respects C1-C5 (branch→PR→CodeRabbit→merge, human tags post-merge, zero agent runtime deps, CHANGELOG bullets hand-authored, no narrative auto-replace). Verdict is needs-fixes driven by two issues that emit non-working CI for explicitly-named §5 requirements: (1) the BOTTLENECK detail is plumbed through $GITHUB_ENV across step/job boundaries it cannot cross — the readiness issue comment will always say 'unknown bottleneck' and the per-channel Slack detail never materializes (Slack stays job-granularity, missing the named net-new); fix is a promote job output read by notify-failure plus an inline shell var for the same-step comment. (2) The release-readiness upsert (a contract-mandated exact-title-not-search mechanism) uses `gh api --jq --arg`, which is invalid — `gh api --jq` takes only a jq-program string with no --arg; fix is piping to standalone `jq -r --arg`. Secondary: Task 12.9's typecheck verifies nothing about the sync-TS because tsconfig include excludes scripts/; the changelog gate is locally 'simulated' with an awk that does not match the gate's added-vs-base diff logic (CI-only check claimed locally); the readiness-issue rows are never ticked though the spec frames it as a ticked status pane; the reconcile Slack is per-cycle (and fires on the re-dispatch run itself) rather than persistent-N-cycles; and the config-integrity test is narrower than §7 item 2 (no brewCommand/derived-URL agreement). Trivial: Task 3 'end of file at line 128' is off-by-one (file is 127 lines). The asset-URL-from-API decision, install backoff arithmetic, install.ps1 preserved guards, and the App auth topology are all correct and need no change.
-
-
-### Spec coverage gaps
-
-- **§5 net-new: per-channel bottleneck DETAIL inside the failure Slack message (not job-granularity).** → As written, the bottleneck never reaches Slack. notify-failure (Task 10.4) is a separate job and builds `detail` only from PROMOTE_RESULT/DISPATCH_RESULT — that is per-JOB granularity, not the per-CHANNEL (missing assets vs which PyPI pin) detail §5 mandates. Expose the bottleneck as a promote job OUTPUT (write to $GITHUB_OUTPUT in the readiness step AND declare `outputs: bottleneck: ${{ steps.<id>.outputs.bottleneck }}`) and have notify-failure read `needs.promote.outputs.bottleneck`. The Task 10.4 env block also lists no expression that actually sources BOTTLENECK.
-- **§5 / step 10: the release-readiness issue is a CHECKLIST that gets its rows TICKED as the live-status pane (GH assets, PyPI code, PyPI sub-pkg pins, tap, site version.json).** → The plan creates the issue body with unchecked boxes (Task 9.2), comments on stuck-failure (9.3), and closes on success (9.4) — but never edits the body to tick rows. Either implement row-ticking on partial readiness, or explicitly downgrade the issue to a create/close tracking artifact and note the deviation from the spec's 'pane' framing.
-- **§5 reconcile: escalate to red Slack only on PERSISTENT drift across N cycles.** → Task 11 alerts every cycle on any detected drift, AND fires on the same run that just re-dispatched (transient drift → guaranteed noise on a normal release). The plan self-flags this as a deferred YAGNI counter, but it is silently weaker than the named requirement. Surface as an accepted deviation, and at minimum re-check drift AFTER the re-dispatch settle (or skip the Slack on the same run that re-dispatched) so a normal release does not page.
-- **§7 item 2: add a lockstep assertion that each product's owner/repo/derived URLs/brewCommand AGREE (so a stale literal fails loudly).** → The Task 12.3 'config integrity' test only asserts repo != 'Pythinker', owner non-empty, and url-contains-owner. It does not assert derived release-URL or brewCommand consistency with owner/repo. Extend the test to assert the brewCommand and derived asset/release URLs are built from the same owner/repo, matching the spec's 'agree' requirement.
-
-### Consistency issues
-
-- Task 9.2 uses `gh api "repos/$REPO/issues?..." --jq --arg t "$title" '...'`. Verified against `gh api --help`: `--jq`/`-q` takes a SINGLE jq-program string and has NO `--arg` passthrough (unlike standalone jq). `gh` will treat `--arg` as the jq query and choke on the trailing args — the exact-title upsert (a contract-mandated mechanism: 'upsert by REST exact-title, not search API') will error at runtime. → Pipe to standalone jq: `number=$(gh api "repos/$REPO/issues?state=open&per_page=100" | jq -r --arg t "$title" '.[] | select(.title==$t) | .number' | head -n1)`. Same pattern is fine in Task 11's auto-close step (it already uses `--jq` with no `--arg`, so that one is OK).
-- Task 12.9 verifies the sync-TS changes with `bun run typecheck` (= `vue-tsc --noEmit`). Verified `site/tsconfig.json` include = ["src/**/*", "src/**/*.vue", "env.d.ts"] — `scripts/` is OUTSIDE the typecheck scope, so vue-tsc never sees `sync-upstream-products.ts` or the new test file. The 'typecheck clean' verification gives false confidence; it proves nothing about the edited TS. → Drop the typecheck step as evidence for the TS changes (or add `scripts/**/*` to a tsconfig include / run `bunx tsc --noEmit scripts/sync-upstream-products.ts` against an appropriate config). Rely on `bun test` (which does exercise the module) as the real gate, and state that explicitly.
-- Task 3 instruction says 'remove everything from line 67 ... through the end of file at line 128.' Verified the file is 127 lines; the `docs:` job is genuinely lines 67-127 (last line `git -C "$PAGES_DIR" push origin gh-pages`). → Off-by-one only: change 'line 128' to 'line 127 (end of file)'. The block to delete (67-127) is correct.
-
-### Constraint issues
-
-- [Verification rigor / no false 'it works' (Part VI; advisor-confirmed GitHub Actions semantics).] BOTTLENECK plumbing via $GITHUB_ENV is non-functional. Task 8.5 writes BOTTLENECK to $GITHUB_ENV inside the readiness-wait step; Task 9.3 then reads `${BOTTLENECK:-unknown bottleneck}` IN THE SAME STEP. A value written to $GITHUB_ENV is only visible to SUBSEQUENT steps, never the writing step — so the issue comment always emits 'unknown bottleneck'. Worse, notify-failure (Task 10.4) is a separate JOB and $GITHUB_ENV never crosses jobs, so the per-channel detail can never reach Slack. → Build the bottleneck as a normal shell variable for same-step use in 9.3 (compute it inline before the gh issue comment). For cross-job use, write it to $GITHUB_OUTPUT and declare it as a promote job output, then read `needs.promote.outputs.bottleneck` in notify-failure. Keep the $GITHUB_STEP_SUMMARY write (that one works as-is).
-- [Do not claim a local pytest/check for a CI-only gate (review directive).] Task 1.4 claims to 'verify the gate logic would pass locally' for changelog-entry-required.yml, but the awk it runs counts TOTAL non-blank lines in the working-tree Unreleased block, whereas the actual gate (lines 99-115) requires at least one ADDED non-blank line in a base-vs-head diff of the Unreleased block. The local sim does not replicate the gate and is a local stand-in for a CI-only check. (Note: the real gate still passes because the new bullet is a genuine added line; the issue is the misleading verification, not the outcome.) → Either drop the 1.4 'local gate sim' claim and rely on the CI check, or replace it with a faithful base-vs-head diff simulation (git show BASE:CHANGELOG.md vs HEAD, extract Unreleased, diff, count added lines). Same applies to Task 7's implicit reliance.
+**Negative-path checks (must hold):** if a sub-package PyPI pin lags, the promote run stays in CHECKING and on budget-exhaust **keeps the release as prerelease** (so `/releases/latest` serves last-good), PATCHes the readiness issue body with the unticked sub-package row, comments the per-channel bottleneck on the issue, posts the red Slack with the `Detail` field carrying the named bottleneck (via `needs.promote.outputs.bottleneck`), and exits 1 — never flips to a half-resolvable `pip install`. If the `dispatch-site` job fails (empty/missing App token), it exits 1 loud with the "release IS promoted, self-heals via reconcile/cron" Slack detail and does NOT contaminate the promote success signal. The readiness-issue auto-close must NEVER close a release-readiness issue whose tag is semver-newer than `/releases/latest` (Task 11.3 reproduction proves the `sort -V` guard).

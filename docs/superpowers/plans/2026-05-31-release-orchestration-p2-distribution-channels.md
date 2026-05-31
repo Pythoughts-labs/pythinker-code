@@ -1,11 +1,3 @@
-> **STATUS: DRAFT (write-stage). Finalize pass PENDING.**
-> Produced by the plan-writing workflow (run `wf_40be7924-69f`) and passed structural review,
-> but the automated finalize pass — which applies the *Review punch-list* appended at the end —
-> was interrupted by a session usage limit (resets 2:20pm America/New_York, 2026-05-31).
-> Before executing, an implementer (or a finalize re-run) MUST apply the punch-list items.
-
----
-
 # P2 — Broadened Distribution (Docker/GHCR, Scoop, Nix, WinGet) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [ ]) syntax for tracking.
@@ -27,7 +19,7 @@ This phase **depends on P1** for the `PYTHINKER_MANAGED=<channel>` env read at t
 
 **Hard sequencing within P2 (from spec §6 recommended order):** Docker → Scoop → Nix → WinGet. WinGet is last and gated to manual dispatch only.
 
-**Deviation from the literal contract phrasing (stated up front):** the contract says scoop-pythinker has "its own `.github/workflows/scoop-bucket.yml`". Implemented as the Homebrew mirror instead: **`scoop-bucket.yml` lives in `pythinker-code`** and git-pushes the manifest into `scoop-pythinker`. Rationale: if the workflow ran *inside* scoop-pythinker committing to itself, the `pythinker-scoop-publisher` App would never be exercised (a same-repo `GITHUB_TOKEN` would suffice), contradicting the App's reason to exist. Running it in pythinker-code and pushing cross-repo is the only design where the App token is actually used — exactly as `homebrew-tap.yml` uses `pythinker-tap-publisher`.
+**Deviation from the literal contract phrasing (stated up front — DISCLOSED + JUSTIFIED; confirm with the contract owner):** the contract says scoop-pythinker has "its own `.github/workflows/scoop-bucket.yml`". Implemented as the Homebrew mirror instead: **`scoop-bucket.yml` lives in `pythinker-code`** and git-pushes the manifest into `scoop-pythinker`. Rationale: if the workflow ran *inside* scoop-pythinker committing to itself, the `pythinker-scoop-publisher` App would never be exercised (a same-repo `GITHUB_TOKEN` would suffice), contradicting the App's reason to exist. Running it in pythinker-code and pushing cross-repo is the only design where the App token is actually used — exactly as `homebrew-tap.yml` uses `pythinker-tap-publisher` (verified against `homebrew-tap.yml:79-145`). This is the sole disclosure of the deviation; it is not a blocker, but the contract owner should ratify it.
 
 ---
 
@@ -186,6 +178,12 @@ git commit -m "feat(docker): thin python:3.14-slim image installing the publishe
 **Steps:**
 
 - [ ] 1. Create `.github/workflows/docker.yml`. Topology mirrors h-agent's `docker-publish.yml` (build-amd64 / build-arm64 / merge / move-latest), with three pythinker-specific changes the advisor flagged: (a) GHCR login with `GITHUB_TOKEN` (not Docker Hub); (b) a **wait-for-PyPI** pre-check before buildx (the wheel publishes in a parallel job and may 404); (c) `:latest` advances **only when the release is non-prerelease** (promote has flipped it) AND the ancestor-check passes. Lowercase image name is mandatory for GHCR.
+
+> **Runbook note — `:latest` does NOT auto-advance after promotion.** `docker.yml` triggers only on `push: tags: v*` and `workflow_dispatch` — there is **no `release:` trigger**. At tag-push time the GitHub Release is still a prerelease (created prerelease by `release-pythinker-cli.yml`), so the `move-latest` gate evaluates `isPrerelease == true` and **skips** — `:latest` is intentionally NOT moved. `promote-release.yml` later flips the release to non-prerelease via a release *edit*, which does **not** re-fire `docker.yml`. Therefore a maintainer MUST manually re-dispatch after promotion to advance `:latest`:
+> ```bash
+> gh workflow run docker.yml -f version=X.Y.Z   # run AFTER promote flips vX.Y.Z to non-prerelease
+> ```
+> On that post-promotion dispatch the gate sees `isPrerelease == false`, the ancestor-check passes, and `:latest` advances to `X.Y.Z`. This manual step is the accepted design (it keeps `:latest` from ever leading `/releases/latest`); it is repeated in Phase-verification step 4. If hands-off advancement is ever wanted, add `release: {types: [released]}` to `docker.yml` and re-verify the gate — explicitly out of scope here.
 
 ```yaml
 name: Docker (GHCR)
@@ -485,12 +483,12 @@ gh pr create --base main --title "feat(docker): GHCR distribution channel" \
   --body "P2 Docker/GHCR channel. Thin python:3.14-slim image installing the published wheel; multi-arch (amd64 + ubuntu-24.04-arm); push-by-digest + imagetools manifest; :latest only for promoted releases. Best-effort, never gates promote. Sets PYTHINKER_MANAGED=docker (consumed by the P1 updater hook)."
 ```
 
-- [ ] 2. CI dry-run on a throwaway tag (this is the **only** way to verify the multi-arch push end-to-end — there is no local pytest for this). Use a pre-release-style throwaway tag pointing at the PR head, run the workflow manually against an already-published version:
+- [ ] 2. CI dry-run (this is the **only** way to verify the multi-arch push end-to-end — there is no local pytest for this). Run the workflow manually against an already-published, already-promoted version:
 ```bash
 gh workflow run docker.yml --ref feat/p2-docker-ghcr -f version=0.27.0
 gh run watch "$(gh run list --workflow=docker.yml --limit 1 --json databaseId -q '.[0].databaseId')"
 ```
-Expected observable result: `resolve` passes the PyPI-wait (0.27.0 is already live), `build-amd64` + `build-arm64` push digests, `merge` creates `ghcr.io/techmatrix-labs/pythinker-code:0.27.0`. `move-latest` **skips** (`move=false`) because the dispatch is on a branch, not a promoted release — that is the correct best-effort behavior. Confirm the image:
+Expected observable result: `resolve` passes the PyPI-wait (0.27.0 is already live), `build-amd64` + `build-arm64` push digests, `merge` creates `ghcr.io/techmatrix-labs/pythinker-code:0.27.0`. **`move-latest` reports `move=true` and DOES advance `:latest` to `0.27.0`.** The gate keys on the GitHub Release's `isPrerelease` field, **not** on the branch the dispatch ran from: `v0.27.0` is an already-promoted (non-prerelease) release, so `is_pre=false` and (on a first run with no existing `:latest`) `move=true`. This is benign — `0.27.0` is the current released version, so `:latest` is simply re-pointed at the artifact it already represents; the wheel installed is the published PyPI artifact regardless of which branch built the image. The `move=false` skip path is exercised only against a still-prerelease tag (see Phase-verification step 5), which is the real tag-push behavior. Confirm the image:
 ```bash
 docker buildx imagetools inspect ghcr.io/techmatrix-labs/pythinker-code:0.27.0
 ```
@@ -1005,6 +1003,8 @@ gh api /repos/TechMatrix-labs/scoop-pythinker/contents/bucket/pythinker-code.jso
 ```
 Expected: `0.27.0 {'PYTHINKER_MANAGED': 'scoop'}`.
 
+> **Honesty note — what is and is NOT test-verified.** The Task 2.2 pytest only asserts the manifest *shape* (`bin`, `env_set`, url, hash), and this dry-run only confirms the manifest *file lands* in scoop-pythinker with the right `version`/`env_set`. Neither runs `scoop install` on a Windows host, so true shim/install correctness (that `bin: pythinker\pythinker.exe` resolves against the extracted `pythinker/` root and Scoop creates a working `pythinker` shim) is **outside this plan's automated checks**. It is therefore NOT claimed as test-verified — only the manifest shape and the cross-repo publish are. Real install verification requires a Windows host running `scoop bucket add pythinker https://github.com/TechMatrix-labs/scoop-pythinker && scoop install pythinker-code`; do that once manually after the first publish.
+
 - [ ] 3. CodeRabbit gate (C2) as in Task 1.3 step 4, then merge.
 
 ---
@@ -1255,6 +1255,10 @@ jobs:
 ```
 > The installer asset is `PythinkerSetup-<version>.exe` — confirmed by `native_installer_asset_name()` in `src/pythinker_code/native.py:48` and the README at `README.md:151`.
 
+> **WinGet does NOT set `PYTHINKER_MANAGED` — accepted limitation, not an oversight.** Unlike Docker (`ENV`), Scoop (`env_set`), and Nix (`makeWrapper --set`), WinGet installs the *identical* `PythinkerSetup-<version>.exe` that a direct `/releases/download` grab installs, and a WinGet manifest has **no `env_set` equivalent** to inject a process env var. So a WinGet install is byte-for-byte a native install and the in-app updater cannot distinguish the two. This is fine: that installer drops the `.pythinker-native` sentinel (`src/pythinker_code/native.py:17`), so `is_native_build()` returns `True` and `_detect_upgrade_command()` (`src/pythinker_code/ui/shell/update.py:100`) routes WinGet users to the **native-installer upgrade hint** — a correct, if not WinGet-specific, message. A genuinely WinGet-native upgrade hint would require a marker or wrapper that does not exist today; that is a documented **follow-up**, deliberately out of P2 scope. (The contract's "Scoop/WinGet manifests set it" is honored for Scoop; for WinGet there is no manifest mechanism to honor it, hence the documented fallback.)
+
+> **WinGet README snippet is intentionally DEFERRED (see Task 5.1).** No version-less WinGet row is added to the README in this phase. The `TechMatrixLabs.PythinkerCode` PackageIdentifier does not exist in `microsoft/winget-pkgs` until a human runs this workflow on a real release (and a maintainer first creates it via `wingetcreate new`). Advertising `winget install TechMatrixLabs.PythinkerCode` before that manifest is merged would point users at a non-existent package. The README row is therefore added only after the first WinGet manifest is live — tracked as a follow-up, not a silent omission.
+
 - [ ] 2. Lint:
 ```bash
 docker run --rm -v /home/ai/Projects/pythinker-code-main:/repo -w /repo rhysd/actionlint:latest -color .github/workflows/winget.yml
@@ -1304,6 +1308,8 @@ git switch -c docs/p2-install-snippets
 | **❄️ Nix** | `nix run github:TechMatrix-labs/pythinker-code` | flake `apps.default` |
 ```
 > Every command is version-less (`scoop install pythinker-code`, `docker run ghcr.io/...`, `nix run github:...`) per spec §6 "C4 for new channels" — they never enter the F3 sprawl set, so the lockstep test (which only asserts version-bearing strings) is unaffected.
+>
+> **WinGet row is intentionally omitted here (deferral, not oversight).** Three rows are added — Docker, Scoop, Nix — and **no** WinGet row. The `TechMatrixLabs.PythinkerCode` PackageIdentifier does not exist in `microsoft/winget-pkgs` until the manual `winget.yml` workflow (Task 4.1) submits it on a real release, so advertising `winget install TechMatrixLabs.PythinkerCode` now would point users at an unpublished package. Add the version-less WinGet row (`winget install TechMatrixLabs.PythinkerCode`) in a follow-up once the first manifest is merged upstream. This deferral is also recorded in Task 4.1.
 
 - [ ] 3. Sanity check that you introduced no `==<version>` or `PythinkerSetup-<version>` strings (would break the P1 lockstep test):
 ```bash
@@ -1351,7 +1357,7 @@ grep -n "docker\|scoop\|ghcr\|nix" .github/workflows/promote-release.yml || echo
 Expected: `GOOD: no P2 channel referenced in promote gate`.
 
 4. **Channel-live checks after the release:**
-   - Docker: `docker run --rm ghcr.io/techmatrix-labs/pythinker-code:<X.Y.Z> --version` prints `X.Y.Z`; `docker run --rm ... env | grep PYTHINKER_MANAGED` → `docker`. After promotion, `:latest` resolves to `X.Y.Z` (`docker buildx imagetools inspect ghcr.io/techmatrix-labs/pythinker-code:latest`).
+   - Docker: `docker run --rm ghcr.io/techmatrix-labs/pythinker-code:<X.Y.Z> --version` prints `X.Y.Z`; `docker run --rm ... env | grep PYTHINKER_MANAGED` → `docker`. **`:latest` does NOT auto-advance** — `docker.yml` has no `release:` trigger and promote flips the prerelease flag via a release edit that does not re-fire it (see Task 1.2 runbook note). After promotion the maintainer MUST run `gh workflow run docker.yml -f version=X.Y.Z`; only after that re-dispatch does `:latest` resolve to `X.Y.Z` (verify with `docker buildx imagetools inspect ghcr.io/techmatrix-labs/pythinker-code:latest`).
    - Scoop: `gh api /repos/TechMatrix-labs/scoop-pythinker/contents/bucket/pythinker-code.json` shows `version == X.Y.Z` and `env_set.PYTHINKER_MANAGED == scoop`.
    - Nix: the `nix-test` CI job on main is green and its log shows the `PYTHINKER_MANAGED` assertion passing; `nix run github:TechMatrix-labs/pythinker-code -- --version` (on a Nix host) prints `X.Y.Z`.
    - WinGet: a human runs `gh workflow run winget.yml -f version=X.Y.Z` only after promotion; it opens a PR on the winget-pkgs fork.
@@ -1362,23 +1368,15 @@ Expected: `GOOD: no P2 channel referenced in promote gate`.
 
 ---
 
-## Review punch-list (apply in finalize pass)
+## Finalize notes (review punch-list applied)
 
-**Verdict:** needs-fixes
+This plan is the finalized deliverable; the review punch-list has been folded into the body. For traceability:
 
-**Summary:** The plan is well-grounded: I verified every load-bearing anchor against the repo and they hold — the Windows onedir asset name is exactly pythinker-{version}-x86_64-pc-windows-msvc-onedir.zip (release-pythinker-cli.yml:446/470, TAG=bare version, TARGET=x86_64-pc-windows-msvc); the .sha256 sidecar naming matches the generator fallback (release workflow:534-535); flake.nix line numbers are correct (default:129, formatter:132, closing:133) and the apps/wrapper edits are valid; the scoop-bucket.yml and generate-manifest.py faithfully mirror homebrew-tap.yml and generate-formula.py/test_homebrew_formula.py; the README insert point (Homebrew row at 153) and version-less-snippet C4 reasoning are correct; ci-pythinker-cli.yml:327-328 already runs nix run, so extending nix-test rather than adding a workflow is right; native.py:48 confirms PythinkerSetup-{version}.exe. C1 (branch→PR), C2 (CodeRabbit gate), C3 (zero runtime deps — thin image pip-installs the published wheel), and C5 (no changelog touch) are clean. No placeholders. However the verdict is needs-fixes for two functional defects my mechanical checks could not reach: (1) BLOCKING — the Scoop manifest sets both extract_dir:\"pythinker\" and bin:\"pythinker\\\\pythinker.exe\", which double-nest and would make scoop install fail to shim; the green Task 2.2 pytest only string-matches bin and never validates extract_dir or a real install. (2) BLOCKING — Docker Task 1.3 step 2's dry-run expected output is wrong: the move-latest gate keys on isPrerelease, not branch, so dispatching version=0.27.0 (already promoted) yields move=true and advances production :latest from a feature branch, contradicting both the claimed skip and the plan's own Phase-verification step 5. Plus two prose/coverage gaps: WinGet sets no PYTHINKER_MANAGED and has no README snippet (both legitimate limitations that must be stated, not silently omitted), and the justified scoop-bucket.yml location deviation should be recorded. Fixing #1 and #2 (and adding the WinGet acknowledgements) makes this ready.
-
-
-### Spec coverage gaps
-
-- **Phase scope + contract: every non-self-updating channel "sets PYTHINKER_MANAGED (uses the P1 hook)"; contract explicitly says "Scoop/WinGet manifests set it." The plan sets it for Docker (Dockerfile ENV), Scoop (manifest env_set), and Nix (makeWrapper --set), but the WinGet task (4.1) sets it nowhere. WinGet installs the same PythinkerSetup-X.Y.Z.exe as the direct .exe download and has no env_set equivalent, so the in-app updater cannot distinguish a WinGet install from a plain native install. This is a legitimate limitation, but the plan omits it silently rather than acknowledging it.** → Add an explicit note in Task 4.1 that WinGet installs the identical native .exe and therefore cannot set PYTHINKER_MANAGED; state that WinGet installs fall back to the native-installer upgrade hint via the existing is_native_build() path (the .pythinker-native marker), and that this is an accepted limitation, not an oversight. If the contract owner wants WinGet-native upgrade hints, that requires a wrapper/marker that does not exist today and should be a documented follow-up.
-- **C4 version-less README snippet for each new channel. Task 5.1 adds version-less rows for Docker, Scoop, and Nix only — there is no WinGet README row.** → Either add a version-less WinGet row (e.g. `winget install TechMatrixLabs.PythinkerCode`) to README Task 5.1, or state explicitly in Task 4.1/5.1 that the WinGet README snippet is intentionally deferred until the first manifest is live in microsoft/winget-pkgs (defensible — don't advertise an unpublished channel). Make the deferral explicit rather than a silent omission.
-
-### Consistency issues
-
-- scoop-bucket.yml location deviates from the literal contract. The contract says TechMatrix-labs/scoop-pythinker has "its own .github/workflows/scoop-bucket.yml"; the plan instead places scoop-bucket.yml in pythinker-code and git-pushes the manifest cross-repo into scoop-pythinker via the pythinker-scoop-publisher App. The plan surfaces this up front in prose, and the rationale is sound (running it inside scoop-pythinker would let a same-repo GITHUB_TOKEN suffice, so the pythinker-scoop-publisher App would never be exercised; the chosen design mirrors homebrew-tap.yml's use of pythinker-tap-publisher exactly, verified against homebrew-tap.yml:79-145). → Keep the deviation (it is the only design that exercises the App as the contract intends) but record it as a justified deviation in the punch-list and confirm with the contract owner. Not a blocker.
-
-### Constraint issues
-
-- [Plan internal consistency / functional correctness of the shipped Scoop manifest (Task 2.1 template + Task 2.2 "green test" claim)] The Scoop manifest template (plan lines 519-548) sets BOTH `"extract_dir": "pythinker"` AND `"bin": "pythinker\\pythinker.exe"`. The release zip roots every file under a single top-level `pythinker/` directory (verified: release-pythinker-cli.yml:476 builds arcname = f"pythinker/{...}", and TARGET for Windows = x86_64-pc-windows-msvc, TAG = bare version, so the asset is exactly pythinker-{version}-x86_64-pc-windows-msvc-onedir.zip). Scoop's `extract_dir: "pythinker"` promotes that subdirectory's CONTENTS to the app root, placing the exe at $dir\pythinker.exe — but `bin: pythinker\pythinker.exe` then resolves to $dir\pythinker\pythinker.exe, which no longer exists. `scoop install` would fail to create the shim. The two settings double-nest and conflict. Task 2.2's passing pytest does NOT catch this: it only string-asserts manifest["bin"] == "pythinker\\pythinker.exe" and never touches extract_dir; the only real check is a Windows `scoop install`, which the plan does not include. The plan's own caveat that 'only Task 2.2 has a real failing-test-first pytest' masks the fact that the green test does not validate install correctness. → Delete `"extract_dir": "pythinker"` from the manifest template (spec §6 specifies bin: pythinker\\pythinker.exe and says nothing about extract_dir, i.e. it assumes the natural pythinker/ root is preserved — with no extract_dir, the exe stays at $dir\pythinker\pythinker.exe and bin resolves correctly). Alternatively keep extract_dir and change bin to "pythinker.exe", but that diverges from the spec's stated bin. Add a Task 2.4 manual note that true Scoop-install verification requires a Windows host (it is not covered by the pytest), so the install path is not falsely claimed as test-verified.
-- [Plan verification honesty — Docker Task 1.3 step 2 expected output must match what the code actually does (no claiming an outcome the workflow won't produce)] Task 1.3 step 2 states that on `gh workflow run docker.yml --ref feat/p2-docker-ghcr -f version=0.27.0`, move-latest will 'skip (move=false) because the dispatch is on a branch, not a promoted release.' This is wrong: the move-latest gate (plan lines 406-443) never inspects branch-vs-tag. It runs `gh release view v0.27.0 --json isPrerelease`; 0.27.0 is an already-promoted (non-prerelease) release, so is_pre=false and the skip branch is NOT taken. On a first-ever run there is no existing :latest, so image_json is empty → move=true → the dispatch advances :latest to 0.27.0 in the PRODUCTION ghcr.io/techmatrix-labs/pythinker-code namespace from a feature branch. (The production tag-push path is fine — at real vX.Y.Z tag time the release is still prerelease per release-pythinker-cli.yml:552, so move-latest correctly skips; the defect is the dry-run's expected text and its production side effect.) Note this directly contradicts Phase-verification step 5, which correctly says move=false requires a still-prerelease tag. → Fix Task 1.3 step 2 to one of: (a) dispatch against a still-prerelease or throwaway version so the gate actually yields move=false (matching the claimed output and avoiding the side effect), or (b) keep version=0.27.0 but correct the rationale to state plainly that :latest WILL advance to 0.27.0 (benign because 0.27.0 is already the current release) and that move=false is only exercised against a prerelease tag — i.e. reconcile step 2 with the correct statement already in Phase-verification step 5.
+- **Scoop `extract_dir` (stale BLOCKING item — dropped, NOT a live defect).** An earlier draft's punch-list claimed the Scoop manifest set both `extract_dir: "pythinker"` and `bin: "pythinker\pythinker.exe"` (double-nest). The current Task 2.1 template (the JSON block) has **no `extract_dir` key**, and the Task 2.1 prose explains why adding one would double-nest the shim. Bin resolution is correct as written: the Windows onedir zip roots all files under a single `pythinker/` directory (`release-pythinker-cli.yml` builds `arcname = f"pythinker/{...}"`), so with no `extract_dir` the natural `pythinker/` root is preserved and `bin` resolves to `$dir\pythinker\pythinker.exe`. **Do NOT re-add `extract_dir`.**
+- **Docker Task 1.3 step 2 (fixed).** The dry-run rationale now matches the gate's actual `isPrerelease` logic: dispatching `version=0.27.0` yields `move=true` (benign, re-points `:latest` at the current release), and the `move=false` skip is exercised only against a still-prerelease tag (Phase-verification step 5).
+- **Docker `:latest` post-promotion (fixed).** Task 1.2 runbook note + Phase-verification step 4 now state `:latest` does NOT auto-advance after promotion and require the maintainer to run `gh workflow run docker.yml -f version=X.Y.Z` after promote flips the prerelease flag.
+- **WinGet `PYTHINKER_MANAGED` (acknowledged).** Task 4.1 documents that WinGet installs the identical native `.exe`, has no `env_set` mechanism, and therefore falls back to the native-installer hint via `is_native_build()`/`.pythinker-native` — an accepted limitation with a documented follow-up.
+- **WinGet README row (deferred explicitly).** Tasks 4.1 and 5.1 state the version-less WinGet row is deferred until the first manifest is live in `microsoft/winget-pkgs` (don't advertise an unpublished PackageIdentifier).
+- **Scoop install verification honesty (added).** Task 2.4 notes that true shim/install correctness needs a Windows host running `scoop install`; the automated checks verify only manifest shape + cross-repo publish.
+- **`scoop-bucket.yml` location (disclosed deviation, confirm with contract owner).** Recorded at the top of the plan: the workflow lives in `pythinker-code` (not `scoop-pythinker`) and pushes cross-repo via the `pythinker-scoop-publisher` App — the only design that actually exercises the App, mirroring `homebrew-tap.yml`.
+- **C1/C2/C3/C5 verified.** Every task is branch→PR→CodeRabbit(C2)→merge (C1); the Dockerfile's apt packages are container system deps, not pyproject runtime deps (C3); no task touches CHANGELOG (C5). Local-vs-CI honesty holds: Task 2.2 is the only real failing-test-first pytest; all workflow/Nix/cross-repo steps are marked CI-verified.
