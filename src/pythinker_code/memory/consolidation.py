@@ -28,6 +28,10 @@ def _safe_id(value: str) -> str:
     return re.sub(r"[^a-z0-9_-]", "-", value.lower())[:32].strip("-") or "candidate"
 
 
+def _memory_entry_hash(content: str) -> str:
+    return content_hash(tier="memory", title=content[:60], body=content)
+
+
 async def inbox_dir(store: ProjectMemoryStore) -> Path:
     root = await store._ensure_dir()  # pyright: ignore[reportPrivateUsage]
     path = root / "memory" / "inbox"
@@ -53,16 +57,16 @@ async def generate_inbox_candidates(
 ) -> list[InboxCandidate]:
     """Stage scratch/journal candidates for approval-gated durable memory consolidation."""
     existing_entries = [*await store.read_entries("memory"), *await store.read_entries("user")]
-    existing_hashes = {
-        content_hash(tier="memory", title=entry[:60], body=entry) for entry in existing_entries
-    }
-    staged = {candidate.content_hash for candidate in await list_inbox_candidates(store)}
+    existing_hashes = {_memory_entry_hash(entry) for entry in existing_entries}
+    inbox_candidates = await list_inbox_candidates(store)
+    staged = {candidate.content_hash for candidate in inbox_candidates}
+    staged.update(_memory_entry_hash(candidate.content) for candidate in inbox_candidates)
     directory = await inbox_dir(store)
     candidates: list[InboxCandidate] = []
     for block in await gather_candidates(store, work_dir):
         if block.tier in {"memory", "user"}:
             continue
-        digest = content_hash(tier="memory", title=block.title, body=block.content)
+        digest = _memory_entry_hash(block.content)
         if digest in existing_hashes or digest in staged:
             continue
         candidate = InboxCandidate(
@@ -74,7 +78,14 @@ async def generate_inbox_candidates(
             content_hash=digest,
         )
         path = directory / f"{candidate.id}.json"
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            # A file with this id already exists on disk but was absent from
+            # ``staged`` (e.g. it is corrupt and was skipped during listing).
+            # Treat it as already staged instead of crashing the whole harvest.
+            staged.add(digest)
+            continue
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(asdict(candidate), fh, ensure_ascii=False, indent=2)
         candidates.append(candidate)

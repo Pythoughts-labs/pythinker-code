@@ -5,6 +5,8 @@ import json
 import shlex
 from typing import TYPE_CHECKING
 
+from rich.markup import escape
+
 from pythinker_code.auth.platforms import parse_managed_provider_key
 from pythinker_code.config import LLMProvider
 from pythinker_code.soul.pythinkersoul import PythinkerSoul
@@ -209,7 +211,7 @@ async def usage(app: Shell, args: str):
     try:
         tokens = shlex.split(args.strip())
     except ValueError as e:
-        console.print(f"[{_t.error}]Invalid usage arguments: {e}[/]")
+        console.print(f"[{_t.error}]Invalid usage arguments: {escape(str(e))}[/]")
         return
 
     json_mode = "--json" in tokens

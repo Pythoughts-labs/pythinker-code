@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -138,6 +139,18 @@ class BackgroundTaskStore:
     def write_runtime(self, task_id: str, runtime: TaskRuntime) -> None:
         with self._runtime_lock(task_id):
             self._write_runtime_unlocked(task_id, runtime)
+
+    def update_runtime(self, task_id: str, update: Callable[[TaskRuntime], bool]) -> TaskRuntime:
+        """Apply a read-modify-write update under the runtime lock.
+
+        ``update`` mutates the current runtime and returns true when it should
+        be written back. The current runtime is returned either way.
+        """
+        with self._runtime_lock(task_id):
+            runtime = self.read_runtime(task_id)
+            if update(runtime):
+                self._write_runtime_unlocked(task_id, runtime)
+            return runtime
 
     def _write_runtime_unlocked(self, task_id: str, runtime: TaskRuntime) -> None:
         """Write runtime without acquiring the per-task lock (caller holds it)."""

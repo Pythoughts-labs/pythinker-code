@@ -204,16 +204,53 @@ class StrReplaceFile(CallableTool2[Params]):
 
             original_content = content
             edits = [params.edit] if isinstance(params.edit, Edit) else params.edit
+            if not edits:
+                return ToolError(
+                    message="At least one edit is required.",
+                    brief="No edits provided",
+                )
 
-            # Apply all edits
-            for edit in edits:
+            # Validate and apply the batch in memory first. If any edit is
+            # missing or ambiguous, return before writing so the file stays
+            # unchanged.
+            per_edit_counts: list[int] = []
+            for index, edit in enumerate(edits, start=1):
+                if not edit.old:
+                    return ToolError(
+                        message=f"Edit {index}: old string cannot be empty.",
+                        brief="Empty old string",
+                    )
+                if edit.old == edit.new:
+                    return ToolError(
+                        message=f"Edit {index}: old and new strings are identical.",
+                        brief="No-op edit",
+                    )
+
+                match_count = content.count(edit.old)
+                if match_count == 0:
+                    return ToolError(
+                        message=(
+                            f"No replacements were made for edit {index}: "
+                            f"old string {edit.old!r} was not found in the file."
+                        ),
+                        brief="No replacements made",
+                    )
+                if match_count > 1 and not edit.replace_all:
+                    return ToolError(
+                        message=(
+                            f"Edit {index}: old string {edit.old!r} occurs {match_count} times. "
+                            "Add surrounding context to make it unique, or set replace_all=true."
+                        ),
+                        brief="Ambiguous replacement",
+                    )
+
+                per_edit_counts.append(match_count if edit.replace_all else 1)
                 content = self._apply_edit(content, edit)
 
-            # Check if any changes were made
             if content == original_content:
                 return ToolError(
-                    message="No replacements were made. The old string was not found in the file.",
-                    brief="No replacements made",
+                    message="Edits resulted in no file changes.",
+                    brief="No changes",
                 )
 
             diff_blocks: list[DisplayBlock] = await build_diff_blocks(
@@ -245,13 +282,8 @@ class StrReplaceFile(CallableTool2[Params]):
             # Write the modified content back to the file
             await p.write_text(content, encoding="utf-8", errors="replace")
 
-            # Count changes for success message
-            total_replacements = 0
-            for edit in edits:
-                if edit.replace_all:
-                    total_replacements += original_content.count(edit.old)
-                else:
-                    total_replacements += 1 if edit.old in original_content else 0
+            # Count changes for success message (tallied per-edit during application).
+            total_replacements = sum(per_edit_counts)
 
             return ToolReturnValue(
                 is_error=False,

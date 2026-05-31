@@ -282,10 +282,8 @@ async def test_replace_mixed_multiple_edits(
         Params(
             path=str(file_path),
             edit=[
-                Edit(old="apple", new="fruit", replace_all=False),  # Only first occurrence
-                Edit(
-                    old="banana", new="tasty", replace_all=True
-                ),  # All occurrences (though only one)
+                Edit(old="apple apple", new="fruit apple", replace_all=False),
+                Edit(old="banana", new="tasty", replace_all=True),
             ],
         )
     )
@@ -293,6 +291,111 @@ async def test_replace_mixed_multiple_edits(
     assert not result.is_error
     assert "successfully edited" in result.message
     assert await file_path.read_text() == "fruit apple tasty apple cherry"
+
+
+async def test_multi_edit_reports_missing_old_string(
+    str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+):
+    """A non-matching edit in a multi-edit list must error, not silently no-op.
+
+    Regression: previously the file was written with only the matching edits
+    applied and the missing edit was swallowed because the no-change check ran
+    once over the whole batch.
+    """
+    file_path = temp_work_dir / "test.txt"
+    original_content = "apple banana cherry"
+    await file_path.write_text(original_content)
+
+    result = await str_replace_file_tool(
+        Params(
+            path=str(file_path),
+            edit=[
+                Edit(old="apple", new="fruit"),
+                Edit(old="not-present", new="x"),
+            ],
+        )
+    )
+
+    assert result.is_error
+    assert "No replacements were made" in result.message
+    assert "not-present" in result.message
+    # The file must be left untouched when any edit fails to match.
+    assert await file_path.read_text() == original_content
+
+
+async def test_multi_edit_count_handles_chained_edits(
+    str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+):
+    """Replacement count is tallied against progressively-edited content.
+
+    The second edit targets text produced by the first; the success message
+    must still count it (the old code counted against the original content and
+    reported zero for chained edits).
+    """
+    file_path = temp_work_dir / "test.txt"
+    await file_path.write_text("alpha")
+
+    result = await str_replace_file_tool(
+        Params(
+            path=str(file_path),
+            edit=[
+                Edit(old="alpha", new="beta"),
+                Edit(old="beta", new="gamma"),
+            ],
+        )
+    )
+
+    assert not result.is_error
+    assert "successfully edited" in result.message
+    assert "2 total replacement(s)" in result.message
+    assert await file_path.read_text() == "gamma"
+
+
+async def test_single_edit_requires_unique_old_string(
+    str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+):
+    """A non-replace_all edit must not silently choose the first match."""
+    file_path = temp_work_dir / "test.txt"
+    original_content = "apple banana apple"
+    await file_path.write_text(original_content)
+
+    result = await str_replace_file_tool(
+        Params(path=str(file_path), edit=Edit(old="apple", new="fruit"))
+    )
+
+    assert result.is_error
+    assert "occurs 2 times" in result.message
+    assert "replace_all=true" in result.message
+    assert await file_path.read_text() == original_content
+
+
+async def test_replace_rejects_empty_old_string(
+    str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+):
+    """An empty old string would otherwise insert text instead of replacing."""
+    file_path = temp_work_dir / "test.txt"
+    original_content = "Hello world!"
+    await file_path.write_text(original_content)
+
+    result = await str_replace_file_tool(
+        Params(path=str(file_path), edit=Edit(old="", new="prefix"))
+    )
+
+    assert result.is_error
+    assert "old string cannot be empty" in result.message
+    assert await file_path.read_text() == original_content
+
+
+async def test_replace_rejects_empty_edit_list(
+    str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+):
+    file_path = temp_work_dir / "test.txt"
+    await file_path.write_text("Hello world!")
+
+    result = await str_replace_file_tool(Params(path=str(file_path), edit=[]))
+
+    assert result.is_error
+    assert "At least one edit" in result.message
 
 
 async def test_replace_empty_strings(
