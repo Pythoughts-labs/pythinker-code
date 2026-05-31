@@ -824,12 +824,19 @@ def _run_native_installer(installer_path: Path) -> None:
     """
     if _spawn_detached_windows_installer(installer_path):
         sys.exit(0)
-    subprocess.Popen(
-        [str(installer_path), *_windows_native_installer_args()],
-        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        | getattr(subprocess, "DETACHED_PROCESS", 0),
-        close_fds=True,
-    )
+    try:
+        subprocess.Popen(
+            [str(installer_path), *_windows_native_installer_args()],
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            | getattr(subprocess, "DETACHED_PROCESS", 0),
+            close_fds=True,
+        )
+    except Exception as exc:
+        logger.exception("Failed to launch Windows native installer fallback:")
+        _t = _get_tui_tokens()
+        console.print(f"[{_t.error}]Failed to launch the Windows installer.[/]")
+        console.print(f"[{_t.muted}]Run it manually: {installer_path}[/]")
+        raise typer.Exit(1) from exc
     sys.exit(0)
 
 

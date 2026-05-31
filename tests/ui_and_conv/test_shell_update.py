@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import typer
 from rich.console import Console
 
 from pythinker_code.ui.shell import update
@@ -789,6 +790,23 @@ def test_run_native_installer_detaches_on_windows(monkeypatch, tmp_path):
 
     assert excinfo.value.code == 0
     assert spawned == [installer]
+
+
+def test_run_native_installer_reports_fallback_spawn_failure(monkeypatch, tmp_path):
+    installer = tmp_path / "PythinkerSetup-999.0.0.exe"
+    installer.write_bytes(b"")
+
+    monkeypatch.setattr(update, "_spawn_detached_windows_installer", lambda path: False)
+
+    def fake_popen(*args, **kwargs):
+        raise OSError("blocked")
+
+    monkeypatch.setattr(update.subprocess, "Popen", fake_popen)
+
+    with pytest.raises(typer.Exit) as excinfo:
+        update._run_native_installer(installer)
+
+    assert excinfo.value.exit_code == 1
 
 
 def test_version_from_release_payload_parses_v_tag():
