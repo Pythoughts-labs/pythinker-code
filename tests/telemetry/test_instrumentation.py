@@ -416,6 +416,22 @@ class TestInfrastructureEdgeCases:
 # ---------------------------------------------------------------------------
 
 
+def _mock_store_for(runtime: Any) -> MagicMock:
+    """A mock BackgroundTaskStore whose ``update_runtime`` runs the callback and
+    returns the (mutated) runtime, mirroring the real read-modify-write store so
+    the manager's ``_transition_status`` path is actually exercised."""
+    store = MagicMock()
+    store.read_runtime.return_value = runtime
+
+    def _update(task_id: str, update_fn: Any) -> Any:
+        rt = store.read_runtime(task_id)
+        update_fn(rt)
+        return rt
+
+    store.update_runtime.side_effect = _update
+    return store
+
+
 class TestEventPropertyCorrectness:
     """Verify specific events carry the right property types and values."""
 
@@ -608,8 +624,7 @@ class TestEventPropertyCorrectness:
         from pythinker_code.background.models import TaskRuntime
 
         runtime = TaskRuntime(status="running", started_at=None)
-        mock_store = MagicMock()
-        mock_store.read_runtime.return_value = runtime
+        mock_store = _mock_store_for(runtime)
 
         manager = object.__new__(BackgroundTaskManager)
         manager._store = mock_store
@@ -626,8 +641,7 @@ class TestEventPropertyCorrectness:
 
         runtime = TaskRuntime(status="running", started_at=1000.0)
 
-        mock_store = MagicMock()
-        mock_store.read_runtime.return_value = runtime
+        mock_store = _mock_store_for(runtime)
 
         manager = object.__new__(BackgroundTaskManager)
         manager._store = mock_store
@@ -647,8 +661,7 @@ class TestEventPropertyCorrectness:
         from pythinker_code.background.models import TaskRuntime
 
         runtime = TaskRuntime(status="running", started_at=None)
-        mock_store = MagicMock()
-        mock_store.read_runtime.return_value = runtime
+        mock_store = _mock_store_for(runtime)
 
         manager = object.__new__(BackgroundTaskManager)
         manager._store = mock_store
