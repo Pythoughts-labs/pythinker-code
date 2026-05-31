@@ -30,8 +30,12 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 LicenseFile=assets\LICENSE.rtf
 ChangesEnvironment=yes
-CloseApplications=force
+CloseApplications=yes
 RestartApplications=no
+#ifdef UseInnoSignTool
+SignTool=PythinkerSign
+SignedUninstaller=yes
+#endif
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

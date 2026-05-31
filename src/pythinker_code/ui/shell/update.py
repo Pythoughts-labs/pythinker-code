@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import contextlib
 import os
 import platform
@@ -122,40 +121,28 @@ def _is_windows() -> bool:
 
 
 def _spawn_detached_windows_upgrade(upgrade_command: list[str]) -> bool:
-    """Launch the upgrade in a new console window that survives this process exit.
+    """Launch a Windows upgrade command without a PowerShell wrapper.
 
-    Returns True if the helper was spawned. The helper waits for this process
-    to exit before invoking ``upgrade_command`` so the currently running
-    ``pythinker.exe`` has released the executable lock that ``uv``/``pip``
-    would otherwise trip over with ``os error 32``.
+    Older builds used an encoded PowerShell payload to wait for the
+    current process and then run the updater. That shape is common in malware
+    and trips command-line heuristics in products such as Bitdefender. Instead
+    we start the real updater directly with inherited handles closed; the caller
+    exits immediately after spawning so Windows can release the running binary.
     """
     if not _is_windows():
         return False
 
-    pid = os.getpid()
     executable = which(upgrade_command[0]) or upgrade_command[0]
-    argument_text = subprocess.list2cmdline(upgrade_command[1:])
-    script = (
-        f"Write-Host 'Waiting for Pythinker (PID {pid}) to exit...';"
-        f"Wait-Process -Id {pid} -Timeout 60 -ErrorAction SilentlyContinue;"
-        "$psi = [System.Diagnostics.ProcessStartInfo]::new();"
-        f"$psi.FileName = {_ps_single_quote(executable)};"
-        f"$psi.Arguments = {_ps_single_quote(argument_text)};"
-        "$psi.UseShellExecute = $false;"
-        "$process = [System.Diagnostics.Process]::Start($psi);"
-        "$process.WaitForExit();"
-        "$exitCode = $process.ExitCode;"
-        "Write-Host '';"
-        "if ($exitCode -eq 0) {"
-        "Write-Host 'Upgrade finished. Press any key to close this window.';"
-        "} else {"
-        'Write-Host "Upgrade failed with exit code $exitCode. '
-        'Press any key to close this window.";'
-        "};"
-        "$null = [System.Console]::ReadKey($true);"
-    )
-    if not _spawn_detached_windows_powershell(script):
-        logger.warning("Failed to spawn detached Windows upgrade helper")
+    CREATE_NEW_CONSOLE = 0x00000010
+    CREATE_NEW_PROCESS_GROUP = 0x00000200
+    try:
+        subprocess.Popen(
+            [executable, *upgrade_command[1:]],
+            creationflags=CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP,
+            close_fds=True,
+        )
+    except OSError:
+        logger.exception("Failed to spawn detached Windows upgrade helper:")
         return False
     return True
 
@@ -302,6 +289,7 @@ async def prompt_pre_start_update() -> None:
     """
     from pythinker_code.constant import VERSION as current_version
 
+    _cleanup_stale_windows_update_staging()
     if _auto_update_disabled() or _is_running_from_source_checkout():
         return
     if not sys.stdout.isatty():
@@ -786,104 +774,35 @@ async def _fetch_native_release_asset(
     return download_url, sha
 
 
-def _ps_single_quote(value: str) -> str:
-    """Quote a string for embedding inside a PowerShell single-quoted literal.
+def _windows_native_installer_args() -> list[str]:
+    """Installer arguments for user-initiated Windows native updates.
 
-    PowerShell single-quoted strings (``'...'``) treat every character as a
-    literal except ``'``, which doubles. Windows paths don't normally contain
-    ``'``, but we quote defensively so an exotic ``%TEMP%`` can't break out.
+    Keep this transparent and boring. Hidden, encoded, or fully suppressed
+    updater chains look like commodity malware to command-line heuristics.
+    ``/SILENT`` still avoids the wizard, but leaves normal installer UI/errors
+    visible and delegates app-closing to Inno Setup's Restart Manager.
     """
-    return "'" + value.replace("'", "''") + "'"
-
-
-def _spawn_detached_windows_powershell(script: str) -> bool:
-    """Run a PowerShell script in a new console using ``-EncodedCommand``.
-
-    ``-EncodedCommand`` expects UTF-16LE bytes, and avoids the cmd.exe / Python
-    quoting layers entirely for the script payload. ``CREATE_NEW_CONSOLE`` keeps
-    the helper visible after the current Pythinker process exits.
-    """
-    if not _is_windows():
-        return False
-    powershell = which("powershell") or which("powershell.exe")
-    if powershell is None:
-        return False
-    CREATE_NEW_CONSOLE = 0x00000010
-    CREATE_NEW_PROCESS_GROUP = 0x00000200
-    # PowerShell's -EncodedCommand mandates UTF-16LE bytes; the project lint
-    # blocks `.encode("utf-16-le")` so we use the bytes() constructor instead.
-    # The base64 output is pure ASCII, which is a strict subset of UTF-8.
-    encoded = base64.b64encode(bytes(script, "utf-16-le")).decode("utf-8")
-    try:
-        subprocess.Popen(
-            [powershell, "-NoProfile", "-EncodedCommand", encoded],
-            creationflags=CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP,
-            close_fds=True,
-        )
-    except OSError:
-        logger.exception("Failed to spawn detached Windows PowerShell helper:")
-        return False
-    return True
+    return ["/SILENT", "/NORESTART", "/CLOSEAPPLICATIONS", "/NORESTARTAPPLICATIONS"]
 
 
 def _spawn_detached_windows_installer(installer_path: Path) -> bool:
-    """Run the native installer after this process exits and releases file locks.
+    """Run the native installer directly, without PowerShell or cmd wrappers.
 
-    The detached PowerShell process waits on *this* process's PID (capped at
-    60s via ``Wait-Process``) so the installer only runs once the running
-    ``pythinker.exe`` has released its own-file lock, then cleans up the
-    staged installer + temp dir. The cap stops a hung process stranding the
-    installer forever.
-
-    Why a base64-encoded PowerShell payload instead of inline ``cmd /k``:
-    Windows has at least three command-line parsers in this chain — Python's
-    ``subprocess.list2cmdline``, cmd.exe's own rules, and
-    ``CommandLineToArgvW`` for the spawned child. Each strips a layer of
-    quoting differently. The previous inline ``powershell -Command
-    "Wait-Process …"`` form leaked the double quotes through every layer
-    until PowerShell saw a literal ``"Wait-Process …"`` *string expression*
-    and printed it instead of running the cmdlet. The base64 payload contains
-    only ``[A-Za-z0-9+/=]`` — no character that any of those parsers need to
-    escape — so the script reaches PowerShell intact regardless of how
-    ``%TEMP%`` or the installer path is spelled (spaces, parentheses, etc.).
+    The caller exits immediately after spawning, which releases the running
+    ``pythinker.exe`` handle. The installer itself handles closing/replacing
+    files through Inno Setup's Restart Manager support.
     """
     if not _is_windows():
         return False
-    pid = os.getpid()
-    tmpdir = installer_path.parent
-
-    installer_arg = _ps_single_quote(str(installer_path))
-    installer_arguments = _ps_single_quote(
-        subprocess.list2cmdline(["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])
-    )
-    tmpdir_arg = _ps_single_quote(str(tmpdir))
-    # PowerShell handles all I/O: wait, install, clean up, prompt. Each step
-    # is independently fault-tolerant; -ErrorAction SilentlyContinue lets the
-    # script complete even if (e.g.) Wait-Process can't find the PID because
-    # pythinker.exe has already exited.
-    script = (
-        f"Write-Host 'Waiting for Pythinker (PID {pid}) to exit...';"
-        f"Wait-Process -Id {pid} -Timeout 60 -ErrorAction SilentlyContinue;"
-        f"$psi = [System.Diagnostics.ProcessStartInfo]::new();"
-        f"$psi.FileName = {installer_arg};"
-        f"$psi.Arguments = {installer_arguments};"
-        f"$psi.UseShellExecute = $false;"
-        f"$process = [System.Diagnostics.Process]::Start($psi);"
-        f"$process.WaitForExit();"
-        f"$exitCode = $process.ExitCode;"
-        f"Remove-Item -LiteralPath {tmpdir_arg} -Recurse -Force "
-        f"-ErrorAction SilentlyContinue;"
-        f"Write-Host '';"
-        f"if ($exitCode -eq 0) {{"
-        f"Write-Host 'Installer finished. Press any key to close this window.';"
-        f"}} else {{"
-        f'Write-Host "Installer failed with exit code $exitCode. '
-        f'Press any key to close this window.";'
-        f"}};"
-        f"$null = [System.Console]::ReadKey($true);"
-    )
-    if not _spawn_detached_windows_powershell(script):
-        logger.warning("Failed to spawn detached Windows native installer helper")
+    CREATE_NEW_PROCESS_GROUP = 0x00000200
+    try:
+        subprocess.Popen(
+            [str(installer_path), *_windows_native_installer_args()],
+            creationflags=CREATE_NEW_PROCESS_GROUP,
+            close_fds=True,
+        )
+    except OSError:
+        logger.exception("Failed to spawn detached Windows native installer:")
         return False
     return True
 
@@ -891,18 +810,15 @@ def _spawn_detached_windows_installer(installer_path: Path) -> bool:
 def _run_native_installer(installer_path: Path) -> None:
     """Spawn the downloaded native installer and exit this process.
 
-    ``close_fds=True`` is critical on the fallback path: PyInstaller's official
-    Windows recipe (`Recipe-subprocess`) notes that the child inherits the
-    parent's open file handles by default — including the handle to
-    pythinker.exe itself — which leaves the parent binary locked even after
-    this process exits and prevents Inno Setup from replacing it. The detached
-    PowerShell helper (the preferred path) already sets this in
-    ``_spawn_detached_windows_powershell``.
+    ``close_fds=True`` is critical: PyInstaller's official Windows subprocess
+    recipe notes that child processes otherwise inherit open file handles,
+    including the handle to ``pythinker.exe`` itself. Inheriting that handle can
+    keep the parent binary locked even after this process exits.
     """
     if _spawn_detached_windows_installer(installer_path):
         sys.exit(0)
     subprocess.Popen(
-        [str(installer_path), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+        [str(installer_path), *_windows_native_installer_args()],
         creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         | getattr(subprocess, "DETACHED_PROCESS", 0),
         close_fds=True,
@@ -1088,10 +1004,44 @@ def _install_native_archive(archive: Path) -> UpdateResult:
     return UpdateResult.UPDATED
 
 
-async def _maybe_run_native_update(latest_version: str, channel: str = "latest") -> UpdateResult:
-    """Native-build update path for an explicit user-requested update."""
+WINDOWS_UPDATE_STAGING_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+
+
+def _windows_update_staging_parent() -> Path:
+    return get_share_dir() / "windows-update-staging"
+
+
+def _cleanup_stale_windows_update_staging(now: float | None = None) -> None:
+    if not _is_windows():
+        return
+    parent = _windows_update_staging_parent()
+    if not parent.exists():
+        return
+    cutoff = (time.time() if now is None else now) - WINDOWS_UPDATE_STAGING_MAX_AGE_SECONDS
+    for child in parent.glob("pythinker-update-*"):
+        try:
+            if child.is_dir() and child.stat().st_mtime < cutoff:
+                shutil.rmtree(child, ignore_errors=True)
+        except OSError:
+            logger.exception("Failed to inspect stale Windows update staging directory:")
+
+
+def _make_native_update_tmpdir() -> Path:
     import tempfile
 
+    if _is_windows():
+        _cleanup_stale_windows_update_staging()
+        staging_parent = _windows_update_staging_parent()
+        try:
+            staging_parent.mkdir(parents=True, exist_ok=True)
+            return Path(tempfile.mkdtemp(prefix="pythinker-update-", dir=staging_parent))
+        except OSError:
+            logger.exception("Failed to create Windows update staging directory; using temp:")
+    return Path(tempfile.mkdtemp(prefix="pythinker-update-"))
+
+
+async def _maybe_run_native_update(latest_version: str, channel: str = "latest") -> UpdateResult:
+    """Native-build update path for an explicit user-requested update."""
     linux_package_kind = _installed_linux_package_kind()
     if _is_windows():
         asset_name = native_installer_asset_name(latest_version)
@@ -1113,11 +1063,12 @@ async def _maybe_run_native_update(latest_version: str, channel: str = "latest")
             return UpdateResult.FAILED
         download_url, expected_sha = fetched
 
-        tmpdir = Path(tempfile.mkdtemp(prefix="pythinker-update-"))
-        # On Windows, the detached PowerShell helper owns tmpdir cleanup so the
-        # installer .exe survives this process's exit. On Linux/Mac the install
-        # runs inline, so we own cleanup and must release ~50-100MB of archive
-        # + extracted-binary debris from /tmp on every update, success or fail.
+        tmpdir = _make_native_update_tmpdir()
+        # On Windows, the spawned installer must keep its staged .exe after
+        # this process exits, so a later launch prunes stale staging dirs. On
+        # Linux/Mac the install runs inline, so we own cleanup and must release
+        # ~50-100MB of archive + extracted-binary debris from /tmp on every
+        # update, success or fail.
         cleanup_tmpdir = True
         try:
             asset = tmpdir / asset_name
@@ -1224,8 +1175,8 @@ async def _do_update(*, print: bool, check_only: bool) -> UpdateResult:
         _print(f"[{_t.muted}]Downloading native installer from GitHub Releases...[/]")
         if _is_windows():
             _print(
-                f"[{_t.warning}]Pythinker will exit after staging the installer so "
-                "Windows can replace the running app.[/]"
+                f"[{_t.warning}]Pythinker will exit after staging the installer; "
+                "the signed Windows installer will continue normally.[/]"
             )
         native_result = await _maybe_run_native_update(latest_version)
         if native_result is UpdateResult.UPDATE_AVAILABLE:
@@ -1245,17 +1196,14 @@ async def _do_update(*, print: bool, check_only: bool) -> UpdateResult:
             _print(f"[{_t.warning}]Restart Pythinker CLI to use the new version.[/]")
         return native_result
 
-    # On Windows, the running pythinker.exe holds an exclusive lock on its own
-    # binary. Any in-process `uv tool upgrade` / `pip install --upgrade` fails
-    # with `os error 32` (file in use). Spawn the upgrade in a detached console
-    # that waits a few seconds, then exit so the lock releases first.
+    # On Windows, the running pythinker.exe can hold a lock on its own binary.
+    # Spawn the real upgrade command directly (no PowerShell/cmd wrapper), then
+    # exit so Windows can release the running executable.
     if _is_windows() and _spawn_detached_windows_upgrade(upgrade_command):
         _print(
             f"[{_t.warning}]Pythinker will exit so Windows can release the running executable.[/]"
         )
-        _print(f"[{_t.muted}]The upgrade will continue in a new console window.[/]")
-        # Brief pause so the user can read the banner before the process dies.
-        await asyncio.sleep(1.0)
+        _print(f"[{_t.muted}]The upgrade will continue in a new process.[/]")
         sys.exit(0)
 
     try:

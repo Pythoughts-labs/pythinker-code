@@ -2,13 +2,14 @@
 
 Kept in a separate file from test_shell_update.py to avoid colliding with
 concurrent edits there. Covers: the cached-only startup notice, the Windows
-PID-wait installer command shape, the /update slash command registration, and
-the in-shell run_update_prompt flow.
+installer command shape, the /update slash command registration, and the
+in-shell run_update_prompt flow.
 """
 
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import cast
 
 import pythinker_code.constant as constant
 from pythinker_code.ui.shell import update
@@ -58,17 +59,11 @@ def test_pending_update_notice_none_for_source_checkout(monkeypatch):
     assert update.pending_update_notice() is None
 
 
-def test_windows_upgrade_helper_uses_encoded_powershell(monkeypatch):
-    import base64
-
+def test_windows_upgrade_helper_uses_direct_command_not_powershell(monkeypatch):
     monkeypatch.setattr(update, "_is_windows", lambda: True)
-    monkeypatch.setattr(update.os, "getpid", lambda: 4242)
 
     def fake_which(name: str) -> str | None:
-        return {
-            "powershell": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
-            "uv": "C:\\Program Files\\uv\\uv.exe",
-        }.get(name)
+        return {"uv": "C:\\Program Files\\uv\\uv.exe"}.get(name)
 
     monkeypatch.setattr(update, "which", fake_which)
 
@@ -83,24 +78,14 @@ def test_windows_upgrade_helper_uses_encoded_powershell(monkeypatch):
 
     assert update._spawn_detached_windows_upgrade(["uv", "tool", "upgrade", "pythinker code"])
 
-    args = captured["args"]
-    assert isinstance(args, list)
-    assert args[0] == "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
-    assert "-EncodedCommand" in args
-    kwargs = captured["kwargs"]
-    assert isinstance(kwargs, dict)
-    assert kwargs["creationflags"] & 0x00000010  # CREATE_NEW_CONSOLE
+    args = cast(list[str], captured["args"])
+    assert args == ["C:\\Program Files\\uv\\uv.exe", "tool", "upgrade", "pythinker code"]
+    assert "powershell" not in " ".join(args).lower()
+    assert "encoded" not in " ".join(args).lower()
 
-    encoded = args[args.index("-EncodedCommand") + 1]
-    assert all(c.isalnum() or c in "+/=" for c in encoded)
-    script = base64.b64decode(encoded).decode("utf-16-le")
-
-    assert "Waiting for Pythinker (PID 4242) to exit..." in script
-    assert "Wait-Process -Id 4242 -Timeout 60" in script
-    assert "Start-Sleep" not in script
-    assert "$psi.FileName = 'C:\\Program Files\\uv\\uv.exe'" in script
-    assert "$psi.Arguments = 'tool upgrade \"pythinker code\"'" in script
-    assert "Upgrade finished. Press any key to close this window." in script
+    kwargs = cast(dict[str, object], captured["kwargs"])
+    assert cast(int, kwargs["creationflags"]) & 0x00000010  # CREATE_NEW_CONSOLE
+    assert kwargs["close_fds"] is True
 
 
 async def test_shell_auto_update_toast_shows_new_version_immediately(monkeypatch):
@@ -146,18 +131,8 @@ async def test_shell_auto_update_toast_shows_new_version_immediately(monkeypatch
     assert invalidated == [True]
 
 
-def test_windows_installer_waits_on_pid_and_cleans_up(monkeypatch, tmp_path):
-    import base64
-
+def test_windows_installer_launches_signed_inno_directly(monkeypatch, tmp_path):
     monkeypatch.setattr(update, "_is_windows", lambda: True)
-    monkeypatch.setattr(
-        update,
-        "which",
-        lambda name: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
-        if name == "powershell"
-        else None,
-    )
-    monkeypatch.setattr(update.os, "getpid", lambda: 4242)
 
     captured: dict[str, object] = {}
 
@@ -172,40 +147,22 @@ def test_windows_installer_waits_on_pid_and_cleans_up(monkeypatch, tmp_path):
     installer.write_bytes(b"stub")
     assert update._spawn_detached_windows_installer(installer) is True
 
-    args = captured["args"]
-    assert isinstance(args, list)
-    # PowerShell -EncodedCommand sidesteps the cmd+list2cmdline+CommandLineToArgvW
-    # multi-layer quoting that previously turned the Wait-Process call into a
-    # string literal PowerShell printed verbatim instead of running.
-    assert args[0] == "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
-    assert "-EncodedCommand" in args
-    kwargs = captured["kwargs"]
-    assert isinstance(kwargs, dict)
-    assert kwargs["creationflags"] & 0x00000010  # CREATE_NEW_CONSOLE
+    args = cast(list[str], captured["args"])
+    assert args == [
+        str(installer),
+        "/SILENT",
+        "/NORESTART",
+        "/CLOSEAPPLICATIONS",
+        "/NORESTARTAPPLICATIONS",
+    ]
+    assert "powershell" not in " ".join(args).lower()
+    assert "encoded" not in " ".join(args).lower()
+    assert "/VERYSILENT" not in args
+    assert "/SUPPRESSMSGBOXES" not in args
 
-    encoded = args[args.index("-EncodedCommand") + 1]
-    # The encoded payload must contain no characters cmd.exe needs to escape.
-    assert all(c.isalnum() or c in "+/=" for c in encoded)
-
-    script = base64.b64decode(encoded).decode("utf-16-le")
-    # Robust wait on this process's own PID instead of a fixed sleep, capped:
-    assert "Wait-Process -Id 4242" in script
-    assert "-Timeout 60" in script
-    assert "Start-Sleep" not in script
-    assert "timeout /t" not in script
-    # Silent install + staged-tmpdir cleanup:
-    assert "/VERYSILENT" in script
-    assert "/SUPPRESSMSGBOXES" in script
-    assert "/NORESTART" in script
-    assert "[System.Diagnostics.ProcessStartInfo]::new()" in script
-    assert "Remove-Item" in script
-    assert "-Recurse" in script
-    # The actual installer + tmpdir paths are embedded as PS string literals:
-    assert str(installer) in script
-    assert str(installer.parent) in script
-    # User-visible bookend messages:
-    assert "Waiting for Pythinker (PID 4242) to exit..." in script
-    assert "Installer finished" in script
+    kwargs = cast(dict[str, object], captured["kwargs"])
+    assert cast(int, kwargs["creationflags"]) & 0x00000200  # CREATE_NEW_PROCESS_GROUP
+    assert kwargs["close_fds"] is True
 
 
 def test_update_command_registered():
