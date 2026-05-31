@@ -69,3 +69,50 @@ def test_welcome_banner_no_chip_unchanged(monkeypatch):
     # Both paths produce the same output when banner is None.
     assert out_without == out_with
     assert "Welcome to Pythinker" in out_without
+
+
+def test_welcome_chip_renders_in_footer_not_header(monkeypatch):
+    console = Console(record=True, width=120, color_system=None)
+    monkeypatch.setattr(shell_module, "console", console)
+    monkeypatch.setattr(shell_module, "get_version", lambda: "9.9.9")
+
+    chip = Text("✦ What's new in v9.9.9 · /changelog")
+    shell_module._print_welcome_info("Pythinker Code", [], banner=chip)
+
+    lines = [ln for ln in console.export_text().splitlines() if ln.strip()]
+    # Chip sits on the bottom border (footer), not in the header.
+    assert "changelog" in lines[-1]
+    assert all("changelog" not in ln for ln in lines[:3])
+
+
+def test_welcome_info_grid_has_no_pipe_separator(monkeypatch):
+    from pythinker_code.ui.shell import WelcomeInfoItem
+
+    console = Console(record=True, width=120, color_system=None)
+    monkeypatch.setattr(shell_module, "console", console)
+    monkeypatch.setattr(shell_module, "get_version", lambda: "9.9.9")
+
+    items = [WelcomeInfoItem(name="Directory", value="/tmp/proj")]
+    shell_module._print_welcome_info("Pythinker Code", items)
+
+    out = console.export_text()
+    dir_line = next(ln for ln in out.splitlines() if "Directory" in ln)
+    # Only the two panel-edge pipes remain; the separator column is gone.
+    assert dir_line.count("│") == 2
+    assert "/tmp/proj" in dir_line
+
+
+def test_welcome_strapline_and_help_on_separate_lines(monkeypatch):
+    console = Console(record=True, width=120, color_system=None)
+    monkeypatch.setattr(shell_module, "console", console)
+    monkeypatch.setattr(shell_module, "get_version", lambda: "9.9.9")
+
+    shell_module._print_welcome_info("Pythinker Code", [])
+
+    out = console.export_text()
+    assert "then Create." in out
+    assert "Send /help for help." in out
+    # The strapline and the help line must not share one rendered line.
+    assert not any(
+        "then Create." in ln and "Send /help" in ln for ln in out.splitlines()
+    )
