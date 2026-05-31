@@ -15,6 +15,10 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **`/feedback` submits structured reports with redacted session context.** A new
+  `/feedback [bug|feature|ux|wrong] [message]` command collects recent session context
+  and strips sensitive file contents before sending, shows a confirmation preview, and
+  falls back to opening a prefilled GitHub issue when direct submission is unavailable.
 - **Fresh releases surface in the startup update prompt immediately.** The pre-start
   update prompt now revalidates a cached "already current" answer with a bounded
   conditional request instead of waiting for the 24-hour background-check throttle.
