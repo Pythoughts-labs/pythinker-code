@@ -478,7 +478,7 @@ class Shell:
 
     @staticmethod
     def _echo_agent_input(user_input: UserInput) -> None:
-        console.print(render_user_echo_text(user_input.command))
+        console.print(render_user_echo_text(user_input.resolved_command))
 
     def _bind_running_input(
         self,
@@ -1198,7 +1198,7 @@ class Shell:
                 if not pending:
                     break
                 queued = pending.pop(0)
-                console.print(render_user_echo_text(queued.command))
+                console.print(render_user_echo_text(queued.resolved_command))
                 await run_soul(
                     self.soul,
                     queued.content,

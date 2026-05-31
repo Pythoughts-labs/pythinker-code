@@ -2558,10 +2558,12 @@ class CustomPromptSession:
         fragments: FormattedText = FormattedText()
         visible = todos[:5]
         hidden = todos[5:]
+        first_prefix = f"  {TRANSCRIPT_TOOL_GUTTER}  "
+        continuation_prefix = " " * _display_width(first_prefix)
         for index, todo in enumerate(visible):
             if fragments:
                 fragments.append(("", "\n"))
-            prefix = f"  {TRANSCRIPT_TOOL_GUTTER}  " if index == 0 else "       "
+            prefix = first_prefix if index == 0 else continuation_prefix
             if todo.status == "done":
                 icon = "✔"
                 icon_style = success_style
@@ -2591,7 +2593,7 @@ class CustomPromptSession:
                 if hidden_done == len(hidden)
                 else "more"
             )
-            fragments.append((muted_style, f"       … +{len(hidden)} {label}"))
+            fragments.append((muted_style, f"{continuation_prefix}… +{len(hidden)} {label}"))
         return fragments
 
     def _render_background_working_status(

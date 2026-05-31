@@ -341,8 +341,8 @@ class _PromptLiveView(_LiveView):
                     duration=3.0,
                 )
                 return
-        # Print permanently in conversation flow (shows placeholder for pasted text)
-        console.print(render_user_echo_text(user_input.command))
+        # Print permanently in conversation flow with UI-only text placeholders expanded.
+        console.print(render_user_echo_text(user_input.resolved_command))
         from pythinker_code.telemetry import track
 
         track("input_steer")
