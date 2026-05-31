@@ -73,7 +73,7 @@ def test_site_dispatch_uses_scoped_github_app_token_and_fails_loud() -> None:
 
     assert "PYTHINKER_HOME_REPO_DISPATCH_TOKEN" not in workflow
     assert "actions/create-github-app-token" not in workflow
-    assert 'permissions:{contents:"write"}' in workflow
+    assert re.search(r"permissions\s*:\s*\{[^}]*contents\s*:\s*\"write\"", workflow)
     assert "PYTHINKER_RELEASE_BOT_APP_ID" in workflow
     assert "PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY" in workflow
     assert "Missing PYTHINKER_RELEASE_BOT_APP_ID" in workflow
