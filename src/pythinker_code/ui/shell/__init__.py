@@ -56,9 +56,11 @@ from pythinker_code.ui.shell.slash import registry as shell_slash_registry
 from pythinker_code.ui.shell.update import (
     consume_whats_new,
     pending_update_notice,
-    prompt_pre_start_update,
     refresh_update_cache_if_due,
     welcome_update_target,
+)
+from pythinker_code.ui.shell.update_orchestrator import (
+    prompt_pre_start_update_job as prompt_pre_start_update,
 )
 from pythinker_code.ui.shell.visualize import (
     ApprovalPromptDelegate,
@@ -1859,7 +1861,6 @@ _LOGO_NAVY = "#213853"  # outline / chassis (head + body frame, mouth, neck)
 _LOGO_FACE = "#F9F2F5"  # face / chest interior (cream)
 _LOGO_CORAL = "#EE9983"  # antenna ball, ears, accent bits
 _LOGO_IRIS = "#AFE3F1"  # eye iris + chest button glow (light cyan)
-_PYTHINKER_BORDER = "grey39"
 
 _LOGO = (
     f"      [{_LOGO_CORAL}]●[/]\n"
@@ -1934,25 +1935,19 @@ def _print_welcome_info(
 ) -> None:
     _t = _get_tui_tokens()
     head = Text.from_markup("Welcome to Pythinker — think first, then code.")
-    help_text = Text.from_markup(
-        f"[{_t.muted}]Review · Secure · Diagnose · then Create. Send /help for help.[/]"
+    strapline = Text.from_markup(
+        f"[{_t.muted}]Review · Secure · Diagnose · then Create.[/]"
     )
+    help_text = Text.from_markup(f"[{_t.muted}]Send /help for help.[/]")
     help_text.highlight_regex(r"/help\b", f"bold {_t.warning}")
 
-    # Use Table for precise width control
+    # Logo on the left; the 3-line text block bottom-aligns against the 5-line
+    # robot so the antenna floats above and the lines sit beside the body.
     logo = Text.from_markup(_LOGO)
     table = Table(show_header=False, show_edge=False, box=None, padding=(0, 1), expand=False)
     table.add_column(justify="left")
-    if banner is not None:
-        # Chip at the top, head/help at the bottom, blank padding in between.
-        logo_lines = _LOGO.count("\n") + 1  # 5 for the current robot logo
-        pad = max(0, logo_lines - 3)  # chip(1) + head(1) + help(1) = 3 fixed
-        right_cell: RenderableType = Group(banner, *([Text("")] * pad), head, help_text)
-        table.add_column(justify="left", vertical="top")
-    else:
-        right_cell = Group(head, help_text)
-        table.add_column(justify="left", vertical="bottom")
-    table.add_row(logo, right_cell)
+    table.add_column(justify="left", vertical="bottom")
+    table.add_row(logo, Group(head, strapline, help_text))
 
     rows: list[RenderableType] = [table]
 
@@ -1965,11 +1960,10 @@ def _print_welcome_info(
             show_header=False, show_edge=False, box=None, padding=(0, 1), expand=False
         )
         info_table.add_column(justify="right", style=tui_rich_style("muted"))
-        info_table.add_column(justify="center", style=tui_rich_style("dim"), no_wrap=True)
         info_table.add_column(justify="left")
         for item in facts:
             value_style = _value_style_for_label(item.name, item.level)
-            info_table.add_row(item.name, "│", Text(item.value, style=value_style))
+            info_table.add_row(item.name, Text(item.value, style=value_style))
         rows.append(info_table)
 
     if tips:
@@ -1989,8 +1983,8 @@ def _print_welcome_info(
         rows.append(tips_table)
 
     version_title = Text.assemble(
-        ("Pythinker Code", _PYTHINKER_BORDER),
-        (f" v{get_version()}", "grey50"),
+        ("Pythinker Code", tui_rich_style("muted")),
+        (f" v{get_version()}", tui_rich_style("dim")),
     )
 
     console.print(
@@ -1998,7 +1992,9 @@ def _print_welcome_info(
             Group(*rows),
             title=version_title,
             title_align="left",
-            border_style=_PYTHINKER_BORDER,
+            subtitle=banner,
+            subtitle_align="right",
+            border_style=tui_rich_style("border"),
             box=box.ROUNDED,
             expand=False,
             padding=(1, 2),
