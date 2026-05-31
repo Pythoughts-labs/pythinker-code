@@ -101,10 +101,13 @@ begin
   end;
   if not RegQueryStringValue(Root, Subkey, 'Path', OrigPath) then
     OrigPath := '';
+  StringChangeEx(OrigPath, ';' + Param, '', True);
+  StringChangeEx(OrigPath, Param + ';', '', True);
+  StringChangeEx(OrigPath, Param, '', True);
   if OrigPath = '' then
     NewPath := Param
   else
-    NewPath := OrigPath + ';' + Param;
+    NewPath := Param + ';' + OrigPath;
   RegWriteExpandStringValue(Root, Subkey, 'Path', NewPath);
 end;
 
@@ -134,11 +137,9 @@ var
 begin
   if CurStep = ssPostInstall then begin
     AppDir := ExpandConstant('{app}');
-    if WizardIsTaskSelected('modifypath')
-       and NeedsAddPath(AppDir, 'HKCU') then
+    if WizardIsTaskSelected('modifypath') then
       AddToPath(AppDir, 'HKCU');
-    if WizardIsTaskSelected('modifypathmachine')
-       and NeedsAddPath(AppDir, 'HKLM') then
+    if WizardIsTaskSelected('modifypathmachine') then
       AddToPath(AppDir, 'HKLM');
   end;
 end;

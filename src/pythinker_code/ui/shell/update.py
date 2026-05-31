@@ -94,7 +94,7 @@ def _detect_upgrade_command() -> list[str]:
     exe = sys.executable.replace("\\", "/").lower()
     if "/cellar/pythinker-code/" in exe or "/homebrew/cellar/pythinker-code/" in exe:
         return ["brew", "upgrade", "pythinker-code"]
-    if _is_native_build():
+    if _is_native_build() or (_is_windows() and not _is_running_from_source_checkout()):
         return [NATIVE_INSTALLER_MARKER]
     if "/uv/tools/" in exe:
         return ["uv", "tool", "upgrade", "pythinker-code"]

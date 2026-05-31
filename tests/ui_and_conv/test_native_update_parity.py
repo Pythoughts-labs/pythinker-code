@@ -59,6 +59,32 @@ def test_pending_update_notice_none_for_source_checkout(monkeypatch):
     assert update.pending_update_notice() is None
 
 
+def test_windows_python_install_prefers_native_installer(monkeypatch):
+    monkeypatch.setattr(update, "_is_windows", lambda: True)
+    monkeypatch.setattr(update, "_is_native_build", lambda: False)
+    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: False)
+    monkeypatch.setattr(update.sys, "executable", r"C:\Users\me\.local\bin\python.exe")
+
+    assert update._detect_upgrade_command() == [update.NATIVE_INSTALLER_MARKER]
+
+
+def test_windows_source_checkout_keeps_python_upgrade_command(monkeypatch):
+    monkeypatch.setattr(update, "_is_windows", lambda: True)
+    monkeypatch.setattr(update, "_is_native_build", lambda: False)
+    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: True)
+    python = r"C:\repo\.venv\Scripts\python.exe"
+    monkeypatch.setattr(update.sys, "executable", python)
+
+    assert update._detect_upgrade_command() == [
+        python,
+        "-m",
+        "pip",
+        "install",
+        "--upgrade",
+        "pythinker-code",
+    ]
+
+
 def test_windows_upgrade_helper_uses_direct_command_not_powershell(monkeypatch):
     monkeypatch.setattr(update, "_is_windows", lambda: True)
 
