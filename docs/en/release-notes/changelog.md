@@ -17,6 +17,36 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.27.0 (2026-05-31)
+
+### What changed in this release
+
+- **`/feedback` submits structured reports with redacted session context.** A new
+  `/feedback [bug|feature|ux|wrong] [message]` command collects recent session context
+  and strips sensitive file contents before sending, shows a confirmation preview, and
+  falls back to opening a prefilled GitHub issue when direct submission is unavailable.
+- **Fresh releases surface in the startup update prompt immediately.** The pre-start
+  update prompt now revalidates a cached "already current" answer with a bounded
+  conditional request instead of waiting for the 24-hour background-check throttle.
+  Release promotion also waits for exact native assets, PyPI, and the Homebrew tap
+  before marking a version latest, so installed clients no longer resolve a release
+  before its install channel is ready.
+- **Background agent recovery preserves terminal task state.** Recovery now re-reads
+  task runtime under the store update lock before marking orphaned agent work
+  recoverable, so a stale snapshot can no longer clobber a task that completed.
+- **Project memory recall keeps the simple lexical path.** The unused SQLite FTS
+  retriever seam and dead recall path argument are removed; collaborators now use
+  a public memory-store root accessor instead of reaching into private methods.
+- **Shell prompt echoes and background todo rows are clearer.** Transcript echoes now
+  show the resolved submitted text for pasted-content placeholders, and background
+  todo rows align continuation icons with the first row.
+- **StrReplaceFile now refuses ambiguous single replacements.** A non-`replace_all` edit now
+  errors when `old` matches more than once instead of silently editing the first match. Add
+  surrounding context to make the old string unique, or pass `replace_all=true` when every
+  occurrence should change.
+
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.27.0`, or use the native installer for your OS (see the README install table).
+
 ## 0.26.0 (2026-05-30)
 
 ### What changed in this release

@@ -15,6 +15,10 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.27.0 (2026-05-31)
+
+### What changed in this release
+
 - **`/feedback` submits structured reports with redacted session context.** A new
   `/feedback [bug|feature|ux|wrong] [message]` command collects recent session context
   and strips sensitive file contents before sending, shows a confirmation preview, and
@@ -38,6 +42,8 @@ GitHub Releases page; `0.8.0` is the new starting line.
   errors when `old` matches more than once instead of silently editing the first match. Add
   surrounding context to make the old string unique, or pass `replace_all=true` when every
   occurrence should change.
+
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.27.0`, or use the native installer for your OS (see the README install table).
 
 ## 0.26.0 (2026-05-30)
 
