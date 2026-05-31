@@ -31,7 +31,7 @@ These touch org admin, secrets, and an external repo — they are **operator act
 ```bash
 gh repo create TechMatrix-labs/scoop-pythinker \
   --public \
-  --description "Scoop bucket for Pythinker Code. Auto-updated by pythinker-code/.github/workflows/scoop-bucket.yml on every v* tag. Do not hand-edit bucket/*." \
+  --description "Scoop bucket for Pythinker Code. Auto-updated by pythinker-code/.github/workflows/scoop-bucket.yml on every semver release tag. Do not hand-edit bucket/*." \
   --disable-wiki
 # Verify:
 gh repo view TechMatrix-labs/scoop-pythinker --json visibility,name -q '.name + " " + .visibility'
@@ -88,10 +88,10 @@ gh api /orgs/TechMatrix-labs/packages?package_type=container --jq '.[].name'
 |---|---|---|
 | Create | `Dockerfile` | Thin `python:3.14-slim` image; `pip install pythinker-code==${V}` from PyPI; sets `PYTHINKER_MANAGED=docker`; entrypoint `pythinker`. |
 | Create | `.dockerignore` | Keep the build context tiny (the wheel comes from PyPI, not the repo). |
-| Create | `.github/workflows/docker.yml` | On `push: tags: v*`: wait-for-PyPI, build amd64 + arm64 by digest, stitch manifest to `ghcr.io/techmatrix-labs/pythinker-code:<version>`, advance `:latest` only when the release is promoted (non-prerelease) + ancestor-check. Best-effort. |
+| Create | `.github/workflows/docker.yml` | On semver release tags (`v+([0-9]).+([0-9]).+([0-9])`): wait-for-PyPI, build amd64 + arm64 by digest, stitch manifest to `ghcr.io/techmatrix-labs/pythinker-code:<version>`, advance `:latest` only when the release is promoted (non-prerelease) + ancestor-check. Best-effort. |
 | Create | `packages/scoop-bucket/generate-manifest.py` | Stdlib generator: poll the release, read the EXISTING Windows onedir zip + `.sha256`, render `bucket/pythinker-code.json`. Mirrors `packages/homebrew-tap/generate-formula.py`. |
 | Create | `packages/scoop-bucket/pythinker-code.json.tmpl` | Scoop manifest template with `__VERSION__`/`__URL__`/`__SHA256__` placeholders; `bin: pythinker\pythinker.exe`; `env_set: PYTHINKER_MANAGED=scoop`; version-less `autoupdate`. |
-| Create | `.github/workflows/scoop-bucket.yml` | On `push: tags: v*` + `workflow_dispatch`: generate the manifest, mint `pythinker-scoop-publisher` token, git-push `bucket/pythinker-code.json` into `scoop-pythinker`. Mirrors `homebrew-tap.yml`. |
+| Create | `.github/workflows/scoop-bucket.yml` | On semver release tags (`v+([0-9]).+([0-9]).+([0-9])`) + `workflow_dispatch`: generate the manifest, mint `pythinker-scoop-publisher` token, git-push `bucket/pythinker-code.json` into `scoop-pythinker`. Mirrors `homebrew-tap.yml`. |
 | Create | `tests/test_scoop_manifest.py` | Failing-test-first pytest for `generate-manifest.py` (mirrors `tests/test_homebrew_formula.py`). |
 | Modify | `flake.nix` | Add `apps.default` (`type=app`, `program=.../bin/pythinker`); add `--set PYTHINKER_MANAGED "nix"` to the `makeWrapper` installPhase. |
 | Modify | `.github/workflows/ci-pythinker-cli.yml` | Extend the existing `nix-test` job to also run `nix run .#default -- --version` (the `apps.default` smoke check). |
@@ -179,7 +179,7 @@ git commit -m "feat(docker): thin python:3.14-slim image installing the publishe
 
 - [ ] 1. Create `.github/workflows/docker.yml`. Topology mirrors h-agent's `docker-publish.yml` (build-amd64 / build-arm64 / merge / move-latest), with three pythinker-specific changes the advisor flagged: (a) GHCR login with `GITHUB_TOKEN` (not Docker Hub); (b) a **wait-for-PyPI** pre-check before buildx (the wheel publishes in a parallel job and may 404); (c) `:latest` advances **only when the release is non-prerelease** (promote has flipped it) AND the ancestor-check passes. Lowercase image name is mandatory for GHCR.
 
-> **Runbook note — `:latest` does NOT auto-advance after promotion.** `docker.yml` triggers only on `push: tags: v*` and `workflow_dispatch` — there is **no `release:` trigger**. At tag-push time the GitHub Release is still a prerelease (created prerelease by `release-pythinker-cli.yml`), so the `move-latest` gate evaluates `isPrerelease == true` and **skips** — `:latest` is intentionally NOT moved. `promote-release.yml` later flips the release to non-prerelease via a release *edit*, which does **not** re-fire `docker.yml`. Therefore a maintainer MUST manually re-dispatch after promotion to advance `:latest`:
+> **Runbook note — `:latest` does NOT auto-advance after promotion.** `docker.yml` triggers only on semver release tags (`v+([0-9]).+([0-9]).+([0-9])`) and `workflow_dispatch` — there is **no `release:` trigger**. At tag-push time the GitHub Release is still a prerelease (created prerelease by `release-pythinker-cli.yml`), so the `move-latest` gate evaluates `isPrerelease == true` and **skips** — `:latest` is intentionally NOT moved. `promote-release.yml` later flips the release to non-prerelease via a release *edit*, which does **not** re-fire `docker.yml`. Therefore a maintainer MUST manually re-dispatch after promotion to advance `:latest`:
 > ```bash
 > gh workflow run docker.yml -f version=X.Y.Z   # run AFTER promote flips vX.Y.Z to non-prerelease
 > ```
@@ -191,7 +191,7 @@ name: Docker (GHCR)
 on:
   push:
     tags:
-      - "v[0-9]*.[0-9]*.[0-9]*"
+      - "v+([0-9]).+([0-9]).+([0-9])"
   workflow_dispatch:
     inputs:
       version:
@@ -830,7 +830,7 @@ name: Update Scoop bucket
 on:
   push:
     tags:
-      - "v[0-9]*.[0-9]*.[0-9]*"
+      - "v+([0-9]).+([0-9]).+([0-9])"
   workflow_dispatch:
     inputs:
       version:
@@ -945,7 +945,7 @@ jobs:
 
           This bucket is auto-updated by the
           [scoop-bucket.yml](https://github.com/TechMatrix-labs/pythinker-code/blob/main/.github/workflows/scoop-bucket.yml)
-          workflow on every \`v*.*.*\` tag. Do not hand-edit \`bucket/*\` — your
+          workflow on every semver release tag. Do not hand-edit \`bucket/*\` — your
           edits will be overwritten on the next release.
           EOF
           fi
