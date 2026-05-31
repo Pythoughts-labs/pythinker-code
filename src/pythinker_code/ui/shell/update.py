@@ -387,7 +387,10 @@ def _skip_version_this_session(version: str) -> None:
 def _read_last_seen_version() -> str | None:
     try:
         return LAST_SEEN_VERSION_FILE.read_text(encoding="utf-8").strip() or None
+    except FileNotFoundError:
+        return None
     except OSError:
+        logger.exception("Failed to read last-seen version:")
         return None
 
 

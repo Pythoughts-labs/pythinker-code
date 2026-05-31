@@ -18,6 +18,7 @@ from pythinker_code.telemetry.errors import RecentError, recent_errors
 from pythinker_code.ui.shell.oauth import current_model_key
 from pythinker_code.utils.aiohttp import new_client_session
 from pythinker_code.utils.export import is_sensitive_file
+from pythinker_code.utils.logging import logger
 from pythinker_code.utils.string import shorten
 from pythinker_code.wire.types import TextPart, ThinkPart
 
@@ -149,8 +150,8 @@ def redact_text(text: str) -> str:
         home = str(Path.home())
         if home and home != "/":
             redacted = redacted.replace(home, "~")
-    except Exception:
-        pass
+    except (RuntimeError, OSError):
+        logger.debug("Could not resolve home directory for redaction")
     return redacted
 
 

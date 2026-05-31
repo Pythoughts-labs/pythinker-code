@@ -1008,15 +1008,17 @@ def test_welcome_update_target_suppressed_for_source_checkout(monkeypatch, tmp_p
 
 
 def test_consume_whats_new_baseline_on_first_launch(monkeypatch, tmp_path):
+    from pythinker_code.constant import VERSION as current_version
+
     last_seen_file = tmp_path / "last_seen.txt"
 
     monkeypatch.setattr(update, "LAST_SEEN_VERSION_FILE", last_seen_file)
     monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: False)
 
-    # First-ever launch: no file → write baseline, return None.
+    # First-ever launch: no file → write the current version as baseline, return None.
     result = update.consume_whats_new()
     assert result is None
-    assert last_seen_file.read_text(encoding="utf-8").strip() != ""
+    assert last_seen_file.read_text(encoding="utf-8").strip() == current_version
 
 
 def test_consume_whats_new_returns_version_after_upgrade(monkeypatch, tmp_path):

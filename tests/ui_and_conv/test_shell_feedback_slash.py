@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Awaitable
 from pathlib import Path
-from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock, Mock
 
 from pythinker_core.message import Message, ToolCall
 
 from pythinker_code.feedback import (
+    FeedbackSubmission,
     build_feedback_issue_url,
     feedback_summary,
     parse_feedback_args,
@@ -127,7 +127,7 @@ class TestFeedbackSubmission:
         app.soul = soul
         monkeypatch.setattr(shell_slash, "_feedback_destination", lambda _soul: ("https://fb", {}))
         submit_mock = AsyncMock(
-            return_value=SimpleNamespace(number=42, html_url="https://issue/42")
+            return_value=FeedbackSubmission(number=42, html_url="https://issue/42")
         )
         monkeypatch.setattr("pythinker_code.feedback.submit_feedback_payload", submit_mock)
         monkeypatch.setattr("pythinker_code.feedback.current_model_key", lambda _soul: "test/model")
@@ -172,7 +172,7 @@ class TestFeedbackSubmission:
         monkeypatch.setattr(shell_slash, "_feedback_destination", lambda _soul: ("https://fb", {}))
         monkeypatch.setattr(
             "pythinker_code.feedback.submit_feedback_payload",
-            AsyncMock(return_value=SimpleNamespace(number=None, html_url=None)),
+            AsyncMock(return_value=FeedbackSubmission(number=None, html_url=None)),
         )
         print_mock = Mock()
         monkeypatch.setattr(shell_slash.console, "print", print_mock)
