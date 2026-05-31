@@ -946,3 +946,114 @@ async def test_run_awaits_pre_start_update_before_auto_update(runtime, tmp_path,
 
     prompt_mock.assert_awaited_once()
     auto_update_mock.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# welcome_update_target and consume_whats_new
+# ---------------------------------------------------------------------------
+
+
+def test_welcome_update_target_returns_newer_cached_version(monkeypatch, tmp_path):
+    latest_file = tmp_path / "latest.txt"
+    latest_file.write_text("99.0.0", encoding="utf-8")
+    dismissed_file = tmp_path / "dismissed.txt"
+
+    monkeypatch.setattr(update, "LATEST_VERSION_FILE", latest_file)
+    monkeypatch.setattr(update, "DISMISSED_VERSION_FILE", dismissed_file)
+    monkeypatch.setattr(update, "_auto_update_disabled", lambda: False)
+    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: False)
+
+    result = update.welcome_update_target()
+    assert result == "99.0.0"
+
+
+def test_welcome_update_target_not_suppressed_by_session_skip(monkeypatch, tmp_path):
+    latest_file = tmp_path / "latest.txt"
+    latest_file.write_text("99.0.0", encoding="utf-8")
+    dismissed_file = tmp_path / "dismissed.txt"
+
+    monkeypatch.setattr(update, "LATEST_VERSION_FILE", latest_file)
+    monkeypatch.setattr(update, "DISMISSED_VERSION_FILE", dismissed_file)
+    monkeypatch.setattr(update, "_auto_update_disabled", lambda: False)
+    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: False)
+    # Simulate that the user chose "Skip this session" on the modal.
+    monkeypatch.setattr(update, "_skipped_version_this_session", "99.0.0")
+
+    # welcome_update_target does NOT suppress session-skips (that's its purpose).
+    assert update.welcome_update_target() == "99.0.0"
+
+
+def test_welcome_update_target_suppressed_by_dismiss(monkeypatch, tmp_path):
+    latest_file = tmp_path / "latest.txt"
+    latest_file.write_text("99.0.0", encoding="utf-8")
+    dismissed_file = tmp_path / "dismissed.txt"
+    dismissed_file.write_text("99.0.0", encoding="utf-8")
+
+    monkeypatch.setattr(update, "LATEST_VERSION_FILE", latest_file)
+    monkeypatch.setattr(update, "DISMISSED_VERSION_FILE", dismissed_file)
+    monkeypatch.setattr(update, "_auto_update_disabled", lambda: False)
+    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: False)
+
+    assert update.welcome_update_target() is None
+
+
+def test_welcome_update_target_suppressed_for_source_checkout(monkeypatch, tmp_path):
+    latest_file = tmp_path / "latest.txt"
+    latest_file.write_text("99.0.0", encoding="utf-8")
+
+    monkeypatch.setattr(update, "LATEST_VERSION_FILE", latest_file)
+    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: True)
+
+    assert update.welcome_update_target() is None
+
+
+def test_consume_whats_new_baseline_on_first_launch(monkeypatch, tmp_path):
+    last_seen_file = tmp_path / "last_seen.txt"
+
+    monkeypatch.setattr(update, "LAST_SEEN_VERSION_FILE", last_seen_file)
+    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: False)
+
+    # First-ever launch: no file → write baseline, return None.
+    result = update.consume_whats_new()
+    assert result is None
+    assert last_seen_file.read_text(encoding="utf-8").strip() != ""
+
+
+def test_consume_whats_new_returns_version_after_upgrade(monkeypatch, tmp_path):
+    from pythinker_code.constant import VERSION as current_version
+
+    last_seen_file = tmp_path / "last_seen.txt"
+    last_seen_file.write_text("0.0.1", encoding="utf-8")  # older than current
+
+    monkeypatch.setattr(update, "LAST_SEEN_VERSION_FILE", last_seen_file)
+    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: False)
+
+    result = update.consume_whats_new()
+    assert result == current_version
+    assert last_seen_file.read_text(encoding="utf-8").strip() == current_version
+
+
+def test_consume_whats_new_no_disk_write_in_steady_state(monkeypatch, tmp_path):
+    from pythinker_code.constant import VERSION as current_version
+
+    last_seen_file = tmp_path / "last_seen.txt"
+    last_seen_file.write_text(current_version, encoding="utf-8")
+    mtime_before = last_seen_file.stat().st_mtime
+
+    monkeypatch.setattr(update, "LAST_SEEN_VERSION_FILE", last_seen_file)
+    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: False)
+
+    result = update.consume_whats_new()
+    assert result is None
+    # File must not have been rewritten (mtime unchanged).
+    assert last_seen_file.stat().st_mtime == mtime_before
+
+
+def test_consume_whats_new_suppressed_for_source_checkout(monkeypatch, tmp_path):
+    last_seen_file = tmp_path / "last_seen.txt"
+    last_seen_file.write_text("0.0.1", encoding="utf-8")
+
+    monkeypatch.setattr(update, "LAST_SEEN_VERSION_FILE", last_seen_file)
+    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: True)
+
+    assert update.consume_whats_new() is None

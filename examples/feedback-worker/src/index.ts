@@ -20,6 +20,7 @@ type RecentError = {
 };
 
 type FeedbackPayload = {
+  schema_version?: number;
   session_id?: string;
   type?: string;
   content?: string;
@@ -27,10 +28,26 @@ type FeedbackPayload = {
   os?: string;
   model?: string;
   recent_errors?: RecentError[];
+  session?: Record<string, unknown>;
+  client?: Record<string, unknown>;
+  repo?: Record<string, unknown>;
+  context?: {
+    recent_errors?: RecentError[];
+    last_messages?: unknown[];
+    tool_calls?: unknown[];
+    subagents?: unknown[];
+  };
+  privacy?: Record<string, unknown>;
+};
+
+type GitHubIssue = {
+  number?: number;
+  html_url?: string;
 };
 
 const MAX_CONTENT_LENGTH = 10_000;
 const MAX_RECENT_ERRORS = 10;
+const MAX_CONTEXT_ITEMS = 20;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -50,15 +67,17 @@ export default {
 
     let payload: FeedbackPayload;
     try {
-      payload = await request.json<FeedbackPayload>();
+      payload = (await request.json()) as FeedbackPayload;
     } catch {
       return jsonResponse({ error: "invalid_json" }, 400);
     }
 
     const content = (payload.content || "").trim();
-    const recentErrors = Array.isArray(payload.recent_errors)
-      ? payload.recent_errors.slice(0, MAX_RECENT_ERRORS)
-      : [];
+    const recentErrors = Array.isArray(payload.context?.recent_errors)
+      ? payload.context.recent_errors.slice(0, MAX_RECENT_ERRORS)
+      : Array.isArray(payload.recent_errors)
+        ? payload.recent_errors.slice(0, MAX_RECENT_ERRORS)
+        : [];
     if (!content && recentErrors.length === 0) {
       return jsonResponse({ error: "empty_feedback" }, 400);
     }
@@ -74,15 +93,25 @@ export default {
       os: trim(payload.os, 128),
       model: trim(payload.model, 128),
       recent_errors: recentErrors.map(sanitizeRecentError),
+      session: sanitizeRecord(payload.session),
+      client: sanitizeRecord(payload.client),
+      repo: sanitizeRecord(payload.repo, 24, 20_000),
+      context: {
+        recent_errors: recentErrors.map(sanitizeRecentError),
+        last_messages: sanitizeArray(payload.context?.last_messages),
+        tool_calls: sanitizeArray(payload.context?.tool_calls),
+        subagents: sanitizeArray(payload.context?.subagents),
+      },
+      privacy: sanitizeRecord(payload.privacy),
     };
 
     const title = githubTitle(sanitizedPayload);
     const body = githubBody(sanitizedPayload, request);
 
-    await createGithubIssue(env, title, body);
+    const issue = await createGithubIssue(env, sanitizedPayload, title, body);
     await sendSupportEmail(env, title, body);
 
-    return corsResponse(null, 204);
+    return jsonResponse({ number: issue.number, html_url: issue.html_url }, 201);
   },
 };
 
@@ -101,6 +130,33 @@ function sanitizeRecentError(error: RecentError): RecentError {
     message: trim(error.message, 500),
     tool: trim(error.tool, 128) || null,
   };
+}
+
+function sanitizeValue(value: unknown, maxStringLength = 2_000): unknown {
+  if (typeof value === "string") return value.slice(0, maxStringLength);
+  if (typeof value === "number" || typeof value === "boolean" || value === null) return value;
+  if (Array.isArray(value)) return value.slice(0, MAX_CONTEXT_ITEMS).map((item) => sanitizeValue(item));
+  if (typeof value === "object" && value !== null) return sanitizeRecord(value as Record<string, unknown>);
+  return undefined;
+}
+
+function sanitizeRecord(
+  value: unknown,
+  maxKeys = 20,
+  maxStringLength = 2_000,
+): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const [key, raw] of Object.entries(value).slice(0, maxKeys)) {
+    out[key.slice(0, 80)] = sanitizeValue(raw, maxStringLength);
+  }
+  return out;
+}
+
+function sanitizeArray(value: unknown): unknown[] | undefined {
+  return Array.isArray(value)
+    ? value.slice(0, MAX_CONTEXT_ITEMS).map((item) => sanitizeValue(item))
+    : undefined;
 }
 
 function githubTitle(payload: FeedbackPayload): string {
@@ -127,6 +183,9 @@ function githubBody(payload: FeedbackPayload, request: Request): string {
     `- CF ray: ${request.headers.get("cf-ray") || "unknown"}`,
   ];
 
+  appendJsonSection(lines, "Privacy", payload.privacy);
+  appendJsonSection(lines, "Repository", payload.repo);
+
   if (payload.recent_errors?.length) {
     lines.push("", "## Recent errors", "");
     for (const error of payload.recent_errors) {
@@ -138,11 +197,30 @@ function githubBody(payload: FeedbackPayload, request: Request): string {
     }
   }
 
+  appendJsonSection(lines, "Recent visible messages", payload.context?.last_messages);
+  appendJsonSection(lines, "Tool calls", payload.context?.tool_calls);
+  appendJsonSection(lines, "Subagents", payload.context?.subagents);
+
   return lines.join("\n");
 }
 
-async function createGithubIssue(env: Env, title: string, body: string): Promise<void> {
-  const labels = splitCsv(env.GITHUB_LABELS || "feedback,pythinker-cli");
+function appendJsonSection(lines: string[], title: string, value: unknown): void {
+  if (value === undefined || value === null) return;
+  if (Array.isArray(value) && value.length === 0) return;
+  if (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0) return;
+  lines.push("", `## ${title}`, "", "```json", JSON.stringify(value, null, 2), "```");
+}
+
+async function createGithubIssue(
+  env: Env,
+  payload: FeedbackPayload,
+  title: string,
+  body: string,
+): Promise<GitHubIssue> {
+  const labels = unique([
+    ...splitCsv(env.GITHUB_LABELS || "feedback,pythinker-cli"),
+    `feedback:${payload.type || "feedback"}`,
+  ]);
   const assignees = splitCsv(env.GITHUB_ASSIGNEES || "");
   const response = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/issues`, {
     method: "POST",
@@ -159,6 +237,8 @@ async function createGithubIssue(env: Env, title: string, body: string): Promise
   if (!response.ok) {
     throw new Error(`GitHub issue creation failed: ${response.status}`);
   }
+  const issue = (await response.json()) as GitHubIssue;
+  return { number: issue.number, html_url: issue.html_url };
 }
 
 async function sendSupportEmail(env: Env, subject: string, body: string): Promise<void> {
@@ -227,6 +307,10 @@ function splitCsv(value: string): string[] {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function unique(values: string[]): string[] {
+  return Array.from(new Set(values));
 }
 
 function corsResponse(body: BodyInit | null, status: number): Response {

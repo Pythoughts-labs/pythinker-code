@@ -578,19 +578,136 @@ def _feedback_destination(soul: PythinkerSoul) -> tuple[str, dict[str, str]] | N
 
 @registry.command
 @shell_mode_registry.command
-def feedback(app: Shell, args: str):
-    """Open a GitHub issue to submit feedback or report a bug"""
+async def feedback(app: Shell, args: str):
+    """Submit feedback with redacted session context. Usage: /feedback [bug|feature|ux|wrong] [message]"""  # noqa: E501
+    import aiohttp
+
+    from pythinker_code.feedback import (
+        build_feedback_issue_url,
+        build_feedback_payload,
+        feedback_summary,
+        parse_feedback_args,
+        submit_feedback_payload,
+    )
     from pythinker_code.ui.theme import get_tui_tokens as _get_tok_fb
     from pythinker_code.utils.term import open_url_in_browser
 
     _t_fb = _get_tok_fb()
+    app_soul = getattr(app, "soul", None)
+    soul = app_soul if isinstance(app_soul, PythinkerSoul) else None
 
-    ISSUE_URL = "https://github.com/TechMatrix-labs/pythinker-code/issues/new/choose"
+    def _fallback_to_issue(payload: dict[str, Any] | None = None) -> None:
+        issue_url = (
+            build_feedback_issue_url(payload, soul.runtime.config.feedback.github_repo)
+            if payload is not None and soul is not None
+            else "https://github.com/TechMatrix-labs/pythinker-code/issues/new/choose"
+        )
+        if open_url_in_browser(issue_url):
+            console.print(f"[{_t_fb.success}]Opening GitHub feedback in your browser...[/]")
+        else:
+            console.print(f"Please open: [underline]{issue_url}[/underline]")
 
-    if open_url_in_browser(ISSUE_URL):
-        console.print(f"[{_t_fb.success}]Opening GitHub issues in your browser...[/]")
+    parsed = parse_feedback_args(args)
+    if isinstance(parsed, str):
+        console.print(f"[{_t_fb.error}]{_rich_escape(parsed)}[/]")
+        if soul is None:
+            _fallback_to_issue()
+        return
+
+    if soul is None:
+        _fallback_to_issue()
+        return
+
+    if not parsed.message:
+        from prompt_toolkit import PromptSession
+
+        prompt_session: PromptSession[str] = PromptSession()
+        try:
+            message = await prompt_session.prompt_async(
+                f"Describe your {parsed.kind} feedback (Ctrl-C to cancel): "
+            )
+        except (EOFError, KeyboardInterrupt):
+            console.print(f"[{_t_fb.muted}]Feedback cancelled.[/]")
+            return
+        parsed = type(parsed)(
+            kind=parsed.kind,
+            message=message.strip(),
+            include_diff=parsed.include_diff,
+            include_transcript=parsed.include_transcript,
+            include_tool_details=parsed.include_tool_details,
+            yes=parsed.yes,
+        )
+
+    if not parsed.message:
+        console.print(f"[{_t_fb.warning}]Nothing to submit. Cancelled.[/]")
+        return
+
+    with console.status(f"[{_t_fb.info}]Collecting feedback context...[/]"):
+        payload = await build_feedback_payload(soul, parsed)
+    console.print(feedback_summary(payload))
+
+    if not parsed.yes:
+        from prompt_toolkit import PromptSession
+
+        prompt_session = PromptSession[str]()
+        try:
+            answer = await prompt_session.prompt_async("Send this feedback? [y/N] ")
+        except (EOFError, KeyboardInterrupt):
+            console.print(f"[{_t_fb.muted}]Feedback cancelled.[/]")
+            return
+        if answer.strip().lower() not in {"y", "yes"}:
+            console.print(f"[{_t_fb.muted}]Feedback cancelled.[/]")
+            return
+
+    destination = _feedback_destination(soul)
+    if destination is None:
+        _fallback_to_issue(payload)
+        return
+    feedback_url, headers = destination
+
+    with console.status(f"[{_t_fb.info}]Submitting feedback...[/]"):
+        try:
+            submission = await submit_feedback_payload(feedback_url, headers, payload)
+        except TimeoutError:
+            console.print(f"[{_t_fb.error}]Feedback submission timed out.[/]")
+            _fallback_to_issue(payload)
+            return
+        except aiohttp.ClientError as exc:
+            status = getattr(exc, "status", None)
+            msg = (
+                f"Feedback submission failed (HTTP {status})."
+                if status
+                else "Network error, failed to submit feedback."
+            )
+            console.print(f"[{_t_fb.error}]{msg}[/]")
+            _fallback_to_issue(payload)
+            return
+
+    from pythinker_code.telemetry import track
+
+    track(
+        "feedback_submitted",
+        feedback_type=parsed.kind,
+        include_diff=parsed.include_diff,
+        include_transcript=parsed.include_transcript,
+        include_tool_details=parsed.include_tool_details,
+    )
+    if submission.html_url:
+        console.print(f"[{_t_fb.success}]Thanks — feedback submitted: {submission.html_url}[/]")
+    elif submission.number is not None:
+        console.print(
+            f"[{_t_fb.success}]Thanks — feedback report #{submission.number} submitted.[/]"
+        )
     else:
-        console.print(f"Please open: [underline]{ISSUE_URL}[/underline]")
+        console.print(
+            f"[{_t_fb.success}]Thanks — feedback submitted. "
+            f"Session ID: {soul.runtime.session.id}[/]"
+        )
+        issue_url = build_feedback_issue_url(payload, soul.runtime.config.feedback.github_repo)
+        console.print(
+            "No report link was returned. To add follow-up details, open: "
+            f"[underline]{issue_url}[/underline]"
+        )
 
 
 @registry.command(aliases=["report-error", "report"])
