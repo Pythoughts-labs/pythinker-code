@@ -25,7 +25,7 @@ Note: the terminal-art mockups below are illustrative, not pixel-perfect contrac
 
 ### Current (v0.27.0)
 
-```
+```text
 ╭─ Pythinker Code v0.27.0 ───────────────────────────────────────────╮
 │         ●       ✦ What's new in v0.27.0 · /changelog               │
 │         │                                                           │
@@ -47,7 +47,7 @@ adds visual noise to the info grid.
 
 ### Proposed ("Footer chip")
 
-```
+```text
 ╭─ Pythinker Code v0.27.0 ─────────────────────────────────────────╮
 │                                                                  │
 │         ●                                                        │

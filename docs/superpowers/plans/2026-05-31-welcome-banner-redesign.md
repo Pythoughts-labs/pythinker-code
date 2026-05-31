@@ -125,6 +125,15 @@ git commit -m "test: lock welcome banner redesign (footer chip, no pipe, split s
 
 ## Task 2: Rewrite `_print_welcome_info` to the footer-chip layout
 
+> **Note (post-implementation):** the shipped `_print_welcome_info` evolved
+> beyond the skeleton below. The source is the source of truth; it adds
+> responsive width handling (`_welcome_panel_width`, `_WELCOME_MAX_WIDTH`,
+> `_WELCOME_PANEL_CHROME_WIDTH`), cell-aware truncation helpers
+> (`_truncate_middle_to_width`, `_welcome_value`, `_welcome_tip_lines`), a
+> `Table.grid(...)` build, and a `width >= 68` logo-beside-text vs stacked
+> branch. Read the block below as the original footer-chip intent, not the
+> literal final code.
+
 **Files:**
 - Modify: `src/pythinker_code/ui/shell/__init__.py` (function `_print_welcome_info`, lines ~1934–2008; constant `_PYTHINKER_BORDER`, line 1864)
 

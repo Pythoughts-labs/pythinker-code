@@ -802,7 +802,7 @@ Distributed under the **Apache-2.0 License**. See [`LICENSE`](https://github.com
 [🔌 MCP](https://modelcontextprotocol.io/)
 
 <p align="center">
-  <em>Thanks for visiting ✨ Pythinker! This README does not collect user-level telemetry.</em>
+  <em>Thanks for visiting ✨ Pythinker! Viewing this README does not trigger telemetry.</em>
 </p>
 
 </div>
