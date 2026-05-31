@@ -555,7 +555,7 @@ Expected: `success`. Read its summary + any "Actionable comments posted: N" befo
 
 - [ ] 2. Validate it is well-formed JSON before relying on it as a template fixture:
 ```bash
-/home/ai/.local/bin/uv run python -c "import json,pathlib; json.loads(pathlib.Path('packages/scoop-bucket/pythinker-code.json.tmpl').read_text())"
+uv run python -c "import json,pathlib; json.loads(pathlib.Path('packages/scoop-bucket/pythinker-code.json.tmpl').read_text())"
 ```
 Expected: no output, exit 0 (the `__VERSION__` etc. are valid JSON string values, so it parses as-is).
 
@@ -651,7 +651,7 @@ def test_windows_zip_asset_name_matches_release_workflow() -> None:
 
 - [ ] 2. Run it and watch it fail for the right reason (the generator does not exist yet):
 ```bash
-/home/ai/.local/bin/uv run pytest tests/test_scoop_manifest.py -vv
+uv run pytest tests/test_scoop_manifest.py -vv
 ```
 Expected: collection/import error — `FileNotFoundError`/`spec is None` because `packages/scoop-bucket/generate-manifest.py` does not exist. (Red.)
 
@@ -798,13 +798,13 @@ if __name__ == "__main__":
 
 - [ ] 4. Run the test and watch it pass (Green):
 ```bash
-/home/ai/.local/bin/uv run pytest tests/test_scoop_manifest.py -vv
+uv run pytest tests/test_scoop_manifest.py -vv
 ```
 Expected: `3 passed`.
 
 - [ ] 5. Run the repo lint on the new files so the PR's `check` job will be green (matches `make check-pythinker-code`):
 ```bash
-/home/ai/.local/bin/uv run ruff check tests/test_scoop_manifest.py
+uv run ruff check tests/test_scoop_manifest.py
 ```
 Expected: `All checks passed!` (the generator lives under `packages/scoop-bucket/` which is generator code; if ruff flags it, match the homebrew generator's style — it passes today.)
 
@@ -1319,7 +1319,7 @@ Expected: `OK: no versioned strings added`.
 
 - [ ] 4. If P1 is merged, run the lockstep test to prove the README edits didn't break it:
 ```bash
-/home/ai/.local/bin/uv run pytest tests/test_version_lockstep.py -vv
+uv run pytest tests/test_version_lockstep.py -vv
 ```
 Expected: `passed` (only run if P1's test exists; if P1 isn't merged yet, skip and note it).
 

@@ -28,10 +28,13 @@ def test_tool_style_maps_common_tools_to_professional_labels():
     assert tool_style("ReadFile").label == "Read"
     assert tool_style("Grep").label == "Search"
     assert tool_style("Edit").label == "Edit"
+    assert tool_style("StrReplaceFile").label == "Edit"
     assert tool_style("ApplyPatch").label == "Patch"
     assert tool_style("Bash").label == "Shell"
+    assert tool_style("SetTodoList").label == "Todo"
     assert tool_style("TodoWrite").label == "Todo"
     assert tool_style("Agent").label == "Subagent"
+    assert tool_style("RunAgents").label == "Subagents"
     assert tool_style("Agent").icon == "●"
     from pythinker_code.ui.theme import get_tui_tokens, set_active_theme
 

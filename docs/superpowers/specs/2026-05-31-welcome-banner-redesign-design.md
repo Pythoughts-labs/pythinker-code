@@ -21,6 +21,8 @@ still appears verbatim, and the rendered panel matches the approved mock below.
 
 ## 2. Current vs. Proposed
 
+Note: the terminal-art mockups below are illustrative, not pixel-perfect contracts. CI logs, SSH panes, no-color terminals, and font differences may shift box-drawing alignment; use the plain-text assertions in `tests/ui_and_conv/test_shell_welcome_info.py` as the canonical fallback when exact appearance matters.
+
 ### Current (v0.27.0)
 
 ```
@@ -29,7 +31,7 @@ still appears verbatim, and the rendered panel matches the approved mock below.
 │         │                                                           │
 │     ▛▀▀▀▀▀▀▀▜                                                       │
 │    ◖█ ◉   ◉ █◗  Welcome to Pythinker — think first, then code.      │
-│     ▙▄▄▄≡▄▄▄▟   Review · Secure · Diagnose · then Create. Send /help│
+│     ▙▄▄▄≡▄▄▄▟   Review · Secure · Diagnose · Build with confidence. Type /help│
 │                                                                    │
 │   Directory  │  ~                                                  │
 │     Session  │  be1c9425-...                                       │
@@ -51,8 +53,8 @@ adds visual noise to the info grid.
 │         ●                                                        │
 │         │                                                        │
 │     ▛▀▀▀▀▀▀▀▜   Welcome to Pythinker — think first, then code.   │
-│    ◖█ ◉   ◉ █◗  Review · Secure · Diagnose · then Create.        │
-│     ▙▄▄▄≡▄▄▄▟   Send /help for help.                             │
+│    ◖█ ◉   ◉ █◗  Review · Secure · Diagnose · Build with confidence. │
+│     ▙▄▄▄≡▄▄▄▟   Type /help for commands.                          │
 │                                                                  │
 │   Directory  ~                                                   │
 │     Session  be1c9425-6f1f-47d5-8e33-01d2d13c44c9                │
@@ -84,8 +86,8 @@ adds visual noise to the info grid.
    (`vertical="bottom"`), so the antenna (`●` / `│`) floats above and the three text
    lines sit beside the robot's face/body/mouth rows.
 
-3. **Strapline on its own line.** `"Review · Secure · Diagnose · then Create."` and
-   `"Send /help for help."` become two separate lines instead of one overflowing line.
+3. **Strapline on its own line.** `"Review · Secure · Diagnose · Build with confidence."` and
+   `"Type /help for commands."` become two separate lines instead of one overflowing line.
    The headline `"Welcome to Pythinker — think first, then code."` remains a single
    contiguous line (e2e dependency).
 
@@ -165,7 +167,7 @@ contiguous substring `"Welcome to Pythinker — think first, then code."` → pr
 2. `test_welcome_info_grid_has_no_pipe_separator` — render with info items; assert the
    `" │ "` separator no longer appears between a label and its value (guard the cleanup).
 3. `test_welcome_strapline_and_help_on_separate_lines` — assert no single rendered line
-   contains both "then Create." and "Send /help".
+   contains both "Build with confidence." and "Type /help".
 
 No snapshot/golden files exist, so none to regenerate.
 
@@ -201,4 +203,3 @@ No snapshot/golden files exist, so none to regenerate.
 | Light-mode border token regresses a color test. | No test asserts border/title color; `color_system=None` in unit tests ignores color. |
 | Splitting the strapline breaks an unseen assertion. | grep across `tests/`, `tests_e2e/`, docs found **no** assertion on strapline contiguity or `/help` adjacency. |
 | Narrow terminal (<64 cols) wrapping. | Same `expand=False` behavior as today; not a regression. Logged, not solved. |
-```

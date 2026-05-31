@@ -29,7 +29,7 @@ from rich.text import Text
 
 from pythinker_code.ui.shell.components.key_hints import key_hint
 from pythinker_code.ui.shell.components.render_utils import render_message_response
-from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ASSISTANT_MARKER
+from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ACTIVE_MARKER, TRANSCRIPT_ASSISTANT_MARKER
 from pythinker_code.ui.shell.motion import reduced_motion_enabled
 from pythinker_code.ui.shell.spacing import TINTED_CARD_PADDING
 from pythinker_code.ui.shell.tool_renderers import (
@@ -260,7 +260,7 @@ class ToolExecutionComponent:
             glyph = "✘ "
             glyph_style = tui_rich_style("error") + Style(bold=True)
         elif self._status == ToolExecutionStatus.CANCELLED:
-            glyph = "● "
+            glyph = f"{TRANSCRIPT_ACTIVE_MARKER} "
             glyph_style = tui_rich_style("warning") + Style(bold=True)
         else:
             active = reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0

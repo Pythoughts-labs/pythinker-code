@@ -11,7 +11,7 @@ from rich.text import Text
 
 from pythinker_code.ui.shell.components.render_utils import cell_width, truncate_to_width
 from pythinker_code.ui.shell.design_system import ShellTone, shell_style, status_icon
-from pythinker_code.ui.shell.motion import shimmer_text
+from pythinker_code.ui.shell.motion import reduced_motion_enabled, shimmer_text
 
 ActivityState = Literal["running", "completed", "failed", "waiting", "denied", "interrupted"]
 
@@ -24,9 +24,19 @@ class ActivityRow:
     identity: str | None = None
 
 
+def _row_marker(state: ActivityState, now: float) -> Text:
+    """Status marker for an activity row, pulsing the running dot in step with
+    the rest of the shell (`loading_marker`/`_worklog`) on a 0.8s cadence."""
+    icon = status_icon(state)
+    if state == "running" and not reduced_motion_enabled() and int(now / 0.8) % 2 != 0:
+        return Text(" ", style=icon.style)
+    return icon
+
+
 def render_activity_tree(
-    rows: list[ActivityRow], *, width: int, max_rows: int = 4
+    rows: list[ActivityRow], *, width: int, max_rows: int = 4, now: float | None = None
 ) -> RenderableType:
+    clock = time.monotonic() if now is None else now
     rendered: list[RenderableType] = []
     visible = rows[-max_rows:]
     hidden = max(0, len(rows) - len(visible))
@@ -36,12 +46,12 @@ def render_activity_tree(
         prefix = f"{branch} {label} "
         available = max(1, width - cell_width(prefix) - 4)
         text = Text()
-        text.append_text(status_icon(row.state))
+        text.append_text(_row_marker(row.state, clock))
         text.append(" ")
         text.append(prefix, style=shell_style(ShellTone.MUTED))
         detail = truncate_to_width(row.detail, available)
         if row.state == "running":
-            text.append_text(shimmer_text(detail, time.monotonic()))
+            text.append_text(shimmer_text(detail, clock))
         else:
             text.append(detail, style=shell_style(ShellTone.MUTED))
         rendered.append(text)

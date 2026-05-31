@@ -786,7 +786,7 @@ class PythinkerCLI:
             welcome_info.append(
                 WelcomeInfoItem(
                     name="Model",
-                    value="not set, send /login to login",
+                    value="not set — type /login to sign in",
                     level=WelcomeInfoItem.Level.WARN,
                 )
             )
@@ -817,7 +817,7 @@ class PythinkerCLI:
                 welcome_info.append(
                     WelcomeInfoItem(
                         name="Tip",
-                        value="send /login to use Pythinker for Coding",
+                        value="Type /login to use Pythinker for Coding.",
                         level=WelcomeInfoItem.Level.WARN,
                     )
                 )
@@ -825,9 +825,8 @@ class PythinkerCLI:
             WelcomeInfoItem(
                 name="Tip",
                 value=(
-                    'Pythinker reviews before it writes. Try "review this diff",'
-                    ' "scan for vulnerabilities", or "find the root cause"'
-                    " — code edits come after the analysis."
+                    'Review first: try "review this diff", "scan for vulnerabilities",'
+                    ' or "find the root cause" before editing.'
                 ),
                 level=WelcomeInfoItem.Level.INFO,
             )
@@ -835,10 +834,7 @@ class PythinkerCLI:
         welcome_info.append(
             WelcomeInfoItem(
                 name="Tip",
-                value=(
-                    "Spot a bug or have feedback? Type /feedback right in this session"
-                    " — every report makes Pythinker better."
-                ),
+                value="Feedback or bug? Type /feedback in this session.",
                 level=WelcomeInfoItem.Level.INFO,
             )
         )

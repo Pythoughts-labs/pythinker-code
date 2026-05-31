@@ -30,7 +30,7 @@ from pythinker_code.tools.display import TodoDisplayBlock, TodoDisplayItem
 from pythinker_code.ui.shell.components.render_utils import cell_width, truncate_to_width
 from pythinker_code.ui.shell.console import console, current_console_width
 from pythinker_code.ui.shell.echo import render_user_echo
-from pythinker_code.ui.shell.glyphs import TRANSCRIPT_TOOL_GUTTER
+from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ACTIVE_MARKER, TRANSCRIPT_TOOL_GUTTER
 from pythinker_code.ui.shell.keyboard import KeyboardListener, KeyEvent
 from pythinker_code.ui.shell.mcp_status import render_mcp_startup_text
 from pythinker_code.ui.shell.motion import (
@@ -50,6 +50,7 @@ from pythinker_code.ui.shell.visualize._blocks import (
     Markdown,
     _CompactionBlock,
     _ContentBlock,
+    _HookBlock,
     _NotificationBlock,
     _ProgressNoteBlock,
     _QuestionAnsweredBlock,
@@ -75,6 +76,8 @@ from pythinker_code.wire.types import (
     CompactionBegin,
     CompactionEnd,
     ContentPart,
+    HookResolved,
+    HookTriggered,
     MCPLoadingBegin,
     MCPLoadingEnd,
     Notification,
@@ -211,6 +214,7 @@ class _LiveView:
         self._current_question_panel: QuestionRequestPanel | None = None
         self._notification_blocks = deque[_NotificationBlock]()
         self._live_notification_blocks = deque[_NotificationBlock](maxlen=MAX_LIVE_NOTIFICATIONS)
+        self._hook_blocks: dict[tuple[str, str], _HookBlock] = {}
         self._status_block = _StatusBlock(initial_status)
 
         self._need_recompose = False
@@ -517,6 +521,8 @@ class _LiveView:
                 # it too, so a still-running agent is separated from a finished
                 # one already committed to scrollback.
                 _append_action_block(blocks, tool_call.compose(), leading=True)
+            for hook_block in self._hook_blocks.values():
+                _append_action_block(blocks, hook_block.compose(), leading=True)
             if include_working_indicator and self._active_turn_depth > 0:
                 # Keep a stable activity indicator visible even while content or
                 # tool cards are already on-screen. This makes long-running
@@ -764,7 +770,7 @@ class _LiveView:
                 if self._latest_mcp_status is not None:
                     self._mcp_loading_spinner = render_mcp_startup_text(self._latest_mcp_status)
                 else:
-                    line = Text("● ", style=tui_rich_style("muted"))
+                    line = Text(f"{TRANSCRIPT_ACTIVE_MARKER} ", style=tui_rich_style("muted"))
                     line.append("Starting MCP servers", style=tui_rich_style("muted"))
                     self._mcp_loading_spinner = line
                 self.refresh_soon()
@@ -775,7 +781,9 @@ class _LiveView:
                 truncated = (question[:40] + "...") if len(question) > 40 else question
                 self._btw_question = question
                 glyph = (
-                    "●" if reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0 else " "
+                    TRANSCRIPT_ACTIVE_MARKER
+                    if reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0
+                    else " "
                 )
                 line = Text(f"{glyph} ", style=tui_rich_style("muted"))
                 line.append(f"Side question... {truncated}", style=tui_rich_style("muted"))
@@ -823,6 +831,10 @@ class _LiveView:
                 self.display_question_answered(msg)
             case ProgressNote():
                 self.display_progress_note(msg)
+            case HookTriggered():
+                self.append_hook_triggered(msg)
+            case HookResolved():
+                self.append_hook_resolved(msg)
             case ContentPart():
                 self.append_content(msg)
             case ToolCall():
@@ -1004,6 +1016,7 @@ class _LiveView:
         self._compaction_block = None
         self._mcp_loading_spinner = None
         self._btw_spinner = None
+        self._hook_blocks.clear()
         self._current_step_retry = None
 
         if is_interrupt:
@@ -1160,6 +1173,26 @@ class _LiveView:
         block = _NotificationBlock(notification)
         self._notification_blocks.append(block)
         self._live_notification_blocks.append(block)
+        self.refresh_soon()
+
+    def append_hook_triggered(self, event: HookTriggered) -> None:
+        self._hook_blocks[(event.event, event.target)] = _HookBlock(event)
+        self.refresh_soon()
+
+    def append_hook_resolved(self, event: HookResolved) -> None:
+        key = (event.event, event.target)
+        block = self._hook_blocks.pop(key, None)
+        if block is None:
+            block = _HookBlock(
+                HookTriggered(
+                    event=event.event,
+                    target=event.target,
+                    hook_count=1,
+                )
+            )
+        block.resolve(event)
+        console.print()
+        console.print(block.compose())
         self.refresh_soon()
 
     def display_question_answered(self, event: QuestionAnswered) -> None:

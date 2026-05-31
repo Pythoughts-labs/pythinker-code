@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 from urllib.parse import parse_qs, urlsplit
 
 import aiohttp
@@ -18,6 +20,7 @@ from pythinker_code.auth.openai import (
     OPENAI_BROWSER_PORT,
     OPENAI_BROWSER_REDIRECT_PATH,
     OPENAI_CHATGPT_BASE_URL,
+    OPENAI_CHATGPT_MODELS_URL,
     OPENAI_CHATGPT_OAUTH_KEY,
     OPENAI_CLIENT_ID,
     OPENAI_DEVICE_REDIRECT_URI,
@@ -25,10 +28,12 @@ from pythinker_code.auth.openai import (
     PkceCodes,
     _apply_openai_config,
     _build_authorize_url,
-    _discover_chatgpt_models,
+    _callback_html,
     _exchange_id_token_for_api_key,
     _select_default_openai_model,
+    _token_from_openai_response,
     _wait_for_browser_code,
+    discover_chatgpt_models,
     login_openai_api_key,
     login_openai_browser,
 )
@@ -52,6 +57,20 @@ def _model(model_id: str, *, reasoning: bool = False, image: bool = False) -> Mo
     )
 
 
+def _jwt_with_chatgpt_account(account_id: str) -> str:
+    header = base64.urlsafe_b64encode(b'{"alg":"none"}').decode("utf-8").rstrip("=")
+    payload = (
+        base64.urlsafe_b64encode(
+            json.dumps({"https://api.openai.com/auth": {"chatgpt_account_id": account_id}}).encode(
+                "utf-8"
+            )
+        )
+        .decode("utf-8")
+        .rstrip("=")
+    )
+    return f"{header}.{payload}.signature"
+
+
 def _request_info(url: str) -> aiohttp.RequestInfo:
     return aiohttp.RequestInfo(
         url=URL(url),
@@ -70,6 +89,23 @@ def test_openai_auth_constants_match_codex_compatible_values():
     assert OPENAI_DEVICE_REDIRECT_URI == "https://auth.openai.com/deviceauth/callback"
     assert OPENAI_DEVICE_VERIFICATION_URL == "https://auth.openai.com/codex/device"
     assert OPENAI_CHATGPT_OAUTH_KEY == "oauth/openai-chatgpt"
+
+
+def test_openai_callback_html_uses_pythinker_branding():
+    page = _callback_html(ok=True, message=None)
+
+    assert "<title>Pythinker logged in</title>" in page
+    assert "You&#x27;re logged in to Pythinker" in page
+    assert "OpenAI login complete" not in page
+    assert "data:image/svg+xml" in page
+
+
+def test_openai_callback_html_escapes_error_message():
+    page = _callback_html(ok=False, message='<script>alert("x")</script>')
+
+    assert "<title>Pythinker login failed</title>" in page
+    assert "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;" in page
+    assert '<script>alert("x")</script>' not in page
 
 
 def test_build_authorize_url_uses_codex_parameters():
@@ -128,6 +164,20 @@ async def test_exchange_id_token_for_api_key_uses_codex_requested_token(monkeypa
     assert captured["url"] == "https://auth.openai.com/oauth/token"
     assert captured["data"]["requested_token"] == "openai-api-key"
     assert "requested_token_type" not in captured["data"]
+
+
+def test_token_from_openai_response_extracts_chatgpt_account_id_from_access_token():
+    token = _token_from_openai_response(
+        {
+            "access_token": _jwt_with_chatgpt_account("acc_access"),
+            "refresh_token": "refresh-token",
+            "expires_in": 3600,
+            "token_type": "Bearer",
+            "scope": "openid profile email offline_access",
+        }
+    )
+
+    assert token.account_id == "acc_access"
 
 
 @pytest.mark.asyncio
@@ -349,38 +399,148 @@ async def test_login_openai_api_key_does_not_save_on_401(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_discover_chatgpt_models_reraises_401(monkeypatch):
-    async def fake_list_models(platform, api_key):
-        assert platform.id == OPENAI_CHATGPT_PLATFORM_ID
-        assert api_key == "bad-token"
-        request_info = _request_info("https://chatgpt.com/backend-api/codex/models")
-        raise aiohttp.ClientResponseError(request_info, (), status=401, message="Unauthorized")
+    class FakeSession:
+        async def __aenter__(self):
+            return self
 
-    monkeypatch.setattr("pythinker_code.auth.openai.list_models", fake_list_models)
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        def get(self, url, *, headers, raise_for_status):
+            assert url == OPENAI_CHATGPT_MODELS_URL
+            assert headers["Authorization"] == "Bearer bad-token"
+            request_info = _request_info(url)
+            raise aiohttp.ClientResponseError(request_info, (), status=401, message="Unauthorized")
+
+    monkeypatch.setattr("pythinker_code.auth.openai.new_client_session", FakeSession)
 
     with pytest.raises(aiohttp.ClientResponseError) as exc_info:
-        await _discover_chatgpt_models("bad-token")
+        await discover_chatgpt_models("bad-token")
     assert exc_info.value.status == 401
 
 
 @pytest.mark.asyncio
-async def test_discover_chatgpt_models_fallback_uses_current_supported_models(monkeypatch):
-    async def fake_list_models(platform, api_key):
-        raise RuntimeError("models endpoint unavailable")
+async def test_discover_chatgpt_models_uses_account_scoped_codex_catalog(monkeypatch):
+    captured = {}
+    payload = {
+        "models": [
+            {
+                "slug": "gpt-5.3-codex",
+                "display_name": "GPT-5.3 Codex",
+                "context_window": 272_000,
+                "priority": 20,
+                "supported_in_api": False,
+            },
+            {
+                "slug": "hidden-model",
+                "visibility": "hidden",
+                "context_window": 272_000,
+                "priority": 1,
+            },
+            {
+                "slug": "gpt-5.3-codex-spark",
+                "name": "GPT-5.3 Codex Spark",
+                "context_window": 128_000,
+                "priority": 10,
+                "supported_in_api": False,
+            },
+        ]
+    }
 
-    monkeypatch.setattr("pythinker_code.auth.openai.list_models", fake_list_models)
+    class FakeResponse:
+        async def __aenter__(self):
+            return self
 
-    models = await _discover_chatgpt_models("access-token")
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
 
-    model_ids = [model.id for model in models]
-    assert model_ids[:6] == [
-        "gpt-5.5",
-        "gpt-5.4",
-        "gpt-5.4-mini",
-        "gpt-5.3-codex",
-        "gpt-5.3-codex-spark",
-        "gpt-5.2",
-    ]
-    assert "gpt-5.1-codex" not in model_ids
+        async def json(self, content_type=None):
+            return payload
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        def get(self, url, *, headers, raise_for_status):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["raise_for_status"] = raise_for_status
+            return FakeResponse()
+
+    monkeypatch.setattr("pythinker_code.auth.openai.new_client_session", FakeSession)
+
+    models = await discover_chatgpt_models("access-token", account_id="acc_123")
+
+    assert captured["url"] == OPENAI_CHATGPT_MODELS_URL
+    assert captured["headers"]["Authorization"] == "Bearer access-token"
+    assert captured["headers"]["ChatGPT-Account-ID"] == "acc_123"
+    assert captured["headers"]["originator"] == "codex_cli_rs"
+    assert captured["raise_for_status"] is True
+    assert [model.id for model in models] == ["gpt-5.3-codex-spark", "gpt-5.3-codex"]
+    assert models[0].context_length == 128_000
+    assert models[0].supports_image_in is False
+    assert models[1].display_name == "GPT-5.3 Codex"
+
+
+@pytest.mark.asyncio
+async def test_discover_chatgpt_models_uses_custom_base_url(monkeypatch):
+    captured = {}
+    payload = {"models": [{"slug": "gpt-5.3-codex", "supported_in_api": False}]}
+
+    class FakeResponse:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def json(self, content_type=None):
+            return payload
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        def get(self, url, *, headers, raise_for_status):
+            captured["url"] = url
+            return FakeResponse()
+
+    monkeypatch.setattr("pythinker_code.auth.openai.new_client_session", FakeSession)
+
+    models = await discover_chatgpt_models(
+        "access-token",
+        base_url="https://proxy.example/backend-api/codex/",
+    )
+
+    assert (
+        captured["url"]
+        == "https://proxy.example/backend-api/codex/models?client_version=1.0.0"
+    )
+    assert [model.id for model in models] == ["gpt-5.3-codex"]
+
+
+@pytest.mark.asyncio
+async def test_discover_chatgpt_models_does_not_fallback_when_catalog_unavailable(monkeypatch):
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        def get(self, *args, **kwargs):
+            raise RuntimeError("models endpoint unavailable")
+
+    monkeypatch.setattr("pythinker_code.auth.openai.new_client_session", FakeSession)
+
+    with pytest.raises(RuntimeError, match="models endpoint unavailable"):
+        await discover_chatgpt_models("access-token")
 
 
 @pytest.mark.asyncio
@@ -409,16 +569,17 @@ async def test_login_openai_api_key_falls_back_to_public_models_on_non_auth_fail
 
 
 @pytest.mark.asyncio
-async def test_refresh_managed_models_replaces_stale_chatgpt_codex_model_with_fallback(
+async def test_refresh_managed_models_replaces_stale_chatgpt_codex_model_with_live_catalog(
     monkeypatch, tmp_path
 ):
     monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
     provider_key = managed_provider_key(OPENAI_CHATGPT_PLATFORM_ID)
     stale_model_key = managed_model_key(OPENAI_CHATGPT_PLATFORM_ID, "gpt-5.1-codex")
     config = Config(is_from_default_location=True)
+    chatgpt_base_url = "https://proxy.example/backend-api/codex"
     config.providers[provider_key] = LLMProvider(
         type="openai_codex",
-        base_url=OPENAI_CHATGPT_BASE_URL,
+        base_url=chatgpt_base_url,
         api_key=SecretStr("access-token"),
         oauth=OAuthRef(storage="file", key=OPENAI_CHATGPT_OAUTH_KEY),
     )
@@ -430,17 +591,22 @@ async def test_refresh_managed_models_replaces_stale_chatgpt_codex_model_with_fa
     )
     config.default_model = stale_model_key
 
-    async def fake_list_models(platform, api_key):
-        raise RuntimeError("models endpoint unavailable")
+    async def fake_discover_chatgpt_models(api_key, *, account_id=None, base_url=None):
+        assert api_key == "access-token"
+        assert account_id is None
+        assert base_url == chatgpt_base_url
+        return [_model("gpt-5.5", reasoning=True)]
 
-    monkeypatch.setattr("pythinker_code.auth.platforms.list_models", fake_list_models)
+    monkeypatch.setattr(
+        "pythinker_code.auth.openai.discover_chatgpt_models", fake_discover_chatgpt_models
+    )
 
     changed = await refresh_managed_models(config)
 
     assert changed is True
     assert config.default_model == managed_model_key(OPENAI_CHATGPT_PLATFORM_ID, "gpt-5.5")
     assert stale_model_key not in config.models
-    assert managed_model_key(OPENAI_CHATGPT_PLATFORM_ID, "gpt-5.3-codex") in config.models
+    assert managed_model_key(OPENAI_CHATGPT_PLATFORM_ID, "gpt-5.5") in config.models
 
 
 @pytest.mark.asyncio
@@ -475,8 +641,9 @@ async def test_login_openai_headless_stores_chatgpt_tokens(monkeypatch, tmp_path
     async def fake_exchange_id_token_for_api_key(id_token):
         return ""
 
-    async def fake_discover_chatgpt_models(api_key):
+    async def fake_discover_chatgpt_models(api_key, *, account_id=None):
         assert api_key == "access-token"
+        assert account_id is None
         return [_model("gpt-5.1-codex", reasoning=True)]
 
     monkeypatch.setattr("pythinker_code.auth.openai._request_device_code", fake_request_device_code)
@@ -489,7 +656,7 @@ async def test_login_openai_headless_stores_chatgpt_tokens(monkeypatch, tmp_path
         fake_exchange_id_token_for_api_key,
     )
     monkeypatch.setattr(
-        "pythinker_code.auth.openai._discover_chatgpt_models",
+        "pythinker_code.auth.openai.discover_chatgpt_models",
         fake_discover_chatgpt_models,
     )
 
@@ -528,7 +695,8 @@ async def test_login_openai_browser_finishes_with_callback_code(monkeypatch, tmp
             "scope": "openid profile email offline_access",
         }
 
-    async def fake_discover_chatgpt_models(api_key):
+    async def fake_discover_chatgpt_models(api_key, *, account_id=None):
+        assert account_id is None
         return [_model("gpt-5.1-codex", reasoning=True)]
 
     monkeypatch.setattr(
@@ -538,7 +706,7 @@ async def test_login_openai_browser_finishes_with_callback_code(monkeypatch, tmp
         "pythinker_code.auth.openai._exchange_code_for_tokens", fake_exchange_code_for_tokens
     )
     monkeypatch.setattr(
-        "pythinker_code.auth.openai._discover_chatgpt_models", fake_discover_chatgpt_models
+        "pythinker_code.auth.openai.discover_chatgpt_models", fake_discover_chatgpt_models
     )
 
     events = [event async for event in login_openai_browser(config, open_browser=False)]

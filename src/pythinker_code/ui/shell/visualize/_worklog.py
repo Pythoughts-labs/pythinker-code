@@ -18,6 +18,7 @@ from pythinker_code.tools.display import (
 )
 from pythinker_code.ui.shell.components.markdown import PythinkerMarkdown as Markdown
 from pythinker_code.ui.shell.design_system import ShellTone, StatusName, shell_style, status_icon
+from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ACTIVE_MARKER
 from pythinker_code.ui.shell.motion import reduced_motion_enabled
 from pythinker_code.ui.shell.spacing import WORKLOG_PANEL_PADDING
 from pythinker_code.ui.theme import get_tui_tokens, tui_rich_style
@@ -51,18 +52,26 @@ _TOOL_STYLES: dict[str, ToolStyle] = {
     "Glob": ToolStyle("Find", "*", "info"),
     "Edit": ToolStyle("Edit", "<-", "accent"),
     "Replace": ToolStyle("Edit", "<-", "accent"),
+    "StrReplaceFile": ToolStyle("Edit", "<-", "accent"),
     "Write": ToolStyle("Write", "<-", "accent"),
     "WriteFile": ToolStyle("Write", "<-", "accent"),
     "ApplyPatch": ToolStyle("Patch", "◆", "accent"),
     "Bash": ToolStyle("Shell", "$", "success"),
     "Shell": ToolStyle("Shell", "$", "success"),
+    "SetTodoList": ToolStyle("Todo", "☑", "warning"),
     "TodoWrite": ToolStyle("Todo", "☑", "warning"),
-    "Agent": ToolStyle("Subagent", "●", "muted"),
-    "Task": ToolStyle("Subagent", "●", "muted"),
+    "Agent": ToolStyle("Subagent", TRANSCRIPT_ACTIVE_MARKER, "muted"),
+    "RunAgents": ToolStyle("Subagents", TRANSCRIPT_ACTIVE_MARKER, "muted"),
+    "Task": ToolStyle("Subagent", TRANSCRIPT_ACTIVE_MARKER, "muted"),
     "AskUser": ToolStyle("Ask", "?", "warning"),
+    "AskUserQuestion": ToolStyle("Ask", "?", "warning"),
     "FetchURL": ToolStyle("Fetch", "%", "info"),
     "WebFetch": ToolStyle("Fetch", "%", "info"),
     "WebSearch": ToolStyle("Search", "◈", "info"),
+    "SearchWeb": ToolStyle("Search", "◈", "info"),
+    "TaskList": ToolStyle("Tasks", "☷", "info"),
+    "TaskOutput": ToolStyle("TaskOutput", "☷", "info"),
+    "TaskStop": ToolStyle("TaskStop", "■", "warning"),
     "Skill": ToolStyle("Skill", "◇", "info"),
 }
 

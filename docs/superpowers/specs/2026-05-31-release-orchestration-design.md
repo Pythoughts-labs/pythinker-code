@@ -14,7 +14,7 @@ provenance: multi-agent design workflow wf_620b356a-d6e (5 subsystem designs -> 
 
 ## 1. Target Architecture Overview
 
-```
+```text
                               ┌──────────────────────────────────────────────────────────────┐
                               │  SSOT = pyproject.toml:3  (the ONLY authoritative version)     │
                               │  scripts/release.py rewrites all derived files + uv.lock,       │
@@ -103,7 +103,8 @@ After P0+P1: **zero long-lived cross-repo PATs** on the release path. The only r
 **Source:** `pyproject.toml:3` `[project].version`. The installed package reads `importlib.metadata.version("pythinker-code")` (`constant.py:14`) — there is no `__version__` constant, so this is genuinely the only authoritative store.
 
 **The SSOT→site chain (proves distribution + site consume the orchestrator's source):**
-```
+
+```text
 pyproject.toml:3 ─(release.py rewrite)→ release PR ─(check_version_tag gate)→ merge
    → human tag vX.Y.Z ─(CI)→ GitHub Release ─→ /releases/latest.tag_name
    → site sync writes public/version.json {pythinkerCode: X.Y.Z}  AND  brew formula version "X.Y.Z"  AND  scoop manifest
@@ -157,7 +158,7 @@ pyproject.toml:3 ─(release.py rewrite)→ release PR ─(check_version_tag gat
 
 **Terminal states:** `PROMOTED` (success), `FAILED_STUCK` (loud failure, release retained as prerelease, tracking issue open, red CI). `DEGRADED` is transient (promoted but best-effort channel reconciling) and **never un-promotes**.
 
-```
+```text
 tag push → PRERELEASE (/latest = last good)
    → CHECKING (poll BLOCKING set: GH assets + PyPI(pythinker-code) + PyPI(core,host,review pins))
    ├─ all blocking ready → PATCH prerelease=false, make_latest → PROMOTED (/latest = X.Y.Z; pip fully resolvable)
@@ -206,7 +207,7 @@ tag push → PRERELEASE (/latest = last good)
 | **WinGet** P2-late | `wingetcreate update ... --submit` | `microsoft/winget-pkgs` fork | **MANUAL `workflow_dispatch` only** (hard gate) | fine-grained PAT `WINGET_SUBMIT_TOKEN` (isolated; can't be an App for external-repo PRs) | never |
 | **AUR** | DEFER | — | — | SSH key (re-introduces non-App secret) | — |
 
-**Required code change (don't ship non-self-updating channels without it):** `src/pythinker_code/ui/shell/update.py` — add a `PYTHINKER_MANAGED=<channel>` env read at the top of `_detect_upgrade_command()` (mirrors hermes `HERMES_MANAGED`); Docker/Nix set it, Scoop/WinGet manifests set it → channel-native upgrade hint. **Brew must NOT set `PYTHINKER_MANAGED`** (keep its existing path-sniff so behavior is unchanged); **mandatory regression test** that brew still maps to `['brew','upgrade','pythinker-code']` (the `.pythinker-native` marker means brew also trips `is_native_build()`; precedence is load-bearing). This change ships in P1 as prep so P2 channels are not released non-self-updating.
+**Required code change (don't ship supported non-self-updating channels without it):** `src/pythinker_code/ui/shell/update.py` — add a `PYTHINKER_MANAGED=<channel>` env read at the top of `_detect_upgrade_command()` (mirrors hermes `HERMES_MANAGED`); Docker/Nix set it and Scoop manifests set it → channel-native upgrade hint. **WinGet does not set `PYTHINKER_MANAGED`** because its workflow submits installer metadata only and the WinGet manifest cannot inject a process env var, so it uses the generic native-updater path. **Brew must NOT set `PYTHINKER_MANAGED`** (keep its existing path-sniff so behavior is unchanged); **mandatory regression test** that brew still maps to `['brew','upgrade','pythinker-code']` (the `.pythinker-native` marker means brew also trips `is_native_build()`; precedence is load-bearing). This change ships in P1 as prep so P2 channels are not released non-self-updating where markers are supported.
 
 **C4 for new channels:** README install snippets MUST be **version-less** (`scoop install pythinker-code`, `docker run ghcr.io/techmatrix-labs/pythinker-code`, `nix run github:TechMatrix-labs/pythinker-code`) so they never enter the F3 sprawl set.
 
@@ -230,12 +231,15 @@ The discriminator that matters in `sync-upstream-products.ts`:
 - **Release-asset download URLs** (`/releases/download/<tag>/...`, plus the deb/rpm/exe URLs + shas in `pythinkerCodeRelease.ts`) **must be built from the live API's `release.tag_name`, never from the payload ref** — a SHA there 404s. The sync already derives release data from `/releases/latest`; this codifies that the payload `tag` is used only for raw-source pinning and **never** for constructing asset URLs.
 
 **Deploy chain (the commit-push IS the deploy trigger):**
-```
+
+```text
 release → promote → dispatch → sync-upstream-products.ts writes files → git push main
    → Dokploy build-from-source (nixpacks → bun run server.ts: serves dist/ + bun:sqlite install-counter) → pythinker.com
 ```
 
 **Deploy resolution (F5):** **Canonical = Dokploy build-from-source.** GitHub Pages is **disqualified** — `server.ts` needs a runtime + SQLite + POST endpoint. GHCR+Watchtower path is **provably dead** (no image since `docker.yml` deleted; `deploy/.env.example` `SITE_IMAGE` points at the wrong org `mohamed-elkholy95`). **Retire** (after confirming the live host runs Dokploy, not compose): `docker-compose.yml`, `docker-compose.private-ghcr.yml`, `deploy/traefik/`, Watchtower + all GHCR refs, rewrite `deploy/README.md` around Dokploy. **Keep:** `Dockerfile` (documented single-container fallback), `nixpacks.toml`, `server.ts`. **State the dependency:** the deploy chain relies on `pythinker-home` main being unprotected (verified) so the workflow can push; if it's ever protected, exempt `github-actions[bot]` or the chain breaks.
+
+**Operational branch-protection note:** if `pythinker-home` main is protected, the sync workflow cannot push the generated site files and Dokploy never sees a new build-from-source commit. Symptom: the sync workflow fails at its `git push main` step; check the `sync-upstream-products.yml` CI logs in `pythinker-home`. Remediation is either (1) remove main-branch protection for this repository, or (2) keep protection but add `github-actions[bot]` as an allowed actor/bypass for pushes from the workflow. Preserve one of those two settings whenever branch protection is changed.
 
 **Install-script locations — distinguish code-repo sources from site mirrors (critique item 7):**
 - **Code repo (KEEP — they are dispatch triggers):** `scripts/install.ps1` + `scripts/install-native.sh` are the **source** scripts; `dispatch-pythinker-home-sync.yml` watches them (`paths:` lines 16-17). Do **not** delete these.
@@ -290,7 +294,7 @@ Add a **`.sha256` sidecar existence check** (right-sized: defense-in-depth for t
 **Risk:** Low-medium (tool runs locally before any push; gates mirror CI; no workflow topology change). **Reversibility:** High (additive; manual bump still works if tool unused). **Effort:** ~2–3 days incl. tests + a dry-run release rehearsal.
 
 ### P2 — Breadth (new channels; broaden distribution)
-**Scope, in order:** (1) Docker/GHCR (`Dockerfile` + `docker.yml`, ancestor-check, `GITHUB_TOKEN`); (2) Scoop (`scoop-pythinker` **org repo** + `pythinker-scoop-publisher` **org App** + `generate-manifest.py` polling the windows zip + `scoop-bucket.yml`); (3) Nix (`apps.default` net-new + `nix build .#default`/`nix run` CI + monthly `update-flake-lock` PR); (4) WinGet (manual `workflow_dispatch`, isolated PAT) — last; AUR deferred. Each new channel: version-less README snippet (C4), `PYTHINKER_MANAGED` set, best-effort (never gates promote).
+**Scope, in order:** (1) Docker/GHCR (`Dockerfile` + `docker.yml`, ancestor-check, `GITHUB_TOKEN`); (2) Scoop (`scoop-pythinker` **org repo** + `pythinker-scoop-publisher` **org App** + `generate-manifest.py` polling the windows zip + `scoop-bucket.yml`); (3) Nix (`apps.default` net-new + `nix build .#default`/`nix run` CI + monthly `update-flake-lock` PR); (4) WinGet (manual `workflow_dispatch`, isolated PAT) — last; AUR deferred. Each new channel: version-less README snippet (C4), best-effort (never gates promote); Docker/Scoop/Nix set `PYTHINKER_MANAGED`, while WinGet's no-marker limitation is documented.
 **Risk:** Medium (new repos/Apps/secrets; all best-effort so they can't worsen F1). **Reversibility:** High (each channel is an independent additive workflow; delete to remove). **Effort:** Docker ~1 day, Scoop ~1.5 days, Nix ~0.5 day, WinGet ~0.5 day — adopt incrementally, one PR each.
 
 **Cross-phase invariants:** every PR goes branch → PR → checks pass → CodeRabbit `success` (C2) → merge → (release PRs) tag (C1); no direct main push; no new agent runtime dep (C3); README/badges move with the bump (C4); authored CHANGELOG narrative preserved, contributor footer only as release-notes addendum (C5).

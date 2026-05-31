@@ -73,7 +73,7 @@ def test_tool_call_block_renders_running_worklog_entry():
     assert "running" in output.lower()
 
 
-def test_tool_call_block_renders_running_subagent_with_solid_circle(monkeypatch):
+def test_tool_call_block_renders_running_subagent_with_text_safe_solid_circle(monkeypatch):
     monkeypatch.setattr(_worklog.time, "monotonic", lambda: 0.0)
     block = _ToolCallBlock(_tool_call("Agent", '{"description":"Audit UI"}'))
     output = _plain(block.compose())
@@ -168,7 +168,32 @@ def test_completed_subagent_renders_compact_summary():
     assert "Subagent" in output
     assert "completed" in output.lower()
     assert "7 tool calls" in output
+    assert "tools: Read ×7" in output
     assert output.count("ReadFile") <= 4
+
+
+def test_completed_subagent_summarizes_changed_files_and_tool_counts():
+    block = _ToolCallBlock(_tool_call("Agent", '{"description":"Implement UI"}'))
+    calls = [
+        _tool_call_with_id("read-1", "ReadFile", json.dumps({"path": "src/app.py"})),
+        _tool_call_with_id("read-2", "ReadFile", json.dumps({"path": "src/ui.py"})),
+        _tool_call_with_id("write-1", "WriteFile", json.dumps({"path": "src/new.py"})),
+        _tool_call_with_id("edit-1", "StrReplaceFile", json.dumps({"path": "src/existing.py"})),
+        _tool_call_with_id("shell-1", "Shell", json.dumps({"command": "pytest"})),
+    ]
+    for call in calls:
+        block.append_sub_tool_call(call)
+        block.finish_sub_tool_call(ToolResult(tool_call_id=call.id, return_value=ToolOk(output="")))
+
+    block.finish(ToolOk(output="done"))
+    output = _plain(block.compose())
+
+    assert "tools:" in output
+    assert "Read ×2" in output
+    assert "Write" in output
+    assert "Edit" in output
+    assert "Shell" in output
+    assert "changed: src/new.py, src/existing.py" in output
 
 
 def test_append_sub_output_part_accumulates_text():

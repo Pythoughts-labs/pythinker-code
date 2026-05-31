@@ -60,7 +60,7 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
     if resume:
         summary.append_text(fg(secondary_token, f" · resume {resume[:8]}"))
 
-    style_token = "error" if ctx.is_error else "success" if ctx.has_result else secondary_token
+    style_token = "error" if ctx.is_error else "success" if ctx.has_result else "muted"
     header = tool_call_header(
         "Agent", summary, style_token=style_token, paren_style_token=secondary_token
     )
@@ -78,7 +78,7 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
             rendered,
             execution_started=ctx.execution_started,
             has_result=ctx.has_result,
-            marker_style_token=secondary_token,
+            marker_style_token="muted",
         )
 
     rendered = Group(header, *missing) if missing else header
@@ -86,7 +86,7 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
         rendered,
         execution_started=ctx.execution_started,
         has_result=ctx.has_result,
-        marker_style_token=secondary_token,
+        marker_style_token="muted",
     )
 
 
@@ -154,7 +154,7 @@ def _render_run_agents_call(ctx: ToolRenderContext) -> RenderableType:
                 header,
                 execution_started=ctx.execution_started,
                 has_result=ctx.has_result,
-                marker_style_token="thinking_text",
+                marker_style_token="muted",
             )
     else:
         summary_text.append_text(fg("border_accent", _plural(len(agent_summaries), "agent")))
@@ -191,7 +191,7 @@ def _render_run_agents_call(ctx: ToolRenderContext) -> RenderableType:
         rendered,
         execution_started=ctx.execution_started,
         has_result=ctx.has_result,
-        marker_style_token="thinking_text",
+        marker_style_token="muted",
     )
 
 

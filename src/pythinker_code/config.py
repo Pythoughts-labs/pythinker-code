@@ -20,6 +20,10 @@ from pydantic import (
 from tomlkit.exceptions import TOMLKitError
 
 from pythinker_code.exception import ConfigError
+from pythinker_code.feedback_repo import (
+    DEFAULT_FEEDBACK_GITHUB_REPO,
+    normalize_feedback_github_repo,
+)
 from pythinker_code.hooks.config import HookDef
 from pythinker_code.llm import ModelCapability, ProviderType
 from pythinker_code.share import get_share_dir
@@ -279,9 +283,14 @@ class FeedbackConfig(BaseModel):
         ),
     )
     github_repo: str = Field(
-        default="TechMatrix-labs/pythinker-code",
+        default=DEFAULT_FEEDBACK_GITHUB_REPO,
         description="GitHub owner/repo used by /feedback GitHub OAuth submissions.",
     )
+
+    @field_validator("github_repo")
+    @classmethod
+    def migrate_legacy_github_repo(cls, value: str) -> str:
+        return normalize_feedback_github_repo(value)
 
     @field_serializer("api_key", when_used="json")
     def dump_secret(self, v: SecretStr | None):

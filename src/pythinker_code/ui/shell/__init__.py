@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import re
 import shlex
+import textwrap
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable, Coroutine
@@ -38,8 +39,13 @@ from pythinker_code.soul import (
     run_soul,
 )
 from pythinker_code.soul.pythinkersoul import FLOW_COMMAND_PREFIX, PythinkerSoul
-from pythinker_code.ui.shell.components.render_utils import render_message_response, sanitize_ansi
-from pythinker_code.ui.shell.console import console
+from pythinker_code.ui.shell.components.render_utils import (
+    cell_width,
+    render_message_response,
+    sanitize_ansi,
+    truncate_to_width,
+)
+from pythinker_code.ui.shell.console import console, current_console_width
 from pythinker_code.ui.shell.echo import render_user_echo_text
 from pythinker_code.ui.shell.mcp_status import render_mcp_prompt
 from pythinker_code.ui.shell.prompt import (
@@ -1930,56 +1936,138 @@ def _welcome_banner_chip() -> Text | None:
     return None
 
 
+_WELCOME_MAX_WIDTH = 100
+_WELCOME_LABEL_WIDTH = 10
+_WELCOME_PANEL_CHROME_WIDTH = 6  # border + horizontal padding used below
+
+
+def _take_cells_left(text: str, max_width: int) -> str:
+    if max_width <= 0:
+        return ""
+    out: list[str] = []
+    used = 0
+    for char in text:
+        width = cell_width(char)
+        if used + width > max_width:
+            break
+        out.append(char)
+        used += width
+    return "".join(out)
+
+
+def _take_cells_right(text: str, max_width: int) -> str:
+    if max_width <= 0:
+        return ""
+    out: list[str] = []
+    used = 0
+    for char in reversed(text):
+        width = cell_width(char)
+        if used + width > max_width:
+            break
+        out.append(char)
+        used += width
+    return "".join(reversed(out))
+
+
+def _truncate_middle_to_width(text: str, max_width: int) -> str:
+    """Cell-aware middle truncation for paths and UUID-like values."""
+    if max_width <= 0:
+        return ""
+    cleaned = sanitize_ansi(text).replace("\r", " ").replace("\n", " ")
+    if cell_width(cleaned) <= max_width:
+        return cleaned
+    if max_width <= 1:
+        return truncate_to_width(cleaned, max_width)
+    left_width = max(1, (max_width - 1) // 2)
+    right_width = max(1, max_width - 1 - left_width)
+    return f"{_take_cells_left(cleaned, left_width)}…{_take_cells_right(cleaned, right_width)}"
+
+
+def _welcome_panel_width() -> int:
+    columns = current_console_width(console, default=_WELCOME_MAX_WIDTH)
+    return max(1, min(columns, _WELCOME_MAX_WIDTH))
+
+
+def _welcome_value(label: str, value: str, max_width: int) -> str:
+    cleaned = sanitize_ansi(value).replace("\r", " ").replace("\n", " ")
+    if label.strip() in {"Directory", "Auto-save", "Session"}:
+        return _truncate_middle_to_width(cleaned, max_width)
+    return truncate_to_width(cleaned, max_width)
+
+
+def _welcome_tip_lines(value: str, max_width: int) -> list[str]:
+    cleaned = sanitize_ansi(value).replace("\r", " ").replace("\n", " ").strip()
+    if not cleaned:
+        return [""]
+    lines = textwrap.wrap(
+        cleaned,
+        width=max(1, max_width),
+        break_long_words=False,
+        break_on_hyphens=False,
+    ) or [cleaned]
+    return [truncate_to_width(line, max_width) for line in lines]
+
+
 def _print_welcome_info(
     name: str, info_items: list[WelcomeInfoItem], *, banner: Text | None = None
 ) -> None:
     _t = _get_tui_tokens()
-    head = Text.from_markup("Welcome to Pythinker — think first, then code.")
+    panel_width = _welcome_panel_width()
+    content_width = max(1, panel_width - _WELCOME_PANEL_CHROME_WIDTH)
+
+    head = Text.from_markup("[bold]Welcome to Pythinker — think first, then code.[/]")
     strapline = Text.from_markup(
-        f"[{_t.muted}]Review · Secure · Diagnose · then Create.[/]"
+        f"[{_t.muted}]Review · Secure · Diagnose · Build with confidence.[/]"
     )
-    help_text = Text.from_markup(f"[{_t.muted}]Send /help for help.[/]")
+    help_text = Text.from_markup(f"[{_t.muted}]Type /help for commands.[/]")
     help_text.highlight_regex(r"/help\b", f"bold {_t.warning}")
 
-    # Logo on the left; the 3-line text block bottom-aligns against the 5-line
-    # robot so the antenna floats above and the lines sit beside the body.
-    logo = Text.from_markup(_LOGO)
-    table = Table(show_header=False, show_edge=False, box=None, padding=(0, 1), expand=False)
-    table.add_column(justify="left")
-    table.add_column(justify="left", vertical="bottom")
-    table.add_row(logo, Group(head, strapline, help_text))
-
-    rows: list[RenderableType] = [table]
+    rows: list[RenderableType] = []
+    if content_width >= 68:
+        # Logo on the left; the 3-line text block bottom-aligns against the 5-line
+        # robot so the antenna floats above and the lines sit beside the body.
+        logo = Text.from_markup(_LOGO)
+        table = Table.grid(padding=(0, 1))
+        table.add_column(justify="left", no_wrap=True)
+        table.add_column(justify="left", vertical="bottom", no_wrap=True)
+        table.add_row(logo, Group(head, strapline, help_text))
+        rows.append(table)
+    else:
+        rows.extend([head, strapline, help_text])
 
     facts = [item for item in info_items if item.name.strip() != "Tip"]
     tips = [item for item in info_items if item.name.strip() == "Tip"]
 
     if facts:
         rows.append(Text(""))  # empty line
-        info_table = Table(
-            show_header=False, show_edge=False, box=None, padding=(0, 1), expand=False
+        label_width = min(_WELCOME_LABEL_WIDTH, max(4, content_width // 3))
+        value_width = max(4, content_width - label_width - 2)
+        info_table = Table.grid(padding=(0, 1))
+        info_table.add_column(
+            justify="right",
+            style=tui_rich_style("muted"),
+            no_wrap=True,
+            width=label_width,
         )
-        info_table.add_column(justify="right", style=tui_rich_style("muted"))
-        info_table.add_column(justify="left")
+        info_table.add_column(justify="left", no_wrap=True, width=value_width)
         for item in facts:
             value_style = _value_style_for_label(item.name, item.level)
-            info_table.add_row(item.name, Text(item.value, style=value_style))
+            value = _welcome_value(item.name, item.value, value_width)
+            info_table.add_row(item.name, Text(value, style=value_style, no_wrap=True))
         rows.append(info_table)
 
     if tips:
         rows.append(Text(""))  # empty line
         rows.append(Text("Tips", style=tui_rich_style("muted")))
-        # 2-col table → wrapped tip lines hang-indent under the text column,
-        # not under the bullet.
-        tips_table = Table(
-            show_header=False, show_edge=False, box=None, padding=(0, 0), expand=False
-        )
+        tip_width = max(4, content_width - 4)
+        tips_table = Table.grid(padding=(0, 0))
         tips_table.add_column(style=tui_rich_style("muted"), no_wrap=True, width=4)
-        tips_table.add_column(justify="left", overflow="fold")
+        tips_table.add_column(justify="left", no_wrap=True, width=tip_width)
         for item in tips:
-            tip_text = Text(item.value, style=item.level.value)
-            tip_text.highlight_regex(r"/[A-Za-z][A-Za-z0-9_-]*", "yellow bold")
-            tips_table.add_row("  • ", tip_text)
+            for index, line in enumerate(_welcome_tip_lines(item.value, tip_width)):
+                tip_text = Text(line, style=item.level.value, no_wrap=True)
+                tip_text.highlight_regex(r"/[A-Za-z][A-Za-z0-9_-]*", "yellow bold")
+                tips_table.add_row("  • " if index == 0 else "    ", tip_text)
         rows.append(tips_table)
 
     version_title = Text.assemble(
@@ -1997,6 +2085,7 @@ def _print_welcome_info(
             border_style=tui_rich_style("border"),
             box=box.ROUNDED,
             expand=False,
+            width=panel_width,
             padding=(1, 2),
         )
     )

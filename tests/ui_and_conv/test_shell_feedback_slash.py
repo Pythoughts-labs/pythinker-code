@@ -91,6 +91,50 @@ class TestFeedbackFallback:
         assert "Opening GitHub feedback" in output
 
 
+class TestFeedbackDestination:
+    def test_builtin_endpoint_without_pythinker_auth_falls_back(self, monkeypatch) -> None:
+        from pythinker_code.config import Config
+
+        monkeypatch.delenv("PYTHINKER_FEEDBACK_URL", raising=False)
+        soul = Mock()
+        soul.runtime.config = Config()
+
+        assert shell_slash._feedback_destination(soul) is None
+
+    def test_configured_endpoint_is_used_without_pythinker_auth(self, monkeypatch) -> None:
+        from pythinker_code.config import Config
+
+        monkeypatch.delenv("PYTHINKER_FEEDBACK_URL", raising=False)
+        soul = Mock()
+        soul.runtime.config = Config()
+        soul.runtime.config.feedback.endpoint_url = "https://feedback.example/submit"
+
+        assert shell_slash._feedback_destination(soul) == ("https://feedback.example/submit", {})
+
+    def test_builtin_endpoint_uses_pythinker_auth(self, monkeypatch) -> None:
+        from pydantic import SecretStr
+
+        from pythinker_code.auth import PYTHINKER_CODE_PLATFORM_ID
+        from pythinker_code.auth.platforms import managed_provider_key
+        from pythinker_code.config import Config, LLMProvider
+
+        monkeypatch.delenv("PYTHINKER_FEEDBACK_URL", raising=False)
+        soul = Mock()
+        soul.runtime.config = Config()
+        soul.runtime.config.providers[managed_provider_key(PYTHINKER_CODE_PLATFORM_ID)] = (
+            LLMProvider(
+                type="pythinker",
+                base_url="https://api.pythinker.com/coding/v1",
+                api_key=SecretStr("token"),
+            )
+        )
+
+        feedback_url, headers = shell_slash._feedback_destination(soul) or ("", {})
+
+        assert feedback_url.endswith("/feedback")
+        assert headers["Authorization"] == "Bearer token"
+
+
 class TestFeedbackSubmission:
     async def test_submits_structured_payload(self, tmp_path: Path, monkeypatch) -> None:
         from pythinker_code.soul.pythinkersoul import PythinkerSoul
@@ -252,6 +296,14 @@ class TestFeedbackHelpers:
         assert submission.number is None
         assert submission.html_url is None
 
+    def test_feedback_issue_url_migrates_legacy_default_repo(self) -> None:
+        payload = {"type": "other", "content": "hi"}
+
+        url = build_feedback_issue_url(payload, "mohamed-elkholy95/Pythinker-Code")
+
+        assert "github.com/TechMatrix-labs/pythinker-code/issues/new" in url
+        assert "mohamed-elkholy95" not in url
+
     def test_feedback_issue_url_uses_compact_body_for_large_payload(self) -> None:
         payload = {
             "type": "bug",
@@ -308,6 +360,20 @@ class TestFeedbackHelpers:
         assert "ghp_" not in redacted
         assert str(Path.home()) not in redacted
         assert "<redacted" in redacted
+
+    def test_redacts_url_credentials_and_package_manager_secrets(self) -> None:
+        text = (
+            "PIP_INDEX_URL=https://user:pass@example.test/simple "
+            "HTTPS_PROXY=http://proxy-user:proxy-pass@proxy.test:8080 "
+            "Authorization: Basic dXNlcjpwYXNzd29yZA=="
+        )
+
+        redacted = redact_text(text)
+
+        assert "user:pass" not in redacted
+        assert "proxy-user:proxy-pass" not in redacted
+        assert "dXNlcjpwYXNzd29yZA" not in redacted
+        assert redacted.count("<redacted") >= 3
 
     def test_redacts_common_bare_token_formats(self) -> None:
         text = " ".join(

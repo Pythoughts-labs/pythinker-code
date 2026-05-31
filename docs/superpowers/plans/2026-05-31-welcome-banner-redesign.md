@@ -85,11 +85,11 @@ def test_welcome_strapline_and_help_on_separate_lines(monkeypatch):
     shell_module._print_welcome_info("Pythinker Code", [])
 
     out = console.export_text()
-    assert "then Create." in out
-    assert "Send /help for help." in out
+    assert "Build with confidence." in out
+    assert "Type /help for commands." in out
     # The strapline and the help line must not share one rendered line.
     assert not any(
-        "then Create." in ln and "Send /help" in ln for ln in out.splitlines()
+        "Build with confidence." in ln and "Type /help" in ln for ln in out.splitlines()
     )
 ```
 
@@ -103,7 +103,7 @@ uv run pytest tests/ui_and_conv/test_shell_welcome_info.py -q -k "footer or pipe
 Expected: all three FAIL.
 - `test_welcome_chip_renders_in_footer_not_header` fails because today the chip is in the header (top), so `lines[-1]` has no "changelog" and `lines[:3]` contains it.
 - `test_welcome_info_grid_has_no_pipe_separator` fails because today the row is `│ Directory │ /tmp/proj │` → 3 pipes, not 2.
-- `test_welcome_strapline_and_help_on_separate_lines` fails because today "then Create." and "Send /help" share one line.
+- `test_welcome_strapline_and_help_on_separate_lines` fails if "Build with confidence." and "Type /help for commands." share one line.
 
 - [ ] **Step 3: Confirm the 5 existing tests still pass (no regression introduced by the new tests)**
 
@@ -139,9 +139,9 @@ def _print_welcome_info(
     _t = _get_tui_tokens()
     head = Text.from_markup("Welcome to Pythinker — think first, then code.")
     strapline = Text.from_markup(
-        f"[{_t.muted}]Review · Secure · Diagnose · then Create.[/]"
+        f"[{_t.muted}]Review · Secure · Diagnose · Build with confidence.[/]"
     )
-    help_text = Text.from_markup(f"[{_t.muted}]Send /help for help.[/]")
+    help_text = Text.from_markup(f"[{_t.muted}]Type /help for commands.[/]")
     help_text.highlight_regex(r"/help\b", f"bold {_t.warning}")
 
     # Logo on the left; the 3-line text block bottom-aligns against the 5-line
@@ -338,4 +338,3 @@ rm -f /tmp/verify_banner.py
 - **Spec coverage:** §3 changes 1–5 each map to a Task-2 step (chip→footer = `subtitle=`; bottom-align = `vertical="bottom"`; split strapline = three `Text` lines; drop pipe = 2-col info grid; token border = `tui_rich_style`). §5 new tests = Task 1. §6 verification = Task 3.
 - **Placeholder scan:** no TBD/TODO; every code step shows complete code; every command shows expected output.
 - **Type/name consistency:** `WelcomeInfoItem`, `_value_style_for_label`, `_get_tui_tokens`, `tui_rich_style`, `get_version`, `Group`, `RenderableType`, `Table`, `Text`, `Panel`, `box` are all already imported in the target file; no new imports needed. `_print_welcome_info` keeps its exact signature, so the `Shell.run()` call site is unaffected.
-```

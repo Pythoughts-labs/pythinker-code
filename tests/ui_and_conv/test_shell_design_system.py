@@ -33,12 +33,18 @@ def _color_hex(style: Style) -> str:
 def test_status_icon_names_are_stable():
     assert status_icon("running").plain == "●"
     assert status_icon("completed").plain == "✓"
-    assert status_icon("failed").plain == "!"
+    assert status_icon("failed").plain == "✘"
     assert status_icon("denied").plain == "×"
     assert status_icon("interrupted").plain == "■"
     assert status_icon("waiting").plain == "○"
     assert status_icon("question").plain == "?"
     assert status_icon("approval").plain == "?"
+
+
+def test_running_and_failed_status_icons_use_expected_tones():
+    assert status_icon("running").style == shell_style(ShellTone.MUTED)
+    assert status_icon("completed").style == shell_style(ShellTone.SUCCESS)
+    assert status_icon("failed").style == shell_style(ShellTone.ERROR)
 
 
 def test_keyboard_hint_uses_key_and_label():

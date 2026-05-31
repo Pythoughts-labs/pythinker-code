@@ -4,6 +4,7 @@ import asyncio
 import base64
 import binascii
 import hashlib
+import html
 import json
 import secrets
 import time
@@ -26,16 +27,17 @@ from pythinker_code.auth.oauth import (
 )
 from pythinker_code.auth.platforms import (
     ModelInfo,
-    Platform,
     list_models,
     managed_model_key,
     managed_provider_key,
 )
 from pythinker_code.config import Config, LLMModel, LLMProvider, OAuthRef, save_config
+from pythinker_code.constant import USER_AGENT
 from pythinker_code.utils.aiohttp import new_client_session
 
 OPENAI_API_BASE_URL = "https://api.openai.com/v1"
 OPENAI_CHATGPT_BASE_URL = "https://chatgpt.com/backend-api/codex"
+OPENAI_CHATGPT_MODELS_URL = f"{OPENAI_CHATGPT_BASE_URL}/models?client_version=1.0.0"
 OPENAI_AUTH_ISSUER = "https://auth.openai.com"
 OPENAI_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 OPENAI_BROWSER_PORT = 1455
@@ -226,6 +228,74 @@ def _build_authorize_url(
     return f"{authorize_url}?{query}"
 
 
+_PYTHINKER_CALLBACK_LOGO_SVG = """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Pythinker">
+  <rect width="64" height="64" rx="16" fill="#0f172a"/>
+  <rect x="12" y="20" width="40" height="28" rx="10" fill="#f9f2f5"/>
+  <path d="M20 48h24l5 10H15z" fill="#ee9983"/>
+  <circle cx="25" cy="34" r="6" fill="#afe3f1" stroke="#213853" stroke-width="4"/>
+  <circle cx="39" cy="34" r="6" fill="#afe3f1" stroke="#213853" stroke-width="4"/>
+  <path d="M27 45h10" stroke="#213853" stroke-width="4" stroke-linecap="round"/>
+  <path d="M32 20V9" stroke="#213853" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="32" cy="8" r="5" fill="#ee9983"/>
+</svg>
+""".strip()
+
+
+def _callback_html(*, ok: bool, message: str | None) -> str:
+    title = "Pythinker logged in" if ok else "Pythinker login failed"
+    heading = "You're logged in to Pythinker" if ok else "Pythinker login failed"
+    body = "You can close this tab and return to Pythinker." if ok else message
+    escaped_title = html.escape(title)
+    escaped_heading = html.escape(heading)
+    escaped_body = html.escape(body or "OpenAI login failed.")
+    favicon = html.escape(
+        "data:image/svg+xml," + _PYTHINKER_CALLBACK_LOGO_SVG.replace("#", "%23"),
+        quote=True,
+    )
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{escaped_title}</title>
+  <link rel="icon" href="{favicon}">
+  <style>
+    :root {{ color-scheme: light dark; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system,
+        BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #1e293b 0, #0f172a 42%, #020617 100%);
+      color: #f8fafc;
+    }}
+    main {{
+      width: min(440px, calc(100vw - 48px));
+      padding: 40px 32px;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 28px;
+      background: rgba(15, 23, 42, 0.82);
+      box-shadow: 0 24px 80px rgba(2, 6, 23, 0.45);
+      text-align: center;
+    }}
+    .logo {{ width: 88px; height: 88px; margin-bottom: 22px; }}
+    h1 {{ margin: 0 0 12px; font-size: 2rem; line-height: 1.15; }}
+    p {{ margin: 0; color: #cbd5e1; font-size: 1.05rem; line-height: 1.6; }}
+  </style>
+</head>
+<body>
+  <main>
+    {_PYTHINKER_CALLBACK_LOGO_SVG.replace("<svg ", '<svg class="logo" ')}
+    <h1>{escaped_heading}</h1>
+    <p>{escaped_body}</p>
+  </main>
+</body>
+</html>"""
+
+
 async def _handle_browser_callback(
     reader: asyncio.StreamReader, writer: asyncio.StreamWriter, state: str
 ) -> tuple[str | None, str | None]:
@@ -251,17 +321,15 @@ async def _handle_browser_callback(
                 error = "OpenAI callback did not include an authorization code."
 
     ok = code is not None and error is None
-    title = "OpenAI login complete" if ok else "OpenAI login failed"
-    body = "You can close this window and return to Pythinker." if ok else error
-    html = f"<html><body><h1>{title}</h1><p>{body}</p></body></html>"
+    response_html = _callback_html(ok=ok, message=error)
     status = "200 OK" if ok else "400 Bad Request"
     writer.write(
         bytes(
             f"HTTP/1.1 {status}\r\n"
             "Content-Type: text/html; charset=utf-8\r\n"
-            f"Content-Length: {len(html.encode('utf-8'))}\r\n"
+            f"Content-Length: {len(response_html.encode('utf-8'))}\r\n"
             "Connection: close\r\n\r\n"
-            f"{html}",
+            f"{response_html}",
             encoding="utf-8",
         )
     )
@@ -530,21 +598,197 @@ async def refresh_openai_chatgpt_token(refresh_token: str) -> OAuthToken:
     return _token_from_openai_response(payload)
 
 
-async def _discover_chatgpt_models(access_token: str) -> list[ModelInfo]:
-    platform = Platform(
-        id=OPENAI_CHATGPT_PLATFORM_ID,
-        name="OpenAI ChatGPT Codex",
-        base_url=OPENAI_CHATGPT_BASE_URL,
-        allowed_prefixes=None,
+def build_chatgpt_codex_headers(
+    *, access_token: str | None = None, account_id: str | None = None
+) -> dict[str, str]:
+    """Headers expected by the ChatGPT-backed Codex endpoint.
+
+    The ChatGPT Codex backend is account-scoped. The bearer token carries the
+    subscription, and ``ChatGPT-Account-ID`` disambiguates the active ChatGPT
+    account when OpenAI returns it in the OAuth claims.
+    """
+    headers = {
+        "User-Agent": f"codex_cli_rs/0.0.0 ({USER_AGENT})",
+        "originator": "codex_cli_rs",
+    }
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if account_id:
+        headers["ChatGPT-Account-ID"] = account_id
+    return headers
+
+
+def _optional_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes"}:
+            return True
+        if normalized in {"false", "0", "no"}:
+            return False
+    return None
+
+
+def _optional_int(value: object) -> int | None:
+    if isinstance(value, int | float | str):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _field(item: dict[str, Any], *names: str) -> object:
+    for name in names:
+        if name in item and item[name] is not None:
+            return item[name]
+    return None
+
+
+def _string_field(item: dict[str, Any], *names: str) -> str | None:
+    value = _field(item, *names)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _looks_like_reasoning_model(model_id: str) -> bool:
+    normalized = model_id.lower()
+    return normalized.startswith(("gpt-5", "o1", "o3", "o4")) or "codex" in normalized
+
+
+def _chatgpt_model_context(model_id: str, item: dict[str, Any]) -> int:
+    value = _optional_int(
+        _field(
+            item,
+            "context_window",
+            "contextWindow",
+            "context_length",
+            "contextLength",
+            "max_context_size",
+        )
     )
-    try:
-        return await list_models(platform, access_token)
-    except aiohttp.ClientResponseError as exc:
-        if exc.status in {401, 403}:
-            raise
-        return list(OPENAI_CHATGPT_FALLBACK_MODELS)
-    except Exception:
-        return list(OPENAI_CHATGPT_FALLBACK_MODELS)
+    if value and value > 0:
+        return value
+    return 128_000 if model_id.lower().endswith("spark") else 272_000
+
+
+def _chatgpt_model_supports_image(model_id: str, item: dict[str, Any]) -> bool:
+    value = _optional_bool(
+        _field(
+            item,
+            "supports_image_in",
+            "supportsImageIn",
+            "supports_vision",
+            "supportsVision",
+            "vision",
+        )
+    )
+    if value is not None:
+        return value
+    # OpenAI documents Spark as a text-only research-preview model.
+    return not model_id.lower().endswith("spark")
+
+
+def _is_visible_chatgpt_model(item: dict[str, Any]) -> bool:
+    visibility = item.get("visibility")
+    if isinstance(visibility, str) and visibility.strip().lower() in {"hide", "hidden"}:
+        return False
+    for key in ("disabled", "unavailable"):
+        if item.get(key) is True:
+            return False
+    return all(item.get(key) is not False for key in ("available", "is_available", "isAvailable"))
+
+
+def _parse_chatgpt_models_payload(payload: object) -> list[ModelInfo]:
+    if not isinstance(payload, dict):
+        raise ValueError("Unexpected OpenAI ChatGPT Codex models response.")
+    payload_dict = cast(dict[str, Any], payload)
+    raw_models = payload_dict.get("models")
+    if not isinstance(raw_models, list):
+        # Keep a small compatibility path in case OpenAI ever aligns this with
+        # the public /v1/models shape. ChatGPT Codex currently returns
+        # {"models": [{"slug": ...}]}.
+        raw_models = payload_dict.get("data")
+    if not isinstance(raw_models, list):
+        raise ValueError("OpenAI ChatGPT Codex models response did not include models.")
+
+    raw_model_items = cast(list[object], raw_models)
+    sortable: list[tuple[int, int, ModelInfo]] = []
+    seen: set[str] = set()
+    for index, raw_item in enumerate(raw_model_items):
+        if not isinstance(raw_item, dict):
+            continue
+        item = cast(dict[str, Any], raw_item)
+        model_id = _string_field(item, "slug", "id")
+        if not model_id or model_id in seen or not _is_visible_chatgpt_model(item):
+            continue
+        seen.add(model_id)
+        reasoning = _optional_bool(
+            _field(item, "supports_reasoning", "supportsReasoning", "reasoning")
+        )
+        supports_reasoning = (
+            reasoning if reasoning is not None else _looks_like_reasoning_model(model_id)
+        )
+        priority = _optional_int(item.get("priority"))
+        display_name = _string_field(item, "display_name", "displayName", "name", "title")
+        sortable.append(
+            (
+                priority if priority is not None else 10_000,
+                index,
+                ModelInfo(
+                    id=model_id,
+                    context_length=_chatgpt_model_context(model_id, item),
+                    supports_reasoning=supports_reasoning,
+                    supports_image_in=_chatgpt_model_supports_image(model_id, item),
+                    supports_video_in=bool(
+                        _optional_bool(
+                            _field(
+                                item,
+                                "supports_video_in",
+                                "supportsVideoIn",
+                                "supports_video",
+                                "supportsVideo",
+                            )
+                        )
+                    ),
+                    display_name=display_name,
+                ),
+            )
+        )
+
+    sortable.sort(key=lambda entry: (entry[0], entry[1]))
+    models = [model for _, _, model in sortable]
+    if not models:
+        raise ValueError("No OpenAI ChatGPT Codex models are available for this account.")
+    return models
+
+
+def _chatgpt_models_url(base_url: str | None = None) -> str:
+    root = (base_url or OPENAI_CHATGPT_BASE_URL).rstrip("/")
+    return f"{root}/models?client_version=1.0.0"
+
+
+async def discover_chatgpt_models(
+    access_token: str,
+    *,
+    account_id: str | None = None,
+    base_url: str | None = None,
+) -> list[ModelInfo]:
+    async with (
+        new_client_session() as session,
+        session.get(
+            _chatgpt_models_url(base_url),
+            headers=build_chatgpt_codex_headers(
+                access_token=access_token,
+                account_id=account_id,
+            ),
+            raise_for_status=True,
+        ) as response,
+    ):
+        payload = await response.json(content_type=None)
+    return _parse_chatgpt_models_payload(payload)
 
 
 def _token_from_openai_response(payload: dict[str, Any]) -> OAuthToken:
@@ -555,17 +799,15 @@ def _token_from_openai_response(payload: dict[str, Any]) -> OAuthToken:
         **payload,
     }
     # ChatGPT does not return `account_id` as a top-level OAuth response field;
-    # it lives inside the id_token JWT claims under
+    # it lives inside the OAuth JWT claims under
     # `https://api.openai.com/auth.chatgpt_account_id`. Hoist it onto the
     # response so OAuthToken.from_response() picks it up. Without this the
-    # ChatGPT usage adapter (and any other code calling
-    # OAuthManager.get_chatgpt_account_id) sees None.
-    if (
-        "account_id" not in normalized
-        and (id_token := payload.get("id_token"))
-        and (account_id := _extract_chatgpt_account_id(str(id_token)))
-    ):
-        normalized["account_id"] = account_id
+    # ChatGPT usage adapter, model catalog endpoint, and Codex request headers
+    # cannot scope requests to the active Plus/Pro account.
+    if "account_id" not in normalized:
+        jwt_token = payload.get("id_token") or payload.get("access_token")
+        if jwt_token and (account_id := _extract_chatgpt_account_id(str(jwt_token))):
+            normalized["account_id"] = account_id
     return OAuthToken.from_response(normalized)
 
 
@@ -610,7 +852,7 @@ async def _finish_chatgpt_login(
         api_key = ""
         if id_token := token_payload.get("id_token"):
             api_key = await _exchange_id_token_for_api_key(str(id_token))
-        models = await _discover_chatgpt_models(token.access_token)
+        models = await discover_chatgpt_models(token.access_token, account_id=token.account_id)
         selected_model, thinking = _select_default_openai_model(models)
     except Exception as exc:
         from pythinker_code.telemetry.errors import report_handled_error

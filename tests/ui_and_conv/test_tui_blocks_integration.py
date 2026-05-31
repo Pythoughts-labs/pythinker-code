@@ -185,7 +185,7 @@ def test_card_style_running_subagent_uses_solid_circle(_force_card_style, monkey
 
     assert "Agent(" in rendered
     assert "Audit UI" in rendered
-    assert "⏺" in rendered
+    assert "●" in rendered
     assert not any(frame in rendered for frame in spinner_frames)
 
     block.finish(_ok_result("done"))
@@ -210,7 +210,7 @@ def test_card_style_finished_subagent_shows_compact_result(_force_card_style, mo
     block.finish(_ok_result("done"))
     rendered = render_plain(block.compose(), width=80)
 
-    assert "⏺ Agent(coder · Audit UI)" in rendered
+    assert "● Agent(coder · Audit UI)" in rendered
     assert "⎿  done" in rendered
     assert "Agent finished" not in rendered
 
@@ -234,7 +234,7 @@ def test_card_style_running_task_output_uses_solid_circle(_force_card_style, mon
 
     assert "TaskOutput(" in rendered
     assert "agent-123" in rendered
-    assert "⏺" in rendered
+    assert "●" in rendered
     assert not any(frame in rendered for frame in spinner_frames)
 
 
@@ -258,9 +258,9 @@ def test_card_style_running_subagent_marker_pulses(_force_card_style, monkeypatc
 
     assert first != second
     assert "Agent(" in first
-    assert "⏺" in first
+    assert "●" in first
     assert "Agent(" in second
-    assert "⏺" not in second
+    assert "●" not in second
 
 
 def test_card_style_background_subagent_result_keeps_solid_circle(_force_card_style, monkeypatch):
@@ -291,7 +291,7 @@ def test_card_style_background_subagent_result_keeps_solid_circle(_force_card_st
     assert "background subagent working" in rendered
     assert "background audit" in rendered
     assert "status: running" in rendered
-    assert "⏺" in rendered
+    assert "●" in rendered
     assert not any(frame in rendered for frame in spinner_frames)
 
 
@@ -326,7 +326,7 @@ def test_card_style_background_subagent_marker_pulses(_force_card_style, monkeyp
 
     assert first != second
     assert "background subagent working" in first
-    assert "⎿  ⏺ background subagent working" in first
+    assert "⎿  ● background subagent working" in first
     assert "background subagent working" in second
     assert "⎿    background subagent working" in second
 

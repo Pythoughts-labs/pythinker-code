@@ -176,10 +176,11 @@ def _select_retry_api_keys(
 
 
 def _openai_fallback_models(platform_id: str) -> list[ModelInfo] | None:
+    # ChatGPT Codex model availability is subscription/account-specific. Do not
+    # replace the user's live catalog with a static fallback; stale fallback
+    # slugs surface as 400 "model is not supported with a ChatGPT account".
     if platform_id == OPENAI_CHATGPT_PLATFORM_ID:
-        from pythinker_code.auth.openai import OPENAI_CHATGPT_FALLBACK_MODELS
-
-        return list(OPENAI_CHATGPT_FALLBACK_MODELS)
+        return None
     if platform_id == OPENAI_API_PLATFORM_ID:
         from pythinker_code.auth.openai import OPENAI_API_FALLBACK_MODELS
 
@@ -206,6 +207,24 @@ def _fallback_or_log(
         error=error,
     )
     return models
+
+
+async def _list_models_for_managed_platform(
+    *,
+    platform_id: str,
+    platform: Platform,
+    api_key: str,
+    account_id: str | None = None,
+) -> list[ModelInfo]:
+    if platform_id == OPENAI_CHATGPT_PLATFORM_ID:
+        from pythinker_code.auth.openai import discover_chatgpt_models
+
+        return await discover_chatgpt_models(
+            api_key,
+            account_id=account_id,
+            base_url=platform.base_url,
+        )
+    return await list_models(platform, api_key)
 
 
 async def refresh_managed_models(config: Config) -> bool:
@@ -276,8 +295,20 @@ async def refresh_managed_models(config: Config) -> bool:
             )
             continue
         effective_platform = platform._replace(base_url=provider.base_url)
+        account_id = (
+            oauth_manager.get_chatgpt_account_id(provider.oauth)
+            if platform_id == OPENAI_CHATGPT_PLATFORM_ID
+            and provider.oauth is not None
+            and oauth_manager is not None
+            else None
+        )
         try:
-            models = await list_models(effective_platform, api_key)
+            models = await _list_models_for_managed_platform(
+                platform_id=platform_id,
+                platform=effective_platform,
+                api_key=api_key,
+                account_id=account_id,
+            )
         except aiohttp.ClientResponseError as exc:
             if exc.status != 401 or provider.oauth is None or oauth_manager is None:
                 fallback_models = _fallback_or_log(platform_id=platform_id, error=exc)
@@ -311,6 +342,8 @@ async def refresh_managed_models(config: Config) -> bool:
                 resolved_api_key=oauth_manager.resolve_api_key(provider.api_key, provider.oauth),
                 fallback_api_key=fallback_api_key,
             )
+            if platform_id == OPENAI_CHATGPT_PLATFORM_ID:
+                account_id = oauth_manager.get_chatgpt_account_id(provider.oauth)
             if not retry_api_keys:
                 fallback_models = _fallback_or_log(
                     platform_id=platform_id,
@@ -325,7 +358,12 @@ async def refresh_managed_models(config: Config) -> bool:
             retry_exc: Exception | None = None
             for retry_api_key in retry_api_keys:
                 try:
-                    models = await list_models(effective_platform, retry_api_key)
+                    models = await _list_models_for_managed_platform(
+                        platform_id=platform_id,
+                        platform=effective_platform,
+                        api_key=retry_api_key,
+                        account_id=account_id,
+                    )
                     break
                 except Exception as exc3:
                     retry_exc = exc3

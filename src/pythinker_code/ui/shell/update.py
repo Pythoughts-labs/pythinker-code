@@ -9,8 +9,9 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from enum import Enum, auto
 from pathlib import Path
 from shutil import which
@@ -54,6 +55,7 @@ LAST_SEEN_VERSION_FILE = get_share_dir() / "last_seen_version.txt"
 AUTO_UPDATE_CHECK_INTERVAL_SECONDS = 24 * 60 * 60
 PROMPT_UPDATE_REFRESH_TIMEOUT_SECONDS = 2.0
 WINDOWS_UPDATE_STAGING_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+UPGRADE_COMMAND_TIMEOUT_SECONDS = 30 * 60
 
 _UPDATE_LOCK = asyncio.Lock()
 _skipped_version_this_session: str | None = None
@@ -74,6 +76,9 @@ class UpdatePromptSelection(Enum):
     SKIP = auto()
     DISMISS_VERSION = auto()
     EXIT = auto()
+
+
+type UpdateRunner = Callable[..., Awaitable[UpdateResult]]
 
 
 def semver_tuple(version: str) -> tuple[int, int, int]:
@@ -280,7 +285,7 @@ def _mark_auto_update_check_attempt() -> None:
         logger.exception("Failed to write last update-check timestamp:")
 
 
-async def prompt_pre_start_update() -> None:
+async def prompt_pre_start_update(update_runner: UpdateRunner | None = None) -> None:
     """pythinker-x-style blocking update prompt for the interactive shell.
 
     Runs once at startup, before the agent loop. When a newer native release
@@ -314,7 +319,10 @@ async def prompt_pre_start_update() -> None:
         _skip_version_this_session(latest_version)
         return
 
-    result = await do_update(print=True)
+    if update_runner is None:
+        result = await do_update(print_output=True)
+    else:
+        result = await update_runner(print_output=True, check_only=False)
     if result is UpdateResult.UPDATED:
         # do_update() already printed "Updated successfully!" + the relaunch
         # hint. Wait for the user to acknowledge before exiting so the message
@@ -474,7 +482,7 @@ async def _refresh_update_cache(*, force: bool) -> UpdateResult | None:
     if not force and not _should_auto_check_for_updates():
         return None
     try:
-        result = await do_update(print=False, check_only=True)
+        result = await do_update(print_output=False, check_only=True)
     except Exception:
         logger.exception("Update cache refresh failed:")
         return None
@@ -536,7 +544,7 @@ def pending_update_notice() -> str | None:
     return f"Update available: {current_version} → {cached}. Run /update to install."
 
 
-async def run_update_prompt() -> UpdateResult | None:
+async def run_update_prompt(update_runner: UpdateRunner | None = None) -> UpdateResult | None:
     """Interactive ``/update`` flow: refresh, show the 3-choice modal, install.
 
     In-shell safe — unlike ``prompt_pre_start_update`` it does not block on raw
@@ -546,7 +554,10 @@ async def run_update_prompt() -> UpdateResult | None:
     """
     from pythinker_code.constant import VERSION as current_version
 
-    refresh_result = await do_update(print=True, check_only=True)
+    if update_runner is None:
+        refresh_result = await do_update(print_output=True, check_only=True)
+    else:
+        refresh_result = await update_runner(print_output=True, check_only=True)
     if refresh_result is UpdateResult.UP_TO_DATE:
         return UpdateResult.UP_TO_DATE
     if refresh_result is UpdateResult.FAILED:
@@ -567,7 +578,9 @@ async def run_update_prompt() -> UpdateResult | None:
     if selection is not UpdatePromptSelection.UPDATE_NOW:
         _skip_version_this_session(latest_version)
         return None
-    return await do_update(print=True)
+    if update_runner is None:
+        return await do_update(print_output=True)
+    return await update_runner(print_output=True, check_only=False)
 
 
 async def _prompt_update_selection(
@@ -1104,18 +1117,80 @@ async def _maybe_run_native_update(latest_version: str, channel: str = "latest")
                 shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-async def do_update(*, print: bool = True, check_only: bool = False) -> UpdateResult:
+def _run_upgrade_command(
+    command: list[str],
+    *,
+    print_output: bool,
+    output_callback: Callable[[str], None] | None,
+) -> int:
+    def _emit(text: str) -> None:
+        if output_callback is not None:
+            output_callback(text)
+        if print_output:
+            console.print(text, markup=False)
+
+    proc = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=get_clean_env(),
+        bufsize=1,
+    )
+
+    def _drain_stdout() -> None:
+        if proc.stdout is None:
+            return
+        for line in proc.stdout:
+            _emit(line.rstrip("\n"))
+
+    output_thread = threading.Thread(target=_drain_stdout, daemon=True)
+    output_thread.start()
+    try:
+        return proc.wait(timeout=UPGRADE_COMMAND_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        _emit(f"Upgrade command timed out after {UPGRADE_COMMAND_TIMEOUT_SECONDS} seconds.")
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        return 124
+    finally:
+        output_thread.join(timeout=5)
+
+
+async def do_update(
+    *,
+    print_output: bool = True,
+    check_only: bool = False,
+    output_callback: Callable[[str], None] | None = None,
+) -> UpdateResult:
     async with _UPDATE_LOCK:
-        return await _do_update(print=print, check_only=check_only)
+        return await _do_update(
+            print_output=print_output,
+            check_only=check_only,
+            output_callback=output_callback,
+        )
 
 
-async def _do_update(*, print: bool, check_only: bool) -> UpdateResult:
+async def _do_update(
+    *,
+    print_output: bool,
+    check_only: bool,
+    output_callback: Callable[[str], None] | None,
+) -> UpdateResult:
     from pythinker_code.constant import VERSION as current_version
 
     _t = _get_tui_tokens()
 
     def _print(message: str) -> None:
-        if print:
+        if output_callback is not None:
+            output_callback(message)
+        if print_output:
             console.print(message)
 
     timeout = aiohttp.ClientTimeout(total=15, sock_connect=5, sock_read=10)
@@ -1218,14 +1293,18 @@ async def _do_update(*, print: bool, check_only: bool) -> UpdateResult:
         sys.exit(0)
 
     try:
-        result = subprocess.run(upgrade_command)
+        returncode = _run_upgrade_command(
+            upgrade_command,
+            print_output=print_output,
+            output_callback=output_callback,
+        )
     except OSError as e:
         logger.exception("Upgrade failed:")
         _print(f"[{_t.error}]Upgrade failed:[/] {e}")
         _print(f"Please run manually: {upgrade_command_text}")
         return UpdateResult.FAILED
 
-    if result.returncode == 0:
+    if returncode == 0:
         _print(f"[{_t.success}]Updated successfully![/]")
         _print(f"[{_t.warning}]Restart Pythinker CLI to use the new version.[/]")
         return UpdateResult.UPDATED

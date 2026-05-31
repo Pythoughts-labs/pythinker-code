@@ -14,6 +14,10 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import aiohttp
 
 from pythinker_code.constant import VERSION
+from pythinker_code.feedback_repo import (
+    DEFAULT_FEEDBACK_GITHUB_REPO,
+    normalize_feedback_github_repo,
+)
 from pythinker_code.telemetry.errors import RecentError, recent_errors
 from pythinker_code.ui.shell.oauth import current_model_key
 from pythinker_code.utils.aiohttp import new_client_session
@@ -44,16 +48,28 @@ _TYPE_ALIASES: dict[str, FeedbackType] = {
     "other": "other",
     "feedback": "other",
 }
-_SENSITIVE_KEY_RE = re.compile(r"(api[_-]?key|token|secret|password|passwd|authorization)", re.I)
+_SENSITIVE_KEY_RE = re.compile(
+    r"(api[_-]?key|token|secret|password|passwd|authorization|proxy|"
+    r"pip[_-]?[\w-]*index[_-]?url)",
+    re.I,
+)
 _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
-        re.compile(r"(?i)(authorization\s*[:=]\s*(?:bearer|token)\s+)[A-Za-z0-9._~+/=-]{8,}"),
+        re.compile(r"(?i)(authorization\s*[:=]\s*(?:bearer|token|basic)\s+)[A-Za-z0-9._~+/=-]{8,}"),
         r"\1<redacted>",
     ),
     (
         re.compile(r"(?i)((?:api[_-]?key|token|secret|password|passwd)\s*[:=]\s*)[^\s'\"]+"),
         r"\1<redacted>",
     ),
+    (
+        re.compile(
+            r"(?i)((?:pip[_-]?index[_-]?url|pip[_-]?extra[_-]?index[_-]?url|"
+            r"https?[_-]?proxy|all[_-]?proxy)\s*[:=]\s*)[^\s'\"]+"
+        ),
+        r"\1<redacted>",
+    ),
+    (re.compile(r"(?i)(https?://)[^\s/@:]+:[^\s/@]+@"), r"\1<redacted>@"),
     (re.compile(r"\bsk-(?:ant|proj|[A-Za-z0-9])[A-Za-z0-9_-]{16,}\b"), "<redacted-api-key>"),
     (re.compile(r"\bxox(?:a|b|p|r|s)-[A-Za-z0-9-]{10,}\b"), "<redacted-slack-token>"),
     (re.compile(r"\bAIza[0-9A-Za-z_-]{30,45}\b"), "<redacted-google-api-key>"),
@@ -263,10 +279,11 @@ async def submit_feedback_payload(
 
 
 def build_feedback_issue_url(
-    payload: dict[str, Any], repo: str = "TechMatrix-labs/pythinker-code"
+    payload: dict[str, Any], repo: str = DEFAULT_FEEDBACK_GITHUB_REPO
 ) -> str:
     from urllib.parse import urlencode
 
+    repo = normalize_feedback_github_repo(repo)
     title = build_feedback_title(payload)
     body = build_feedback_issue_body(payload)
     labels = f"feedback,feedback:{payload.get('type') or 'other'}"

@@ -110,9 +110,31 @@ def test_welcome_strapline_and_help_on_separate_lines(monkeypatch):
     shell_module._print_welcome_info("Pythinker Code", [])
 
     out = console.export_text()
-    assert "then Create." in out
-    assert "Send /help for help." in out
+    assert "Build with confidence." in out
+    assert "Type /help for commands." in out
     # The strapline and the help line must not share one rendered line.
-    assert not any(
-        "then Create." in ln and "Send /help" in ln for ln in out.splitlines()
-    )
+    assert not any("Build with confidence." in ln and "Type /help" in ln for ln in out.splitlines())
+
+
+def test_welcome_auto_save_path_is_middle_truncated_not_wrapped(monkeypatch):
+    from pythinker_code.ui.shell import WelcomeInfoItem
+
+    console = Console(record=True, width=120, color_system=None)
+    monkeypatch.setattr(shell_module, "console", console)
+    monkeypatch.setattr(shell_module, "get_version", lambda: "9.9.9")
+
+    items = [
+        WelcomeInfoItem(
+            name="Auto-save",
+            value=(
+                "~/.pythinker/sessions/91ce869d5afa3e6547c32cb5b58fa943/"
+                "6b76c556-cae9-47e2-8233-38ecf986624e/context.json"
+            ),
+        )
+    ]
+    shell_module._print_welcome_info("Pythinker Code", items)
+
+    lines = [ln for ln in console.export_text().splitlines() if "Auto-save" in ln]
+    assert len(lines) == 1
+    assert "…" in lines[0]
+    assert "context.json" in lines[0]

@@ -9,18 +9,29 @@ from __future__ import annotations
 
 from typing import Final
 
-#: Braille dotted spinner frames, rendered left-to-right per tick.
-SPINNER_FRAMES: Final = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
-#: Solid dot pulse for the Composing / Thinking activity lines instead of the
-#: dotted braille spinner. The blank frame keeps the label column stable while
-#: making the dot appear and disappear.
-SHAPE_FRAMES: Final = ("●", " ")
+from pythinker_code.ui.terminal_capabilities import ascii_glyphs_enabled
+
+_ASCII_GLYPHS = ascii_glyphs_enabled()
+
+#: Braille dotted spinner frames, rendered left-to-right per tick. ASCII mode is
+#: available for legacy Windows code pages, ``TERM=dumb``, and users who set
+#: ``PYTHINKER_TUI_GLYPHS=ascii``.
+SPINNER_FRAMES: Final = (
+    ("-", "\\", "|", "/") if _ASCII_GLYPHS else ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+)
+#: Text-safe pulse for the Composing / Thinking activity lines instead of the
+#: dotted braille spinner. Use the filled text circle so active transcript,
+#: tool, and subagent markers read at the same weight as the reference CLI.
+#: ASCII mode keeps legacy Windows code pages, ``TERM=dumb``, and explicit safe
+#: glyph requests on a plain star. The blank frame keeps the label column stable
+#: while making the marker appear and disappear.
+SHAPE_FRAMES: Final = ("*", " ") if _ASCII_GLYPHS else ("●", " ")
 #: Seconds each braille spinner frame stays on screen.
 SPINNER_FRAME_INTERVAL_S: Final = 0.08
-#: Seconds each solid-dot pulse frame stays on screen.
+#: Seconds each text-safe pulse frame stays on screen.
 SHAPE_FRAME_INTERVAL_S: Final = 0.45
 #: Static stand-in used when motion is disabled.
-REDUCED_MOTION_GLYPH: Final = "●"
+REDUCED_MOTION_GLYPH: Final = "*" if _ASCII_GLYPHS else "●"
 #: Braille dotted frames for the active task/status marker beside pinned todos.
 ACTIVE_MARKER_FRAMES: Final = SPINNER_FRAMES
 #: Seconds each active-marker braille frame stays on screen.
@@ -29,16 +40,18 @@ ACTIVE_MARKER_FRAME_INTERVAL_S: Final = SPINNER_FRAME_INTERVAL_S
 STAR_SPINNER_FRAMES: Final = ACTIVE_MARKER_FRAMES
 STAR_SPINNER_FRAME_INTERVAL_S: Final = ACTIVE_MARKER_FRAME_INTERVAL_S
 
-#: Transcript row marker for assistant/tool-call lines.
-TRANSCRIPT_ASSISTANT_MARKER: Final = "⏺"
+#: Transcript row marker for assistant/tool-call lines. U+23FA (record button)
+#: renders as a blue emoji tile on some Windows terminals; keep this as a
+#: monochrome text circle.
+TRANSCRIPT_ASSISTANT_MARKER: Final = "*" if _ASCII_GLYPHS else "●"
 #: Transcript prompt marker for submitted user input.
-TRANSCRIPT_PROMPT_MARKER: Final = "❯"
+TRANSCRIPT_PROMPT_MARKER: Final = ">" if _ASCII_GLYPHS else "❯"
 #: Transcript marker for completed thinking/status timing rows.
-TRANSCRIPT_STATUS_MARKER: Final = "✻"
+TRANSCRIPT_STATUS_MARKER: Final = "*" if _ASCII_GLYPHS else "✻"
 #: Transcript marker for active task/status rows when motion is disabled.
 TRANSCRIPT_ACTIVE_MARKER: Final = REDUCED_MOTION_GLYPH
 #: Transcript gutter marker for tool results.
-TRANSCRIPT_TOOL_GUTTER: Final = "⎿"
+TRANSCRIPT_TOOL_GUTTER: Final = "|" if _ASCII_GLYPHS else "⎿"
 
 __all__ = [
     "SPINNER_FRAMES",

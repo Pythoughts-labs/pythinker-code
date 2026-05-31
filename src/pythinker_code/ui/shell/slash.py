@@ -564,14 +564,17 @@ def _feedback_destination(soul: PythinkerSoul) -> tuple[str, dict[str, str]] | N
         return None
 
     provider = soul.runtime.config.providers.get(managed_provider_key(PYTHINKER_CODE_PLATFORM_ID))
-    if provider is not None:
-        if provider.custom_headers:
-            headers.update(provider.custom_headers)
-        api_key = provider.api_key.get_secret_value()
-        if provider.oauth is not None:
-            api_key = soul.runtime.oauth.resolve_api_key(provider.api_key, provider.oauth)
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
+    if provider is None:
+        return None
+    if provider.custom_headers:
+        headers.update(provider.custom_headers)
+    api_key = provider.api_key.get_secret_value()
+    if provider.oauth is not None:
+        api_key = soul.runtime.oauth.resolve_api_key(provider.api_key, provider.oauth)
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    if not any(key.lower() == "authorization" and value for key, value in headers.items()):
+        return None
 
     return f"{pythinker_platform.base_url.rstrip('/')}/feedback", headers
 
@@ -1622,8 +1625,14 @@ async def update_command(app: Shell, args: str):
     """Check for and optionally install the latest Pythinker version."""
     _ = args, app
     from pythinker_code.ui.shell.update import UpdateResult, run_update_prompt
+    from pythinker_code.ui.shell.update_orchestrator import run_update_job
 
-    result = await run_update_prompt()
+    async def _runner(*, print_output: bool, check_only: bool) -> UpdateResult:
+        return await run_update_job(
+            print_output=print_output, check_only=check_only, source="slash"
+        )
+
+    result = await run_update_prompt(update_runner=_runner)
     if result is UpdateResult.UPDATED:
         console.print("Updated — restart Pythinker to use the new version.")
 

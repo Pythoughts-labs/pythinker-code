@@ -233,7 +233,7 @@ The current loop (lines 229-238) is flat 6×10s. Replace with exponential backof
   while [ "$elapsed" -lt "$max" ]; do seq="$seq $delay"; elapsed=$((elapsed+delay)); delay=$((delay*2)); [ "$delay" -gt 120 ] && delay=120; done
   echo "delays:$seq  total:${elapsed}s"
   ```
-  Expected: `delays: 4 8 16 32 64 120 120 120  total:480s` (≈8 retries, geometric early then 120s-capped; the loop stops once `elapsed >= 360`).
+  Expected: `delays: 4 8 16 32 64 120 120  total:364s` (7 retries, geometric early then 120s-capped; the loop stops once `elapsed >= 360`).
 - [ ] 4.3 Lint the whole file and confirm it is clean:
   ```bash
   shellcheck /home/ai/Projects/pythinker-code-main/scripts/install-native.sh; echo "exit=$?"

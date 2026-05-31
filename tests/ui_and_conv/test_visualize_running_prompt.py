@@ -224,7 +224,7 @@ def test_prompt_status_block_renders_above_agent_input_preamble() -> None:
     from prompt_toolkit.formatted_text import FormattedText
 
     def _status_block(_columns: int) -> FormattedText:
-        return FormattedText([("", "● Booting MCP server: context7")])
+        return FormattedText([("", "• Booting MCP server: context7")])
 
     session = object.__new__(CustomPromptSession)
     session._running_prompt_delegate = None
@@ -234,7 +234,7 @@ def test_prompt_status_block_renders_above_agent_input_preamble() -> None:
     rendered = CustomPromptSession._render_agent_status(session, 80)
     text = "".join(item[1] for item in rendered)
 
-    assert text.startswith("● Booting MCP server: context7")
+    assert text.startswith("• Booting MCP server: context7")
 
 
 def test_background_status_splits_verb_and_count_styles(monkeypatch) -> None:

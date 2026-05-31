@@ -54,6 +54,19 @@ def test_create_llm_supports_openai_codex_provider(monkeypatch, tmp_path):
         "pythinker_core.contrib.chat_provider.openai_responses.OpenAIResponses", FakeOpenAIResponses
     )
     config = _openai_chatgpt_config()
+    ref = OAuthRef(storage="file", key=OPENAI_CHATGPT_OAUTH_KEY)
+    save_tokens(
+        ref,
+        OAuthToken(
+            access_token="access-token",
+            refresh_token="refresh-token",
+            expires_at=time.time() + 3600,
+            scope="openid",
+            token_type="Bearer",
+            expires_in=3600,
+            account_id="acc_test",
+        ),
+    )
     provider = next(iter(config.providers.values()))
     model = next(iter(config.models.values()))
 
@@ -62,8 +75,10 @@ def test_create_llm_supports_openai_codex_provider(monkeypatch, tmp_path):
     assert llm is not None
     assert captured["model"] == "gpt-5.1-codex"
     assert captured["base_url"] == "https://chatgpt.com/backend-api/codex"
-    assert captured["api_key"] == ""
+    assert captured["api_key"] == "access-token"
     assert captured["system_prompt_as_instructions"] is True
+    assert captured["default_headers"]["ChatGPT-Account-ID"] == "acc_test"
+    assert captured["default_headers"]["originator"] == "codex_cli_rs"
     assert captured["thinking"] == "high"
 
 

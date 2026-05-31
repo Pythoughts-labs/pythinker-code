@@ -203,8 +203,8 @@ async def test_run_update_prompt_reports_up_to_date(monkeypatch):
     monkeypatch.setattr(constant, "VERSION", "2.0.0")
     calls: list[tuple[bool, bool]] = []
 
-    async def fake_do_update(*, print: bool, check_only: bool):
-        calls.append((print, check_only))
+    async def fake_do_update(*, print_output: bool, check_only: bool):
+        calls.append((print_output, check_only))
         return update.UpdateResult.UP_TO_DATE
 
     monkeypatch.setattr(update, "do_update", fake_do_update)
@@ -216,8 +216,8 @@ async def test_run_update_prompt_reports_up_to_date(monkeypatch):
 async def test_run_update_prompt_skip_returns_none(monkeypatch):
     monkeypatch.setattr(constant, "VERSION", "1.0.0")
 
-    async def fake_do_update(*, print: bool, check_only: bool):
-        assert (print, check_only) == (True, True)
+    async def fake_do_update(*, print_output: bool, check_only: bool):
+        assert (print_output, check_only) == (True, True)
         return update.UpdateResult.UPDATE_AVAILABLE
 
     async def fake_prompt(current, latest):

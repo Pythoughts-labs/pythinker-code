@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import random
 import time
-from collections import deque
+from collections import Counter, deque
 from typing import Any, NamedTuple, cast
 
 import streamingjson  # type: ignore[reportMissingTypeStubs]
@@ -20,6 +20,7 @@ from rich.text import Text
 
 from pythinker_code.soul import format_context_status, format_token_count
 from pythinker_code.tools import extract_key_argument
+from pythinker_code.tools.display import DiffDisplayBlock
 from pythinker_code.ui.shell.components import ToolExecutionComponent
 from pythinker_code.ui.shell.components.markdown import (
     PythinkerMarkdown as Markdown,
@@ -54,6 +55,8 @@ from pythinker_code.ui.tui_config import is_card_style
 from pythinker_code.utils.datetime import format_elapsed
 from pythinker_code.utils.rich.columns import BulletColumns
 from pythinker_code.wire.types import (
+    HookResolved,
+    HookTriggered,
     MCPStatusSnapshot,
     Notification,
     ProgressNote,
@@ -71,12 +74,24 @@ _COMPOSING_PREVIEW_LINES = 12
 MAX_SUBAGENT_TOOL_CALLS_TO_SHOW = 4
 _MAX_RUNNING_ROWS = 2
 _MAX_SUB_OUTPUT_CHARS = 200
+_MAX_SUBAGENT_ROLLUP_TOOLS = 6
+_MAX_SUBAGENT_CHANGED_FILES = 5
 
 # Background-agent statuses that mean "still running" — the tool call result
 # has arrived but the spawned agent has not yet finished.  Blocks with this
 # status must stay in the Live area so their spinner keeps animating.
 _AGENT_ACTIVE_STATUSES = frozenset({"created", "starting", "running", "awaiting_approval"})
 _TODO_TOOL_NAMES = frozenset({"SetTodoList", "TodoWrite"})
+_MUTATING_TOOL_NAMES = frozenset(
+    {
+        "applypatch",
+        "edit",
+        "replace",
+        "strreplacefile",
+        "write",
+        "writefile",
+    }
+)
 
 
 def _is_active_background_agent(tool_name: str, result_text: str) -> bool:
@@ -371,6 +386,9 @@ class _ToolCallBlock:
         self._ongoing_subagent_tool_calls: dict[str, ToolCall] = {}
         self._last_subagent_tool_call: ToolCall | None = None
         self._n_finished_subagent_tool_calls = 0
+        self._finished_subagent_tool_counts: Counter[str] = Counter()
+        self._subagent_changed_files: list[str] = []
+        self._subagent_changed_file_set: set[str] = set()
         self._finished_subagent_tool_calls = deque[_ToolCallBlock.FinishedSubCall](
             maxlen=MAX_SUBAGENT_TOOL_CALLS_TO_SHOW
         )
@@ -499,6 +517,7 @@ class _ToolCallBlock:
         self._subagent_output_parts.pop(tool_result.tool_call_id, None)
         self._subagent_output_had_stderr.pop(tool_result.tool_call_id, None)
         self._subagent_execution_started.discard(tool_result.tool_call_id)
+        self._record_finished_subagent_call(sub_tool_call, tool_result.return_value)
 
         self._finished_subagent_tool_calls.append(
             _ToolCallBlock.FinishedSubCall(
@@ -540,16 +559,88 @@ class _ToolCallBlock:
             self._subagent_output_parts[tool_call_id] = [combined[-_MAX_SUB_OUTPUT_CHARS:]]
         self._renderable = self._compose()
 
-    def _subagent_activity_children(self, style_label: str) -> list[RenderableType]:
+    def _record_finished_subagent_call(
+        self, sub_tool_call: ToolCall, result: ToolReturnValue
+    ) -> None:
+        self._finished_subagent_tool_counts[sub_tool_call.function.name] += 1
+        for path in self._changed_paths_from_sub_call(sub_tool_call, result):
+            if path in self._subagent_changed_file_set:
+                continue
+            self._subagent_changed_file_set.add(path)
+            self._subagent_changed_files.append(path)
+
+    def _changed_paths_from_sub_call(
+        self, sub_tool_call: ToolCall, result: ToolReturnValue
+    ) -> list[str]:
+        paths: list[str] = []
+        for block in getattr(result, "display", []) or []:
+            if isinstance(block, DiffDisplayBlock):
+                paths.append(block.path)
+        if paths:
+            return paths
+
+        if sub_tool_call.function.name.lower() not in _MUTATING_TOOL_NAMES:
+            return []
+        try:
+            args = json.loads(sub_tool_call.function.arguments or "{}", strict=False)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(args, dict):
+            return []
+        parsed_args = cast(dict[str, Any], args)
+        raw_path = parsed_args.get("path") or parsed_args.get("file_path")
+        return [str(raw_path)] if raw_path else []
+
+    def _subagent_rollup_children(self) -> list[RenderableType]:
         children: list[RenderableType] = []
-        if not (style_label == "Subagent" and self._result is not None):
+        if self._finished_subagent_tool_counts:
+            parts: list[str] = []
+            for tool_name, count in self._finished_subagent_tool_counts.most_common(
+                _MAX_SUBAGENT_ROLLUP_TOOLS
+            ):
+                label = tool_style(tool_name).label
+                parts.append(f"{label} ×{count}" if count > 1 else label)
+            hidden = len(self._finished_subagent_tool_counts) - len(parts)
+            if hidden > 0:
+                parts.append(f"+{hidden} more")
+            children.append(
+                BulletColumns(
+                    Text("tools: " + ", ".join(parts), style=tui_rich_style("muted")),
+                    bullet_style=tui_rich_style("muted"),
+                )
+            )
+        if self._subagent_changed_files:
+            shown = self._subagent_changed_files[:_MAX_SUBAGENT_CHANGED_FILES]
+            suffix = ""
+            hidden = len(self._subagent_changed_files) - len(shown)
+            if hidden > 0:
+                suffix = f", +{hidden} more"
+            children.append(
+                BulletColumns(
+                    Text(
+                        "changed: " + ", ".join(shown) + suffix,
+                        style=tui_rich_style("muted"),
+                    ),
+                    bullet_style=tui_rich_style("muted"),
+                )
+            )
+        return children
+
+    def _subagent_activity_children(
+        self, style_label: str, *, include_completed_subagent: bool = False
+    ) -> list[RenderableType]:
+        children: list[RenderableType] = []
+        should_show_activity = include_completed_subagent or not (
+            style_label == "Subagent" and self._result is not None
+        )
+        if should_show_activity:
             # Finished sub-tool call rows
             rows: list[ActivityRow] = []
             for sub_call, sub_result in self._finished_subagent_tool_calls:
                 argument = extract_key_argument(
                     sub_call.function.arguments or "", sub_call.function.name
                 )
-                detail = sub_call.function.name
+                detail = tool_style(sub_call.function.name).label
                 if argument:
                     detail = f"{detail} {argument}"
                 rows.append(
@@ -567,7 +658,7 @@ class _ToolCallBlock:
             running_rows: list[ActivityRow] = []
             for call in visible_running:
                 argument = extract_key_argument(call.function.arguments or "", call.function.name)
-                detail = call.function.name
+                detail = tool_style(call.function.name).label
                 if argument:
                     detail = f"{detail} {argument}"
                 state = "running" if call.id in self._subagent_execution_started else "waiting"
@@ -642,6 +733,7 @@ class _ToolCallBlock:
                         style=tui_rich_style("muted"),
                     )
                 children.append(BulletColumns(summary, bullet_style=tui_rich_style("muted")))
+                children.extend(self._subagent_rollup_children())
         elif self._n_finished_subagent_tool_calls > MAX_SUBAGENT_TOOL_CALLS_TO_SHOW:
             n_hidden = self._n_finished_subagent_tool_calls - MAX_SUBAGENT_TOOL_CALLS_TO_SHOW
             children.append(
@@ -653,7 +745,12 @@ class _ToolCallBlock:
                     bullet_style=tui_rich_style("muted"),
                 )
             )
-        children.extend(self._subagent_activity_children(style.label))
+        children.extend(
+            self._subagent_activity_children(
+                style.label,
+                include_completed_subagent=style.label == "Subagent" and self._result is not None,
+            )
+        )
 
         if self._result is None:
             streamed_output = self._streamed_output_text()
@@ -750,7 +847,16 @@ class _ToolCallBlock:
                 is_partial=True,
             )
         card_rendered = self._tui_card.render()
-        activity_children = self._subagent_activity_children(tool_style(self._tool_name).label)
+        style_label = tool_style(self._tool_name).label
+        activity_children: list[RenderableType] = []
+        if style_label == "Subagent" and self._result is not None:
+            activity_children.extend(self._subagent_rollup_children())
+        activity_children.extend(
+            self._subagent_activity_children(
+                style_label,
+                include_completed_subagent=style_label == "Subagent" and self._result is not None,
+            )
+        )
         if activity_children:
             return Group(card_rendered, *activity_children)
         return card_rendered
@@ -859,6 +965,48 @@ class _NotificationBlock:
                 preview += "\n..."
             lines.append(Text(preview, style=tui_rich_style("muted")))
         return BulletColumns(Group(*lines), bullet_style=style)
+
+
+class _HookBlock:
+    """Compact lifecycle row for configured hooks around prompts and tools."""
+
+    def __init__(self, triggered: HookTriggered) -> None:
+        self.event = triggered.event
+        self.target = triggered.target
+        self.hook_count = triggered.hook_count
+        self.resolved: HookResolved | None = None
+
+    def resolve(self, resolved: HookResolved) -> None:
+        self.resolved = resolved
+        self.event = resolved.event
+        self.target = resolved.target
+
+    @property
+    def finished(self) -> bool:
+        return self.resolved is not None
+
+    def compose(self) -> RenderableType:
+        target = self.event if not self.target else f"{self.event} {self.target}"
+        detail_parts: list[str] = []
+        if self.hook_count > 1:
+            detail_parts.append(f"{self.hook_count} hooks")
+        if self.resolved is None:
+            state = WorkLogState.RUNNING
+        elif self.resolved.action == "block":
+            state = WorkLogState.FAILED
+            reason = " ".join(self.resolved.reason.split())
+            if reason:
+                detail_parts.append(reason[:120] + ("…" if len(reason) > 120 else ""))
+        else:
+            state = WorkLogState.COMPLETED
+        if self.resolved is not None and self.resolved.duration_ms:
+            detail_parts.append(f"{self.resolved.duration_ms}ms")
+        return render_worklog_entry(
+            label="Hook",
+            target=target,
+            state=state,
+            detail=" · ".join(detail_parts) if detail_parts else None,
+        )
 
 
 class _QuestionAnsweredBlock:
