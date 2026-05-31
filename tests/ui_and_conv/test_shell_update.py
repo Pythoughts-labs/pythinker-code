@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -317,6 +318,52 @@ async def test_resolve_latest_version_uses_cache_when_not_due(monkeypatch, tmp_p
     monkeypatch.setattr(update, "do_update", fail_do_update)
 
     assert await update._resolve_latest_version_for_prompt() == "3.1.0"
+
+
+@pytest.mark.asyncio
+async def test_resolve_latest_version_revalidates_stale_cache_when_not_due(monkeypatch, tmp_path):
+    latest_file = tmp_path / "latest.txt"
+    latest_file.write_text("0.0.0", encoding="utf-8")
+    last_check_file = tmp_path / "last_update_check.txt"
+    calls: list[tuple[bool, bool]] = []
+
+    async def fake_do_update(*, print: bool, check_only: bool) -> update.UpdateResult:
+        calls.append((print, check_only))
+        latest_file.write_text("999.0.0", encoding="utf-8")
+        return update.UpdateResult.UPDATE_AVAILABLE
+
+    def fail_should_auto_check() -> bool:
+        raise AssertionError("stale prompt cache must bypass the 24h throttle")
+
+    monkeypatch.setattr(update, "LATEST_VERSION_FILE", latest_file)
+    monkeypatch.setattr(update, "LAST_UPDATE_CHECK_FILE", last_check_file)
+    monkeypatch.setattr(update, "_should_auto_check_for_updates", fail_should_auto_check)
+    monkeypatch.setattr(update, "do_update", fake_do_update)
+
+    assert await update._resolve_latest_version_for_prompt() == "999.0.0"
+    assert calls == [(False, True)]
+    assert last_check_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_resolve_latest_version_keeps_cache_when_prompt_refresh_times_out(
+    monkeypatch, tmp_path
+):
+    latest_file = tmp_path / "latest.txt"
+    latest_file.write_text("0.0.0", encoding="utf-8")
+    calls: list[bool] = []
+
+    async def slow_refresh(*, force: bool) -> update.UpdateResult:
+        calls.append(force)
+        await asyncio.sleep(60)
+        return update.UpdateResult.UPDATE_AVAILABLE
+
+    monkeypatch.setattr(update, "LATEST_VERSION_FILE", latest_file)
+    monkeypatch.setattr(update, "PROMPT_UPDATE_REFRESH_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(update, "_refresh_update_cache", slow_refresh)
+
+    assert await update._resolve_latest_version_for_prompt() == "0.0.0"
+    assert calls == [True]
 
 
 @pytest.mark.asyncio

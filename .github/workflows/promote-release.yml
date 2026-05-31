@@ -3,9 +3,10 @@ name: Promote release
 # Platform build workflows (windows-installer, linux-installer,
 # release-pythinker-cli) create the GitHub Release as a PRERELEASE so it stays
 # out of the date-based /releases/latest endpoint (which ignores make_latest)
-# until every asset has uploaded. This workflow waits for all expected assets,
-# then clears `prerelease` and marks the release latest — the single point
-# where a version becomes resolvable by the install scripts and in-app updater.
+# until every install channel is ready. This workflow waits for exact release
+# assets, PyPI, and the Homebrew formula, then clears `prerelease` and marks the
+# release latest — the single point where a version becomes resolvable by the
+# install scripts and in-app updater.
 #
 # It runs on the tag push (not `release: published`, which a GITHUB_TOKEN-created
 # release never fires) so promotion always happens. workflow_dispatch allows a
@@ -55,24 +56,44 @@ jobs:
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for all release assets
+      - name: Wait for install-channel readiness
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.tag.outputs.tag }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          required=(
-            "PythinkerSetup-"
-            "_amd64.deb"
-            "_arm64.deb"
-            ".x86_64.rpm"
-            ".aarch64.rpm"
-            "x86_64-unknown-linux-gnu.tar.gz"
-            "aarch64-unknown-linux-gnu.tar.gz"
-            "aarch64-apple-darwin.tar.gz"
-            "x86_64-apple-darwin.tar.gz"
+          version="${TAG#v}"
+          required_assets=(
+            "PythinkerSetup-${version}.exe"
+            "PythinkerSetup-${version}.exe.sha256"
+            "pythinker-code_${version}_amd64.deb"
+            "pythinker-code_${version}_amd64.deb.sha256"
+            "pythinker-code_${version}_arm64.deb"
+            "pythinker-code_${version}_arm64.deb.sha256"
+            "pythinker-code-${version}.x86_64.rpm"
+            "pythinker-code-${version}.x86_64.rpm.sha256"
+            "pythinker-code-${version}.aarch64.rpm"
+            "pythinker-code-${version}.aarch64.rpm.sha256"
+            "pythinker-${version}-x86_64-unknown-linux-gnu.tar.gz"
+            "pythinker-${version}-x86_64-unknown-linux-gnu.tar.gz.sha256"
+            "pythinker-${version}-aarch64-unknown-linux-gnu.tar.gz"
+            "pythinker-${version}-aarch64-unknown-linux-gnu.tar.gz.sha256"
+            "pythinker-${version}-aarch64-apple-darwin.tar.gz"
+            "pythinker-${version}-aarch64-apple-darwin.tar.gz.sha256"
+            "pythinker-${version}-x86_64-apple-darwin.tar.gz"
+            "pythinker-${version}-x86_64-apple-darwin.tar.gz.sha256"
+            "pythinker-${version}-x86_64-unknown-linux-gnu-onedir.tar.gz"
+            "pythinker-${version}-x86_64-unknown-linux-gnu-onedir.tar.gz.sha256"
+            "pythinker-${version}-aarch64-unknown-linux-gnu-onedir.tar.gz"
+            "pythinker-${version}-aarch64-unknown-linux-gnu-onedir.tar.gz.sha256"
+            "pythinker-${version}-aarch64-apple-darwin-onedir.tar.gz"
+            "pythinker-${version}-aarch64-apple-darwin-onedir.tar.gz.sha256"
+            "pythinker-${version}-x86_64-apple-darwin-onedir.tar.gz"
+            "pythinker-${version}-x86_64-apple-darwin-onedir.tar.gz.sha256"
           )
+          pypi_url="https://pypi.org/pypi/pythinker-code/${version}/json"
+          homebrew_formula_url="https://raw.githubusercontent.com/TechMatrix-labs/homebrew-pythinker/main/Formula/pythinker-code.rb"
           # The budget must comfortably exceed the slowest platform build, since
           # this job runs on the tag push in parallel with them. The long pole is
           # linux-installer's emulated arm64 .deb/.rpm step: on the 0.26.0 release
@@ -83,26 +104,51 @@ jobs:
           max_attempts=80
           poll_interval=30
           budget_min=$(( max_attempts * poll_interval / 60 ))
-          echo "Polling for all release assets on $TAG (up to ${budget_min}m)..."
-          all_present=false
+          echo "Polling install-channel readiness for $TAG (up to ${budget_min}m)..."
+          all_ready=false
           for i in $(seq 1 "$max_attempts"); do
-            assets=$(gh api "repos/$REPO/releases/tags/$TAG" --jq '[.assets[].name] | join(" ")' 2>/dev/null || echo "")
-            all_present=true
-            for p in "${required[@]}"; do
-              if [[ "$assets" != *"$p"* ]]; then
-                all_present=false
-                break
+            assets_json=$(gh api "repos/$REPO/releases/tags/$TAG" --jq '[.assets[].name]' 2>/dev/null || printf '[]')
+            missing_assets=()
+            for asset in "${required_assets[@]}"; do
+              if ! jq -e --arg name "$asset" 'index($name)' <<<"$assets_json" >/dev/null; then
+                missing_assets+=("$asset")
               fi
             done
-            if [[ "$all_present" == "true" ]]; then
-              echo "All assets present (attempt $i)"
+
+            pypi_ready=false
+            if curl -fsSL --retry 2 --retry-delay 2 -o /dev/null "$pypi_url"; then
+              pypi_ready=true
+            fi
+
+            homebrew_ready=false
+            formula_text=$(curl -fsSL --retry 2 --retry-delay 2 "$homebrew_formula_url" 2>/dev/null || true)
+            if grep -qF "version \"${version}\"" <<<"$formula_text"; then
+              homebrew_ready=true
+            fi
+
+            if [[ "${#missing_assets[@]}" -eq 0 && "$pypi_ready" == "true" && "$homebrew_ready" == "true" ]]; then
+              all_ready=true
+              echo "All install channels ready (attempt $i)"
               break
             fi
-            echo "Attempt $i/$max_attempts: assets not ready, retrying in ${poll_interval}s..."
-            sleep "$poll_interval"
+
+            echo "Attempt $i/$max_attempts: install channels not ready."
+            if [[ "${#missing_assets[@]}" -gt 0 ]]; then
+              printf 'Missing release assets: %s\n' "${missing_assets[*]}"
+            fi
+            if [[ "$pypi_ready" != "true" ]]; then
+              echo "PyPI is not serving ${version} yet: $pypi_url"
+            fi
+            if [[ "$homebrew_ready" != "true" ]]; then
+              echo "Homebrew tap formula is not at ${version} yet: $homebrew_formula_url"
+            fi
+            if [[ "$i" -lt "$max_attempts" ]]; then
+              echo "Retrying in ${poll_interval}s..."
+              sleep "$poll_interval"
+            fi
           done
-          if [[ "$all_present" != "true" ]]; then
-            echo "::error::Release assets not fully uploaded after ${budget_min} minutes"
+          if [[ "$all_ready" != "true" ]]; then
+            echo "::error::Install channels were not fully ready after ${budget_min} minutes"
             exit 1
           fi
 
