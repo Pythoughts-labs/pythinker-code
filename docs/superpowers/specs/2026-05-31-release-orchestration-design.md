@@ -317,12 +317,12 @@ Add a **`.sha256` sidecar existence check** (right-sized: defense-in-depth for t
 C1–C5 confirmed complete: C1 (release.py opens `release/X.Y.Z` PR, human tags post-merge); C2 (existing merge-gate hook); C3 (release.py is CI tooling, shipped agent gains zero deps); C4 (version-less new-channel snippets + lockstep-enforced README strings, bump in same change set); C5 (`## Unreleased`→`## X.Y.Z (DATE)` preserves body, contributor footer addendum only).
 
 **Files referenced (absolute paths):**
-- `/home/ai/Projects/pythinker-code-main/pyproject.toml` (SSOT `:3`; pins `:28` core, `:47` host, `:48` review; workspace `:89`; sources `:97`)
-- `/home/ai/Projects/pythinker-code-main/scripts/check_pythinker_dependency_versions.py` (`:66-67` core+host only — extend for review)
-- `/home/ai/Projects/pythinker-code-main/.github/workflows/promote-release.yml` (`:95` PyPI poll, `:126-129` homebrew gate, `:152` exit/prerelease, `:168-186` dispatch PAT, `:172-174` silent skip, `:188-200` Slack)
-- `/home/ai/Projects/pythinker-code-main/.github/workflows/dispatch-pythinker-home-sync.yml` (`:16-17` watched paths, `:28` PAT, `:30` sends `github.sha`)
-- `/home/ai/Projects/pythinker-code-main/.github/workflows/changelog-entry-required.yml` (`:54` title skip, `:57` branch skip)
-- `/home/ai/Projects/pythinker-code-main/.github/workflows/release-pythinker-core.yml` (`:99-127` pdoc gh-pages step to retire)
-- `/home/ai/Projects/pythinker-code-main/flake.nix` (`:129` `packages.default`; NO `apps` stanza)
-- `/home/ai/Projects/pythinker-code-main/scripts/install.ps1` (`:144` per_page=20, `:152` prerelease skip, `:158` asset-pair guard)
+- `pyproject.toml` (SSOT `:3`; pins `:28` core, `:47` host, `:48` review; workspace `:89`; sources `:97`)
+- `scripts/check_pythinker_dependency_versions.py` (`:66-67` core+host only — extend for review)
+- `.github/workflows/promote-release.yml` (`:95` PyPI poll, `:126-129` homebrew gate, `:152` exit/prerelease, `:168-186` dispatch PAT, `:172-174` silent skip, `:188-200` Slack)
+- `.github/workflows/dispatch-pythinker-home-sync.yml` (`:16-17` watched paths, `:28` PAT, `:30` sends `github.sha`)
+- `.github/workflows/changelog-entry-required.yml` (`:54` title skip, `:57` branch skip)
+- `.github/workflows/release-pythinker-core.yml` (`:99-127` pdoc gh-pages step to retire)
+- `flake.nix` (`:129` `packages.default`; NO `apps` stanza)
+- `scripts/install.ps1` (`:144` per_page=20, `:152` prerelease skip, `:158` asset-pair guard)
 - `/home/ai/Projects/pythinker-site/site/scripts/sync-upstream-products.ts` (`:82-83`/`:98-99` per-product owner config, `:366` hardcoded `replaceAll` literal)
