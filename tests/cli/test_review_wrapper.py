@@ -1,12 +1,25 @@
+import os
 import subprocess
 
 import pytest
 
 
+def _cli_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["NO_COLOR"] = "1"
+    env["TERM"] = "dumb"
+    env["COLUMNS"] = "120"
+    return env
+
+
 @pytest.mark.parametrize("cmd", ["review", "secscan", "security-scan", "debug"])
 def test_top_level_help_lists_command(cmd: str) -> None:
     proc = subprocess.run(
-        ["uv", "run", "pythinker", "--help"], check=True, capture_output=True, text=True
+        ["uv", "run", "pythinker", "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=_cli_env(),
     )
     assert cmd in proc.stdout
 
@@ -17,6 +30,7 @@ def test_review_diff_help_works() -> None:
         check=True,
         capture_output=True,
         text=True,
+        env=_cli_env(),
     )
     assert "--with-security" in proc.stdout
     assert "--mode" in proc.stdout
@@ -43,6 +57,7 @@ def test_review_artifact_help_works(command: str) -> None:
         check=True,
         capture_output=True,
         text=True,
+        env=_cli_env(),
     )
     assert "--budget-chars" in proc.stdout
     assert "--timeout-s" in proc.stdout
@@ -62,6 +77,7 @@ def test_review_local_parity_help_works(command: str, expected: str) -> None:
         check=True,
         capture_output=True,
         text=True,
+        env=_cli_env(),
     )
     assert expected in proc.stdout
 
@@ -72,6 +88,7 @@ def test_review_help_docs_help_works() -> None:
         check=True,
         capture_output=True,
         text=True,
+        env=_cli_env(),
     )
     assert "--docs-path" in proc.stdout
     assert "--root-readme" in proc.stdout
@@ -83,6 +100,7 @@ def test_review_compliance_help_works() -> None:
         check=True,
         capture_output=True,
         text=True,
+        env=_cli_env(),
     )
     assert "--checklist" in proc.stdout
     assert "--ticket-file" in proc.stdout
@@ -94,6 +112,7 @@ def test_security_scan_help_works() -> None:
         check=True,
         capture_output=True,
         text=True,
+        env=_cli_env(),
     )
     assert "scan" in proc.stdout
     assert "process" in proc.stdout
@@ -112,6 +131,7 @@ def test_standalone_security_scan_help_works() -> None:
         check=True,
         capture_output=True,
         text=True,
+        env=_cli_env(),
     )
     assert "scan" in proc.stdout
     assert "process" in proc.stdout
@@ -123,5 +143,6 @@ def test_debug_failure_help_works() -> None:
         check=True,
         capture_output=True,
         text=True,
+        env=_cli_env(),
     )
     assert "--command" in proc.stdout

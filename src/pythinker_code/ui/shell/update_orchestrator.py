@@ -379,9 +379,9 @@ async def run_update_job(
             append_update_log(smoke_message)
             if smoke_ok:
                 message = smoke_message
+                _write_last_success(job_id=job_id, message=message)
             else:
                 message = f"Updated, but smoke check did not pass: {smoke_message}"
-            _write_last_success(job_id=job_id, message=message)
 
         write_update_status(
             _new_status(

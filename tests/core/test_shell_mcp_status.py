@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from rich.console import Console
 
+from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ACTIVE_MARKER
 from pythinker_code.ui.shell.mcp_status import (
     mcp_startup_header,
     render_mcp_console,
@@ -42,12 +43,14 @@ def test_render_mcp_servers_shows_pythinker_x_loading_design() -> None:
     prompt_text = "".join(fragment[1] for fragment in render_mcp_prompt(snapshot, now=0.0))
     prompt_text_off = "".join(fragment[1] for fragment in render_mcp_prompt(snapshot, now=0.9))
     assert prompt_text != prompt_text_off
-    assert prompt_text.startswith("• ")
+    assert prompt_text.startswith(f"{TRANSCRIPT_ACTIVE_MARKER} ")
     assert "Starting MCP servers (0/2): chrome-devtools, context7" in prompt_text
     assert "resolve-library-id" not in prompt_text
 
     startup_text = render_mcp_startup_text(snapshot, now=0.0).plain
-    assert startup_text == "• Starting MCP servers (0/2): chrome-devtools, context7"
+    assert startup_text == (
+        f"{TRANSCRIPT_ACTIVE_MARKER} Starting MCP servers (0/2): chrome-devtools, context7"
+    )
 
 
 def test_render_mcp_prompt_respects_reduced_motion(monkeypatch) -> None:
@@ -62,7 +65,7 @@ def test_render_mcp_prompt_respects_reduced_motion(monkeypatch) -> None:
 
     prompt_text = "".join(fragment[1] for fragment in render_mcp_prompt(snapshot, now=0.9))
 
-    assert prompt_text.startswith("• ")
+    assert prompt_text.startswith(f"{TRANSCRIPT_ACTIVE_MARKER} ")
 
 
 def test_render_mcp_startup_header_for_single_server() -> None:

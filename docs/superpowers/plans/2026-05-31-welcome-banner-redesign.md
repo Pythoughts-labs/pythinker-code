@@ -59,7 +59,6 @@ def test_welcome_chip_renders_in_footer_not_header(monkeypatch):
     assert "changelog" in lines[-1]
     assert all("changelog" not in ln for ln in lines[:3])
 
-
 def test_welcome_info_grid_has_no_pipe_separator(monkeypatch):
     from pythinker_code.ui.shell import WelcomeInfoItem
 
@@ -75,7 +74,6 @@ def test_welcome_info_grid_has_no_pipe_separator(monkeypatch):
     # Only the two panel-edge pipes remain; the separator column is gone.
     assert dir_line.count("│") == 2
     assert "/tmp/proj" in dir_line
-
 
 def test_welcome_strapline_and_help_on_separate_lines(monkeypatch):
     console = Console(record=True, width=120, color_system=None)
@@ -96,6 +94,7 @@ def test_welcome_strapline_and_help_on_separate_lines(monkeypatch):
 - [ ] **Step 2: Run the new tests and confirm they fail against the current banner**
 
 Run:
+
 ```bash
 uv run pytest tests/ui_and_conv/test_shell_welcome_info.py -q -k "footer or pipe_separator or separate_lines"
 ```
@@ -108,6 +107,7 @@ Expected: all three FAIL.
 - [ ] **Step 3: Confirm the 5 existing tests still pass (no regression introduced by the new tests)**
 
 Run:
+
 ```bash
 uv run pytest tests/ui_and_conv/test_shell_welcome_info.py -q -k "not (footer or pipe_separator or separate_lines)"
 ```
@@ -131,8 +131,11 @@ git commit -m "test: lock welcome banner redesign (footer chip, no pipe, split s
 > `_WELCOME_PANEL_CHROME_WIDTH`), cell-aware truncation helpers
 > (`_truncate_middle_to_width`, `_welcome_value`, `_welcome_tip_lines`), a
 > `Table.grid(...)` build, and a `width >= 68` logo-beside-text vs stacked
-> branch. Read the block below as the original footer-chip intent, not the
-> literal final code.
+> branch. For the final implementation, open
+> `src/pythinker_code/ui/shell/__init__.py` and search for
+> `_print_welcome_info` to inspect the responsive/truncation logic and
+> logo layout. Read the block below as the original footer-chip intent,
+> not the literal final code.
 
 **Files:**
 - Modify: `src/pythinker_code/ui/shell/__init__.py` (function `_print_welcome_info`, lines ~1934–2008; constant `_PYTHINKER_BORDER`, line 1864)
@@ -236,6 +239,7 @@ Leave the surrounding `_LOGO_*` color constants and `_LOGO` exactly as they are.
 - [ ] **Step 3: Confirm `_PYTHINKER_BORDER` has no remaining references**
 
 Run:
+
 ```bash
 grep -rn "_PYTHINKER_BORDER" src/ tests/ tests_e2e/
 ```
@@ -245,6 +249,7 @@ Expected: no output (zero matches). If any match remains, you removed the consta
 - [ ] **Step 4: Run the full banner test file**
 
 Run:
+
 ```bash
 uv run pytest tests/ui_and_conv/test_shell_welcome_info.py -q
 ```
@@ -299,6 +304,7 @@ for width in (80, 100, 120):
 ```
 
 Run:
+
 ```bash
 uv run python /tmp/verify_banner.py
 ```
@@ -308,6 +314,7 @@ Expected: the antenna (`●`/`│`) floats above the headline; headline/straplin
 - [ ] **Step 2: Lint the changed file**
 
 Run:
+
 ```bash
 uv run ruff check src/pythinker_code/ui/shell/__init__.py
 ```
@@ -317,6 +324,7 @@ Expected: no errors. (Line-length limit is 100; the code blocks above are within
 - [ ] **Step 3: Type-check the changed file (project type gate)**
 
 Run:
+
 ```bash
 uv run pyright src/pythinker_code/ui/shell/__init__.py
 ```
@@ -326,6 +334,7 @@ Expected: no new errors introduced by this change. If `pyright` is not the confi
 - [ ] **Step 4: Run the broader UI test directory to catch unexpected fallout**
 
 Run:
+
 ```bash
 uv run pytest tests/ui_and_conv/ -q
 ```

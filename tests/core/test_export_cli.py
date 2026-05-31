@@ -199,7 +199,7 @@ def test_export_previous_session_errors_when_missing(
 
 
 def test_export_help_is_leaf_command() -> None:
-    result = CliRunner().invoke(cli, ["export", "--help"])
+    result = CliRunner().invoke(cli, ["export", "--help"], color=False)
 
     assert result.exit_code == 0, result.output
     assert "Usage: root export [OPTIONS] [SESSION_ID]" in result.output
