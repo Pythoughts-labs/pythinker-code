@@ -4,12 +4,37 @@ on:
   pull_request:
     types: [opened, edited, synchronize, labeled]
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
     name: pr-title-checker
     steps:
-      - uses: thehanimo/pr-title-checker@v1.4.3
-        with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          configuration_path: ".github/pr-title-checker-config.json"
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Validate PR title
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          regexp=$(jq -r '.CHECKS.regexp' .github/pr-title-checker-config.json)
+          label=$(jq -r '.LABEL.name' .github/pr-title-checker-config.json)
+          color=$(jq -r '.LABEL.color' .github/pr-title-checker-config.json)
+          failure=$(jq -r '.MESSAGES.failure' .github/pr-title-checker-config.json)
+
+          if [[ "$PR_TITLE" =~ $regexp ]]; then
+            gh pr edit "$PR_NUMBER" --remove-label "$label" >/dev/null 2>&1 || true
+            exit 0
+          fi
+
+          gh label create "$label" --color "$color" --force >/dev/null 2>&1 || true
+          gh pr edit "$PR_NUMBER" --add-label "$label" >/dev/null 2>&1 || true
+          echo "::error::$failure"
+          exit 1

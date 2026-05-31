@@ -25,7 +25,7 @@ jobs:
       TAP_REPO:  homebrew-pythinker
     steps:
       - name: Checkout source repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Resolve version
         id: ver
@@ -45,7 +45,7 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
@@ -78,9 +78,9 @@ jobs:
       # other than the one this workflow runs in.
       - name: Mint GitHub App token for the tap repo
         id: app-token
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.HOMEBREW_TAP_APP_ID }}
+          client-id: ${{ secrets.HOMEBREW_TAP_CLIENT_ID }}
           private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
           owner: ${{ env.TAP_OWNER }}
           repositories: ${{ env.TAP_REPO }}
@@ -92,7 +92,7 @@ jobs:
         run: |
           set -euxo pipefail
           if [ -z "${TAP_TOKEN:-}" ]; then
-            echo "::error::No tap token available — the GitHub App token mint produced an empty value. Confirm the HOMEBREW_TAP_APP_ID and HOMEBREW_TAP_APP_PRIVATE_KEY secrets are set and the App is installed on ${TAP_OWNER}/${TAP_REPO} with Contents: Read and write, then re-run this workflow." >&2
+            echo "::error::No tap token available — the GitHub App token mint produced an empty value. Confirm the HOMEBREW_TAP_CLIENT_ID and HOMEBREW_TAP_APP_PRIVATE_KEY secrets are set and the App is installed on ${TAP_OWNER}/${TAP_REPO} with Contents: Read and write, then re-run this workflow." >&2
             exit 1
           fi
           # We do NOT use actions/checkout for the tap repo because on the

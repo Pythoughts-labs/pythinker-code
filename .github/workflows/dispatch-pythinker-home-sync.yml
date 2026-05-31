@@ -26,21 +26,37 @@ jobs:
       DISPATCH_OWNER: TechMatrix-labs
       DISPATCH_REPO: pythinker-home
     steps:
+      - name: Check pythinker-home dispatch credentials
+        id: dispatch-credentials
+        env:
+          CLIENT_ID: ${{ secrets.PYTHINKER_RELEASE_BOT_CLIENT_ID }}
+          PRIVATE_KEY: ${{ secrets.PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLIENT_ID:-}" ] || [ -z "${PRIVATE_KEY:-}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping pythinker-home sync because PYTHINKER_RELEASE_BOT_CLIENT_ID or PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY is not configured."
+            exit 0
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
       # Mint a short-lived installation token for the org-owned
       # pythinker-release-bot App (Contents: write on pythinker-home only).
       # Replaces a personal PAT: org-owned (survives member/org changes),
       # ~1h TTL, minted fresh each run, scoped to the single private site repo.
       - name: Mint GitHub App token for pythinker-home
         id: app-token
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        if: steps.dispatch-credentials.outputs.configured == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.PYTHINKER_RELEASE_BOT_APP_ID }}
+          client-id: ${{ secrets.PYTHINKER_RELEASE_BOT_CLIENT_ID }}
           private-key: ${{ secrets.PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY }}
           owner: ${{ env.DISPATCH_OWNER }}
           repositories: ${{ env.DISPATCH_REPO }}
           permission-contents: write
 
       - name: Trigger pythinker-home sync
+        if: steps.dispatch-credentials.outputs.configured == 'true'
         env:
           DISPATCH_TOKEN: ${{ steps.app-token.outputs.token }}
           SOURCE_REPO: ${{ github.repository }}
@@ -50,7 +66,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${DISPATCH_TOKEN:-}" ]; then
-            echo "::error::No dispatch token: the pythinker-release-bot App token mint produced an empty value. Confirm PYTHINKER_RELEASE_BOT_APP_ID and PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY org secrets are set and the App is installed on ${DISPATCH_OWNER}/${DISPATCH_REPO} with Contents: Read and write." >&2
+            echo "::error::No dispatch token: the pythinker-release-bot App token mint produced an empty value. Confirm PYTHINKER_RELEASE_BOT_CLIENT_ID and PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY org secrets are set and the App is installed on ${DISPATCH_OWNER}/${DISPATCH_REPO} with Contents: Read and write." >&2
             exit 1
           fi
           payload=$(jq -n \
