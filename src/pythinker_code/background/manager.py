@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -634,14 +635,17 @@ class BackgroundTaskManager:
         ``TaskRuntime`` — closing the window where a process crash between
         :meth:`finalize_agent_task`'s two writes, or between :meth:`kill` and the
         runner's cancellation handler, left the two records divergent.
+
+        The runtime is re-read under the store's update lock before recovery so a
+        stale ``TaskView`` snapshot cannot overwrite an authoritative terminal
+        status that was written after the snapshot was created.
         """
         agent_id_raw = (view.spec.kind_payload or {}).get("agent_id")
         agent_id = agent_id_raw if isinstance(agent_id_raw, str) else None
-        runtime_status: TaskStatus = view.runtime.status
-        if not is_terminal_status(runtime_status):
-            if view.spec.id in self._live_agent_tasks:
-                return
-            runtime = view.runtime.model_copy()
+
+        def recover_orphan(runtime: TaskRuntime) -> bool:
+            if is_terminal_status(runtime.status) or view.spec.id in self._live_agent_tasks:
+                return False
             runtime.finished_at = now
             runtime.updated_at = now
             runtime.status = "recoverable" if agent_id is not None else "lost"
@@ -651,9 +655,10 @@ class BackgroundTaskManager:
                 if agent_id is not None
                 else "In-process background agent is no longer running"
             )
-            self._store.write_runtime(view.spec.id, runtime)
-            runtime_status = runtime.status
-        self._reconcile_subagent_status(agent_id, runtime_status, live_agent_ids)
+            return True
+
+        runtime = self._store.update_runtime(view.spec.id, recover_orphan)
+        self._reconcile_subagent_status(agent_id, runtime.status, live_agent_ids)
 
     def _reconcile_subagent_status(
         self, agent_id: str | None, runtime_status: TaskStatus, live_agent_ids: set[str]
@@ -814,105 +819,113 @@ class BackgroundTaskManager:
             if subagent_status is not None:
                 self._runtime.subagent_store.update_instance(agent_id, status=subagent_status)
 
-    def _mark_task_running(self, task_id: str) -> None:
-        with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
-            runtime = self._store.read_runtime(task_id)
+    def _transition_status(
+        self,
+        task_id: str,
+        *,
+        mutate: Callable[[TaskRuntime], None],
+    ) -> TaskRuntime | None:
+        """Locked, terminal-guarded status write via the public store API.
+
+        Stamps ``updated_at`` then applies ``mutate``. Returns the resulting
+        runtime when the transition was applied, or ``None`` when the task was
+        already terminal (no write performed, so callers skip telemetry).
+        """
+        applied = False
+
+        def _apply(runtime: TaskRuntime) -> bool:
+            nonlocal applied
             if is_terminal_status(runtime.status):
-                return
-            runtime.status = "running"
+                return False
             runtime.updated_at = time.time()
+            mutate(runtime)
+            applied = True
+            return True
+
+        runtime = self._store.update_runtime(task_id, _apply)
+        return runtime if applied else None
+
+    def _mark_task_running(self, task_id: str) -> None:
+        def mutate(runtime: TaskRuntime) -> None:
+            runtime.status = "running"
             runtime.heartbeat_at = runtime.updated_at
             runtime.failure_reason = None
-            self._store._write_runtime_unlocked(task_id, runtime)  # pyright: ignore[reportPrivateUsage]
+
+        self._transition_status(task_id, mutate=mutate)
 
     def _mark_task_awaiting_approval(self, task_id: str, reason: str) -> None:
-        with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
-            runtime = self._store.read_runtime(task_id)
-            if is_terminal_status(runtime.status):
-                return
+        def mutate(runtime: TaskRuntime) -> None:
             runtime.status = "awaiting_approval"
-            runtime.updated_at = time.time()
             runtime.failure_reason = reason
-            self._store._write_runtime_unlocked(task_id, runtime)  # pyright: ignore[reportPrivateUsage]
+
+        self._transition_status(task_id, mutate=mutate)
 
     def _mark_task_completed(self, task_id: str) -> None:
-        with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
-            runtime = self._store.read_runtime(task_id)
-            if is_terminal_status(runtime.status):
-                return
+        def mutate(runtime: TaskRuntime) -> None:
             runtime.status = "completed"
-            runtime.updated_at = time.time()
             runtime.finished_at = runtime.updated_at
             runtime.failure_reason = None
-            self._store._write_runtime_unlocked(task_id, runtime)  # pyright: ignore[reportPrivateUsage]
-        from pythinker_code.telemetry import track
 
-        if runtime.started_at and runtime.finished_at:
-            duration = runtime.finished_at - runtime.started_at
-            track("background_task_completed", success=True, duration_s=duration)
+        runtime = self._transition_status(task_id, mutate=mutate)
+        if runtime is not None and runtime.started_at and runtime.finished_at:
+            from pythinker_code.telemetry import track
+
+            track(
+                "background_task_completed",
+                success=True,
+                duration_s=runtime.finished_at - runtime.started_at,
+            )
 
     def _mark_task_failed(self, task_id: str, reason: str) -> None:
-        with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
-            runtime = self._store.read_runtime(task_id)
-            if is_terminal_status(runtime.status):
-                return
+        def mutate(runtime: TaskRuntime) -> None:
             runtime.status = "failed"
-            runtime.updated_at = time.time()
             runtime.finished_at = runtime.updated_at
             runtime.failure_reason = reason
-            self._store._write_runtime_unlocked(task_id, runtime)  # pyright: ignore[reportPrivateUsage]
-        from pythinker_code.telemetry import track
 
-        if runtime.started_at and runtime.finished_at:
-            duration = runtime.finished_at - runtime.started_at
+        runtime = self._transition_status(task_id, mutate=mutate)
+        if runtime is not None and runtime.started_at and runtime.finished_at:
+            from pythinker_code.telemetry import track
+
             track(
                 "background_task_completed",
                 success=False,
-                duration_s=duration,
+                duration_s=runtime.finished_at - runtime.started_at,
                 reason="error",
             )
 
     def _mark_task_timed_out(self, task_id: str, reason: str) -> None:
-        with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
-            runtime = self._store.read_runtime(task_id)
-            if is_terminal_status(runtime.status):
-                return
+        def mutate(runtime: TaskRuntime) -> None:
             runtime.status = "failed"
-            runtime.updated_at = time.time()
             runtime.finished_at = runtime.updated_at
             runtime.interrupted = True
             runtime.timed_out = True
             runtime.failure_reason = reason
-            self._store._write_runtime_unlocked(task_id, runtime)  # pyright: ignore[reportPrivateUsage]
-        from pythinker_code.telemetry import track
 
-        if runtime.started_at and runtime.finished_at:
-            duration = runtime.finished_at - runtime.started_at
+        runtime = self._transition_status(task_id, mutate=mutate)
+        if runtime is not None and runtime.started_at and runtime.finished_at:
+            from pythinker_code.telemetry import track
+
             track(
                 "background_task_completed",
                 success=False,
-                duration_s=duration,
+                duration_s=runtime.finished_at - runtime.started_at,
                 reason="timeout",
             )
 
     def _mark_task_killed(self, task_id: str, reason: str) -> None:
-        with self._store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
-            runtime = self._store.read_runtime(task_id)
-            if is_terminal_status(runtime.status):
-                return
+        def mutate(runtime: TaskRuntime) -> None:
             runtime.status = "killed"
-            runtime.updated_at = time.time()
             runtime.finished_at = runtime.updated_at
             runtime.interrupted = True
             runtime.failure_reason = reason
-            self._store._write_runtime_unlocked(task_id, runtime)  # pyright: ignore[reportPrivateUsage]
-        from pythinker_code.telemetry import track
 
-        if runtime.started_at and runtime.finished_at:
-            duration = runtime.finished_at - runtime.started_at
+        runtime = self._transition_status(task_id, mutate=mutate)
+        if runtime is not None and runtime.started_at and runtime.finished_at:
+            from pythinker_code.telemetry import track
+
             track(
                 "background_task_completed",
                 success=False,
-                duration_s=duration,
+                duration_s=runtime.finished_at - runtime.started_at,
                 reason="killed",
             )

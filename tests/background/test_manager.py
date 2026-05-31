@@ -753,6 +753,27 @@ def test_recover_reconciles_subagent_record_for_terminal_agent_task(runtime):
     assert manager.store.merged_view("acrashtask").runtime.status == "failed"
 
 
+def test_recover_agent_view_does_not_clobber_terminal_runtime_from_stale_view(runtime):
+    manager = runtime.background_tasks
+    spec = _seed_agent_task(
+        runtime,
+        task_id="astaletask",
+        agent_id="astaleagent",
+        task_status="running",
+    )
+    stale_view = manager.store.merged_view(spec.id)
+    now = time.time()
+    manager.store.write_runtime(
+        spec.id,
+        TaskRuntime(status="completed", updated_at=now, finished_at=now),
+    )
+
+    manager._recover_agent_view(stale_view, now=now + 1, live_agent_ids=set())
+
+    assert manager.store.merged_view(spec.id).runtime.status == "completed"
+    assert runtime.subagent_store.require_instance("astaleagent").status == "idle"
+
+
 def test_recover_reconciles_subagent_record_for_killed_agent_task(runtime):
     # kill() marks TaskRuntime killed first, then cancels the asyncio task. A
     # crash before the runner's cancel handler writes the instance leaves it
