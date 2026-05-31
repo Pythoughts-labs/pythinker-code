@@ -144,6 +144,14 @@ function Test-ReleaseHasInstaller($release) {
   return $null
 }
 
+function Format-ReleaseApiError($Uri, $ErrorRecord) {
+  $message = $ErrorRecord.Exception.Message
+  $status = $null
+  try { $status = [int]$ErrorRecord.Exception.Response.StatusCode } catch { }
+  if ($status) { return "$Uri failed with HTTP ${status}: $message" }
+  return "$Uri failed: $message"
+}
+
 function Get-LatestVersion {
   Step "Looking up latest Pythinker release"
   # /releases/latest is prerelease-excluding and not page-bound, so it is the
@@ -156,21 +164,27 @@ function Get-LatestVersion {
   $delay = 4
   $elapsed = 0
   $maxElapsed = 360
+  $lastApiError = $null
   while ($true) {
     try {
       $latest = Invoke-RestMethod -UseBasicParsing -Uri $latestApi
       $found = Test-ReleaseHasInstaller $latest
       if ($found) { OK "Latest version is $found"; return $found }
-    } catch { }
+    } catch {
+      $lastApiError = Format-ReleaseApiError $latestApi $_
+    }
     try {
       $releases = Invoke-RestMethod -UseBasicParsing -Uri $listApi
       foreach ($release in @($releases)) {
         $found = Test-ReleaseHasInstaller $release
         if ($found) { OK "Latest version is $found"; return $found }
       }
-    } catch { }
+    } catch {
+      $lastApiError = Format-ReleaseApiError $listApi $_
+    }
     if ($elapsed -ge $maxElapsed) {
-      Fail "no published release has a ready Windows installer asset after ~${maxElapsed}s; try again shortly or pin `$env:PYTHINKER_VERSION"
+      $detail = if ($lastApiError) { " Last API error: $lastApiError" } else { "" }
+      Fail "no published release has a ready Windows installer asset after ~${maxElapsed}s; try again shortly or pin `$env:PYTHINKER_VERSION.$detail"
     }
     Step "Windows installer asset not ready yet; retry in ${delay}s"
     Start-Sleep -Seconds $delay

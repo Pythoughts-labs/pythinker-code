@@ -38,6 +38,7 @@ jobs:
           private-key: ${{ secrets.PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY }}
           owner: ${{ env.DISPATCH_OWNER }}
           repositories: ${{ env.DISPATCH_REPO }}
+          permission-contents: write
 
       - name: Trigger pythinker-home sync
         env:

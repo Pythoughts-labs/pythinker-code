@@ -50,7 +50,10 @@ def test_install_scripts_gate_on_asset_readiness() -> None:
     waits for this version's archive + checksum before downloading.
     """
     ps1 = (ROOT / "scripts" / "install.ps1").read_text()
-    assert "releases?per_page=" in ps1, "install.ps1 must scan releases, not trust /releases/latest"
+    assert "releases/latest" in ps1
+    assert "releases?per_page=100" in ps1
+    assert "Test-ReleaseHasInstaller" in ps1
+    assert "Format-ReleaseApiError" in ps1
     assert "$release.prerelease" in ps1
     assert '"$exe.sha256"' in ps1
 
@@ -63,6 +66,18 @@ def test_install_scripts_gate_on_asset_readiness() -> None:
     assert (ROOT / "web" / "public" / "install.ps1").read_text() == ps1
     assert (ROOT / "docs" / "public" / "install.sh").read_text() == sh
     assert (ROOT / "web" / "public" / "install.sh").read_text() == sh
+
+
+def test_site_dispatch_uses_scoped_github_app_token_and_fails_loud() -> None:
+    workflow = (WORKFLOWS / "dispatch-pythinker-home-sync.yml").read_text()
+
+    assert "PYTHINKER_HOME_REPO_DISPATCH_TOKEN" not in workflow
+    assert "actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349" in workflow
+    assert "permission-contents: write" in workflow
+    assert "PYTHINKER_RELEASE_BOT_APP_ID" in workflow
+    assert "PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY" in workflow
+    assert "exit 1" in workflow
+    assert "Skipping pythinker-home sync" not in workflow
 
 
 def test_windows_installer_signs_update_artifacts_when_credentials_are_available() -> None:

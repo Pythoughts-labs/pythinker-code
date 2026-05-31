@@ -226,15 +226,24 @@ release_has_assets() {
   printf '%s' "$_body" | grep -Fq "\"${tarball}\"" \
     && printf '%s' "$_body" | grep -Fq "\"${tarball}.sha256\""
 }
+# Exponential backoff: the GitHub Release can briefly advertise a version
+# whose assets are still uploading. Wait 4,8,16,...,120s (capped), ~6m total,
+# before giving up — long enough to ride out a slow multi-arch upload.
 attempt=0
+delay=4
+elapsed=0
+max_elapsed=360
 until release_has_assets; do
   attempt=$((attempt + 1))
-  if [ "$attempt" -ge 6 ]; then
-    fail "release assets for v${VERSION} are not available yet: ${tarball_url}
+  if [ "$elapsed" -ge "$max_elapsed" ]; then
+    fail "release assets for v${VERSION} are not available after ~${max_elapsed}s: ${tarball_url}
 The latest release may still be publishing. Try again shortly, or pin a known-good version with --version X.Y.Z"
   fi
-  step "Waiting for v${VERSION} assets to finish publishing (attempt ${attempt}/6)"
-  sleep 10
+  step "Waiting for v${VERSION} assets to finish publishing (attempt ${attempt}, retry in ${delay}s)"
+  sleep "$delay"
+  elapsed=$((elapsed + delay))
+  delay=$((delay * 2))
+  [ "$delay" -gt 120 ] && delay=120
 done
 
 # --- download + verify --------------------------------------------------
