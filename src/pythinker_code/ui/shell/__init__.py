@@ -54,9 +54,11 @@ from pythinker_code.ui.shell.replay import replay_recent_history
 from pythinker_code.ui.shell.slash import SKILL_COMMAND_PREFIX, shell_mode_registry
 from pythinker_code.ui.shell.slash import registry as shell_slash_registry
 from pythinker_code.ui.shell.update import (
+    consume_whats_new,
     pending_update_notice,
     prompt_pre_start_update,
     refresh_update_cache_if_due,
+    welcome_update_target,
 )
 from pythinker_code.ui.shell.visualize import (
     ApprovalPromptDelegate,
@@ -633,7 +635,11 @@ class Shell:
         else:
             self._start_background_task(self._auto_update())
 
-        _print_welcome_info(self.soul.name or "Pythinker CLI", self._welcome_info)
+        _print_welcome_info(
+            self.soul.name or "Pythinker CLI",
+            self._welcome_info,
+            banner=_welcome_banner_chip(),
+        )
 
         # Start telemetry periodic flush and disk retry
         from pythinker_code.telemetry import get_sink
@@ -1899,7 +1905,33 @@ def _value_style_for_label(label: str, level: WelcomeInfoItem.Level) -> str:
     return level.value
 
 
-def _print_welcome_info(name: str, info_items: list[WelcomeInfoItem]) -> None:
+def _welcome_banner_chip() -> Text | None:
+    """One-line chip for the top-right of the welcome banner, or None.
+
+    Precedence: update-available > what's-new > nothing.
+    ``consume_whats_new`` is always called first so the 'last seen' mark is
+    written regardless of which chip wins the display.
+    """
+    _t = _get_tui_tokens()
+    whats_new_version = consume_whats_new()
+    update_target = welcome_update_target()
+
+    if update_target:
+        chip = Text.from_markup(f"[{_t.warning}]↑ Update available — v{update_target} · /update[/]")
+        chip.highlight_regex(r"/[A-Za-z][A-Za-z0-9_-]*", f"bold {_t.warning}")
+        return chip
+
+    if whats_new_version:
+        chip = Text.from_markup(f"[{_t.info}]✦ What's new in v{whats_new_version} · /changelog[/]")
+        chip.highlight_regex(r"/[A-Za-z][A-Za-z0-9_-]*", f"bold {_t.info}")
+        return chip
+
+    return None
+
+
+def _print_welcome_info(
+    name: str, info_items: list[WelcomeInfoItem], *, banner: Text | None = None
+) -> None:
     _t = _get_tui_tokens()
     head = Text.from_markup("Welcome to Pythinker — think first, then code.")
     help_text = Text.from_markup(
@@ -1911,8 +1943,16 @@ def _print_welcome_info(name: str, info_items: list[WelcomeInfoItem]) -> None:
     logo = Text.from_markup(_LOGO)
     table = Table(show_header=False, show_edge=False, box=None, padding=(0, 1), expand=False)
     table.add_column(justify="left")
-    table.add_column(justify="left", vertical="bottom")
-    table.add_row(logo, Group(head, help_text))
+    if banner is not None:
+        # Chip at the top, head/help at the bottom, blank padding in between.
+        logo_lines = _LOGO.count("\n") + 1  # 5 for the current robot logo
+        pad = max(0, logo_lines - 3)  # chip(1) + head(1) + help(1) = 3 fixed
+        right_cell: RenderableType = Group(banner, *([Text("")] * pad), head, help_text)
+        table.add_column(justify="left", vertical="top")
+    else:
+        right_cell = Group(head, help_text)
+        table.add_column(justify="left", vertical="bottom")
+    table.add_row(logo, right_cell)
 
     rows: list[RenderableType] = [table]
 

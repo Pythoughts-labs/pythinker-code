@@ -51,6 +51,7 @@ LATEST_VERSION_FILE = get_share_dir() / "latest_version.txt"
 LATEST_VERSION_ETAG_FILE = get_share_dir() / "latest_version.etag"
 LAST_UPDATE_CHECK_FILE = get_share_dir() / "last_update_check.txt"
 DISMISSED_VERSION_FILE = get_share_dir() / "dismissed_update_version.txt"
+LAST_SEEN_VERSION_FILE = get_share_dir() / "last_seen_version.txt"
 AUTO_UPDATE_CHECK_INTERVAL_SECONDS = 24 * 60 * 60
 PROMPT_UPDATE_REFRESH_TIMEOUT_SECONDS = 2.0
 
@@ -383,6 +384,98 @@ def _skip_version_this_session(version: str) -> None:
     _skipped_version_this_session = version
 
 
+def _read_last_seen_version() -> str | None:
+    try:
+        return LAST_SEEN_VERSION_FILE.read_text(encoding="utf-8").strip() or None
+    except FileNotFoundError:
+        return None
+    except OSError:
+        logger.exception("Failed to read last-seen version:")
+        return None
+
+
+def _write_last_seen_version(version: str) -> None:
+    try:
+        LAST_SEEN_VERSION_FILE.write_text(version, encoding="utf-8")
+    except OSError:
+        logger.exception("Failed to write last-seen version:")
+
+
+def _write_last_seen_version_if_absent(version: str) -> bool:
+    """Create the last-seen marker only if another process has not done so."""
+    try:
+        with LAST_SEEN_VERSION_FILE.open("x", encoding="utf-8") as f:
+            f.write(version)
+        return True
+    except FileExistsError:
+        return False
+    except OSError:
+        logger.exception("Failed to create last-seen version:")
+        return False
+
+
+def _cached_update_available() -> str | None:
+    """Return a newer cached release version after shared non-session filters.
+
+    This intentionally ignores the per-session skip flag; callers that surface
+    transient toasts apply that suppression separately, while the welcome banner
+    uses this result as a session-persistent reminder.
+    """
+    from pythinker_code.constant import VERSION as current_version
+
+    if _auto_update_disabled() or _is_running_from_source_checkout():
+        return None
+    cached = _read_latest_version_cache()
+    if not cached:
+        return None
+    if semver_tuple(cached) <= semver_tuple(current_version):
+        return None
+    if _read_dismissed_version() == cached:
+        return None
+    return cached
+
+
+def welcome_update_target() -> str | None:
+    """Cached newer release version for the welcome-banner chip, or None.
+
+    Unlike ``pending_update_notice`` this does not suppress when the user
+    chose 'Skip this session' on the startup modal — the banner chip is the
+    session-persistent reminder of that skip.
+    """
+    return _cached_update_available()
+
+
+def consume_whats_new() -> str | None:
+    """Return the current version string on first launch after an upgrade, else None.
+
+    Side-effect: records the current version as 'last seen' so subsequent
+    launches in the same installation return None.  No disk write in steady
+    state (last_seen == current).  First-ever launch writes the baseline and
+    returns None so existing installs upgrading onto this feature see nothing
+    until the *next* upgrade.
+    """
+    if _is_running_from_source_checkout():
+        return None
+
+    from pythinker_code.constant import VERSION as current_version
+
+    last_seen = _read_last_seen_version()
+    if last_seen is None:
+        # First launch — establish baseline, show nothing. Use exclusive create
+        # so concurrent first launches do not both truncate/write the marker.
+        if not _write_last_seen_version_if_absent(current_version):
+            last_seen = _read_last_seen_version()
+            if last_seen is None:
+                # Repair an empty/corrupt marker left by a crashed concurrent writer.
+                _write_last_seen_version(current_version)
+        return None
+    if last_seen == current_version:
+        return None
+    # Upgraded since last launch.
+    _write_last_seen_version(current_version)
+    return current_version
+
+
 async def refresh_update_cache_if_due() -> UpdateResult | None:
     """Refresh the cached latest native release when the startup throttle allows it."""
     return await _refresh_update_cache(force=False)
@@ -442,18 +535,14 @@ def pending_update_notice() -> str | None:
     Reads only the cached latest version (no network). This is used by the
     background refresher after the pre-start prompt has had first chance to
     interrupt the session. Suppressed for source checkouts, disabled
-    auto-update, and per-version dismissals.
+    auto-update, per-version dismissals, and session-level skips.
     """
     from pythinker_code.constant import VERSION as current_version
 
-    if _auto_update_disabled() or _is_running_from_source_checkout():
-        return None
-    cached = _read_latest_version_cache()
+    cached = _cached_update_available()
     if not cached:
         return None
-    if semver_tuple(cached) <= semver_tuple(current_version):
-        return None
-    if _read_dismissed_version() == cached or cached == _skipped_version_this_session:
+    if cached == _skipped_version_this_session:
         return None
     return f"Update available: {current_version} → {cached}. Run /update to install."
 
