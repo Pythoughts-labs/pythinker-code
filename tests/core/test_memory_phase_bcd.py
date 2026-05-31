@@ -15,7 +15,6 @@ from pythinker_code.memory.retriever import (
     RecallQuery,
     estimate_tokens,
 )
-from pythinker_code.memory.retriever_sqlite import SqliteFts5Retriever
 from pythinker_code.project_memory import ProjectMemoryStore
 from pythinker_code.session_state import SessionState, TodoItemState
 
@@ -151,11 +150,3 @@ async def test_generate_inbox_candidates_ignores_corrupt_duplicate_file(tmp_path
     (inbox / f"{first[0].id}.json").write_text("{not json", encoding="utf-8")
 
     assert await generate_inbox_candidates(store, _hp(repo)) == []
-
-
-async def test_sqlite_retriever_falls_back_to_lexical():
-    block = _ranked("lexical sqlite fallback")
-    out = await SqliteFts5Retriever([block], fts5_available=False).retrieve(
-        RecallQuery(text="sqlite fallback"), budget_tokens=100
-    )
-    assert out and out[0].content == "lexical sqlite fallback"

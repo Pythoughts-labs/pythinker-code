@@ -33,7 +33,7 @@ def _memory_entry_hash(content: str) -> str:
 
 
 async def inbox_dir(store: ProjectMemoryStore) -> Path:
-    root = await store._ensure_dir()  # pyright: ignore[reportPrivateUsage]
+    root = await store.ensure_root()
     path = root / "memory" / "inbox"
     path.mkdir(parents=True, exist_ok=True)
     return path
