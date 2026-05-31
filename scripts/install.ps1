@@ -198,14 +198,14 @@ try {
   OK "Checksum OK"
 
   Step "Running Pythinker installer"
-  $args = @(
+  $installerArgs = @(
     '/SILENT',
     '/NORESTART',
     '/CURRENTUSER',
     '/CLOSEAPPLICATIONS',
     '/NORESTARTAPPLICATIONS'
   )
-  $process = Start-Process -FilePath $installerPath -ArgumentList $args -Wait -PassThru
+  $process = Start-Process -FilePath $installerPath -ArgumentList $installerArgs -Wait -PassThru
   if ($process.ExitCode -ne 0) {
     Fail "installer exited with code $($process.ExitCode)"
   }

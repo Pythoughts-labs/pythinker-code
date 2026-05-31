@@ -78,8 +78,15 @@ def test_windows_installer_signs_update_artifacts_when_credentials_are_available
     # wired for the frozen executable, bundled DLL/PYD files, and Inno's
     # setup/uninstaller/temp copies.
     assert "@('.exe', '.dll', '.pyd')" in build_script
+    assert "PYTHINKER_INNO_SIGN_SCRIPT" in build_script
+    assert (
+        "cmd.exe /D /C powershell.exe -NoProfile -NonInteractive "
+        "-File %PYTHINKER_INNO_SIGN_SCRIPT% $f"
+    ) in build_script
+    assert '-File `"$signScript`"' not in build_script
     assert "/SPythinkerSign=$signCommand" in build_script
     assert "/DUseInnoSignTool=1" in build_script
+    assert "build.ps1: invoking Inno Setup with arguments:" in build_script
 
 
 def test_release_asset_wait_covers_all_updater_channels() -> None:

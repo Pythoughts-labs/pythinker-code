@@ -99,12 +99,17 @@ if (-not $SkipInstaller) {
     }
     $isccArgs = @("/DAppVersion=$Version")
     if ($signingConfigured) {
-        $signCommand = "powershell.exe -NoProfile -NonInteractive -File `"$signScript`" `$f"
+        # Keep quoted paths out of /SPythinkerSign itself. Windows PowerShell 5.1
+        # can mangle nested quotes when passing native arguments to iscc.exe.
+        $env:PYTHINKER_INNO_SIGN_SCRIPT = "`"$signScript`""
+        $signCommand = 'cmd.exe /D /C powershell.exe -NoProfile -NonInteractive -File %PYTHINKER_INNO_SIGN_SCRIPT% $f'
         $isccArgs += "/SPythinkerSign=$signCommand"
         $isccArgs += "/DUseInnoSignTool=1"
     }
     $isccArgs += (Join-Path $here 'installer.iss')
 
+    Write-Host "build.ps1: invoking Inno Setup with arguments:"
+    foreach ($arg in $isccArgs) { Write-Host "  $arg" }
     & $iscc.Source @isccArgs
     if ($LASTEXITCODE -ne 0) { throw "Inno Setup compile failed ($LASTEXITCODE)" }
 }

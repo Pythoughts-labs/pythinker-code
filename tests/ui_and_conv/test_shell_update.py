@@ -766,6 +766,7 @@ def test_spawn_detached_windows_installer_uses_inno_directly_not_powershell(monk
                 str(installer),
                 "/SILENT",
                 "/NORESTART",
+                "/CURRENTUSER",
                 "/CLOSEAPPLICATIONS",
                 "/NORESTARTAPPLICATIONS",
             ],

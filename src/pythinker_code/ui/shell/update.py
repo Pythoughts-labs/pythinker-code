@@ -53,6 +53,7 @@ DISMISSED_VERSION_FILE = get_share_dir() / "dismissed_update_version.txt"
 LAST_SEEN_VERSION_FILE = get_share_dir() / "last_seen_version.txt"
 AUTO_UPDATE_CHECK_INTERVAL_SECONDS = 24 * 60 * 60
 PROMPT_UPDATE_REFRESH_TIMEOUT_SECONDS = 2.0
+WINDOWS_UPDATE_STAGING_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 
 _UPDATE_LOCK = asyncio.Lock()
 _skipped_version_this_session: str | None = None
@@ -782,7 +783,13 @@ def _windows_native_installer_args() -> list[str]:
     ``/SILENT`` still avoids the wizard, but leaves normal installer UI/errors
     visible and delegates app-closing to Inno Setup's Restart Manager.
     """
-    return ["/SILENT", "/NORESTART", "/CLOSEAPPLICATIONS", "/NORESTARTAPPLICATIONS"]
+    return [
+        "/SILENT",
+        "/NORESTART",
+        "/CURRENTUSER",
+        "/CLOSEAPPLICATIONS",
+        "/NORESTARTAPPLICATIONS",
+    ]
 
 
 def _spawn_detached_windows_installer(installer_path: Path) -> bool:
@@ -1002,9 +1009,6 @@ def _install_native_archive(archive: Path) -> UpdateResult:
             replacement.unlink()
         return UpdateResult.FAILED
     return UpdateResult.UPDATED
-
-
-WINDOWS_UPDATE_STAGING_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 
 
 def _windows_update_staging_parent() -> Path:

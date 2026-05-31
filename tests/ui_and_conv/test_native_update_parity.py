@@ -152,6 +152,7 @@ def test_windows_installer_launches_signed_inno_directly(monkeypatch, tmp_path):
         str(installer),
         "/SILENT",
         "/NORESTART",
+        "/CURRENTUSER",
         "/CLOSEAPPLICATIONS",
         "/NORESTARTAPPLICATIONS",
     ]
