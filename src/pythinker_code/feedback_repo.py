@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 DEFAULT_FEEDBACK_GITHUB_REPO = "TechMatrix-labs/pythinker-code"
+_LEGACY_FEEDBACK_GITHUB_OWNER = "mohamed-elkholy95"
 
 _LEGACY_DEFAULT_FEEDBACK_GITHUB_REPOS = {
-    "mohamed-elkholy95/Pythinker-Code",
-    "mohamed-elkholy95/pythinker-code",
+    _LEGACY_FEEDBACK_GITHUB_OWNER + "/Pythinker-Code",
+    _LEGACY_FEEDBACK_GITHUB_OWNER + "/pythinker-code",
 }
 _LEGACY_DEFAULT_FEEDBACK_GITHUB_REPOS_LOWER = {
     repo.lower() for repo in _LEGACY_DEFAULT_FEEDBACK_GITHUB_REPOS

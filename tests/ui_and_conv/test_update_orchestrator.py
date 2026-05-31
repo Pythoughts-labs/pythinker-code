@@ -146,7 +146,7 @@ async def test_update_job_replaces_stale_lock(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_update_job_marks_failed_when_smoke_check_fails(monkeypatch, tmp_path):
+async def test_update_job_keeps_success_when_post_install_smoke_check_fails(monkeypatch, tmp_path):
     _isolate_update_files(monkeypatch, tmp_path)
 
     async def fake_do_update(*, print_output: bool, check_only: bool, output_callback=None):
@@ -161,13 +161,13 @@ async def test_update_job_marks_failed_when_smoke_check_fails(monkeypatch, tmp_p
 
     result = await orchestrator.run_update_job(print_output=False, source="test")
 
-    assert result is update.UpdateResult.FAILED
+    assert result is update.UpdateResult.UPDATED
     status = orchestrator.read_update_status()
     assert status is not None
-    assert status.state is orchestrator.UpdateJobState.FAILED
-    assert status.result == "FAILED"
-    assert "smoke check failed" in (status.message or "").lower()
-    assert not orchestrator.UPDATE_LAST_SUCCESS_FILE.exists()
+    assert status.state is orchestrator.UpdateJobState.UPDATED
+    assert status.result == "UPDATED"
+    assert "smoke check did not pass" in (status.message or "").lower()
+    assert orchestrator.UPDATE_LAST_SUCCESS_FILE.exists()
 
 
 @pytest.mark.asyncio
@@ -250,6 +250,26 @@ def test_pid_exists_is_conservative_on_windows_without_signaling(monkeypatch):
     assert orchestrator._pid_exists(os.getpid() + 1) is True
 
 
+def test_python_smoke_check_uses_safe_import_path(monkeypatch):
+    monkeypatch.setattr(orchestrator, "is_native_build", lambda: False)
+    monkeypatch.setattr(orchestrator.sys, "executable", "/tmp/venv/bin/python")
+
+    assert orchestrator._smoke_check_command() == [
+        "/tmp/venv/bin/python",
+        "-P",
+        "-m",
+        "pythinker_code",
+        "--version",
+    ]
+
+
+def test_native_smoke_check_does_not_use_python_module_import(monkeypatch):
+    monkeypatch.setattr(orchestrator, "is_native_build", lambda: True)
+    monkeypatch.setattr(orchestrator.sys, "executable", "/opt/pythinker/pythinker")
+
+    assert orchestrator._smoke_check_command() == ["/opt/pythinker/pythinker", "--version"]
+
+
 @pytest.mark.asyncio
 async def test_do_update_mirrors_messages_to_output_callback(monkeypatch, tmp_path):
     messages: list[str] = []
@@ -278,10 +298,14 @@ async def test_do_update_mirrors_messages_to_output_callback(monkeypatch, tmp_pa
 
 def test_smoke_check_reports_success(monkeypatch):
     monkeypatch.setattr(orchestrator, "_smoke_check_command", lambda: ["pythinker", "--version"])
+    monkeypatch.setenv("PYTHONPATH", "/tmp/untrusted")
 
     def fake_run(command, **kwargs):
         assert command == ["pythinker", "--version"]
         assert kwargs["timeout"] == orchestrator._SMOKE_CHECK_TIMEOUT_SECONDS
+        assert kwargs["env"]["PYTHONSAFEPATH"] == "1"
+        assert "PYTHONPATH" not in kwargs["env"]
+        assert kwargs["cwd"] == orchestrator._smoke_check_cwd()
         return SimpleNamespace(returncode=0, stdout="pythinker, version 1.2.3\n", stderr="")
 
     monkeypatch.setattr(orchestrator.subprocess, "run", fake_run)

@@ -298,11 +298,12 @@ class TestFeedbackHelpers:
 
     def test_feedback_issue_url_migrates_legacy_default_repo(self) -> None:
         payload = {"type": "other", "content": "hi"}
+        old_owner = "mohamed-elkholy95"
 
-        url = build_feedback_issue_url(payload, "mohamed-elkholy95/Pythinker-Code")
+        url = build_feedback_issue_url(payload, old_owner + "/Pythinker-Code")
 
         assert "github.com/TechMatrix-labs/pythinker-code/issues/new" in url
-        assert "mohamed-elkholy95" not in url
+        assert old_owner not in url
 
     def test_feedback_issue_url_uses_compact_body_for_large_payload(self) -> None:
         payload = {

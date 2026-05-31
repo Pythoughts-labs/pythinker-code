@@ -518,10 +518,7 @@ async def test_discover_chatgpt_models_uses_custom_base_url(monkeypatch):
         base_url="https://proxy.example/backend-api/codex/",
     )
 
-    assert (
-        captured["url"]
-        == "https://proxy.example/backend-api/codex/models?client_version=1.0.0"
-    )
+    assert captured["url"] == "https://proxy.example/backend-api/codex/models?client_version=1.0.0"
     assert [model.id for model in models] == ["gpt-5.3-codex"]
 
 
@@ -632,6 +629,7 @@ async def test_login_openai_headless_stores_chatgpt_tokens(monkeypatch, tmp_path
         assert redirect_uri == "https://auth.openai.com/deviceauth/callback"
         return {
             "access_token": "access-token",
+            "id_token": _jwt_with_chatgpt_account("acc_headless"),
             "refresh_token": "refresh-token",
             "expires_in": 3600,
             "token_type": "Bearer",
@@ -639,11 +637,12 @@ async def test_login_openai_headless_stores_chatgpt_tokens(monkeypatch, tmp_path
         }
 
     async def fake_exchange_id_token_for_api_key(id_token):
+        assert id_token == _jwt_with_chatgpt_account("acc_headless")
         return ""
 
     async def fake_discover_chatgpt_models(api_key, *, account_id=None):
         assert api_key == "access-token"
-        assert account_id is None
+        assert account_id == "acc_headless"
         return [_model("gpt-5.1-codex", reasoning=True)]
 
     monkeypatch.setattr("pythinker_code.auth.openai._request_device_code", fake_request_device_code)
@@ -668,6 +667,7 @@ async def test_login_openai_headless_stores_chatgpt_tokens(monkeypatch, tmp_path
     token = load_tokens(OAuthRef(storage="file", key=OPENAI_CHATGPT_OAUTH_KEY))
     assert token is not None
     assert token.access_token == "access-token"
+    assert token.account_id == "acc_headless"
     provider = config.providers[managed_provider_key(OPENAI_CHATGPT_PLATFORM_ID)]
     assert provider.type == "openai_codex"
     assert provider.oauth == OAuthRef(storage="file", key=OPENAI_CHATGPT_OAUTH_KEY)
@@ -689,14 +689,19 @@ async def test_login_openai_browser_finishes_with_callback_code(monkeypatch, tmp
         assert redirect_uri.startswith("http://localhost:")
         return {
             "access_token": "access-token",
+            "id_token": _jwt_with_chatgpt_account("acc_browser"),
             "refresh_token": "refresh-token",
             "expires_in": 3600,
             "token_type": "Bearer",
             "scope": "openid profile email offline_access",
         }
 
+    async def fake_exchange_id_token_for_api_key(id_token):
+        assert id_token == _jwt_with_chatgpt_account("acc_browser")
+        return ""
+
     async def fake_discover_chatgpt_models(api_key, *, account_id=None):
-        assert account_id is None
+        assert account_id == "acc_browser"
         return [_model("gpt-5.1-codex", reasoning=True)]
 
     monkeypatch.setattr(
@@ -704,6 +709,10 @@ async def test_login_openai_browser_finishes_with_callback_code(monkeypatch, tmp
     )
     monkeypatch.setattr(
         "pythinker_code.auth.openai._exchange_code_for_tokens", fake_exchange_code_for_tokens
+    )
+    monkeypatch.setattr(
+        "pythinker_code.auth.openai._exchange_id_token_for_api_key",
+        fake_exchange_id_token_for_api_key,
     )
     monkeypatch.setattr(
         "pythinker_code.auth.openai.discover_chatgpt_models", fake_discover_chatgpt_models

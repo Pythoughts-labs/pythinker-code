@@ -97,9 +97,8 @@ def test_load_config_text_json():
 
 
 def test_load_config_migrates_legacy_feedback_repo_default():
-    config = load_config_from_string(
-        '[feedback]\ngithub_repo = "mohamed-elkholy95/Pythinker-Code"\n'
-    )
+    old_owner = "mohamed-elkholy95"
+    config = load_config_from_string(f'[feedback]\ngithub_repo = "{old_owner}/Pythinker-Code"\n')
 
     assert config.feedback.github_repo == "TechMatrix-labs/pythinker-code"
 

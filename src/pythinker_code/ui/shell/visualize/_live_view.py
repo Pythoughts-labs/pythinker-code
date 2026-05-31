@@ -521,7 +521,7 @@ class _LiveView:
                 # it too, so a still-running agent is separated from a finished
                 # one already committed to scrollback.
                 _append_action_block(blocks, tool_call.compose(), leading=True)
-            for hook_block in self._hook_blocks.values():
+            for hook_block in getattr(self, "_hook_blocks", {}).values():
                 _append_action_block(blocks, hook_block.compose(), leading=True)
             if include_working_indicator and self._active_turn_depth > 0:
                 # Keep a stable activity indicator visible even while content or

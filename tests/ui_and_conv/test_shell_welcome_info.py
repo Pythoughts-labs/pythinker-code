@@ -116,6 +116,48 @@ def test_welcome_strapline_and_help_on_separate_lines(monkeypatch):
     assert not any("Build with confidence." in ln and "Type /help" in ln for ln in out.splitlines())
 
 
+def test_welcome_banner_layout_width_matrix(monkeypatch):
+    from pythinker_code.ui.shell import WelcomeInfoItem
+    from pythinker_code.ui.shell.components.render_utils import cell_width
+
+    monkeypatch.setattr(shell_module, "get_version", lambda: "9.9.9")
+    items = [
+        WelcomeInfoItem(name="Directory", value="/home/ai/Projects/pythinker-code-main"),
+        WelcomeInfoItem(name="Model", value="gpt-5.1-codex"),
+        WelcomeInfoItem(name="Branch", value="feat/welcome-banner-redesign"),
+        WelcomeInfoItem(
+            name="Tip",
+            value="Use /update after release promotion completes and /help for commands.",
+        ),
+    ]
+
+    for width in (60, 80, 120):
+        console = Console(record=True, width=width, color_system=None)
+        monkeypatch.setattr(shell_module, "console", console)
+
+        shell_module._print_welcome_info(
+            "Pythinker Code",
+            items,
+            banner=Text("↑ Update available — v9.9.10 · /update"),
+        )
+
+        output = console.export_text()
+        lines = [line.rstrip() for line in output.splitlines() if line.strip()]
+        max_panel_width = min(width, shell_module._WELCOME_MAX_WIDTH)
+        assert all(cell_width(line) <= max_panel_width for line in lines)
+        assert "Pythinker Code v9.9.9" in lines[0]
+        assert "Welcome to Pythinker" in output
+        assert "Directory" in output
+        assert "gpt-5.1-codex" in output
+        assert "Tips" in output
+        assert "/update" in lines[-1]
+        assert "/help" in output
+        if width == 60:
+            assert "▛" not in output
+        else:
+            assert "▛" in output
+
+
 def test_welcome_auto_save_path_is_middle_truncated_not_wrapped(monkeypatch):
     from pythinker_code.ui.shell import WelcomeInfoItem
 

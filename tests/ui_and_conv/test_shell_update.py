@@ -698,6 +698,71 @@ async def test_do_update_on_windows_spawns_detached_and_exits(monkeypatch, tmp_p
     assert spawned and "pythinker-code" in spawned[0]
 
 
+def test_run_upgrade_command_streams_subprocess_output(monkeypatch):
+    messages: list[str] = []
+    launched: list[list[str]] = []
+
+    class FakeProc:
+        stdout = ["first line\n", "second line\n"]
+
+        def wait(self, *, timeout: float) -> int:
+            assert timeout == update.UPGRADE_COMMAND_TIMEOUT_SECONDS
+            return 0
+
+    def fake_popen(command, **kwargs):
+        launched.append(command)
+        assert kwargs["stdout"] is update.subprocess.PIPE
+        assert kwargs["stderr"] is update.subprocess.STDOUT
+        assert kwargs["text"] is True
+        return FakeProc()
+
+    monkeypatch.setattr(update.subprocess, "Popen", fake_popen)
+
+    returncode = update._run_upgrade_command(
+        ["uv", "tool", "upgrade", "pythinker-code"],
+        print_output=False,
+        output_callback=messages.append,
+    )
+
+    assert returncode == 0
+    assert launched == [["uv", "tool", "upgrade", "pythinker-code"]]
+    assert messages == ["first line", "second line"]
+
+
+@pytest.mark.asyncio
+async def test_do_update_reports_non_native_upgrade_failure_to_callback(monkeypatch, tmp_path):
+    messages: list[str] = []
+
+    async def fake_get_latest(session):
+        return "999.0.0"
+
+    async def fake_unavailable(session, latest_version: str, upgrade_command: list[str]):
+        return None
+
+    def fake_run_upgrade_command(command, *, print_output: bool, output_callback):
+        assert command == ["uv", "tool", "upgrade", "pythinker-code"]
+        assert print_output is False
+        assert output_callback is not None
+        output_callback("installer said no")
+        return 2
+
+    monkeypatch.setattr(update, "LATEST_VERSION_FILE", tmp_path / "latest.txt")
+    monkeypatch.setattr(update, "_get_latest_version", fake_get_latest)
+    monkeypatch.setattr(update, "_update_candidate_unavailable_reason", fake_unavailable)
+    monkeypatch.setattr(
+        update,
+        "_detect_upgrade_command",
+        lambda: ["uv", "tool", "upgrade", "pythinker-code"],
+    )
+    monkeypatch.setattr(update, "_run_upgrade_command", fake_run_upgrade_command)
+
+    result = await update.do_update(print_output=False, output_callback=messages.append)
+
+    assert result is update.UpdateResult.FAILED
+    assert "installer said no" in messages
+    assert any("Upgrade failed" in message for message in messages)
+
+
 @pytest.mark.asyncio
 async def test_do_update_uses_native_installer_marker(monkeypatch, tmp_path):
     native_versions: list[str] = []

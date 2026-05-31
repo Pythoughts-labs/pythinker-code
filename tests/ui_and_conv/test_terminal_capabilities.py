@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 from types import SimpleNamespace
+from typing import TextIO, cast
 
 from pythinker_code.ui.terminal_capabilities import (
     ascii_glyphs_enabled,
@@ -22,7 +23,8 @@ def test_ascii_glyphs_are_opt_in_or_minimal_terminal() -> None:
     assert ascii_glyphs_enabled({"PYTHINKER_TUI_GLYPHS": "ascii"})
     assert ascii_glyphs_enabled({"PYTHINKER_ASCII_UI": "1"})
     assert ascii_glyphs_enabled({"TERM": "dumb"})
-    assert ascii_glyphs_enabled({"TERM": "xterm"}, stdout=SimpleNamespace(encoding="cp1252"))
+    legacy_stdout = cast(TextIO, SimpleNamespace(encoding="cp1252"))
+    assert ascii_glyphs_enabled({"TERM": "xterm"}, stdout=legacy_stdout)
     assert not ascii_glyphs_enabled({"PYTHINKER_TUI_GLYPHS": "unicode", "TERM": "dumb"})
 
 
@@ -66,3 +68,50 @@ def test_ascii_glyph_mode_uses_plain_fallbacks(monkeypatch) -> None:
     finally:
         monkeypatch.delenv("PYTHINKER_TUI_GLYPHS", raising=False)
         importlib.reload(glyphs)
+
+
+def test_term_dumb_glyph_mode_uses_plain_fallbacks(monkeypatch) -> None:
+    import pythinker_code.ui.shell.glyphs as glyphs
+
+    monkeypatch.setenv("TERM", "dumb")
+    plain_glyphs = importlib.reload(glyphs)
+    try:
+        assert plain_glyphs.SPINNER_FRAMES == ("-", "\\", "|", "/")
+        assert plain_glyphs.TRANSCRIPT_PROMPT_MARKER == ">"
+        assert plain_glyphs.TRANSCRIPT_TOOL_GUTTER == "|"
+    finally:
+        monkeypatch.delenv("TERM", raising=False)
+        importlib.reload(glyphs)
+
+
+def test_explicit_unicode_glyph_mode_overrides_term_dumb(monkeypatch) -> None:
+    import pythinker_code.ui.shell.glyphs as glyphs
+
+    monkeypatch.setenv("TERM", "dumb")
+    monkeypatch.setenv("PYTHINKER_TUI_GLYPHS", "unicode")
+    unicode_glyphs = importlib.reload(glyphs)
+    try:
+        assert unicode_glyphs.SPINNER_FRAMES[0] == "⠋"
+        assert unicode_glyphs.REDUCED_MOTION_GLYPH == "●"
+        assert unicode_glyphs.TRANSCRIPT_PROMPT_MARKER == "❯"
+        assert unicode_glyphs.TRANSCRIPT_TOOL_GUTTER == "⎿"
+    finally:
+        monkeypatch.delenv("TERM", raising=False)
+        monkeypatch.delenv("PYTHINKER_TUI_GLYPHS", raising=False)
+        importlib.reload(glyphs)
+
+
+def test_reduced_motion_env_pins_runtime_activity_marker(monkeypatch) -> None:
+    from pythinker_code.ui.shell.glyphs import REDUCED_MOTION_GLYPH
+    from pythinker_code.ui.shell.motion import (
+        ActivitySnapshot,
+        active_marker_frame,
+        activity_status_line,
+    )
+
+    monkeypatch.setenv("PYTHINKER_REDUCED_MOTION", "1")
+
+    assert active_marker_frame(0.0) == REDUCED_MOTION_GLYPH
+    assert active_marker_frame(10.0) == REDUCED_MOTION_GLYPH
+    line = activity_status_line(ActivitySnapshot(label="Thinking", elapsed_s=10.0))
+    assert line.plain.startswith(f"{REDUCED_MOTION_GLYPH} Thinking")

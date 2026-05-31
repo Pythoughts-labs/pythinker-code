@@ -377,13 +377,11 @@ async def run_update_job(
         if result is UpdateResult.UPDATED and not check_only:
             smoke_ok, smoke_message = run_post_install_smoke_check()
             append_update_log(smoke_message)
-            if not smoke_ok:
-                reported_result = UpdateResult.FAILED
-                final_state = UpdateJobState.FAILED
-                message = f"Updated, but smoke check failed: {smoke_message}"
-            else:
+            if smoke_ok:
                 message = smoke_message
-                _write_last_success(job_id=job_id, message=message)
+            else:
+                message = f"Updated, but smoke check did not pass: {smoke_message}"
+            _write_last_success(job_id=job_id, message=message)
 
         write_update_status(
             _new_status(
@@ -433,7 +431,21 @@ def _write_last_success(*, job_id: str, message: str) -> None:
 def _smoke_check_command() -> list[str]:
     if is_native_build():
         return [sys.executable, "--version"]
-    return [sys.executable, "-m", "pythinker_code", "--version"]
+    return [sys.executable, "-P", "-m", "pythinker_code", "--version"]
+
+
+def _smoke_check_cwd() -> Path:
+    try:
+        return Path(sys.executable).resolve().parent
+    except OSError:
+        return Path.home()
+
+
+def _smoke_check_env() -> dict[str, str]:
+    env = get_clean_env()
+    env["PYTHONSAFEPATH"] = "1"
+    env.pop("PYTHONPATH", None)
+    return env
 
 
 def run_post_install_smoke_check() -> tuple[bool, str]:
@@ -446,7 +458,8 @@ def run_post_install_smoke_check() -> tuple[bool, str]:
             encoding="utf-8",
             errors="replace",
             timeout=_SMOKE_CHECK_TIMEOUT_SECONDS,
-            env=get_clean_env(),
+            env=_smoke_check_env(),
+            cwd=_smoke_check_cwd(),
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:

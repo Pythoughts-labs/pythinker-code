@@ -8,12 +8,12 @@ from rich.style import Style
 from rich.text import Text
 
 from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
-from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ACTIVE_MARKER
 from pythinker_code.ui.shell.motion import reduced_motion_enabled
 from pythinker_code.ui.theme import get_mcp_prompt_colors, tui_rich_style
 from pythinker_code.wire.types import MCPServerSnapshot, MCPStatusSnapshot
 
 _STARTING_STATUSES = frozenset({"pending", "connecting"})
+_MCP_STARTUP_GLYPH = "•"
 
 
 def _safe_text(text: str) -> str:
@@ -56,7 +56,7 @@ def mcp_startup_header(snapshot: MCPStatusSnapshot) -> str | None:
 def render_mcp_startup_text(snapshot: MCPStatusSnapshot, *, now: float | None = None) -> Text:
     """Render the animated MCP startup status used by live prompt/status areas."""
     t = time.monotonic() if now is None else now
-    glyph = TRANSCRIPT_ACTIVE_MARKER if reduced_motion_enabled() or int(t / 0.8) % 2 == 0 else " "
+    glyph = _MCP_STARTUP_GLYPH if reduced_motion_enabled() or int(t / 0.8) % 2 == 0 else " "
     line = Text(f"{glyph} ", style=tui_rich_style("muted"))
     line.append(
         mcp_startup_header(snapshot) or "Starting MCP servers",
@@ -97,7 +97,7 @@ def render_mcp_console(snapshot: MCPStatusSnapshot) -> RenderableType:
 
 def render_mcp_inventory_loading(*, now: float | None = None) -> RenderableType:
     t = time.monotonic() if now is None else now
-    glyph = TRANSCRIPT_ACTIVE_MARKER if reduced_motion_enabled() or int(t / 0.8) % 2 == 0 else " "
+    glyph = _MCP_STARTUP_GLYPH if reduced_motion_enabled() or int(t / 0.8) % 2 == 0 else " "
     line = Text(f"{glyph} ", style=tui_rich_style("muted"))
     line.append("Loading MCP inventory", style=tui_rich_style("tool_title") + Style(bold=True))
     line.append("…", style=tui_rich_style("muted"))
@@ -135,7 +135,7 @@ def render_mcp_prompt(snapshot: MCPStatusSnapshot, *, now: float | None = None) 
 
     colors = get_mcp_prompt_colors()
     t = time.monotonic() if now is None else now
-    glyph = TRANSCRIPT_ACTIVE_MARKER if reduced_motion_enabled() or int(t / 0.8) % 2 == 0 else " "
+    glyph = _MCP_STARTUP_GLYPH if reduced_motion_enabled() or int(t / 0.8) % 2 == 0 else " "
     prefix = f"{glyph} "
     return FormattedText([(colors.text, f"{prefix}{header}"), ("", "\n")])
 
