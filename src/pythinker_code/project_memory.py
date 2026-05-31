@@ -116,6 +116,10 @@ class ProjectMemoryStore:
             self._root = root
         return self._root
 
+    async def ensure_root(self) -> Path:
+        """Public entry point for :meth:`_ensure_dir` used by collaborators."""
+        return await self._ensure_dir()
+
     def _filename(self, target: Target) -> str:
         return "USER.md" if target == "user" else "MEMORY.md"
 

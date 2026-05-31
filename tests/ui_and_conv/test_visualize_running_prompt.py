@@ -298,6 +298,29 @@ def test_prompt_status_keeps_todos_visible_during_background_tasks() -> None:
     assert "◻ Code quality review" in text
 
 
+def test_prompt_background_todo_rows_align_icons_and_titles() -> None:
+    session = object.__new__(CustomPromptSession)
+    session._latest_todos = (
+        TodoDisplayItem(
+            title="Launch parallel deep scan agents (overengineering, simplicity, architecture, bug hunt)",
+            status="in_progress",
+        ),
+        TodoDisplayItem(title="Cross-validate findings against live code", status="pending"),
+        TodoDisplayItem(
+            title="Synthesize consolidated findings report with fixes", status="pending"
+        ),
+    )
+
+    rendered = CustomPromptSession._render_background_todo_rows(session, 120)
+    lines = "".join(item[1] for item in rendered).splitlines()
+
+    assert lines[0].startswith("  ⎿  ◼ ")
+    assert lines[1].startswith("     ◻ ")
+    assert lines[2].startswith("     ◻ ")
+    assert lines[1].index("◻") == lines[0].index("◼")
+    assert lines[2].index("Synthesize") == lines[0].index("Launch")
+
+
 def test_background_status_drops_verb_when_working_indicator_pinned() -> None:
     """During an active turn the pinned working indicator owns the verb, so the
     background-task line must show the count *without* repeating it."""

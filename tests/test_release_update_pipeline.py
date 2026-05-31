@@ -36,7 +36,7 @@ def test_release_is_promoted_only_after_update_assets_are_ready() -> None:
     # Promotion clears prerelease AND marks latest, and only after the wait.
     assert "-F prerelease=false" in promote_workflow
     assert "-f make_latest=true" in promote_workflow
-    assert promote_workflow.index("Wait for all release assets") < promote_workflow.index(
+    assert promote_workflow.index("Wait for install-channel readiness") < promote_workflow.index(
         "-F prerelease=false"
     )
 
@@ -67,15 +67,22 @@ def test_install_scripts_gate_on_asset_readiness() -> None:
 def test_release_asset_wait_covers_all_updater_channels() -> None:
     promote_workflow = (WORKFLOWS / "promote-release.yml").read_text()
 
-    for expected_asset_fragment in (
-        "PythinkerSetup-",
-        "_amd64.deb",
-        "_arm64.deb",
-        ".x86_64.rpm",
-        ".aarch64.rpm",
-        "x86_64-unknown-linux-gnu.tar.gz",
-        "aarch64-unknown-linux-gnu.tar.gz",
-        "aarch64-apple-darwin.tar.gz",
-        "x86_64-apple-darwin.tar.gz",
+    for expected_readiness_marker in (
+        "PythinkerSetup-${version}.exe.sha256",
+        "pythinker-code_${version}_amd64.deb.sha256",
+        "pythinker-code_${version}_arm64.deb.sha256",
+        "pythinker-code-${version}.x86_64.rpm.sha256",
+        "pythinker-code-${version}.aarch64.rpm.sha256",
+        "pythinker-${version}-x86_64-unknown-linux-gnu.tar.gz.sha256",
+        "pythinker-${version}-aarch64-unknown-linux-gnu.tar.gz.sha256",
+        "pythinker-${version}-aarch64-apple-darwin.tar.gz.sha256",
+        "pythinker-${version}-x86_64-apple-darwin.tar.gz.sha256",
+        "pythinker-${version}-x86_64-unknown-linux-gnu-onedir.tar.gz.sha256",
+        "pythinker-${version}-aarch64-unknown-linux-gnu-onedir.tar.gz.sha256",
+        "pythinker-${version}-aarch64-apple-darwin-onedir.tar.gz.sha256",
+        "pythinker-${version}-x86_64-apple-darwin-onedir.tar.gz.sha256",
+        "https://pypi.org/pypi/pythinker-code/${version}/json",
+        "raw.githubusercontent.com/TechMatrix-labs/homebrew-pythinker",
+        'version \\"${version}\\"',
     ):
-        assert expected_asset_fragment in promote_workflow
+        assert expected_readiness_marker in promote_workflow

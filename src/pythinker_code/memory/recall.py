@@ -89,12 +89,10 @@ async def build_recall_block(
     query: RecallQuery,
     open_todos: list[tuple[str, list[str]]],
     budget_tokens: int,
-    store_path: str,
 ) -> str:
     ranked = await LexicalRetriever(candidates).retrieve(query, budget_tokens)
     if not ranked and not open_todos:
         return ""
-    _ = store_path
     lines: list[str] = ["Relevant project memory — recalled by relevance, not the full store."]
     if open_todos:
         lines.append("\n## Open todos from recent sessions")
@@ -249,13 +247,11 @@ class RecallInjectionProvider(DynamicInjectionProvider):
                 text=_last_user_text(history),
                 labels=tuple(title for _label, items in open_todos for title in items),
             )
-            store_root = await self._store._ensure_dir()  # pyright: ignore[reportPrivateUsage]
             block = await build_recall_block(
                 candidates=candidates,
                 query=query,
                 open_todos=open_todos,
                 budget_tokens=INJECTION_BUDGET_BYTES // 4,
-                store_path=str(store_root / "memory"),
             )
         except Exception:
             logger.debug("recall: snapshot failed")

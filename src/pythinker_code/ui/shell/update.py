@@ -52,6 +52,7 @@ LATEST_VERSION_ETAG_FILE = get_share_dir() / "latest_version.etag"
 LAST_UPDATE_CHECK_FILE = get_share_dir() / "last_update_check.txt"
 DISMISSED_VERSION_FILE = get_share_dir() / "dismissed_update_version.txt"
 AUTO_UPDATE_CHECK_INTERVAL_SECONDS = 24 * 60 * 60
+PROMPT_UPDATE_REFRESH_TIMEOUT_SECONDS = 2.0
 
 _UPDATE_LOCK = asyncio.Lock()
 _skipped_version_this_session: str | None = None
@@ -404,17 +405,32 @@ async def _refresh_update_cache(*, force: bool) -> UpdateResult | None:
     return result
 
 
-async def _resolve_latest_version_for_prompt(*, force_refresh: bool = False) -> str | None:
-    """Return the latest known native release, refreshing when due or uncached.
+async def _refresh_update_cache_for_prompt(*, force: bool) -> UpdateResult | None:
+    """Refresh the startup-prompt version cache without hanging shell startup."""
+    try:
+        return await asyncio.wait_for(
+            _refresh_update_cache(force=force),
+            timeout=PROMPT_UPDATE_REFRESH_TIMEOUT_SECONDS,
+        )
+    except TimeoutError:
+        logger.warning("Update prompt refresh timed out; using cached latest version")
+        return None
 
-    Used by the blocking pre-start prompt and by the explicit ``/update`` flow.
-    A missing cache forces one network check so fresh installs can be prompted
-    before the agent starts instead of seeing only a later background notice.
-    ``/update`` passes ``force_refresh=True`` so explicit user checks hit the
-    release API even when the startup throttle is not due.
+
+async def _resolve_latest_version_for_prompt(*, force_refresh: bool = False) -> str | None:
+    """Return the latest known native release for the pre-start prompt.
+
+    The background notifier uses a 24h throttle, but the blocking startup prompt
+    must not trust a cached "already current" answer forever: a release can land
+    minutes after the last successful check. Revalidate missing/stale caches with
+    a short timeout and GitHub's cached ETag; keep the throttle only when the
+    cached version is already newer than the running version.
     """
+    from pythinker_code.constant import VERSION as current_version
+
     cached = _read_latest_version_cache()
-    refresh_result = await _refresh_update_cache(force=force_refresh or not cached)
+    cached_is_stale = cached is None or semver_tuple(cached) <= semver_tuple(current_version)
+    refresh_result = await _refresh_update_cache_for_prompt(force=force_refresh or cached_is_stale)
     if refresh_result is not None:
         return _read_latest_version_cache() or cached
     return cached

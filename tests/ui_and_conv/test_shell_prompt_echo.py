@@ -61,7 +61,7 @@ def test_echo_agent_input_prints_stringified_user_message(monkeypatch) -> None:
     assert [text.plain for text in printed] == ["❯ hi"]
 
 
-def test_echo_agent_input_uses_display_command_for_placeholders(monkeypatch) -> None:
+def test_echo_agent_input_uses_resolved_command_for_placeholders(monkeypatch) -> None:
     printed: list[Text] = []
     monkeypatch.setattr(shell_module.console, "print", lambda text: printed.append(text))
 
@@ -74,7 +74,7 @@ def test_echo_agent_input_uses_display_command_for_placeholders(monkeypatch) -> 
 
     Shell._echo_agent_input(user_input)
 
-    assert [text.plain for text in printed] == ["❯ [Pasted text #1 +3 lines]"]
+    assert [text.plain for text in printed] == ["❯ line1\nline2\nline3"]
 
 
 def test_render_user_echo_preserves_literal_brackets() -> None:

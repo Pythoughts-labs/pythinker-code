@@ -38,6 +38,22 @@ subagents, skills, web/visualization UIs, and multi-provider LLM authentication.
   any "Actionable comments posted: N" findings. Do not merge while CodeRabbit is still reviewing or
   on an unreviewed commit; surface unresolved actionable findings instead of merging past them.
 
+## Simplicity and scope discipline
+
+- Before implementing, identify the Minimum Viable Change: the smallest code delta that solves the
+  current task with acceptable correctness and maintainability.
+- Prefer the 80/20 fix over broad infrastructure. Do not build large systems for edge cases unless
+  the task explicitly requires them.
+- Avoid speculative abstractions: no new generic interfaces, configuration layers, wrappers around
+  built-ins, or design patterns unless the current requirement directly needs them.
+- Match existing conventions for naming, layout, error handling, async boundaries, and tests. If the
+  existing pattern is imperfect but not the cause of the bug, follow it.
+- Fix the target issue only. Do not refactor unrelated systems, reformat untouched code, or create
+  cascading changes unless required to address the root cause.
+- When reviewing code, treat low-delta maintainability as a primary quality signal. Flag unnecessary
+  abstraction, custom logic where native features or existing helpers suffice, and changes a junior
+  maintainer would struggle to follow.
+
 ## Quick commands
 
 Use these first; they encode the supported local workflow.

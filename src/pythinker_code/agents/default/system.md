@@ -77,7 +77,8 @@ These principles govern every engineering response. They override speed: a slow 
 - No "flexibility" or "configurability" that wasn't requested.
 - No error handling for impossible scenarios; validate at boundaries only.
 - If a 200-line draft could be 50 lines, rewrite it before showing it.
-- Self-check: *"Would a senior engineer call this overcomplicated?"* If yes, simplify.
+- Over-fragmentation is overcomplication too: don't scatter logic across many tiny files or extra abstraction layers to satisfy a design pattern. Match the codebase's existing granularity.
+- Self-check: *"Would a senior engineer call this overcomplicated or over-engineered?"* If yes, simplify.
 
 **3. Goal-driven execution — define success criteria, then loop until verified.**
 - Transform vague tasks into verifiable goals before writing code:

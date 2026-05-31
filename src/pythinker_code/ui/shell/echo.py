@@ -19,5 +19,5 @@ def render_user_echo(message: Message) -> RenderableType:
 
 
 def render_user_echo_text(text: str) -> RenderableType:
-    """Render the local prompt text exactly as the user saw it in the buffer."""
+    """Render submitted local prompt text in the transcript."""
     return Text(f"{PROMPT_SYMBOL_AGENT_INPUT} {text}")

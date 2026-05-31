@@ -4,7 +4,7 @@ import math
 import re
 import time
 import unicodedata
-from abc import ABC, abstractmethod
+from collections import Counter
 from dataclasses import dataclass, replace
 
 # Unicode word runs, with underscores treated as separators for snake_case.
@@ -46,12 +46,7 @@ class RankedBlock:
     content: str
 
 
-class Retriever(ABC):
-    @abstractmethod
-    async def retrieve(self, query: RecallQuery, budget_tokens: int) -> list[RankedBlock]: ...
-
-
-class LexicalRetriever(Retriever):
+class LexicalRetriever:
     """Hand-rolled BM25 + recency decay + label/path boost. Stdlib only."""
 
     def __init__(self, candidates: list[RankedBlock], *, now: float | None = None) -> None:
@@ -73,9 +68,7 @@ class LexicalRetriever(Retriever):
         scored: list[RankedBlock] = []
         for cand, doc in zip(self._candidates, docs, strict=True):
             dl = len(doc) or 1
-            tf: dict[str, int] = {}
-            for term in doc:
-                tf[term] = tf.get(term, 0) + 1
+            tf = Counter(doc)
             bm25 = 0.0
             for term in q_terms:
                 if term not in tf:

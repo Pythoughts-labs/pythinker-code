@@ -36,7 +36,6 @@ async def test_build_recall_block_includes_open_todos_and_facts():
         query=RecallQuery(text="retriever"),
         open_todos=[("prior session", ["wire the retriever"])],
         budget_tokens=1000,
-        store_path="/tmp/x/memory",
     )
     assert "use the lexical retriever" in block
     assert "wire the retriever" in block
@@ -49,7 +48,6 @@ async def test_build_recall_block_empty_when_nothing():
         query=RecallQuery(text="x"),
         open_todos=[],
         budget_tokens=1000,
-        store_path="/tmp/x/memory",
     )
     assert block == ""
 
@@ -60,7 +58,6 @@ async def test_build_recall_block_open_todos_only_does_not_suggest_missing_files
         query=RecallQuery(text="x"),
         open_todos=[("prior", ["finish review"])],
         budget_tokens=1000,
-        store_path="/tmp/x/memory",
     )
     assert "finish review" in block
     assert "/tmp/x/memory" not in block
