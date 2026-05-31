@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,6 +63,29 @@ def test_install_scripts_gate_on_asset_readiness() -> None:
     assert (ROOT / "web" / "public" / "install.ps1").read_text() == ps1
     assert (ROOT / "docs" / "public" / "install.sh").read_text() == sh
     assert (ROOT / "web" / "public" / "install.sh").read_text() == sh
+
+
+def test_windows_installer_signs_update_artifacts_when_credentials_are_available() -> None:
+    installer_script = (ROOT / "packages" / "windows-installer" / "installer.iss").read_text()
+    build_script = (ROOT / "packages" / "windows-installer" / "build.ps1").read_text()
+
+    assert "CloseApplications=yes" in installer_script
+    assert "CloseApplications=force" not in installer_script
+    assert "SignTool=PythinkerSign" in installer_script
+    assert "SignedUninstaller=yes" in installer_script
+    assert re.search(r"NewPath\s*:=\s*Param\s*\+\s*';'\s*\+\s*OrigPath", installer_script)
+    assert not re.search(r"NewPath\s*:=\s*OrigPath\s*\+\s*';'\s*\+\s*Param", installer_script)
+    assert not re.search(r"StringChangeEx\(\s*OrigPath\s*,\s*Param\s*,", installer_script)
+
+    # Signing only the final setup executable leaves Smart App Control and AV
+    # heuristics to inspect unsigned bundled/native helper files. Keep signing
+    # wired for the frozen executable, bundled DLL/PYD files, and Inno's
+    # setup/uninstaller/temp copies.
+    assert "@('.exe', '.dll', '.pyd')" in build_script
+    assert "PYTHINKER_INNO_SIGN_SCRIPT" in build_script
+    assert '-File `"$signScript`"' not in build_script
+    assert "/SPythinkerSign=$signCommand" in build_script
+    assert "/DUseInnoSignTool=1" in build_script
 
 
 def test_release_asset_wait_covers_all_updater_channels() -> None:

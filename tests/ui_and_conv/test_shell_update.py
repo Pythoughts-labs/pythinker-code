@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import typer
 from rich.console import Console
 
 from pythinker_code.ui.shell import update
@@ -725,6 +726,56 @@ async def test_do_update_uses_native_installer_marker(monkeypatch, tmp_path):
     assert native_versions == ["999.0.0"]
 
 
+def test_spawn_detached_windows_upgrade_uses_real_command_not_powershell(monkeypatch):
+    launched: list[tuple[list[str], dict[str, object]]] = []
+
+    monkeypatch.setattr(update, "_is_windows", lambda: True)
+    monkeypatch.setattr(update, "which", lambda name: f"C:\\Tools\\{name}.exe")
+
+    def fake_popen(args, **kwargs):
+        launched.append((args, kwargs))
+        return object()
+
+    monkeypatch.setattr(update.subprocess, "Popen", fake_popen)
+
+    assert update._spawn_detached_windows_upgrade(["uv", "tool", "upgrade", "pythinker-code"])
+    assert launched == [
+        (
+            ["C:\\Tools\\uv.exe", "tool", "upgrade", "pythinker-code"],
+            {"creationflags": 0x00000010 | 0x00000200, "close_fds": True},
+        )
+    ]
+
+
+def test_spawn_detached_windows_installer_uses_inno_directly_not_powershell(monkeypatch, tmp_path):
+    installer = tmp_path / "PythinkerSetup-999.0.0.exe"
+    installer.write_bytes(b"")
+    launched: list[tuple[list[str], dict[str, object]]] = []
+
+    monkeypatch.setattr(update, "_is_windows", lambda: True)
+
+    def fake_popen(args, **kwargs):
+        launched.append((args, kwargs))
+        return object()
+
+    monkeypatch.setattr(update.subprocess, "Popen", fake_popen)
+
+    assert update._spawn_detached_windows_installer(installer)
+    assert launched == [
+        (
+            [
+                str(installer),
+                "/SILENT",
+                "/NORESTART",
+                "/CURRENTUSER",
+                "/CLOSEAPPLICATIONS",
+                "/NORESTARTAPPLICATIONS",
+            ],
+            {"creationflags": 0x00000200, "close_fds": True},
+        )
+    ]
+
+
 def test_run_native_installer_detaches_on_windows(monkeypatch, tmp_path):
     installer = tmp_path / "PythinkerSetup-999.0.0.exe"
     installer.write_bytes(b"")
@@ -739,6 +790,23 @@ def test_run_native_installer_detaches_on_windows(monkeypatch, tmp_path):
 
     assert excinfo.value.code == 0
     assert spawned == [installer]
+
+
+def test_run_native_installer_reports_fallback_spawn_failure(monkeypatch, tmp_path):
+    installer = tmp_path / "PythinkerSetup-999.0.0.exe"
+    installer.write_bytes(b"")
+
+    monkeypatch.setattr(update, "_spawn_detached_windows_installer", lambda path: False)
+
+    def fake_popen(*args, **kwargs):
+        raise OSError("blocked")
+
+    monkeypatch.setattr(update.subprocess, "Popen", fake_popen)
+
+    with pytest.raises(typer.Exit) as excinfo:
+        update._run_native_installer(installer)
+
+    assert excinfo.value.exit_code == 1
 
 
 def test_version_from_release_payload_parses_v_tag():

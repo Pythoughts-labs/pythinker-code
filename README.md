@@ -194,8 +194,8 @@ pythinker --version
 installs to `%ProgramFiles%\Pythinker` and writes PATH to HKLM (requires admin).
 
 **Upgrade:** `pythinker update` from inside the running app — it downloads
-the newest installer, verifies SHA-256, and re-runs it silently
-(`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`).
+the newest installer, verifies SHA-256, and launches the signed Inno installer
+with visible progress (`/SILENT /NORESTART /CURRENTUSER /CLOSEAPPLICATIONS /NORESTARTAPPLICATIONS`).
 
 **Uninstall:** Apps & Features → *Pythinker Code* → Uninstall reverts both
 the files and the PATH edit.

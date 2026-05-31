@@ -49,6 +49,10 @@ def test_windows_installer_bootstrap_downloads_native_setup() -> None:
     assert "Get-FileHash -Algorithm SHA256" in installer
     assert "Start-Process -FilePath $installerPath" in installer
     assert "'/CURRENTUSER'" in installer
+    assert "'/SILENT'" in installer
+    assert "'/CLOSEAPPLICATIONS'" in installer
+    assert "'/VERYSILENT'" not in installer
+    assert "'/SUPPRESSMSGBOXES'" not in installer
     assert "uv tool install" not in installer
 
 

@@ -30,8 +30,12 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 LicenseFile=assets\LICENSE.rtf
 ChangesEnvironment=yes
-CloseApplications=force
+CloseApplications=yes
 RestartApplications=no
+#ifdef UseInnoSignTool
+SignTool=PythinkerSign
+SignedUninstaller=yes
+#endif
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -82,6 +86,20 @@ begin
                 ';' + UpperCase(OrigPath) + ';') = 0;
 end;
 
+function PathWithoutEntry(OrigPath, Param: string): string;
+var
+  BoundedPath: string;
+begin
+  BoundedPath := ';' + OrigPath + ';';
+  StringChangeEx(BoundedPath, ';' + Param + ';', ';', True);
+  while Pos(';;', BoundedPath) > 0 do
+    StringChangeEx(BoundedPath, ';;', ';', True);
+  if BoundedPath = ';' then
+    Result := ''
+  else
+    Result := Copy(BoundedPath, 2, Length(BoundedPath) - 2);
+end;
+
 procedure AddToPath(Param, RootHive: string);
 var
   OrigPath, NewPath: string;
@@ -97,10 +115,11 @@ begin
   end;
   if not RegQueryStringValue(Root, Subkey, 'Path', OrigPath) then
     OrigPath := '';
+  OrigPath := PathWithoutEntry(OrigPath, Param);
   if OrigPath = '' then
     NewPath := Param
   else
-    NewPath := OrigPath + ';' + Param;
+    NewPath := Param + ';' + OrigPath;
   RegWriteExpandStringValue(Root, Subkey, 'Path', NewPath);
 end;
 
@@ -118,9 +137,7 @@ begin
     Subkey := 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment';
   end;
   if not RegQueryStringValue(Root, Subkey, 'Path', OrigPath) then exit;
-  StringChangeEx(OrigPath, ';' + Param, '', True);
-  StringChangeEx(OrigPath, Param + ';', '', True);
-  StringChangeEx(OrigPath, Param, '', True);
+  OrigPath := PathWithoutEntry(OrigPath, Param);
   RegWriteExpandStringValue(Root, Subkey, 'Path', OrigPath);
 end;
 
@@ -130,11 +147,9 @@ var
 begin
   if CurStep = ssPostInstall then begin
     AppDir := ExpandConstant('{app}');
-    if WizardIsTaskSelected('modifypath')
-       and NeedsAddPath(AppDir, 'HKCU') then
+    if WizardIsTaskSelected('modifypath') then
       AddToPath(AppDir, 'HKCU');
-    if WizardIsTaskSelected('modifypathmachine')
-       and NeedsAddPath(AppDir, 'HKLM') then
+    if WizardIsTaskSelected('modifypathmachine') then
       AddToPath(AppDir, 'HKLM');
   end;
 end;
