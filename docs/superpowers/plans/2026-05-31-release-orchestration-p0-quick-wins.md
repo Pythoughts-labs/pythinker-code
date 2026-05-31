@@ -108,7 +108,7 @@ This is CI-wiring: verify with `actionlint` locally, then `gh workflow run` post
 
 **Files:** Modify `.github/workflows/dispatch-pythinker-home-sync.yml:25-47`. Verify: `actionlint`.
 
-- [ ] 2.1 Replace the `dispatch` job's `steps:` block (current lines 25-47, where the single `Trigger pythinker-home sync` step reads `DISPATCH_TOKEN: ${{ secrets.PYTHINKER_HOME_REPO_DISPATCH_TOKEN }}` and silently `exit 0` on empty) with a job-level `env:` + a mint step + a dispatch step. The exact replacement for lines 25-47:
+- [ ] 2.1 Replace the `dispatch` job's `steps:` block (current lines 25-47, where the single `Trigger pythinker-home sync` step reads <code v-pre>DISPATCH_TOKEN: ${{ secrets.PYTHINKER_HOME_REPO_DISPATCH_TOKEN }}</code> and silently `exit 0` on empty) with a job-level `env:` + a mint step + a dispatch step. The exact replacement for lines 25-47:
   ```yaml
       env:
         DISPATCH_OWNER: TechMatrix-labs
@@ -508,7 +508,7 @@ Branch: `release-orch/p0-promote-reconcile`. Touches `promote-release.yml` and a
           echo "number=$number" >> "$GITHUB_OUTPUT"
   ```
   Notes: `gh api --paginate ... | jq -r --arg t ...` — the exact-title filter is a **standalone `jq`** consuming the paginated `gh api` output. `gh api`'s own `--jq` takes only a jq-program string and rejects `--arg`, so the variable injection must be on the piped `jq`. `--paginate` ensures the match scans all open issues, not just page 1.
-- [ ] 9.3 The stuck-failure issue comment is already emitted inside the readiness-wait step (Task 8.5, using the local `bottleneck` shell variable and `steps.readiness.outputs.number`). No separate step is needed; confirm the readiness-wait step's `env:` block carries `GH_TOKEN: ${{ github.token }}` and `REPO: ${{ github.repository }}` (it already does, current lines 60-63) so `gh issue comment` authenticates.
+- [ ] 9.3 The stuck-failure issue comment is already emitted inside the readiness-wait step (Task 8.5, using the local `bottleneck` shell variable and `steps.readiness.outputs.number`). No separate step is needed; confirm the readiness-wait step's `env:` block carries <code v-pre>GH_TOKEN: ${{ github.token }}</code> and <code v-pre>REPO: ${{ github.repository }}</code> (it already does, current lines 60-63) so `gh issue comment` authenticates.
 - [ ] 9.4 On **success**, tick all rows and close the issue. Append to the `Promote release` step (after the PATCH at current line 163-164):
   ```bash
           all_ready_body=$'Tracking install-channel readiness for **'"$TAG"$'**.\n\n- [x] GitHub Release assets\n- [x] PyPI: pythinker-code\n- [x] PyPI: pinned sub-packages (core/host/review)\n- [ ] Homebrew tap (best-effort)\n- [ ] Site version.json (best-effort)'
