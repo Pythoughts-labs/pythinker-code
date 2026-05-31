@@ -1,4 +1,5 @@
 """Test configuration and fixtures."""
+# ruff: noqa: E402 -- terminal-capability env must be pinned before pythinker imports
 
 from __future__ import annotations
 
@@ -8,6 +9,31 @@ import tempfile
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
+
+# Pin a capable terminal for the whole test session BEFORE any pythinker import
+# runs, because ``ui.shell.glyphs`` freezes its glyph constants from
+# ``terminal_capabilities`` at module load. CI runs with ``NO_COLOR=1`` and
+# ``TERM=dumb`` to keep build logs clean; left untouched those would degrade
+# every renderer to ASCII glyphs and stripped color, breaking the UI-contract
+# tests that assert the rich appearance. The degraded fallbacks themselves are
+# covered explicitly by tests/ui_and_conv/test_terminal_capabilities.py, which
+# sets these vars per-test and reloads. (Don't set PYTHINKER_TUI_GLYPHS=unicode
+# here: that mode short-circuits the TERM=dumb check and would break the
+# fallback tests; popping it and relying on TERM != dumb + UTF-8 stdout is
+# enough.)
+for _capability_var in (
+    "NO_COLOR",
+    "PYTHINKER_NO_COLOR",
+    "CLICOLOR",
+    "PYTHINKER_TUI_GLYPHS",
+    "PYTHINKER_ASCII_UI",
+    "PYTHINKER_SAFE_GLYPHS",
+    "PYTHINKER_REDUCED_MOTION",
+    "PYTHINKER_NO_ANIMATION",
+    "PYTHINKER_STATIC_OUTPUT",
+):
+    os.environ.pop(_capability_var, None)
+os.environ["TERM"] = "xterm-256color"
 
 import pytest
 from pydantic import SecretStr

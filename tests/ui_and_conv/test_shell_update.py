@@ -24,8 +24,8 @@ async def test_prompt_pre_start_update_runs_update_and_exits_on_accept(monkeypat
         assert allow_exit is True
         return update.UpdatePromptSelection.UPDATE_NOW
 
-    async def fake_do_update(*, print: bool) -> update.UpdateResult:
-        assert print is True
+    async def fake_do_update(*, print_output: bool) -> update.UpdateResult:
+        assert print_output is True
         calls.append("update")
         return update.UpdateResult.UPDATED
 
@@ -113,7 +113,7 @@ async def test_prompt_pre_start_update_exits_without_update_on_exit_selection(mo
         assert allow_exit is True
         return update.UpdatePromptSelection.EXIT
 
-    async def fail_do_update(*, print: bool) -> update.UpdateResult:
+    async def fail_do_update(*, print_output: bool) -> update.UpdateResult:
         raise AssertionError("exit must not run the update")
 
     monkeypatch.setattr(update.sys, "stdout", SimpleNamespace(isatty=lambda: True))
@@ -139,7 +139,7 @@ async def test_prompt_pre_start_update_continues_on_decline(monkeypatch):
         assert allow_exit is True
         return update.UpdatePromptSelection.SKIP
 
-    async def fail_do_update(*, print: bool) -> update.UpdateResult:
+    async def fail_do_update(*, print_output: bool) -> update.UpdateResult:
         raise AssertionError("declining must not run the update")
 
     monkeypatch.setattr(update.sys, "stdout", SimpleNamespace(isatty=lambda: True))
@@ -165,7 +165,7 @@ async def test_prompt_pre_start_update_can_dismiss_until_next_version(monkeypatc
         assert allow_exit is True
         return update.UpdatePromptSelection.DISMISS_VERSION
 
-    async def fail_do_update(*, print: bool) -> update.UpdateResult:
+    async def fail_do_update(*, print_output: bool) -> update.UpdateResult:
         raise AssertionError("dismissing must not run the update")
 
     monkeypatch.setattr(update.sys, "stdout", SimpleNamespace(isatty=lambda: True))
@@ -268,8 +268,8 @@ async def test_resolve_latest_version_fetches_when_due(monkeypatch, tmp_path):
     last_check_file = tmp_path / "last_update_check.txt"
     calls: list[tuple[bool, bool]] = []
 
-    async def fake_do_update(*, print: bool, check_only: bool) -> update.UpdateResult:
-        calls.append((print, check_only))
+    async def fake_do_update(*, print_output: bool, check_only: bool) -> update.UpdateResult:
+        calls.append((print_output, check_only))
         latest_file.write_text("2.0.0", encoding="utf-8")
         return update.UpdateResult.UPDATE_AVAILABLE
 
@@ -291,8 +291,8 @@ async def test_resolve_latest_version_fetches_when_cache_missing(monkeypatch, tm
     last_check_file = tmp_path / "last_update_check.txt"
     calls: list[tuple[bool, bool]] = []
 
-    async def fake_do_update(*, print: bool, check_only: bool) -> update.UpdateResult:
-        calls.append((print, check_only))
+    async def fake_do_update(*, print_output: bool, check_only: bool) -> update.UpdateResult:
+        calls.append((print_output, check_only))
         latest_file.write_text("2.0.0", encoding="utf-8")
         return update.UpdateResult.UPDATE_AVAILABLE
 
@@ -311,7 +311,7 @@ async def test_resolve_latest_version_uses_cache_when_not_due(monkeypatch, tmp_p
     latest_file = tmp_path / "latest.txt"
     latest_file.write_text("3.1.0", encoding="utf-8")
 
-    async def fail_do_update(*, print: bool, check_only: bool) -> update.UpdateResult:
+    async def fail_do_update(*, print_output: bool, check_only: bool) -> update.UpdateResult:
         raise AssertionError("must not hit the network when the throttle is not due")
 
     monkeypatch.setattr(update, "LATEST_VERSION_FILE", latest_file)
@@ -328,8 +328,8 @@ async def test_resolve_latest_version_revalidates_stale_cache_when_not_due(monke
     last_check_file = tmp_path / "last_update_check.txt"
     calls: list[tuple[bool, bool]] = []
 
-    async def fake_do_update(*, print: bool, check_only: bool) -> update.UpdateResult:
-        calls.append((print, check_only))
+    async def fake_do_update(*, print_output: bool, check_only: bool) -> update.UpdateResult:
+        calls.append((print_output, check_only))
         latest_file.write_text("999.0.0", encoding="utf-8")
         return update.UpdateResult.UPDATE_AVAILABLE
 
@@ -378,7 +378,7 @@ async def test_refresh_cache_does_not_throttle_on_failure(monkeypatch, tmp_path)
     latest_file = tmp_path / "latest.txt"
     last_check_file = tmp_path / "last_update_check.txt"
 
-    async def failing_do_update(*, print: bool, check_only: bool) -> update.UpdateResult:
+    async def failing_do_update(*, print_output: bool, check_only: bool) -> update.UpdateResult:
         return update.UpdateResult.FAILED
 
     monkeypatch.setattr(update, "LATEST_VERSION_FILE", latest_file)
@@ -398,7 +398,7 @@ async def test_refresh_cache_does_not_throttle_on_failure(monkeypatch, tmp_path)
 async def test_refresh_cache_does_not_throttle_on_exception(monkeypatch, tmp_path):
     last_check_file = tmp_path / "last_update_check.txt"
 
-    async def raising_do_update(*, print: bool, check_only: bool) -> update.UpdateResult:
+    async def raising_do_update(*, print_output: bool, check_only: bool) -> update.UpdateResult:
         raise RuntimeError("boom")
 
     monkeypatch.setattr(update, "LAST_UPDATE_CHECK_FILE", last_check_file)
@@ -554,7 +554,7 @@ async def test_do_update_does_not_cache_uninstallable_latest(monkeypatch, tmp_pa
     monkeypatch.setattr(update, "_update_candidate_unavailable_reason", fake_unavailable)
     monkeypatch.setattr(update, "new_client_session", lambda timeout: _FakeSessionContext(object()))
 
-    result = await update.do_update(print=False, check_only=True)
+    result = await update.do_update(print_output=False, check_only=True)
 
     assert result is update.UpdateResult.FAILED
     assert not latest_file.exists()
@@ -645,8 +645,8 @@ async def test_resolve_latest_version_can_force_refresh(monkeypatch, tmp_path):
     last_check_file = tmp_path / "last_update_check.txt"
     calls: list[tuple[bool, bool]] = []
 
-    async def fake_do_update(*, print: bool, check_only: bool) -> update.UpdateResult:
-        calls.append((print, check_only))
+    async def fake_do_update(*, print_output: bool, check_only: bool) -> update.UpdateResult:
+        calls.append((print_output, check_only))
         latest_file.write_text("3.2.0", encoding="utf-8")
         return update.UpdateResult.UPDATE_AVAILABLE
 
@@ -692,10 +692,75 @@ async def test_do_update_on_windows_spawns_detached_and_exits(monkeypatch, tmp_p
     monkeypatch.setattr(update.subprocess, "run", fake_run)
 
     with pytest.raises(SystemExit) as excinfo:
-        await update.do_update(print=False, check_only=False)
+        await update.do_update(print_output=False, check_only=False)
 
     assert excinfo.value.code == 0
     assert spawned and "pythinker-code" in spawned[0]
+
+
+def test_run_upgrade_command_streams_subprocess_output(monkeypatch):
+    messages: list[str] = []
+    launched: list[list[str]] = []
+
+    class FakeProc:
+        stdout = ["first line\n", "second line\n"]
+
+        def wait(self, *, timeout: float) -> int:
+            assert timeout == update.UPGRADE_COMMAND_TIMEOUT_SECONDS
+            return 0
+
+    def fake_popen(command, **kwargs):
+        launched.append(command)
+        assert kwargs["stdout"] is update.subprocess.PIPE
+        assert kwargs["stderr"] is update.subprocess.STDOUT
+        assert kwargs["text"] is True
+        return FakeProc()
+
+    monkeypatch.setattr(update.subprocess, "Popen", fake_popen)
+
+    returncode = update._run_upgrade_command(
+        ["uv", "tool", "upgrade", "pythinker-code"],
+        print_output=False,
+        output_callback=messages.append,
+    )
+
+    assert returncode == 0
+    assert launched == [["uv", "tool", "upgrade", "pythinker-code"]]
+    assert messages == ["first line", "second line"]
+
+
+@pytest.mark.asyncio
+async def test_do_update_reports_non_native_upgrade_failure_to_callback(monkeypatch, tmp_path):
+    messages: list[str] = []
+
+    async def fake_get_latest(session):
+        return "999.0.0"
+
+    async def fake_unavailable(session, latest_version: str, upgrade_command: list[str]):
+        return None
+
+    def fake_run_upgrade_command(command, *, print_output: bool, output_callback):
+        assert command == ["uv", "tool", "upgrade", "pythinker-code"]
+        assert print_output is False
+        assert output_callback is not None
+        output_callback("installer said no")
+        return 2
+
+    monkeypatch.setattr(update, "LATEST_VERSION_FILE", tmp_path / "latest.txt")
+    monkeypatch.setattr(update, "_get_latest_version", fake_get_latest)
+    monkeypatch.setattr(update, "_update_candidate_unavailable_reason", fake_unavailable)
+    monkeypatch.setattr(
+        update,
+        "_detect_upgrade_command",
+        lambda: ["uv", "tool", "upgrade", "pythinker-code"],
+    )
+    monkeypatch.setattr(update, "_run_upgrade_command", fake_run_upgrade_command)
+
+    result = await update.do_update(print_output=False, output_callback=messages.append)
+
+    assert result is update.UpdateResult.FAILED
+    assert "installer said no" in messages
+    assert any("Upgrade failed" in message for message in messages)
 
 
 @pytest.mark.asyncio
@@ -722,7 +787,9 @@ async def test_do_update_uses_native_installer_marker(monkeypatch, tmp_path):
     monkeypatch.setattr(update, "_maybe_run_native_update", fake_native_update)
     monkeypatch.setattr(update.subprocess, "run", fake_run)
 
-    assert await update.do_update(print=False, check_only=False) is update.UpdateResult.UPDATED
+    assert (
+        await update.do_update(print_output=False, check_only=False) is update.UpdateResult.UPDATED
+    )
     assert native_versions == ["999.0.0"]
 
 

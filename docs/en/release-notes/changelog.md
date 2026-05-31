@@ -17,6 +17,10 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Redesigned startup welcome banner.** The banner now uses a cleaner footer-chip layout: the "What's new / Update available" chip sits on the panel's bottom border, the headline/strapline/help lines align beside the robot logo, and the info grid drops its vertical separator. The robot art and palette are unchanged.
+- **Terminal-aware rendering for minimal and CI terminals.** The shell UI adapts to the terminal — ASCII glyph fallbacks for `TERM=dumb` and legacy Windows code pages, reduced-motion mode (`PYTHINKER_REDUCED_MOTION`), and `NO_COLOR`/`CLICOLOR` support that strips color cleanly — so output stays readable in CI logs, SSH panes, and bare terminals.
+- **Windows updates avoid encoded PowerShell.** Native updates now launch the signed Inno installer directly with Restart Manager flags instead of a `powershell.exe -EncodedCommand` helper, reducing antivirus command-line heuristic false positives. Windows bootstrap installs use visible `/SILENT` progress instead of fully suppressed setup, and the installer build signs bundled PE files plus Inno's setup/uninstaller/temp copies when signing credentials are configured.
+
 ## 0.27.0 (2026-05-31)
 
 ### What changed in this release

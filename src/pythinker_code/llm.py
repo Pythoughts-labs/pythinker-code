@@ -238,12 +238,19 @@ def create_llm(
         case "openai_codex":
             from pythinker_core.contrib.chat_provider.openai_responses import OpenAIResponses
 
+            from pythinker_code.auth.openai import build_chatgpt_codex_headers
+
+            default_headers = build_chatgpt_codex_headers(
+                account_id=oauth.get_chatgpt_account_id(provider.oauth) if oauth else None
+            )
+            if provider.custom_headers:
+                default_headers.update(provider.custom_headers)
             chat_provider = OpenAIResponses(
                 model=model.model,
                 base_url=provider.base_url,
                 api_key=resolved_api_key,
                 system_prompt_as_instructions=True,
-                default_headers=dict(provider.custom_headers) if provider.custom_headers else None,
+                default_headers=default_headers,
                 http_client=rl_http_client,
             )
         case "anthropic":

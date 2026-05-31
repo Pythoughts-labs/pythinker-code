@@ -63,6 +63,14 @@ def test_spinner_frame_changes_with_time():
     assert spinner_frame_at(0.0) != spinner_frame_at(0.2)
 
 
+def test_active_glyphs_use_text_safe_solid_circle():
+    from pythinker_code.ui.shell.glyphs import SHAPE_FRAMES, TRANSCRIPT_ASSISTANT_MARKER
+
+    active_glyphs = {TRANSCRIPT_ASSISTANT_MARKER, SHAPE_FRAMES[0], REDUCED_MOTION_GLYPH}
+    assert active_glyphs == {"●"}
+    assert "⏺" not in active_glyphs
+
+
 def test_reduced_motion_uses_static_glyph():
     assert spinner_frame_at(0.2, reduced_motion=True) == "●"
 

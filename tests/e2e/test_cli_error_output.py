@@ -18,6 +18,8 @@ def _run_pythinker(args: list[str], *, share_dir: Path) -> subprocess.CompletedP
     env = os.environ.copy()
     env["PYTHINKER_SHARE_DIR"] = str(share_dir)
     # Stabilize rich/Click formatting across environments for snapshot tests.
+    env["NO_COLOR"] = "1"
+    env["TERM"] = "dumb"
     env["COLUMNS"] = "120"
     env["LINES"] = "40"
     # Run via `python -m` to avoid `uv run pythinker` build/progress output interfering with snapshots.

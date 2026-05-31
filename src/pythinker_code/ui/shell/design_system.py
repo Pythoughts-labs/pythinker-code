@@ -10,6 +10,7 @@ from rich.style import Style
 from rich.text import Text
 
 from pythinker_code.ui.shell.components.render_utils import cell_width, truncate_to_width
+from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ACTIVE_MARKER
 from pythinker_code.ui.theme import tui_rich_style
 
 
@@ -46,9 +47,9 @@ _TONE_TOKEN: dict[ShellTone, str] = {
 }
 
 _STATUS: dict[StatusName, tuple[str, ShellTone]] = {
-    "running": ("●", ShellTone.ACCENT),
+    "running": (TRANSCRIPT_ACTIVE_MARKER, ShellTone.MUTED),
     "completed": ("✓", ShellTone.SUCCESS),
-    "failed": ("!", ShellTone.ERROR),
+    "failed": ("✘", ShellTone.ERROR),
     "denied": ("×", ShellTone.WARNING),
     "interrupted": ("■", ShellTone.MUTED),
     "waiting": ("○", ShellTone.MUTED),

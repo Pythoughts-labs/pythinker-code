@@ -96,6 +96,13 @@ def test_load_config_text_json():
     assert config == get_default_config()
 
 
+def test_load_config_migrates_legacy_feedback_repo_default():
+    old_owner = "mohamed-elkholy95"
+    config = load_config_from_string(f'[feedback]\ngithub_repo = "{old_owner}/Pythinker-Code"\n')
+
+    assert config.feedback.github_repo == "TechMatrix-labs/pythinker-code"
+
+
 def test_agent_execution_profile_autonomous_sets_autonomy_defaults():
     config = load_config_from_string('agent_execution_profile = "autonomous_coding"')
 

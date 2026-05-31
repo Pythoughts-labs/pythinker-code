@@ -69,7 +69,7 @@ def test_markdown_code_fences_use_aligned_panel_frame(width: int) -> None:
 def test_activity_line_reduced_motion_uses_static_glyph(width: int) -> None:
     snap = ActivitySnapshot(label="Working", elapsed_s=3.0, reduced_motion=True)
     out = _render(activity_status_line(snap, width=width), width=width, no_color=True)
-    assert "●" in out  # static dot, not an animated braille frame
+    assert "●" in out  # static text bullet, not an animated braille frame
     assert "Working" in out
 
 

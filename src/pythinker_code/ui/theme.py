@@ -6,13 +6,44 @@ terminal themes only requires changing the active ``ThemeName``.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
-from typing import Literal
+import re
+from dataclasses import dataclass, fields, replace
+from typing import Any, Literal, cast
 
 from prompt_toolkit.styles import Style as PTKStyle
 from rich.style import Style as RichStyle
 
+from pythinker_code.ui.terminal_capabilities import colors_disabled
+
 type ThemeName = Literal["dark", "light"]
+
+
+# Intentionally strips only hex prompt_toolkit color tokens (for example
+# ``#RRGGBB``, ``fg:#RRGGBB``, and ``bg:#RRGGBB``). Named/ANSI tokens such as
+# ``fg:red`` or ``bg:ansired`` are preserved; if those need no-color support,
+# extend this regex and keep ``_strip_ptk_colors`` in sync.
+_PTK_COLOR_TOKEN_RE = re.compile(r"^(?:fg:|bg:)?#[0-9A-Fa-f]{6}$")
+
+
+def _strip_ptk_colors(style: str) -> str:
+    """Remove prompt_toolkit color directives while preserving weight/style."""
+    if not style:
+        return style
+    return " ".join(part for part in style.split() if not _PTK_COLOR_TOKEN_RE.match(part))
+
+
+def _strip_ptk_style_map(values: dict[str, str]) -> dict[str, str]:
+    return {key: _strip_ptk_colors(value) for key, value in values.items()}
+
+
+def _strip_color_dataclass[T](value: T) -> T:
+    updates: dict[str, Any] = {}
+    for field in fields(cast(Any, value)):
+        current = getattr(value, field.name)
+        if isinstance(current, str):
+            updates[field.name] = _strip_ptk_colors(current)
+    result: T = replace(cast(Any, value), **updates)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -42,6 +73,13 @@ _DIFF_LIGHT = DiffColors(
     del_hl=RichStyle(bgcolor="#ffc1c0"),
 )
 
+_DIFF_PLAIN = DiffColors(
+    add_bg=RichStyle(),
+    del_bg=RichStyle(),
+    add_hl=RichStyle(),
+    del_hl=RichStyle(),
+)
+
 
 # ---------------------------------------------------------------------------
 # Task browser colors (used by ui/shell/task_browser.py)
@@ -49,51 +87,53 @@ _DIFF_LIGHT = DiffColors(
 
 
 def _task_browser_style_dark() -> PTKStyle:
-    return PTKStyle.from_dict(
-        {
-            "header": "bg:#1f2937 #e5e7eb",
-            "header.title": "bg:#1f2937 #F4F4F5 bold",
-            "header.meta": "bg:#1f2937 #A3A3A3",
-            "status.running": "bg:#1f2937 #7BC97F bold",
-            "status.success": "bg:#1f2937 #7BC97F",
-            "status.warning": "bg:#1f2937 #E6B450",
-            "status.error": "bg:#1f2937 #EF5E62",
-            "status.info": "bg:#1f2937 #AFE3F1",
-            "task-list": "bg:#111827 #d1d5db",
-            "task-list.checked": "bg:#164e63 #ecfeff bold",
-            "frame.border": "#3A506D",
-            "frame.label": "bg:#17182a #F4F4F5 bold",
-            "footer": "bg:#17182a #A3A3A3",
-            "footer.key": "bg:#17182a #AFE3F1 bold",
-            "footer.text": "bg:#17182a #A3A3A3",
-            "footer.warning": "bg:#4a3315 #E6B450 bold",
-            "footer.meta": "bg:#17182a #5F6B7E",
-        }
-    )
+    styles = {
+        "header": "bg:#1f2937 #e5e7eb",
+        "header.title": "bg:#1f2937 #F4F4F5 bold",
+        "header.meta": "bg:#1f2937 #A3A3A3",
+        "status.running": "bg:#1f2937 #7BC97F bold",
+        "status.success": "bg:#1f2937 #7BC97F",
+        "status.warning": "bg:#1f2937 #E6B450",
+        "status.error": "bg:#1f2937 #EF5E62",
+        "status.info": "bg:#1f2937 #AFE3F1",
+        "task-list": "bg:#111827 #d1d5db",
+        "task-list.checked": "bg:#164e63 #ecfeff bold",
+        "frame.border": "#3A506D",
+        "frame.label": "bg:#17182a #F4F4F5 bold",
+        "footer": "bg:#17182a #A3A3A3",
+        "footer.key": "bg:#17182a #AFE3F1 bold",
+        "footer.text": "bg:#17182a #A3A3A3",
+        "footer.warning": "bg:#4a3315 #E6B450 bold",
+        "footer.meta": "bg:#17182a #5F6B7E",
+    }
+    if colors_disabled():
+        styles = _strip_ptk_style_map(styles)
+    return PTKStyle.from_dict(styles)
 
 
 def _task_browser_style_light() -> PTKStyle:
-    return PTKStyle.from_dict(
-        {
-            "header": "bg:#e5e7eb #1f2937",
-            "header.title": "bg:#e5e7eb #213853 bold",
-            "header.meta": "bg:#e5e7eb #666666",
-            "status.running": "bg:#e5e7eb #2C7A39 bold",
-            "status.success": "bg:#e5e7eb #2C7A39",
-            "status.warning": "bg:#e5e7eb #9A6B18",
-            "status.error": "bg:#e5e7eb #C0392B",
-            "status.info": "bg:#e5e7eb #176B7E",
-            "task-list": "bg:#f9fafb #374151",
-            "task-list.checked": "bg:#cffafe #164e63 bold",
-            "frame.border": "#495F7C",
-            "frame.label": "bg:#f1f5f9 #213853 bold",
-            "footer": "bg:#f1f5f9 #475569",
-            "footer.key": "bg:#f1f5f9 #176B7E bold",
-            "footer.text": "bg:#f1f5f9 #475569",
-            "footer.warning": "bg:#fee2e2 #C0392B bold",
-            "footer.meta": "bg:#f1f5f9 #64748b",
-        }
-    )
+    styles = {
+        "header": "bg:#e5e7eb #1f2937",
+        "header.title": "bg:#e5e7eb #213853 bold",
+        "header.meta": "bg:#e5e7eb #666666",
+        "status.running": "bg:#e5e7eb #2C7A39 bold",
+        "status.success": "bg:#e5e7eb #2C7A39",
+        "status.warning": "bg:#e5e7eb #9A6B18",
+        "status.error": "bg:#e5e7eb #C0392B",
+        "status.info": "bg:#e5e7eb #176B7E",
+        "task-list": "bg:#f9fafb #374151",
+        "task-list.checked": "bg:#cffafe #164e63 bold",
+        "frame.border": "#495F7C",
+        "frame.label": "bg:#f1f5f9 #213853 bold",
+        "footer": "bg:#f1f5f9 #475569",
+        "footer.key": "bg:#f1f5f9 #176B7E bold",
+        "footer.text": "bg:#f1f5f9 #475569",
+        "footer.warning": "bg:#fee2e2 #C0392B bold",
+        "footer.meta": "bg:#f1f5f9 #64748b",
+    }
+    if colors_disabled():
+        styles = _strip_ptk_style_map(styles)
+    return PTKStyle.from_dict(styles)
 
 
 # ---------------------------------------------------------------------------
@@ -262,8 +302,11 @@ def markdown_rich_style(token: str, *, theme: ThemeName | None = None) -> RichSt
     """Resolve a MarkdownColors field name to a Rich Style.
 
     Background tokens (suffix ``_bg``) produce a style with ``bgcolor``;
-    everything else produces a style with ``color``.
+    everything else produces a style with ``color``. Color is suppressed when
+    the terminal environment requests plain output.
     """
+    if colors_disabled():
+        return RichStyle()
     colors = get_markdown_colors(theme)
     value = getattr(colors, token)
     if not value:
@@ -324,6 +367,8 @@ def get_active_theme() -> ThemeName:
 
 
 def get_diff_colors() -> DiffColors:
+    if colors_disabled():
+        return _DIFF_PLAIN
     return _DIFF_LIGHT if _active_theme == "light" else _DIFF_DARK
 
 
@@ -333,15 +378,19 @@ def get_task_browser_style() -> PTKStyle:
 
 def get_prompt_style() -> PTKStyle:
     d = _PROMPT_STYLE_LIGHT if _active_theme == "light" else _PROMPT_STYLE_DARK
+    if colors_disabled():
+        d = _strip_ptk_style_map(d)
     return PTKStyle.from_dict(d)
 
 
 def get_toolbar_colors() -> ToolbarColors:
-    return _TOOLBAR_LIGHT if _active_theme == "light" else _TOOLBAR_DARK
+    colors = _TOOLBAR_LIGHT if _active_theme == "light" else _TOOLBAR_DARK
+    return _strip_color_dataclass(colors) if colors_disabled() else colors
 
 
 def get_mcp_prompt_colors() -> MCPPromptColors:
-    return _MCP_PROMPT_LIGHT if _active_theme == "light" else _MCP_PROMPT_DARK
+    colors = _MCP_PROMPT_LIGHT if _active_theme == "light" else _MCP_PROMPT_DARK
+    return _strip_color_dataclass(colors) if colors_disabled() else colors
 
 
 # ---------------------------------------------------------------------------
@@ -483,6 +532,7 @@ def tui_rich_style(token: str, *, theme: ThemeName | None = None) -> RichStyle:
     Background tokens (suffix ``_bg``) produce a style with ``bgcolor``;
     everything else produces a style with ``color``. Empty hex values
     (``""``) yield an empty style — Rich falls back to terminal defaults.
+    Color is suppressed when the terminal environment requests plain output.
 
     Raises:
         ValueError: If *token* is not a known TuiTokens field.
@@ -490,6 +540,8 @@ def tui_rich_style(token: str, *, theme: ThemeName | None = None) -> RichStyle:
     if token not in TUI_TOKEN_NAMES:
         known = ", ".join(sorted(TUI_TOKEN_NAMES))
         raise ValueError(f"Unknown TUI token {token!r}. Known tokens: {known}")
+    if colors_disabled():
+        return RichStyle()
     tokens = get_tui_tokens(theme)
     value = getattr(tokens, token)
     if not value:

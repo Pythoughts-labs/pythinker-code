@@ -22,7 +22,7 @@ from pythinker_code.ui.shell.components.render_utils import (
     sanitize_ansi,
     truncate_middle_to_visual_lines,
 )
-from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ASSISTANT_MARKER
+from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ACTIVE_MARKER, TRANSCRIPT_ASSISTANT_MARKER
 from pythinker_code.ui.shell.motion import reduced_motion_enabled
 from pythinker_code.ui.theme import tui_rich_style
 
@@ -147,7 +147,7 @@ def _status_header(state: BashExecutionState) -> Text:
         header = Text("✘ ", style=tui_rich_style("error"))
         header.append("Ran", style=tui_rich_style("error") + RichStyle(bold=True))
     elif state.status == "cancelled":
-        header = Text("● ", style=tui_rich_style("warning"))
+        header = Text(f"{TRANSCRIPT_ACTIVE_MARKER} ", style=tui_rich_style("warning"))
         header.append("Cancelled", style=tui_rich_style("warning") + RichStyle(bold=True))
     else:
         header = Text(f"{TRANSCRIPT_ASSISTANT_MARKER} ", style=tui_rich_style("success"))

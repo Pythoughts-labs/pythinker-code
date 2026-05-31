@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import zipfile
 from pathlib import Path
 
@@ -14,6 +15,8 @@ from pythinker_code.cli.export import _format_message_timestamp
 from pythinker_code.metadata import load_metadata, save_metadata
 from pythinker_code.session import Session
 from pythinker_code.wire.types import TextPart, TurnBegin
+
+_ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 @pytest.fixture
@@ -199,8 +202,9 @@ def test_export_previous_session_errors_when_missing(
 
 
 def test_export_help_is_leaf_command() -> None:
-    result = CliRunner().invoke(cli, ["export", "--help"])
+    result = CliRunner().invoke(cli, ["export", "--help"], color=False)
 
     assert result.exit_code == 0, result.output
-    assert "Usage: root export [OPTIONS] [SESSION_ID]" in result.output
-    assert "COMMAND [ARGS]..." not in result.output
+    output = _ANSI_RE.sub("", result.output)
+    assert "Usage: root export [OPTIONS] [SESSION_ID]" in output
+    assert "COMMAND [ARGS]..." not in output

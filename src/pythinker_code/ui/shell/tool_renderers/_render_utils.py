@@ -70,6 +70,10 @@ def tool_title(label: str) -> Text:
     return Text(label, style=base + RichStyle(bold=True))
 
 
+def _status_marker(style_token: str) -> str:
+    return "✘" if style_token == "error" else TRANSCRIPT_ASSISTANT_MARKER
+
+
 def tool_call_header(
     name: str,
     summary: str | Text | None = None,
@@ -79,11 +83,12 @@ def tool_call_header(
 ) -> Text:
     """Return the Blackbox/Claude-style tool-use row.
 
-    Shape: ``• Tool(summary)``.  The surrounding ``ToolExecutionComponent``
-    owns result gutters; individual renderers should keep this row compact.
+    Shape: ``● Tool(summary)`` for completed rows, ``✘ Tool(summary)`` for
+    failed rows. The surrounding ``ToolExecutionComponent`` owns result
+    gutters; individual renderers should keep this row compact.
     """
     header = Text()
-    header.append(f"{TRANSCRIPT_ASSISTANT_MARKER} ", style=tui_rich_style(style_token))
+    header.append(f"{_status_marker(style_token)} ", style=tui_rich_style(style_token))
     header.append_text(tool_title(name))
     if summary is not None:
         paren_style = tui_rich_style(paren_style_token)

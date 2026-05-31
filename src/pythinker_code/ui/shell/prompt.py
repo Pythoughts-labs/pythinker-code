@@ -60,7 +60,11 @@ from pythinker_code.soul import StatusSnapshot, format_context_status
 from pythinker_code.tools.display import TodoDisplayItem
 from pythinker_code.ui.shell import placeholders as prompt_placeholders
 from pythinker_code.ui.shell.console import console
-from pythinker_code.ui.shell.glyphs import TRANSCRIPT_PROMPT_MARKER, TRANSCRIPT_TOOL_GUTTER
+from pythinker_code.ui.shell.glyphs import (
+    TRANSCRIPT_ACTIVE_MARKER,
+    TRANSCRIPT_PROMPT_MARKER,
+    TRANSCRIPT_TOOL_GUTTER,
+)
 from pythinker_code.ui.shell.motion import shimmer_prompt_fragments
 from pythinker_code.ui.shell.placeholders import (
     PromptPlaceholderManager,
@@ -2610,7 +2614,7 @@ class CustomPromptSession:
         if total <= 0:
             return FormattedText([])
         now = time.monotonic()
-        frame = "●" if int(now / 0.8) % 2 == 0 else " "
+        frame = TRANSCRIPT_ACTIVE_MARKER if int(now / 0.8) % 2 == 0 else " "
         noun = "process" if total == 1 else "processes"
         detail = f"{total} background {noun}"
         if counts.agent and counts.bash:
@@ -3012,7 +3016,7 @@ class CustomPromptSession:
         secondary_style = f"fg:{tokens.muted}"
         mode = str(self._mode)
         if self._mode == PromptMode.AGENT and self._model_name:
-            thinking_dot = "●" if self._thinking else "○"
+            thinking_dot = TRANSCRIPT_ACTIVE_MARKER if self._thinking else "○"
             mode_full = f"{mode} ({self._model_name} {thinking_dot})"
             mode_mid = f"{mode} {thinking_dot}"
             if _display_width(mode_full) <= remaining - 2:
@@ -3182,7 +3186,7 @@ class CustomPromptSession:
             )
             _append_right(secondary_style, ctx_compact)
         if self._model_name:
-            thinking_dot = "●" if self._thinking else "○"
+            thinking_dot = TRANSCRIPT_ACTIVE_MARKER if self._thinking else "○"
             mode = str(self._mode)
             _append_right(mode_style, f"{mode} {self._model_name} {thinking_dot}")
         right_text = "  ".join(right_parts)

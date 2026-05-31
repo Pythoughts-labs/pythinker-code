@@ -9,7 +9,13 @@ from pythinker_code.ui.shell.console import console as shell_console
 from pythinker_code.ui.shell.keyboard import KeyEvent
 from pythinker_code.ui.shell.visualize import _live_view as live_view_module
 from pythinker_code.ui.shell.visualize import _LiveView, _PromptLiveView
-from pythinker_code.wire.types import Notification, StatusUpdate, TurnBegin
+from pythinker_code.wire.types import (
+    HookResolved,
+    HookTriggered,
+    Notification,
+    StatusUpdate,
+    TurnBegin,
+)
 
 
 def _render(renderable) -> str:
@@ -43,6 +49,42 @@ def test_live_view_renders_notification_block():
     assert "Task ID: b0000001" in rendered
     assert "Status: completed" in rendered
     assert "..." in rendered
+
+
+def test_live_view_renders_running_hook_block():
+    view = _LiveView(StatusUpdate())
+
+    view.dispatch_wire_message(HookTriggered(event="PreToolUse", target="Shell", hook_count=1))
+
+    rendered = _render(view.compose_agent_output(include_working_indicator=False))
+    assert "Hook" in rendered
+    assert "PreToolUse Shell" in rendered
+    assert "running" in rendered.lower()
+
+
+def test_live_view_prints_resolved_blocking_hook(monkeypatch):
+    view = _LiveView(StatusUpdate())
+    view.dispatch_wire_message(HookTriggered(event="PreToolUse", target="Shell", hook_count=1))
+    printed = []
+    monkeypatch.setattr(shell_console, "print", lambda *args, **kwargs: printed.extend(args))
+
+    view.dispatch_wire_message(
+        HookResolved(
+            event="PreToolUse",
+            target="Shell",
+            action="block",
+            reason="blocked by policy",
+            duration_ms=12,
+        )
+    )
+
+    assert view._hook_blocks == {}
+    rendered = "\n".join(_render(item) for item in printed)
+    assert "Hook" in rendered
+    assert "PreToolUse Shell" in rendered
+    assert "failed" in rendered.lower()
+    assert "blocked by policy" in rendered
+    assert "12ms" in rendered
 
 
 def test_working_indicator_uses_turn_elapsed_time(monkeypatch):

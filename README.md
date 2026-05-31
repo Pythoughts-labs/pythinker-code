@@ -801,4 +801,8 @@ Distributed under the **Apache-2.0 License**. See [`LICENSE`](https://github.com
 [🧩 ACP](https://github.com/agentclientprotocol/agent-client-protocol) &nbsp;·&nbsp;
 [🔌 MCP](https://modelcontextprotocol.io/)
 
+<p align="center">
+  <em>Thanks for visiting ✨ Pythinker! Viewing this README does not trigger telemetry.</em>
+</p>
+
 </div>

@@ -10,12 +10,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Shimmer } from "./shimmer";
-import {
-  CheckIcon,
-  ChevronRightIcon,
-  Loader2Icon,
-  XIcon,
-} from "lucide-react";
+import { ChevronRightIcon, XIcon } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // SubagentActivity — top-level wrapper rendered inside Tool's ToolContent area
@@ -56,16 +51,20 @@ export const SubagentActivity = memo(
         {...props}
       >
         <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-muted-foreground group cursor-pointer">
-          <span
-            className={cn(
-              "size-1.5 rounded-full shrink-0",
-              isRunning
-                ? "bg-blue-500 animate-pulse"
-                : hasError
-                  ? "bg-destructive"
-                  : "bg-success",
+          <span className="flex size-3 items-center justify-center shrink-0">
+            {hasError && !isRunning ? (
+              <XIcon className="size-3 text-destructive" />
+            ) : (
+              <span
+                className={cn(
+                  "size-2 rounded-full",
+                  isRunning
+                    ? "bg-muted-foreground animate-pulse motion-reduce:animate-none"
+                    : "bg-success",
+                )}
+              />
             )}
-          />
+          </span>
           <span>
             {isRunning ? (
               <>
@@ -78,6 +77,12 @@ export const SubagentActivity = memo(
                   ...
                 </Shimmer>
               </>
+            ) : hasError ? (
+              toolCallCount > 0 ? (
+                `${agentLabel} failed · ${toolCallCount} tool call${toolCallCount !== 1 ? "s" : ""}`
+              ) : (
+                `${agentLabel} failed`
+              )
             ) : toolCallCount > 0 ? (
               `${agentLabel} completed · ${toolCallCount} tool call${toolCallCount !== 1 ? "s" : ""}`
             ) : (
@@ -157,11 +162,21 @@ const getPrimaryParam = (input: unknown): string | null => {
 const getSubToolStatusIcon = (status: string) => {
   switch (status) {
     case "success":
-      return <CheckIcon className="size-2.5 text-success shrink-0" />;
+      return (
+        <span className="flex size-2.5 items-center justify-center shrink-0">
+          <span className="size-2 rounded-full bg-success" />
+        </span>
+      );
     case "error":
       return <XIcon className="size-2.5 text-destructive shrink-0" />;
     default:
-      return <Loader2Icon className="size-2.5 text-muted-foreground animate-spin shrink-0" />;
+      // Running: pulse a grey solid circle; keep the footprint aligned with
+      // the finished green dot and failed red X states.
+      return (
+        <span className="flex size-2.5 items-center justify-center shrink-0">
+          <span className="size-2 rounded-full bg-muted-foreground animate-pulse motion-reduce:animate-none" />
+        </span>
+      );
   }
 };
 

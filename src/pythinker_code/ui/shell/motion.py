@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import Literal
 
@@ -23,6 +22,7 @@ from pythinker_code.ui.shell.glyphs import (
     SPINNER_FRAMES,
     TRANSCRIPT_ACTIVE_MARKER,
 )
+from pythinker_code.ui.terminal_capabilities import colors_disabled, motion_disabled
 from pythinker_code.ui.theme import tui_rich_style
 from pythinker_code.utils.datetime import format_elapsed
 
@@ -32,6 +32,8 @@ _FRAME_INTERVAL_S = SPINNER_FRAME_INTERVAL_S
 
 def verb_spinner_style() -> Style:
     """Muted yellow style for the active verb spinner word."""
+    if colors_disabled():
+        return Style()
     return Style(color=Color.parse("#E6B450"))  # brand-exception: muted yellow verb shimmer
 
 
@@ -48,6 +50,8 @@ def shimmer_spinner_style(elapsed_s: float, *, reduced_motion: bool = False) -> 
 
     Reduced motion pins to the base muted yellow so the word stays calm.
     """
+    if colors_disabled():
+        return Style()
     if reduced_motion or reduced_motion_enabled():
         return Style(color=Color.parse(_SHIMMER_BASE))
     palette = (_SHIMMER_BASE, _SHIMMER_MID, _SHIMMER_HIGHLIGHT, _SHIMMER_MID)
@@ -65,6 +69,8 @@ def _shimmer_segments(
     """
     if not label:
         return []
+    if colors_disabled():
+        return [(None, label)]
     if reduced_motion or reduced_motion_enabled():
         return [(_SHIMMER_BASE, label)]
 
@@ -133,12 +139,7 @@ class ActivitySnapshot:
 
 
 def reduced_motion_enabled() -> bool:
-    return os.environ.get("PYTHINKER_REDUCED_MOTION", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    return motion_disabled()
 
 
 def spinner_frame_at(
@@ -197,7 +198,7 @@ def activity_status_line(snapshot: ActivitySnapshot, *, width: int | None = None
         glyph_style = thinking_style
     else:
         # The dotted braille spinner is a marker; keep it silver while the verb shimmers.
-        glyph_style = _SPINNER_SILVER_STYLE
+        glyph_style = Style() if colors_disabled() else _SPINNER_SILVER_STYLE
     if snapshot.label_style is not None:
         label_style = snapshot.label_style
     elif snapshot.spinner == "shape":
