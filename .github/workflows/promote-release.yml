@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to promote (e.g. v0.26.0)"
+        description: "Release tag to promote (e.g. v0.27.0)"
         required: true
         type: string
 

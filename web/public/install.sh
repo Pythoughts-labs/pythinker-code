@@ -9,7 +9,7 @@
 #   curl -fsSL https://pythinker.com/install.sh | bash
 #
 #   # Pin a specific version:
-#   curl -fsSL https://pythinker.com/install.sh | bash -s -- --version 0.26.0
+#   curl -fsSL https://pythinker.com/install.sh | bash -s -- --version 0.27.0
 #
 #   # Custom install prefix (default $HOME/.local):
 #   curl -fsSL https://pythinker.com/install.sh | bash -s -- --prefix /opt/pythinker
