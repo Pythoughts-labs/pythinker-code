@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pythinker_host.path import HostPath
+from rich.markup import escape
 
 from pythinker_code.ui.shell.console import console
 from pythinker_code.ui.shell.slash import ensure_pythinker_soul, registry, shell_mode_registry
@@ -42,14 +43,14 @@ async def export(app: Shell, args: str):
     )
     _t = _get_tui_tokens()
     if isinstance(result, str):
-        console.print(f"[{_t.warning}]{result}[/]")
+        console.print(f"[{_t.warning}]{escape(result)}[/]")
         return
 
     output, count = result
     from pythinker_code.telemetry import track
 
     track("export")
-    display = shorten_home(HostPath(str(output)))
+    display = escape(str(shorten_home(HostPath(str(output)))))
     console.print(f"[{_t.success}]Exported {count} messages to {display}[/]")
     console.print(
         f"[{_t.warning}]Note: The exported file may contain sensitive information. "
@@ -95,7 +96,7 @@ async def import_context(app: Shell, args: str):
         max_context_size=max_context_size,
     )
     if isinstance(result, str):
-        console.print(f"[{_t.error}]{result}[/]")
+        console.print(f"[{_t.error}]{escape(result)}[/]")
         return
 
     source_desc, content_len = result
@@ -110,7 +111,7 @@ async def import_context(app: Shell, args: str):
     await soul.wire_file.append_message(TurnEnd())
 
     console.print(
-        f"[{_t.success}]Imported context from {source_desc} "
+        f"[{_t.success}]Imported context from {escape(source_desc)} "
         f"({content_len} chars) into current session.[/]"
     )
     if source_desc.startswith("file") and is_sensitive_file(Path(target).name):

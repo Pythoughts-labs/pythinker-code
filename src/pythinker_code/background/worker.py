@@ -12,7 +12,7 @@ from typing import Any
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.subprocess_env import get_clean_env
 
-from .models import TaskControl
+from .models import TaskControl, TaskRuntime
 from .store import BackgroundTaskStore
 
 
@@ -112,9 +112,9 @@ async def run_background_task_worker(
     async def _check_output_limit() -> None:
         """Terminate the task if its output.log grew past ``max_output_bytes``.
 
-        Writes a single marker line and records a failure the first time the
-        limit is hit; the ``output_limit_exceeded`` guard keeps it from
-        re-marking on subsequent polls or once the process is already exiting.
+        Writes a single marker line and asks the process to terminate the first
+        time the limit is hit; the final runtime write records the failure once
+        the process has exited.
         """
         nonlocal output_limit_exceeded, output_limit_reason
         if max_output_bytes <= 0 or output_limit_exceeded:
@@ -133,14 +133,6 @@ async def run_background_task_worker(
         marker = f"\n... output limit exceeded ({size} bytes); task terminated ...\n"
         with contextlib.suppress(OSError), output_path.open("ab") as marker_file:
             marker_file.write(marker.encode("utf-8"))
-        with store._runtime_lock(task_id):  # pyright: ignore[reportPrivateUsage]
-            current = store.read_runtime(task_id)
-            if not current.finished_at:
-                current.status = "failed"
-                current.interrupted = True
-                current.failure_reason = output_limit_reason
-                current.updated_at = time.time()
-                store._write_runtime_unlocked(task_id, current)  # pyright: ignore[reportPrivateUsage]
         await _terminate_process(force=False)
 
     async def _control_loop() -> None:
@@ -211,7 +203,6 @@ async def run_background_task_worker(
             runtime.updated_at = time.time()
             runtime.heartbeat_at = runtime.updated_at
             store.write_runtime(task_id, runtime)
-            last_known_runtime = runtime
 
             heartbeat_task = asyncio.create_task(_heartbeat_loop())
             control_task = asyncio.create_task(_control_loop())
@@ -254,29 +245,32 @@ async def run_background_task_worker(
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
 
-    runtime = last_known_runtime.model_copy()
     control = store.read_control(task_id)
-    runtime.finished_at = time.time()
-    runtime.updated_at = runtime.finished_at
-    runtime.exit_code = returncode
-    runtime.heartbeat_at = runtime.finished_at
-    if output_limit_exceeded:
-        runtime.status = "failed"
-        runtime.interrupted = True
-        runtime.failure_reason = output_limit_reason
-    elif timed_out:
-        runtime.status = "failed"
-        runtime.interrupted = True
-        runtime.timed_out = True
-        runtime.failure_reason = timeout_reason
-    elif control.kill_requested_at is not None:
-        runtime.status = "killed"
-        runtime.interrupted = True
-        runtime.failure_reason = control.kill_reason or "Killed"
-    elif returncode == 0:
-        runtime.status = "completed"
-        runtime.failure_reason = None
-    else:
-        runtime.status = "failed"
-        runtime.failure_reason = f"Command failed with exit code {returncode}"
-    store.write_runtime(task_id, runtime)
+
+    def finish_runtime(runtime: TaskRuntime) -> bool:
+        runtime.finished_at = time.time()
+        runtime.updated_at = runtime.finished_at
+        runtime.exit_code = returncode
+        runtime.heartbeat_at = runtime.finished_at
+        if output_limit_exceeded:
+            runtime.status = "failed"
+            runtime.interrupted = True
+            runtime.failure_reason = output_limit_reason
+        elif timed_out:
+            runtime.status = "failed"
+            runtime.interrupted = True
+            runtime.timed_out = True
+            runtime.failure_reason = timeout_reason
+        elif control.kill_requested_at is not None:
+            runtime.status = "killed"
+            runtime.interrupted = True
+            runtime.failure_reason = control.kill_reason or "Killed"
+        elif returncode == 0:
+            runtime.status = "completed"
+            runtime.failure_reason = None
+        else:
+            runtime.status = "failed"
+            runtime.failure_reason = f"Command failed with exit code {returncode}"
+        return True
+
+    store.update_runtime(task_id, finish_runtime)

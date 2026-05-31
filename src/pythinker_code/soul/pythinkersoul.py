@@ -1616,6 +1616,70 @@ class PythinkerSoul:
             compaction_result = await _compact_with_retry()
             if not compaction_result.messages:
                 raise RuntimeError("Compaction produced no messages; preserving existing history")
+            await self._context.clear()
+            await self._context.write_system_prompt(self._agent.system_prompt)
+            await self._checkpoint()
+            await self._context.append_message(compaction_result.messages)
+            estimated_token_count = compaction_result.estimated_token_count
+            summary_text = compact_summary_text(compaction_result.messages)
+
+            if restore_context.messages:
+                await self._context.append_message(restore_context.messages)
+                estimated_token_count += estimate_text_tokens(restore_context.messages)
+
+            if self._runtime.role == "root":
+                active_task_snapshot = build_active_task_snapshot(self._runtime.background_tasks)
+                if active_task_snapshot is not None:
+                    active_task_message = Message(
+                        role="user",
+                        content=[
+                            system(
+                                "The following background tasks are still active after compaction. "
+                                "Use TaskList if you need to re-enumerate them later."
+                            ),
+                            TextPart(text=active_task_snapshot),
+                        ],
+                    )
+                    await self._context.append_message(active_task_message)
+                    estimated_token_count += estimate_text_tokens([active_task_message])
+
+            post_compact_results = await self._hook_engine.trigger(
+                "PostCompact",
+                matcher_value=trigger_reason,
+                input_data=events.post_compact(
+                    session_id=self._runtime.session.id,
+                    cwd=str(Path.cwd()),
+                    trigger=trigger_reason,
+                    estimated_token_count=estimated_token_count,
+                    compact_summary=summary_text,
+                ),
+            )
+            session_start_results = await self._hook_engine.trigger(
+                "SessionStart",
+                matcher_value="compact",
+                input_data=events.session_start(
+                    session_id=self._runtime.session.id,
+                    cwd=str(Path.cwd()),
+                    source="compact",
+                ),
+            )
+            hook_context_message = build_hook_context_message(
+                result.additional_context
+                for result in [*post_compact_results, *session_start_results]
+            )
+            if hook_context_message is not None:
+                await self._context.append_message(hook_context_message)
+                estimated_token_count += estimate_text_tokens([hook_context_message])
+
+            # Estimate token count so context_usage is not reported as 0%
+            await self._context.update_token_count(estimated_token_count)
+
+            # Notify dynamic injection providers that history has been rebuilt so
+            # they can reset any one-shot throttling state. Failures are isolated
+            # per-provider so compaction completion (wire event + telemetry) is
+            # not affected by a buggy provider.
+            await self._notify_injection_providers_compacted()
+
         except Exception:
             from pythinker_code.telemetry import track
 
@@ -1626,70 +1690,11 @@ class PythinkerSoul:
                 success=False,
             )
             raise
-        await self._context.clear()
-        await self._context.write_system_prompt(self._agent.system_prompt)
-        await self._checkpoint()
-        await self._context.append_message(compaction_result.messages)
-        estimated_token_count = compaction_result.estimated_token_count
-        summary_text = compact_summary_text(compaction_result.messages)
+        finally:
+            # Always close the wire pair, even if the LLM call, context rewrite,
+            # hooks, or injection-provider notifications fail.
+            wire_send(CompactionEnd())
 
-        if restore_context.messages:
-            await self._context.append_message(restore_context.messages)
-            estimated_token_count += estimate_text_tokens(restore_context.messages)
-
-        if self._runtime.role == "root":
-            active_task_snapshot = build_active_task_snapshot(self._runtime.background_tasks)
-            if active_task_snapshot is not None:
-                active_task_message = Message(
-                    role="user",
-                    content=[
-                        system(
-                            "The following background tasks are still active after compaction. "
-                            "Use TaskList if you need to re-enumerate them later."
-                        ),
-                        TextPart(text=active_task_snapshot),
-                    ],
-                )
-                await self._context.append_message(active_task_message)
-                estimated_token_count += estimate_text_tokens([active_task_message])
-
-        post_compact_results = await self._hook_engine.trigger(
-            "PostCompact",
-            matcher_value=trigger_reason,
-            input_data=events.post_compact(
-                session_id=self._runtime.session.id,
-                cwd=str(Path.cwd()),
-                trigger=trigger_reason,
-                estimated_token_count=estimated_token_count,
-                compact_summary=summary_text,
-            ),
-        )
-        session_start_results = await self._hook_engine.trigger(
-            "SessionStart",
-            matcher_value="compact",
-            input_data=events.session_start(
-                session_id=self._runtime.session.id,
-                cwd=str(Path.cwd()),
-                source="compact",
-            ),
-        )
-        hook_context_message = build_hook_context_message(
-            result.additional_context for result in [*post_compact_results, *session_start_results]
-        )
-        if hook_context_message is not None:
-            await self._context.append_message(hook_context_message)
-            estimated_token_count += estimate_text_tokens([hook_context_message])
-
-        # Estimate token count so context_usage is not reported as 0%
-        await self._context.update_token_count(estimated_token_count)
-
-        # Notify dynamic injection providers that history has been rebuilt so
-        # they can reset any one-shot throttling state. Failures are isolated
-        # per-provider so compaction completion (wire event + telemetry) is
-        # not affected by a buggy provider.
-        await self._notify_injection_providers_compacted()
-
-        wire_send(CompactionEnd())
         wire_send(TextPart(text=restore_context.display_text()))
 
         from pythinker_code.telemetry import track

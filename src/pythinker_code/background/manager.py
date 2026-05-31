@@ -262,15 +262,19 @@ class BackgroundTaskManager:
             self._store.write_runtime(task_id, runtime)
             raise
 
-        runtime = self._store.read_runtime(task_id)
-        if runtime.finished_at is None and (
-            runtime.status == "created"
-            or (runtime.status == "starting" and runtime.worker_pid is None)
-        ):
+        def mark_worker_started(runtime: TaskRuntime) -> bool:
+            if runtime.finished_at is not None:
+                return False
+            if runtime.status != "created" and not (
+                runtime.status == "starting" and runtime.worker_pid is None
+            ):
+                return False
             runtime.status = "starting"
             runtime.worker_pid = worker_pid
             runtime.updated_at = time.time()
-            self._store.write_runtime(task_id, runtime)
+            return True
+
+        self._store.update_runtime(task_id, mark_worker_started)
         view = self._store.merged_view(task_id)
         self._journal_task_milestone("background task started", view)
         return view

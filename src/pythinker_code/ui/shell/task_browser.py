@@ -13,6 +13,7 @@ from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import Box, Frame, RadioList
 from rich import box
 from rich.console import Group
+from rich.markup import escape
 from rich.panel import Panel
 from rich.text import Text
 
@@ -272,7 +273,7 @@ class TaskBrowserApp:
             view = self._model.view_for(task_id)
             if view is None:
                 _t = _get_tui_tokens()
-                console.print(f"[{_t.warning}]Task not found: {task_id}[/]")
+                console.print(f"[{_t.warning}]Task not found: {escape(task_id)}[/]")
                 return
             with console.pager(styles=True):
                 console.print(_build_full_output_renderable(view, self._model.full_output(task_id)))

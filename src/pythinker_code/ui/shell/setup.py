@@ -6,6 +6,7 @@ import aiohttp
 from prompt_toolkit import PromptSession
 from prompt_toolkit.shortcuts.choice_input import ChoiceInput
 from pydantic import SecretStr
+from rich.markup import escape
 
 from pythinker_code.auth import PYTHINKER_CODE_PLATFORM_ID
 from pythinker_code.auth.platforms import (
@@ -61,8 +62,8 @@ async def setup_platform(platform: Platform) -> bool:
     _t = _get_tui_tokens()
     thinking_label = "on" if result.thinking else "off"
     console.print(f"[{_t.success}]✓ Setup complete![/]")
-    console.print(f"  Platform: [bold]{result.platform.name}[/bold]")
-    console.print(f"  Model:    [bold]{result.selected_model.id}[/bold]")
+    console.print(f"  Platform: [bold]{escape(result.platform.name)}[/bold]")
+    console.print(f"  Model:    [bold]{escape(result.selected_model.id)}[/bold]")
     console.print(f"  Thinking: [bold]{thinking_label}[/bold]")
     console.print("  Reloading...")
     return True
@@ -89,7 +90,7 @@ async def _setup_platform(platform: Platform) -> _SetupResult | None:
             models = await list_models(platform, api_key)
     except aiohttp.ClientResponseError as e:
         logger.error("Failed to get models: {error}", error=e)
-        console.print(f"[{_t.error}]Failed to get models: {e.message}[/]")
+        console.print(f"[{_t.error}]Failed to get models: {escape(e.message)}[/]")
         if e.status == 401 and platform.id != PYTHINKER_CODE_PLATFORM_ID:
             console.print(
                 f"[{_t.warning}]Hint: If your API key was obtained from Pythinker, "
@@ -98,7 +99,7 @@ async def _setup_platform(platform: Platform) -> _SetupResult | None:
         return None
     except Exception as e:
         logger.error("Failed to get models: {error}", error=e)
-        console.print(f"[{_t.error}]Failed to get models: {e}[/]")
+        console.print(f"[{_t.error}]Failed to get models: {escape(str(e))}[/]")
         return None
 
     # select the model

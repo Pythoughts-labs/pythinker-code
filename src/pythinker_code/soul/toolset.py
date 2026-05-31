@@ -525,8 +525,6 @@ class PythinkerToolset:
         import fastmcp
         from fastmcp.mcp_config import MCPConfig, RemoteMCPServer
 
-        from pythinker_code.ui.shell.prompt import toast
-
         async def _check_oauth_tokens(server_url: str) -> bool:
             """Check if OAuth tokens exist for the server."""
             try:
@@ -545,6 +543,8 @@ class PythinkerToolset:
 
         def _toast_mcp(message: str) -> None:
             if in_background:
+                from pythinker_code.ui.shell.prompt import toast
+
                 toast(
                     message,
                     duration=10.0,
@@ -611,12 +611,6 @@ class PythinkerToolset:
             results = await asyncio.gather(*tasks) if tasks else []
             failed_servers = {name: error for name, error in results if error is not None}
 
-            for mcp_config in mcp_configs:
-                # Skip empty MCP configs (no servers defined)
-                if not mcp_config.mcpServers:
-                    logger.debug("Skipping empty MCP config: {mcp_config}", mcp_config=mcp_config)
-                    continue
-
             if failed_servers:
                 _toast_mcp("mcp connection failed")
                 raise MCPRuntimeError(f"Failed to connect MCP servers: {failed_servers}")
@@ -639,6 +633,9 @@ class PythinkerToolset:
                 self._mcp_servers[server_name] = MCPServerInfo(
                     status="pending", client=client, tools=[]
                 )
+
+        if not any(server_info.status == "pending" for server_info in self._mcp_servers.values()):
+            return
 
         if in_background:
             self._mcp_loading_task = asyncio.create_task(_connect())

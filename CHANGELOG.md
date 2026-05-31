@@ -15,6 +15,11 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **StrReplaceFile now refuses ambiguous single replacements.** A non-`replace_all` edit now
+  errors when `old` matches more than once instead of silently editing the first match. Add
+  surrounding context to make the old string unique, or pass `replace_all=true` when every
+  occurrence should change.
+
 ## 0.26.0 (2026-05-30)
 
 ### What changed in this release

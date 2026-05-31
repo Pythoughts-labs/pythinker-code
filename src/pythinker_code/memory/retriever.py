@@ -3,14 +3,15 @@ from __future__ import annotations
 import math
 import re
 import time
+import unicodedata
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
 
-_TOKEN_RE = re.compile(r"[a-z0-9]{2,}")
+# Unicode word runs, with underscores treated as separators for snake_case.
+_TOKEN_RE = re.compile(r"[^\W_]{2,}", re.UNICODE)
 _RECENCY_HALF_LIFE_DAYS = 14.0
 _BM25_K1 = 1.5
 _BM25_B = 0.75
-_LABEL_BOOST = 0.5
 _PATH_BOOST = 0.5
 
 
@@ -19,7 +20,8 @@ def estimate_tokens(text: str) -> int:
 
 
 def _tokenize(text: str) -> list[str]:
-    return _TOKEN_RE.findall(text.lower())
+    normalized = unicodedata.normalize("NFKC", text).casefold()
+    return _TOKEN_RE.findall(normalized)
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,7 +69,7 @@ class LexicalRetriever(Retriever):
             for term in set(doc):
                 df[term] = df.get(term, 0) + 1
 
-        q_terms = _tokenize(query.text)
+        q_terms = _tokenize(" ".join((query.text, *query.labels)))
         scored: list[RankedBlock] = []
         for cand, doc in zip(self._candidates, docs, strict=True):
             dl = len(doc) or 1
@@ -91,8 +93,6 @@ class LexicalRetriever(Retriever):
             boost = 0.0
             if any(path in cand.files for path in query.paths):
                 boost += _PATH_BOOST
-            if set(query.labels) & set(cand.labels):
-                boost += _LABEL_BOOST
             if not q_terms and not query.paths and not query.labels:
                 boost += 0.01
             scored.append(replace(cand, score=bm25 * decay + boost))

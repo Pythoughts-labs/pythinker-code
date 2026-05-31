@@ -20,6 +20,7 @@ from pythinker_core.chat_provider import (
 )
 from rich import box
 from rich.console import Group, RenderableType
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -900,7 +901,7 @@ class Shell:
                         resume_prompt.set()
                         continue
                     if action.kind == InputAction.IGNORED:
-                        console.print(f"[dim]{action.args}[/dim]")
+                        console.print(f"[dim]{escape(str(action.args))}[/dim]")
                         resume_prompt.set()
                         continue
 
@@ -1055,7 +1056,9 @@ class Shell:
                 console.print(render_message_response(output))
         except Exception as e:
             logger.exception("Failed to run shell command:")
-            console.print(f"[{_get_tui_tokens().error}]Failed to run shell command: {e}[/]")
+            console.print(
+                f"[{_get_tui_tokens().error}]Failed to run shell command: {escape(str(e))}[/]"
+            )
         finally:
             remove_sigint()
 
@@ -1101,7 +1104,7 @@ class Shell:
             console.print(f"[{_get_tui_tokens().error}]Interrupted by user[/]")
         except Exception as e:
             logger.exception("Unknown error:")
-            console.print(f"[{_get_tui_tokens().error}]Unknown error: {e}[/]")
+            console.print(f"[{_get_tui_tokens().error}]Unknown error: {escape(str(e))}[/]")
             raise  # re-raise unknown error
 
     async def run_soul_command(self, user_input: str | list[ContentPart]) -> bool:
@@ -1248,7 +1251,7 @@ class Shell:
             # actually unsupported input/mode should already be blocked by prompt session
             _t = _get_tui_tokens()
             logger.exception("LLM not supported:")
-            console.print(f"[{_t.error}]{e}[/]")
+            console.print(f"[{_t.error}]{escape(str(e))}[/]")
         except ChatProviderError as e:
             _t = _get_tui_tokens()
             logger.exception("LLM provider error:")
@@ -1342,10 +1345,10 @@ class Shell:
                     "namespace in LM Studio's model browser — those have audited templates.[/dim]\n"
                     "[dim]  3. Or override the template manually in LM Studio: "
                     "[bold]My Models → model settings → Prompt Template[/bold].[/dim]\n"
-                    f"[dim]Server: {e}[/dim]"
+                    f"[dim]Server: {escape(str(e))}[/dim]"
                 )
             else:
-                console.print(f"[{_t.error}]LLM provider error: {e}[/]")
+                console.print(f"[{_t.error}]LLM provider error: {escape(str(e))}[/]")
             if not isinstance(e, APIStatusError) or e.status_code not in (401, 402, 403):
                 console.print(
                     "[dim]If this persists, run [bold]pythinker export[/bold] and send the "

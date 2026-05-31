@@ -177,3 +177,47 @@ async def test_compact_context_restores_files_and_hook_context(
     session_start_call = soul._hook_engine.trigger.await_args_list[2]  # pyright: ignore[reportPrivateUsage]
     assert session_start_call.args[0] == "SessionStart"
     assert session_start_call.kwargs["matcher_value"] == "compact"
+
+
+@pytest.mark.asyncio
+async def test_compact_context_emits_end_when_compaction_fails(
+    runtime: Runtime,
+    tmp_path: Path,
+) -> None:
+    agent = Agent(
+        name="Test Agent",
+        system_prompt="Test system prompt.",
+        toolset=EmptyToolset(),
+        runtime=runtime,
+    )
+    context = Context(file_backend=tmp_path / "history-failure.jsonl")
+    soul = PythinkerSoul(agent, context=context)
+    runtime.session.state.active_skills = []
+
+    await context.append_message(Message(role="user", content=[TextPart(text="compact me")]))
+
+    soul._run_with_connection_recovery = AsyncMock(  # pyright: ignore[reportPrivateUsage]
+        side_effect=RuntimeError("LLM 5xx")
+    )
+    soul._hook_engine.trigger = AsyncMock(return_value=[])  # pyright: ignore[reportPrivateUsage]
+
+    sent: list[str] = []
+
+    def _capture_wire(msg):
+        sent.append(type(msg).__name__)
+
+    with (
+        patch("pythinker_code.soul.pythinkersoul.wire_send", _capture_wire),
+        patch("pythinker_code.telemetry.track") as track,
+        pytest.raises(RuntimeError, match="LLM 5xx"),
+    ):
+        await soul.compact_context()
+
+    assert sent.count("CompactionBegin") == 1
+    assert sent.count("CompactionEnd") == 1
+    track.assert_called_once_with(
+        "compaction_triggered",
+        trigger_type="auto",
+        before_tokens=context.token_count,
+        success=False,
+    )

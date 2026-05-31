@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 from pythinker_core.message import Message
+from rich.console import Console
 
 from pythinker_code.session import Session
 from pythinker_code.ui.shell import export_import as shell_export_import
@@ -44,6 +46,25 @@ async def test_export_writes_markdown_file(tmp_path: Path) -> None:
     assert "session_id: curr-session-id" in content
     assert "Hello" in content
     assert "Hi!" in content
+
+
+async def test_export_escapes_bracketed_output_path(tmp_path: Path, monkeypatch) -> None:
+    app = _make_shell_app(tmp_path)
+    app.soul.context.history = [Message(role="user", content=[TextPart(text="Hello")])]
+    output_dir = tmp_path / "[proj]"
+    output_dir.mkdir()
+    output = output_dir / "session.md"
+
+    printed = StringIO()
+    monkeypatch.setattr(
+        shell_export_import,
+        "console",
+        Console(file=printed, force_terminal=False, color_system=None),
+    )
+
+    await shell_export_import.export(app, str(output))  # type: ignore[reportGeneralTypeIssues]
+
+    assert "[proj]" in printed.getvalue()
 
 
 async def test_import_from_file_appends_message_and_wire_markers(tmp_path: Path) -> None:

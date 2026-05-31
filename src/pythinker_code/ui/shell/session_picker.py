@@ -139,6 +139,11 @@ class SessionPickerApp:
     def _header_fragments(self) -> StyleAndTextTuples:
         scope_label = "current directory" if self._scope == "current" else "all directories"
         total = len(self._sessions)
+        if total == 0:
+            return [
+                ("class:header.title", " SESSIONS "),
+                ("class:header.meta", f" [{scope_label}] "),
+            ]
         selected = self._radio_list._selected_index + 1  # pyright: ignore[reportPrivateUsage]
         return [
             ("class:header.title", f" SESSIONS ({selected} of {total}) "),
