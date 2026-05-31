@@ -4,12 +4,64 @@ on:
   pull_request:
     types: [opened, edited, synchronize, labeled]
 
+permissions:
+  contents: read # allow checkout of the repo config by default
+  pull-requests: read # allow PR metadata reads by default
+
 jobs:
   check:
     runs-on: ubuntu-latest
     name: pr-title-checker
+    permissions:
+      contents: read # checkout .github/pr-title-checker-config.json
+      pull-requests: read # read PR title metadata from the event/CLI
+      issues: write # create/update the Invalid PR Title label on the PR issue
     steps:
-      - uses: thehanimo/pr-title-checker@v1.4.3
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # pinned from v6.0.2
         with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          configuration_path: ".github/pr-title-checker-config.json"
+          persist-credentials: false
+
+      - name: Validate PR title
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+
+          config=.github/pr-title-checker-config.json
+          if [ ! -f "$config" ]; then
+            echo "::error::PR title checker config is missing at $config."
+            exit 1
+          fi
+
+          read_config_value() {
+            local query=$1
+            local name=$2
+            local value
+            if ! value=$(jq -er "$query" "$config"); then
+              echo "::error::Failed to read $name from $config."
+              exit 1
+            fi
+            if [ -z "$value" ] || [ "$value" = "null" ]; then
+              echo "::error::$name in $config must be non-empty."
+              exit 1
+            fi
+            printf '%s' "$value"
+          }
+
+          regexp=$(read_config_value '.CHECKS.regexp' 'CHECKS.regexp')
+          label=$(read_config_value '.LABEL.name' 'LABEL.name')
+          color=$(read_config_value '.LABEL.color' 'LABEL.color')
+          failure=$(read_config_value '.MESSAGES.failure' 'MESSAGES.failure')
+
+          if [[ "$PR_TITLE" =~ $regexp ]]; then
+            gh pr edit "$PR_NUMBER" --remove-label "$label" >/dev/null 2>&1 || true
+            exit 0
+          fi
+
+          gh label create "$label" --color "$color" --force >/dev/null 2>&1 || true
+          gh pr edit "$PR_NUMBER" --add-label "$label" >/dev/null 2>&1 || true
+          echo "::error::$failure"
+          exit 1
