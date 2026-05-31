@@ -22,28 +22,46 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      DISPATCH_OWNER: TechMatrix-labs
+      DISPATCH_REPO: pythinker-home
     steps:
+      # Mint a short-lived installation token for the org-owned
+      # pythinker-release-bot App (Contents: write on pythinker-home only).
+      # Replaces a personal PAT: org-owned (survives member/org changes),
+      # ~1h TTL, minted fresh each run, scoped to the single private site repo.
+      - name: Mint GitHub App token for pythinker-home
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.PYTHINKER_RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ env.DISPATCH_OWNER }}
+          repositories: ${{ env.DISPATCH_REPO }}
+          permission-contents: write
+
       - name: Trigger pythinker-home sync
         env:
-          DISPATCH_TOKEN: ${{ secrets.PYTHINKER_HOME_REPO_DISPATCH_TOKEN }}
+          DISPATCH_TOKEN: ${{ steps.app-token.outputs.token }}
           SOURCE_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.sha }}
+          DISPATCH_OWNER: ${{ env.DISPATCH_OWNER }}
+          DISPATCH_REPO: ${{ env.DISPATCH_REPO }}
         run: |
-          if [ -z "$DISPATCH_TOKEN" ]; then
-            echo "::notice::Skipping pythinker-home sync: PYTHINKER_HOME_REPO_DISPATCH_TOKEN is not configured"
-            exit 0
+          set -euo pipefail
+          if [ -z "${DISPATCH_TOKEN:-}" ]; then
+            echo "::error::No dispatch token: the pythinker-release-bot App token mint produced an empty value. Confirm PYTHINKER_RELEASE_BOT_APP_ID and PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY org secrets are set and the App is installed on ${DISPATCH_OWNER}/${DISPATCH_REPO} with Contents: Read and write." >&2
+            exit 1
           fi
-
           payload=$(jq -n \
             --arg source_repo "$SOURCE_REPO" \
             --arg tag "$RELEASE_TAG" \
             '{"event_type":"sync-pythinker-products","client_payload":{"source_repo":$source_repo,"tag":$tag}}')
-
           curl --fail-with-body \
             -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer $DISPATCH_TOKEN" \
-            https://api.github.com/repos/TechMatrix-labs/pythinker-home/dispatches \
+            "https://api.github.com/repos/${DISPATCH_OWNER}/${DISPATCH_REPO}/dispatches" \
             -d "$payload"
 
   notify-failure:

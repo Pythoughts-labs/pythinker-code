@@ -133,34 +133,64 @@ if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
 
 Write-Logo
 
+function Test-ReleaseHasInstaller($release) {
+  if ($release.draft -or $release.prerelease) { return $null }
+  $tag = [string]$release.tag_name
+  if (-not $tag) { return $null }
+  $candidate = $tag.TrimStart('v')
+  $exe = "PythinkerSetup-$candidate.exe"
+  $names = @($release.assets | ForEach-Object { [string]$_.name })
+  if (($names -contains $exe) -and ($names -contains "$exe.sha256")) { return $candidate }
+  return $null
+}
+
+function Format-ReleaseApiError($Uri, $ErrorRecord) {
+  $message = $ErrorRecord.Exception.Message
+  $status = $null
+  try { $status = [int]$ErrorRecord.Exception.Response.StatusCode } catch { }
+  if ($status) { return "$Uri failed with HTTP ${status}: $message" }
+  return "$Uri failed: $message"
+}
+
 function Get-LatestVersion {
   Step "Looking up latest Pythinker release"
-  # The GitHub Release is published before every platform asset finishes
-  # uploading, and the /releases/latest endpoint is date-based, so it can
-  # briefly advertise a version whose Windows installer is still in flight.
-  # Resolve the newest published (non-draft, non-prerelease) release that
-  # actually carries PythinkerSetup-<ver>.exe AND its .sha256, so a release
-  # caught mid-publish never 404s the download below.
-  $api = "https://api.github.com/repos/$Repo/releases?per_page=20"
-  try {
-    $releases = Invoke-RestMethod -UseBasicParsing -Uri $api
-  } catch {
-    Fail "could not fetch releases from $api"
-  }
-
-  foreach ($release in @($releases)) {
-    if ($release.draft -or $release.prerelease) { continue }
-    $tag = [string]$release.tag_name
-    if (-not $tag) { continue }
-    $candidate = $tag.TrimStart('v')
-    $exe = "PythinkerSetup-$candidate.exe"
-    $names = @($release.assets | ForEach-Object { [string]$_.name })
-    if (($names -contains $exe) -and ($names -contains "$exe.sha256")) {
-      OK "Latest version is $candidate"
-      return $candidate
+  # /releases/latest is prerelease-excluding and not page-bound, so it is the
+  # correct primary source (fixes the per_page=20 pagination cliff). The
+  # GitHub Release can briefly advertise a version whose Windows installer is
+  # still uploading, so retry with exponential backoff (~6m). A paginated
+  # scan is only a fallback if /latest somehow lacks the asset pair.
+  $latestApi = "https://api.github.com/repos/$Repo/releases/latest"
+  $listApi   = "https://api.github.com/repos/$Repo/releases?per_page=100"
+  $delay = 4
+  $elapsed = 0
+  $maxElapsed = 360
+  $lastApiError = $null
+  while ($true) {
+    try {
+      $latest = Invoke-RestMethod -UseBasicParsing -Uri $latestApi
+      $found = Test-ReleaseHasInstaller $latest
+      if ($found) { OK "Latest version is $found"; return $found }
+    } catch {
+      $lastApiError = Format-ReleaseApiError $latestApi $_
     }
+    try {
+      $releases = Invoke-RestMethod -UseBasicParsing -Uri $listApi
+      foreach ($release in @($releases)) {
+        $found = Test-ReleaseHasInstaller $release
+        if ($found) { OK "Latest version is $found"; return $found }
+      }
+    } catch {
+      $lastApiError = Format-ReleaseApiError $listApi $_
+    }
+    if ($elapsed -ge $maxElapsed) {
+      $detail = if ($lastApiError) { " Last API error: $lastApiError" } else { "" }
+      Fail "no published release has a ready Windows installer asset after ~${maxElapsed}s; try again shortly or pin `$env:PYTHINKER_VERSION.$detail"
+    }
+    Step "Windows installer asset not ready yet; retry in ${delay}s"
+    Start-Sleep -Seconds $delay
+    $elapsed += $delay
+    $delay = [Math]::Min($delay * 2, 120)
   }
-  Fail "no published release has a ready Windows installer asset yet; try again shortly or pin `$env:PYTHINKER_VERSION"
 }
 
 function Read-ExpectedHash($Path) {
