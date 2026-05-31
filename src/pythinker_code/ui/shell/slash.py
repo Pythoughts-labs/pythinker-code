@@ -568,7 +568,9 @@ def _feedback_destination(soul: PythinkerSoul) -> tuple[str, dict[str, str]] | N
         return None
     if provider.custom_headers:
         headers.update(provider.custom_headers)
-    api_key = provider.api_key.get_secret_value()
+    api_key: str | None = None
+    if provider.api_key is not None:
+        api_key = provider.api_key.get_secret_value()
     if provider.oauth is not None:
         api_key = soul.runtime.oauth.resolve_api_key(provider.api_key, provider.oauth)
     if api_key:

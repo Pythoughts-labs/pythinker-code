@@ -8,12 +8,13 @@ from rich.style import Style
 from rich.text import Text
 
 from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
+from pythinker_code.ui.shell.glyphs import LIST_BULLET
 from pythinker_code.ui.shell.motion import reduced_motion_enabled
 from pythinker_code.ui.theme import get_mcp_prompt_colors, tui_rich_style
 from pythinker_code.wire.types import MCPServerSnapshot, MCPStatusSnapshot
 
 _STARTING_STATUSES = frozenset({"pending", "connecting"})
-_MCP_STARTUP_GLYPH = "•"
+_MCP_STARTUP_GLYPH = LIST_BULLET
 
 
 def _safe_text(text: str) -> str:
@@ -78,14 +79,18 @@ def render_mcp_console(snapshot: MCPStatusSnapshot) -> RenderableType:
 
     servers = sorted(snapshot.servers, key=lambda server: server.name)
     if not servers:
-        renderables.append(Text("  • No MCP servers configured.", style=Style(italic=True)))
+        renderables.append(
+            Text(f"  {LIST_BULLET} No MCP servers configured.", style=Style(italic=True))
+        )
         renderables.append(
             Text("    See the MCP docs to configure them.", style=tui_rich_style("muted"))
         )
         return Group(*renderables)
 
     if snapshot.tools == 0:
-        renderables.append(Text("  • No MCP tools available.", style=Style(italic=True)))
+        renderables.append(
+            Text(f"  {LIST_BULLET} No MCP tools available.", style=Style(italic=True))
+        )
         renderables.append(Text(""))
 
     for server in servers:
@@ -108,22 +113,22 @@ def _server_inventory_lines(server: MCPServerSnapshot) -> list[RenderableType]:
     status = _safe_text(server.status)
     status_style = _status_color(server.status)
     server_name = _safe_text(server.name)
-    lines: list[RenderableType] = [Text.assemble("  • ", (server_name, status_style))]
-    lines.append(Text.assemble("    • Status: ", (status, status_style)))
+    lines: list[RenderableType] = [Text.assemble(f"  {LIST_BULLET} ", (server_name, status_style))]
+    lines.append(Text.assemble(f"    {LIST_BULLET} Status: ", (status, status_style)))
 
     if server.status == "unauthorized":
         lines.append(
             Text(
-                f"    • Auth: Not authorized - run: pythinker mcp auth {server_name}",
+                f"    {LIST_BULLET} Auth: Not authorized - run: pythinker mcp auth {server_name}",
                 style=tui_rich_style("muted"),
             )
         )
 
     tool_names = sorted(_safe_text(tool_name) for tool_name in server.tools)
     if tool_names:
-        lines.append(Text.assemble("    • Tools: ", ", ".join(tool_names)))
+        lines.append(Text.assemble(f"    {LIST_BULLET} Tools: ", ", ".join(tool_names)))
     else:
-        lines.append(Text("    • Tools: (none)"))
+        lines.append(Text(f"    {LIST_BULLET} Tools: (none)"))
 
     return lines
 

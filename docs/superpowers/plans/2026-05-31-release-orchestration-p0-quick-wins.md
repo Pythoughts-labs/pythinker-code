@@ -18,10 +18,12 @@ These touch admin/secrets/outward-facing services. They are **operator actions**
   - *Why an App and not the PAT:* `homebrew-pythinker` is public, `pythinker-home` is private; a dedicated org App contains a leak to one trust domain, survives member/org changes, and mints ~1h tokens per run (§4).
 - [ ] **OP-2 — Install the App on `pythinker-home` ONLY.** App page → **Install App** → TechMatrix-labs → **Only select repositories** → `pythinker-home` → Install. Verify it is NOT installed on any other repo.
 - [ ] **OP-3 — Set the org secrets** (run from a shell where `gh auth status` shows an org-admin token):
+
   ```bash
-  gh secret set PYTHINKER_RELEASE_BOT_APP_ID --org TechMatrix-labs --visibility all --body "<numeric-app-id-from-OP-1>"
-  gh secret set PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY --org TechMatrix-labs --visibility all < /path/to/pythinker-release-bot.private-key.pem
+  gh secret set PYTHINKER_RELEASE_BOT_APP_ID --org TechMatrix-labs --visibility selected --repos pythinker-code --body "<numeric-app-id-from-OP-1>"
+  gh secret set PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY --org TechMatrix-labs --visibility selected --repos pythinker-code < /path/to/pythinker-release-bot.private-key.pem
   ```
+
   Expected: `✓ Set Organization secret PYTHINKER_RELEASE_BOT_APP_ID` (and `_PRIVATE_KEY`). Then `rm /path/to/pythinker-release-bot.private-key.pem` (the key lives only in the secret now).
 - [ ] **OP-4 — Confirm the live site host runs Dokploy build-from-source, not the Docker-Compose/Watchtower stack.** Required before Task 14 (deploy retirement). Check the Dokploy dashboard / server: the site is built from source via nixpacks (`bun run server.ts`), and there is no running `watchtower`/`traefik` compose stack for it. If you cannot confirm, **skip Task 14** and log it under "Out of scope / deferred" — it is reversible (`git rm`) and not on the release path.
 - [ ] **OP-5 — (DEFERRED, post-verification) Delete the retired PATs.** Do these only after the gated green cycle in "Phase verification":

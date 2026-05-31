@@ -572,10 +572,11 @@ class _ToolCallBlock:
     def _changed_paths_from_sub_call(
         self, sub_tool_call: ToolCall, result: ToolReturnValue
     ) -> list[str]:
-        paths: list[str] = []
-        for block in getattr(result, "display", []) or []:
-            if isinstance(block, DiffDisplayBlock):
-                paths.append(block.path)
+        paths: list[str] = [
+            block.path
+            for block in getattr(result, "display", []) or []
+            if isinstance(block, DiffDisplayBlock)
+        ]
         if paths:
             return paths
 

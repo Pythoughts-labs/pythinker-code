@@ -52,6 +52,9 @@ TRANSCRIPT_STATUS_MARKER: Final = "*" if _ASCII_GLYPHS else "✻"
 TRANSCRIPT_ACTIVE_MARKER: Final = REDUCED_MOTION_GLYPH
 #: Transcript gutter marker for tool results.
 TRANSCRIPT_TOOL_GUTTER: Final = "|" if _ASCII_GLYPHS else "⎿"
+#: List/detail bullet (U+2022) used in status panels; falls back to an asterisk
+#: under ASCII mode so legacy code pages and ``TERM=dumb`` stay clean.
+LIST_BULLET: Final = "*" if _ASCII_GLYPHS else "•"
 
 __all__ = [
     "SPINNER_FRAMES",
@@ -68,4 +71,5 @@ __all__ = [
     "TRANSCRIPT_STATUS_MARKER",
     "TRANSCRIPT_ACTIVE_MARKER",
     "TRANSCRIPT_TOOL_GUTTER",
+    "LIST_BULLET",
 ]

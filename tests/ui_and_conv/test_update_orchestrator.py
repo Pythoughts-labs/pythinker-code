@@ -11,7 +11,7 @@ from pythinker_code.ui.shell import update
 from pythinker_code.ui.shell import update_orchestrator as orchestrator
 
 
-def _isolate_update_files(monkeypatch, tmp_path):
+def _isolate_update_files(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(orchestrator, "UPDATE_STATUS_FILE", tmp_path / "update_status.json")
     monkeypatch.setattr(orchestrator, "UPDATE_LOG_FILE", tmp_path / "update.log")
     monkeypatch.setattr(orchestrator, "UPDATE_LOCK_FILE", tmp_path / "update.lock")
