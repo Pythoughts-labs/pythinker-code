@@ -246,6 +246,16 @@ jobs:
             exit 0
           fi
 
+          # Guard against manually re-dispatching an older promoted release: Docker
+          # :latest must follow GitHub /releases/latest, which excludes drafts and
+          # prereleases. The commit-label ancestor check below is only defense in depth.
+          latest_tag=$(gh api "/repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name' 2>/dev/null || true)
+          if [ "$latest_tag" != "v${VERSION}" ]; then
+            echo "GitHub /releases/latest is ${latest_tag:-unknown}, not v${VERSION}; not advancing :latest."
+            echo "move=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           image_json=$(docker buildx imagetools inspect "${IMAGE_NAME}:latest" \
             --format '{{ json (index .Image "linux/amd64") }}' 2>/dev/null || true)
           if [ -z "${image_json}" ]; then
