@@ -151,6 +151,9 @@ matches your OS — no Python, Node, or `uv` prerequisite.
 | **🪟 Windows** | `irm https://pythinker.com/install.ps1 \| iex` | `PythinkerSetup-0.27.0.exe` from [Releases](https://github.com/TechMatrix-labs/pythinker-code/releases/latest) |
 | **<img src="https://img.shields.io/badge/-macOS-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS"> / <img src="https://img.shields.io/badge/-Linux-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux">** | `curl -fsSL https://pythinker.com/install.sh \| bash` | native tarball from [Releases](https://github.com/TechMatrix-labs/pythinker-code/releases/latest) |
 | **<img src="https://img.shields.io/badge/-macOS-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS"> — Homebrew** | `brew install TechMatrix-labs/pythinker/pythinker-code` | auto-published Homebrew tap |
+| **🐳 Docker** | `docker run --rm -it ghcr.io/techmatrix-labs/pythinker-code` | GHCR multi-arch image |
+| **🪟 Windows — Scoop** | `scoop bucket add pythinker https://github.com/TechMatrix-labs/scoop-pythinker && scoop install pythinker-code` | auto-published Scoop bucket |
+| **❄️ Nix** | `nix run github:TechMatrix-labs/pythinker-code` | flake `apps.default` |
 | **<img src="https://img.shields.io/badge/-Linux-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux"> — system package** | Download the `.deb` or `.rpm` for your distro below | [Releases](https://github.com/TechMatrix-labs/pythinker-code/releases/latest) |
 | **🐍 Python fallback** | `pip install pythinker-code` | PyPI |
 

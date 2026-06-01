@@ -1,0 +1,33 @@
+name: Update flake.lock
+
+on:
+  schedule:
+    # 06:00 UTC on the 1st of each month.
+    - cron: "0 6 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # pinned from v6.0.2
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@1d87d45818068401a10cf16bdc5f00b24994a83f # pinned from main
+
+      - name: Update flake.lock and open PR
+        uses: DeterminateSystems/update-flake-lock@5ba4a20ae344a5edd7b97ed3002219974f4d20d7 # pinned from main
+        with:
+          pr-title: "chore(nix): monthly flake.lock update"
+          pr-labels: dependencies
+          # NOTE: this PR is opened with the default GITHUB_TOKEN, which does
+          # not trigger required status checks under branch protection. A
+          # maintainer must push an empty commit or close+reopen the PR to fire
+          # CI before merge. Use a fine-grained PAT/App token in a follow-up if
+          # fully hands-off dependency PRs become necessary.
+          branch: update-flake-lock

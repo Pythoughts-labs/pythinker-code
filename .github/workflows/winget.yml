@@ -1,0 +1,52 @@
+name: Submit to WinGet
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Released version to submit to winget-pkgs (e.g. 0.27.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    # WinGet manifests can only be submitted from Windows (wingetcreate is a
+    # Windows tool). Manual-only by design: a human runs this after a release is
+    # promoted, so it never gates promote and never auto-fires on a tag.
+    runs-on: windows-latest
+    steps:
+      - name: Verify the release is published and non-prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          is_pre=$(gh release view "v${VERSION}" --repo "${GITHUB_REPOSITORY}" --json isPrerelease -q '.isPrerelease')
+          if [ "$is_pre" != "false" ]; then
+            echo "::error::Release v${VERSION} is not a promoted (non-prerelease) release; refusing to submit to WinGet." >&2
+            exit 1
+          fi
+
+      - name: Submit manifest update with wingetcreate
+        shell: pwsh
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_SUBMIT_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if (-not $env:WINGET_TOKEN) {
+            throw "WINGET_SUBMIT_TOKEN is not configured"
+          }
+          $installerUrl = "https://github.com/TechMatrix-labs/pythinker-code/releases/download/v$env:VERSION/PythinkerSetup-$env:VERSION.exe"
+          Invoke-WebRequest -Uri "https://aka.ms/wingetcreate/latest" -OutFile wingetcreate.exe
+          # PackageIdentifier must match the existing winget-pkgs entry; create it
+          # once manually via `wingetcreate new` before the first automated update.
+          .\wingetcreate.exe update TechMatrixLabs.PythinkerCode `
+            --version $env:VERSION `
+            --urls "$installerUrl" `
+            --submit `
+            --token $env:WINGET_TOKEN

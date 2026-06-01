@@ -1,0 +1,149 @@
+name: Update Scoop bucket
+
+on:
+  push:
+    tags:
+      - "v+([0-9]).+([0-9]).+([0-9])"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to push to the Scoop bucket (e.g. 0.27.0)"
+        required: true
+        type: string
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      BUCKET_OWNER: TechMatrix-labs
+      BUCKET_REPO: scoop-pythinker
+    steps:
+      - name: Checkout source repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # pinned from v6.0.2
+
+      - name: Resolve version
+        id: ver
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+          elif [[ -n "${INPUT_VERSION:-}" ]]; then
+            version="$INPUT_VERSION"
+          else
+            echo "::error::No version source available" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # pinned from v6.2.0
+        with:
+          python-version: "3.13"
+
+      - name: Generate Scoop manifest
+        env:
+          PKG_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euxo pipefail
+          mkdir -p out/bucket
+          deadline=$(( $(date +%s) + 30 * 60 ))
+          until python packages/scoop-bucket/generate-manifest.py \
+            --version "$PKG_VERSION" \
+            --template packages/scoop-bucket/pythinker-code.json.tmpl \
+            --output out/bucket/pythinker-code.json; do
+            if [ "$(date +%s)" -gt "$deadline" ]; then
+              echo "::error::Windows onedir zip for ${PKG_VERSION} was not ready within 30 minutes" >&2
+              exit 1
+            fi
+            echo "Windows zip not ready for ${PKG_VERSION}; sleeping 30s"
+            sleep 30
+          done
+          echo "--- generated manifest ---"
+          cat out/bucket/pythinker-code.json
+
+      - name: Verify Scoop App credentials are configured
+        env:
+          APP_ID: ${{ secrets.SCOOP_BUCKET_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.SCOOP_BUCKET_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_ID:-}" ] || [ -z "${APP_PRIVATE_KEY:-}" ]; then
+            echo "::error::No Scoop GitHub App credentials available. Configure SCOOP_BUCKET_APP_ID and SCOOP_BUCKET_APP_PRIVATE_KEY, and install the App on ${BUCKET_OWNER}/${BUCKET_REPO} with Contents: Read and write." >&2
+            exit 1
+          fi
+
+      # Mint a short-lived installation token for the org-owned
+      # pythinker-scoop-publisher App (Contents: Read and write on
+      # scoop-pythinker only). This workflow runs in pythinker-code and pushes
+      # cross-repo, so the App token is the authorization boundary being tested.
+      - name: Mint GitHub App token for the bucket repo
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # pinned from v2.2.2
+        with:
+          app-id: ${{ secrets.SCOOP_BUCKET_APP_ID }}
+          private-key: ${{ secrets.SCOOP_BUCKET_APP_PRIVATE_KEY }}
+          owner: ${{ env.BUCKET_OWNER }}
+          repositories: ${{ env.BUCKET_REPO }}
+          permission-contents: write
+
+      - name: Sync manifest into bucket repo (handles empty repo on first run)
+        env:
+          PKG_VERSION: ${{ steps.ver.outputs.version }}
+          BUCKET_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BUCKET_TOKEN:-}" ]; then
+            echo "::error::No bucket token available — the GitHub App token mint produced an empty value. Confirm SCOOP_BUCKET_APP_ID and SCOOP_BUCKET_APP_PRIVATE_KEY are set and the App is installed on ${BUCKET_OWNER}/${BUCKET_REPO} with Contents: Read and write, then re-run." >&2
+            exit 1
+          fi
+          rm -rf bucket-repo
+          mkdir bucket-repo
+          cd bucket-repo
+          git init -q -b main
+          git remote add origin \
+            "https://x-access-token:${BUCKET_TOKEN}@github.com/${BUCKET_OWNER}/${BUCKET_REPO}.git"
+          if git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
+            git fetch --depth 1 origin main
+            git reset --hard FETCH_HEAD
+          fi
+
+          mkdir -p bucket
+          cp ../out/bucket/pythinker-code.json bucket/pythinker-code.json
+
+          if [ ! -f README.md ]; then
+            cat > README.md <<'EOF'
+          # scoop-pythinker
+
+          Scoop bucket for [Pythinker Code](https://github.com/TechMatrix-labs/pythinker-code).
+
+          ```pwsh
+          scoop bucket add pythinker https://github.com/TechMatrix-labs/scoop-pythinker
+          scoop install pythinker-code
+          ```
+
+          This bucket is auto-updated by the
+          [scoop-bucket.yml](https://github.com/TechMatrix-labs/pythinker-code/blob/main/.github/workflows/scoop-bucket.yml)
+          workflow on every semver release tag. Do not hand-edit `bucket/*` — your
+          edits will be overwritten on the next release.
+          EOF
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add bucket/pythinker-code.json README.md
+          if git diff --cached --quiet; then
+            echo "Manifest already up to date for ${PKG_VERSION}; nothing to push."
+            exit 0
+          fi
+          git commit -m "pythinker-code ${PKG_VERSION}" \
+                     -m "Auto-updated by pythinker-code/.github/workflows/scoop-bucket.yml"
+          git push -u origin HEAD:main

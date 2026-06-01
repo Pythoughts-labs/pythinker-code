@@ -1,0 +1,283 @@
+name: Docker (GHCR)
+
+on:
+  push:
+    tags:
+      - "v+([0-9]).+([0-9]).+([0-9])"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to (re)build (e.g. 0.27.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/techmatrix-labs/pythinker-code
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+# One run per tag/ref; never cancel a tag/dispatch run because each one may
+# publish digests or manifests for a release artifact.
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - name: Resolve version
+        id: ver
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+          elif [[ -n "${INPUT_VERSION:-}" ]]; then
+            version="$INPUT_VERSION"
+          else
+            echo "::error::No version source available" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      # A tag-triggered Docker run can outrun release-pythinker-cli.yml's
+      # publish-python job. Wait for the PyPI JSON endpoint before buildx tries
+      # to pip-install the pinned wheel.
+      - name: Wait for the wheel on PyPI
+        env:
+          PKG_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + 30 * 60 ))
+          url="https://pypi.org/pypi/pythinker-code/${PKG_VERSION}/json"
+          until [ "$(curl -s -o /dev/null -w '%{http_code}' "$url")" = "200" ]; do
+            if [ "$(date +%s)" -gt "$deadline" ]; then
+              echo "::error::pythinker-code==${PKG_VERSION} not on PyPI within 30 minutes" >&2
+              exit 1
+            fi
+            echo "pythinker-code==${PKG_VERSION} not on PyPI yet; sleeping 30s"
+            sleep 30
+          done
+          echo "pythinker-code==${PKG_VERSION} is live on PyPI"
+
+  build-amd64:
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # pinned from v6.0.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # pinned from v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # pinned from v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push amd64 by digest
+        id: push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # pinned from v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          build-args: |
+            PYTHINKER_VERSION=${{ needs.resolve.outputs.version }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.resolve.outputs.version }}
+          outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=docker-amd64
+          cache-to: type=gha,mode=max,scope=docker-amd64
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.push.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # pinned from v7.0.1
+        with:
+          name: digest-amd64
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  build-arm64:
+    needs: resolve
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # pinned from v6.0.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # pinned from v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # pinned from v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push arm64 by digest
+        id: push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # pinned from v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/arm64
+          build-args: |
+            PYTHINKER_VERSION=${{ needs.resolve.outputs.version }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.resolve.outputs.version }}
+          outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=docker-arm64
+          cache-to: type=gha,mode=max,scope=docker-arm64
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.push.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # pinned from v7.0.1
+        with:
+          name: digest-arm64
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs: [resolve, build-amd64, build-arm64]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # pinned from v8.0.1
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # pinned from v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # pinned from v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create version manifest and push
+        working-directory: /tmp/digests
+        env:
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          TAG: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          args=()
+          for digest_file in *; do
+            args+=("${IMAGE_NAME}@sha256:${digest_file}")
+          done
+          docker buildx imagetools create -t "${IMAGE_NAME}:${TAG}" "${args[@]}"
+          docker buildx imagetools inspect "${IMAGE_NAME}:${TAG}"
+
+  move-latest:
+    needs: [resolve, merge]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: docker-move-latest
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # pinned from v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # pinned from v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # pinned from v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # :latest intentionally does not auto-advance at tag push time while the
+      # release is still prerelease. After promote-release.yml flips the release
+      # to non-prerelease, a maintainer re-dispatches this workflow with the
+      # promoted version to move :latest.
+      - name: Decide whether to move :latest
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+        run: |
+          set -euo pipefail
+          is_pre=$(gh release view "v${VERSION}" \
+            --repo "${GITHUB_REPOSITORY}" --json isPrerelease -q '.isPrerelease' 2>/dev/null || echo "true")
+          if [ "$is_pre" != "false" ]; then
+            echo "Release v${VERSION} is still prerelease (or missing); not advancing :latest."
+            echo "move=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          image_json=$(docker buildx imagetools inspect "${IMAGE_NAME}:latest" \
+            --format '{{ json (index .Image "linux/amd64") }}' 2>/dev/null || true)
+          if [ -z "${image_json}" ]; then
+            echo "move=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          current_sha=$(printf '%s' "${image_json}" | jq -r '.config.Labels."org.opencontainers.image.revision" // ""')
+          if [ -z "${current_sha}" ] || [ "${current_sha}" = "${GITHUB_SHA}" ]; then
+            echo "move=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git cat-file -e "${current_sha}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --prune origin "+refs/heads/main:refs/remotes/origin/main" || true
+          fi
+          if ! git cat-file -e "${current_sha}^{commit}" 2>/dev/null; then
+            echo "Registry :latest points at an unknown commit; refusing to overwrite."
+            echo "move=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git merge-base --is-ancestor "${current_sha}" "${GITHUB_SHA}"; then
+            echo "move=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Existing :latest is newer (likely a backport); leaving it alone."
+            echo "move=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Move :latest
+        if: steps.gate.outputs.move == 'true'
+        env:
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create --tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${VERSION}"
+          docker buildx imagetools inspect "${IMAGE_NAME}:latest"

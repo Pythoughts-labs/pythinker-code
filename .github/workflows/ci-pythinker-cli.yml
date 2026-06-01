@@ -334,3 +334,11 @@ jobs:
 
       - name: Run nix package
         run: nix run .#pythinker-code -- --version && nix run . -- --help
+
+      - name: Run nix app (apps.default) and assert PYTHINKER_MANAGED
+        run: |
+          set -euo pipefail
+          nix run .#default -- --version
+          nix build .#default
+          grep -q 'PYTHINKER_MANAGED' result/bin/pythinker
+          echo "apps.default runs and the wrapper sets PYTHINKER_MANAGED"
