@@ -61,6 +61,7 @@ _UPDATE_LOCK = asyncio.Lock()
 _skipped_version_this_session: str | None = None
 
 NATIVE_INSTALLER_MARKER = "__pythinker_native_installer__"
+MANAGED_CHANNEL_MARKER = "__pythinker_managed_channel__"
 
 
 class UpdateResult(Enum):
@@ -96,6 +97,13 @@ def semver_tuple(version: str) -> tuple[int, int, int]:
 
 def _detect_upgrade_command() -> list[str]:
     """Pick the right upgrade argv based on how this interpreter was installed."""
+    # Channel-managed installs (Docker/Nix/Scoop/WinGet) export PYTHINKER_MANAGED
+    # so the updater emits a channel-native hint instead of shelling pip/uv.
+    # Brew deliberately does NOT set it — its cellar path-sniff below is the
+    # load-bearing, behavior-unchanged path.
+    managed = os.environ.get("PYTHINKER_MANAGED")
+    if managed:
+        return [MANAGED_CHANNEL_MARKER, managed]
     exe = sys.executable.replace("\\", "/").lower()
     if "/cellar/pythinker-code/" in exe or "/homebrew/cellar/pythinker-code/" in exe:
         return ["brew", "upgrade", "pythinker-code"]
@@ -615,7 +623,11 @@ async def _prompt_update_selection(
 
 def _update_prompt_text(current_version: str, latest_version: str) -> Text:
     upgrade_command = _detect_upgrade_command()
-    if upgrade_command == [NATIVE_INSTALLER_MARKER]:
+    if upgrade_command[:1] == [MANAGED_CHANNEL_MARKER]:
+        update_method = (
+            f"managed by {upgrade_command[1]} — update via your {upgrade_command[1]} channel"
+        )
+    elif upgrade_command == [NATIVE_INSTALLER_MARKER]:
         update_method = "downloads the native updater automatically"
     else:
         update_method = _format_upgrade_command(upgrade_command)
@@ -1213,6 +1225,14 @@ async def _do_update(
             return UpdateResult.UP_TO_DATE
 
         upgrade_command = _detect_upgrade_command()
+        if upgrade_command[:1] == [MANAGED_CHANNEL_MARKER]:
+            channel = upgrade_command[1]
+            _print(
+                f"[{_t.warning}]Pythinker is managed by your {channel} channel. "
+                f"Update {current_version} → {latest_version} via {channel} "
+                "(rebuild/repull the image or run the channel's upgrade command).[/]"
+            )
+            return UpdateResult.UPDATE_AVAILABLE
         unavailable_reason = await _update_candidate_unavailable_reason(
             session, latest_version, upgrade_command
         )

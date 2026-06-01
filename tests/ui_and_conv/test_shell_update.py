@@ -1194,3 +1194,44 @@ def test_consume_whats_new_suppressed_for_source_checkout(monkeypatch, tmp_path)
     monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: True)
 
     assert update.consume_whats_new() is None
+
+
+def test_brew_unchanged_when_pythinker_managed_unset(monkeypatch):
+    monkeypatch.delenv("PYTHINKER_MANAGED", raising=False)
+    monkeypatch.setattr(
+        update.sys,
+        "executable",
+        "/opt/homebrew/Cellar/pythinker-code/0.27.0/libexec/bin/python",
+    )
+    monkeypatch.setattr(update, "_is_native_build", lambda: False)
+    assert update._detect_upgrade_command() == ["brew", "upgrade", "pythinker-code"]
+
+
+def test_brew_unchanged_even_with_native_marker(monkeypatch):
+    # The .pythinker-native marker also trips _is_native_build(); the cellar
+    # path-sniff must win first so brew installs stay on `brew upgrade`.
+    monkeypatch.delenv("PYTHINKER_MANAGED", raising=False)
+    monkeypatch.setattr(
+        update.sys,
+        "executable",
+        "/opt/homebrew/Cellar/pythinker-code/0.27.0/libexec/bin/python",
+    )
+    monkeypatch.setattr(update, "_is_native_build", lambda: True)
+    assert update._detect_upgrade_command() == ["brew", "upgrade", "pythinker-code"]
+
+
+def test_pythinker_managed_channel_short_circuits(monkeypatch):
+    monkeypatch.setenv("PYTHINKER_MANAGED", "docker")
+    monkeypatch.setattr(update.sys, "executable", "/usr/local/bin/python")
+    cmd = update._detect_upgrade_command()
+    assert cmd == [update.MANAGED_CHANNEL_MARKER, "docker"]
+
+
+def test_update_prompt_text_renders_managed_channel_hint(monkeypatch):
+    # The contract requires a usable channel-native hint, not a raw marker.
+    monkeypatch.setenv("PYTHINKER_MANAGED", "docker")
+    monkeypatch.setattr(update.sys, "executable", "/usr/local/bin/python")
+    text = update._update_prompt_text("0.27.0", "0.28.0")
+    rendered = text.plain
+    assert "docker" in rendered
+    assert update.MANAGED_CHANNEL_MARKER not in rendered
