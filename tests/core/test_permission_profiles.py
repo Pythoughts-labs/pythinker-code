@@ -42,8 +42,8 @@ async def test_explore_profile_denies_mutating_shell_before_approval(
 @pytest.mark.skipif(
     platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
 )
-@pytest.mark.parametrize("subagent_type", ["review", "verifier"])
-async def test_review_and_verifier_profiles_deny_mutating_shell(
+@pytest.mark.parametrize("subagent_type", ["review", "verifier", "judge"])
+async def test_review_verifier_and_judge_profiles_deny_mutating_shell(
     runtime: Runtime,
     environment: Environment,
     temp_work_dir: HostPath,
@@ -60,6 +60,44 @@ async def test_review_and_verifier_profiles_deny_mutating_shell(
     assert result.is_error
     assert "output redirection" in result.message
     assert not await target.exists()
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="Shell network guard examples use POSIX")
+@pytest.mark.parametrize("subagent_type", ["review", "verifier", "judge"])
+async def test_read_only_profiles_deny_network_shell(
+    runtime: Runtime,
+    environment: Environment,
+    subagent_type: str,
+) -> None:
+    """Read-only profiles block network shell commands so the no-web-tools intent
+    cannot be bypassed via Shell (curl/wget/ssh/...)."""
+    runtime.role = "subagent"
+    runtime.subagent_type = subagent_type
+
+    with tool_call_context("Shell"):
+        shell = Shell(Approval(yolo=True), environment, runtime)
+        result = await shell(ShellParams(command="curl -s https://example.com"))
+
+    assert result.is_error
+    assert "network access" in result.message
+
+
+def test_shell_network_commands_classified() -> None:
+    """Network CLIs and git-network subcommands are flagged; read-only git stays allowed."""
+    from pythinker_code.soul.permission import shell_mutation_reason
+
+    for cmd in (
+        "curl https://example.com",
+        "wget http://example.com/x",
+        "ssh user@host",
+        "nc 10.0.0.1 80",
+        "git fetch origin",
+        "git clone https://example.com/x.git",
+    ):
+        assert shell_mutation_reason(cmd) is not None, cmd
+    # read-only git and shell stay allowed (judge needs `git diff`)
+    for cmd in ("git diff --stat", "git log --oneline", "git show HEAD", "ls -la"):
+        assert shell_mutation_reason(cmd) is None, cmd
 
 
 @pytest.mark.skipif(
@@ -229,7 +267,7 @@ async def test_step_permission_profile_snapshot_blocks_same_step_plan_exit_race(
 @pytest.mark.skipif(
     platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
 )
-@pytest.mark.parametrize("subagent_type", ["review", "verifier", "explore", "coder"])
+@pytest.mark.parametrize("subagent_type", ["review", "verifier", "judge", "explore", "coder"])
 async def test_read_only_shell_in_subagent_requests_approval(
     runtime: Runtime,
     environment: Environment,

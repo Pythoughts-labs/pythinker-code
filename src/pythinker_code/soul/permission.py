@@ -76,6 +76,7 @@ _SUBAGENT_PROFILES: dict[str, PermissionProfileName] = {
     "code-reviewer": "review",
     "security-reviewer": "review",
     "debugger": "verify",
+    "judge": "verify",
 }
 
 _STEP_PERMISSION_PROFILE: ContextVar[PermissionProfile | None] = ContextVar(
@@ -125,6 +126,21 @@ _MUTATING_COMMANDS = {
     "helm",
     "kubectl",
     "podman",
+}
+# Network clients: blocked in read-only/review/verify profiles so the no-web-tools
+# intent of those subagents (judge, verifier, review, ...) cannot be bypassed via Shell.
+_NETWORK_COMMANDS = {
+    "curl",
+    "wget",
+    "nc",
+    "ncat",
+    "netcat",
+    "telnet",
+    "ssh",
+    "scp",
+    "sftp",
+    "ftp",
+    "ping",
 }
 _PACKAGE_MANAGER_COMMANDS = {
     "apt",
@@ -177,6 +193,9 @@ _GIT_MUTATIONS = {
     "switch",
     "tag",
 }
+# git subcommands that reach the network (read-only working-tree git like
+# diff/log/show/status stays allowed so judge/verifier can inspect changes).
+_GIT_NETWORK = {"clone", "fetch", "ls-remote"}
 _WRAPPER_COMMANDS = {"command", "env", "nohup", "sudo", "time"}
 
 
@@ -248,8 +267,9 @@ def check_shell_command_allowed(runtime: Runtime, command: str) -> ToolError | N
     return ToolError(
         message=(
             f"The active {profile.description} permission profile blocks this shell command "
-            f"because it appears to mutate the workspace or environment ({reason}). "
-            "Use a read-only command or switch to an implementation/coder profile."
+            f"because it appears to mutate the workspace or environment, or access the network "
+            f"({reason}). Use a read-only, offline command or switch to an implementation/coder "
+            "profile."
         ),
         brief="Permission profile restriction",
     )
@@ -288,10 +308,12 @@ def check_tool_call_allowed(
 
 
 def shell_mutation_reason(command: str) -> str | None:
-    """Best-effort guard for obviously mutating shell commands.
+    """Best-effort guard for obviously mutating or network-accessing shell commands.
 
-    This is intentionally conservative for common destructive/write forms. It is not a shell
-    sandbox; it prevents accidental tool-level bypasses of read-only/plan/review/verify profiles.
+    This is intentionally conservative for common destructive/write/network forms. It is not a
+    shell sandbox; it prevents accidental tool-level bypasses of read-only/plan/review/verify
+    profiles — including circumventing the no-web-tools intent via `curl`/`wget`/`ssh`. Script
+    interpreters (python/node/sh) are already treated as mutating, so those paths are blocked too.
     """
     for match in _WRITING_REDIRECTION_RE.finditer(command):
         target = match.group(1)
@@ -326,6 +348,8 @@ def _segment_mutation_reason(tokens: list[str]) -> str | None:
 
     if base in _MUTATING_COMMANDS:
         return f"{base} command"
+    if base in _NETWORK_COMMANDS:
+        return f"network access via {base}"
     if base == "sed" and any(arg == "-i" or arg.startswith("-i") for arg in args):
         return "sed in-place edit"
     if base == "perl" and any(arg == "-i" or arg.startswith("-i") for arg in args):
@@ -334,6 +358,8 @@ def _segment_mutation_reason(tokens: list[str]) -> str | None:
         subcommand = _git_subcommand(args)
         if subcommand in _GIT_MUTATIONS:
             return f"git {subcommand}"
+        if subcommand in _GIT_NETWORK:
+            return f"network access via git {subcommand}"
     if base in _PACKAGE_MANAGER_COMMANDS:
         subcommand = _first_non_option(args)
         if subcommand in _PACKAGE_MANAGER_MUTATIONS:
