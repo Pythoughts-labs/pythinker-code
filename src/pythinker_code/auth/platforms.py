@@ -414,7 +414,7 @@ async def refresh_managed_models(config: Config) -> bool:
         minimax_models = await refresh_minimax_models(config)
     except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
         logger.warning("Failed to refresh MiniMax models: {error}", error=exc)
-    if minimax_models and apply_minimax_models(config, minimax_models):
+    if minimax_models is not None and apply_minimax_models(config, minimax_models):
         changed = True
 
     if changed:
@@ -425,7 +425,7 @@ async def refresh_managed_models(config: Config) -> bool:
                 save_changed = True
         if opencode_go_models and apply_opencode_go_models(config_for_save, opencode_go_models):
             save_changed = True
-        if minimax_models and apply_minimax_models(config_for_save, minimax_models):
+        if minimax_models is not None and apply_minimax_models(config_for_save, minimax_models):
             save_changed = True
         if save_changed:
             save_config(config_for_save)

@@ -171,26 +171,42 @@ async def test_login_minimax_uses_discovered_context_length(monkeypatch, tmp_pat
 
 @pytest.mark.asyncio
 async def test_login_minimax_token_plan_uses_discovered_available_subset(monkeypatch, tmp_path):
-    from pythinker_code.auth.minimax import MiniMaxModel, login_minimax_api_key
+    from pythinker_code.auth.minimax import MINIMAX_ANTHROPIC_MODELS_URL, login_minimax_api_key
 
     monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
     config = Config(is_from_default_location=True)
 
-    async def fake_discover(api_key):
-        assert api_key == "sk-cp-token-plan-abc"
-        return (
-            MiniMaxModel(
-                model_id="MiniMax-M2.7",
-                alias_suffix="m2.7",
-                display_name="MiniMax M2.7",
-            ),
-        )
+    class FakeResponse:
+        async def __aenter__(self):
+            return self
 
-    monkeypatch.setattr("pythinker_code.auth.minimax._discover_minimax_models", fake_discover)
+        async def __aexit__(self, *args):
+            pass
+
+        async def json(self, *, content_type=None):
+            return {"data": [{"id": "MiniMax-M2.7"}]}
+
+    class FakeSession:
+        def __init__(self):
+            self.calls: list[tuple[str, dict[str, str]]] = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        def get(self, url, *, headers, raise_for_status):
+            self.calls.append((url, headers))
+            return FakeResponse()
+
+    session = FakeSession()
+    monkeypatch.setattr("pythinker_code.auth.minimax.new_client_session", lambda **_: session)
 
     events = [event async for event in login_minimax_api_key(config, "sk-cp-token-plan-abc")]
 
     assert [event.type for event in events] == ["info", "success"]
+    assert session.calls == [(MINIMAX_ANTHROPIC_MODELS_URL, {"X-Api-Key": "sk-cp-token-plan-abc"})]
     assert set(config.models) == {"minimax/m2.7"}
     assert config.default_model == "minimax/m2.7"
 
@@ -227,6 +243,8 @@ async def test_login_minimax_emits_token_plan_event_for_sk_cp_prefix(monkeypatch
     assert "Token Plan" in events[0].message
     assert types[-1] == "success"
     assert "sk-cp-token-plan-abc" not in "\n".join(event.json for event in events)
+    assert config.models == {}
+    assert config.default_model == ""
 
 
 @pytest.mark.asyncio

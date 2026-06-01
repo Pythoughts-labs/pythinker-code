@@ -192,7 +192,12 @@ async def _fetch_minimax_models(
 ) -> tuple[MiniMaxModel, ...]:
     async with session.get(url, headers=headers, raise_for_status=True) as response:
         payload = await response.json(content_type=None)
-    return _parse_discovered_models(payload)
+    if not isinstance(payload, dict):
+        raise ValueError(f"Unexpected MiniMax models response for {url}")
+    payload_map = cast(dict[str, Any], payload)
+    if not isinstance(payload_map.get("data"), list):
+        raise ValueError(f"Unexpected MiniMax models response for {url}")
+    return _parse_discovered_models(payload_map)
 
 
 async def _discover_minimax_models(api_key: str) -> tuple[MiniMaxModel, ...]:
@@ -217,8 +222,7 @@ async def _discover_minimax_models(api_key: str) -> tuple[MiniMaxModel, ...]:
             except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
                 errors.append(exc)
                 continue
-            if models:
-                return models
+            return models
 
     if auth_errors:
         raise auth_errors[0]
@@ -295,8 +299,7 @@ async def refresh_minimax_models(config: Config) -> tuple[MiniMaxModel, ...] | N
     api_key = _minimax_api_key(config)
     if api_key is None:
         return None
-    discovered = await _discover_minimax_models(api_key)
-    return discovered or None
+    return await _discover_minimax_models(api_key)
 
 
 async def login_minimax_api_key(
@@ -323,9 +326,7 @@ async def login_minimax_api_key(
 
     models = MINIMAX_MODELS
     try:
-        discovered = await _discover_minimax_models(resolved_key)
-        if discovered:
-            models = discovered
+        models = await _discover_minimax_models(resolved_key)
     except aiohttp.ClientResponseError as exc:
         if exc.status in {401, 403}:
             yield OAuthEvent("error", "Invalid MiniMax API key; the key was not saved.")

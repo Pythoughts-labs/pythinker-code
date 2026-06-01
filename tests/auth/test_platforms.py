@@ -800,7 +800,7 @@ async def test_refresh_managed_models_refreshes_minimax_token_plan_without_relog
 
     with (
         patch(
-            "pythinker_code.auth.minimax._discover_minimax_models",
+            "pythinker_code.auth.minimax.refresh_minimax_models",
             new=AsyncMock(return_value=discovered),
         ),
         patch("pythinker_code.auth.platforms.list_models", new=AsyncMock()) as list_models_mock,
@@ -822,6 +822,41 @@ async def test_refresh_managed_models_refreshes_minimax_token_plan_without_relog
     assert len(saved) == 1
     assert "minimax/m3" in saved[0].models
     assert "minimax/m2.7-highspeed" not in saved[0].models
+
+
+@pytest.mark.asyncio
+async def test_refresh_managed_models_applies_empty_minimax_catalog():
+    """An authenticated empty MiniMax catalog is authoritative and prunes stale models."""
+    from pythinker_code.auth.minimax import MINIMAX_ANTHROPIC_PROVIDER_KEY
+
+    config = _make_minimax_config()
+    saved: list[Config] = []
+
+    with (
+        patch(
+            "pythinker_code.auth.minimax.refresh_minimax_models",
+            new=AsyncMock(return_value=()),
+        ) as refresh_mock,
+        patch("pythinker_code.auth.platforms.list_models", new=AsyncMock()) as list_models_mock,
+        patch("pythinker_code.auth.platforms.load_config", side_effect=_make_minimax_config),
+        patch(
+            "pythinker_code.auth.platforms.save_config",
+            side_effect=lambda cfg, *a, **k: saved.append(cfg),
+        ),
+    ):
+        changed = await refresh_managed_models(config)
+
+    assert changed is True
+    assert refresh_mock.await_count == 1
+    assert list_models_mock.await_count == 0
+    assert not any(
+        model.provider == MINIMAX_ANTHROPIC_PROVIDER_KEY for model in config.models.values()
+    )
+    assert config.default_model == ""
+    assert len(saved) == 1
+    assert not any(
+        model.provider == MINIMAX_ANTHROPIC_PROVIDER_KEY for model in saved[0].models.values()
+    )
 
 
 @pytest.mark.asyncio
@@ -857,7 +892,7 @@ async def test_refresh_managed_models_isolates_minimax_discovery_failure():
 
     with (
         patch(
-            "pythinker_code.auth.minimax._discover_minimax_models",
+            "pythinker_code.auth.minimax.refresh_minimax_models",
             new=AsyncMock(side_effect=aiohttp.ClientConnectionError("offline")),
         ),
         patch(
@@ -878,4 +913,6 @@ async def test_refresh_managed_models_isolates_minimax_discovery_failure():
     assert changed is True
     assert len(saved) == 1
     assert saved[0].models["pythinker-code/pythinker-for-coding"].max_context_size == 200_000
+    assert "minimax/m2.7-highspeed" in saved[0].models
+    assert saved[0].models["minimax/m2.7-highspeed"].provider == "managed:minimax-anthropic"
     assert "minimax/m2.7-highspeed" in config.models
