@@ -65,6 +65,34 @@ def test_apply_minimax_config_writes_provider_and_default():
     assert config.default_model == "minimax/m2.7"
 
 
+def test_apply_minimax_config_empty_catalog_preserves_non_minimax_default():
+    from pythinker_code.auth.minimax import _apply_minimax_config
+
+    config = Config(is_from_default_location=True)
+    config.providers["managed:openai"] = LLMProvider(
+        type="openai_responses",
+        base_url="https://api.openai.com/v1",
+        api_key=SecretStr("sk-test"),
+    )
+    config.models["openai/gpt-5.2"] = LLMModel(
+        provider="managed:openai",
+        model="gpt-5.2",
+        max_context_size=400_000,
+    )
+    config.default_model = "openai/gpt-5.2"
+
+    _apply_minimax_config(config, SecretStr("sk-cp-test"), models=())
+
+    assert config.default_model == "openai/gpt-5.2"
+    assert config.models == {
+        "openai/gpt-5.2": LLMModel(
+            provider="managed:openai",
+            model="gpt-5.2",
+            max_context_size=400_000,
+        )
+    }
+
+
 def _request_info(url: str) -> aiohttp.RequestInfo:
     return aiohttp.RequestInfo(
         url=URL(url),

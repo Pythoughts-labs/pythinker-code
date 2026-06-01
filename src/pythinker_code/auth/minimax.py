@@ -76,14 +76,17 @@ def _apply_minimax_config(
             display_name=model.display_name,
         )
 
-    fallback = next(
-        (m.alias for m in models),
-        next(iter(config.models), ""),
-    )
-    if MINIMAX_DEFAULT_MODEL_ALIAS in config.models:
-        config.default_model = MINIMAX_DEFAULT_MODEL_ALIAS
-    else:
-        config.default_model = fallback
+    if models:
+        fallback = next(
+            (m.alias for m in models),
+            next(iter(config.models), ""),
+        )
+        if MINIMAX_DEFAULT_MODEL_ALIAS in config.models:
+            config.default_model = MINIMAX_DEFAULT_MODEL_ALIAS
+        else:
+            config.default_model = fallback
+    elif config.default_model not in config.models:
+        config.default_model = next(iter(config.models), "")
     config.default_thinking = False
 
 
