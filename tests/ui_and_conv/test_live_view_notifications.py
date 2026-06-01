@@ -319,7 +319,7 @@ def test_prompt_live_view_keeps_non_background_task_notifications(monkeypatch):
 def test_live_view_prints_turn_recap_when_enabled(monkeypatch):
     printed = []
     monkeypatch.setattr(
-        live_view_module.console, "print", lambda *args, **kwargs: printed.extend(args)
+        live_view_module.console, "print", lambda *args, **_kwargs: printed.extend(args)
     )
 
     view = _LiveView(StatusUpdate(), show_turn_recaps=True)
