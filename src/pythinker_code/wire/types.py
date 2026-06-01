@@ -146,12 +146,18 @@ class HookTriggered(BaseModel):
     """Number of matched hooks running in parallel."""
 
 
+# Engine truncates each stream to 12_000 chars (hooks/engine._MAX_HOOK_OUTPUT_CHARS)
+# then appends a "\n...[truncated]" marker; allow headroom so the marked payload
+# still validates while rejecting unbounded strings from any other producer.
+_MAX_HOOK_OUTPUT_FIELD_CHARS = 12_032
+
+
 class HookOutput(BaseModel):
     """Bounded stdout/stderr captured from one hook invocation."""
 
-    stdout: str = ""
+    stdout: str = Field(default="", max_length=_MAX_HOOK_OUTPUT_FIELD_CHARS)
     """Captured stdout, truncated before it is sent over the wire."""
-    stderr: str = ""
+    stderr: str = Field(default="", max_length=_MAX_HOOK_OUTPUT_FIELD_CHARS)
     """Captured stderr, truncated before it is sent over the wire."""
     exit_code: int = 0
     """Hook process exit code, when available."""

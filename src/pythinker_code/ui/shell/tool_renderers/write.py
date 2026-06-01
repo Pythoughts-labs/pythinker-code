@@ -128,7 +128,11 @@ def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> Rendera
     mode = ctx.args.get("mode")
     raw_content = as_str(ctx.args.get("content")) or ""
 
-    if preview is not None and (preview.removed > 0 or _is_existing_file_diff(diff_blocks)):
+    if (
+        preview is not None
+        and not preview.is_new_file
+        and (preview.removed > 0 or _is_existing_file_diff(diff_blocks))
+    ):
         return Group(
             change_summary_text(preview.added, preview.removed),
             diff_frame(

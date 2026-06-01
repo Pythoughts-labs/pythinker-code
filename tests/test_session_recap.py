@@ -1,13 +1,27 @@
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 from zoneinfo import ZoneInfo
+
+import pytest
+
+if TYPE_CHECKING:
+    from pythinker_code.session import Session
 
 from pythinker_code.session_recap import (
     SessionRecapItem,
+    _first_sentence,
+    _format_duration,
+    _format_tool_counts,
+    _last_substantive_thread,
+    _tool_label,
     build_turn_recap_line,
     format_recap,
     parse_recap_range,
+    summarize_session_for_recap,
 )
 
 
@@ -54,3 +68,175 @@ def test_build_turn_recap_line_uses_assistant_text() -> None:
         "※ recap: Implemented a /recap command and a shell recap banner. (3 steps) "
         "(disable recaps in /settings)"
     )
+
+
+_UTC = ZoneInfo("UTC")
+_NOW = datetime(2026, 6, 1, 15, 30, tzinfo=_UTC)
+
+
+def test_parse_recap_range_yesterday() -> None:
+    rng = parse_recap_range("yesterday", now=_NOW)
+    assert rng.label == "yesterday"
+    assert rng.start_ts == datetime(2026, 5, 31, tzinfo=_UTC).timestamp()
+    assert rng.end_ts == datetime(2026, 5, 31, 23, 59, 59, 999999, tzinfo=_UTC).timestamp()
+
+
+@pytest.mark.parametrize("arg", ["week", "7d", "past 7 days"])
+def test_parse_recap_range_week_aliases(arg: str) -> None:
+    rng = parse_recap_range(arg, now=_NOW)
+    assert rng.label == "past 7 days"
+    assert rng.start_ts == datetime(2026, 5, 25, tzinfo=_UTC).timestamp()
+    assert rng.end_ts == _NOW.timestamp()
+
+
+def test_parse_recap_range_explicit_date() -> None:
+    rng = parse_recap_range("2026-05-20", now=_NOW)
+    assert rng.label == "2026-05-20"
+    assert rng.start_ts == datetime(2026, 5, 20, tzinfo=_UTC).timestamp()
+
+
+def test_parse_recap_range_invalid_raises() -> None:
+    with pytest.raises(ValueError, match="Unknown recap period"):
+        parse_recap_range("last decade", now=_NOW)
+
+
+def test_add_modified_file_ignores_empty_and_duplicates() -> None:
+    item = SessionRecapItem(title="t", session_id="s")
+    item.add_modified_file("")
+    item.add_modified_file("a.py")
+    item.add_modified_file("a.py")
+    item.add_modified_file("b.py")
+    assert item.files_modified == ["a.py", "b.py"]
+
+
+def test_duration_minutes_zero_when_timestamps_missing() -> None:
+    assert SessionRecapItem(title="t", session_id="s").duration_minutes == 0
+    item = SessionRecapItem(title="t", session_id="s")
+    item.start_ts, item.end_ts = 100.0, 280.0
+    assert item.duration_minutes == 3  # round(180 / 60)
+
+
+@pytest.mark.parametrize(
+    ("minutes", "expected"),
+    [(0, "<1 min"), (1, "~1 min"), (59, "~59 min"), (60, "~1 hr"), (90, "~1 hr 30 min")],
+)
+def test_format_duration_boundaries(minutes: int, expected: str) -> None:
+    assert _format_duration(minutes) == expected
+
+
+def test_format_tool_counts_caps_at_four_with_more() -> None:
+    counts = Counter({"ReadFile": 5, "WriteFile": 3, "Grep": 2, "Glob": 2, "Shell": 1, "Agent": 1})
+    rendered = _format_tool_counts(counts)
+    assert "Read ×5" in rendered
+    assert "+2 more" in rendered
+    assert _format_tool_counts(Counter()) == ""
+
+
+def test_tool_label_known_and_passthrough() -> None:
+    assert _tool_label("WriteFile") == "Write"
+    assert _tool_label("CustomTool") == "CustomTool"
+
+
+def test_first_sentence_boundaries() -> None:
+    # Separator before index 40 is ignored; the whole string is kept.
+    assert _first_sentence("Too short. Then more text here") == "Too short. Then more text here"
+    # No punctuation -> whole (collapsed) string.
+    assert _first_sentence("a plain line with no terminator at all") == (
+        "a plain line with no terminator at all"
+    )
+    # '? ' boundary past index 40 splits the first sentence.
+    long_q = "I spent a while wondering what the right approach was? Then I moved on."
+    assert _first_sentence(long_q) == "I spent a while wondering what the right approach was?"
+    assert _first_sentence("   ") == ""
+
+
+def test_last_substantive_thread_empty() -> None:
+    assert _last_substantive_thread([]) == ""
+
+
+def test_format_recap_empty_items() -> None:
+    out = format_recap([], parse_recap_range("today", now=_NOW))
+    assert "No Pythinker sessions found" in out
+
+
+def test_build_turn_recap_line_falls_back_to_request_and_handles_empty() -> None:
+    assert build_turn_recap_line(request="fix the bug", assistant_text="") == (
+        "※ recap: fix the bug (disable recaps in /settings)"
+    )
+    assert build_turn_recap_line(request="", assistant_text="") is None
+
+
+def _record(timestamp: float, message: object) -> SimpleNamespace:
+    return SimpleNamespace(timestamp=timestamp, to_wire_message=lambda: message)
+
+
+@pytest.mark.asyncio
+async def test_summarize_session_collects_turns_tools_and_files() -> None:
+    from pythinker_core.message import ToolCall as CoreToolCall
+    from pythinker_core.tooling import ToolReturnValue
+
+    from pythinker_code.tools.display import DiffDisplayBlock
+    from pythinker_code.wire.types import TextPart, ToolCall, ToolResult, TurnBegin
+
+    rng = parse_recap_range("today", now=_NOW)
+    in_range = rng.start_ts + 10.0
+    records = [
+        _record(rng.start_ts - 100.0, TurnBegin(user_input="out of range, skipped")),
+        _record(in_range, TurnBegin(user_input="first ask")),
+        _record(in_range + 1, TextPart(text="working on it")),
+        _record(
+            in_range + 2,
+            ToolCall(id="1", function=CoreToolCall.FunctionBody(name="WriteFile", arguments="{}")),
+        ),
+        _record(
+            in_range + 3,
+            ToolResult(
+                tool_call_id="1",
+                return_value=ToolReturnValue(
+                    is_error=False,
+                    output="ok",
+                    message="ok",
+                    display=[
+                        DiffDisplayBlock(
+                            path="a.py", old_text="", new_text="x", old_start=1, new_start=1
+                        )
+                    ],
+                ),
+            ),
+        ),
+        _record(in_range + 4, TurnBegin(user_input="second ask")),
+    ]
+
+    async def _iter_records():
+        for record in records:
+            yield record
+
+    session = SimpleNamespace(
+        title="My session",
+        id="sess-1",
+        wire_file=SimpleNamespace(iter_records=_iter_records),
+    )
+
+    item = await summarize_session_for_recap(cast("Session", session), rng)
+    assert item is not None
+    assert item.turn_count == 2  # out-of-range TurnBegin skipped
+    assert item.first_user_message == "first ask"
+    assert item.last_user_message == "second ask"
+    assert item.assistant_snippets == ["working on it"]
+    assert item.tool_counts["WriteFile"] == 1
+    assert item.files_modified == ["a.py"]
+
+
+@pytest.mark.asyncio
+async def test_summarize_session_returns_none_without_turns() -> None:
+    rng = parse_recap_range("today", now=_NOW)
+
+    async def _iter_records():
+        from pythinker_code.wire.types import TextPart
+
+        yield _record(rng.start_ts + 5.0, TextPart(text="no turn began"))
+
+    session = SimpleNamespace(
+        title="t", id="s", wire_file=SimpleNamespace(iter_records=_iter_records)
+    )
+    assert await summarize_session_for_recap(cast("Session", session), rng) is None

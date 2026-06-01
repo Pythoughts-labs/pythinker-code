@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import cast
 
@@ -22,6 +23,20 @@ class DiffPreview:
     added: int
     removed: int
     summary_only: bool = False
+    is_new_file: bool = False
+
+
+# Huge-file summary blocks (utils/diff.py) describe the old side as "(N lines)".
+# A zero-line old side means the file did not exist before this write.
+_SUMMARY_LINE_COUNT_RE = re.compile(r"^\((\d+) lines?")
+
+
+def _block_old_is_empty(block: DiffDisplayBlock) -> bool:
+    """Whether *block* represents content with no pre-existing old side."""
+    if block.is_summary:
+        match = _SUMMARY_LINE_COUNT_RE.match(block.old_text.strip())
+        return match is not None and match.group(1) == "0"
+    return not block.old_text.strip()
 
 
 def display_blocks_from_result(result: ToolResultPayload) -> list[DisplayBlock]:
@@ -84,7 +99,14 @@ def preview_from_diff_blocks(blocks: list[DiffDisplayBlock]) -> DiffPreview | No
     if not diff_text:
         return None
     added, removed = _diff_counts(diff_text)
-    return DiffPreview(diff_text=diff_text, added=added, removed=removed, summary_only=summary_only)
+    is_new_file = all(_block_old_is_empty(block) for block in blocks)
+    return DiffPreview(
+        diff_text=diff_text,
+        added=added,
+        removed=removed,
+        summary_only=summary_only,
+        is_new_file=is_new_file,
+    )
 
 
 def preview_from_result(result: ToolResultPayload) -> DiffPreview | None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import html
-from functools import cache
+from functools import lru_cache
 from pathlib import Path
 
 _PYTHINKER_BRAND_DIR = Path(__file__).resolve().parents[1] / "web" / "static" / "brand"
@@ -10,7 +10,9 @@ _PYTHINKER_LOGO_PATH = _PYTHINKER_BRAND_DIR / "icon.svg"
 _PYTHINKER_FAVICON_PATH = _PYTHINKER_BRAND_DIR / "favicon.ico"
 
 
-@cache
+# Bounded: only the two brand assets below are ever passed in; the cap keeps a
+# future caller with many distinct paths from leaking memory.
+@lru_cache(maxsize=16)
 def browser_login_asset_data_uri(path: Path, media_type: str) -> str:
     encoded = base64.b64encode(path.read_bytes()).decode("utf-8")
     return f"data:{media_type};base64,{encoded}"

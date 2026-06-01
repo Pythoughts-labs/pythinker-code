@@ -18,7 +18,13 @@ type OnTriggered = Callable[[str, str, int], None]
 """(event, target, hook_count) -> None"""
 
 type OnResolved = Callable[..., None]
-"""(event, target, action, reason, duration_ms[, outputs]) -> None"""
+"""(event, target, action, reason, duration_ms[, outputs]) -> None.
+
+Intentionally variadic: ``_resolved_callback_accepts_outputs`` inspects each
+concrete callable at runtime and calls it with 5 or 6 positional args, so both
+legacy 5-arg subscribers and opt-in 6-arg subscribers are valid. A stricter
+Protocol/overload type was tried and rejected — it statically excludes one of
+the two arities the runtime deliberately supports (see tests/hooks)."""
 
 type OnWireHookRequest = Callable[[WireHookHandle], Awaitable[None]]
 """Called when a wire hook needs client handling. The callback should send

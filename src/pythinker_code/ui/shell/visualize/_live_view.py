@@ -28,7 +28,11 @@ from rich.text import Text
 from pythinker_code.session_recap import build_turn_recap_line
 from pythinker_code.soul import format_token_count
 from pythinker_code.tools.display import TodoDisplayBlock, TodoDisplayItem
-from pythinker_code.ui.shell.components.render_utils import cell_width, truncate_to_width
+from pythinker_code.ui.shell.components.render_utils import (
+    cell_width,
+    sanitize_ansi,
+    truncate_to_width,
+)
 from pythinker_code.ui.shell.console import console, current_console_width
 from pythinker_code.ui.shell.echo import render_user_echo
 from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ACTIVE_MARKER, TRANSCRIPT_TOOL_GUTTER
@@ -550,7 +554,7 @@ class _LiveView:
         )
         if not line:
             return
-        console.print(Text(line, style=tui_rich_style("muted") + Style(italic=True)))
+        console.print(Text(sanitize_ansi(line), style=tui_rich_style("muted") + Style(italic=True)))
 
     def _working_indicator(self) -> RenderableType:
         now = time.monotonic()

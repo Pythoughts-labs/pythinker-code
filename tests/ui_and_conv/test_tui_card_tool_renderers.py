@@ -243,6 +243,28 @@ def test_write_existing_file_renders_diff_for_add_only_change():
     assert "Wrote 2 lines" not in rendered
 
 
+def test_write_huge_new_file_shows_wrote_header_not_diff():
+    content = "".join(f"line {i}\n" for i in range(12_000))
+    rendered = _render(
+        "WriteFile",
+        {"path": "/repo/big.py", "content": content},
+        details={
+            "display": [
+                DiffDisplayBlock(
+                    path="/repo/big.py",
+                    old_text="(0 lines)",
+                    new_text="(12000 lines)",
+                    old_start=1,
+                    new_start=1,
+                    is_summary=True,
+                )
+            ]
+        },
+    )
+    assert "Wrote 12000 lines" in rendered
+    assert "removed 1 line" not in rendered
+
+
 def test_write_large_diff_can_expand_from_completed_card():
     defn = get_tool_renderer("WriteFile")
     assert defn is not None
