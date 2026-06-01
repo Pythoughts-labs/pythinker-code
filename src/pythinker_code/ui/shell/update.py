@@ -1227,6 +1227,10 @@ async def _do_update(
         upgrade_command = _detect_upgrade_command()
         if upgrade_command[:1] == [MANAGED_CHANNEL_MARKER]:
             channel = upgrade_command[1]
+            try:
+                LATEST_VERSION_FILE.write_text(latest_version, encoding="utf-8")
+            except OSError:
+                logger.exception("Failed to cache latest version:")
             _print(
                 f"[{_t.warning}]Pythinker is managed by your {channel} channel. "
                 f"Update {current_version} → {latest_version} via {channel} "

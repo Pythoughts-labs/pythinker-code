@@ -180,6 +180,17 @@ def test_promote_changelog_missing_anchor_raises(tmp_path: Path) -> None:
         release_tool.promote_changelog(p, "0.28.0", release_date="2026-06-01")
 
 
+def test_open_pr_dry_run_branches_from_origin_main(capsys: pytest.CaptureFixture[str]) -> None:
+    release_tool.open_pr("0.28.0", bump_core=None, bump_host=None, dry_run=True)
+    out = capsys.readouterr().out
+    assert "[dry-run] git switch -c release/0.28.0 origin/main" in out
+
+
+def test_format_called_process_error_includes_returncode_and_command() -> None:
+    exc = subprocess.CalledProcessError(7, ["git", "fetch", "origin"])
+    assert release_tool._format_called_process_error(exc) == "command failed (7): git fetch origin"
+
+
 def test_rewrite_version_strings_targets_only_release_patterns() -> None:
     text = (
         "## 🆕 What's New in 0.27.0\n"

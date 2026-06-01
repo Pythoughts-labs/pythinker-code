@@ -212,6 +212,13 @@ jobs:
           python-version: "3.14"
           allow-prereleases: true
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # pinned from v8.1.0
+        with:
+          version: "0.8.5"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
       - name: Detect version bump
         id: version
         shell: python

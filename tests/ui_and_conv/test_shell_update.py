@@ -530,6 +530,33 @@ async def test_update_candidate_waits_for_homebrew_formula_version():
 
 
 @pytest.mark.asyncio
+async def test_do_update_managed_check_only_caches_latest(monkeypatch, tmp_path):
+    latest_file = tmp_path / "latest.txt"
+    messages: list[str] = []
+
+    async def fake_get_latest(session) -> str:
+        return "999.0.0"
+
+    async def fail_unavailable(session, latest_version: str, upgrade_command: list[str]) -> str:
+        raise AssertionError("managed channel must not run install-channel readiness checks")
+
+    monkeypatch.setenv("PYTHINKER_MANAGED", "docker")
+    monkeypatch.setattr(update.sys, "executable", "/usr/local/bin/python")
+    monkeypatch.setattr(update, "LATEST_VERSION_FILE", latest_file)
+    monkeypatch.setattr(update, "_get_latest_version", fake_get_latest)
+    monkeypatch.setattr(update, "_update_candidate_unavailable_reason", fail_unavailable)
+    monkeypatch.setattr(update, "new_client_session", lambda timeout: _FakeSessionContext(object()))
+
+    result = await update.do_update(
+        print_output=False, check_only=True, output_callback=messages.append
+    )
+
+    assert result is update.UpdateResult.UPDATE_AVAILABLE
+    assert latest_file.read_text(encoding="utf-8") == "999.0.0"
+    assert any("managed by your docker channel" in message for message in messages)
+
+
+@pytest.mark.asyncio
 async def test_do_update_does_not_cache_uninstallable_latest(monkeypatch, tmp_path):
     latest_file = tmp_path / "latest.txt"
     latest_file.write_text("8.0.0", encoding="utf-8")

@@ -180,6 +180,9 @@ def validate(target: str) -> None:
     remote = _git_capture(["git", "rev-parse", "origin/main"])
     if local != remote:
         raise ReleaseError("local main != origin/main; rebase onto origin/main first")
+    head = _git_capture(["git", "rev-parse", "HEAD"])
+    if head != remote:
+        raise ReleaseError("current HEAD is not origin/main; switch to main before release prep")
     assert_monotonic(current=read_project_version(ROOT_PYPROJECT), target=target)
     # Assert the `## Unreleased` anchor in ALL changelog files BEFORE any write
     # (same list rewrite() promotes) so Phase 2 cannot partially rewrite the tree.
@@ -270,7 +273,7 @@ def run_gates(target: str) -> None:
 def open_pr(target: str, *, bump_core: str | None, bump_host: str | None, dry_run: bool) -> None:
     """Phase 4 — branch + commit + push + PR (never main, C1)."""
     branch = f"release/{target}"
-    _run(["git", "switch", "-c", branch], dry_run=dry_run)
+    _run(["git", "switch", "-c", branch, "origin/main"], dry_run=dry_run)
     _run(["git", "add", "-A"], dry_run=dry_run)
     _run(["git", "commit", "-m", f"chore(release): prepare {target}"], dry_run=dry_run)
     _run(["git", "push", "-u", "origin", branch], dry_run=dry_run)
@@ -300,6 +303,11 @@ def open_pr(target: str, *, bump_core: str | None, bump_host: str | None, dry_ru
     print(f"  git tag v{target} && git push origin v{target}")
 
 
+def _format_called_process_error(exc: subprocess.CalledProcessError) -> str:
+    cmd = " ".join(str(part) for part in exc.cmd) if isinstance(exc.cmd, list) else str(exc.cmd)
+    return f"command failed ({exc.returncode}): {cmd}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prepare a pythinker-code release PR.")
     parser.add_argument("--set-version", required=True, help="target X.Y.Z")
@@ -324,6 +332,9 @@ def main() -> int:
         _run(["uv", "lock"], dry_run=False)
         run_gates(target)
         open_pr(target, bump_core=args.bump_core, bump_host=args.bump_host, dry_run=False)
+    except subprocess.CalledProcessError as exc:
+        print(f"error: {_format_called_process_error(exc)}", file=sys.stderr)
+        return 1
     except ReleaseError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
