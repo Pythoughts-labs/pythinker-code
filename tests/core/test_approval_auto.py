@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
+import json
+
 from pythinker_code.soul.approval import Approval, ApprovalState
+from pythinker_code.wire.types import ToolCall
+
+
+def _shell_call(cmd: str) -> ToolCall:
+    return ToolCall(
+        id="call-1",
+        function=ToolCall.FunctionBody(name="Shell", arguments=json.dumps({"command": cmd})),
+    )
 
 
 def test_yolo_only() -> None:
@@ -104,3 +114,61 @@ def test_set_auto_false_clears_runtime_auto() -> None:
     approval.set_auto(False)
     assert approval.is_auto() is False
     assert approval.is_runtime_auto() is False
+
+
+def test_destructive_action_deliberates_once_then_proceeds_under_auto() -> None:
+    """auto + auto_deliberate: a destructive Shell command deliberates the first
+    time, the identical re-issue runs once (one-shot retry), and a third issue
+    deliberates again — so deliberation never permanently whitelists ``rm -rf``."""
+    approval = Approval(state=ApprovalState(auto=True, auto_deliberate=True))
+
+    first = approval.deliberation_gate(_shell_call("rm -rf build"))
+    assert first is not None, "first destructive issue should deliberate"
+
+    second = approval.deliberation_gate(_shell_call("rm -rf build"))
+    assert second is None, "identical re-issue is the one-shot retry: allowed through"
+
+    third = approval.deliberation_gate(_shell_call("rm -rf build"))
+    assert third is not None, "one-shot consumed; a fresh issue deliberates again"
+
+
+def test_deliberation_gate_conditions() -> None:
+    """The gate fires only when the feature is on, we would otherwise auto-approve
+    (auto OR yolo), and the command is destructive."""
+    rm = _shell_call("rm -rf x")
+    safe = _shell_call("ls -la")
+
+    # feature off -> never deliberates (full back-compat)
+    off = Approval(state=ApprovalState(auto=True, auto_deliberate=False))
+    assert off.deliberation_gate(rm) is None
+
+    # human present (not auto, not yolo) -> normal interactive approval shows the rm -rf;
+    # no self-deliberation needed
+    human = Approval(state=ApprovalState(auto=False, auto_deliberate=True))
+    assert human.deliberation_gate(rm) is None
+
+    # yolo + auto_deliberate -> gates AHEAD of the yolo bypass
+    yolo = Approval(state=ApprovalState(yolo=True, auto_deliberate=True))
+    assert yolo.deliberation_gate(rm) is not None
+
+    # non-destructive in auto + auto_deliberate -> proceeds untouched
+    benign = Approval(state=ApprovalState(auto=True, auto_deliberate=True))
+    assert benign.deliberation_gate(safe) is None
+
+
+async def test_request_bounces_destructive_then_approves_retry() -> None:
+    """End-to-end through request(): a destructive command in auto + auto_deliberate is
+    bounced once with deliberation feedback that does NOT masquerade as a user rejection,
+    then the identical retry auto-approves."""
+    from tests.conftest import tool_call_context
+
+    approval = Approval(state=ApprovalState(auto=True, auto_deliberate=True))
+    with tool_call_context("Shell", arguments={"command": "rm -rf build"}):
+        first = await approval.request("Shell", "run command", "Run command `rm -rf build`")
+        assert not first, "destructive action is bounced for deliberation"
+        assert first.deliberation is True
+        assert "irreversible" in first.feedback
+        assert "rejected by the user" not in first.rejection_error().message
+
+        second = await approval.request("Shell", "run command", "Run command `rm -rf build`")
+        assert second, "one-shot consumed: the deliberated retry runs"

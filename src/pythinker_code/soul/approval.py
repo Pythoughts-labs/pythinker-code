@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import Callable
 from typing import Literal
+
+from pythinker_core.utils.typing import JsonType
 
 from pythinker_code.approval_runtime import (
     ApprovalCancelledError,
@@ -16,24 +19,40 @@ from pythinker_code.soul.toolset import (
 )
 from pythinker_code.tools.utils import ToolRejectedError
 from pythinker_code.utils.logging import logger
-from pythinker_code.wire.types import DisplayBlock
+from pythinker_code.wire.types import DisplayBlock, ToolCall
 
 type Response = Literal["approve", "approve_for_session", "reject"]
+
+_DELIBERATION_FEEDBACK = (
+    "No user is present and this action is irreversible ({reason}). Before re-issuing: "
+    "enumerate the realistic alternatives, weigh them against the current task, and commit "
+    "to the best one. If this exact action is still right, re-issue it and it will run."
+)
 
 
 class ApprovalResult:
     """Result of an approval request. Behaves as bool for backward compatibility."""
 
-    __slots__ = ("approved", "feedback")
+    __slots__ = ("approved", "feedback", "deliberation")
 
-    def __init__(self, approved: bool, feedback: str = ""):
+    def __init__(self, approved: bool, feedback: str = "", deliberation: bool = False):
         self.approved = approved
         self.feedback = feedback
+        self.deliberation = deliberation
+        """True when the bounce is an auto-mode deliberation prompt, not a user rejection."""
 
     def __bool__(self) -> bool:
         return self.approved
 
     def rejection_error(self) -> ToolRejectedError:
+        if self.deliberation and self.feedback:
+            # Auto-mode deliberation: no user is present, so do not frame it as a
+            # user rejection — the feedback itself is the instruction to deliberate.
+            return ToolRejectedError(
+                message=self.feedback,
+                brief="Deliberate before retrying",
+                has_feedback=True,
+            )
         if self.feedback:
             return ToolRejectedError(
                 message=(f"The tool call is rejected by the user. User feedback: {self.feedback}"),
@@ -62,6 +81,7 @@ class ApprovalState:
         auto: bool = False,
         runtime_auto: bool = False,
         safe_mode: bool = False,
+        auto_deliberate: bool = False,
         auto_approve_actions: set[str] | None = None,
         on_change: Callable[[], None] | None = None,
     ):
@@ -75,10 +95,19 @@ class ApprovalState:
         """Invocation-only auto flag, e.g. ``--auto`` or ``--print``. Not persisted."""
         self.safe_mode = safe_mode
         """When true, all auto-approval paths are suppressed."""
+        self.auto_deliberate = auto_deliberate
+        """When true, destructive auto-approved actions must deliberate once first.
+
+        Set from ``ask_user_question_policy == "auto_deliberate"``. Gates *ahead*
+        of yolo/auto: an irreversible action (``rm -rf``, ``git push --force``, ...)
+        is bounced back once for the agent to weigh alternatives before it runs.
+        """
         self.auto_approve_actions: set[str] = auto_approve_actions or set()
         """Set of action names that should automatically be approved."""
         self.approved_orchestration_fingerprints: set[str] = set()
         """RunAgents orchestration shapes approved for this in-memory session."""
+        self.deliberated_fingerprints: set[str] = set()
+        """Destructive (tool, command) shapes already bounced once; the re-issue runs."""
         self._on_change = on_change
 
     def notify_change(self) -> None:
@@ -171,6 +200,48 @@ class Approval:
     def approve_orchestration(self, fingerprint: str) -> None:
         self._state.approved_orchestration_fingerprints.add(fingerprint)
 
+    @staticmethod
+    def _shell_command(tool_call: ToolCall) -> str | None:
+        """Extract the Shell command string from a tool call, else ``None``."""
+        if tool_call.function.name != "Shell":
+            return None
+        try:
+            args: JsonType = json.loads(tool_call.function.arguments or "{}")
+        except (ValueError, TypeError):
+            return None
+        if not isinstance(args, dict):
+            return None
+        command = args.get("command")
+        return command if isinstance(command, str) else None
+
+    def deliberation_gate(self, tool_call: ToolCall) -> str | None:
+        """Reason a destructive auto-approved action must deliberate once, else ``None``.
+
+        Fires only when ``auto_deliberate`` is on, the action would otherwise be
+        auto-approved (auto *or* yolo — so it gates ahead of the yolo bypass), and the
+        command is destructive (Unit 1's classifier). One-shot: the first occurrence is
+        bounced for the agent to weigh alternatives; the identical re-issue is let through
+        once, so a deliberated ``rm -rf`` runs without being permanently whitelisted.
+        """
+        if not self._state.auto_deliberate:
+            return None
+        if not self.is_auto_approve():
+            return None
+        command = self._shell_command(tool_call)
+        if command is None:
+            return None
+        from pythinker_code.soul.permission import shell_destructive_reason
+
+        reason = shell_destructive_reason(command)
+        if reason is None:
+            return None
+        fingerprint = f"{tool_call.function.name}::{command}"
+        if fingerprint in self._state.deliberated_fingerprints:
+            self._state.deliberated_fingerprints.discard(fingerprint)  # consume one-shot
+            return None
+        self._state.deliberated_fingerprints.add(fingerprint)
+        return reason
+
     async def request(
         self,
         sender: str,
@@ -205,6 +276,21 @@ class Approval:
             action=action,
             description=description,
         )
+        # Gate ahead of the auto/yolo auto-approve: an irreversible action under
+        # auto_deliberate is bounced once so the agent weighs alternatives first.
+        if (reason := self.deliberation_gate(tool_call)) is not None:
+            from pythinker_code.telemetry import track
+
+            track(
+                "tool_deliberation",
+                tool_name=tool_call.function.name,
+                approval_mode="auto" if self.is_auto() else "yolo",
+            )
+            return ApprovalResult(
+                approved=False,
+                feedback=_DELIBERATION_FEEDBACK.format(reason=reason),
+                deliberation=True,
+            )
         if self.is_auto_approve():
             from pythinker_code.telemetry import track
 

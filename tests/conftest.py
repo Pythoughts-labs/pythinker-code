@@ -258,13 +258,18 @@ def toolset() -> PythinkerToolset:
 
 
 @contextmanager
-def tool_call_context(tool_name: str) -> Generator[None]:
-    """Create a tool call context."""
+def tool_call_context(
+    tool_name: str, arguments: dict[str, object] | None = None
+) -> Generator[None]:
+    """Create a tool call context. Pass ``arguments`` to populate the call payload."""
+    import json
+
     from pythinker_code.soul.toolset import current_tool_call
     from pythinker_code.wire.types import ToolCall
 
+    encoded = json.dumps(arguments) if arguments is not None else None
     token = current_tool_call.set(
-        ToolCall(id="test", function=ToolCall.FunctionBody(name=tool_name, arguments=None))
+        ToolCall(id="test", function=ToolCall.FunctionBody(name=tool_name, arguments=encoded))
     )
     try:
         yield
