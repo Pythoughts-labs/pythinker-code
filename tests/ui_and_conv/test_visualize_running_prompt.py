@@ -658,7 +658,9 @@ async def test_prompt_live_view_prints_turn_recap_after_turn_end(monkeypatch) ->
                 return self._messages.pop(0)
             raise shell_visualize.QueueShutDown
 
-    monkeypatch.setattr(_live_view_mod.console, "print", lambda *args, **kwargs: printed.extend(args))
+    monkeypatch.setattr(
+        _live_view_mod.console, "print", lambda *args, **kwargs: printed.extend(args)
+    )
 
     view = _PromptLiveView(
         StatusUpdate(),
