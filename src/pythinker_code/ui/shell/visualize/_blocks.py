@@ -1035,7 +1035,9 @@ class _HookBlock:
                 if has_both_streams:
                     body.append("[stderr]\n", style=tui_rich_style("dim"))
                 body.append(stderr, style=tui_rich_style("error"))
-            if output.timed_out and not body.plain:
+            if output.timed_out:
+                if body.plain:
+                    body.append("\n")
                 body.append("hook timed out", style=tui_rich_style("warning"))
             if output.truncated:
                 if body.plain:

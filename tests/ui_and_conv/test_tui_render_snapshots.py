@@ -228,6 +228,32 @@ def test_short_result_does_not_show_expand_hint():
     assert "ctrl+o" not in rendered
 
 
+def test_renderer_expandable_payload_flag_is_frame_scoped():
+    def render_call(_ctx: ToolRenderContext) -> RenderableType:
+        return Text("flaggy")
+
+    def render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> RenderableType:
+        if result.text == "large":
+            ctx.state["__has_expandable_payload__"] = True
+            ctx.state["__suppress_generic_expand_hint__"] = True
+        return Text(result.text)
+
+    defn = ToolRenderDefinition(
+        name="Flaggy",
+        label="Flaggy",
+        render_call=render_call,
+        render_result=render_result,
+    )
+    comp = ToolExecutionComponent("Flaggy", "t1", definition=defn)
+    comp.set_result(ToolResultPayload(text="large"))
+    render_plain(comp.render(), width=60)
+    assert comp.can_expand
+
+    comp.set_result(ToolResultPayload(text="small"))
+    render_plain(comp.render(), width=60)
+    assert not comp.can_expand
+
+
 # ---------------------------------------------------------------------------
 # render_shell="self" skips the bg padding
 # ---------------------------------------------------------------------------

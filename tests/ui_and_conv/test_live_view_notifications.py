@@ -122,6 +122,26 @@ def test_live_view_prints_resolved_hook_stdout(monkeypatch):
     assert "PRO AGENT ACTIVATION RECOMMENDED" in rendered
 
 
+def test_live_view_prints_hook_timeout_status_with_partial_output(monkeypatch):
+    view = _LiveView(StatusUpdate())
+    view.dispatch_wire_message(HookTriggered(event="PreToolUse", target="Shell", hook_count=1))
+    printed = []
+    monkeypatch.setattr(shell_console, "print", lambda *args, **kwargs: printed.extend(args))
+
+    view.dispatch_wire_message(
+        HookResolved(
+            event="PreToolUse",
+            target="Shell",
+            action="allow",
+            outputs=(HookOutput(stdout="partial output", timed_out=True),),
+        )
+    )
+
+    rendered = "\n".join(_render(item) for item in printed)
+    assert "partial output" in rendered
+    assert "hook timed out" in rendered
+
+
 def test_working_indicator_uses_turn_elapsed_time(monkeypatch):
     now = 1000.0
     monkeypatch.setattr(live_view_module.time, "monotonic", lambda: now)

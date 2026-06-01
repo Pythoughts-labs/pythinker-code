@@ -10,7 +10,14 @@ from rich.text import Text
 
 from pythinker_code.tools.display import TodoDisplayItem
 from pythinker_code.ui.shell.prompt import BgTaskCounts, CustomPromptSession, PromptMode, UserInput
-from pythinker_code.wire.types import ApprovalRequest, StatusUpdate, SteerInput, TextPart
+from pythinker_code.wire.types import (
+    ApprovalRequest,
+    StatusUpdate,
+    SteerInput,
+    TextPart,
+    TurnBegin,
+    TurnEnd,
+)
 
 shell_visualize = importlib.import_module("pythinker_code.ui.shell.visualize")
 # Sub-modules for monkeypatching internal names (Live, _keyboard_listener, console)
@@ -627,6 +634,45 @@ async def test_prompt_live_view_keeps_processing_external_approvals_after_turn_e
     finally:
         gate.set()
         await task
+
+
+@pytest.mark.asyncio
+async def test_prompt_live_view_prints_turn_recap_after_turn_end(monkeypatch) -> None:
+    invalidations: list[str] = []
+    printed: list[object] = []
+
+    class _PromptSession:
+        def invalidate(self) -> None:
+            invalidations.append("invalidate")
+
+    class _Wire:
+        def __init__(self) -> None:
+            self._messages = [
+                TurnBegin(user_input="implement recaps"),
+                TextPart(text="Implemented a /recap command."),
+                TurnEnd(),
+            ]
+
+        async def receive(self):
+            if self._messages:
+                return self._messages.pop(0)
+            raise shell_visualize.QueueShutDown
+
+    monkeypatch.setattr(_live_view_mod.console, "print", lambda *args, **kwargs: printed.extend(args))
+
+    view = _PromptLiveView(
+        StatusUpdate(),
+        prompt_session=cast(Any, _PromptSession()),
+        steer=lambda _content: None,
+        show_turn_recaps=True,
+    )
+
+    await view.visualize_loop(cast(Any, _Wire()))
+
+    plain = "\n".join(getattr(item, "plain", str(item)) for item in printed)
+    assert "※ recap: Implemented a /recap command." in plain
+    assert "disable recaps in /settings" in plain
+    assert invalidations
 
 
 @pytest.mark.asyncio

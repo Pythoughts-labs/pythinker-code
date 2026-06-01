@@ -57,7 +57,7 @@ async def init(soul: PythinkerSoul, args: str):
 
 
 @registry.command
-async def recap(soul: PythinkerSoul, args: str):
+async def recap(soul: PythinkerSoul, args: str) -> None:
     """Recap Pythinker sessions. Usage: /recap [today|yesterday|week|YYYY-MM-DD]"""
     from pythinker_code.session_recap import build_pythinker_recap
 

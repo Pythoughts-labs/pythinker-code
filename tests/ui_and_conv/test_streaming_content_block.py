@@ -238,8 +238,22 @@ def test_thinking_status_line_uses_compact_activity_metadata():
 
 def _assert_blank_line_after_activity(output: str, label: str) -> None:
     lines = output.splitlines()
-    activity_index = next(index for index, line in enumerate(lines) if label in line)
+    try:
+        activity_index = next(index for index, line in enumerate(lines) if label in line)
+    except StopIteration:
+        raise AssertionError(f"Label '{label}' not found in output") from None
+    assert activity_index + 1 < len(lines), f"Label '{label}' is the last line in output"
     assert lines[activity_index + 1].strip() == ""
+
+
+def test_assert_blank_line_after_activity_reports_missing_label() -> None:
+    with pytest.raises(AssertionError, match="Label 'Missing' not found in output"):
+        _assert_blank_line_after_activity("Composing\n", "Missing")
+
+
+def test_assert_blank_line_after_activity_reports_missing_following_line() -> None:
+    with pytest.raises(AssertionError, match="Label 'Composing' is the last line in output"):
+        _assert_blank_line_after_activity("Composing\n", "Composing")
 
 
 def test_composing_preview_has_standard_gap_after_activity_line():

@@ -162,6 +162,7 @@ class ToolExecutionComponent:
                 width = console.size.width
             except Exception:  # noqa: BLE001 - rendering must not fail on width lookup
                 width = 100
+        self._renderer_state.pop("__has_expandable_payload__", None)
         self._renderer_state.pop("__suppress_generic_expand_hint__", None)
         ctx = self._build_context(width=width)
         children: list[RenderableType] = []

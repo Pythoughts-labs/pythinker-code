@@ -132,7 +132,7 @@ async def visualize(
     on_view_closed: Callable[[], None] | None = None,
     show_thinking_stream: bool = False,
     show_turn_recaps: bool = False,
-):
+) -> None:
     """A loop to consume agent events and visualize the agent behavior.
 
     Creates either a ``_LiveView`` (Rich Live, non-interactive) or a
