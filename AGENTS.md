@@ -422,3 +422,26 @@ user or release workflow explicitly asks for that package.
    resolvable by the install scripts and the in-app updater. If a builder is
    re-run after promotion it flips the Release back to prerelease; recover by
    running `promote-release.yml` via `workflow_dispatch` for that tag.
+
+### Release pipeline gotchas
+
+Hard-won traps — re-check these before and during a release:
+
+- **Tag triggers use GitHub's glob filter, which is NOT regex or ksh extglob.** Every `v*`-triggered
+  workflow (`release-pythinker-cli`, `promote-release`, `linux-installer`, `windows-installer`,
+  `homebrew-tap`, `scoop-bucket`, `docker`) must filter on `"v[0-9]+.[0-9]+.[0-9]+"`. In a GitHub tag
+  filter `(` and `)` are literal characters, so an extglob-style pattern such as
+  `"v+([0-9]).+([0-9]).+([0-9])"` matches no real tag and silently fires **nothing** — the release looks
+  like it "did nothing" with no error anywhere. Do not "modernize" these patterns into extglob/regex.
+- **A pushed tag runs the workflow definition that exists AT the tagged commit.** If you fix a release
+  workflow or its trigger, re-create the tag on the post-fix commit — re-pushing a tag that still points
+  at the pre-fix commit just re-runs the broken definition. Use an annotated tag
+  (`git tag -a vX.Y.Z -m ...`). Pre-flight before re-tagging: confirm nothing shipped yet
+  (`gh release view vX.Y.Z` is "not found" and `https://pypi.org/pypi/pythinker-code/X.Y.Z/json` is 404),
+  then delete the old tag locally and on origin and re-push.
+- **`main` requires conversation resolution, so all-green checks are not sufficient to merge.** If
+  `gh pr view <n> --json mergeStateStatus` shows `BLOCKED` while every required check is `SUCCESS`, look
+  for an unresolved review thread — CodeRabbit can open one even when its commit status reads "Review
+  skipped". Inspect via the `reviewThreads` GraphQL field, verify the finding, reply in-thread, then
+  `resolveReviewThread`. `main` is also squash-only (linear history, `enforce_admins` on), so merge with
+  `gh pr merge --squash`.
