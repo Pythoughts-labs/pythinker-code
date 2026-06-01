@@ -40,7 +40,6 @@ export default withMermaid(defineConfig({
                 { text: 'Interaction and Input', link: '/en/guides/interaction' },
                 { text: 'Sessions and Context', link: '/en/guides/sessions' },
                 { text: 'Using in IDEs', link: '/en/guides/ides' },
-                { text: 'Integrations with Tools', link: '/en/guides/integrations' },
               ],
             },
           ],
@@ -105,7 +104,7 @@ export default withMermaid(defineConfig({
     outline: [2, 3],
     search: { provider: 'local' },
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/TechMatrix-labs/pythinker-code' },
+      { icon: 'github', link: 'https://github.com/Pythoughts-labs/pythinker-code' },
     ],
   },
 

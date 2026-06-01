@@ -11,7 +11,7 @@ auto-regenerates the formula and pushes it to the tap repo.
 ## End-user install (post-setup)
 
 ```sh
-brew install TechMatrix-labs/pythinker/pythinker-code
+brew install Pythoughts-labs/pythinker/pythinker-code
 ```
 
 Works on macOS (Intel + Apple Silicon) and Linux (x86_64 + aarch64) — same
@@ -32,10 +32,10 @@ matches Anthropic's published advice for Claude Code's Homebrew cask.)
 1. **Create the tap repo.** Create a new empty GitHub repo named
    `homebrew-pythinker` under your account. The `homebrew-` prefix is
    required by Homebrew; the part after the dash becomes the tap name
-   (so `brew tap TechMatrix-labs/pythinker`).
+   (so `brew tap Pythoughts-labs/pythinker`).
 
    ```sh
-   gh repo create TechMatrix-labs/homebrew-pythinker \
+   gh repo create Pythoughts-labs/homebrew-pythinker \
      --public \
      --description "Homebrew tap for Pythinker Code" \
      --enable-issues=false
@@ -56,7 +56,7 @@ That's it. The next `v*.*.*` tag push to `Pythinker-Code` will:
 1. Wait for native GitHub Release tarballs to be attached.
 2. Render `Formula/pythinker-code.rb` from `pythinker-code.rb.tmpl` with the
    release URLs and SHA-256 digests.
-3. Commit + push the formula to `TechMatrix-labs/homebrew-pythinker` on
+3. Commit + push the formula to `Pythoughts-labs/homebrew-pythinker` on
    `main` (creating the inaugural commit on first run).
 4. Brew users get the new release via `brew upgrade pythinker-code`.
 

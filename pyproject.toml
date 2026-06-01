@@ -1,6 +1,6 @@
 [project]
 name = "pythinker-code"
-version = "0.27.0"
+version = "0.28.0"
 description = "Pythinker Code is your next CLI agent."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -102,11 +102,11 @@ pythinker = "pythinker_code.__main__:main"
 pythinker-code = "pythinker_code.__main__:main"
 
 [project.urls]
-Homepage      = "https://github.com/TechMatrix-labs/pythinker-code"
-Repository    = "https://github.com/TechMatrix-labs/pythinker-code"
-Issues        = "https://github.com/TechMatrix-labs/pythinker-code/issues"
-Changelog     = "https://github.com/TechMatrix-labs/pythinker-code/blob/main/CHANGELOG.md"
-Documentation = "https://github.com/TechMatrix-labs/pythinker-code#readme"
+Homepage      = "https://github.com/Pythoughts-labs/pythinker-code"
+Repository    = "https://github.com/Pythoughts-labs/pythinker-code"
+Issues        = "https://github.com/Pythoughts-labs/pythinker-code/issues"
+Changelog     = "https://github.com/Pythoughts-labs/pythinker-code/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/Pythoughts-labs/pythinker-code#readme"
 
 [tool.ruff]
 line-length = 100

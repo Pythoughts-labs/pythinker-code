@@ -26,10 +26,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage      = "https://github.com/TechMatrix-labs/pythinker-code"
-Repository    = "https://github.com/TechMatrix-labs/pythinker-code"
-Issues        = "https://github.com/TechMatrix-labs/pythinker-code/issues"
-Changelog     = "https://github.com/TechMatrix-labs/pythinker-code/blob/main/packages/pythinker-host/CHANGELOG.md"
+Homepage      = "https://github.com/Pythoughts-labs/pythinker-code"
+Repository    = "https://github.com/Pythoughts-labs/pythinker-code"
+Issues        = "https://github.com/Pythoughts-labs/pythinker-code/issues"
+Changelog     = "https://github.com/Pythoughts-labs/pythinker-code/blob/main/packages/pythinker-host/CHANGELOG.md"
 
 [dependency-groups]
 dev = [

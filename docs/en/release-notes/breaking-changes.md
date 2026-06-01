@@ -4,6 +4,10 @@ This page documents breaking changes in Pythinker Code releases and provides mig
 
 ## Unreleased
 
+## 0.28.0 (2026-05-31)
+
+No breaking changes. This release is compatible with 0.27.0 user configuration, native installs, and session data. The repository's move to the Pythoughts-labs GitHub org is handled transparently — the default `/feedback` repository auto-migrates and download/update URLs resolve to the new org.
+
 ## 0.27.0 (2026-05-31)
 
 No breaking changes. This release is compatible with 0.26.0 user configuration, native installs, and session data.
