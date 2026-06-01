@@ -126,3 +126,17 @@ def test_release_asset_wait_covers_all_updater_channels() -> None:
         'version \\"${version}\\"',
     ):
         assert expected_readiness_marker in promote_workflow
+
+
+def test_changelog_workflow_skips_release_prep_prs() -> None:
+    """release.py opens `release/X.Y.Z` PRs titled `chore(release): prepare X.Y.Z`.
+
+    changelog-entry-required.yml MUST skip its required check for that shape,
+    or every release PR is blocked under branch protection. Assert both the
+    title guard and the head-branch guard so neither half silently regresses.
+    """
+    wf = (WORKFLOWS / "changelog-entry-required.yml").read_text()
+    # Title guard: chore(release)* → skip.
+    assert '"chore(release)"*)' in wf, "missing chore(release) title skip"
+    # Head-branch guard: release/* → skip.
+    assert "release/*)" in wf, "missing release/* branch skip"
