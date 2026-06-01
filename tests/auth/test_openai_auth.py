@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import aiohttp
@@ -110,6 +111,35 @@ def test_openai_callback_html_uses_pythinker_branding():
     assert favicon_bytes.startswith(b"\x00\x00\x01\x00")
     assert f'<link rel="icon" type="image/x-icon" href="{favicon_data_uri}">' in page
     assert f'<img class="logo" src="{logo_data_uri}" alt="Pythinker logo">' in page
+
+
+def test_committed_brand_assets_match_web_public_source():
+    """Committed login-brand assets must stay byte-identical to their canonical source.
+
+    ``web/static/`` is a build output: ``scripts/build_web.py`` ``rmtree``s it and
+    repopulates from the vite build (whose brand files come from ``web/public/brand``).
+    We force-commit ``icon.svg`` + ``favicon.ico`` only so the test job — which does
+    not run the web build — still has the files the OAuth callback reads. This guard
+    fails loudly if the canonical source changes without the committed copies being
+    re-synced (otherwise the branding tests above would validate a stale fixture).
+    """
+    from pythinker_code.auth.browser_login_page import (
+        _PYTHINKER_FAVICON_PATH,
+        _PYTHINKER_LOGO_PATH,
+    )
+
+    public_brand = Path(__file__).resolve().parents[2] / "web" / "public" / "brand"
+    for committed, name in (
+        (_PYTHINKER_LOGO_PATH, "icon.svg"),
+        (_PYTHINKER_FAVICON_PATH, "favicon.ico"),
+    ):
+        source = public_brand / name
+        assert source.exists(), f"canonical brand source missing: {source}"
+        assert committed.read_bytes() == source.read_bytes(), (
+            f"{committed} drifted from canonical source {source}; re-sync the committed "
+            "copy (e.g. `cp` from web/public/brand or rerun the web build) so the "
+            "login-branding tests match what actually ships."
+        )
 
 
 def test_openai_callback_html_escapes_error_message():
