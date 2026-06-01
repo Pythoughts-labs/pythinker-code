@@ -213,12 +213,11 @@ def test_no_old_repo_owner_references() -> None:
         ".pytest_cache",
     }
     # Excluded paths that legitimately reference old owner for non-main-repo projects
-    # (pythinker-home, pythinker-agent-rs, zsh-pythinker-code) or are this guard itself.
+    # (pythinker-home, pythinker-agent-rs) or are this guard itself.
     skip_files = {
         ROOT / "tests" / "test_installation_docs.py",
         ROOT / ".github" / "workflows" / "dispatch-pythinker-home-sync.yml",
         ROOT / "docs" / "en" / "customization" / "wire-mode.md",
-        ROOT / "docs" / "en" / "guides" / "integrations.md",
     }
     violations: list[str] = []
     for path in ROOT.rglob("*"):
