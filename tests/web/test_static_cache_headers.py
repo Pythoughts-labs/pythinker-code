@@ -9,7 +9,9 @@ from starlette.testclient import TestClient
 
 from pythinker_code.web.app import STATIC_DIR, create_app
 
-_needs_static = pytest.mark.skipif(not STATIC_DIR.exists(), reason="web static assets not built")
+_needs_static = pytest.mark.skipif(
+    not (STATIC_DIR / "index.html").exists(), reason="web static assets not built"
+)
 
 
 def _make_client() -> TestClient:
