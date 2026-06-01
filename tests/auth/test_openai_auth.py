@@ -142,6 +142,18 @@ def test_committed_brand_assets_match_web_public_source():
         )
 
 
+def test_browser_login_asset_missing_degrades_gracefully(tmp_path):
+    """A missing brand asset must not break the OAuth callback page.
+
+    The data-uri helper should log and return an empty source rather than raising,
+    so login still completes if a build ever ships without the cosmetic assets.
+    """
+    from pythinker_code.auth.browser_login_page import browser_login_asset_data_uri
+
+    missing = tmp_path / "does-not-exist.svg"
+    assert browser_login_asset_data_uri(missing, "image/svg+xml") == ""
+
+
 def test_openai_callback_html_escapes_error_message():
     page = _callback_html(ok=False, message='<script>alert("x")</script>')
 

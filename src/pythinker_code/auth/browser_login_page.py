@@ -5,6 +5,8 @@ import html
 from functools import lru_cache
 from pathlib import Path
 
+from pythinker_code.utils.logging import logger
+
 _PYTHINKER_BRAND_DIR = Path(__file__).resolve().parents[1] / "web" / "static" / "brand"
 _PYTHINKER_LOGO_PATH = _PYTHINKER_BRAND_DIR / "icon.svg"
 _PYTHINKER_FAVICON_PATH = _PYTHINKER_BRAND_DIR / "favicon.ico"
@@ -14,7 +16,17 @@ _PYTHINKER_FAVICON_PATH = _PYTHINKER_BRAND_DIR / "favicon.ico"
 # future caller with many distinct paths from leaking memory.
 @lru_cache(maxsize=16)
 def browser_login_asset_data_uri(path: Path, media_type: str) -> str:
-    encoded = base64.b64encode(path.read_bytes()).decode("utf-8")
+    # Fail soft: a missing/unreadable brand asset is cosmetic and must never break
+    # the OAuth callback page. Build outputs (web/static) are normally present, so
+    # log loudly and embed an empty source rather than raising mid-login.
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        logger.warning(
+            "Browser-login brand asset unavailable, rendering without it ({}): {}", path, exc
+        )
+        return ""
+    encoded = base64.b64encode(raw).decode("utf-8")
     return f"data:{media_type};base64,{encoded}"
 
 
