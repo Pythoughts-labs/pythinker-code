@@ -742,3 +742,177 @@ async def test_refresh_managed_models_isolates_opencode_go_discovery_failure():
     # OpenCode Go list is left exactly as-is (not wiped, not half-applied).
     assert "opencode-go/qwen3.7-max" not in config.models
     assert config.models["opencode-go/qwen3.5-plus"].provider == OPENCODE_GO_OPENAI_PROVIDER_KEY
+
+
+def _make_minimax_config() -> Config:
+    from pythinker_code.auth.minimax import (
+        MINIMAX_ANTHROPIC_BASE_URL,
+        MINIMAX_ANTHROPIC_PROVIDER_KEY,
+    )
+
+    config = Config(
+        default_model="minimax/m2.7",
+        default_thinking=True,
+        providers={
+            MINIMAX_ANTHROPIC_PROVIDER_KEY: LLMProvider(
+                type="anthropic",
+                base_url=MINIMAX_ANTHROPIC_BASE_URL,
+                api_key=SecretStr("sk-cp-test"),
+            )
+        },
+        models={
+            "minimax/m2.7": LLMModel(
+                provider=MINIMAX_ANTHROPIC_PROVIDER_KEY,
+                model="MiniMax-M2.7",
+                max_context_size=192_000,
+            ),
+            "minimax/m2.7-highspeed": LLMModel(
+                provider=MINIMAX_ANTHROPIC_PROVIDER_KEY,
+                model="MiniMax-M2.7-highspeed",
+                max_context_size=192_000,
+            ),
+        },
+        services=Services(),
+    )
+    config.is_from_default_location = True
+    return config
+
+
+@pytest.mark.asyncio
+async def test_refresh_managed_models_refreshes_minimax_token_plan_without_relogin():
+    """MiniMax startup refresh must use the authenticated live catalog.
+
+    Token Plan availability is key-specific, so stale aliases from an older
+    login must be pruned and newly available models surfaced without routing
+    through the generic managed-provider path.
+    """
+    from pythinker_code.auth.minimax import (
+        MINIMAX_ANTHROPIC_PROVIDER_KEY,
+        MiniMaxModel,
+    )
+
+    config = _make_minimax_config()
+    discovered = (
+        MiniMaxModel("MiniMax-M2.7", "m2.7", "MiniMax M2.7", max_context_size=205_000),
+        MiniMaxModel("MiniMax-M3", "m3", "MiniMax M3", max_context_size=512_000),
+    )
+    saved: list[Config] = []
+
+    with (
+        patch(
+            "pythinker_code.auth.minimax.refresh_minimax_models",
+            new=AsyncMock(return_value=discovered),
+        ),
+        patch("pythinker_code.auth.platforms.list_models", new=AsyncMock()) as list_models_mock,
+        patch("pythinker_code.auth.platforms.load_config", side_effect=_make_minimax_config),
+        patch(
+            "pythinker_code.auth.platforms.save_config",
+            side_effect=lambda cfg, *a, **k: saved.append(cfg),
+        ),
+    ):
+        changed = await refresh_managed_models(config)
+
+    assert changed is True
+    assert list_models_mock.await_count == 0
+    assert "minimax/m2.7-highspeed" not in config.models
+    assert config.models["minimax/m2.7"].max_context_size == 205_000
+    assert config.models["minimax/m3"].provider == MINIMAX_ANTHROPIC_PROVIDER_KEY
+    assert config.default_model == "minimax/m2.7"
+    assert config.default_thinking is True
+    assert len(saved) == 1
+    assert "minimax/m3" in saved[0].models
+    assert "minimax/m2.7-highspeed" not in saved[0].models
+
+
+@pytest.mark.asyncio
+async def test_refresh_managed_models_applies_empty_minimax_catalog():
+    """An authenticated empty MiniMax catalog is authoritative and prunes stale models."""
+    from pythinker_code.auth.minimax import MINIMAX_ANTHROPIC_PROVIDER_KEY
+
+    config = _make_minimax_config()
+    saved: list[Config] = []
+
+    with (
+        patch(
+            "pythinker_code.auth.minimax.refresh_minimax_models",
+            new=AsyncMock(return_value=()),
+        ) as refresh_mock,
+        patch("pythinker_code.auth.platforms.list_models", new=AsyncMock()) as list_models_mock,
+        patch("pythinker_code.auth.platforms.load_config", side_effect=_make_minimax_config),
+        patch(
+            "pythinker_code.auth.platforms.save_config",
+            side_effect=lambda cfg, *a, **k: saved.append(cfg),
+        ),
+    ):
+        changed = await refresh_managed_models(config)
+
+    assert changed is True
+    assert refresh_mock.await_count == 1
+    assert list_models_mock.await_count == 0
+    assert not any(
+        model.provider == MINIMAX_ANTHROPIC_PROVIDER_KEY for model in config.models.values()
+    )
+    assert config.default_model == ""
+    assert len(saved) == 1
+    assert not any(
+        model.provider == MINIMAX_ANTHROPIC_PROVIDER_KEY for model in saved[0].models.values()
+    )
+
+
+@pytest.mark.asyncio
+async def test_refresh_managed_models_isolates_minimax_discovery_failure():
+    """MiniMax refresh failure must not abort other managed-provider refreshes."""
+
+    def _config_with_generic_provider() -> Config:
+        cfg = _make_minimax_config()
+        cfg.providers["managed:pythinker-code"] = LLMProvider(
+            type="pythinker",
+            base_url="https://api.test/v1",
+            api_key=SecretStr("k"),
+        )
+        cfg.models["pythinker-code/pythinker-for-coding"] = LLMModel(
+            provider="managed:pythinker-code",
+            model="pythinker-for-coding",
+            max_context_size=100_000,
+        )
+        return cfg
+
+    config = _config_with_generic_provider()
+    generic_models = [
+        ModelInfo(
+            id="pythinker-for-coding",
+            context_length=200_000,
+            supports_reasoning=False,
+            supports_image_in=False,
+            supports_video_in=False,
+            display_name=None,
+        )
+    ]
+    saved: list[Config] = []
+
+    with (
+        patch(
+            "pythinker_code.auth.minimax.refresh_minimax_models",
+            new=AsyncMock(side_effect=aiohttp.ClientConnectionError("offline")),
+        ),
+        patch(
+            "pythinker_code.auth.platforms.list_models",
+            new=AsyncMock(return_value=generic_models),
+        ),
+        patch(
+            "pythinker_code.auth.platforms.load_config",
+            side_effect=_config_with_generic_provider,
+        ),
+        patch(
+            "pythinker_code.auth.platforms.save_config",
+            side_effect=lambda cfg, *a, **k: saved.append(cfg),
+        ),
+    ):
+        changed = await refresh_managed_models(config)
+
+    assert changed is True
+    assert len(saved) == 1
+    assert saved[0].models["pythinker-code/pythinker-for-coding"].max_context_size == 200_000
+    assert "minimax/m2.7-highspeed" in saved[0].models
+    assert saved[0].models["minimax/m2.7-highspeed"].provider == "managed:minimax-anthropic"
+    assert "minimax/m2.7-highspeed" in config.models
