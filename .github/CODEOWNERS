@@ -8,23 +8,23 @@
 # breaking-change regressions (e.g. pydantic 2.13 alias serialization).
 
 # Default fallback: project owner reviews everything not matched below.
-*                                @Pythoughts-labs
+*                                @mohamed-elkholy95
 
 # Dependency surfaces: explicit owner.
-pyproject.toml                   @Pythoughts-labs
-uv.lock                          @Pythoughts-labs
-**/pyproject.toml                @Pythoughts-labs
-**/uv.lock                       @Pythoughts-labs
-package.json                     @Pythoughts-labs
-package-lock.json                @Pythoughts-labs
-**/package.json                  @Pythoughts-labs
-**/package-lock.json             @Pythoughts-labs
+pyproject.toml                   @mohamed-elkholy95
+uv.lock                          @mohamed-elkholy95
+**/pyproject.toml                @mohamed-elkholy95
+**/uv.lock                       @mohamed-elkholy95
+package.json                     @mohamed-elkholy95
+package-lock.json                @mohamed-elkholy95
+**/package.json                  @mohamed-elkholy95
+**/package-lock.json             @mohamed-elkholy95
 
 # Telemetry & monitoring config — contractual changes need a closer look.
-src/pythinker_code/telemetry/    @Pythoughts-labs
-docs/en/reference/telemetry.md   @Pythoughts-labs
+src/pythinker_code/telemetry/    @mohamed-elkholy95
+docs/en/reference/telemetry.md   @mohamed-elkholy95
 
 # CI workflows — branch protection / required-status-check changes shouldn't
 # slip in unnoticed.
-.github/workflows/               @Pythoughts-labs
-.github/CODEOWNERS               @Pythoughts-labs
+.github/workflows/               @mohamed-elkholy95
+.github/CODEOWNERS               @mohamed-elkholy95
