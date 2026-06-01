@@ -23,7 +23,7 @@ jobs:
     permissions:
       contents: read
     env:
-      DISPATCH_OWNER: TechMatrix-labs
+      DISPATCH_OWNER: Pythoughts-labs
       DISPATCH_REPO: pythinker-home
     steps:
       # Mint a short-lived installation token for the org-owned

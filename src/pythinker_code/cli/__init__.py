@@ -157,8 +157,8 @@ LazySubcommandGroup = import_module(f"{__name__}._lazy_group").LazySubcommandGro
 cli = typer.Typer(
     cls=LazySubcommandGroup,
     epilog="""\b\
-Documentation:        https://techmatrix-labs.github.io/pythinker-code/\n
-LLM friendly version: https://techmatrix-labs.github.io/pythinker-code/llms.txt""",
+Documentation:        https://pythoughts-labs.github.io/pythinker-code/\n
+LLM friendly version: https://pythoughts-labs.github.io/pythinker-code/llms.txt""",
     add_completion=False,
     context_settings={"help_option_names": ["-h", "--help"]},
     help="Pythinker, your next CLI agent.",

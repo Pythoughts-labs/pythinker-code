@@ -122,7 +122,7 @@ def test_release_asset_wait_covers_all_updater_channels() -> None:
         "pythinker-${version}-aarch64-apple-darwin-onedir.tar.gz.sha256",
         "pythinker-${version}-x86_64-apple-darwin-onedir.tar.gz.sha256",
         "https://pypi.org/pypi/pythinker-code/${version}/json",
-        "raw.githubusercontent.com/TechMatrix-labs/homebrew-pythinker",
+        "raw.githubusercontent.com/Pythoughts-labs/homebrew-pythinker",
         'version \\"${version}\\"',
     ):
         assert expected_readiness_marker in promote_workflow

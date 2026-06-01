@@ -14,21 +14,21 @@
 
 These touch admin/secrets/outward-facing services. They are **operator actions**, not code steps. Do them in this order; PR-code-1, PR-code-2 dispatch verification, and the PAT deletions depend on them.
 
-- [ ] **OP-1 — Create the org-owned GitHub App `pythinker-release-bot`.** In the GitHub UI: `https://github.com/organizations/TechMatrix-labs/settings/apps/new`. Name `pythinker-release-bot`. Homepage URL `https://github.com/TechMatrix-labs/pythinker-code`. Uncheck "Webhook → Active". Repository permissions: **Contents: Read and write**, **Metadata: Read-only** (Metadata auto-selects). "Where can this GitHub App be installed?" → **Only on this account**. Create. On the App's page, **Generate a private key** (downloads a `.pem`) and note the numeric **App ID**.
+- [ ] **OP-1 — Create the org-owned GitHub App `pythinker-release-bot`.** In the GitHub UI: `https://github.com/organizations/Pythoughts-labs/settings/apps/new`. Name `pythinker-release-bot`. Homepage URL `https://github.com/Pythoughts-labs/pythinker-code`. Uncheck "Webhook → Active". Repository permissions: **Contents: Read and write**, **Metadata: Read-only** (Metadata auto-selects). "Where can this GitHub App be installed?" → **Only on this account**. Create. On the App's page, **Generate a private key** (downloads a `.pem`) and note the numeric **App ID**.
   - *Why an App and not the PAT:* `homebrew-pythinker` is public, `pythinker-home` is private; a dedicated org App contains a leak to one trust domain, survives member/org changes, and mints ~1h tokens per run (§4).
-- [ ] **OP-2 — Install the App on `pythinker-home` ONLY.** App page → **Install App** → TechMatrix-labs → **Only select repositories** → `pythinker-home` → Install. Verify it is NOT installed on any other repo.
+- [ ] **OP-2 — Install the App on `pythinker-home` ONLY.** App page → **Install App** → Pythoughts-labs → **Only select repositories** → `pythinker-home` → Install. Verify it is NOT installed on any other repo.
 - [ ] **OP-3 — Set the org secrets** (run from a shell where `gh auth status` shows an org-admin token):
 
   ```bash
-  gh secret set PYTHINKER_RELEASE_BOT_APP_ID --org TechMatrix-labs --visibility selected --repos pythinker-code --body "<numeric-app-id-from-OP-1>"
-  gh secret set PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY --org TechMatrix-labs --visibility selected --repos pythinker-code < /path/to/pythinker-release-bot.private-key.pem
+  gh secret set PYTHINKER_RELEASE_BOT_APP_ID --org Pythoughts-labs --visibility selected --repos pythinker-code --body "<numeric-app-id-from-OP-1>"
+  gh secret set PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY --org Pythoughts-labs --visibility selected --repos pythinker-code < /path/to/pythinker-release-bot.private-key.pem
   ```
 
   Expected: `✓ Set Organization secret PYTHINKER_RELEASE_BOT_APP_ID` (and `_PRIVATE_KEY`). Then `rm /path/to/pythinker-release-bot.private-key.pem` (the key lives only in the secret now).
 - [ ] **OP-4 — Confirm the live site host runs Dokploy build-from-source, not the Docker-Compose/Watchtower stack.** Required before Task 14 (deploy retirement). Check the Dokploy dashboard / server: the site is built from source via nixpacks (`bun run server.ts`), and there is no running `watchtower`/`traefik` compose stack for it. If you cannot confirm, **skip Task 14** and log it under "Out of scope / deferred" — it is reversible (`git rm`) and not on the release path.
 - [ ] **OP-5 — (DEFERRED, post-verification) Delete the retired PATs.** Do these only after the gated green cycle in "Phase verification":
-  - `PYTHINKER_HOME_REPO_DISPATCH_TOKEN` — delete after **both** dispatch files are migrated (PR-code-1 + PR-code-2) **and** one green release cycle dispatches via the App. `gh secret delete PYTHINKER_HOME_REPO_DISPATCH_TOKEN --repo TechMatrix-labs/pythinker-code` (it is a repo secret today, per `promote-release.yml:168`).
-  - `PYTHINKER_CORE_PAGES_TOKEN` — delete after PR-code-1 merges (the only consumer, `release-pythinker-core.yml:101`, is removed there). `gh secret delete PYTHINKER_CORE_PAGES_TOKEN --repo TechMatrix-labs/pythinker-code`.
+  - `PYTHINKER_HOME_REPO_DISPATCH_TOKEN` — delete after **both** dispatch files are migrated (PR-code-1 + PR-code-2) **and** one green release cycle dispatches via the App. `gh secret delete PYTHINKER_HOME_REPO_DISPATCH_TOKEN --repo Pythoughts-labs/pythinker-code` (it is a repo secret today, per `promote-release.yml:168`).
+  - `PYTHINKER_CORE_PAGES_TOKEN` — delete after PR-code-1 merges (the only consumer, `release-pythinker-core.yml:101`, is removed there). `gh secret delete PYTHINKER_CORE_PAGES_TOKEN --repo Pythoughts-labs/pythinker-code`.
 
 **Local tooling the executor needs** (install once; none are repo deps):
 ```bash
@@ -113,7 +113,7 @@ This is CI-wiring: verify with `actionlint` locally, then `gh workflow run` post
 - [ ] 2.1 Replace the `dispatch` job's `steps:` block (current lines 25-47, where the single `Trigger pythinker-home sync` step reads <code v-pre>DISPATCH_TOKEN: ${{ secrets.PYTHINKER_HOME_REPO_DISPATCH_TOKEN }}</code> and silently `exit 0` on empty) with a job-level `env:` + a mint step + a dispatch step. The exact replacement for lines 25-47:
   ```yaml
       env:
-        DISPATCH_OWNER: TechMatrix-labs
+        DISPATCH_OWNER: Pythoughts-labs
         DISPATCH_REPO: pythinker-home
       steps:
         # Mint a short-lived installation token for the org-owned
@@ -322,30 +322,30 @@ The current `Get-LatestVersion` (lines 136-164) scans `releases?per_page=20` and
 - [ ] 6.1 Push and open the PR:
   ```bash
   git -C /home/ai/Projects/pythinker-code-main push -u origin release-orch/p0-dispatch-and-installers
-  gh pr create --repo TechMatrix-labs/pythinker-code --base main \
+  gh pr create --repo Pythoughts-labs/pythinker-code --base main \
     --title "ci: dispatch App migration + retire dead docs step + installer hardening" \
     --body "P0 (1/2): migrate dispatch-pythinker-home-sync.yml to the pythinker-release-bot App token with fail-loud-on-empty; remove the dead pythinker-core pdoc gh-pages step (404 target); install-native.sh exponential backoff; install.ps1 /releases/latest-first with paginated fallback and backoff. No agent runtime deps. Sequencing note: promote-release.yml gate changes ship in PR-code-2 with the reconcile backstop."
   ```
   Expected: prints the new PR URL.
 - [ ] 6.2 Wait for required checks (including `changelog`) to pass and CodeRabbit commit status on the head SHA to be `success` (C2). Verify before merge:
   ```bash
-  gh pr checks --repo TechMatrix-labs/pythinker-code <PR#>
-  gh api repos/TechMatrix-labs/pythinker-code/commits/$(gh pr view --repo TechMatrix-labs/pythinker-code <PR#> --json headRefOid -q .headRefOid)/status --jq '.statuses[] | select(.context=="CodeRabbit") | .state'
+  gh pr checks --repo Pythoughts-labs/pythinker-code <PR#>
+  gh api repos/Pythoughts-labs/pythinker-code/commits/$(gh pr view --repo Pythoughts-labs/pythinker-code <PR#> --json headRefOid -q .headRefOid)/status --jq '.statuses[] | select(.context=="CodeRabbit") | .state'
   ```
   Expected: all checks `pass`; the CodeRabbit line prints `success`. Do not merge until then (C2).
 - [ ] 6.3 Merge (after CodeRabbit `success`):
   ```bash
-  gh pr merge --repo TechMatrix-labs/pythinker-code <PR#> --squash
+  gh pr merge --repo Pythoughts-labs/pythinker-code <PR#> --squash
   ```
   Expected: `✓ Squashed and merged pull request #<PR#>`.
 - [ ] 6.4 **Post-merge dispatch smoke test** (needs OP-1..OP-3 done): trigger the dispatch workflow manually and confirm the App-token path fires:
   ```bash
-  gh workflow run dispatch-pythinker-home-sync.yml --repo TechMatrix-labs/pythinker-code
-  gh run watch --repo TechMatrix-labs/pythinker-code $(gh run list --repo TechMatrix-labs/pythinker-code --workflow dispatch-pythinker-home-sync.yml -L1 --json databaseId -q '.[0].databaseId')
+  gh workflow run dispatch-pythinker-home-sync.yml --repo Pythoughts-labs/pythinker-code
+  gh run watch --repo Pythoughts-labs/pythinker-code $(gh run list --repo Pythoughts-labs/pythinker-code --workflow dispatch-pythinker-home-sync.yml -L1 --json databaseId -q '.[0].databaseId')
   ```
   Expected: the run is green; the "Mint GitHub App token" step succeeds and the dispatch POST returns 204. Then confirm pythinker-home received it:
   ```bash
-  gh run list --repo TechMatrix-labs/pythinker-home --workflow sync-upstream-products.yml -L1
+  gh run list --repo Pythoughts-labs/pythinker-home --workflow sync-upstream-products.yml -L1
   ```
   Expected: a fresh `repository_dispatch` run is listed.
 
@@ -541,7 +541,7 @@ Branch: `release-orch/p0-promote-reconcile`. Touches `promote-release.yml` and a
       permissions:
         contents: read
       env:
-        DISPATCH_OWNER: TechMatrix-labs
+        DISPATCH_OWNER: Pythoughts-labs
         DISPATCH_REPO: pythinker-home
       steps:
         - name: Mint GitHub App token for pythinker-home
@@ -651,7 +651,7 @@ Detects drift (tap formula version != `/releases/latest` OR served `public/versi
     cancel-in-progress: false
 
   env:
-    DISPATCH_OWNER: TechMatrix-labs
+    DISPATCH_OWNER: Pythoughts-labs
     DISPATCH_REPO: pythinker-home
 
   jobs:
@@ -672,7 +672,7 @@ Detects drift (tap formula version != `/releases/latest` OR served `public/versi
             latest="${latest_tag#v}"
             echo "Latest published release: $latest_tag ($latest)"
             drift=""
-            tap_url="https://raw.githubusercontent.com/TechMatrix-labs/homebrew-pythinker/main/Formula/pythinker-code.rb"
+            tap_url="https://raw.githubusercontent.com/Pythoughts-labs/homebrew-pythinker/main/Formula/pythinker-code.rb"
             tap_text=$(curl -fsSL --retry 2 --retry-delay 2 "$tap_url" 2>/dev/null || true)
             if ! grep -qF "version \"${latest}\"" <<<"$tap_text"; then
               drift="$drift tap"
@@ -798,17 +798,17 @@ Detects drift (tap formula version != `/releases/latest` OR served `public/versi
 - [ ] 11b.1 Push + PR:
   ```bash
   git -C /home/ai/Projects/pythinker-code-main push -u origin release-orch/p0-promote-reconcile
-  gh pr create --repo TechMatrix-labs/pythinker-code --base main \
+  gh pr create --repo Pythoughts-labs/pythinker-code --base main \
     --title "ci(promote): fail-loud sub-pkg PyPI gate + drift reconcile backstop" \
     --body "P0 (2/2): block prerelease->latest until all pinned sub-packages resolve on PyPI; remove Homebrew from the gate; per-channel bottleneck Slack; release-readiness issue (issues:write) whose rows tick as channels go ready; separate App-authed needs:promote dispatch job with fail-loud token; asset URLs from API tag_name. Ships release-readiness-reconcile.yml in the SAME PR so the §5 sequencing rule (reconcile before/with gate removal) holds; reconcile auto-closes only OLDER-than-latest readiness issues (semver). Depends on PR-code-1 (dispatch App migration) for the full PAT retirement."
   ```
   Expected: prints the new PR URL.
 - [ ] 11b.2 Wait for checks + CodeRabbit `success` on the head SHA (C2), as in Task 6.2:
   ```bash
-  gh pr checks --repo TechMatrix-labs/pythinker-code <PR#>
-  gh api repos/TechMatrix-labs/pythinker-code/commits/$(gh pr view --repo TechMatrix-labs/pythinker-code <PR#> --json headRefOid -q .headRefOid)/status --jq '.statuses[] | select(.context=="CodeRabbit") | .state'
+  gh pr checks --repo Pythoughts-labs/pythinker-code <PR#>
+  gh api repos/Pythoughts-labs/pythinker-code/commits/$(gh pr view --repo Pythoughts-labs/pythinker-code <PR#> --json headRefOid -q .headRefOid)/status --jq '.statuses[] | select(.context=="CodeRabbit") | .state'
   ```
-  Expected: all checks `pass`; CodeRabbit `success`. Merge with `gh pr merge --repo TechMatrix-labs/pythinker-code <PR#> --squash` only after `success`.
+  Expected: all checks `pass`; CodeRabbit `success`. Merge with `gh pr merge --repo Pythoughts-labs/pythinker-code <PR#> --squash` only after `success`.
 
 ---
 
@@ -853,7 +853,7 @@ Branch: `release-orch/p0-site`, in `/home/ai/Projects/pythinker-site/site`. This
 
   const codeRelease = {
     tag_name: "v0.27.0",
-    html_url: "https://github.com/TechMatrix-labs/pythinker-code/releases/tag/v0.27.0",
+    html_url: "https://github.com/Pythoughts-labs/pythinker-code/releases/tag/v0.27.0",
     assets: [
       { name: "PythinkerSetup-0.27.0.exe", browser_download_url: "" },
       { name: "PythinkerSetup-0.27.0.exe.sha256", browser_download_url: "" },
@@ -1026,7 +1026,7 @@ Branch: `release-orch/p0-site`, in `/home/ai/Projects/pythinker-site/site`. This
 
 - [ ] 13.1 Add the job-level receiver gate to `sync-upstream-products.yml`. The gate must let cron/manual through (no payload) and only restrict `repository_dispatch`. Add to the `sync` job after `runs-on: ubuntu-latest` (current line 20):
   ```yaml
-      if: github.event_name != 'repository_dispatch' || github.event.client_payload.source_repo == 'TechMatrix-labs/pythinker-code'
+      if: github.event_name != 'repository_dispatch' || github.event.client_payload.source_repo == 'Pythoughts-labs/pythinker-code'
   ```
 - [ ] 13.2 Thread the dispatched ref into the sync via `env:` (NEVER into a `run:` line — injection, §4). Edit the `Sync public upstream products` step (current lines 30-33):
   ```yaml
@@ -1125,15 +1125,15 @@ Only do this if **OP-4** confirmed the live host runs Dokploy build-from-source.
 - [ ] 15.1 Push + PR:
   ```bash
   git -C /home/ai/Projects/pythinker-site/site push -u origin release-orch/p0-site
-  gh pr create --repo TechMatrix-labs/pythinker-home --base main \
+  gh pr create --repo Pythoughts-labs/pythinker-home --base main \
     --title "P0: receiver source-repo gate, version.json, Mode-B fix, dead mirrors, deploy retire" \
     --body "P0 site half: job-level receiver if: on client_payload.source_repo (cron/manual carry no payload -> allowed); ref passed via env, validated in TS, never into a run: shell; emit public/version.json {pythinkerCode,tag}; fix the line-366 hardcoded literal to derive from per-product owner/repo config; pin raw-source fetch to the dispatched ref (tag or 40-char sha) while asset URLs stay from API tag_name; git rm the 3 dead tracked install.ps1 mirrors (canonical = public/install.{sh,ps1}); retire orphaned GHCR+Watchtower+Traefik compose (Dokploy build-from-source is canonical). New bun:test unit tests (incl. §7 config lockstep) for the TS logic."
   ```
   Expected: prints the new PR URL.
 - [ ] 15.2 Wait for checks + CodeRabbit `success` on the head SHA (C2):
   ```bash
-  gh pr checks --repo TechMatrix-labs/pythinker-home <PR#>
-  gh api repos/TechMatrix-labs/pythinker-home/commits/$(gh pr view --repo TechMatrix-labs/pythinker-home <PR#> --json headRefOid -q .headRefOid)/status --jq '.statuses[] | select(.context=="CodeRabbit") | .state'
+  gh pr checks --repo Pythoughts-labs/pythinker-home <PR#>
+  gh api repos/Pythoughts-labs/pythinker-home/commits/$(gh pr view --repo Pythoughts-labs/pythinker-home <PR#> --json headRefOid -q .headRefOid)/status --jq '.statuses[] | select(.context=="CodeRabbit") | .state'
   ```
   Expected: checks `pass`; CodeRabbit `success`. Merge `--squash` only after `success`. (pythinker-home `main` must stay unprotected for the deploy chain — do not enable protection.)
 
@@ -1143,16 +1143,16 @@ Only do this if **OP-4** confirmed the live host runs Dokploy build-from-source.
 
 **Done = all three PRs merged (each past CodeRabbit `success`, C2), the App fully replaces both PAT dispatch sites, the next release flips only when every pinned sub-package resolves on PyPI, the readiness issue ticks rows then closes on success, and the site serves a correct `public/version.json` with the reconcile backstop live.** Prove it with one rehearsal + one real cycle:
 
-1. **App dispatch (post PR-code-1):** `gh workflow run dispatch-pythinker-home-sync.yml --repo TechMatrix-labs/pythinker-code` → `gh run watch` green; the mint step succeeds; pythinker-home shows a fresh `repository_dispatch` sync run that **passes the receiver gate** (source_repo matches). This proves the App token + receiver gate end-to-end. (Confirms OP-1..OP-3.)
+1. **App dispatch (post PR-code-1):** `gh workflow run dispatch-pythinker-home-sync.yml --repo Pythoughts-labs/pythinker-code` → `gh run watch` green; the mint step succeeds; pythinker-home shows a fresh `repository_dispatch` sync run that **passes the receiver gate** (source_repo matches). This proves the App token + receiver gate end-to-end. (Confirms OP-1..OP-3.)
 
-2. **Reconcile dry-run (post PR-code-2 + PR-home-3):** `gh workflow run release-readiness-reconcile.yml --repo TechMatrix-labs/pythinker-code` → `gh run watch`. With the site already at latest, expect **no drift** (`drift=` empty), the stale-issue close step runs cleanly (closing only older-than-latest issues, leaving any newer in-progress issue open), `notify-drift` does NOT run. To prove the drift path, the run's "Detect drift" log shows the served `pythinkerCode` vs latest comparison; the `notify-drift` job's `if:` (drift present AND not re-dispatched this run) confirms a normal re-dispatch run does not page.
+2. **Reconcile dry-run (post PR-code-2 + PR-home-3):** `gh workflow run release-readiness-reconcile.yml --repo Pythoughts-labs/pythinker-code` → `gh run watch`. With the site already at latest, expect **no drift** (`drift=` empty), the stale-issue close step runs cleanly (closing only older-than-latest issues, leaving any newer in-progress issue open), `notify-drift` does NOT run. To prove the drift path, the run's "Detect drift" log shows the served `pythinkerCode` vs latest comparison; the `notify-drift` job's `if:` (drift present AND not re-dispatched this run) confirms a normal re-dispatch run does not page.
 
-3. **promote rehearsal (no real tag):** after a real release tag exists, `gh workflow run promote-release.yml --repo TechMatrix-labs/pythinker-code -f tag=v<latest>` re-enters CHECKING; with all four PyPI URLs already 200 and assets present, it PROMOTES idempotently (PATCH is a no-op), the `release-readiness` issue is upserted, its rows ticked, then closed, and the `dispatch-site` job mints the App token and fires. The Slack `notify-failure` job does NOT run (no failure). This exercises the new blocking-PyPI check and the separated dispatch job without waiting on a fresh build.
+3. **promote rehearsal (no real tag):** after a real release tag exists, `gh workflow run promote-release.yml --repo Pythoughts-labs/pythinker-code -f tag=v<latest>` re-enters CHECKING; with all four PyPI URLs already 200 and assets present, it PROMOTES idempotently (PATCH is a no-op), the `release-readiness` issue is upserted, its rows ticked, then closed, and the `dispatch-site` job mints the App token and fires. The Slack `notify-failure` job does NOT run (no failure). This exercises the new blocking-PyPI check and the separated dispatch job without waiting on a fresh build.
 
 4. **First real release** (the true end-to-end): maintainer tags `vX.Y.Z`; `promote-release` waits for assets + all four PyPI pins; on ready it flips `prerelease=false, make_latest=true`, ticks+closes the readiness issue, and the `needs: promote` dispatch job updates pythinker-home → Dokploy redeploys → `https://pythinker.com/version.json` returns `{"pythinkerCode":"X.Y.Z","tag":"vX.Y.Z"}`. Confirm:
    ```bash
    curl -fsSL https://pythinker.com/version.json
-   gh release view vX.Y.Z --repo TechMatrix-labs/pythinker-code --json isLatest,isPrerelease
+   gh release view vX.Y.Z --repo Pythoughts-labs/pythinker-code --json isLatest,isPrerelease
    pip index versions pythinker-code   # or: pip install pythinker-code==X.Y.Z --dry-run
    ```
    Expected: `version.json` == X.Y.Z; release `isLatest=true, isPrerelease=false`; `pip install` resolves all transitive pins (no 500 on a lagging sub-package).

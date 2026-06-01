@@ -17,7 +17,7 @@ env:
 jobs:
   deploy:
     # Only run on the original repository, not on forks
-    if: github.repository == 'TechMatrix-labs/pythinker-code'
+    if: github.repository == 'Pythoughts-labs/pythinker-code'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

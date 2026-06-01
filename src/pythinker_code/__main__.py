@@ -54,8 +54,8 @@ Commands:
   vis      Run Pythinker Agent Tracing Visualizer.
   web      Run Pythinker CLI web interface.
 
-Documentation:        https://techmatrix-labs.github.io/pythinker-code/
-LLM friendly version: https://techmatrix-labs.github.io/pythinker-code/llms.txt
+Documentation:        https://pythoughts-labs.github.io/pythinker-code/
+LLM friendly version: https://pythoughts-labs.github.io/pythinker-code/llms.txt
 """
 
 

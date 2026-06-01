@@ -2,13 +2,13 @@
 title: Release & Distribution Orchestration — Design Spec
 status: approved-design
 date: 2026-05-31
-scope: TechMatrix-labs/{pythinker-code, homebrew-pythinker, pythinker-home}
+scope: Pythoughts-labs/{pythinker-code, homebrew-pythinker, pythinker-home}
 provenance: multi-agent design workflow wf_620b356a-d6e (5 subsystem designs -> adversarial stress-tests -> synthesis -> completeness critic -> final merge); ground-truthed against live repos + PyPI on 2026-05-31
 ---
 
 # Pythinker-code 3-Repo Release & Distribution Orchestration — Final Design Spec
 
-**Scope:** TechMatrix-labs/{pythinker-code, homebrew-pythinker, pythinker-home}. Coherent evolution — no consolidation, no churn. Respects C1–C5. This is the approval-ready architecture; every punch-list item from the completeness critique is resolved inline (fixed, or justified out-of-scope in one line). Ground-truthed against the live repos on 2026-05-31.
+**Scope:** Pythoughts-labs/{pythinker-code, homebrew-pythinker, pythinker-home}. Coherent evolution — no consolidation, no churn. Respects C1–C5. This is the approval-ready architecture; every punch-list item from the completeness critique is resolved inline (fixed, or justified out-of-scope in one line). Ground-truthed against the live repos on 2026-05-31.
 
 ---
 
@@ -23,7 +23,7 @@ provenance: multi-agent design workflow wf_620b356a-d6e (5 subsystem designs -> 
                                                               │ merge (CodeRabbit status=success, C2)
                                                               │ then human pushes tag(s): sub-pkg tags first, then vX.Y.Z
    ┌──────────────────────────────────────────────────────────▼───────────────────────────────────────────┐
-   │                          TechMatrix-labs/pythinker-code  (PUBLIC, source of truth)                      │
+   │                          Pythoughts-labs/pythinker-code  (PUBLIC, source of truth)                      │
    │                                                                                                         │
    │  on tag v* : release-cli ┃ linux-installer ┃ windows-installer ┃ homebrew-tap ┃ docker(P2) ┃ promote   │
    └───┬──────────────┬──────────────┬───────────────┬───────────────────┬─────────────────────┬───────────┘
@@ -51,7 +51,7 @@ provenance: multi-agent design workflow wf_620b356a-d6e (5 subsystem designs -> 
                                                                                                        ▲
                                                                                           daily cron 04:17 + drift reconcile (backstops)
 
-  Nix: nix run github:TechMatrix-labs/pythinker-code  (P2: needs apps.default — currently UNVERIFIED; auth=none)
+  Nix: nix run github:Pythoughts-labs/pythinker-code  (P2: needs apps.default — currently UNVERIFIED; auth=none)
 
   AUTH EDGE SUMMARY (every cross-repo / privileged write):
     PyPI/TestPyPI ............ OIDC trusted publishing (no token)        [unchanged, GOOD]
@@ -146,9 +146,9 @@ pyproject.toml:3 ─(release.py rewrite)→ release PR ─(check_version_tag gat
 
 **PATs eliminated:**
 - `PYTHINKER_HOME_REPO_DISPATCH_TOKEN` → `pythinker-release-bot` (replaces it in **both** `promote-release.yml:168` AND `dispatch-pythinker-home-sync.yml:28`). Delete only after both files migrate + one green cycle.
-- `PYTHINKER_CORE_PAGES_TOKEN` → **retired**. Target `PythinkerAI/pythinker-core` is a genuine 404 post-migration (and `TechMatrix-labs/pythinker-core` is also 404 — core exists only as a monorepo sub-package). **Drop the pdoc gh-pages step entirely** (`release-pythinker-core.yml:99-127`, including the PAT-skip swallow at lines 104-105) — Auth Option A. The VitePress docs are the docs surface and nothing user-facing has rendered there since the migration. (Option B is rejected: pdoc runs on core tags but `docs-pages.yml` deploys only on push-to-main, so it would silently deploy nothing.)
+- `PYTHINKER_CORE_PAGES_TOKEN` → **retired**. Target `PythinkerAI/pythinker-core` is a genuine 404 post-migration (and `Pythoughts-labs/pythinker-core` is also 404 — core exists only as a monorepo sub-package). **Drop the pdoc gh-pages step entirely** (`release-pythinker-core.yml:99-127`, including the PAT-skip swallow at lines 104-105) — Auth Option A. The VitePress docs are the docs surface and nothing user-facing has rendered there since the migration. (Option B is rejected: pdoc runs on core tags but `docs-pages.yml` deploys only on push-to-main, so it would silently deploy nothing.)
 
-**Residual blast radius (stated honestly):** `contents:write` is the floor for `POST /dispatches` (there is no narrower fine-grained permission). A leaked ~1h `pythinker-release-bot` token could push commits to the private site, not merely dispatch. Mitigated by single-repo install + ~1h TTL + per-run minting. Receiver-side defense: `sync-upstream-products.yml` adds a job-level `if:` gating on `client_payload.source_repo == 'TechMatrix-labs/pythinker-code'` (cron/manual carry no payload → allowed; the sync workflow currently has only `if: failure()` on notify and no payload gate — this is genuinely net-new); payload fields are **never** interpolated into a `run:` shell line (injection vector — the sync derives everything from the live API by repo name).
+**Residual blast radius (stated honestly):** `contents:write` is the floor for `POST /dispatches` (there is no narrower fine-grained permission). A leaked ~1h `pythinker-release-bot` token could push commits to the private site, not merely dispatch. Mitigated by single-repo install + ~1h TTL + per-run minting. Receiver-side defense: `sync-upstream-products.yml` adds a job-level `if:` gating on `client_payload.source_repo == 'Pythoughts-labs/pythinker-code'` (cron/manual carry no payload → allowed; the sync workflow currently has only `if: failure()` on notify and no payload gate — this is genuinely net-new); payload fields are **never** interpolated into a `run:` shell line (injection vector — the sync derives everything from the live API by repo name).
 
 ---
 
@@ -201,15 +201,15 @@ tag push → PRERELEASE (/latest = last good)
 | **GitHub Release** | PyInstaller ×5 + installers + .sha256 | repo releases | tag CI | GITHUB_TOKEN | **BLOCKING** |
 | **Homebrew tap** | `generate-formula.py` polls onedir tarballs | homebrew-pythinker | `homebrew-tap.yml` poll | App tap-publisher | best-effort |
 | **Website** | sync.ts pulls latest+raw@tag | pythinker.com (Dokploy) | dispatch + cron + reconcile | App release-bot | best-effort |
-| **Docker (GHCR)** P2 | `python:3.14-slim` + `pip install pythinker-code==${V}` (reuses PyPI wheel, C3-safe), multi-arch native amd64+arm64, push-by-digest, imagetools stitch, **ancestor-check** before `:latest` (`fetch-depth:0` + refuse-on-unknown-:latest) | `ghcr.io/TechMatrix-labs/pythinker-code` | `push: tags: v*` | GITHUB_TOKEN packages:write (**zero new secrets, best auth fit**) | best-effort |
-| **Scoop** P2 | NEW `packages/scoop-bucket/generate-manifest.py` points at the **EXISTING** `pythinker-{v}-x86_64-pc-windows-msvc-onedir.zip` + its `.sha256` (verified produced by `release-pythinker-cli.yml`); `bin: pythinker\pythinker.exe`. Generator polls the **windows zip specifically** (NOT a clone of generate-formula.py's mac/linux NATIVE_TARGETS) | `TechMatrix-labs/scoop-pythinker` (PUBLIC, **org-owned**) `bucket/pythinker-code.json` | `scoop-bucket.yml` poll | App scoop-publisher (**org-owned**) | best-effort |
+| **Docker (GHCR)** P2 | `python:3.14-slim` + `pip install pythinker-code==${V}` (reuses PyPI wheel, C3-safe), multi-arch native amd64+arm64, push-by-digest, imagetools stitch, **ancestor-check** before `:latest` (`fetch-depth:0` + refuse-on-unknown-:latest) | `ghcr.io/Pythoughts-labs/pythinker-code` | `push: tags: v*` | GITHUB_TOKEN packages:write (**zero new secrets, best auth fit**) | best-effort |
+| **Scoop** P2 | NEW `packages/scoop-bucket/generate-manifest.py` points at the **EXISTING** `pythinker-{v}-x86_64-pc-windows-msvc-onedir.zip` + its `.sha256` (verified produced by `release-pythinker-cli.yml`); `bin: pythinker\pythinker.exe`. Generator polls the **windows zip specifically** (NOT a clone of generate-formula.py's mac/linux NATIVE_TARGETS) | `Pythoughts-labs/scoop-pythinker` (PUBLIC, **org-owned**) `bucket/pythinker-code.json` | `scoop-bucket.yml` poll | App scoop-publisher (**org-owned**) | best-effort |
 | **Nix** P2 | flake builds via uv2nix with `packages.default = pythinker-code` (`flake.nix:129`) — **but there is NO `apps` stanza** (verified), so `apps.default` + `nix build .#default`/`nix run` CI check is genuine net-new; `nix run github:…` working is **UNVERIFIED** until `apps.default` exists; monthly `update-flake-lock` PR | git repo (no artifact store); version from `pyproject.toml` | flake.lock cron PR | none | build-time CI gate |
 | **WinGet** P2-late | `wingetcreate update ... --submit` | `microsoft/winget-pkgs` fork | **MANUAL `workflow_dispatch` only** (hard gate) | fine-grained PAT `WINGET_SUBMIT_TOKEN` (isolated; can't be an App for external-repo PRs) | never |
 | **AUR** | DEFER | — | — | SSH key (re-introduces non-App secret) | — |
 
 **Required code change (don't ship supported non-self-updating channels without it):** `src/pythinker_code/ui/shell/update.py` — add a `PYTHINKER_MANAGED=<channel>` env read at the top of `_detect_upgrade_command()` (mirrors hermes `HERMES_MANAGED`); Docker/Nix set it and Scoop manifests set it → channel-native upgrade hint. **WinGet does not set `PYTHINKER_MANAGED`** because its workflow submits installer metadata only and the WinGet manifest cannot inject a process env var, so it uses the generic native-updater path. **Brew must NOT set `PYTHINKER_MANAGED`** (keep its existing path-sniff so behavior is unchanged); **mandatory regression test** that brew still maps to `['brew','upgrade','pythinker-code']` (the `.pythinker-native` marker means brew also trips `is_native_build()`; precedence is load-bearing). This change ships in P1 as prep so P2 channels are not released non-self-updating where markers are supported.
 
-**C4 for new channels:** README install snippets MUST be **version-less** (`scoop install pythinker-code`, `docker run ghcr.io/techmatrix-labs/pythinker-code`, `nix run github:TechMatrix-labs/pythinker-code`) so they never enter the F3 sprawl set.
+**C4 for new channels:** README install snippets MUST be **version-less** (`scoop install pythinker-code`, `docker run ghcr.io/pythoughts-labs/pythinker-code`, `nix run github:Pythoughts-labs/pythinker-code`) so they never enter the F3 sprawl set.
 
 **Recommended adoption order:** **Docker (GHCR)** → **Scoop** → **Nix polish** → WinGet (manual) → defer AUR. Rationale: Docker = highest reach-per-fragility (OIDC auth, reuses wheel, self-protecting ancestor-check); Scoop = closes the Windows gap as a mechanical clone of the trusted tap pattern; Nix needs the `apps.default` net-new but the package build already works.
 
@@ -245,7 +245,7 @@ release → promote → dispatch → sync-upstream-products.ts writes files → 
 - **Code repo (KEEP — they are dispatch triggers):** `scripts/install.ps1` + `scripts/install-native.sh` are the **source** scripts; `dispatch-pythinker-home-sync.yml` watches them (`paths:` lines 16-17). Do **not** delete these.
 - **Site repo (`git rm` the dead mirrors):** the canonical served pair is **`public/install.sh` + `public/install.ps1`** (the sole Vite-served dir, confirmed kept). The 3 dead, git-tracked mirrors — `scripts/install.ps1`, `web/public/install.ps1`, `docs/public/install.ps1` (all verified tracked + byte-identical) — get `git rm`'d and dropped from `installMirrors[].targetPaths`.
 
-**0.24.0 root-cause fix (Mode B) — re-scoped to what is actually net-new (critique item 4):** the per-product `owner`/`repo` config block **already exists** in `sync-upstream-products.ts` (lines 82-83 for the AI product `owner:"mohamed-elkholy95", repo:"Pythinker-ai"`; lines 98-99 for `TechMatrix-labs/pythinker-code`). Do **NOT** "create the config block" (overstated) and do **NOT** collapse to a single `ORG` const (would break the AI product, owner `mohamed-elkholy95`, a different org from code's `TechMatrix-labs`). The real residual risk is two things the config block does not cover:
+**0.24.0 root-cause fix (Mode B) — re-scoped to what is actually net-new (critique item 4):** the per-product `owner`/`repo` config block **already exists** in `sync-upstream-products.ts` (lines 82-83 for the AI product `owner:"mohamed-elkholy95", repo:"Pythinker-ai"`; lines 98-99 for `Pythoughts-labs/pythinker-code`). Do **NOT** "create the config block" (overstated) and do **NOT** collapse to a single `ORG` const (would break the AI product, owner `mohamed-elkholy95`, a different org from code's `Pythoughts-labs`). The real residual risk is two things the config block does not cover:
 1. A **hardcoded literal at line 366**: `readme.replaceAll("github.com/mohamed-elkholy95/Pythinker/releases", "github.com/mohamed-elkholy95/Pythinker-ai/releases")` — bypasses the config block. **Fix:** derive both sides from the product's `owner`/`repo` config, or drop the rewrite if it's a migration vestige.
 2. **No assertion** that each product's `owner`/`repo`/derived URLs/`brewCommand` agree. **Fix:** add a lockstep/typecheck assertion over the existing config so a stale literal fails loudly.
 

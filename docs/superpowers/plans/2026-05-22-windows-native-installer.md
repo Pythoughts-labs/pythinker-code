@@ -279,8 +279,8 @@ AppName=Pythinker Code
 AppVersion={#AppVersion}
 AppPublisher=Pythinker
 AppPublisherURL=https://pythinker.com
-AppSupportURL=https://github.com/TechMatrix-labs/pythinker-code/issues
-AppUpdatesURL=https://github.com/TechMatrix-labs/pythinker-code/releases
+AppSupportURL=https://github.com/Pythoughts-labs/pythinker-code/issues
+AppUpdatesURL=https://github.com/Pythoughts-labs/pythinker-code/releases
 DefaultDirName={localappdata}\Programs\Pythinker
 DefaultGroupName=Pythinker
 DisableProgramGroupPage=yes
@@ -756,7 +756,7 @@ def test_is_native_build_true_when_sentinel_present(tmp_path):
 def test_native_installer_release_url_latest():
     url = native.native_installer_release_url(channel="latest")
     assert url == (
-        "https://api.github.com/repos/TechMatrix-labs/"
+        "https://api.github.com/repos/Pythoughts-labs/"
         "pythinker-code/releases/latest"
     )
 
@@ -795,7 +795,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-GITHUB_REPO = "TechMatrix-labs/pythinker-code"
+GITHUB_REPO = "Pythoughts-labs/pythinker-code"
 SENTINEL_FILENAME = ".pythinker-native"
 
 
@@ -1043,7 +1043,7 @@ if upgrade_command == [NATIVE_INSTALLER_MARKER]:
     if native_result is UpdateResult.UPDATE_AVAILABLE:
         _print("[yellow]Auto-update disabled. "
                "Download the new installer manually from "
-               "https://github.com/TechMatrix-labs/pythinker-code/releases/latest[/yellow]")
+               "https://github.com/Pythoughts-labs/pythinker-code/releases/latest[/yellow]")
         return UpdateResult.UPDATE_AVAILABLE
     if native_result is UpdateResult.FAILED:
         _print("[red]Native update failed. "
@@ -1225,7 +1225,7 @@ bundles Pythinker as a self-contained executable; **you do not need Python, Node
 or uv installed**.
 
 1. Download the latest installer from the
-   [Releases page](https://github.com/TechMatrix-labs/pythinker-code/releases/latest)
+   [Releases page](https://github.com/Pythoughts-labs/pythinker-code/releases/latest)
    (`PythinkerSetup-x.y.z.exe`).
 2. Run it. The wizard installs to `%LOCALAPPDATA%\Programs\Pythinker` and adds
    `pythinker` to your user PATH — no admin / UAC prompt.
@@ -1238,7 +1238,7 @@ Set the env var `DISABLE_AUTOUPDATER=1` to opt out of automatic update prompts.
 > If you prefer a one-liner from PowerShell:
 >
 > ```powershell
-> irm https://raw.githubusercontent.com/TechMatrix-labs/pythinker-code/main/scripts/install-native.ps1 | iex
+> irm https://raw.githubusercontent.com/Pythoughts-labs/pythinker-code/main/scripts/install-native.ps1 | iex
 > ```
 >
 > *(That helper script ships in a follow-up; for now download the `.exe`

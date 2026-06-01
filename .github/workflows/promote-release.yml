@@ -93,7 +93,7 @@ jobs:
             "pythinker-${version}-x86_64-apple-darwin-onedir.tar.gz.sha256"
           )
           pypi_url="https://pypi.org/pypi/pythinker-code/${version}/json"
-          homebrew_formula_url="https://raw.githubusercontent.com/TechMatrix-labs/homebrew-pythinker/main/Formula/pythinker-code.rb"
+          homebrew_formula_url="https://raw.githubusercontent.com/Pythoughts-labs/homebrew-pythinker/main/Formula/pythinker-code.rb"
           # The budget must comfortably exceed the slowest platform build, since
           # this job runs on the tag push in parallel with them. The long pole is
           # linux-installer's emulated arm64 .deb/.rpm step: on the 0.26.0 release
@@ -168,7 +168,7 @@ jobs:
         env:
           APP_ID: ${{ secrets.PYTHINKER_RELEASE_BOT_APP_ID }}
           APP_PRIVATE_KEY: ${{ secrets.PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY }}
-          DISPATCH_OWNER: TechMatrix-labs
+          DISPATCH_OWNER: Pythoughts-labs
           DISPATCH_REPO: pythinker-home
         run: |
           set -euo pipefail
@@ -213,7 +213,7 @@ jobs:
           DISPATCH_TOKEN: ${{ steps.app-token.outputs.token }}
           SOURCE_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
-          DISPATCH_OWNER: TechMatrix-labs
+          DISPATCH_OWNER: Pythoughts-labs
           DISPATCH_REPO: pythinker-home
         run: |
           set -euo pipefail

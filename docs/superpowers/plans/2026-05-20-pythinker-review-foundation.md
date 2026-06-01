@@ -300,8 +300,8 @@ pythinker-secscan = "pythinker_review.cli.secscan:app"
 pythinker-debug = "pythinker_review.cli.debug:app"
 
 [project.urls]
-Homepage = "https://github.com/TechMatrix-labs/pythinker-code"
-Repository = "https://github.com/TechMatrix-labs/pythinker-code"
+Homepage = "https://github.com/Pythoughts-labs/pythinker-code"
+Repository = "https://github.com/Pythoughts-labs/pythinker-code"
 
 [dependency-groups]
 dev = [
@@ -3646,7 +3646,7 @@ def render_sarif(meta: RunMeta, findings: list[Finding]) -> str:
                 "tool": {
                     "driver": {
                         "name": "pythinker-review",
-                        "informationUri": "https://github.com/TechMatrix-labs/pythinker-code",
+                        "informationUri": "https://github.com/Pythoughts-labs/pythinker-code",
                         "rules": list(rules_seen.values()),
                     }
                 },

@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE_NAME: ghcr.io/techmatrix-labs/pythinker-code
+  IMAGE_NAME: ghcr.io/pythoughts-labs/pythinker-code
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 # One run per tag/ref; never cancel a tag/dispatch run because each one may
