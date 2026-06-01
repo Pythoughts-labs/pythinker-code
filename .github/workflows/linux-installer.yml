@@ -4,7 +4,7 @@ on:
   push:
     tags:
       # Same scheme as release-pythinker-cli.yml and windows-installer.yml.
-      - "v+([0-9]).+([0-9]).+([0-9])"
+      - "v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
     inputs:
       version:
