@@ -316,6 +316,17 @@ def _card_side_indent() -> str:
     return " " * _card_side_padding()
 
 
+def _prompt_rule(columns: int) -> str:
+    """Return a prompt-toolkit-safe horizontal rule for the current terminal width.
+
+    prompt_toolkit can leave resize artifacts when non-fullscreen prompts draw
+    visible content through the last terminal column; full-width bottom bars make
+    the duplicated prompt spam especially obvious. Keep the rightmost column
+    blank for prompt-owned chrome while still visually reading as a full rule.
+    """
+    return "─" * max(0, columns - 1)
+
+
 def _truncate_to_width(text: str, width: int) -> str:
     if width <= 0:
         return ""
@@ -2442,7 +2453,7 @@ class CustomPromptSession:
         if is_card_style():
             ensure_prompt_newline(fragments)
             tc = get_toolbar_colors()
-            fragments.append((tc.separator, "─" * columns))
+            fragments.append((tc.separator, _prompt_rule(columns)))
             fragments.append(("", "\n"))
         elif preamble:
             fragments.append(("", "\n"))
@@ -2649,7 +2660,7 @@ class CustomPromptSession:
         if is_card_style():
             ensure_prompt_newline(fragments)
             tc = get_toolbar_colors()
-            fragments.append((tc.separator, "─" * columns))
+            fragments.append((tc.separator, _prompt_rule(columns)))
             fragments.append(("", "\n"))
             fragments.append(("", _card_side_indent()))
         else:
@@ -3226,7 +3237,7 @@ class CustomPromptSession:
         fragments: list[tuple[str, str]] = []
         tc = get_toolbar_colors()
 
-        fragments.append((tc.separator, "─" * columns))
+        fragments.append((tc.separator, _prompt_rule(columns)))
         fragments.append(("", "\n"))
 
         remaining = columns
@@ -3368,7 +3379,7 @@ class CustomPromptSession:
         mode_style = f"fg:{tokens.text or tokens.activity_label}"
         secondary_style = f"fg:{tokens.muted}"
 
-        fragments.append((tc.separator, "─" * columns))
+        fragments.append((tc.separator, _prompt_rule(columns)))
         fragments.append(("", "\n"))
 
         # ── line 1: cwd + git + status flags ───────────────────────────────

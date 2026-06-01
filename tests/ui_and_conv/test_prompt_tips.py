@@ -1251,6 +1251,12 @@ def test_modal_prompt_suspends_and_restores_existing_draft_when_input_is_hidden(
     assert prompt_session._suspended_buffer_document is None
 
 
+def test_prompt_rule_keeps_rightmost_column_clear() -> None:
+    assert shell_prompt._prompt_rule(0) == ""
+    assert shell_prompt._prompt_rule(1) == ""
+    assert shell_prompt._prompt_rule(8) == "─" * 7
+
+
 def test_idle_agent_prompt_uses_same_codex_input_layout(monkeypatch: Any) -> None:
     width = 64
     prompt_session = object.__new__(CustomPromptSession)
@@ -1269,7 +1275,9 @@ def test_idle_agent_prompt_uses_same_codex_input_layout(monkeypatch: Any) -> Non
 
     rendered_message = prompt_session._render_agent_prompt_message()
     plain_message = "".join(fragment[1] for fragment in rendered_message)
-    assert plain_message == f"{'─' * width}\n  ❯ "
+    # Keep the rightmost terminal column clear. Full-width prompt-toolkit chrome
+    # is prone to resize artifacts in non-fullscreen prompts.
+    assert plain_message == f"{'─' * (width - 1)}\n  ❯ "
     assert "input" not in plain_message
 
 
