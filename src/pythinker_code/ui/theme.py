@@ -565,3 +565,42 @@ def tui_rich_style(token: str, *, theme: ThemeName | None = None) -> RichStyle:
     if token.endswith("_bg"):
         return RichStyle(bgcolor=value)
     return RichStyle(color=value)
+
+
+# ---------------------------------------------------------------------------
+# Thinking-level prompt frame colors (Shift+Tab cycle). Keyed by the plain level
+# string to avoid a theme<->selector import cycle; ThinkingLevel values are
+# exactly these strings.
+# ---------------------------------------------------------------------------
+
+_THINKING_FRAME_DARK: dict[str, str] = {
+    "off": "#5F6B7E",  # grey
+    "minimal": "#7A8595",  # dim grey
+    "low": "#A3A3A3",  # lighter grey
+    "medium": "#7FB6E6",  # light blue
+    "high": "#A78BFA",  # violet
+    "xhigh": "#C4B5FD",  # lighter purple
+}
+
+_THINKING_FRAME_LIGHT: dict[str, str] = {
+    "off": "#8A93A0",
+    "minimal": "#6E7A88",
+    "low": "#666666",
+    "medium": "#2F6F8F",
+    "high": "#7C3AED",
+    "xhigh": "#9061F9",
+}
+
+
+def thinking_frame_color(level: str, *, theme: ThemeName | None = None) -> str:
+    """Hex frame color for thinking *level*; unmapped levels fall back to ``border``."""
+    name = theme if theme is not None else _active_theme
+    table = _THINKING_FRAME_LIGHT if name == "light" else _THINKING_FRAME_DARK
+    return table.get(level) or get_tui_tokens(theme).border
+
+
+def thinking_frame_style(level: str, *, theme: ThemeName | None = None) -> str:
+    """prompt_toolkit frame style for *level* (``"fg:#A78BFA"``), or ``""`` when colors are off."""
+    if colors_disabled():
+        return ""
+    return f"fg:{thinking_frame_color(level, theme=theme)}"
