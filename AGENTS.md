@@ -37,6 +37,12 @@ subagents, skills, web/visualization UIs, and multi-provider LLM authentication.
   commit status is `success`, not `pending`/`failure` or absent — and read the review summary and
   any "Actionable comments posted: N" findings. Do not merge while CodeRabbit is still reviewing or
   on an unreviewed commit; surface unresolved actionable findings instead of merging past them.
+- **When working on a PR or GitHub Actions failure, investigate and identify the root cause first.**
+  Provide the best-practice, most robust design solution; never provide fast fixes or workarounds.
+  This is a hard constraint.
+- **For session validation, check current authoritative sources before finalizing conclusions.** Use
+  Context7 MCP documentation lookups and targeted web search to verify the latest updates, APIs,
+  CI/GitHub Actions behavior, dependency guidance, and best practices relevant to the task.
 
 ## Simplicity and scope discipline
 

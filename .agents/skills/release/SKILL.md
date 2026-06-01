@@ -21,8 +21,11 @@ confirm_versions: |md
   major only changes by explicit manual decision.
 |
 update_files: |md
-  Update the relevant pyproject.toml (and rust/Cargo.toml if root version changes),
-  CHANGELOG.md (keep the Unreleased header), and breaking-changes.md in both languages.
+  Run `uv run python scripts/release.py --set-version X.Y.Z [--bump-core A.B.C --bump-host A.B.C]`.
+  It rewrites pyproject.toml:3, the sub-package pins, uv.lock, all three changelog files
+  (preserving the authored Unreleased body), and the README/asset names from the single
+  source of truth, then runs the local gates and opens the `release/X.Y.Z` PR.
+  There is no `--bump-review` (review is frozen at 0.1.0).
 |
 root_change: "Is the root package version changing?"
 sync_pythinker_code: |md
@@ -32,7 +35,7 @@ sync_pythinker_code: |md
 sync_kagent: |md
   Sync rust/Cargo.toml workspace version to match the root package version.
 |
-uv_sync: "Run uv sync."
+uv_sync: "release.py already runs `uv lock` + `uv sync --frozen --all-extras --all-packages` as Phase-2/3 steps; no separate uv sync needed."
 gen_docs: |md
   Follow the gen-docs skill instructions to ensure docs are up to date.
 |
