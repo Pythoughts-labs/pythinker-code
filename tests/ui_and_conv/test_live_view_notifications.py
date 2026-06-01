@@ -126,7 +126,7 @@ def test_live_view_prints_hook_timeout_status_with_partial_output(monkeypatch):
     view = _LiveView(StatusUpdate())
     view.dispatch_wire_message(HookTriggered(event="PreToolUse", target="Shell", hook_count=1))
     printed = []
-    monkeypatch.setattr(shell_console, "print", lambda *args, **kwargs: printed.extend(args))
+    monkeypatch.setattr(shell_console, "print", lambda *args, **_kwargs: printed.extend(args))
 
     view.dispatch_wire_message(
         HookResolved(
