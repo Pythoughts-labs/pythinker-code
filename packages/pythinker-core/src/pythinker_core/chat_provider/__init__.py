@@ -119,8 +119,12 @@ class TokenUsage(BaseModel):
         return self.input_other + self.input_cache_read + self.input_cache_creation
 
 
-type ThinkingEffort = Literal["off", "low", "medium", "high", "xhigh", "max"]
+type ThinkingEffort = Literal["off", "minimal", "low", "medium", "high", "xhigh", "max"]
 """The effort level for thinking.
+
+``minimal`` is the lowest user-facing reasoning level and maps to providers
+that support it natively (for example OpenAI reasoning_effort) or to the
+smallest available budget/effort otherwise.
 
 Support for levels above ``high`` varies by provider:
 

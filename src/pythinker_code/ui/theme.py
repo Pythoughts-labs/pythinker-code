@@ -580,6 +580,7 @@ _THINKING_FRAME_DARK: dict[str, str] = {
     "medium": "#7FB6E6",  # light blue
     "high": "#A78BFA",  # violet
     "xhigh": "#C4B5FD",  # lighter purple
+    "max": "#F0ABFC",  # bright magenta
 }
 
 _THINKING_FRAME_LIGHT: dict[str, str] = {
@@ -589,6 +590,7 @@ _THINKING_FRAME_LIGHT: dict[str, str] = {
     "medium": "#2F6F8F",
     "high": "#7C3AED",
     "xhigh": "#9061F9",
+    "max": "#B83280",
 }
 
 

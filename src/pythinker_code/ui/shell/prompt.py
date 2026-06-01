@@ -1814,7 +1814,7 @@ def _build_toolbar_tips(clipboard_available: bool) -> list[str]:
     tips = [
         _tip("app.prompt.help", "?", "shortcuts"),
         _tip("app.mode.toggle", "ctrl-x", "toggle mode"),
-        _tip("app.plan.toggle", "shift-tab", "plan mode"),
+        _tip("app.thinking.cycle", "shift-tab", "cycle thinking"),
         _tip("app.shell.oneshot", "!", "shell command"),
         _tip("app.editor.external", "ctrl-o", "editor"),
         _tip("app.todos.toggle", "ctrl-t", "toggle todos"),
@@ -2679,7 +2679,7 @@ class CustomPromptSession:
         help_ids = {
             "app.prompt.help",
             "app.mode.toggle",
-            "app.plan.toggle",
+            "app.thinking.cycle",
             "app.shell.oneshot",
             "app.editor.external",
             "app.prompt.newline",

@@ -49,7 +49,7 @@ class KeybindingInfo:
 _REGISTRY: dict[str, tuple[str, ...]] = {
     "app.prompt.help": ("?",),
     "app.mode.toggle": ("ctrl+x",),
-    "app.plan.toggle": ("shift+tab",),
+    "app.thinking.cycle": ("shift+tab",),
     "app.shell.oneshot": ("!",),
     "app.editor.external": ("ctrl+o",),
     "app.prompt.newline": ("ctrl+j", "alt+enter"),
@@ -68,7 +68,7 @@ _REGISTRY: dict[str, tuple[str, ...]] = {
 _BINDING_DESCRIPTIONS: dict[str, str] = {
     "app.prompt.help": "show shortcuts",
     "app.mode.toggle": "toggle agent/shell prompt",
-    "app.plan.toggle": "toggle plan mode",
+    "app.thinking.cycle": "cycle thinking level",
     "app.shell.oneshot": "run one shell command",
     "app.editor.external": "open prompt in editor",
     "app.prompt.newline": "insert newline",
@@ -87,7 +87,7 @@ _BINDING_DESCRIPTIONS: dict[str, str] = {
 _BINDING_CONTEXTS: dict[str, str] = {
     "app.prompt.help": "prompt",
     "app.mode.toggle": "prompt",
-    "app.plan.toggle": "prompt",
+    "app.thinking.cycle": "prompt",
     "app.shell.oneshot": "agent prompt",
     "app.editor.external": "prompt",
     "app.prompt.newline": "prompt",
@@ -106,7 +106,7 @@ _BINDING_CONTEXTS: dict[str, str] = {
 _BINDING_ORDER: tuple[str, ...] = (
     "app.prompt.help",
     "app.mode.toggle",
-    "app.plan.toggle",
+    "app.thinking.cycle",
     "app.shell.oneshot",
     "app.editor.external",
     "app.prompt.newline",
