@@ -6,7 +6,7 @@ from multidict import CIMultiDict, CIMultiDictProxy
 from pydantic import SecretStr
 from yarl import URL
 
-from pythinker_code.config import Config
+from pythinker_code.config import Config, LLMModel, LLMProvider
 
 
 def test_minimax_model_catalog_contains_four_current_models():
@@ -170,6 +170,32 @@ async def test_login_minimax_uses_discovered_context_length(monkeypatch, tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_login_minimax_token_plan_uses_discovered_available_subset(monkeypatch, tmp_path):
+    from pythinker_code.auth.minimax import MiniMaxModel, login_minimax_api_key
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    config = Config(is_from_default_location=True)
+
+    async def fake_discover(api_key):
+        assert api_key == "sk-cp-token-plan-abc"
+        return (
+            MiniMaxModel(
+                model_id="MiniMax-M2.7",
+                alias_suffix="m2.7",
+                display_name="MiniMax M2.7",
+            ),
+        )
+
+    monkeypatch.setattr("pythinker_code.auth.minimax._discover_minimax_models", fake_discover)
+
+    events = [event async for event in login_minimax_api_key(config, "sk-cp-token-plan-abc")]
+
+    assert [event.type for event in events] == ["info", "success"]
+    assert set(config.models) == {"minimax/m2.7"}
+    assert config.default_model == "minimax/m2.7"
+
+
+@pytest.mark.asyncio
 async def test_login_minimax_requires_key(monkeypatch, tmp_path):
     from pythinker_code.auth.minimax import login_minimax_api_key
 
@@ -256,6 +282,102 @@ def test_parse_discovered_minimax_models_overrides_context_length_only_for_posit
     assert by_id["MiniMax-M2.7"].max_context_size == 192_000
     assert by_id["MiniMax-M2.5"].max_context_size == 192_000
     assert by_id["MiniMax-M2.5-highspeed"].max_context_size == 384_000
+
+
+def test_parse_discovered_minimax_models_accepts_live_future_models_and_filters_modalities():
+    from pythinker_code.auth.minimax import _parse_discovered_models
+
+    payload = {
+        "data": [
+            {
+                "id": "MiniMax-M2.7",
+                "display_name": "MiniMax M2.7 Live",
+                "context_length": 205_000,
+            },
+            {
+                "id": "MiniMax-M3",
+                "name": "MiniMax M3",
+                "max_context_length": 512_000,
+            },
+            {"id": "MiniMax-Audio-01", "context_length": 1_000},
+            {"id": "MiniMax-M3", "context_length": 999_000},
+        ]
+    }
+
+    result = _parse_discovered_models(payload)
+
+    assert [model.alias for model in result] == ["minimax/m2.7", "minimax/m3"]
+    by_id = {m.model_id: m for m in result}
+    assert by_id["MiniMax-M2.7"].display_name == "MiniMax M2.7 Live"
+    assert by_id["MiniMax-M2.7"].max_context_size == 205_000
+    assert by_id["MiniMax-M3"].display_name == "MiniMax M3"
+    assert by_id["MiniMax-M3"].max_context_size == 512_000
+
+
+def test_apply_minimax_models_prunes_stale_models_and_preserves_user_prefs():
+    from pythinker_code.auth.minimax import (
+        MINIMAX_ANTHROPIC_PROVIDER_KEY,
+        MiniMaxModel,
+        _apply_minimax_config,
+        apply_minimax_models,
+    )
+
+    config = Config(is_from_default_location=True)
+    _apply_minimax_config(config, SecretStr("mx-test"))
+    config.default_model = "minimax/m2.7"
+    config.default_thinking = True
+
+    discovered = (
+        MiniMaxModel("MiniMax-M2.7", "m2.7", "MiniMax M2.7", max_context_size=205_000),
+        MiniMaxModel("MiniMax-M3", "m3", "MiniMax M3", max_context_size=512_000),
+    )
+
+    changed = apply_minimax_models(config, discovered)
+
+    assert changed is True
+    minimax_aliases = {
+        alias
+        for alias, model in config.models.items()
+        if model.provider == MINIMAX_ANTHROPIC_PROVIDER_KEY
+    }
+    assert minimax_aliases == {"minimax/m2.7", "minimax/m3"}
+    assert config.models["minimax/m2.7"].max_context_size == 205_000
+    assert config.default_model == "minimax/m2.7"
+    assert config.default_thinking is True
+
+
+def test_apply_minimax_models_reassigns_removed_default_and_returns_false_for_noop():
+    from pythinker_code.auth.minimax import (
+        MiniMaxModel,
+        _apply_minimax_config,
+        apply_minimax_models,
+    )
+
+    config = Config(is_from_default_location=True)
+    current = (MiniMaxModel("MiniMax-M2.7", "m2.7", "MiniMax M2.7"),)
+    _apply_minimax_config(config, SecretStr("mx-test"), models=current)
+    config.models["openai/gpt-5.2"] = LLMModel(
+        provider="managed:openai",
+        model="gpt-5.2",
+        max_context_size=400_000,
+    )
+    config.providers["managed:openai"] = LLMProvider(
+        type="openai_responses",
+        base_url="https://api.openai.com/v1",
+        api_key=SecretStr("sk-test"),
+    )
+
+    assert apply_minimax_models(config, current) is False
+
+    config.default_model = "minimax/m2.7"
+    changed = apply_minimax_models(
+        config,
+        (MiniMaxModel("MiniMax-M3", "m3", "MiniMax M3", max_context_size=512_000),),
+    )
+
+    assert changed is True
+    assert "minimax/m2.7" not in config.models
+    assert config.default_model == "minimax/m3"
 
 
 @pytest.mark.asyncio

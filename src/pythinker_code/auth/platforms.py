@@ -231,6 +231,12 @@ async def refresh_managed_models(config: Config) -> bool:
     if not config.is_from_default_location:
         return False
 
+    from pythinker_code.auth.minimax import (
+        MINIMAX_ANTHROPIC_PROVIDER_KEY,
+        MiniMaxModel,
+        apply_minimax_models,
+        refresh_minimax_models,
+    )
     from pythinker_code.auth.opencode_go import (
         OPENCODE_GO_PROVIDER_KEYS,
         OpenCodeGoModel,
@@ -248,10 +254,14 @@ async def refresh_managed_models(config: Config) -> bool:
     updates: list[tuple[str, str, list[ModelInfo]]] = []
     oauth_manager = None
     for provider_key, provider in managed_providers.items():
-        # OpenCode Go uses a two-shape (OpenAI- + Anthropic-compatible) provider
-        # split that the generic single-provider path below can't express, so it
-        # is refreshed via its own discovery after this loop.
-        if provider_key in OPENCODE_GO_PROVIDER_KEYS:
+        # OpenCode Go and MiniMax own provider-specific model discovery. The
+        # generic `managed:<platform>` path can't express OpenCode Go's
+        # two-provider split, and MiniMax's provider key intentionally includes
+        # the wire-shape suffix (`managed:minimax-anthropic`).
+        if (
+            provider_key in OPENCODE_GO_PROVIDER_KEYS
+            or provider_key == MINIMAX_ANTHROPIC_PROVIDER_KEY
+        ):
             continue
         platform_id = parse_managed_provider_key(provider_key)
         if not platform_id:
@@ -399,6 +409,14 @@ async def refresh_managed_models(config: Config) -> bool:
     if opencode_go_models and apply_opencode_go_models(config, opencode_go_models):
         changed = True
 
+    minimax_models: tuple[MiniMaxModel, ...] | None = None
+    try:
+        minimax_models = await refresh_minimax_models(config)
+    except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+        logger.warning("Failed to refresh MiniMax models: {error}", error=exc)
+    if minimax_models and apply_minimax_models(config, minimax_models):
+        changed = True
+
     if changed:
         config_for_save = load_config()
         save_changed = False
@@ -406,6 +424,8 @@ async def refresh_managed_models(config: Config) -> bool:
             if _apply_models(config_for_save, provider_key, platform_id, models):
                 save_changed = True
         if opencode_go_models and apply_opencode_go_models(config_for_save, opencode_go_models):
+            save_changed = True
+        if minimax_models and apply_minimax_models(config_for_save, minimax_models):
             save_changed = True
         if save_changed:
             save_config(config_for_save)
