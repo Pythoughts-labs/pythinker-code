@@ -1,7 +1,9 @@
+import sys
 from typing import Protocol
 
 import rich
 from pythinker_core.message import Message
+from rich.console import Console
 
 from pythinker_code.cli import OutputFormat
 from pythinker_code.soul.message import tool_result_to_message
@@ -142,16 +144,23 @@ class FinalOnlyTextPrinter(Printer):
         self._content_buffer.clear()
 
 
+def _stdout_is_terminal() -> bool:
+    isatty = getattr(sys.stdout, "isatty", None)
+    return bool(isatty and isatty())
+
+
 def _print_final_text(text: str) -> None:
-    """Print the final assistant text, rendering any ` ```report ` block as a
-    clean report. Plain prose is printed verbatim so non-report output is
-    byte-identical (and pipe-safe — Rich drops colour on a non-TTY stdout)."""
+    """Print final assistant text with terminal-safe wrapping.
+
+    Pipes keep non-report prose byte-identical. Interactive terminals render
+    through the shell Markdown/report path so final answers wrap at word
+    boundaries instead of letting the terminal hard-wrap and clip mid-word.
+    """
     from pythinker_code.ui.shell.components.report import has_report_block, render_agent_body
 
-    if not has_report_block(text):
+    if not has_report_block(text) and not _stdout_is_terminal():
         print(text, flush=True)
         return
-    from rich.console import Console
 
     Console().print(render_agent_body(text))
 

@@ -15,9 +15,9 @@ _CHAR_WRAP_PATTERN: Final[re.Pattern[str]] = re.compile(r".", re.DOTALL)
 def enable_character_wrap() -> None:
     """Switch Rich's wrapping logic to break on every character.
 
-    Rich's default behavior tries to preserve whole words; we override the
-    internal regex so markdown rendering can fold text at any column once it
-    exceeds the terminal width.
+    Kept for narrow renderers that explicitly prefer hard folding. Normal TUI
+    prose should use Rich's default word-aware wrapping so paragraphs retain
+    clean margins and don't split ordinary words mid-line.
     """
 
     _wrap.re_word = _CHAR_WRAP_PATTERN
@@ -29,5 +29,6 @@ def restore_word_wrap() -> None:
     _wrap.re_word = _DEFAULT_WRAP_PATTERN
 
 
-# Apply character-based wrapping globally for the CLI.
-enable_character_wrap()
+# Keep Rich's default word-aware wrapping globally. Long unbroken tokens still
+# fold, but ordinary prose and markdown lists wrap on word boundaries.
+restore_word_wrap()
