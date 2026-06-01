@@ -632,7 +632,7 @@ def test_wire_message_type_alias():
 
     module = pythinker_code.wire.types
     # Helper types that are BaseModel subclasses but not WireMessage types
-    from pythinker_code.wire.types import HookResponse
+    from pythinker_code.wire.types import HookOutput, HookResponse
 
     _NON_WIRE_TYPES = {
         WireMessageEnvelope,
@@ -641,6 +641,7 @@ def test_wire_message_type_alias():
         QuestionOption,
         QuestionItem,
         QuestionResponse,
+        HookOutput,
         HookResponse,
     }
 

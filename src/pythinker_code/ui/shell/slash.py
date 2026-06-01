@@ -1185,8 +1185,8 @@ def tui(app: Shell, args: str):
     raise Reload(session_id=soul.runtime.session.id)
 
 
-@registry.command
-@shell_mode_registry.command
+@registry.command(aliases=["config"])
+@shell_mode_registry.command(aliases=["config"])
 async def settings(app: Shell, args: str):
     """Open the interactive settings panel; use `/settings show` for read-only view"""
     from rich.console import Group, RenderableType
@@ -1217,6 +1217,7 @@ async def settings(app: Shell, args: str):
         table.add_row("Telemetry", "on" if config.telemetry else "off")
         table.add_row("Default thinking", "on" if config.default_thinking else "off")
         table.add_row("Show thinking stream", "on" if config.show_thinking_stream else "off")
+        table.add_row("Turn recaps", "on" if config.tui.turn_recaps else "off")
         table.add_row("Default yolo", "on" if config.default_yolo else "off")
         table.add_row("Default plan mode", "on" if config.default_plan_mode else "off")
         if config.source_file is not None:
@@ -1227,7 +1228,7 @@ async def settings(app: Shell, args: str):
         blocks: list[RenderableType] = [Text.from_markup("[bold]Settings[/bold]"), table]
         console.print(Group(*blocks))
         console.print(
-            f"[{_t_set.muted}]Tip: /settings opens the interactive panel; "
+            f"[{_t_set.muted}]Tip: /settings (or /config) opens the interactive panel; "
             f"/theme, /tui, /model, /keys for related controls.[/]"
         )
 

@@ -294,6 +294,8 @@ class ToolExecutionComponent:
 
     def _has_expandable_payload(self) -> bool:
         """Heuristic: return True when expanding can plausibly reveal more payload."""
+        if self._renderer_state.get("__has_expandable_payload__"):
+            return True
         result = self._state.result
         if result is None or not result.text:
             return False

@@ -6,11 +6,12 @@ from dataclasses import dataclass
 from typing import cast
 
 from pythinker_core.tooling import DisplayBlock
-from rich.console import RenderableType
+from rich.console import Group, RenderableType
 from rich.text import Text
 
 from pythinker_code.tools.display import DiffDisplayBlock
 from pythinker_code.ui.shell.components import compute_edit_diff_string, render_diff
+from pythinker_code.ui.shell.render_constants import expand_hint
 from pythinker_code.ui.shell.tool_renderers import ToolResultPayload
 from pythinker_code.ui.shell.tool_renderers._render_utils import fg
 
@@ -116,11 +117,27 @@ def change_summary_text(added: int, removed: int) -> Text:
     return fg("tool_output", out)
 
 
-def diff_frame(diff_text: str, *, width: int) -> RenderableType:
+def diff_frame(
+    diff_text: str,
+    *,
+    width: int,
+    expanded: bool = True,
+    collapsed_max_lines: int = 16,
+    state: dict[str, object] | None = None,
+) -> RenderableType:
     """Render the Blackbox-style inline diff body.
 
     The reference terminal transcript shows the summary line immediately
-    followed by numbered +/- rows, without an ASCII box or dashed rails.
+    followed by numbered +/- rows, without an ASCII box or dashed rails. Large
+    diffs are collapsed by default and can be expanded from the tool card.
     """
     _ = width
+    lines = diff_text.splitlines()
+    if not expanded and len(lines) > collapsed_max_lines:
+        if state is not None:
+            state["__has_expandable_payload__"] = True
+            state["__suppress_generic_expand_hint__"] = True
+        shown = "\n".join(lines[:collapsed_max_lines])
+        remaining = len(lines) - collapsed_max_lines
+        return Group(render_diff(shown), fg("muted", expand_hint(remaining)))
     return render_diff(diff_text)

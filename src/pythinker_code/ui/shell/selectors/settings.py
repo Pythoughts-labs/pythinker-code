@@ -61,6 +61,13 @@ def _build_settings_config(config: Config) -> SettingsListConfig:
             values=("card", "pythinker"),
         ),
         SettingItem(
+            id="tui.turn_recaps",
+            label="Turn recaps",
+            description="Show a compact recap line after completed shell turns.",
+            current_value=_bool(config.tui.turn_recaps),
+            values=_BOOL_VALUES,
+        ),
+        SettingItem(
             id="default_model",
             label="Default model",
             description=(
@@ -248,6 +255,11 @@ def apply_settings_changes(config: Config, changes: dict[str, str]) -> list[str]
             case "tui.style":
                 if config.tui.style != value:
                     config.tui.style = cast(Any, value)
+                    mark(setting_id)
+            case "tui.turn_recaps":
+                new = value == "true"
+                if config.tui.turn_recaps != new:
+                    config.tui.turn_recaps = new
                     mark(setting_id)
             case "default_model":
                 model = "" if value == _NONE_MODEL_VALUE else value

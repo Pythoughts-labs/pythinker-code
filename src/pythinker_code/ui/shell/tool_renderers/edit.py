@@ -118,7 +118,12 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
     return Group(
         head,
         change_summary_text(added, removed),
-        diff_frame(diff_text, width=ctx.width or 80),
+        diff_frame(
+            diff_text,
+            width=ctx.width or 80,
+            expanded=ctx.expanded,
+            state=ctx.state,
+        ),
     )
 
 
@@ -162,7 +167,12 @@ def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> Rendera
 
     return Group(
         change_summary_text(added, removed),
-        diff_frame(preview_diff, width=ctx.width or 80),
+        diff_frame(
+            preview_diff,
+            width=ctx.width or 80,
+            expanded=ctx.expanded,
+            state=ctx.state,
+        ),
     )
 
 

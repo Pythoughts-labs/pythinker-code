@@ -313,3 +313,29 @@ async def test_wire_callbacks_fired():
     assert triggered[0] == ("PreToolUse", "Shell", 1)
     assert len(resolved) == 1
     assert resolved[0] == ("PreToolUse", "Shell", "allow")
+
+
+@pytest.mark.asyncio
+async def test_wire_resolved_callback_receives_hook_output():
+    """HookResolved can carry bounded hook stdout for shell transcript rendering."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        script = Path(tmpdir) / "banner.sh"
+        script.write_text(
+            "#!/bin/bash\necho '[PreToolUse]'\necho 'PRO AGENT ACTIVATION RECOMMENDED'\n"
+        )
+        script.chmod(0o755)
+
+        resolved_outputs = []
+        hooks = [HookDef(event="PreToolUse", matcher="Shell", command=str(script), timeout=5)]
+        engine = HookEngine(
+            hooks,
+            on_resolved=lambda e, t, a, r, d, outputs: resolved_outputs.append(outputs),
+            cwd=tmpdir,
+        )
+
+        await engine.trigger("PreToolUse", matcher_value="Shell", input_data={})
+
+        assert len(resolved_outputs) == 1
+        outputs = resolved_outputs[0]
+        assert outputs[0]["stdout"] == ("[PreToolUse]\nPRO AGENT ACTIVATION RECOMMENDED\n")
+        assert outputs[0]["stderr"] == ""

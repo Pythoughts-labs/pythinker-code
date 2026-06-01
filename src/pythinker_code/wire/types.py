@@ -146,6 +146,21 @@ class HookTriggered(BaseModel):
     """Number of matched hooks running in parallel."""
 
 
+class HookOutput(BaseModel):
+    """Bounded stdout/stderr captured from one hook invocation."""
+
+    stdout: str = ""
+    """Captured stdout, truncated before it is sent over the wire."""
+    stderr: str = ""
+    """Captured stderr, truncated before it is sent over the wire."""
+    exit_code: int = 0
+    """Hook process exit code, when available."""
+    timed_out: bool = False
+    """Whether the hook timed out."""
+    truncated: bool = False
+    """Whether stdout or stderr was truncated for transport/display."""
+
+
 class HookResolved(BaseModel):
     """A batch of hooks has finished executing."""
 
@@ -159,6 +174,8 @@ class HookResolved(BaseModel):
     """Reason for blocking. Empty if allowed."""
     duration_ms: int = 0
     """Wall-clock time for the entire batch, in milliseconds."""
+    outputs: tuple[HookOutput, ...] = ()
+    """Bounded visible output emitted by matched hooks."""
 
 
 class MCPLoadingBegin(BaseModel):
@@ -715,6 +732,9 @@ __all__ = [
     "StepRetry",
     "ToolExecutionStarted",
     "ToolOutputPart",
+    "HookTriggered",
+    "HookOutput",
+    "HookResolved",
     "CompactionBegin",
     "CompactionEnd",
     "MCPLoadingBegin",

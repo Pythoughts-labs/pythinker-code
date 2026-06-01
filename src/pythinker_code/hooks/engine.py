@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import re
 import time
 import uuid
@@ -16,12 +17,70 @@ from pythinker_code.utils.logging import logger
 type OnTriggered = Callable[[str, str, int], None]
 """(event, target, hook_count) -> None"""
 
-type OnResolved = Callable[[str, str, str, str, int], None]
-"""(event, target, action, reason, duration_ms) -> None"""
+type OnResolved = Callable[..., None]
+"""(event, target, action, reason, duration_ms[, outputs]) -> None"""
 
 type OnWireHookRequest = Callable[[WireHookHandle], Awaitable[None]]
 """Called when a wire hook needs client handling. The callback should send
 the request over the wire and resolve the handle when the client responds."""
+
+_MAX_HOOK_OUTPUT_CHARS = 12_000
+
+
+def _truncate_hook_output(text: str) -> tuple[str, bool]:
+    if len(text) <= _MAX_HOOK_OUTPUT_CHARS:
+        return text, False
+    return text[:_MAX_HOOK_OUTPUT_CHARS].rstrip() + "\n...[truncated]", True
+
+
+def _hook_outputs_for_wire(results: list[HookResult]) -> tuple[dict[str, Any], ...]:
+    outputs: list[dict[str, Any]] = []
+    for result in results:
+        stdout, stdout_truncated = _truncate_hook_output(result.stdout)
+        stderr, stderr_truncated = _truncate_hook_output(result.stderr)
+        if not stdout and not stderr and not result.timed_out:
+            continue
+        outputs.append(
+            {
+                "stdout": stdout,
+                "stderr": stderr,
+                "exit_code": result.exit_code,
+                "timed_out": result.timed_out,
+                "truncated": stdout_truncated or stderr_truncated,
+            }
+        )
+    return tuple(outputs)
+
+
+def _resolved_callback_accepts_outputs(callback: OnResolved) -> bool:
+    try:
+        signature = inspect.signature(callback)
+    except (TypeError, ValueError):
+        return False
+    parameters = tuple(signature.parameters.values())
+    if any(param.kind == inspect.Parameter.VAR_POSITIONAL for param in parameters):
+        return True
+    positional_kinds = {
+        inspect.Parameter.POSITIONAL_ONLY,
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+    }
+    positional = [param for param in parameters if param.kind in positional_kinds]
+    return len(positional) >= 6
+
+
+def _call_on_resolved(
+    callback: OnResolved,
+    event: str,
+    target: str,
+    action: str,
+    reason: str,
+    duration_ms: int,
+    outputs: tuple[dict[str, Any], ...],
+) -> None:
+    if _resolved_callback_accepts_outputs(callback):
+        callback(event, target, action, reason, duration_ms, outputs)
+    else:
+        callback(event, target, action, reason, duration_ms)
 
 
 @dataclass
@@ -332,7 +391,15 @@ class HookEngine:
         # --- HookResolved ---
         if self._on_resolved:
             try:
-                self._on_resolved(event, matcher_value, action, reason, duration_ms)
+                _call_on_resolved(
+                    self._on_resolved,
+                    event,
+                    matcher_value,
+                    action,
+                    reason,
+                    duration_ms,
+                    _hook_outputs_for_wire(results),
+                )
             except Exception as e:
                 from pythinker_code.telemetry.errors import report_handled_error
 

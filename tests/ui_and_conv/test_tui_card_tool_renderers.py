@@ -221,6 +221,61 @@ def test_write_error_surfaced():
     assert "Permission denied" in rendered
 
 
+def test_write_existing_file_renders_diff_for_add_only_change():
+    rendered = _render(
+        "WriteFile",
+        {"path": "/repo/report.md", "content": "intro\nnew section\n"},
+        details={
+            "display": [
+                DiffDisplayBlock(
+                    path="/repo/report.md",
+                    old_text="intro",
+                    new_text="intro\nnew section",
+                    old_start=1,
+                    new_start=1,
+                )
+            ]
+        },
+    )
+
+    assert "Added 1 line" in rendered
+    assert "+ 2 new section" in rendered
+    assert "Wrote 2 lines" not in rendered
+
+
+def test_write_large_diff_can_expand_from_completed_card():
+    defn = get_tool_renderer("WriteFile")
+    assert defn is not None
+    comp = ToolExecutionComponent("WriteFile", "tc-1", definition=defn, cwd="/repo")
+    comp.update_args({"path": "/repo/report.md", "content": "new"})
+    comp.set_args_complete()
+    comp.mark_execution_started()
+    comp.set_result(
+        ToolResultPayload(
+            details={
+                "display": [
+                    DiffDisplayBlock(
+                        path="/repo/report.md",
+                        old_text="\n".join(f"old {i}" for i in range(30)),
+                        new_text="\n".join(f"new {i}" for i in range(30)),
+                        old_start=1,
+                        new_start=1,
+                    )
+                ]
+            }
+        )
+    )
+
+    collapsed = render_plain(comp.render(), width=100)
+    assert comp.can_expand
+    assert "ctrl+o to expand" in collapsed
+    assert "new 29" not in collapsed
+
+    comp.toggle_expanded()
+    expanded = render_plain(comp.render(), width=100)
+    assert "new 29" in expanded
+
+
 # ---------------------------------------------------------------------------
 # edit
 # ---------------------------------------------------------------------------

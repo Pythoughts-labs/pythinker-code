@@ -11,6 +11,7 @@ from __future__ import annotations
 from rich.console import Group, RenderableType
 from rich.text import Text
 
+from pythinker_code.tools.display import DiffDisplayBlock
 from pythinker_code.ui.shell.render_constants import expand_hint
 from pythinker_code.ui.shell.tool_renderers import (
     ToolRenderContext,
@@ -19,8 +20,9 @@ from pythinker_code.ui.shell.tool_renderers import (
 )
 from pythinker_code.ui.shell.tool_renderers._file_diff import (
     change_summary_text,
+    diff_blocks_from_result,
     diff_frame,
-    preview_from_result,
+    preview_from_diff_blocks,
 )
 from pythinker_code.ui.shell.tool_renderers._render_utils import (
     as_str,
@@ -105,6 +107,10 @@ def _render_created_or_appended(
     return Group(*children)
 
 
+def _is_existing_file_diff(blocks: list[DiffDisplayBlock]) -> bool:
+    return any(block.is_summary or block.old_text.strip() for block in blocks)
+
+
 def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> RenderableType | None:
     if result.is_error:
         if not result.text:
@@ -117,14 +123,20 @@ def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> Rendera
         )
         return body if body.plain else fg("error", result.text.rstrip("\n"))
 
-    preview = preview_from_result(result)
+    diff_blocks = diff_blocks_from_result(result)
+    preview = preview_from_diff_blocks(diff_blocks)
     mode = ctx.args.get("mode")
     raw_content = as_str(ctx.args.get("content")) or ""
 
-    if preview is not None and preview.removed > 0:
+    if preview is not None and (preview.removed > 0 or _is_existing_file_diff(diff_blocks)):
         return Group(
             change_summary_text(preview.added, preview.removed),
-            diff_frame(preview.diff_text, width=ctx.width or 80),
+            diff_frame(
+                preview.diff_text,
+                width=ctx.width or 80,
+                expanded=ctx.expanded,
+                state=ctx.state,
+            ),
         )
 
     return _render_created_or_appended(ctx, raw_content, append=mode == "append")

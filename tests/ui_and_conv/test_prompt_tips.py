@@ -29,6 +29,7 @@ from pythinker_code.ui.shell.prompt import (
     _get_git_status,
     _git_branch_state,
     _git_status_state,
+    _PromptRightPaddingMargin,
     _shorten_cwd,
     _toast_queues,
     _truncate_left,
@@ -59,6 +60,28 @@ def test_shortcut_help_popup_lists_prompt_and_transcript_shortcuts() -> None:
     assert "!" in plain
     assert "run one shell command" in plain
     assert "expand/collapse tool output (transcript)" in plain
+
+
+def test_prompt_continuation_aligns_wrapped_input_with_text_start() -> None:
+    prompt_session = object.__new__(CustomPromptSession)
+
+    fragments = prompt_session._render_prompt_continuation(
+        width=2,
+        line_number=1,
+        is_soft_wrap=True,
+    )
+
+    assert "".join(fragment[1] for fragment in fragments) == "  "
+
+
+def test_prompt_right_padding_margin_reserves_blank_edge_columns() -> None:
+    margin = _PromptRightPaddingMargin(lambda: 2)
+    render_info = SimpleNamespace(displayed_lines=[0, 0, 0])
+
+    fragments = margin.create_margin(cast(Any, render_info), width=2, height=3)
+
+    assert margin.get_width(lambda: cast(Any, None)) == 2
+    assert "".join(fragment[1] for fragment in fragments) == "  \n  \n  \n"
 
 
 def test_prompt_toolkit_keyprocessor_shutdown_noise_is_filtered() -> None:

@@ -9,7 +9,7 @@ import pythinker_code.ui.shell as shell_module
 from pythinker_code.soul import Soul
 from pythinker_code.ui.shell import Shell
 from pythinker_code.ui.shell.components import render_plain
-from pythinker_code.ui.shell.echo import render_user_echo, render_user_echo_text
+from pythinker_code.ui.shell.echo import UserEcho, render_user_echo, render_user_echo_text
 from pythinker_code.ui.shell.prompt import PromptMode, UserInput
 from pythinker_code.ui.tui_config import get_active_tui_style, set_active_tui_style
 from pythinker_code.utils.slashcmd import SlashCommand, SlashCommandCall
@@ -80,7 +80,7 @@ def test_echo_agent_input_uses_resolved_command_for_placeholders(monkeypatch) ->
 def test_render_user_echo_preserves_literal_brackets() -> None:
     rendered = render_user_echo(Message(role="user", content=[TextPart(text="[brackets]")]))
 
-    assert isinstance(rendered, Text)
+    assert isinstance(rendered, UserEcho)
     assert rendered.plain == "❯ [brackets]"
 
 
@@ -92,7 +92,7 @@ def test_render_user_echo_preserves_image_placeholder_literal() -> None:
         )
     )
 
-    assert isinstance(rendered, Text)
+    assert isinstance(rendered, UserEcho)
     assert rendered.plain == "❯ [image]"
 
 
@@ -108,7 +108,7 @@ def test_render_user_echo_preserves_audio_placeholder_literal() -> None:
         )
     )
 
-    assert isinstance(rendered, Text)
+    assert isinstance(rendered, UserEcho)
     assert rendered.plain == "❯ [audio:clip]"
 
 
@@ -122,7 +122,7 @@ def test_render_user_echo_preserves_video_placeholder_literal() -> None:
         )
     )
 
-    assert isinstance(rendered, Text)
+    assert isinstance(rendered, UserEcho)
     assert rendered.plain == "❯ [video]"
 
 
@@ -139,7 +139,7 @@ def test_render_user_echo_preserves_mixed_content_order() -> None:
         )
     )
 
-    assert isinstance(rendered, Text)
+    assert isinstance(rendered, UserEcho)
     assert rendered.plain == "❯ look [image][audio][video]"
 
 
@@ -152,8 +152,19 @@ def test_card_style_user_echo_renders_transcript_prompt_symbol() -> None:
     finally:
         set_active_tui_style(original)
 
-    assert plain == "❯ apply\n"
+    assert plain == "\n❯ apply\n"
     assert "✨" not in plain
+
+
+def test_user_echo_wraps_continuation_under_text_start() -> None:
+    rendered = render_user_echo_text("abcdefghij klmnopqrst uvwxyz")
+    plain = render_plain(rendered, width=16)
+    lines = plain.splitlines()
+
+    assert lines[0] == ""
+    assert lines[1].startswith("❯ ")
+    assert lines[2].startswith("  ")
+    assert not lines[2].startswith("❯")
 
 
 def test_should_echo_agent_input_for_plain_agent_message() -> None:

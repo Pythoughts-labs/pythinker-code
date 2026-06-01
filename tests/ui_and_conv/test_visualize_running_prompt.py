@@ -45,6 +45,7 @@ async def test_visualize_uses_prompt_live_view_when_prompt_session_and_steer_are
             btw_runner=None,
             cancel_event,
             show_thinking_stream=False,
+            show_turn_recaps=False,
         ):
             called.append(("init", initial_status, cancel_event))
             assert prompt_session is not None

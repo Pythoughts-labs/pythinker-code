@@ -28,6 +28,7 @@ from pythinker_code.ui.shell.components.markdown import (
 from pythinker_code.ui.shell.components.markdown import (
     markdown_commit_boundary,
 )
+from pythinker_code.ui.shell.components.render_utils import render_message_response, sanitize_ansi
 from pythinker_code.ui.shell.components.report import render_agent_body
 from pythinker_code.ui.shell.console import console, current_console_width
 from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ASSISTANT_MARKER, TRANSCRIPT_STATUS_MARKER
@@ -36,6 +37,7 @@ from pythinker_code.ui.shell.motion import (
     ActivitySnapshot,
     activity_status_line,
 )
+from pythinker_code.ui.shell.spacing import BLANK_ROW
 from pythinker_code.ui.shell.tips import FEATURE_TIPS
 from pythinker_code.ui.shell.tool_renderers import (
     ToolResultPayload,
@@ -326,7 +328,7 @@ class _ContentBlock:
         if not pending:
             return spinner
         preview = self._build_preview(pending, max_lines=_COMPOSING_PREVIEW_LINES)
-        return Group(spinner, self._wrap_preview_bullet(Markdown(preview)))
+        return Group(spinner, BLANK_ROW, self._wrap_preview_bullet(Markdown(preview)))
 
     def _compose_spinner(self) -> Text:
         return activity_status_line(
@@ -342,7 +344,11 @@ class _ContentBlock:
             return spinner
         preview = self._build_preview(pending, max_lines=_THINKING_PREVIEW_LINES)
         preview_style = tui_rich_style("thinking_text") + Style(italic=True)
-        return Group(spinner, Text(preview, style=preview_style))
+        return Group(
+            spinner,
+            BLANK_ROW,
+            BulletColumns(Text(preview, style=preview_style), bullet_style=preview_style),
+        )
 
     def _compose_thinking_spinner(self) -> Text:
         return activity_status_line(
@@ -1007,7 +1013,37 @@ class _HookBlock:
             target=target,
             state=state,
             detail=" · ".join(detail_parts) if detail_parts else None,
+            children=self._output_children(),
         )
+
+    def _output_children(self) -> list[RenderableType]:
+        if self.resolved is None:
+            return []
+        children: list[RenderableType] = []
+        for output in self.resolved.outputs:
+            body = Text()
+            stdout = sanitize_ansi(output.stdout).rstrip("\n")
+            stderr = sanitize_ansi(output.stderr).rstrip("\n")
+            has_both_streams = bool(stdout and stderr)
+            if stdout:
+                if has_both_streams:
+                    body.append("[stdout]\n", style=tui_rich_style("dim"))
+                body.append(stdout, style=tui_rich_style("muted"))
+            if stderr:
+                if body.plain:
+                    body.append("\n")
+                if has_both_streams:
+                    body.append("[stderr]\n", style=tui_rich_style("dim"))
+                body.append(stderr, style=tui_rich_style("error"))
+            if output.timed_out and not body.plain:
+                body.append("hook timed out", style=tui_rich_style("warning"))
+            if output.truncated:
+                if body.plain:
+                    body.append("\n")
+                body.append("… hook output truncated", style=tui_rich_style("warning"))
+            if body.plain:
+                children.append(render_message_response(body))
+        return children
 
 
 class _QuestionAnsweredBlock:

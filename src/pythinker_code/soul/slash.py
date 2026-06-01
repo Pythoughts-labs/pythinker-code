@@ -57,6 +57,19 @@ async def init(soul: PythinkerSoul, args: str):
 
 
 @registry.command
+async def recap(soul: PythinkerSoul, args: str):
+    """Recap Pythinker sessions. Usage: /recap [today|yesterday|week|YYYY-MM-DD]"""
+    from pythinker_code.session_recap import build_pythinker_recap
+
+    try:
+        text = await build_pythinker_recap(soul.runtime.session.work_dir, args)
+    except ValueError as exc:
+        wire_send(TextPart(text=str(exc)))
+        return
+    wire_send(TextPart(text=text))
+
+
+@registry.command
 async def compact(soul: PythinkerSoul, args: str):
     """Compact the context (optionally with a custom focus, e.g. /compact keep db discussions)"""
     if soul.context.n_checkpoints == 0:

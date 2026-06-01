@@ -35,7 +35,12 @@ from prompt_toolkit.completion import (
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.document import Document
 from prompt_toolkit.filters import Condition, has_completions
-from prompt_toolkit.formatted_text import AnyFormattedText, FormattedText, to_formatted_text
+from prompt_toolkit.formatted_text import (
+    AnyFormattedText,
+    FormattedText,
+    StyleAndTextTuples,
+    to_formatted_text,
+)
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
 from prompt_toolkit.keys import Keys
@@ -45,9 +50,11 @@ from prompt_toolkit.layout.containers import (
     FloatContainer,
     HSplit,
     Window,
+    WindowRenderInfo,
 )
 from prompt_toolkit.layout.controls import BufferControl, UIContent, UIControl
 from prompt_toolkit.layout.dimension import Dimension
+from prompt_toolkit.layout.margins import Margin
 from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.utils import get_cwidth
@@ -95,6 +102,7 @@ PROMPT_SYMBOL_SHELL = "$"
 PROMPT_SYMBOL_THINKING = "💫"
 PROMPT_SYMBOL_PLAN = "📋"
 _CARD_SIDE_PADDING = 2
+_INPUT_RIGHT_PADDING = 2
 
 
 # prompt_toolkit 3.0.52 can emit these during prompt shutdown on Python 3.14
@@ -365,6 +373,30 @@ def _extend_rows(out: FormattedText, rows: list[FormattedText]) -> None:
         out.extend(row)
         if index != len(rows) - 1:
             out.append(("", "\n"))
+
+
+class _PromptRightPaddingMargin(Margin):
+    """Reserve blank columns at the right edge of the prompt input window."""
+
+    def __init__(self, width: Callable[[], int]) -> None:
+        self._width = width
+
+    def get_width(self, get_ui_content: Callable[[], UIContent]) -> int:
+        del get_ui_content
+        return max(0, self._width())
+
+    def create_margin(
+        self,
+        window_render_info: WindowRenderInfo,
+        width: int,
+        height: int,
+    ) -> StyleAndTextTuples:
+        del height
+        fragments: StyleAndTextTuples = []
+        for _ in window_render_info.displayed_lines:
+            fragments.append(("class:compact-input", " " * width))
+            fragments.append(("", "\n"))
+        return fragments
 
 
 def _background_task_summary(counts: BgTaskCounts) -> str | None:
@@ -974,6 +1006,182 @@ class SlashCommandMenuControl(UIControl):
         return lines
 
 
+class LocalFileMentionMenuControl(UIControl):
+    """Render `@` file completions as a clean inline, two-column menu."""
+
+    _MIN_DETAIL_WIDTH = 16
+    _MAX_NAME_WIDTH = 32
+
+    def __init__(
+        self,
+        *,
+        left_padding: Callable[[], int],
+        scroll_offset: int = 1,
+    ) -> None:
+        self._left_padding = left_padding
+        self._scroll_offset = scroll_offset
+
+    def has_focus(self) -> bool:
+        return False
+
+    def preferred_width(self, max_available_width: int) -> int | None:
+        return max_available_width
+
+    def preferred_height(
+        self,
+        width: int,
+        max_available_height: int,
+        wrap_lines: bool,
+        get_line_prefix: Callable[..., AnyFormattedText] | None,
+    ) -> int | None:
+        app = get_app_or_none()
+        complete_state = (
+            getattr(app.current_buffer, "complete_state", None) if app is not None else None
+        )
+        if complete_state is None or not complete_state.completions:
+            return 0
+        # Reserve the final row for the position counter.
+        return min(max_available_height, len(complete_state.completions) + 1)
+
+    def create_content(self, width: int, height: int) -> UIContent:
+        app = get_app_or_none()
+        complete_state = (
+            getattr(app.current_buffer, "complete_state", None) if app is not None else None
+        )
+        if complete_state is None or not complete_state.completions or height <= 0:
+            return UIContent()
+
+        completions = complete_state.completions
+        selected_index = complete_state.complete_index or 0
+        selected_index = max(0, min(selected_index, len(completions) - 1))
+        show_count = height > 1
+        item_rows = max(1, height - (1 if show_count else 0))
+        start, end = self._visible_window_bounds(
+            completion_count=len(completions),
+            selected_index=selected_index,
+            available_rows=item_rows,
+        )
+
+        menu_width = max(0, width - self._left_padding())
+        marker_width = 2
+        gap_width = 4 if menu_width >= 48 else 2
+        detail_enabled = menu_width >= marker_width + gap_width + self._MIN_DETAIL_WIDTH + 12
+        if detail_enabled:
+            name_width = min(
+                self._MAX_NAME_WIDTH,
+                max(12, (menu_width - marker_width - gap_width) // 2),
+            )
+            detail_width = max(0, menu_width - marker_width - name_width - gap_width)
+        else:
+            name_width = max(0, menu_width - marker_width)
+            detail_width = 0
+            gap_width = 0
+
+        rendered_lines: list[FormattedText] = []
+        selected_line_index = 0
+        for index in range(start, end + 1):
+            if index == selected_index:
+                selected_line_index = len(rendered_lines)
+            rendered_lines.append(
+                self._render_item_line(
+                    width=width,
+                    completion=completions[index],
+                    is_current=index == selected_index,
+                    marker_width=marker_width,
+                    name_width=name_width,
+                    gap_width=gap_width,
+                    detail_width=detail_width,
+                )
+            )
+
+        if show_count:
+            rendered_lines.append(
+                self._render_count_line(
+                    width=width,
+                    selected_index=selected_index,
+                    total=len(completions),
+                    marker_width=marker_width,
+                )
+            )
+
+        return UIContent(
+            get_line=lambda i: rendered_lines[i],
+            line_count=len(rendered_lines),
+            cursor_position=Point(x=0, y=selected_line_index),
+        )
+
+    def _visible_window_bounds(
+        self,
+        *,
+        completion_count: int,
+        selected_index: int,
+        available_rows: int,
+    ) -> tuple[int, int]:
+        visible_rows = min(completion_count, max(1, available_rows))
+        max_start = max(0, completion_count - visible_rows)
+        start = min(max(0, selected_index - self._scroll_offset), max_start)
+        return start, start + visible_rows - 1
+
+    def _render_item_line(
+        self,
+        *,
+        width: int,
+        completion: Completion,
+        is_current: bool,
+        marker_width: int,
+        name_width: int,
+        gap_width: int,
+        detail_width: int,
+    ) -> FormattedText:
+        left_padding = min(self._left_padding(), width)
+        name = completion.display_text or completion.text
+        detail = (completion.text or name).rstrip("/")
+        marker = "→ " if is_current else "  "
+        marker_style = (
+            "class:file-completion-menu.marker.current"
+            if is_current
+            else "class:file-completion-menu.marker"
+        )
+        name_style = (
+            "class:file-completion-menu.name.current"
+            if is_current
+            else "class:file-completion-menu.name"
+        )
+        detail_style = (
+            "class:file-completion-menu.detail.current"
+            if is_current
+            else "class:file-completion-menu.detail"
+        )
+
+        fragments: FormattedText = FormattedText()
+        fragments.append(("class:file-completion-menu", " " * left_padding))
+        fragments.append((marker_style, marker.ljust(marker_width)))
+        fragments.append((name_style, _truncate_to_width(name, name_width)))
+        if detail_width > 0:
+            fragments.append(("class:file-completion-menu", " " * gap_width))
+            fragments.append((detail_style, _truncate_to_width(detail, detail_width)))
+        used_width = left_padding + marker_width + name_width + gap_width + detail_width
+        if used_width < width:
+            fragments.append(("class:file-completion-menu", " " * (width - used_width)))
+        return fragments
+
+    def _render_count_line(
+        self,
+        *,
+        width: int,
+        selected_index: int,
+        total: int,
+        marker_width: int,
+    ) -> FormattedText:
+        left_padding = min(self._left_padding() + marker_width, width)
+        label = f"({selected_index + 1}/{total})"
+        fragments: FormattedText = FormattedText()
+        fragments.append(("class:file-completion-menu", " " * left_padding))
+        count_text = _truncate_to_width(label, max(0, width - left_padding))
+        fragments.append(("class:file-completion-menu.count", count_text))
+        return fragments
+
+
 class LocalFileMentionCompleter(Completer):
     """Offer fuzzy `@` path completion by indexing workspace files.
 
@@ -1107,6 +1315,11 @@ class LocalFileMentionCompleter(Completer):
             return None
 
         return fragment
+
+    @staticmethod
+    def should_complete(document: Document) -> bool:
+        """Return whether `@` file completion should be active for the buffer."""
+        return LocalFileMentionCompleter._extract_fragment(document.text_before_cursor) is not None
 
     def _is_completed_file(self, fragment: str) -> bool:
         candidate = fragment.rstrip("/")
@@ -2011,6 +2224,7 @@ class CustomPromptSession:
             key_bindings=_kb,
             clipboard=clipboard,
             history=history,
+            prompt_continuation=self._render_prompt_continuation,
             bottom_toolbar=self._render_bottom_toolbar,
             style=get_prompt_style(),
         )
@@ -2034,13 +2248,12 @@ class CustomPromptSession:
             if buffer.complete_while_typing() and not self._suppress_auto_completion:
                 buffer.start_completion()
 
-        # Pre-select the first slash-command completion as soon as the menu
-        # appears. The visual hack in SlashCommandMenuControl.create_content
-        # already paints index 0 as highlighted when complete_index is None,
-        # but the underlying complete_state was still un-positioned, so the
-        # first arrow-down moved None→0 (no visible change) and required a
-        # second press to reach row 2. Setting complete_index=0 here makes
-        # the visual and behavioral states agree from the start.
+        # Pre-select the first custom-rendered completion as soon as the menu
+        # appears. The custom menus paint index 0 as highlighted when
+        # complete_index is None, but the underlying complete_state would still
+        # be un-positioned, so first arrow-down would move None→0 (no visible
+        # change) and require a second press to reach row 2. Setting
+        # complete_index=0 here keeps visual and behavioral state aligned.
         @self._session.default_buffer.on_completions_changed.add_handler
         def _(buffer: Buffer) -> None:
             state = buffer.complete_state
@@ -2048,7 +2261,10 @@ class CustomPromptSession:
                 return
             if state.complete_index is not None:
                 return
-            if not SlashCommandCompleter.should_complete(buffer.document):
+            if not (
+                SlashCommandCompleter.should_complete(buffer.document)
+                or LocalFileMentionCompleter.should_complete(buffer.document)
+            ):
                 return
             state.complete_index = 0
 
@@ -2090,7 +2306,12 @@ class CustomPromptSession:
             filter=has_completions & slash_completion_filter,
         )
         non_slash_menu = ConditionalContainer(
-            CompletionsMenu(max_height=6, scroll_offset=1),
+            Window(
+                content=LocalFileMentionMenuControl(left_padding=self._mention_menu_left_padding),
+                dont_extend_height=True,
+                height=Dimension(max=8),
+                style="class:file-completion-menu",
+            ),
             filter=non_slash_completion_filter,
         )
         root = self._session.layout.container
@@ -2145,6 +2366,10 @@ class CustomPromptSession:
             buffer_window.height = Dimension(min=1, max=5)
             buffer_window.dont_extend_height = Condition(lambda: True)
             buffer_window.style = "class:compact-input"
+            buffer_window.right_margins = [
+                *buffer_window.right_margins,
+                _PromptRightPaddingMargin(self._input_right_padding),
+            ]
         self._prompt_buffer_container = buffer_container
 
     def _should_show_slash_completion_menu(self) -> bool:
@@ -2157,6 +2382,22 @@ class CustomPromptSession:
             return side_padding + max(1, get_cwidth(f"{PROMPT_SYMBOL_SHELL} ") - 2)
         # Agent mode: prompt prefix uses the transcript marker inside the compact input block.
         return side_padding + 1
+
+    def _mention_menu_left_padding(self) -> int:
+        return _card_side_padding()
+
+    def _input_right_padding(self) -> int:
+        return _INPUT_RIGHT_PADDING
+
+    def _render_prompt_continuation(
+        self,
+        width: int,
+        line_number: int,
+        is_soft_wrap: int,
+    ) -> FormattedText:
+        """Indent wrapped input rows to the same column as the first text row."""
+        del line_number, is_soft_wrap
+        return FormattedText([("class:compact-input", " " * max(0, width))])
 
     def _render_message(self) -> FormattedText:
         if self._mode == PromptMode.SHELL:

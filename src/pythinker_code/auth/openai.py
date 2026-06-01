@@ -4,7 +4,6 @@ import asyncio
 import base64
 import binascii
 import hashlib
-import html
 import json
 import secrets
 import time
@@ -17,6 +16,7 @@ import aiohttp
 from pydantic import SecretStr
 
 from pythinker_code.auth import OPENAI_API_PLATFORM_ID, OPENAI_CHATGPT_PLATFORM_ID
+from pythinker_code.auth.browser_login_page import build_browser_login_result_html
 from pythinker_code.auth.oauth import (
     OAuthError,
     OAuthEvent,
@@ -228,72 +228,17 @@ def _build_authorize_url(
     return f"{authorize_url}?{query}"
 
 
-_PYTHINKER_CALLBACK_LOGO_SVG = """
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Pythinker">
-  <rect width="64" height="64" rx="16" fill="#0f172a"/>
-  <rect x="12" y="20" width="40" height="28" rx="10" fill="#f9f2f5"/>
-  <path d="M20 48h24l5 10H15z" fill="#ee9983"/>
-  <circle cx="25" cy="34" r="6" fill="#afe3f1" stroke="#213853" stroke-width="4"/>
-  <circle cx="39" cy="34" r="6" fill="#afe3f1" stroke="#213853" stroke-width="4"/>
-  <path d="M27 45h10" stroke="#213853" stroke-width="4" stroke-linecap="round"/>
-  <path d="M32 20V9" stroke="#213853" stroke-width="4" stroke-linecap="round"/>
-  <circle cx="32" cy="8" r="5" fill="#ee9983"/>
-</svg>
-""".strip()
-
-
 def _callback_html(*, ok: bool, message: str | None) -> str:
-    title = "Pythinker logged in" if ok else "Pythinker login failed"
-    heading = "You're logged in to Pythinker" if ok else "Pythinker login failed"
-    body = "You can close this tab and return to Pythinker." if ok else message
-    escaped_title = html.escape(title)
-    escaped_heading = html.escape(heading)
-    escaped_body = html.escape(body or "OpenAI login failed.")
-    favicon = html.escape(
-        "data:image/svg+xml," + _PYTHINKER_CALLBACK_LOGO_SVG.replace("#", "%23"),
-        quote=True,
+    return build_browser_login_result_html(
+        ok=ok,
+        success_title="Pythinker logged in",
+        failure_title="Pythinker login failed",
+        success_heading="You're logged in to Pythinker",
+        failure_heading="Pythinker login failed",
+        success_body="You can close this tab and return to Pythinker.",
+        failure_body=message,
+        fallback_failure_body="OpenAI login failed.",
     )
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{escaped_title}</title>
-  <link rel="icon" href="{favicon}">
-  <style>
-    :root {{ color-scheme: light dark; }}
-    body {{
-      margin: 0;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system,
-        BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: radial-gradient(circle at top, #1e293b 0, #0f172a 42%, #020617 100%);
-      color: #f8fafc;
-    }}
-    main {{
-      width: min(440px, calc(100vw - 48px));
-      padding: 40px 32px;
-      border: 1px solid rgba(148, 163, 184, 0.25);
-      border-radius: 28px;
-      background: rgba(15, 23, 42, 0.82);
-      box-shadow: 0 24px 80px rgba(2, 6, 23, 0.45);
-      text-align: center;
-    }}
-    .logo {{ width: 88px; height: 88px; margin-bottom: 22px; }}
-    h1 {{ margin: 0 0 12px; font-size: 2rem; line-height: 1.15; }}
-    p {{ margin: 0; color: #cbd5e1; font-size: 1.05rem; line-height: 1.6; }}
-  </style>
-</head>
-<body>
-  <main>
-    {_PYTHINKER_CALLBACK_LOGO_SVG.replace("<svg ", '<svg class="logo" ')}
-    <h1>{escaped_heading}</h1>
-    <p>{escaped_body}</p>
-  </main>
-</body>
-</html>"""
 
 
 async def _handle_browser_callback(

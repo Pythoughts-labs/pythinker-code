@@ -82,6 +82,54 @@ def test_prose_inline_code_pipe_is_not_corrupted_with_backslash():
     assert "\\|" not in out
 
 
+def _value_column_offset(separator: str, *, width: int = 40) -> int:
+    """Render a single wide column holding the value ``x`` under *separator*
+    alignment, and return the column at which ``x`` lands.
+
+    Geometry (header text, column width, padding) is identical across calls, so
+    the only thing that can move ``x`` is the alignment marker in *separator*.
+    """
+    md = f"| AveryWideHeaderColumn |\n| {separator} |\n| x |\n"
+    out = render_plain(pythinker_markdown(md), width=width)
+    for line in out.splitlines():
+        if "x" in line and "Header" not in line and set(line.strip()) != {"━"}:
+            return line.index("x")
+    raise AssertionError("table data row with the value was not rendered")
+
+
+def test_table_alignment_markers_position_value_left_center_right():
+    """Bug class: 'alignment markers (:---:, ---:) silently ignored'.
+
+    Spacing carries meaning in tables, so the renderer must honor GFM column
+    alignment. With identical column geometry, the value's position must move
+    strictly rightward as the alignment goes left -> center -> right.
+    """
+    left = _value_column_offset(":---")
+    center = _value_column_offset(":---:")
+    right = _value_column_offset("---:")
+
+    assert left < center < right, (left, center, right)
+    # Left-aligned hugs the column start (only the 1-cell left padding precedes it).
+    assert left == 1
+
+
+@pytest.mark.parametrize("width", WIDTHS)
+def test_table_alignment_ordering_holds_across_widths(width):
+    """The left/center/right ordering must survive reflow at every width where
+    the column is wider than the value, not just one convenient width."""
+    left = _value_column_offset(":---", width=width)
+    center = _value_column_offset(":---:", width=width)
+    right = _value_column_offset("---:", width=width)
+
+    assert left <= center <= right, (width, left, center, right)
+    assert left < right, (width, left, right)
+
+
+def test_table_default_alignment_is_left():
+    """An un-marked column (``---``) must render left-aligned, matching GFM."""
+    assert _value_column_offset("---") == _value_column_offset(":---")
+
+
 def test_table_empty_header_cell_does_not_mislabel():
     """Bug class: 'empty header cells mislabeled in narrow stacked layout'."""
     md = "| | Value |\n| --- | --- |\n| key | 42 |\n"
