@@ -323,6 +323,10 @@ class TUIConfig(BaseModel):
             "Set false or export PYTHINKER_DISABLE_PROMPT_HISTORY=1 for sensitive sessions."
         ),
     )
+    turn_recaps: bool = Field(
+        default=True,
+        description="Show a compact recap line after completed interactive shell turns.",
+    )
 
 
 class MCPConfig(BaseModel):

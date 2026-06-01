@@ -76,8 +76,14 @@ class _PromptLiveView(_LiveView):
         btw_runner: BtwRunner | None = None,
         cancel_event: asyncio.Event | None = None,
         show_thinking_stream: bool = False,
+        show_turn_recaps: bool = False,
     ) -> None:
-        super().__init__(initial_status, cancel_event, show_thinking_stream=show_thinking_stream)
+        super().__init__(
+            initial_status,
+            cancel_event,
+            show_thinking_stream=show_thinking_stream,
+            show_turn_recaps=show_turn_recaps,
+        )
         self._prompt_session = prompt_session
         self._steer = steer
         self._btw_runner = btw_runner
@@ -238,6 +244,7 @@ class _PromptLiveView(_LiveView):
                     self._turn_ended = self._active_turn_depth == 0
                     if self._turn_ended:
                         self._turn_start_time = None
+                        self._pending_turn_recap = True
                     self._flush_prompt_refresh()
                     continue
 

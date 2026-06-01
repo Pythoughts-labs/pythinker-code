@@ -19,6 +19,10 @@ _ANSI_OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
 _ANSI_APC_RE = re.compile(r"\x1b_[^\x07\x1b]*(?:\x07|\x1b\\)")
 _ANSI_ST_RE = re.compile(r"\x1b\\")
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x0d\x0e-\x1f\x7f]")
+# 8-bit C1 controls (0x80-0x9F): includes the single-byte CSI/OSC/PM/APC
+# introducers that most terminals still interpret. Strip them up front so the
+# 7-bit ANSI passes below see no orphaned 8-bit escape openers.
+_C1_CONTROL_RE = re.compile(r"[\x80-\x9f]")
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,7 +196,8 @@ def sanitize_ansi(text: str) -> str:
     shell output into a Rich renderable to avoid cursor-movement and color leaks
     that break layout.
     """
-    no_csi = _ANSI_CSI_RE.sub("", text)
+    no_c1 = _C1_CONTROL_RE.sub("", text)
+    no_csi = _ANSI_CSI_RE.sub("", no_c1)
     no_osc = _ANSI_OSC_RE.sub("", no_csi)
     no_apc = _ANSI_APC_RE.sub("", no_osc)
     no_st = _ANSI_ST_RE.sub("", no_apc)

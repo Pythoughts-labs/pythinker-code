@@ -146,6 +146,27 @@ class HookTriggered(BaseModel):
     """Number of matched hooks running in parallel."""
 
 
+# Engine truncates each stream to 12_000 chars (hooks/engine._MAX_HOOK_OUTPUT_CHARS)
+# then appends a "\n...[truncated]" marker; allow headroom so the marked payload
+# still validates while rejecting unbounded strings from any other producer.
+_MAX_HOOK_OUTPUT_FIELD_CHARS = 12_032
+
+
+class HookOutput(BaseModel):
+    """Bounded stdout/stderr captured from one hook invocation."""
+
+    stdout: str = Field(default="", max_length=_MAX_HOOK_OUTPUT_FIELD_CHARS)
+    """Captured stdout, truncated before it is sent over the wire."""
+    stderr: str = Field(default="", max_length=_MAX_HOOK_OUTPUT_FIELD_CHARS)
+    """Captured stderr, truncated before it is sent over the wire."""
+    exit_code: int = 0
+    """Hook process exit code, when available."""
+    timed_out: bool = False
+    """Whether the hook timed out."""
+    truncated: bool = False
+    """Whether stdout or stderr was truncated for transport/display."""
+
+
 class HookResolved(BaseModel):
     """A batch of hooks has finished executing."""
 
@@ -159,6 +180,8 @@ class HookResolved(BaseModel):
     """Reason for blocking. Empty if allowed."""
     duration_ms: int = 0
     """Wall-clock time for the entire batch, in milliseconds."""
+    outputs: tuple[HookOutput, ...] = ()
+    """Bounded visible output emitted by matched hooks."""
 
 
 class MCPLoadingBegin(BaseModel):
@@ -715,6 +738,9 @@ __all__ = [
     "StepRetry",
     "ToolExecutionStarted",
     "ToolOutputPart",
+    "HookTriggered",
+    "HookOutput",
+    "HookResolved",
     "CompactionBegin",
     "CompactionEnd",
     "MCPLoadingBegin",

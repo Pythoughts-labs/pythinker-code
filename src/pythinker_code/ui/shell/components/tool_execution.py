@@ -162,6 +162,7 @@ class ToolExecutionComponent:
                 width = console.size.width
             except Exception:  # noqa: BLE001 - rendering must not fail on width lookup
                 width = 100
+        self._renderer_state.pop("__has_expandable_payload__", None)
         self._renderer_state.pop("__suppress_generic_expand_hint__", None)
         ctx = self._build_context(width=width)
         children: list[RenderableType] = []
@@ -294,6 +295,8 @@ class ToolExecutionComponent:
 
     def _has_expandable_payload(self) -> bool:
         """Heuristic: return True when expanding can plausibly reveal more payload."""
+        if self._renderer_state.get("__has_expandable_payload__"):
+            return True
         result = self._state.result
         if result is None or not result.text:
             return False

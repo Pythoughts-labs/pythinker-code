@@ -12,6 +12,7 @@ from markdown_it.token import Token
 from rich import box
 from rich._loop import loop_first
 from rich._stack import Stack
+from rich.cells import cell_len
 from rich.console import Console, ConsoleOptions, JustifyMethod, RenderResult
 from rich.containers import Renderables
 from rich.jupyter import JupyterMixin
@@ -488,12 +489,17 @@ class ListItem(TextElement):
         return False
 
     def render_bullet(self, console: Console, options: ConsoleOptions) -> RenderResult:
-        lines = console.render_lines(self.elements, options, style=self.style)
         indent_padding_len = LIST_INDENT_WIDTH * self.indent
         indent_text = " " * indent_padding_len
         bullet = Segment("• ")
         new_line = Segment("\n")
-        bullet_width = len(bullet.text)
+        bullet_width = cell_len(bullet.text)
+        child_width = max(1, options.max_width - indent_padding_len - bullet_width)
+        lines = console.render_lines(
+            self.elements,
+            options.update(width=child_width),
+            style=self.style,
+        )
         for first, line in loop_first(lines):
             if first:
                 if indent_text:
@@ -516,13 +522,18 @@ class ListItem(TextElement):
     def render_number(
         self, console: Console, options: ConsoleOptions, number: int, last_number: int
     ) -> RenderResult:
-        lines = console.render_lines(self.elements, options, style=self.style)
         new_line = Segment("\n")
         indent_padding_len = LIST_INDENT_WIDTH * self.indent
         indent_text = " " * indent_padding_len
         numeral_text = f"{number}. "
         numeral = Segment(numeral_text)
-        numeral_width = len(numeral_text)
+        numeral_width = cell_len(numeral_text)
+        child_width = max(1, options.max_width - indent_padding_len - numeral_width)
+        lines = console.render_lines(
+            self.elements,
+            options.update(width=child_width),
+            style=self.style,
+        )
         for first, line in loop_first(lines):
             if first:
                 if indent_text:

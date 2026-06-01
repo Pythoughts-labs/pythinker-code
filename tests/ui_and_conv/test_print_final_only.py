@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import importlib
 import json
+import sys
+
+from rich.console import Console
 
 from pythinker_code.ui.print.visualize import FinalOnlyJsonPrinter, FinalOnlyTextPrinter
 from pythinker_code.wire.types import StepBegin, TextPart, ThinkPart
+
+print_visualize = importlib.import_module("pythinker_code.ui.print.visualize")
 
 
 def test_final_only_text_printer_outputs_final_text(capsys):
@@ -26,6 +32,31 @@ def test_final_only_text_printer_plain_prose_is_byte_identical(capsys):
     printer.feed(TextPart(text="just a plain answer"))
     printer.flush()
     assert capsys.readouterr().out == "just a plain answer\n"
+
+
+def test_final_only_text_printer_terminal_wraps_plain_prose(capsys, monkeypatch):
+    """Interactive final-text output should wrap before the terminal hard-clips it."""
+
+    def narrow_console() -> Console:
+        return Console(width=40, file=sys.stdout, color_system=None, legacy_windows=False)
+
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(print_visualize, "Console", narrow_console)
+
+    print_visualize._print_final_text(
+        "This is **bold** terminal prose that should wrap on word boundaries instead of "
+        "overflowing beyond the shell viewport."
+    )
+
+    out = capsys.readouterr().out
+    lines = [line.rstrip() for line in out.splitlines()]
+    assert all(len(line) <= 40 for line in lines)
+    assert "**" not in out
+    assert lines == [
+        "This is bold terminal prose that should",
+        "wrap on word boundaries instead of",
+        "overflowing beyond the shell viewport.",
+    ]
 
 
 def test_final_only_text_printer_renders_report_block(capsys):

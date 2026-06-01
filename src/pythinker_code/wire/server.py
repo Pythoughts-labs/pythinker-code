@@ -443,7 +443,7 @@ class WireServer:
         from pythinker_code.hooks.engine import WireHookHandle, WireHookSubscription
         from pythinker_code.soul import wire_send
         from pythinker_code.wire.protocol import WIRE_PROTOCOL_VERSION
-        from pythinker_code.wire.types import HookResolved, HookTriggered
+        from pythinker_code.wire.types import HookOutput, HookResolved, HookTriggered
 
         # Hook engine setup — register wire subscriptions and callbacks
 
@@ -476,6 +476,7 @@ class WireServer:
             action: str,
             reason: str,
             duration_ms: int,
+            outputs: tuple[dict[str, object], ...] = (),
         ) -> None:
             wire_send(
                 HookResolved(
@@ -484,6 +485,7 @@ class WireServer:
                     action=cast(Literal["allow", "block"], action),
                     reason=reason,
                     duration_ms=duration_ms,
+                    outputs=tuple(HookOutput.model_validate(output) for output in outputs),
                 )
             )
 

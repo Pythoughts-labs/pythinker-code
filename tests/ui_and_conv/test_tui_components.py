@@ -143,6 +143,14 @@ def test_sanitize_ansi_strips_control_bytes():
     assert sanitize_ansi(raw) == "ok"
 
 
+def test_sanitize_ansi_strips_8bit_c1_controls():
+    # 8-bit CSI (0x9b) clear-screen and OSC (0x9d) set-title that many terminals
+    # still interpret must not survive sanitization.
+    assert sanitize_ansi("\x9b2J") == "2J"
+    assert sanitize_ansi("before\x9d0;evil\x07after") == "before0;evilafter"
+    assert sanitize_ansi("plain") == "plain"
+
+
 # ---------------------------------------------------------------------------
 # dim
 # ---------------------------------------------------------------------------

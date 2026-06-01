@@ -12,6 +12,10 @@ from pydantic import SecretStr
 from yarl import URL
 
 from pythinker_code.auth import OPENAI_API_PLATFORM_ID, OPENAI_CHATGPT_PLATFORM_ID
+from pythinker_code.auth.browser_login_page import (
+    browser_login_favicon_data_uri,
+    browser_login_logo_data_uri,
+)
 from pythinker_code.auth.oauth import OAuthError, load_tokens
 from pythinker_code.auth.openai import (
     OPENAI_API_BASE_URL,
@@ -93,11 +97,19 @@ def test_openai_auth_constants_match_codex_compatible_values():
 
 def test_openai_callback_html_uses_pythinker_branding():
     page = _callback_html(ok=True, message=None)
+    logo_data_uri = browser_login_logo_data_uri()
+    favicon_data_uri = browser_login_favicon_data_uri()
+
+    logo_svg = base64.b64decode(logo_data_uri.split(",", 1)[1]).decode("utf-8")
+    favicon_bytes = base64.b64decode(favicon_data_uri.split(",", 1)[1])
 
     assert "<title>Pythinker logged in</title>" in page
     assert "You&#x27;re logged in to Pythinker" in page
     assert "OpenAI login complete" not in page
-    assert "data:image/svg+xml" in page
+    assert 'viewBox="0 0 411 512.455"' in logo_svg
+    assert favicon_bytes.startswith(b"\x00\x00\x01\x00")
+    assert f'<link rel="icon" type="image/x-icon" href="{favicon_data_uri}">' in page
+    assert f'<img class="logo" src="{logo_data_uri}" alt="Pythinker logo">' in page
 
 
 def test_openai_callback_html_escapes_error_message():

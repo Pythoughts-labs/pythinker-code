@@ -13,6 +13,8 @@ from prompt_toolkit.utils import get_cwidth
 
 import pythinker_code.ui.shell.prompt as prompt_mod
 from pythinker_code.ui.shell.prompt import (
+    LocalFileMentionCompleter,
+    LocalFileMentionMenuControl,
     SlashCommandCompleter,
     SlashCommandMenuControl,
     _discard_slash_command,
@@ -84,6 +86,19 @@ def test_should_complete_only_for_root_slash_token():
     assert not SlashCommandCompleter.should_complete(Document(text="test /he", cursor_position=8))
     assert not SlashCommandCompleter.should_complete(Document(text="@src", cursor_position=4))
     assert not SlashCommandCompleter.should_complete(Document(text="/he next", cursor_position=8))
+
+
+def test_file_mention_should_complete_for_active_at_fragment():
+    assert LocalFileMentionCompleter.should_complete(
+        Document(text="check @src", cursor_position=10)
+    )
+    assert LocalFileMentionCompleter.should_complete(Document(text="check @", cursor_position=7))
+    assert not LocalFileMentionCompleter.should_complete(
+        Document(text="email test@example.com", cursor_position=22)
+    )
+    assert not LocalFileMentionCompleter.should_complete(
+        Document(text="check @src next", cursor_position=15)
+    )
 
 
 def test_discard_slash_command_clears_root_slash_draft():
@@ -187,6 +202,49 @@ def test_wrap_to_width_respects_max_lines():
     assert len(lines) == 2
     assert all(get_cwidth(line) <= 20 for line in lines)
     assert lines[-1].endswith("...")
+
+
+def test_file_mention_menu_renders_clean_two_column_layout(monkeypatch):
+    completions = [
+        Completion(text=".coderabbit.yaml", start_position=0, display=".coderabbit.yaml"),
+        Completion(text=".dockerignore", start_position=0, display=".dockerignore"),
+        Completion(text=".pytest_cache/", start_position=0, display=".pytest_cache/"),
+    ]
+    complete_state = SimpleNamespace(completions=completions, complete_index=None)
+    app = SimpleNamespace(current_buffer=SimpleNamespace(complete_state=complete_state))
+    monkeypatch.setattr(prompt_mod, "get_app_or_none", lambda: app)
+
+    control = LocalFileMentionMenuControl(left_padding=lambda: 0)
+    content = control.create_content(width=80, height=6)
+    rendered_lines = [
+        "".join(fragment[1] for fragment in content.get_line(i)) for i in range(content.line_count)
+    ]
+
+    assert content.cursor_position.y == 0
+    assert rendered_lines[0].startswith("→ .coderabbit.yaml")
+    assert ".coderabbit.yaml" in rendered_lines[0][20:]
+    assert rendered_lines[1].startswith("  .dockerignore")
+    assert ".pytest_cache" in rendered_lines[2]
+    assert rendered_lines[-1].strip() == "(1/3)"
+
+
+def test_file_mention_menu_counter_tracks_selected_completion(monkeypatch):
+    completions = [
+        Completion(text=f"path-{index}.py", start_position=0, display=f"path-{index}.py")
+        for index in range(6)
+    ]
+    complete_state = SimpleNamespace(completions=completions, complete_index=3)
+    app = SimpleNamespace(current_buffer=SimpleNamespace(complete_state=complete_state))
+    monkeypatch.setattr(prompt_mod, "get_app_or_none", lambda: app)
+
+    control = LocalFileMentionMenuControl(left_padding=lambda: 0)
+    content = control.create_content(width=48, height=4)
+    rendered_lines = [
+        "".join(fragment[1] for fragment in content.get_line(i)) for i in range(content.line_count)
+    ]
+
+    assert any(line.startswith("→ path-3.py") for line in rendered_lines)
+    assert rendered_lines[-1].strip() == "(4/6)"
 
 
 def test_slash_menu_preselects_first_item_when_index_unset(monkeypatch):

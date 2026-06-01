@@ -50,6 +50,11 @@ def test_initialize_handshake(tmp_path) -> None:
                             "aliases": [],
                         },
                         {
+                            "name": "recap",
+                            "description": "Recap Pythinker sessions. Usage: /recap [today|yesterday|week|YYYY-MM-DD]",
+                            "aliases": [],
+                        },
+                        {
                             "name": "compact",
                             "description": "Compact the context (optionally with a custom focus, e.g. /compact keep db discussions)",
                             "aliases": [],
@@ -217,6 +222,11 @@ def test_initialize_external_tool_conflict(tmp_path) -> None:
                         {
                             "name": "init",
                             "description": "Analyze the codebase and generate an `AGENTS.md` file",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "recap",
+                            "description": "Recap Pythinker sessions. Usage: /recap [today|yesterday|week|YYYY-MM-DD]",
                             "aliases": [],
                         },
                         {

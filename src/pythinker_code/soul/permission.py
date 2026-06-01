@@ -427,3 +427,109 @@ def _first_non_option(args: list[str]) -> str | None:
         if not arg.startswith("-"):
             return arg
     return None
+
+
+# --- Destructive (irreversible) classification -----------------------------
+# Distinct from "mutating": `mkdir`/`touch` mutate the workspace but are easy to
+# undo, so they only matter for read-only profile enforcement. A *destructive*
+# command is hard/impossible to reverse (recursive force-delete, force-push,
+# hard reset, raw disk writes), so in auto mode it routes the agent into a
+# deliberation turn instead of being auto-approved. The two questions are
+# deliberately separate; this reuses the same token parser as
+# ``shell_mutation_reason`` so it inherits the wrapper/quote/chain hardening.
+_OPAQUE_INTERPRETERS = {
+    "bash",
+    "sh",
+    "zsh",
+    "dash",
+    "ksh",
+    "csh",
+    "tcsh",
+    "fish",
+    "lua",
+    "node",
+    "perl",
+    "python",
+    "python3",
+    "ruby",
+}
+# Flags that hand an interpreter inline code the token parser cannot inspect.
+# A bare `python script.py` is NOT opaque; only inline `-c`/`-e` code is.
+_INLINE_CODE_FLAGS = {"-c", "-e"}
+
+
+def _short_flag_letters(arg: str) -> set[str]:
+    """Letters of a clustered short-flag arg: ``-rf`` -> ``{'r', 'f'}``.
+
+    Long flags (``--force``) and non-flag tokens return an empty set.
+    """
+    if len(arg) < 2 or not arg.startswith("-") or arg.startswith("--"):
+        return set()
+    letters = arg[1:]
+    if not letters.isalpha():
+        return set()
+    return set(letters)
+
+
+def shell_destructive_reason(command: str) -> str | None:
+    """Best-effort guard for *irreversible* shell commands warranting deliberation.
+
+    Returns a human-readable reason when the command is destructive, else ``None``.
+    Shares the tokenization path of :func:`shell_mutation_reason` (``shlex`` split,
+    wrapper unwrap, git-subcommand extraction), so ``sudo``/``env`` wrappers,
+    quoting, and ``;``/``&&``/``||``/``|`` chains are all covered. Unparsable input
+    is treated conservatively as destructive.
+    """
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        return "unparsable shell command"
+
+    segment: list[str] = []
+    for token in [*tokens, ";"]:
+        if token in _SHELL_SEGMENT_SEPARATORS:
+            reason = _segment_destructive_reason(segment)
+            if reason is not None:
+                return reason
+            segment = []
+        else:
+            segment.append(token)
+    return None
+
+
+def _segment_destructive_reason(tokens: list[str]) -> str | None:
+    if not tokens:
+        return None
+    command, args = _unwrap_command(tokens)
+    if command is None:
+        return None
+    base = command.rsplit("/", 1)[-1]
+
+    if base == "rm":
+        recursive = any(
+            arg in ("-r", "-R", "--recursive") or bool({"r", "R"} & _short_flag_letters(arg))
+            for arg in args
+        )
+        forced = any(arg == "--force" or "f" in _short_flag_letters(arg) for arg in args)
+        # Phase 1: require BOTH recursive and force. `rm -r dir` (no -f) and
+        # `rm -f file` (no -r) are intentionally allowed to limit chattiness.
+        return "rm recursive force delete" if recursive and forced else None
+    if base in ("dd", "truncate"):
+        return f"{base} raw write"
+    if base == "git":
+        subcommand = _git_subcommand(args)
+        if subcommand == "push" and any(
+            arg in ("--force", "-f") or arg.startswith("--force-with-lease") for arg in args
+        ):
+            return "git push --force"
+        if subcommand == "reset" and "--hard" in args:
+            return "git reset --hard"
+        if subcommand == "clean" and any(
+            arg == "--force" or "f" in _short_flag_letters(arg) for arg in args
+        ):
+            return "git clean -f"
+        return None
+    # Inline-code interpreters are opaque to the token parser -> deliberate.
+    if base in _OPAQUE_INTERPRETERS and any(arg in _INLINE_CODE_FLAGS for arg in args):
+        return f"opaque inline code via {base}"
+    return None

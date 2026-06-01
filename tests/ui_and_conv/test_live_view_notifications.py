@@ -10,11 +10,14 @@ from pythinker_code.ui.shell.keyboard import KeyEvent
 from pythinker_code.ui.shell.visualize import _live_view as live_view_module
 from pythinker_code.ui.shell.visualize import _LiveView, _PromptLiveView
 from pythinker_code.wire.types import (
+    HookOutput,
     HookResolved,
     HookTriggered,
     Notification,
     StatusUpdate,
+    TextPart,
     TurnBegin,
+    TurnEnd,
 )
 
 
@@ -85,6 +88,58 @@ def test_live_view_prints_resolved_blocking_hook(monkeypatch):
     assert "failed" in rendered.lower()
     assert "blocked by policy" in rendered
     assert "12ms" in rendered
+
+
+def test_live_view_prints_resolved_hook_stdout(monkeypatch):
+    view = _LiveView(StatusUpdate())
+    view.dispatch_wire_message(HookTriggered(event="PreToolUse", target="Shell", hook_count=1))
+    printed = []
+    monkeypatch.setattr(shell_console, "print", lambda *args, **kwargs: printed.extend(args))
+
+    view.dispatch_wire_message(
+        HookResolved(
+            event="PreToolUse",
+            target="Shell",
+            action="allow",
+            duration_ms=7,
+            outputs=(
+                HookOutput(
+                    stdout=(
+                        "[PreToolUse]\n"
+                        "╔════════════════════════════════════════════════════════════════╗\n"
+                        "║  🤖 PRO AGENT ACTIVATION RECOMMENDED                    ║\n"
+                        "╚════════════════════════════════════════════════════════════════╝\n"
+                    )
+                ),
+            ),
+        )
+    )
+
+    rendered = "\n".join(_render(item) for item in printed)
+    assert "Hook" in rendered
+    assert "PreToolUse Shell" in rendered
+    assert "[PreToolUse]" in rendered
+    assert "PRO AGENT ACTIVATION RECOMMENDED" in rendered
+
+
+def test_live_view_prints_hook_timeout_status_with_partial_output(monkeypatch):
+    view = _LiveView(StatusUpdate())
+    view.dispatch_wire_message(HookTriggered(event="PreToolUse", target="Shell", hook_count=1))
+    printed = []
+    monkeypatch.setattr(shell_console, "print", lambda *args, **_kwargs: printed.extend(args))
+
+    view.dispatch_wire_message(
+        HookResolved(
+            event="PreToolUse",
+            target="Shell",
+            action="allow",
+            outputs=(HookOutput(stdout="partial output", timed_out=True),),
+        )
+    )
+
+    rendered = "\n".join(_render(item) for item in printed)
+    assert "partial output" in rendered
+    assert "hook timed out" in rendered
 
 
 def test_working_indicator_uses_turn_elapsed_time(monkeypatch):
@@ -259,6 +314,23 @@ def test_prompt_live_view_keeps_non_background_task_notifications(monkeypatch):
     view.dispatch_wire_message(notification)
 
     assert forwarded == [notification]
+
+
+def test_live_view_prints_turn_recap_when_enabled(monkeypatch):
+    printed = []
+    monkeypatch.setattr(
+        live_view_module.console, "print", lambda *args, **_kwargs: printed.extend(args)
+    )
+
+    view = _LiveView(StatusUpdate(), show_turn_recaps=True)
+    view.dispatch_wire_message(TurnBegin(user_input="implement recaps"))
+    view.dispatch_wire_message(TextPart(text="Implemented a /recap command."))
+    view.dispatch_wire_message(TurnEnd())
+    view.cleanup(is_interrupt=False)
+
+    plain = "\n".join(getattr(item, "plain", str(item)) for item in printed)
+    assert "※ recap: Implemented a /recap command." in plain
+    assert "disable recaps in /settings" in plain
 
 
 def test_cleanup_flushes_notifications_to_terminal_history(monkeypatch):

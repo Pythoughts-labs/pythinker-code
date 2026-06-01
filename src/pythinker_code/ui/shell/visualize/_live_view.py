@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections import deque
+from collections import Counter, deque
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from typing import Literal
@@ -25,9 +25,14 @@ from rich.panel import Panel
 from rich.style import Style
 from rich.text import Text
 
+from pythinker_code.session_recap import build_turn_recap_line
 from pythinker_code.soul import format_token_count
 from pythinker_code.tools.display import TodoDisplayBlock, TodoDisplayItem
-from pythinker_code.ui.shell.components.render_utils import cell_width, truncate_to_width
+from pythinker_code.ui.shell.components.render_utils import (
+    cell_width,
+    sanitize_ansi,
+    truncate_to_width,
+)
 from pythinker_code.ui.shell.console import console, current_console_width
 from pythinker_code.ui.shell.echo import render_user_echo
 from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ACTIVE_MARKER, TRANSCRIPT_TOOL_GUTTER
@@ -184,9 +189,11 @@ class _LiveView:
         cancel_event: asyncio.Event | None = None,
         *,
         show_thinking_stream: bool = False,
+        show_turn_recaps: bool = False,
     ):
         self._cancel_event = cancel_event
         self._show_thinking_stream = show_thinking_stream
+        self._show_turn_recaps = show_turn_recaps
 
         self._active_turn_depth = 0
         self._turn_start_time: float | None = None
@@ -198,6 +205,10 @@ class _LiveView:
         self._mcp_loading_spinner: RenderableType | None = None
         self._btw_spinner: RenderableType | None = None
         self._btw_question: str | None = None
+        self._recap_user_input = ""
+        self._recap_text_parts: list[str] = []
+        self._recap_tool_counts: Counter[str] = Counter()
+        self._pending_turn_recap = False
 
         self._current_content_block: _ContentBlock | None = None
         self._tool_call_blocks: dict[str, _ToolCallBlock] = {}
@@ -532,6 +543,19 @@ class _LiveView:
             _append_action_block(blocks, notification.compose())
         return blocks
 
+    def _print_turn_recap(self) -> None:
+        if not self._show_turn_recaps:
+            return
+        assistant_text = "\n".join(self._recap_text_parts).strip()
+        line = build_turn_recap_line(
+            request=self._recap_user_input,
+            assistant_text=assistant_text,
+            step_count=sum(self._recap_tool_counts.values()) or None,
+        )
+        if not line:
+            return
+        console.print(Text(sanitize_ansi(line), style=tui_rich_style("muted") + Style(italic=True)))
+
     def _working_indicator(self) -> RenderableType:
         now = time.monotonic()
         elapsed = 0.0 if self._turn_start_time is None else now - self._turn_start_time
@@ -740,9 +764,17 @@ class _LiveView:
             return
 
         match msg:
-            case TurnBegin():
+            case TurnBegin(user_input=user_input):
                 if self._active_turn_depth == 0:
                     self._turn_start_time = time.monotonic()
+                    self._recap_user_input = (
+                        user_input
+                        if isinstance(user_input, str)
+                        else Message(role="user", content=user_input).extract_text(" ")
+                    )
+                    self._recap_text_parts.clear()
+                    self._recap_tool_counts.clear()
+                    self._pending_turn_recap = False
                 self._active_turn_depth += 1
                 self.flush_content()
                 self.refresh_soon()
@@ -758,6 +790,7 @@ class _LiveView:
                 self._active_turn_depth = max(0, self._active_turn_depth - 1)
                 if self._active_turn_depth == 0:
                     self._turn_start_time = None
+                    self._pending_turn_recap = True
             case CompactionBegin():
                 self._compaction_block = _CompactionBlock(
                     context_tokens=self._latest_context_tokens,
@@ -836,8 +869,11 @@ class _LiveView:
             case HookResolved():
                 self.append_hook_resolved(msg)
             case ContentPart():
+                if isinstance(msg, TextPart) and msg.text:
+                    self._recap_text_parts.append(msg.text)
                 self.append_content(msg)
             case ToolCall():
+                self._recap_tool_counts[msg.function.name] += 1
                 self.append_tool_call(msg)
             case ToolCallPart():
                 self.append_tool_call_part(msg)
@@ -1011,6 +1047,9 @@ class _LiveView:
             console.print(block.compose())
             self.refresh_soon()
         self.flush_notifications()
+        if not is_interrupt and self._active_turn_depth == 0 and self._pending_turn_recap:
+            self._print_turn_recap()
+            self._pending_turn_recap = False
 
         # Clear transient spinners to prevent visual residuals after interrupts
         self._compaction_block = None

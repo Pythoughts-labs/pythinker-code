@@ -131,7 +131,8 @@ async def visualize(
     on_view_ready: Callable[[Any], None] | None = None,
     on_view_closed: Callable[[], None] | None = None,
     show_thinking_stream: bool = False,
-):
+    show_turn_recaps: bool = False,
+) -> None:
     """A loop to consume agent events and visualize the agent behavior.
 
     Creates either a ``_LiveView`` (Rich Live, non-interactive) or a
@@ -146,6 +147,7 @@ async def visualize(
             btw_runner=btw_runner,
             cancel_event=cancel_event,
             show_thinking_stream=show_thinking_stream,
+            show_turn_recaps=show_turn_recaps,
         )
         prompt_session.attach_running_prompt(view)
 
@@ -156,7 +158,12 @@ async def visualize(
         if bind_running_input is not None:
             bind_running_input(view.handle_local_input, _cancel_running_input)
     else:
-        view = _LiveView(initial_status, cancel_event, show_thinking_stream=show_thinking_stream)
+        view = _LiveView(
+            initial_status,
+            cancel_event,
+            show_thinking_stream=show_thinking_stream,
+            show_turn_recaps=show_turn_recaps,
+        )
     if on_view_ready is not None:
         on_view_ready(view)
     try:

@@ -236,6 +236,57 @@ def test_thinking_status_line_uses_compact_activity_metadata():
     assert "esc to interrupt" not in output
 
 
+def _assert_blank_line_after_activity(output: str, label: str) -> None:
+    lines = output.splitlines()
+    try:
+        activity_index = next(index for index, line in enumerate(lines) if label in line)
+    except StopIteration:
+        raise AssertionError(f"Label '{label}' not found in output") from None
+    assert activity_index + 1 < len(lines), f"Label '{label}' is the last line in output"
+    assert lines[activity_index + 1].strip() == ""
+
+
+def test_assert_blank_line_after_activity_reports_missing_label() -> None:
+    with pytest.raises(AssertionError, match="Label 'Missing' not found in output"):
+        _assert_blank_line_after_activity("Composing\n", "Missing")
+
+
+def test_assert_blank_line_after_activity_reports_missing_following_line() -> None:
+    with pytest.raises(AssertionError, match="Label 'Composing' is the last line in output"):
+        _assert_blank_line_after_activity("Composing\n", "Composing")
+
+
+def test_composing_preview_has_standard_gap_after_activity_line():
+    block = _ContentBlock(is_think=False)
+    block.append("live preview without newline")
+    console = Console(record=True, width=120, color_system=None)
+    console.print(block.compose())
+    output = console.export_text()
+
+    _assert_blank_line_after_activity(output, "Composing")
+    assert "\n\n● live preview without newline" in output
+
+
+def test_thinking_stream_preview_has_standard_gap_after_activity_line():
+    block = _ContentBlock(is_think=True, show_thinking_stream=True)
+    block.append("reasoning preview")
+    console = Console(record=True, width=120, color_system=None)
+    console.print(block.compose())
+
+    _assert_blank_line_after_activity(console.export_text(), "Thinking")
+
+
+def test_thinking_stream_preview_uses_transcript_bullet_after_activity_line():
+    block = _ContentBlock(is_think=True, show_thinking_stream=True)
+    block.append("**Preparing report generation**")
+    console = Console(record=True, width=120, color_system=None)
+    console.print(block.compose())
+    output = console.export_text()
+
+    assert "Thinking" in output
+    assert "\n\n• **Preparing report generation**" in output
+
+
 def _style_for(renderable: Text, text: str) -> Style:
     start = renderable.plain.index(text)
     end = start + len(text)
