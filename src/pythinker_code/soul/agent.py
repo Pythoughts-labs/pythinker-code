@@ -97,15 +97,9 @@ async def _dirs_root_to_leaf(work_dir: HostPath, project_root: HostPath) -> list
 async def load_agents_md(work_dir: HostPath) -> str | None:
     """Discover and merge ``AGENTS.md`` files from the project root down to *work_dir*.
 
-    For each directory on the path, the following candidates are checked in order:
-
-    1. ``.pythinker/AGENTS.md``  — project-local pythinker config (highest priority)
-    2. ``AGENTS.md``        — standard location
-    3. ``agents.md``        — lowercase variant (mutually exclusive with 2)
-
-    Within a single directory, ``.pythinker/AGENTS.md`` and ``AGENTS.md``/``agents.md``
-    are **both** loaded (with ``.pythinker/`` first), but ``AGENTS.md`` and ``agents.md``
-    are mutually exclusive (uppercase wins).
+    For each directory on the path, ``AGENTS.md`` is checked first, then the
+    lowercase ``agents.md`` variant. The two names are mutually exclusive within
+    a directory: uppercase wins.
 
     All discovered files are concatenated root→leaf, separated by ``\\n\\n``, with
     source annotations.  Total size is capped at :data:`_AGENTS_MD_MAX_BYTES`.
@@ -118,24 +112,15 @@ async def load_agents_md(work_dir: HostPath) -> str | None:
     # Phase 1: collect all candidate files (root → leaf order)
     discovered: list[tuple[HostPath, str]] = []  # (path, content)
     for d in dirs:
-        # .pythinker/AGENTS.md is always checked independently (can coexist with root-level file)
-        pythinker_path = d / ".pythinker" / "AGENTS.md"
         # AGENTS.md and agents.md are mutually exclusive (uppercase wins)
-        root_candidates = [d / "AGENTS.md", d / "agents.md"]
-
-        candidates: list[HostPath] = []
-        if await pythinker_path.is_file():
-            candidates.append(pythinker_path)
-        for rc in root_candidates:
-            if await rc.is_file():
-                candidates.append(rc)
-                break
-
-        for path in candidates:
+        for path in (d / "AGENTS.md", d / "agents.md"):
+            if not await path.is_file():
+                continue
             content = (await path.read_text(encoding="utf-8", errors="replace")).strip()
             if content:
                 discovered.append((path, content))
                 logger.info("Loaded agents.md: {path}", path=path)
+            break
 
     if not discovered:
         logger.info(

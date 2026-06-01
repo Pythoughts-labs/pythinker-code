@@ -43,6 +43,7 @@ _SUMMARY_MIN_LENGTH_BY_TYPE: dict[str, int] = {
     "verifier": 50,
     "explore": 100,
     "debugger": 150,
+    "judge": 150,
     "code-reviewer": 150,
     "review": 150,
     "security-reviewer": 150,

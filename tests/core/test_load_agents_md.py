@@ -58,8 +58,8 @@ async def test_uppercase_over_lowercase(temp_work_dir: HostPath):
 # ---------------------------------------------------------------------------
 
 
-async def test_pythinker_dir_and_root_both_loaded(temp_work_dir: HostPath):
-    """.pythinker/AGENTS.md and AGENTS.md in the same dir are both loaded; .pythinker/ first."""
+async def test_pythinker_dir_agents_md_ignored(temp_work_dir: HostPath):
+    """AGENTS.md under .pythinker is local runtime state, not project instructions."""
     pythinker_dir = temp_work_dir / ".pythinker"
     await pythinker_dir.mkdir()
     await (pythinker_dir / "AGENTS.md").write_text("pythinker agents")
@@ -68,27 +68,20 @@ async def test_pythinker_dir_and_root_both_loaded(temp_work_dir: HostPath):
     content = await load_agents_md(temp_work_dir)
 
     assert content is not None
-    assert content.index("pythinker agents") < content.index("root agents")
-    assert content.count("<!-- From:") == 2
+    assert "root agents" in content
+    assert "pythinker agents" not in content
+    assert content.count("<!-- From:") == 1
 
 
-async def test_pythinker_dir_in_parent(temp_work_dir: HostPath):
-    """.pythinker/AGENTS.md in a parent directory is discovered via hierarchy."""
-    await (temp_work_dir / ".git").mkdir()
+async def test_only_pythinker_dir_agents_md_not_found(temp_work_dir: HostPath):
+    """AGENTS.md under .pythinker does not make project instructions available."""
     pythinker_dir = temp_work_dir / ".pythinker"
     await pythinker_dir.mkdir()
-    await (pythinker_dir / "AGENTS.md").write_text("parent pythinker")
+    await (pythinker_dir / "AGENTS.md").write_text("pythinker agents")
 
-    child = temp_work_dir / "pkg"
-    await child.mkdir()
-    await (child / "AGENTS.md").write_text("child root")
+    content = await load_agents_md(temp_work_dir)
 
-    content = await load_agents_md(child)
-
-    assert content is not None
-    assert "parent pythinker" in content
-    assert "child root" in content
-    assert content.index("parent pythinker") < content.index("child root")
+    assert content is None
 
 
 # ---------------------------------------------------------------------------

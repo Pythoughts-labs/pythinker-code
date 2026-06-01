@@ -56,6 +56,9 @@ agent:
     implementer:
       path: ./implementer.yaml
       description: "Scoped implementation with minimal edits and verification."
+    judge:
+      path: ./judge.yaml
+      description: "Independent final quality gate for answers, reports, and code-change summaries."
     verifier:
       path: ./verifier.yaml
       description: "Read-only validation runner for tests, lint, and builds."

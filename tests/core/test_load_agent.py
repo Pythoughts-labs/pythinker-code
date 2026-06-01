@@ -130,6 +130,7 @@ def test_default_subagent_prompts_keep_robust_contracts():
     assert "Context gate before editing" in prompts["coder"]
     assert "After edits, inspect the diff/changed files" in prompts["implementer"]
     assert "PASS / FAIL / FLAKY" in prompts["verifier"]
+    assert "independent LLM-as-judge quality gate" in prompts["judge"]
     assert "Reproduction protocol" in prompts["debugger"]
     assert "Evidence gate" in prompts["review"]
     assert "Every finding must cite concrete evidence" in prompts["code-reviewer"]
