@@ -81,6 +81,10 @@ def test_load_default_agent_spec():
                 "implementer.yaml",
                 "Scoped implementation with minimal edits and verification.",
             ),
+            "judge": (
+                "judge.yaml",
+                "Independent final quality gate for answers, reports, and code-change summaries.",
+            ),
             "verifier": (
                 "verifier.yaml",
                 "Read-only validation runner for tests, lint, and builds.",
@@ -320,7 +324,7 @@ Plan requirements:
 - Identify likely files/modules and why they are in scope.
 - Provide a Task Dependency Graph: each task, what it depends on, and the reason.
 - Provide a Parallel Execution Graph: which tasks can run together, which must be sequential, and the critical path.
-- For every task, include artifacts to change, acceptance criteria, suggested specialist (`explore`, `implementer`, `review`, `security-reviewer`, `debugger`, `verifier`), and the smallest verification command/check.
+- For every task, include artifacts to change, acceptance criteria, suggested specialist (`explore`, `implementer`, `review`, `security-reviewer`, `debugger`, `verifier`, `judge`), and the smallest verification command/check.
 - Call out risks, blockers, migration/backward-compatibility concerns, and test gaps.
 
 Library/API freshness (run BEFORE recommending an external dependency or API surface):

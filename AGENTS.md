@@ -284,9 +284,10 @@ everything sequentially.
   - `implementer`: tightly scoped edits from a concrete brief; no drive-by refactors.
   - `review`: severity-scored read-only critique with suggested fixes.
   - `verifier`: run tests/lint/build gates and report PASS / FAIL / FLAKY without fixing.
+  - `judge`: independent final quality gate for non-trivial code changes, reports, and findings.
 - **Steer with complete prompts**: new subagents do not inherit the full parent transcript by
   default. Include goal, scope, paths, constraints, success criteria, and expected output.
-- **Use map-reduce workflows**: scout -> plan -> implement -> review -> fix -> verify.
+- **Use map-reduce workflows**: scout -> plan -> implement -> review -> fix -> verify -> judge.
 - **Verify evidence**: after reads, confirm exact paths/line ranges; after grep, confirm relevance;
   after shell, inspect stdout/stderr; after subagent reports, cross-check at least one load-bearing
   finding directly.

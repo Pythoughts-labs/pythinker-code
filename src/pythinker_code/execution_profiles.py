@@ -35,6 +35,7 @@ def resolve_execution_policy(
                     "code-reviewer",
                     "security-reviewer",
                     "debugger",
+                    "judge",
                 },
             )
         case "plan_only":
@@ -66,6 +67,7 @@ def resolve_execution_policy(
                     "implementer",
                     "verifier",
                     "debugger",
+                    "judge",
                 },
             )
         case "default":

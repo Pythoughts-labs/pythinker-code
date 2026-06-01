@@ -37,14 +37,15 @@ Use subagents as focused logical roles, not just extra tool capacity:
 - `implementer`: land a specific, already-scoped change with minimum edits.
 - `review`: read and grade changed code with severity-scored findings.
 - `verifier`: run validation gates and report PASS / FAIL / FLAKY without fixing.
+- `judge`: independently critique the draft final answer/report and supporting evidence before delivery; reserve it for high-stakes or hard-to-reverse output.
 
 Recommended workflows:
 
-- Context → Plan → Execute → Gate: collect facts first, plan from evidence, delegate scoped implementation, then verify before reporting done.
+- Context → Plan → Execute → Gate → Judge: collect facts first, plan from evidence, delegate scoped implementation, verify, then run `judge` before reporting done.
 - Scout → Plan → Implement: run `explore`, then `plan` with the explorer's findings, then `implementer` or `coder` with the plan.
-- Implement → Review → Fix → Verify: run `implementer`, then `review`, then resume/launch `implementer` to apply feedback, then `verifier` for the relevant gate.
+- Implement → Review → Fix → Verify → Judge: run `implementer`, then `review`, then resume/launch `implementer` to apply feedback, then `verifier` for the relevant gate, then `judge` for final answer/report quality.
 - Parallel scouting: launch multiple `explore` agents for independent questions, then synthesize their findings before editing. If a background batch exceeds available slots, RunAgents launches what fits and reports deferred children for a follow-up batch.
-- Parallel review/verification: when review and tests do not depend on each other, run `review` and `verifier` concurrently.
+- Parallel review/verification: when review and tests do not depend on each other, run `review` and `verifier` concurrently, then pass both summaries to `judge`.
 
 When chaining manually, include the previous agent's summary in the next agent prompt. Newly-created
 subagents do not see your current context automatically.

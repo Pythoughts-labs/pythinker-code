@@ -107,7 +107,7 @@ The system prompt file is a Markdown template that can use `${VAR}` syntax to re
 | `${PYTHINKER_NOW}` | Current time (ISO format) |
 | `${PYTHINKER_WORK_DIR}` | Working directory path |
 | `${PYTHINKER_WORK_DIR_LS}` | Working directory file list |
-| `${PYTHINKER_AGENTS_MD}` | Merged `AGENTS.md` content from project root to working directory (including `.pythinker/AGENTS.md`) |
+| `${PYTHINKER_AGENTS_MD}` | Merged `AGENTS.md` content from project root to working directory |
 | `${PYTHINKER_SKILLS}` | Loaded skills list |
 | `${PYTHINKER_ADDITIONAL_DIRS_INFO}` | Information about additional directories added via `--add-dir` or `/add-dir` |
 
@@ -164,13 +164,20 @@ agent:
 
 ## Built-in subagent types
 
-The default agent configuration includes three built-in subagent types, each with different tool policies and use cases:
+The default agent configuration includes focused built-in subagent types with different tool policies and use cases:
 
 | Type | Purpose | Available tools |
 |------|---------|----------------|
-| `coder` | General software engineering: read/write files, run commands, search code | `Shell`, `ReadFile`, `ReadMediaFile`, `Glob`, `Grep`, `WriteFile`, `StrReplaceFile`, `SearchWeb`, `FetchURL` |
-| `explore` | Fast read-only codebase exploration: search, read, summarize | `Shell`, `ReadFile`, `ReadMediaFile`, `Glob`, `Grep`, `SearchWeb`, `FetchURL` (no write tools) |
-| `plan` | Implementation planning and architecture design: analyze files, create plans | `ReadFile`, `ReadMediaFile`, `Glob`, `Grep`, `SearchWeb`, `FetchURL` (no Shell, no write tools) |
+| `coder` | General software engineering with judgment: read/write files, run commands, search code | Read/search tools, `Shell`, write tools, web tools |
+| `implementer` | Scoped implementation with minimal edits and quick verification | Read/search tools, `Shell`, write tools, web tools |
+| `explore` | Fast read-only codebase exploration: search, read, summarize | Read/search tools, `Shell`, web tools; no write tools |
+| `plan` | Implementation planning and architecture design | Read/search tools and web tools; no write tools |
+| `review` | Read-only severity-scored code review | Read/search tools, `Shell`, web tools; no write tools |
+| `code-reviewer` | Diff-focused code review for the current branch | Read/search tools, `Shell`, web tools; no write tools |
+| `security-reviewer` | Diff-focused security review with validated findings | Read/search tools, `Shell`, web tools; no write tools |
+| `debugger` | Root-cause analysis for failures, logs, and stack traces | Read/search tools and `Shell`; no write tools |
+| `verifier` | Read-only validation runner for tests, lint, type checks, and builds | Read/search tools and `Shell`; no write tools |
+| `judge` | Independent final quality gate for answers, reports, and code-change summaries | Read/search tools and `Shell`; no write tools |
 
 All subagent types are prohibited from nesting the `Agent` tool (subagents cannot create their own subagents). The `Agent` tool is only available to the root agent.
 
@@ -190,7 +197,7 @@ The following are all built-in tools in Pythinker Code.
 ### `Agent`
 
 - **Path**: `pythinker_code.tools.agent:Agent`
-- **Description**: Start or resume a subagent instance for a focused task. Three built-in subagent types are available: `coder` (general software engineering), `explore` (fast read-only codebase exploration), and `plan` (implementation planning and architecture design). Each instance maintains its own context history and supports foreground or background execution.
+- **Description**: Start or resume a subagent instance for a focused task. Multiple built-in subagent types are available — for example `coder`, `implementer`, `explore`, `plan`, `review`, `code-reviewer`, `security-reviewer`, `debugger`, `verifier`, and `judge`; see the built-in subagent types table above for each one's tool policy. Each instance maintains its own context history and supports foreground or background execution.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|

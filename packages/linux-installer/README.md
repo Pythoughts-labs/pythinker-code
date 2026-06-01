@@ -36,7 +36,7 @@ file at `/usr/share/doc/pythinker-code/LICENSE`.
 ## Build
 
 ```sh
-bash packages/linux-installer/build.sh 0.27.0
+bash packages/linux-installer/build.sh 0.28.0
 ```
 
 Outputs to `dist/`:

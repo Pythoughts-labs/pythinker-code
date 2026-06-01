@@ -15,6 +15,14 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+### Changed
+
+- **`.pythinker/AGENTS.md` is no longer loaded as project instructions.** Only `AGENTS.md`/`agents.md` from the project root down to the working directory are merged. Move any instructions kept solely in `.pythinker/AGENTS.md` to a root or directory-level `AGENTS.md`.
+
+### Security
+
+- **Read-only subagent profiles now block network shell commands.** The `read_only`/`plan`/`review`/`verify` permission profiles deny `curl`/`wget`/`ssh`/`git fetch` and similar network clients, so a read-only agent's no-web-tools intent cannot be bypassed through the Shell tool.
+
 ## 0.28.0 (2026-05-31)
 
 ### What changed in this release
