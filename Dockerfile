@@ -22,6 +22,7 @@ RUN apt-get update \
 RUN printf 'protobuf<7\n' >/tmp/constraints.txt \
     && pip install --no-cache-dir --root-user-action=ignore \
         --constraint /tmp/constraints.txt \
+        --only-binary=:all: \
         --use-deprecated=legacy-resolver \
         "pythinker-code==${PYTHINKER_VERSION}" \
     && rm /tmp/constraints.txt
@@ -29,6 +30,10 @@ RUN printf 'protobuf<7\n' >/tmp/constraints.txt \
 # Channel marker: the in-app updater reads this and prints a docker-native hint
 # instead of trying to pip-upgrade inside an immutable image.
 ENV PYTHINKER_MANAGED=docker
+ENV HOME=/home/pythinker
+
+RUN useradd --create-home --shell /usr/sbin/nologin pythinker
+USER pythinker
 
 ENTRYPOINT ["pythinker"]
 CMD ["--help"]

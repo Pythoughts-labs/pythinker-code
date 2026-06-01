@@ -17,8 +17,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -32,8 +34,16 @@ def windows_zip_asset_name(version: str) -> str:
     return f"pythinker-{version}-x86_64-pc-windows-msvc-onedir.zip"
 
 
+def _github_headers(url: str, *, accept: str = "application/vnd.github+json") -> dict[str, str]:
+    headers = {"Accept": accept, "User-Agent": "pythinker-scoop-manifest-generator"}
+    token = os.environ.get("GITHUB_TOKEN")
+    if token and urllib.parse.urlparse(url).netloc == "api.github.com":
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
 def _fetch_json(url: str) -> dict[str, Any]:
-    request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
+    request = urllib.request.Request(url, headers=_github_headers(url))
     with urllib.request.urlopen(request, timeout=30) as resp:
         data = json.load(resp)
     if not isinstance(data, dict):
@@ -42,7 +52,8 @@ def _fetch_json(url: str) -> dict[str, Any]:
 
 
 def _fetch_text(url: str) -> str:
-    with urllib.request.urlopen(url, timeout=30) as resp:
+    request = urllib.request.Request(url, headers=_github_headers(url, accept="text/plain"))
+    with urllib.request.urlopen(request, timeout=30) as resp:
         return resp.read().decode("utf-8", errors="replace")
 
 

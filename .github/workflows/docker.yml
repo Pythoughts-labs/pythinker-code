@@ -13,7 +13,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 env:
   IMAGE_NAME: ghcr.io/techmatrix-labs/pythinker-code
@@ -58,19 +57,29 @@ jobs:
           set -euo pipefail
           deadline=$(( $(date +%s) + 30 * 60 ))
           url="https://pypi.org/pypi/pythinker-code/${PKG_VERSION}/json"
-          until [ "$(curl -s -o /dev/null -w '%{http_code}' "$url")" = "200" ]; do
+          while true; do
+            if json=$(curl --fail --silent --show-error --connect-timeout 10 --max-time 30 "$url"); then
+              if printf '%s' "$json" | python3 -c 'import json, sys; data = json.load(sys.stdin); sys.exit(0 if any(u.get("packagetype") == "bdist_wheel" for u in data.get("urls", [])) else 1)'; then
+                echo "pythinker-code==${PKG_VERSION} wheel is live on PyPI"
+                break
+              fi
+              echo "pythinker-code==${PKG_VERSION} exists on PyPI but has no wheel yet; sleeping 30s"
+            else
+              echo "pythinker-code==${PKG_VERSION} not on PyPI yet; sleeping 30s"
+            fi
             if [ "$(date +%s)" -gt "$deadline" ]; then
-              echo "::error::pythinker-code==${PKG_VERSION} not on PyPI within 30 minutes" >&2
+              echo "::error::pythinker-code==${PKG_VERSION} wheel not on PyPI within 30 minutes" >&2
               exit 1
             fi
-            echo "pythinker-code==${PKG_VERSION} not on PyPI yet; sleeping 30s"
             sleep 30
           done
-          echo "pythinker-code==${PKG_VERSION} is live on PyPI"
 
   build-amd64:
     needs: resolve
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     timeout-minutes: 45
     steps:
       - name: Checkout repository
@@ -119,6 +128,9 @@ jobs:
   build-arm64:
     needs: resolve
     runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
     timeout-minutes: 45
     steps:
       - name: Checkout repository
@@ -167,6 +179,9 @@ jobs:
   merge:
     needs: [resolve, build-amd64, build-arm64]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     timeout-minutes: 10
     steps:
       - name: Download digests

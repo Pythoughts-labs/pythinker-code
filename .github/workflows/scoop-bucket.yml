@@ -14,6 +14,10 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
+concurrency:
+  group: scoop-bucket
+  cancel-in-progress: false
+
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -25,6 +29,8 @@ jobs:
     steps:
       - name: Checkout source repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # pinned from v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Resolve version
         id: ver
@@ -35,10 +41,10 @@ jobs:
           set -euo pipefail
           if [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
             version="${BASH_REMATCH[1]}"
-          elif [[ -n "${INPUT_VERSION:-}" ]]; then
+          elif [[ "${INPUT_VERSION:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             version="$INPUT_VERSION"
           else
-            echo "::error::No version source available" >&2
+            echo "::error::Version must match MAJOR.MINOR.PATCH (e.g. 0.27.0)" >&2
             exit 1
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
@@ -51,6 +57,7 @@ jobs:
       - name: Generate Scoop manifest
         env:
           PKG_VERSION: ${{ steps.ver.outputs.version }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
           mkdir -p out/bucket

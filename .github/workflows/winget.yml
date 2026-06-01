@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: winget-submit-${{ inputs.version }}
+  cancel-in-progress: false
+
 jobs:
   submit:
     # WinGet manifests can only be submitted from Windows (wingetcreate is a
