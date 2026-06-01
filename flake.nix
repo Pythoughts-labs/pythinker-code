@@ -102,7 +102,8 @@
                 mkdir -p $out/bin
                 makeWrapper ${pythinkerCodePackage}/bin/pythinker $out/bin/pythinker \
                   --prefix PATH : ${lib.makeBinPath [ ripgrep ]} \
-                  --set PYTHINKER_CLI_NO_AUTO_UPDATE "1"
+                  --set PYTHINKER_CLI_NO_AUTO_UPDATE "1" \
+                  --set PYTHINKER_MANAGED "nix"
 
                 runHook postInstall
               '';
@@ -130,5 +131,14 @@
         }
       );
       formatter = forAllSystems ({ pkgs, ... }: pkgs.nixfmt-tree);
+      apps = forAllSystems (
+        { system, ... }:
+        {
+          default = {
+            type = "app";
+            program = "${self.packages.${system}.default}/bin/pythinker";
+          };
+        }
+      );
     };
 }
