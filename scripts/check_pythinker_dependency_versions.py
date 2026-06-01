@@ -45,6 +45,7 @@ def main() -> int:
     parser.add_argument("--root-pyproject", type=Path, required=True)
     parser.add_argument("--pythinker-core-pyproject", type=Path, required=True)
     parser.add_argument("--pythinker-host-pyproject", type=Path, required=True)
+    parser.add_argument("--pythinker-review-pyproject", type=Path, required=True)
     args = parser.parse_args()
 
     try:
@@ -65,6 +66,7 @@ def main() -> int:
     for name, pyproject_path in (
         ("pythinker-core", args.pythinker_core_pyproject),
         ("pythinker-host", args.pythinker_host_pyproject),
+        ("pythinker-review", args.pythinker_review_pyproject),
     ):
         try:
             package_version = load_project_version(pyproject_path)

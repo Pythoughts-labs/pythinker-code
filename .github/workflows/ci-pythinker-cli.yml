@@ -250,10 +250,11 @@ jobs:
       - name: Check dependency versions
         if: steps.version.outputs.bump == 'true'
         run: |
-          python scripts/check_pythinker_dependency_versions.py \
+          uv run python scripts/check_pythinker_dependency_versions.py \
             --root-pyproject pyproject.toml \
             --pythinker-core-pyproject packages/pythinker-core/pyproject.toml \
-            --pythinker-host-pyproject packages/pythinker-host/pyproject.toml
+            --pythinker-host-pyproject packages/pythinker-host/pyproject.toml \
+            --pythinker-review-pyproject packages/pythinker-review/pyproject.toml
 
       - name: Check pythinker-code version alignment
         if: steps.version.outputs.bump == 'true'
