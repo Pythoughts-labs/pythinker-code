@@ -340,5 +340,5 @@ jobs:
           set -euo pipefail
           nix run .#default -- --version
           nix build .#default
-          grep -q 'PYTHINKER_MANAGED.*"nix"' result/bin/pythinker
-          echo "apps.default runs and the wrapper sets PYTHINKER_MANAGED"
+          grep -Eq 'PYTHINKER_MANAGED.*nix' result/bin/pythinker
+          echo "apps.default runs and the wrapper sets PYTHINKER_MANAGED=nix"
