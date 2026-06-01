@@ -8,23 +8,23 @@
 # breaking-change regressions (e.g. pydantic 2.13 alias serialization).
 
 # Default fallback: project owner reviews everything not matched below.
-*                                @mohamed-elkholy95
+*                                @elkaix
 
 # Dependency surfaces: explicit owner.
-pyproject.toml                   @mohamed-elkholy95
-uv.lock                          @mohamed-elkholy95
-**/pyproject.toml                @mohamed-elkholy95
-**/uv.lock                       @mohamed-elkholy95
-package.json                     @mohamed-elkholy95
-package-lock.json                @mohamed-elkholy95
-**/package.json                  @mohamed-elkholy95
-**/package-lock.json             @mohamed-elkholy95
+pyproject.toml                   @elkaix
+uv.lock                          @elkaix
+**/pyproject.toml                @elkaix
+**/uv.lock                       @elkaix
+package.json                     @elkaix
+package-lock.json                @elkaix
+**/package.json                  @elkaix
+**/package-lock.json             @elkaix
 
 # Telemetry & monitoring config — contractual changes need a closer look.
-src/pythinker_code/telemetry/    @mohamed-elkholy95
-docs/en/reference/telemetry.md   @mohamed-elkholy95
+src/pythinker_code/telemetry/    @elkaix
+docs/en/reference/telemetry.md   @elkaix
 
 # CI workflows — branch protection / required-status-check changes shouldn't
 # slip in unnoticed.
-.github/workflows/               @mohamed-elkholy95
-.github/CODEOWNERS               @mohamed-elkholy95
+.github/workflows/               @elkaix
+.github/CODEOWNERS               @elkaix

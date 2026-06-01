@@ -392,6 +392,14 @@ def _git_subcommand(args: list[str]) -> str | None:
         if arg == "-C" and remaining:
             remaining.pop(0)
             continue
+        if arg == "-c" and remaining:
+            remaining.pop(0)
+            continue
+        if arg == "--config-env" and remaining:
+            remaining.pop(0)
+            continue
+        if arg.startswith("--config-env="):
+            continue
         if arg.startswith("--git-dir=") or arg.startswith("--work-tree="):
             continue
         if arg.startswith("-"):

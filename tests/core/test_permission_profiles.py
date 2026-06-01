@@ -91,6 +91,7 @@ def test_shell_network_commands_classified() -> None:
         "wget http://example.com/x",
         "ssh user@host",
         "nc 10.0.0.1 80",
+        "git -c core.pager=cat fetch origin",
         "git fetch origin",
         "git clone https://example.com/x.git",
     ):

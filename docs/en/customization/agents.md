@@ -197,7 +197,7 @@ The following are all built-in tools in Pythinker Code.
 ### `Agent`
 
 - **Path**: `pythinker_code.tools.agent:Agent`
-- **Description**: Start or resume a subagent instance for a focused task. Three built-in subagent types are available: `coder` (general software engineering), `explore` (fast read-only codebase exploration), and `plan` (implementation planning and architecture design). Each instance maintains its own context history and supports foreground or background execution.
+- **Description**: Start or resume a subagent instance for a focused task. Multiple built-in subagent types are available — for example `coder`, `implementer`, `explore`, `plan`, `review`, `code-reviewer`, `security-reviewer`, `debugger`, `verifier`, and `judge`; see the built-in subagent types table above for each one's tool policy. Each instance maintains its own context history and supports foreground or background execution.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
