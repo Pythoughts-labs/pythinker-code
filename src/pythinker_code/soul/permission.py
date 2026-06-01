@@ -355,6 +355,8 @@ def _segment_mutation_reason(tokens: list[str]) -> str | None:
     if base == "perl" and any(arg == "-i" or arg.startswith("-i") for arg in args):
         return "perl in-place edit"
     if base == "git":
+        if _has_unsafe_git_global_option(args):
+            return "unsafe git option (-c/--config-env/--exec-path)"
         subcommand = _git_subcommand(args)
         if subcommand in _GIT_MUTATIONS:
             return f"git {subcommand}"
@@ -392,20 +394,32 @@ def _git_subcommand(args: list[str]) -> str | None:
         if arg == "-C" and remaining:
             remaining.pop(0)
             continue
-        if arg == "-c" and remaining:
-            remaining.pop(0)
-            continue
-        if arg == "--config-env" and remaining:
-            remaining.pop(0)
-            continue
-        if arg.startswith("--config-env="):
-            continue
         if arg.startswith("--git-dir=") or arg.startswith("--work-tree="):
             continue
         if arg.startswith("-"):
             continue
         return arg
     return None
+
+
+def _has_unsafe_git_global_option(args: list[str]) -> bool:
+    """Detect git global options that can run arbitrary commands.
+
+    ``-c <key>=<value>`` and ``--config-env`` can set ``core.pager``,
+    ``core.sshCommand``, ``alias.*``, ``credential.helper`` and similar, which
+    execute commands even for otherwise read-only subcommands (``log``, ``diff``);
+    ``--exec-path=`` redirects git's helper lookup. Read-only/review/verify
+    profiles have no need for these, so any occurrence is treated as unsafe rather
+    than stripped (stripping would hide the override behind an allowed subcommand).
+    """
+    for arg in args:
+        if arg == "-c" or (arg.startswith("-c") and "=" in arg):
+            return True
+        if arg == "--config-env" or arg.startswith("--config-env="):
+            return True
+        if arg == "--exec-path" or arg.startswith("--exec-path="):
+            return True
+    return False
 
 
 def _first_non_option(args: list[str]) -> str | None:

@@ -91,9 +91,14 @@ def test_shell_network_commands_classified() -> None:
         "wget http://example.com/x",
         "ssh user@host",
         "nc 10.0.0.1 80",
-        "git -c core.pager=cat fetch origin",
         "git fetch origin",
         "git clone https://example.com/x.git",
+        # -c/--config-env/--exec-path can run commands even via read-only
+        # subcommands (core.pager/core.sshCommand/...), so they are blocked outright.
+        "git -c core.pager=cat fetch origin",
+        "git -c core.pager=evil log",
+        "git -c core.sshCommand=evil fetch origin",
+        "git --exec-path=/tmp/evil log",
     ):
         assert shell_mutation_reason(cmd) is not None, cmd
     # read-only git and shell stay allowed (judge needs `git diff`)
