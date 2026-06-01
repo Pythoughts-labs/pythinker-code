@@ -72,10 +72,11 @@ def test_site_dispatch_uses_scoped_github_app_token_and_fails_loud() -> None:
     workflow = (WORKFLOWS / "dispatch-pythinker-home-sync.yml").read_text()
 
     assert "PYTHINKER_HOME_REPO_DISPATCH_TOKEN" not in workflow
-    assert "actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349" in workflow
-    assert "permission-contents: write" in workflow
+    assert "actions/create-github-app-token" not in workflow
+    assert re.search(r"permissions\s*:\s*\{[^}]*contents\s*:\s*\"write\"", workflow)
     assert "PYTHINKER_RELEASE_BOT_APP_ID" in workflow
     assert "PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY" in workflow
+    assert "Missing PYTHINKER_RELEASE_BOT_APP_ID" in workflow
     assert "exit 1" in workflow
     assert "Skipping pythinker-home sync" not in workflow
 

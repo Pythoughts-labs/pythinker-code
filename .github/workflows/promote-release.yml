@@ -163,16 +163,63 @@ jobs:
           gh api -X PATCH "repos/$REPO/releases/$release_id" -F prerelease=false -f make_latest=true
           echo "Promoted $TAG: prerelease=false, make_latest=true (all platform assets present)."
 
+      - name: Mint GitHub App token for pythinker-home
+        id: app-token
+        env:
+          APP_ID: ${{ secrets.PYTHINKER_RELEASE_BOT_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY }}
+          DISPATCH_OWNER: TechMatrix-labs
+          DISPATCH_REPO: pythinker-home
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_ID:-}" ] || [ -z "${APP_PRIVATE_KEY:-}" ]; then
+            echo "::error::Missing PYTHINKER_RELEASE_BOT_APP_ID or PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY. Configure the org-owned pythinker-release-bot App and install it on ${DISPATCH_OWNER}/${DISPATCH_REPO} with Contents: Read and write." >&2
+            exit 1
+          fi
+
+          b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+          key_file=$(mktemp)
+          trap 'rm -f "$key_file"' EXIT
+          printf '%s\n' "$APP_PRIVATE_KEY" > "$key_file"
+          chmod 600 "$key_file"
+
+          now=$(date +%s)
+          header=$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)
+          payload=$(jq -nc --argjson iat "$((now - 60))" --argjson exp "$((now + 540))" --arg iss "$APP_ID" '{iat:$iat,exp:$exp,iss:$iss}' | b64url)
+          unsigned="${header}.${payload}"
+          signature=$(printf '%s' "$unsigned" | openssl dgst -sha256 -sign "$key_file" | b64url)
+          jwt="${unsigned}.${signature}"
+
+          installation_id=$(curl --fail-with-body -sS \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${jwt}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${DISPATCH_OWNER}/${DISPATCH_REPO}/installation" \
+            | jq -er '.id')
+          token=$(jq -nc --arg repo "$DISPATCH_REPO" '{repositories:[$repo],permissions:{contents:"write"}}' \
+            | curl --fail-with-body -sS \
+                -X POST \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${jwt}" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "https://api.github.com/app/installations/${installation_id}/access_tokens" \
+                -d @- \
+            | jq -er '.token')
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
       - name: Trigger pythinker-home sync
         env:
-          DISPATCH_TOKEN: ${{ secrets.PYTHINKER_HOME_REPO_DISPATCH_TOKEN }}
+          DISPATCH_TOKEN: ${{ steps.app-token.outputs.token }}
           SOURCE_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          DISPATCH_OWNER: TechMatrix-labs
+          DISPATCH_REPO: pythinker-home
         run: |
           set -euo pipefail
           if [ -z "${DISPATCH_TOKEN:-}" ]; then
-            echo "::notice::Skipping pythinker-home sync: PYTHINKER_HOME_REPO_DISPATCH_TOKEN is not configured"
-            exit 0
+            echo "::error::No dispatch token: the pythinker-release-bot App token mint produced an empty value. Confirm PYTHINKER_RELEASE_BOT_APP_ID and PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY org secrets are set and the App is installed on ${DISPATCH_OWNER}/${DISPATCH_REPO} with Contents: Read and write." >&2
+            exit 1
           fi
           payload=$(jq -n \
             --arg source_repo "$SOURCE_REPO" \
@@ -182,7 +229,7 @@ jobs:
             -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer $DISPATCH_TOKEN" \
-            https://api.github.com/repos/TechMatrix-labs/pythinker-home/dispatches \
+            "https://api.github.com/repos/${DISPATCH_OWNER}/${DISPATCH_REPO}/dispatches" \
             -d "$payload"
 
   notify-failure:
