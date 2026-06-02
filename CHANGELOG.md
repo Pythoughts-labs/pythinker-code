@@ -15,6 +15,10 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.30.0 (2026-06-02)
+
+### What changed in this release
+
 - **ACP session close and auth errors are spec-compliant.** `session/close` now cancels any
   in-flight work and frees the session's runtime resources (MCP toolset, background refresh)
   before dropping it, instead of leaking them, per the ACP `session/close` requirement. The
@@ -30,6 +34,8 @@ GitHub Releases page; `0.8.0` is the new starting line.
   dependency is now updated by release automation and checked by CI/release validation,
   preventing no-sources binary builds from resolving against a stale core pin.
 - **Routine dependency bumps with the breaking-change fallout fixed.** Upgrades `agent-client-protocol` to 0.10.1, `aiohttp` to 3.14.0, and `typer` to 0.26.5. Aligns the `pythinker-review` `typer` pin so the uv workspace resolves; migrates the ACP server to the 0.10 auth schema (`TerminalAuthMethod`) and expanded `Agent` protocol (`additional_directories`, `close_session`, session config options); and restores the optional-value behaviour of `--session`/`--resume` (interactive picker when used without an ID) under Typer 0.26's new argument parser.
+
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.30.0`, or use the native installer for your OS (see the README install table).
 
 ## 0.29.0 (2026-06-01)
 
