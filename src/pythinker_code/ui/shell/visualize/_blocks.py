@@ -162,7 +162,7 @@ def _find_committed_boundary(text: str) -> int | None:
 
 def _starts_with_report_fence(text: str) -> bool:
     stripped = text.lstrip().casefold()
-    return stripped.startswith("```report") or stripped.startswith("~~~report")
+    return stripped.startswith(("```report", "~~~report"))
 
 
 def _tail_lines(text: str, n: int) -> str:
