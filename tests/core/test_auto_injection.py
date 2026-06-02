@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 from pythinker_code.soul.dynamic_injections.auto_mode import (
     _AUTO_INJECTION_TYPE,
     _AUTO_PROMPT,
+    _AUTO_PROMPT_DELIBERATE,
     AutoModeInjectionProvider,
 )
 
@@ -17,6 +18,7 @@ def _mock_soul(
     is_yolo: bool = False,
     is_subagent: bool = False,
     has_ask_user: bool = True,
+    ask_user_question_policy: str = "ask_except_auto",
 ) -> MagicMock:
     soul = MagicMock()
     soul.is_auto = is_auto
@@ -24,6 +26,7 @@ def _mock_soul(
     soul.is_yolo = is_yolo
     soul.is_subagent = is_subagent
     soul.has_tool.return_value = has_ask_user
+    soul.runtime.config.ask_user_question_policy = ask_user_question_policy
     return soul
 
 
@@ -35,6 +38,15 @@ async def test_injects_when_auto_enabled() -> None:
     assert result[0].content == _AUTO_PROMPT
     assert "auto" in result[0].content.lower()
     assert "Do NOT call AskUserQuestion" in result[0].content
+
+
+async def test_injects_deliberate_prompt_under_auto_deliberate_policy() -> None:
+    provider = AutoModeInjectionProvider()
+    soul = _mock_soul(is_auto=True, ask_user_question_policy="auto_deliberate")
+    result = await provider.get_injections([], soul)
+    assert len(result) == 1
+    assert result[0].content == _AUTO_PROMPT_DELIBERATE
+    assert "advisor-assisted self-decision" in result[0].content
 
 
 async def test_runtime_auto_does_not_inject_prompt() -> None:

@@ -98,9 +98,10 @@ class ApprovalState:
         self.auto_deliberate = auto_deliberate
         """When true, destructive auto-approved actions must deliberate once first.
 
-        Set from ``ask_user_question_policy == "auto_deliberate"``. Gates *ahead*
-        of yolo/auto: an irreversible action (``rm -rf``, ``git push --force``, ...)
-        is bounced back once for the agent to weigh alternatives before it runs.
+        Wired in ``Runtime.create`` from ``config.ask_user_question_policy ==
+        "auto_deliberate"``. Gates *ahead* of yolo/auto: an irreversible action
+        (``rm -rf``, ``git push --force``, ...) is bounced back once for the agent
+        to weigh alternatives before it runs.
         """
         self.auto_approve_actions: set[str] = auto_approve_actions or set()
         """Set of action names that should automatically be approved."""
@@ -201,41 +202,53 @@ class Approval:
         self._state.approved_orchestration_fingerprints.add(fingerprint)
 
     @staticmethod
-    def _shell_command(tool_call: ToolCall) -> str | None:
-        """Extract the Shell command string from a tool call, else ``None``."""
-        if tool_call.function.name != "Shell":
-            return None
+    def _tool_arguments(tool_call: ToolCall) -> dict[str, JsonType] | None:
+        """Parse a tool call's JSON arguments into a dict, else ``None``."""
         try:
             args: JsonType = json.loads(tool_call.function.arguments or "{}")
         except (ValueError, TypeError):
             return None
-        if not isinstance(args, dict):
-            return None
-        command = args.get("command")
-        return command if isinstance(command, str) else None
+        return args if isinstance(args, dict) else None
+
+    @staticmethod
+    def _deliberation_fingerprint(tool_name: str, arguments: dict[str, JsonType]) -> str:
+        """Stable, tool-agnostic identity for a destructive call (name + sorted args)."""
+        encoded = json.dumps(arguments, sort_keys=True, separators=(",", ":"))
+        return f"{tool_name}::{encoded}"
 
     def deliberation_gate(self, tool_call: ToolCall) -> str | None:
         """Reason a destructive auto-approved action must deliberate once, else ``None``.
 
         Fires only when ``auto_deliberate`` is on, the action would otherwise be
         auto-approved (auto *or* yolo — so it gates ahead of the yolo bypass), and the
-        command is destructive (Unit 1's classifier). One-shot: the first occurrence is
-        bounced for the agent to weigh alternatives; the identical re-issue is let through
-        once, so a deliberated ``rm -rf`` runs without being permanently whitelisted.
+        tool call is destructive per the tool-agnostic classifier in ``permission``
+        (today only ``Shell``; other destructive tools register their classifier there).
+        One-shot: the first occurrence is bounced for the agent to weigh alternatives;
+        the identical re-issue is let through once, so a deliberated ``rm -rf`` runs
+        without being permanently whitelisted.
         """
         if not self._state.auto_deliberate:
             return None
         if not self.is_auto_approve():
             return None
-        command = self._shell_command(tool_call)
-        if command is None:
+        arguments = self._tool_arguments(tool_call)
+        if arguments is None:
             return None
-        from pythinker_code.soul.permission import shell_destructive_reason
+        from pythinker_code.soul.permission import tool_destructive_reason
 
-        reason = shell_destructive_reason(command)
+        reason = tool_destructive_reason(tool_call.function.name, arguments)
         if reason is None:
             return None
-        fingerprint = f"{tool_call.function.name}::{command}"
+        fingerprint = self._deliberation_fingerprint(tool_call.function.name, arguments)
+        # NOTE (known limitation, tracked): the one-shot is keyed only by the
+        # (tool, command) fingerprint, not by an assistant-turn boundary. If a
+        # model emits two byte-identical destructive calls within the SAME
+        # response (no intervening deliberation turn), the second consumes the
+        # one-shot and runs. Distinguishing that from a genuine re-issue needs a
+        # turn/generation signal not plumbed into the approval layer; spec §6 #2
+        # treats the one-shot as an open decision. Only reachable when a user has
+        # opted into the auto_deliberate policy (not a default), and requires the
+        # model to emit identical destructive calls in one response.
         if fingerprint in self._state.deliberated_fingerprints:
             self._state.deliberated_fingerprints.discard(fingerprint)  # consume one-shot
             return None

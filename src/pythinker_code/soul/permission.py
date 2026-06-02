@@ -497,6 +497,20 @@ def shell_destructive_reason(command: str) -> str | None:
     return None
 
 
+def tool_destructive_reason(tool_name: str, arguments: dict[str, Any]) -> str | None:
+    """Reason a tool call is irreversibly destructive (warrants deliberation), else ``None``.
+
+    Tool-agnostic dispatch point for the auto-deliberation gate. Today only ``Shell``
+    is classified; a future destructive tool registers its own argument classifier
+    here instead of the gate hard-coding a single tool name.
+    """
+    if tool_name == "Shell":
+        command = arguments.get("command")
+        if isinstance(command, str):
+            return shell_destructive_reason(command)
+    return None
+
+
 def _segment_destructive_reason(tokens: list[str]) -> str | None:
     if not tokens:
         return None

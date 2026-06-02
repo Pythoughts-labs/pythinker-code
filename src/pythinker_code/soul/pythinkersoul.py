@@ -105,6 +105,7 @@ from pythinker_code.wire.types import (
     ContentPart,
     MCPLoadingBegin,
     MCPLoadingEnd,
+    QuestionItem,
     StatusUpdate,
     SteerInput,
     StepBegin,
@@ -550,6 +551,13 @@ class PythinkerSoul:
                 self._approval.is_auto,
                 policy=self._runtime.config.ask_user_question_policy,
             )
+
+            async def _advise(questions: list[QuestionItem]) -> str | None:
+                from pythinker_code.soul.deliberation import blind_advisor_verdict
+
+                return await blind_advisor_verdict(self, questions)
+
+            ask_tool.bind_deliberation(_advise)
 
     def _ensure_plan_session_id(self) -> None:
         """Allocate a stable plan session ID on first activation."""

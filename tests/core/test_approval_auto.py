@@ -172,3 +172,10 @@ async def test_request_bounces_destructive_then_approves_retry() -> None:
 
         second = await approval.request("Shell", "run command", "Run command `rm -rf build`")
         assert second, "one-shot consumed: the deliberated retry runs"
+
+
+def test_approval_state_honors_auto_deliberate_flag() -> None:
+    on = Approval(state=ApprovalState(auto=True, auto_deliberate=True))
+    assert on.deliberation_gate(_shell_call("rm -rf build")) is not None
+    off = Approval(state=ApprovalState(auto=True, auto_deliberate=False))
+    assert off.deliberation_gate(_shell_call("rm -rf build")) is None
