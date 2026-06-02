@@ -4,6 +4,10 @@ This page documents breaking changes in Pythinker Code releases and provides mig
 
 ## Unreleased
 
+## 0.29.0 (2026-06-01)
+
+No breaking changes. This release is compatible with 0.28.0 user configuration, native installs, and session data.
+
 ## 0.28.0 (2026-05-31)
 
 **`.pythinker/AGENTS.md` is no longer loaded as project instructions.** Pythinker now merges only `AGENTS.md`/`agents.md` files from the project root down to the working directory. If you kept instructions solely in `.pythinker/AGENTS.md`, move them to a root or directory-level `AGENTS.md` or they will no longer apply. No action is needed if you did not use `.pythinker/AGENTS.md`.
