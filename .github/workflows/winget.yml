@@ -35,7 +35,7 @@ jobs:
             exit 1
           fi
 
-      - name: Submit manifest update with wingetcreate
+      - name: Submit manifest to WinGet (new or update)
         shell: pwsh
         env:
           WINGET_TOKEN: ${{ secrets.WINGET_SUBMIT_TOKEN }}
@@ -53,10 +53,36 @@ jobs:
           if ($actualHash -ne $wingetCreateSha256) {
             throw "wingetcreate.exe SHA-256 mismatch: expected $wingetCreateSha256, got $actualHash"
           }
-          # PackageIdentifier must match the existing winget-pkgs entry; create it
-          # once manually via `wingetcreate new` before the first automated update.
-          .\wingetcreate.exe update PythoughtsLabs.PythinkerCode `
-            --version $env:VERSION `
-            --urls "$installerUrl" `
-            --submit `
-            --token $env:WINGET_TOKEN
+
+          # Detect whether the package already exists in winget-pkgs.
+          # Use `update` for subsequent releases; `new` for the initial submission.
+          $manifestPath = "manifests/p/PythoughtsLabs/PythinkerCode"
+          $headers = @{
+            Authorization = "token $env:WINGET_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          $packageExists = $false
+          try {
+            $null = Invoke-WebRequest -Uri "https://api.github.com/repos/microsoft/winget-pkgs/contents/$manifestPath" `
+              -Headers $headers -ErrorAction Stop
+            $packageExists = $true
+          } catch {
+            $packageExists = $false
+          }
+
+          if ($packageExists) {
+            Write-Host "Package exists in winget-pkgs — running wingetcreate update"
+            .\wingetcreate.exe update PythoughtsLabs.PythinkerCode `
+              --version $env:VERSION `
+              --urls "$installerUrl" `
+              --submit `
+              --token $env:WINGET_TOKEN
+          } else {
+            Write-Host "Package not found in winget-pkgs — running wingetcreate new (initial submission)"
+            .\wingetcreate.exe new "$installerUrl" `
+              --id PythoughtsLabs.PythinkerCode `
+              --version $env:VERSION `
+              --submit `
+              --token $env:WINGET_TOKEN
+          }
