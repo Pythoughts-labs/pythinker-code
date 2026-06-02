@@ -223,4 +223,4 @@ def reload(app: Shell, args: str):
     """Reload configuration"""
     from pythinker_code.cli import Reload
 
-    raise Reload
+    raise Reload()

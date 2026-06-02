@@ -467,6 +467,24 @@ class PythinkerCLI:
         """Get the Session instance."""
         return self._runtime.session
 
+    async def cleanup_runtime_resources(self) -> None:
+        """Cleanup per-CLI-instance resources without stopping persisted background tasks."""
+        # Cancel the startup managed-model refresh task if it is still running
+        # so it does not outlive this CLI instance across reloads.
+        if self._bg_refresh_task is not None and not self._bg_refresh_task.done():
+            self._bg_refresh_task.cancel()
+
+        # Cleanup MCP connections held by this instance's toolset. Background
+        # task workers are persisted elsewhere and intentionally left alone.
+        from pythinker_code.soul.toolset import PythinkerToolset
+
+        toolset = self._soul.agent.toolset
+        if isinstance(toolset, PythinkerToolset):
+            try:
+                await toolset.cleanup()
+            except Exception:
+                logger.exception("Failed to cleanup MCP toolset during reload")
+
     async def shutdown_background_tasks(self) -> None:
         """Kill active background tasks on exit, unless keep_alive_on_exit is configured.
 
@@ -480,18 +498,7 @@ class PythinkerCLI:
         store corruption must not propagate and replace the real exit code
         with a traceback.
         """
-        # Cancel the startup managed-model refresh task if it is still running
-        # so it does not outlive the CLI process.
-        if self._bg_refresh_task is not None and not self._bg_refresh_task.done():
-            self._bg_refresh_task.cancel()
-
-        # Cleanup MCP connections held by the toolset
-        from pythinker_code.soul.toolset import PythinkerToolset
-
-        toolset = self._soul.agent.toolset
-        if isinstance(toolset, PythinkerToolset):
-            with contextlib.suppress(Exception):
-                await toolset.cleanup()
+        await self.cleanup_runtime_resources()
 
         bg_config = self._runtime.config.background
         if bg_config.keep_alive_on_exit:

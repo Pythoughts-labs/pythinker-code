@@ -355,6 +355,15 @@ async def model(app: Shell, args: str):
     if model_changed and selected_model_cfg.provider == "managed:lm-studio":
         await _preload_lm_studio_model(selected_provider, selected_model_cfg.model)
 
+    if model_changed:
+        current_session = soul.runtime.session
+        session = await Session.create(current_session.work_dir)
+        session.state.additional_dirs = list(current_session.state.additional_dirs)
+        if session.state.additional_dirs:
+            await asyncio.to_thread(session.save_state)
+        console.print(f"[{_t.success}]Starting fresh session for the new model...[/]")
+        raise Reload(session_id=session.id)
+
     raise Reload(session_id=soul.runtime.session.id)
 
 
