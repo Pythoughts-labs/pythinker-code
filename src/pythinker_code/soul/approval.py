@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -51,7 +51,7 @@ _current_deliberation_scope: ContextVar[DeliberationScope | None] = ContextVar(
 
 
 @contextmanager
-def deliberation_scope(context_id: str, generation: int) -> Iterator[None]:
+def deliberation_scope(context_id: str, generation: int) -> Generator[None, None, None]:
     """Bind the active deliberation scope for the duration of one step's tool execution."""
     token = _current_deliberation_scope.set(DeliberationScope(context_id, generation))
     try:
@@ -137,8 +137,9 @@ class ApprovalState:
         """Set of action names that should automatically be approved."""
         self.approved_orchestration_fingerprints: set[str] = set()
         """RunAgents orchestration shapes approved for this in-memory session."""
-        self.deliberated_fingerprints: set[str] = set()
-        """Destructive (tool, command) shapes already bounced once; the re-issue runs."""
+        self.deliberated_fingerprints: dict[str, str] = {}
+        """Maps a context-namespaced destructive fingerprint to the scope token it was last
+        bounced at; a re-issue in a later generation of the same context consumes it once."""
         self._on_change = on_change
 
     def notify_change(self) -> None:
@@ -241,10 +242,12 @@ class Approval:
         return args if isinstance(args, dict) else None
 
     @staticmethod
-    def _deliberation_fingerprint(tool_name: str, arguments: dict[str, JsonType]) -> str:
-        """Stable, tool-agnostic identity for a destructive call (name + sorted args)."""
+    def _deliberation_fingerprint(
+        context_id: str, tool_name: str, arguments: dict[str, JsonType]
+    ) -> str:
+        """Context-namespaced identity for a destructive call (context + name + sorted args)."""
         encoded = json.dumps(arguments, sort_keys=True, separators=(",", ":"))
-        return f"{tool_name}::{encoded}"
+        return f"{context_id}::{tool_name}::{encoded}"
 
     def deliberation_gate(self, tool_call: ToolCall) -> str | None:
         """Reason a destructive auto-approved action must deliberate once, else ``None``.
@@ -253,9 +256,11 @@ class Approval:
         auto-approved (auto *or* yolo — so it gates ahead of the yolo bypass), and the
         tool call is destructive per the tool-agnostic classifier in ``permission``
         (today only ``Shell``; other destructive tools register their classifier there).
-        One-shot: the first occurrence is bounced for the agent to weigh alternatives;
-        the identical re-issue is let through once, so a deliberated ``rm -rf`` runs
-        without being permanently whitelisted.
+        One-shot, scoped to (execution context, generation): the first sighting and any
+        same-generation duplicate are bounced; only a re-issue in a later generation of the
+        same context is let through once, so a deliberated ``rm -rf`` runs without being
+        permanently whitelisted, while two identical calls in one model response both
+        deliberate and a subagent cannot consume the main agent's one-shot.
         """
         if not self._state.auto_deliberate:
             return None
@@ -269,20 +274,20 @@ class Approval:
         reason = tool_destructive_reason(tool_call.function.name, arguments)
         if reason is None:
             return None
-        fingerprint = self._deliberation_fingerprint(tool_call.function.name, arguments)
-        # NOTE (known limitation, tracked): the one-shot is keyed only by the
-        # (tool, command) fingerprint, not by an assistant-turn boundary. If a
-        # model emits two byte-identical destructive calls within the SAME
-        # response (no intervening deliberation turn), the second consumes the
-        # one-shot and runs. Distinguishing that from a genuine re-issue needs a
-        # turn/generation signal not plumbed into the approval layer; spec §6 #2
-        # treats the one-shot as an open decision. Only reachable when a user has
-        # opted into the auto_deliberate policy (not a default), and requires the
-        # model to emit identical destructive calls in one response.
-        if fingerprint in self._state.deliberated_fingerprints:
-            self._state.deliberated_fingerprints.discard(fingerprint)  # consume one-shot
+        scope = _current_deliberation_scope.get()
+        context_id = scope.context_id if scope is not None else "unscoped"
+        gen_token = f"{context_id}:{scope.generation}" if scope is not None else "unscoped"
+        fingerprint = self._deliberation_fingerprint(context_id, tool_call.function.name, arguments)
+        # One-shot keyed by (execution context, generation): the first sighting and any
+        # same-generation duplicate are bounced; only a re-issue in a LATER generation of
+        # the same context is let through once. The context_id prefix prevents a subagent's
+        # identical call from consuming the main agent's one-shot (state is shared via
+        # Approval.share()).
+        prior = self._state.deliberated_fingerprints.get(fingerprint)
+        if prior is not None and prior != gen_token:
+            del self._state.deliberated_fingerprints[fingerprint]
             return None
-        self._state.deliberated_fingerprints.add(fingerprint)
+        self._state.deliberated_fingerprints[fingerprint] = gen_token
         return reason
 
     async def request(

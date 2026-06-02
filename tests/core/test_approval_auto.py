@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from pythinker_code.soul.approval import Approval, ApprovalState
+from pythinker_code.soul.approval import Approval, ApprovalState, deliberation_scope
 from pythinker_code.wire.types import ToolCall
 
 
@@ -150,19 +150,32 @@ def test_set_auto_false_clears_runtime_auto() -> None:
 
 
 def test_destructive_action_deliberates_once_then_proceeds_under_auto() -> None:
-    """auto + auto_deliberate: a destructive Shell command deliberates the first
-    time, the identical re-issue runs once (one-shot retry), and a third issue
-    deliberates again — so deliberation never permanently whitelists ``rm -rf``."""
+    """auto + auto_deliberate: a destructive command deliberates the first time, the
+    re-issue in a LATER generation runs once, and a fresh issue later deliberates again."""
     approval = Approval(state=ApprovalState(auto=True, auto_deliberate=True))
+    with deliberation_scope("root", 1):
+        assert approval.deliberation_gate(_shell_call("rm -rf build")) is not None
+    with deliberation_scope("root", 2):
+        assert approval.deliberation_gate(_shell_call("rm -rf build")) is None
+    with deliberation_scope("root", 3):
+        assert approval.deliberation_gate(_shell_call("rm -rf build")) is not None
 
-    first = approval.deliberation_gate(_shell_call("rm -rf build"))
-    assert first is not None, "first destructive issue should deliberate"
 
-    second = approval.deliberation_gate(_shell_call("rm -rf build"))
-    assert second is None, "identical re-issue is the one-shot retry: allowed through"
+def test_same_generation_duplicate_destructive_calls_both_bounce() -> None:
+    # Property (a): two byte-identical destructive calls in ONE generation both deliberate.
+    approval = Approval(state=ApprovalState(auto=True, auto_deliberate=True))
+    with deliberation_scope("root", 1):
+        assert approval.deliberation_gate(_shell_call("rm -rf build")) is not None
+        assert approval.deliberation_gate(_shell_call("rm -rf build")) is not None
 
-    third = approval.deliberation_gate(_shell_call("rm -rf build"))
-    assert third is not None, "one-shot consumed; a fresh issue deliberates again"
+
+def test_subagent_identical_call_does_not_consume_main_one_shot() -> None:
+    # Property (c): a subagent's identical call must not ride on the main agent's bounce.
+    approval = Approval(state=ApprovalState(auto=True, auto_deliberate=True))
+    with deliberation_scope("root", 1):
+        assert approval.deliberation_gate(_shell_call("rm -rf build")) is not None
+    with deliberation_scope("sub-1", 1):
+        assert approval.deliberation_gate(_shell_call("rm -rf build")) is not None
 
 
 def test_deliberation_gate_conditions() -> None:
@@ -197,14 +210,16 @@ async def test_request_bounces_destructive_then_approves_retry() -> None:
 
     approval = Approval(state=ApprovalState(auto=True, auto_deliberate=True))
     with tool_call_context("Shell", arguments={"command": "rm -rf build"}):
-        first = await approval.request("Shell", "run command", "Run command `rm -rf build`")
+        with deliberation_scope("root", 1):
+            first = await approval.request("Shell", "run command", "Run command `rm -rf build`")
         assert not first, "destructive action is bounced for deliberation"
         assert first.deliberation is True
         assert "irreversible" in first.feedback
         assert "rejected by the user" not in first.rejection_error().message
 
-        second = await approval.request("Shell", "run command", "Run command `rm -rf build`")
-        assert second, "one-shot consumed: the deliberated retry runs"
+        with deliberation_scope("root", 2):
+            second = await approval.request("Shell", "run command", "Run command `rm -rf build`")
+        assert second, "one-shot consumed in a later generation: the deliberated retry runs"
 
 
 def test_approval_state_honors_auto_deliberate_flag() -> None:
