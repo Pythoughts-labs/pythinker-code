@@ -189,6 +189,19 @@ def test_older_generation_duplicate_destructive_call_still_bounces() -> None:
         assert approval.deliberation_gate(_shell_call("rm -rf build")) is not None
 
 
+def test_unscoped_destructive_calls_always_bounce_fail_closed() -> None:
+    # No deliberation scope means no turn-boundary signal to authorize a retry. The gate
+    # fails CLOSED: every sighting (including identical re-issues) bounces, never auto-
+    # approving a destructive action it cannot prove was deliberated. Production always
+    # binds a scope, so reaching this path is a wiring bug, not an expected flow.
+    approval = Approval(state=ApprovalState(auto=True, auto_deliberate=True))
+    assert approval.deliberation_gate(_shell_call("rm -rf build")) is not None
+    assert approval.deliberation_gate(_shell_call("rm -rf build")) is not None
+    assert approval.deliberation_gate(_shell_call("rm -rf build")) is not None
+    # Fail-closed bounce must not accumulate state for the unscoped path.
+    assert approval._state.deliberated_fingerprints == {}
+
+
 def test_deliberation_gate_conditions() -> None:
     """The gate fires only when the feature is on, we would otherwise auto-approve
     (auto OR yolo), and the command is destructive."""

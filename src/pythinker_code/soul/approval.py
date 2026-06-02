@@ -275,9 +275,23 @@ class Approval:
         if reason is None:
             return None
         scope = _current_deliberation_scope.get()
-        context_id = scope.context_id if scope is not None else "unscoped"
-        generation = scope.generation if scope is not None else 0
-        fingerprint = self._deliberation_fingerprint(context_id, tool_call.function.name, arguments)
+        if scope is None:
+            # Defensive fallback. The production path (PythinkerSoul._step) always binds a
+            # scope around step + tool-result collection, and the only caller of this gate
+            # (Approval.request, via a tool future created inside that scope) inherits it.
+            # Reaching here means a destructive call was gated with no turn-boundary signal,
+            # so we cannot distinguish a same-response duplicate from a deliberated re-issue.
+            # Fail CLOSED: keep bouncing rather than auto-approving a destructive action we
+            # cannot prove was deliberated. Surface it loudly — it indicates a wiring bug.
+            logger.warning(
+                "deliberation_gate reached without a deliberation scope for {tool_name}; "
+                "bouncing fail-closed (no turn boundary to authorize a retry)",
+                tool_name=tool_call.function.name,
+            )
+            return reason
+        fingerprint = self._deliberation_fingerprint(
+            scope.context_id, tool_call.function.name, arguments
+        )
         # One-shot keyed by (execution context, generation): the first sighting and any
         # same-generation duplicate are bounced; only a re-issue in a strictly LATER
         # generation of the same context is let through once. The context_id prefix prevents
@@ -285,11 +299,11 @@ class Approval:
         # shared via Approval.share()).
         prior_generation = self._state.deliberated_fingerprints.get(fingerprint)
         if prior_generation is not None:
-            if prior_generation < generation:
+            if prior_generation < scope.generation:
                 del self._state.deliberated_fingerprints[fingerprint]
                 return None
             return reason
-        self._state.deliberated_fingerprints[fingerprint] = generation
+        self._state.deliberated_fingerprints[fingerprint] = scope.generation
         return reason
 
     async def request(
