@@ -195,17 +195,17 @@ def test_user_echo_wraps_message_in_tinted_block() -> None:
 
     from pythinker_code.ui.theme import tui_rich_style
 
-    bg = tui_rich_style("user_message_bg").bgcolor
-    assert bg is not None and bg.triplet is not None
-    red, green, blue = bg.triplet
-    expected = f"48;2;{red};{green};{blue}"
+    expected = tui_rich_style("user_message_bg").bgcolor
+    assert expected is not None
 
     console = Console(force_terminal=True, color_system="truecolor", width=40)
-    with console.capture() as capture:
-        console.print(render_user_echo_text("apply"))
+    lines = console.render_lines(render_user_echo_text("apply"), console.options)
 
-    # The submitted message is painted on the shared user_message_bg block.
-    assert expected in capture.get()
+    # The submitted message itself, not just surrounding padding, is painted on
+    # the shared user_message_bg block.
+    apply_segment = next(segment for line in lines for segment in line if "apply" in segment.text)
+    assert apply_segment.style is not None
+    assert apply_segment.style.bgcolor == expected
 
 
 def test_should_echo_agent_input_for_plain_agent_message() -> None:

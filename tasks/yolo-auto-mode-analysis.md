@@ -16,7 +16,8 @@
 | **Auto** | `ApprovalState.auto` / `runtime_auto` (`soul/approval.py`; `is_auto()` at `approval.py:244`) | "No user is present at the terminal." | `auto` yes (`session_state.py:17`); `runtime_auto` no (`--print` only) |
 
 Key compound: `is_auto_approve()` (`approval.py:223-234`):
-```
+
+```python
 if yolo:        return True      # YOLO overrides everything below
 if safe_mode:   return False     # untrusted workspace blocks auto (but NOT yolo)
 return is_auto()
@@ -120,14 +121,14 @@ YOLO bypasses the `_EDIT_OUTSIDE_ACTION` guard (`approval.py:258,260`) → write
 
 | Hypothesis | Status | Evidence |
 |---|---|---|
-| B1 | **Confirmed** (new test) | `tests/core/test_runtime_auto_state.py::test_default_config_yolo_auto_has_no_destructive_backstop` — default config + yolo+auto → `deliberation_gate(rm -rf) is None` |
-| B2 | **Confirmed** (new test) | `tests/core/test_approval_auto.py::test_plan_mode_enter_exit_predicate_asymmetry` — yolo-only: `is_auto_approve` True, `is_auto` False |
-| B3 | **Confirmed** (new test) | `tests/core/test_runtime_auto_state.py::test_runtime_create_silently_resumes_both_yolo_and_auto` — both flags restored from disk with `yolo=False` |
+| B1 | **Fixed** (new tests) | `tests/core/test_runtime_auto_state.py::test_default_config_yolo_auto_deliberates_destructive_actions` — default config + yolo+auto now bounces destructive shell calls for deliberation |
+| B2 | **Fixed** (new test) | `tests/core/test_plan_mode_auto_approval.py` — Enter/Exit plan-mode tools now use the same unattended predicate |
+| B3 | **Fixed** (new tests) | `tests/core/test_resume_safety_notice.py`; `tests/core/test_runtime_auto_state.py::test_yolo_runtime_does_not_persist_safe_mode_downgrade`; `test_no_yolo_forces_yolo_off_over_persisted_state` |
 | R2 (one-shot/narrow gate) | **Already covered** | `test_approval_auto.py::test_destructive_action_deliberates_once_then_proceeds_under_auto`, `test_same_generation_duplicate...`, `test_subagent_identical_call...`, `test_unscoped_destructive_calls_always_bounce_fail_closed` |
 | R5 (yolo bypasses safe_mode) | **Already covered** | `test_approval_safe_mode.py::test_yolo_overrides_safe_mode`; `test_runtime_auto_state.py::test_unattended_runtime_in_default_safe_mode_denies_without_waiting` (the no-yolo contrast) |
 | R6 (outside-workspace) | **Already covered** | `test_approval_auto.py::test_trusted_auto_denies_outside_workspace_write_without_yolo` + `test_explicit_yolo_allows_outside_workspace_auto_write_boundary` |
 
-3 new tests added; full `test_approval_auto.py` + `test_runtime_auto_state.py` = 34 passed; `ruff check` + `ruff format --check` clean. No production code changed.
+Production fixes and regression tests were added for B1, B2, and B3. Focused approval/runtime tests pass; `ruff check` + `ruff format --check` are clean.
 
 ## 5. Severity summary
 
@@ -159,14 +160,16 @@ YOLO bypasses the `_EDIT_OUTSIDE_ACTION` guard (`approval.py:258,260`) → write
 
 ## 7. Fixes implemented (2026-06-02)
 
-Decided with the user: **B1 = "all unsupervised" scope**, ship **B1 + B2**, defer **B3/B4**.
+Decided with the user: **B1 = "all unsupervised" scope**; ship **B1 + B2 + B3**. **B4** is resolved as correct-as-designed.
 
 ### B1 — destructive backstop now holds whenever unattended
+
 `soul/approval.py` `deliberation_gate`: the early-return changed from
 `if not self._state.auto_deliberate` to `if not (self._state.auto_deliberate or self.is_auto())`.
 A destructive auto-approved action is now bounced once for deliberation whenever **no user
 is present** (`is_auto`), regardless of the config flag. The `auto_deliberate` flag now only
 *extends* deliberation to the interactive-yolo case (user present, approvals skipped).
+
 - Consistency: `soul/dynamic_injections/auto_mode.py` now always injects the
   destructive-deliberation guidance under auto (the bare `_AUTO_PROMPT` was removed as
   orphaned — it could no longer be selected).
@@ -174,12 +177,14 @@ is present** (`is_auto`), regardless of the config flag. The `auto_deliberate` f
   `autonomous_coding` profile instead of being more dangerous than it.
 
 ### B2 — plan-mode checkpoint preserved under interactive yolo
+
 `soul/pythinkersoul.py`: `EnterPlanMode` is now bound to `self._approval.is_auto` (was
 `is_auto_approve`), matching `ExitPlanMode`. Interactive `--yolo` no longer silently slips
 into plan mode and then blocks the exit; both transitions self-approve only when truly
 unattended (`is_auto`).
 
 ### B3 — persisted-state footguns (all three implemented)
+
 - **B3a (trust corruption — the real bug):** `agent.py` no longer forces
   `effective_safe_mode = False` under `--yolo`. Yolo already bypasses safe mode in the
   decision path (`is_auto_approve` / `_unattended_denial_feedback` short-circuit on yolo
@@ -194,12 +199,14 @@ unattended (`is_auto`).
   `default_yolo`, and persisted/resumed state. `--no-yolo` beats `--yolo` if both are passed.
 
 ### B4 — resolved as correct-as-designed (no change)
+
 `autonomous_coding` keeps `ask_user_question_policy="never"`. Switching to `ask_except_auto`
 is a **no-op** in every headless context the profile is for (auto/`--print`/`runtime_auto`
 → `is_auto` → both dismiss) and would *contradict* the profile's purpose interactively (an
 "autonomous" session would block for input). `"never"` is the deliberate, correct choice.
 
 ### Tests (all RED→GREEN)
+
 - New: `tests/core/test_plan_mode_auto_approval.py` (B2 binding);
   `tests/core/test_resume_safety_notice.py` (B3b).
 - `test_runtime_auto_state.py`: B1 backstop + B3a (yolo doesn't corrupt persisted

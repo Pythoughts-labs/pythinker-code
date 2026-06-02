@@ -281,7 +281,8 @@ class Runtime:
 
         # Merge invocation flags with persisted session state. ``--no-yolo`` is an explicit
         # force-off that beats the flag, config ``default_yolo``, and persisted state.
-        effective_yolo = (yolo or session.state.approval.yolo) and not no_yolo
+        original_persisted_yolo = session.state.approval.yolo
+        effective_yolo = (yolo or original_persisted_yolo) and not no_yolo
         # Do NOT force safe_mode off under yolo: yolo already bypasses safe mode in the
         # decision path (is_auto_approve / _unattended_denial_feedback short-circuit on
         # yolo before reading safe_mode), so there is no deadlock to avoid — and forcing it
@@ -294,7 +295,10 @@ class Runtime:
         saved_actions = set(session.state.approval.auto_approve_actions)
 
         def _on_approval_change() -> None:
-            session.state.approval.yolo = approval_state.yolo
+            if not no_yolo:
+                session.state.approval.yolo = approval_state.yolo
+            else:
+                session.state.approval.yolo = original_persisted_yolo
             session.state.approval.auto = approval_state.auto
             session.state.approval.auto_approve_actions = set(approval_state.auto_approve_actions)
             session.state.trust.safe_mode = approval_state.safe_mode

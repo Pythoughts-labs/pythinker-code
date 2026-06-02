@@ -453,7 +453,7 @@ class _ContentBlock:
             # partial syntax (``**bol`` → ``**bold``, half-open ``` fences)
             # flicker char-by-char. Render the uncommitted tail as plain text;
             # completed blocks still commit to full markdown via render_agent_body.
-            body: RenderableType = Text(preview)
+            body: RenderableType = Text(sanitize_ansi(preview))
         else:
             body = Markdown(preview)
         return Group(spinner, BLANK_ROW, self._wrap_preview_bullet(body))

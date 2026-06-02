@@ -67,14 +67,17 @@ def _resumed_unsupervised_notice(*, resumed: bool, yolo: bool, auto: bool) -> st
     """Welcome-banner warning when a resumed session is running unsupervised.
 
     Resuming restores ``yolo``/``auto`` from persisted state, so a session can come back
-    auto-approving everything with no prompt. Surface that prominently at startup (it also
-    fires when the modes were passed explicitly on the resume command — acceptable
-    over-notification). ``None`` when not a resume or no unsupervised mode is active.
+    unattended and, under YOLO, auto-approving actions with no prompt. Surface that
+    prominently at startup (it also fires when the modes were passed explicitly on the
+    resume command — acceptable over-notification). ``None`` when not a resume or no
+    unsupervised mode is active.
     """
     if not resumed or not (yolo or auto):
         return None
     modes = " + ".join(name for name, active in (("YOLO", yolo), ("auto", auto)) if active)
-    return f"{modes} active — actions auto-approved; toggle with /yolo /auto"
+    if yolo:
+        return f"{modes} active — actions auto-approved; toggle with /yolo /auto"
+    return "auto active — interactive approvals still required; toggle with /auto"
 
 
 def _patch_session_id(record: dict[str, Any]) -> None:

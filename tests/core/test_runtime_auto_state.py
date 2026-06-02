@@ -223,6 +223,9 @@ async def test_no_yolo_forces_yolo_off_over_persisted_state(
 
     assert runtime.approval.is_yolo() is False
 
+    runtime.approval.set_auto(True)
+    assert session.state.approval.yolo is True
+
 
 @pytest.mark.asyncio
 async def test_default_config_yolo_auto_deliberates_destructive_actions(

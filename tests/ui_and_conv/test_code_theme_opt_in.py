@@ -18,6 +18,7 @@ from pythinker_code.ui.shell.components.markdown import PythinkerMarkdown
 from pythinker_code.utils.rich.syntax import (
     PYTHINKER_ANSI_THEME,
     PYTHINKER_ANSI_THEME_NAME,
+    PythinkerSyntax,
     get_active_code_theme,
     resolve_code_theme,
     set_active_code_theme,
@@ -66,6 +67,15 @@ def test_opt_in_stock_theme_paints_solid_dark_block() -> None:
 def test_active_code_theme_round_trips() -> None:
     set_active_code_theme("dracula")
     assert get_active_code_theme() == "dracula"
+
+
+def test_pythinker_syntax_uses_active_code_theme() -> None:
+    set_active_code_theme("monokai")
+    console = Console(force_terminal=True, color_system="truecolor", width=60)
+    with console.capture() as capture:
+        console.print(PythinkerSyntax("import os", "python"))
+
+    assert _MONOKAI_BG in capture.get()
 
 
 def test_resolve_code_theme_maps_only_the_sentinel() -> None:

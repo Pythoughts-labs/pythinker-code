@@ -116,7 +116,9 @@ def get_active_code_theme() -> str:
 class PythinkerSyntax(Syntax):
     def __init__(self, code: str, lexer: str, **kwargs: Any) -> None:
         if "theme" not in kwargs or kwargs["theme"] is None:
-            kwargs["theme"] = PYTHINKER_ANSI_THEME
+            kwargs["theme"] = resolve_code_theme(
+                get_active_code_theme() or PYTHINKER_ANSI_THEME_NAME
+            )
         super().__init__(code, lexer, **kwargs)
 
 

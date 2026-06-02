@@ -22,9 +22,13 @@ def test_notice_names_active_modes_on_resume() -> None:
     # with "auto-approved" / "/auto" later in the message.
     yolo_only = _resumed_unsupervised_notice(resumed=True, yolo=True, auto=False)
     assert yolo_only is not None and yolo_only.startswith("YOLO active")
+    assert "actions auto-approved" in yolo_only
 
     auto_only = _resumed_unsupervised_notice(resumed=True, yolo=False, auto=True)
     assert auto_only is not None and auto_only.startswith("auto active")
+    assert "interactive approvals still required" in auto_only
+    assert "actions auto-approved" not in auto_only
 
     both = _resumed_unsupervised_notice(resumed=True, yolo=True, auto=True)
     assert both is not None and both.startswith("YOLO + auto active")
+    assert "actions auto-approved" in both

@@ -240,58 +240,23 @@ def test_pyinstaller_datas():
 
 
 def test_pyinstaller_hiddenimports():
+    import pkgutil
+
+    import pygments.styles
+
     from pythinker_code.utils.pyinstaller import hiddenimports
 
-    assert sorted(hiddenimports) == snapshot(
+    # Pygments style list is owned by the Pygments package and changes with upgrades;
+    # enumerate actual sub-modules (matching collect_submodules) rather than the style
+    # registry names (get_all_styles uses hyphens, modules use underscores).
+    expected_pygments = {"pygments.styles"} | {
+        f"pygments.styles.{mod.name}" for mod in pkgutil.iter_modules(pygments.styles.__path__)
+    }
+    assert expected_pygments <= set(hiddenimports)
+
+    project_entries = sorted(set(hiddenimports) - expected_pygments)
+    assert project_entries == snapshot(
         [
-            "pygments.styles",
-            "pygments.styles._mapping",
-            "pygments.styles.abap",
-            "pygments.styles.algol",
-            "pygments.styles.algol_nu",
-            "pygments.styles.arduino",
-            "pygments.styles.autumn",
-            "pygments.styles.borland",
-            "pygments.styles.bw",
-            "pygments.styles.coffee",
-            "pygments.styles.colorful",
-            "pygments.styles.default",
-            "pygments.styles.dracula",
-            "pygments.styles.emacs",
-            "pygments.styles.friendly",
-            "pygments.styles.friendly_grayscale",
-            "pygments.styles.fruity",
-            "pygments.styles.gh_dark",
-            "pygments.styles.gruvbox",
-            "pygments.styles.igor",
-            "pygments.styles.inkpot",
-            "pygments.styles.lightbulb",
-            "pygments.styles.lilypond",
-            "pygments.styles.lovelace",
-            "pygments.styles.manni",
-            "pygments.styles.material",
-            "pygments.styles.monokai",
-            "pygments.styles.murphy",
-            "pygments.styles.native",
-            "pygments.styles.nord",
-            "pygments.styles.onedark",
-            "pygments.styles.paraiso_dark",
-            "pygments.styles.paraiso_light",
-            "pygments.styles.pastie",
-            "pygments.styles.perldoc",
-            "pygments.styles.rainbow_dash",
-            "pygments.styles.rrt",
-            "pygments.styles.sas",
-            "pygments.styles.solarized",
-            "pygments.styles.staroffice",
-            "pygments.styles.stata_dark",
-            "pygments.styles.stata_light",
-            "pygments.styles.tango",
-            "pygments.styles.trac",
-            "pygments.styles.vim",
-            "pygments.styles.vs",
-            "pygments.styles.xcode",
-            "pygments.styles.zenburn",
             "pythinker_code.cli._lazy_group",
             "pythinker_code.cli.debug",
             "pythinker_code.cli.export",
