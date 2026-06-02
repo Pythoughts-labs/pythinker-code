@@ -185,6 +185,8 @@ def test_older_generation_duplicate_destructive_call_still_bounces() -> None:
         assert approval.deliberation_gate(_shell_call("rm -rf build")) is not None
     with deliberation_scope("root", 1):
         assert approval.deliberation_gate(_shell_call("rm -rf build")) is not None
+    with deliberation_scope("root", 2):
+        assert approval.deliberation_gate(_shell_call("rm -rf build")) is not None
 
 
 def test_deliberation_gate_conditions() -> None:

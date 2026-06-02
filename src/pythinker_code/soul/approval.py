@@ -284,9 +284,11 @@ class Approval:
         # a subagent's identical call from consuming the main agent's one-shot (state is
         # shared via Approval.share()).
         prior_generation = self._state.deliberated_fingerprints.get(fingerprint)
-        if prior_generation is not None and prior_generation < generation:
-            del self._state.deliberated_fingerprints[fingerprint]
-            return None
+        if prior_generation is not None:
+            if prior_generation < generation:
+                del self._state.deliberated_fingerprints[fingerprint]
+                return None
+            return reason
         self._state.deliberated_fingerprints[fingerprint] = generation
         return reason
 
