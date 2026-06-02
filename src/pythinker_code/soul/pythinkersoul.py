@@ -313,6 +313,7 @@ class PythinkerSoul:
         self._context = context
         self._loop_control = agent.runtime.config.loop_control
         self._current_step_no = 0
+        self._deliberation_generation = 0
         self._sleep_inhibitor = SleepInhibitor(enabled=agent.runtime.config.prevent_idle_sleep)
         self._compaction = SimpleCompaction()  # TODO: maybe configurable and composable
 
@@ -1331,6 +1332,19 @@ class PythinkerSoul:
         # already checked in `run`
         assert self._runtime.llm is not None
         chat_provider = self._runtime.llm.chat_provider
+        self._deliberation_generation += 1
+        deliberation_generation = self._deliberation_generation
+        approval_source = get_current_approval_source_or_none()
+        if approval_source is not None:
+            deliberation_context_id = f"{approval_source.kind}:{approval_source.id}"
+            if approval_source.agent_id is not None:
+                deliberation_context_id = f"{deliberation_context_id}:{approval_source.agent_id}"
+        elif self._runtime.subagent_id is not None:
+            deliberation_context_id = self._runtime.subagent_id
+        elif self._runtime.role == "root":
+            deliberation_context_id = "root"
+        else:
+            deliberation_context_id = f"subagent:{self._runtime.session.id}"
 
         if self._runtime.role == "root":
 
@@ -1396,14 +1410,15 @@ class PythinkerSoul:
                         permission_profile_for_runtime(self._runtime)
                     )
                     try:
-                        step_result = await pythinker_core.step(
-                            chat_provider,
-                            self._agent.system_prompt,
-                            self._agent.toolset,
-                            effective_history,
-                            on_message_part=wire_send,
-                            on_tool_result=wire_send,
-                        )
+                        with deliberation_scope(deliberation_context_id, deliberation_generation):
+                            step_result = await pythinker_core.step(
+                                chat_provider,
+                                self._agent.system_prompt,
+                                self._agent.toolset,
+                                effective_history,
+                                on_message_part=wire_send,
+                                on_tool_result=wire_send,
+                            )
                     finally:
                         reset_step_permission_profile(profile_token)
                 except Exception as exc:
@@ -1493,15 +1508,11 @@ class PythinkerSoul:
 
         # wait for all tool results (may be interrupted)
         plan_mode_before_tools = self._plan_mode
-        # Scope the deliberation one-shot to this context + step. The same loop runs for
-        # main and subagents; foreground subagents push/pop their own scope (the finally
-        # restores ours), background subagents run in a copied context.
-        context_id = self._runtime.subagent_id
-        if context_id is None:
-            context_id = (
-                "root" if self._runtime.role == "root" else f"subagent:{self._runtime.session.id}"
-            )
-        with deliberation_scope(context_id, self._current_step_no):
+        # Scope the deliberation one-shot to this context + step. Tool futures normally
+        # inherit this ContextVar when created during pythinker_core.step above; keeping
+        # it bound here also covers any future implementation that starts work lazily in
+        # tool_results().
+        with deliberation_scope(deliberation_context_id, deliberation_generation):
             results = await result.tool_results()
         logger.debug("Got tool results: {results}", results=results)
 

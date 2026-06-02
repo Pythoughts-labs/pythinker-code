@@ -137,8 +137,8 @@ class ApprovalState:
         """Set of action names that should automatically be approved."""
         self.approved_orchestration_fingerprints: set[str] = set()
         """RunAgents orchestration shapes approved for this in-memory session."""
-        self.deliberated_fingerprints: dict[str, str] = {}
-        """Maps a context-namespaced destructive fingerprint to the scope token it was last
+        self.deliberated_fingerprints: dict[str, int] = {}
+        """Maps a context-namespaced destructive fingerprint to the generation it was last
         bounced at; a re-issue in a later generation of the same context consumes it once."""
         self._on_change = on_change
 
@@ -276,18 +276,18 @@ class Approval:
             return None
         scope = _current_deliberation_scope.get()
         context_id = scope.context_id if scope is not None else "unscoped"
-        gen_token = f"{context_id}:{scope.generation}" if scope is not None else "unscoped"
+        generation = scope.generation if scope is not None else 0
         fingerprint = self._deliberation_fingerprint(context_id, tool_call.function.name, arguments)
         # One-shot keyed by (execution context, generation): the first sighting and any
-        # same-generation duplicate are bounced; only a re-issue in a LATER generation of
-        # the same context is let through once. The context_id prefix prevents a subagent's
-        # identical call from consuming the main agent's one-shot (state is shared via
-        # Approval.share()).
-        prior = self._state.deliberated_fingerprints.get(fingerprint)
-        if prior is not None and prior != gen_token:
+        # same-generation duplicate are bounced; only a re-issue in a strictly LATER
+        # generation of the same context is let through once. The context_id prefix prevents
+        # a subagent's identical call from consuming the main agent's one-shot (state is
+        # shared via Approval.share()).
+        prior_generation = self._state.deliberated_fingerprints.get(fingerprint)
+        if prior_generation is not None and prior_generation < generation:
             del self._state.deliberated_fingerprints[fingerprint]
             return None
-        self._state.deliberated_fingerprints[fingerprint] = gen_token
+        self._state.deliberated_fingerprints[fingerprint] = generation
         return reason
 
     async def request(

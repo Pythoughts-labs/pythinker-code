@@ -178,6 +178,15 @@ def test_subagent_identical_call_does_not_consume_main_one_shot() -> None:
         assert approval.deliberation_gate(_shell_call("rm -rf build")) is not None
 
 
+def test_older_generation_duplicate_destructive_call_still_bounces() -> None:
+    # Defensive guard: only a strictly later generation can consume a prior bounce.
+    approval = Approval(state=ApprovalState(auto=True, auto_deliberate=True))
+    with deliberation_scope("root", 2):
+        assert approval.deliberation_gate(_shell_call("rm -rf build")) is not None
+    with deliberation_scope("root", 1):
+        assert approval.deliberation_gate(_shell_call("rm -rf build")) is not None
+
+
 def test_deliberation_gate_conditions() -> None:
     """The gate fires only when the feature is on, we would otherwise auto-approve
     (auto OR yolo), and the command is destructive."""
