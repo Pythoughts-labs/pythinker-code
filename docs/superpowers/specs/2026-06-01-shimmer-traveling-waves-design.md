@@ -19,8 +19,9 @@ back the other way, splashes again, and repeats.
 
 Restructure the per-character shimmer into a four-phase loop while keeping:
 
-- the existing 3-color palette (`#E6B450` base / `#E8876A` mid / `#C084D8`
-  highlight) and `_SHIMMER_INTERVAL_S = 0.22` tick;
+- the existing 3-color palette (`#D49E5A` muted orange-yellow base / `#E2C18A`
+  warm sheen-trail mid / `#D8DCE2` silver highlight) and
+  `_SHIMMER_INTERVAL_S = 0.22` tick;
 - the **purely time-derived** model — every frame is a function of `elapsed_s`
   alone, so the prompt, activity tree, and pinned-todo renderers stay in sync
   with no shared animation state;

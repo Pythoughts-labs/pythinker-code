@@ -1,6 +1,7 @@
 from rich.color import Color
 
 from pythinker_code.ui.shell.motion import (
+    _SHIMMER_BASE,
     _SHIMMER_HIGHLIGHT,
     _SHIMMER_INTERVAL_S,
     _SHIMMER_MID,
@@ -30,7 +31,7 @@ def _color_hex(color: Color | None) -> str:
 def test_shimmer_returns_base_accent_when_reduced_motion():
     set_active_theme("dark")
     s = shimmer_spinner_style(0.0, reduced_motion=True)
-    assert _color_hex(s.color) == "#e6b450"
+    assert _color_hex(s.color) == _SHIMMER_BASE.lower()
 
 
 def test_shimmer_varies_over_time_when_motion_enabled(monkeypatch):
@@ -39,18 +40,18 @@ def test_shimmer_varies_over_time_when_motion_enabled(monkeypatch):
     first = _color_hex(shimmer_spinner_style(0.0, reduced_motion=False).color)
     later = _color_hex(shimmer_spinner_style(0.22, reduced_motion=False).color)
     # At least one sampled frame differs from the base when animating.
-    assert first != later or first != "#e6b450"
+    assert first != later or first != _SHIMMER_BASE.lower()
 
 
-def test_prompt_shimmer_fragments_share_warm_violet_palette(monkeypatch):
+def test_prompt_shimmer_fragments_share_silver_sheen_palette(monkeypatch):
     monkeypatch.delenv("PYTHINKER_REDUCED_MOTION", raising=False)
 
     fragments = shimmer_prompt_fragments("Schlepping…", 0.88)
     styles = {style.lower() for style, text in fragments if text.strip()}
 
-    assert "fg:#e6b450" in styles
-    assert "fg:#e8876a" in styles
-    assert "fg:#c084d8" in styles
+    assert f"fg:{_SHIMMER_BASE.lower()}" in styles
+    assert f"fg:{_SHIMMER_MID.lower()}" in styles
+    assert f"fg:{_SHIMMER_HIGHLIGHT.lower()}" in styles
     assert "".join(text for _style, text in fragments) == "Schlepping…"
 
 

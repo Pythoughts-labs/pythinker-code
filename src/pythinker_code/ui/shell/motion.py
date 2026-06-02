@@ -31,24 +31,25 @@ _FRAME_INTERVAL_S = SPINNER_FRAME_INTERVAL_S
 
 
 def verb_spinner_style() -> Style:
-    """Warm amber style for the active verb spinner word."""
+    """Muted orange-yellow style for the active verb spinner word."""
     if colors_disabled():
         return Style()
     return Style(color=Color.parse(_SHIMMER_BASE))
 
 
-# Terminal-native shimmer: a restrained amber-to-pink-violet sweep on the active verb only.
-_SHIMMER_BASE = "#E6B450"  # brand-exception: warm amber shimmer literal
-_SHIMMER_MID = "#E8876A"  # brand-exception: muted orange-coral shimmer literal
-_SHIMMER_HIGHLIGHT = "#C084D8"  # brand-exception: soft pink-violet shimmer literal
+# Terminal-native shimmer: a restrained silver sheen sweeping over the muted
+# orange-yellow active verb.
+_SHIMMER_BASE = "#D49E5A"  # brand-exception: muted orange-yellow verb literal
+_SHIMMER_MID = "#E2C18A"  # brand-exception: light warm amber sheen-trail literal
+_SHIMMER_HIGHLIGHT = "#D8DCE2"  # brand-exception: silver sheen highlight literal
 _SHIMMER_INTERVAL_S = 0.22
 _SPINNER_SILVER_STYLE = Style(color=Color.parse("#C0C0C0"))  # brand-exception: silver spinner
 
 
 def shimmer_spinner_style(elapsed_s: float, *, reduced_motion: bool = False) -> Style:
-    """Clean warm shimmer color for active verb text.
+    """Clean shimmer color for active verb text.
 
-    Reduced motion pins to the base amber so the word stays calm.
+    Reduced motion pins to the base muted orange-yellow so the word stays calm.
     """
     if colors_disabled():
         return Style()
