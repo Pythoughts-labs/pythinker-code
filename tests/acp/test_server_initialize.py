@@ -1,9 +1,8 @@
-"""Unit tests for ACPServer.initialize — argv handling."""
+"""Unit tests for ACPServer.initialize — terminal auth method."""
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
+import acp.schema
 import pytest
 
 from pythinker_code.acp.server import ACPServer
@@ -11,38 +10,38 @@ from pythinker_code.acp.server import ACPServer
 pytestmark = pytest.mark.asyncio
 
 
-@pytest.mark.parametrize(
-    "argv, expected_command, expected_terminal_args",
-    [
-        # Standard entry-point: pythinker acp
-        (["/usr/local/bin/pythinker", "acp"], "/usr/local/bin/pythinker", ["login"]),
-        # pythinker-code entry-point (JetBrains scenario)
-        (["/usr/local/bin/pythinker-code", "acp"], "/usr/local/bin/pythinker-code", ["login"]),
-        # pythinker-code entry-point
-        (["/usr/local/bin/pythinker-code", "acp"], "/usr/local/bin/pythinker-code", ["login"]),
-        # Arbitrary wrapper script
-        (["/opt/wrapper.sh", "acp"], "/opt/wrapper.sh", ["login"]),
-    ],
-    ids=["pythinker", "pythinker-code", "pythinker-code", "wrapper-script"],
-)
-async def test_initialize_argv_handling(
-    argv: list[str],
-    expected_command: str,
-    expected_terminal_args: list[str],
-):
-    """initialize() should not crash regardless of sys.argv content."""
+async def test_initialize_advertises_terminal_auth_method():
+    """initialize() advertises a single ``terminal`` auth method.
+
+    ACP 0.10 removed the per-method ``command`` field: for security the client
+    invokes the agent binary it already spawned directly (it never runs an
+    agent-supplied command), passing only the extra ``args``/``env``. So the
+    agent only needs to advertise the login ``args`` — not how it was launched.
+    """
     server = ACPServer()
 
-    with patch("pythinker_code.acp.server.sys") as mock_sys:
-        mock_sys.argv = argv
-        resp = await server.initialize(protocol_version=1)
+    resp = await server.initialize(protocol_version=1)
 
     assert resp.protocol_version == 1
     assert resp.auth_methods is not None
     assert len(resp.auth_methods) == 1
 
     auth_method = resp.auth_methods[0]
-    assert auth_method.field_meta is not None
-    terminal_auth = auth_method.field_meta["terminal-auth"]
-    assert terminal_auth["command"] == expected_command
-    assert terminal_auth["args"] == expected_terminal_args
+    assert isinstance(auth_method, acp.schema.TerminalAuthMethod)
+    assert auth_method.id == "login"
+    assert auth_method.type == "terminal"
+    assert auth_method.args == ["login"]
+    assert auth_method.env == {}
+
+
+async def test_close_session_drops_session_from_registry():
+    """ACP 0.10 session/close removes the session from the in-memory registry."""
+    server = ACPServer()
+    server.sessions["sess-1"] = ("placeholder",)  # type: ignore[assignment]
+
+    result = await server.close_session("sess-1")
+
+    assert result is None
+    assert "sess-1" not in server.sessions
+    # Closing an unknown session is a no-op (must not raise).
+    assert await server.close_session("missing") is None

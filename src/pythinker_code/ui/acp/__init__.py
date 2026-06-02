@@ -35,33 +35,66 @@ class ACPServerSingleSession:
         self._raise()
 
     async def new_session(
-        self, cwd: str, mcp_servers: list[MCPServer] | None = None, **kwargs: Any
+        self,
+        cwd: str,
+        additional_directories: list[str] | None = None,
+        mcp_servers: list[MCPServer] | None = None,
+        **kwargs: Any,
     ) -> acp.NewSessionResponse:
         self._raise()
 
     async def load_session(
-        self, cwd: str, session_id: str, mcp_servers: list[MCPServer] | None = None, **kwargs: Any
-    ) -> None:
+        self,
+        cwd: str,
+        session_id: str,
+        additional_directories: list[str] | None = None,
+        mcp_servers: list[MCPServer] | None = None,
+        **kwargs: Any,
+    ) -> acp.schema.LoadSessionResponse | None:
         self._raise()
 
     async def resume_session(
-        self, cwd: str, session_id: str, mcp_servers: list[MCPServer] | None = None, **kwargs: Any
+        self,
+        cwd: str,
+        session_id: str,
+        additional_directories: list[str] | None = None,
+        mcp_servers: list[MCPServer] | None = None,
+        **kwargs: Any,
     ) -> acp.schema.ResumeSessionResponse:
         self._raise()
 
     async def fork_session(
-        self, cwd: str, session_id: str, mcp_servers: list[MCPServer] | None = None, **kwargs: Any
+        self,
+        cwd: str,
+        session_id: str,
+        additional_directories: list[str] | None = None,
+        mcp_servers: list[MCPServer] | None = None,
+        **kwargs: Any,
     ) -> acp.schema.ForkSessionResponse:
         self._raise()
 
     async def list_sessions(
-        self, cursor: str | None = None, cwd: str | None = None, **kwargs: Any
+        self,
+        additional_directories: list[str] | None = None,
+        cursor: str | None = None,
+        cwd: str | None = None,
+        **kwargs: Any,
     ) -> acp.schema.ListSessionsResponse:
         self._raise()
 
     async def set_session_mode(
         self, mode_id: str, session_id: str, **kwargs: Any
     ) -> acp.SetSessionModeResponse | None:
+        self._raise()
+
+    async def close_session(
+        self, session_id: str, **kwargs: Any
+    ) -> acp.schema.CloseSessionResponse | None:
+        self._raise()
+
+    async def set_config_option(
+        self, config_id: str, session_id: str, value: str | bool, **kwargs: Any
+    ) -> acp.schema.SetSessionConfigOptionResponse | None:
         self._raise()
 
     async def set_session_model(
@@ -73,7 +106,11 @@ class ACPServerSingleSession:
         self._raise()
 
     async def prompt(
-        self, prompt: list[ACPContentBlock], session_id: str, **kwargs: Any
+        self,
+        prompt: list[ACPContentBlock],
+        session_id: str,
+        message_id: str | None = None,
+        **kwargs: Any,
     ) -> acp.PromptResponse:
         self._raise()
 

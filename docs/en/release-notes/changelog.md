@@ -17,6 +17,11 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Release packaging keeps SDK/core pins in lockstep.** The SDK's `pythinker-core`
+  dependency is now updated by release automation and checked by CI/release validation,
+  preventing no-sources binary builds from resolving against a stale core pin.
+- **Routine dependency bumps with the breaking-change fallout fixed.** Upgrades `agent-client-protocol` to 0.10.1, `aiohttp` to 3.14.0, and `typer` to 0.26.5. Aligns the `pythinker-review` `typer` pin so the uv workspace resolves; migrates the ACP server to the 0.10 auth schema (`TerminalAuthMethod`) and expanded `Agent` protocol (`additional_directories`, `close_session`, session config options); and restores the optional-value behaviour of `--session`/`--resume` (interactive picker when used without an ID) under Typer 0.26's new argument parser.
+
 ## 0.29.0 (2026-06-01)
 
 ### What changed in this release

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -27,6 +26,11 @@ from pythinker_code.soul.toolset import PythinkerToolset
 from pythinker_code.thinking import DEFAULT_THINKING_EFFORT, effective_config_thinking_effort
 from pythinker_code.utils.logging import logger
 
+# ACP 0.10 types `auth_methods` as a discriminated union of auth-method variants.
+ACPAuthMethod = (
+    acp.schema.EnvVarAuthMethod | acp.schema.TerminalAuthMethod | acp.schema.AuthMethodAgent
+)
+
 
 class ACPServer:
     def __init__(self) -> None:
@@ -34,7 +38,7 @@ class ACPServer:
         self.conn: acp.Client | None = None
         self.sessions: dict[str, tuple[ACPSession, _ModelIDConv]] = {}
         self.negotiated_version: ACPVersionSpec | None = None
-        self._auth_methods: list[acp.schema.AuthMethod] = []
+        self._auth_methods: list[ACPAuthMethod] = []
 
     def on_connect(self, conn: acp.Client) -> None:
         logger.info("ACP client connected")
@@ -67,32 +71,22 @@ class ACPServer:
                 version=getattr(client_info, "version", None),
             )
 
-        # get command and args of current process for terminal-auth
-        command = sys.argv[0]
-        args: list[str] = []
-
-        # Build terminal auth data for error response
-        terminal_args = args + ["login"]
+        # Build the terminal-auth args; the client re-runs the agent command
+        # with these args to complete login in the terminal.
+        terminal_args = ["login"]
 
         # Build and cache auth methods for reuse in AUTH_REQUIRED errors
         self._auth_methods = [
-            acp.schema.AuthMethod(
+            acp.schema.TerminalAuthMethod(
                 id="login",
                 name="Login with Pythinker account",
                 description=(
                     "Run `pythinker login` command in the terminal, "
                     "then follow the instructions to finish login."
                 ),
-                # Store auth data in field_meta for building AUTH_REQUIRED error
-                field_meta={
-                    "terminal-auth": {
-                        "command": command,
-                        "args": terminal_args,
-                        "label": "Pythinker Login",
-                        "env": {},
-                        "type": "terminal",
-                    }
-                },
+                type="terminal",
+                args=terminal_args,
+                env={},
             ),
         ]
 
@@ -155,26 +149,28 @@ class ACPServer:
             self._check_config_auth(config) if config is not None else self._check_token_usable()
         )
         if reason:
-            auth_methods_data: list[dict[str, Any]] = []
-            for m in self._auth_methods:
-                if m.field_meta and "terminal-auth" in m.field_meta:
-                    terminal_auth = m.field_meta["terminal-auth"]
-                    auth_methods_data.append(
-                        {
-                            "id": m.id,
-                            "name": m.name,
-                            "description": m.description,
-                            "type": terminal_auth.get("type", "terminal"),
-                            "args": terminal_auth.get("args", []),
-                            "env": terminal_auth.get("env", {}),
-                        }
-                    )
+            auth_methods_data: list[dict[str, Any]] = [
+                {
+                    "id": m.id,
+                    "name": m.name,
+                    "description": m.description,
+                    "type": m.type,
+                    "args": m.args or [],
+                    "env": m.env or {},
+                }
+                for m in self._auth_methods
+                if isinstance(m, acp.schema.TerminalAuthMethod)
+            ]
 
             logger.warning("Authentication required, {reason}", reason=reason)
             raise acp.RequestError.auth_required({"authMethods": auth_methods_data})
 
     async def new_session(
-        self, cwd: str, mcp_servers: list[MCPServer] | None = None, **kwargs: Any
+        self,
+        cwd: str,
+        additional_directories: list[str] | None = None,
+        mcp_servers: list[MCPServer] | None = None,
+        **kwargs: Any,
     ) -> acp.NewSessionResponse:
         logger.info("Creating new session for working directory: {cwd}", cwd=cwd)
         assert self.conn is not None, "ACP client not connected"
@@ -281,22 +277,33 @@ class ACPServer:
         return acp_session, model_id_conv
 
     async def load_session(
-        self, cwd: str, session_id: str, mcp_servers: list[MCPServer] | None = None, **kwargs: Any
-    ) -> None:
+        self,
+        cwd: str,
+        session_id: str,
+        additional_directories: list[str] | None = None,
+        mcp_servers: list[MCPServer] | None = None,
+        **kwargs: Any,
+    ) -> acp.schema.LoadSessionResponse | None:
         logger.info("Loading session: {id} for working directory: {cwd}", id=session_id, cwd=cwd)
 
         if session_id in self.sessions:
             logger.warning("Session already loaded: {id}", id=session_id)
-            return
+            return None
 
         # Check authentication before loading session
         self._check_auth(load_config())
 
         await self._setup_session(cwd, session_id, mcp_servers)
         # TODO: replay session history?
+        return None
 
     async def resume_session(
-        self, cwd: str, session_id: str, mcp_servers: list[MCPServer] | None = None, **kwargs: Any
+        self,
+        cwd: str,
+        session_id: str,
+        additional_directories: list[str] | None = None,
+        mcp_servers: list[MCPServer] | None = None,
+        **kwargs: Any,
     ) -> acp.schema.ResumeSessionResponse:
         logger.info("Resuming session: {id} for working directory: {cwd}", id=session_id, cwd=cwd)
 
@@ -323,12 +330,21 @@ class ACPServer:
         )
 
     async def fork_session(
-        self, cwd: str, session_id: str, mcp_servers: list[MCPServer] | None = None, **kwargs: Any
+        self,
+        cwd: str,
+        session_id: str,
+        additional_directories: list[str] | None = None,
+        mcp_servers: list[MCPServer] | None = None,
+        **kwargs: Any,
     ) -> acp.schema.ForkSessionResponse:
         raise NotImplementedError
 
     async def list_sessions(
-        self, cursor: str | None = None, cwd: str | None = None, **kwargs: Any
+        self,
+        additional_directories: list[str] | None = None,
+        cursor: str | None = None,
+        cwd: str | None = None,
+        **kwargs: Any,
     ) -> acp.schema.ListSessionsResponse:
         logger.info("Listing sessions for working directory: {cwd}", cwd=cwd)
         if cwd is None:
@@ -348,8 +364,26 @@ class ACPServer:
             next_cursor=None,
         )
 
-    async def set_session_mode(self, mode_id: str, session_id: str, **kwargs: Any) -> None:
+    async def set_session_mode(
+        self, mode_id: str, session_id: str, **kwargs: Any
+    ) -> acp.schema.SetSessionModeResponse | None:
         assert mode_id == "default", "Only default mode is supported"
+        return None
+
+    async def close_session(
+        self, session_id: str, **kwargs: Any
+    ) -> acp.schema.CloseSessionResponse | None:
+        """Drop a session from the in-memory registry (ACP 0.10 session/close)."""
+        logger.info("Closing session: {id}", id=session_id)
+        self.sessions.pop(session_id, None)
+        return None
+
+    async def set_config_option(
+        self, config_id: str, session_id: str, value: str | bool, **kwargs: Any
+    ) -> acp.schema.SetSessionConfigOptionResponse | None:
+        """Pythinker advertises no session config options, so none can be set."""
+        logger.warning("Unsupported session config option: {id}", id=config_id)
+        raise acp.RequestError.invalid_params({"config_id": "Unknown config option"})
 
     async def set_session_model(self, model_id: str, session_id: str, **kwargs: Any) -> None:
         logger.info(
@@ -440,7 +474,11 @@ class ACPServer:
         raise acp.RequestError.invalid_params({"method_id": "Unknown auth method"})
 
     async def prompt(
-        self, prompt: list[ACPContentBlock], session_id: str, **kwargs: Any
+        self,
+        prompt: list[ACPContentBlock],
+        session_id: str,
+        message_id: str | None = None,
+        **kwargs: Any,
     ) -> acp.PromptResponse:
         logger.info("Received prompt request for session: {id}", id=session_id)
         if session_id not in self.sessions:
