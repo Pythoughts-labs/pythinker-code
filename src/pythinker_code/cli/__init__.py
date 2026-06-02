@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from importlib import import_module
 from pathlib import Path
@@ -171,6 +172,51 @@ class ExitCode:
     SUCCESS = 0
     FAILURE = 1
     RETRYABLE = 75  # EX_TEMPFAIL from sysexits.h
+
+
+def _load_mcp_configs_from_cli_inputs(
+    mcp_config_file: list[Path] | None,
+    mcp_config: list[str] | None,
+) -> list[Any]:
+    """Load MCP config JSON from the current CLI inputs.
+
+    This intentionally re-resolves the default global MCP file on every call so
+    `/reload` observes servers added after the process started.
+    """
+    from .mcp import get_global_mcp_config_file
+
+    file_configs = list(mcp_config_file or [])
+    raw_mcp_config = list(mcp_config or [])
+
+    # Use default MCP config file if no MCP config file is provided. Keep this
+    # lookup live for reloads: the file may be created after process startup.
+    if not file_configs:
+        default_mcp_file = get_global_mcp_config_file()
+        if default_mcp_file.exists():
+            file_configs.append(default_mcp_file)
+
+    configs: list[Any] = []
+    for conf in file_configs:
+        try:
+            configs.append(json.loads(conf.read_text(encoding="utf-8")))
+        except json.JSONDecodeError as e:
+            raise typer.BadParameter(
+                f"Invalid JSON in MCP config file {conf}: {e}",
+                param_hint="--mcp-config-file",
+            ) from e
+        except OSError as e:
+            raise typer.BadParameter(
+                f"Cannot read MCP config file {conf}: {e}",
+                param_hint="--mcp-config-file",
+            ) from e
+
+    for conf in raw_mcp_config:
+        try:
+            configs.append(json.loads(conf))
+        except json.JSONDecodeError as e:
+            raise typer.BadParameter(f"Invalid JSON: {e}", param_hint="--mcp-config") from e
+
+    return configs
 
 
 InputFormat = Literal["text", "stream-json"]
@@ -502,7 +548,6 @@ def pythinker(
     """Pythinker, your next CLI agent."""
     import asyncio
     import contextlib
-    import json
 
     from pythinker_code.utils.proctitle import init_process_name
 
@@ -524,8 +569,6 @@ def pythinker(
     from pythinker_code.session import Session
     from pythinker_code.ui.shell.startup import ShellStartupProgress
     from pythinker_code.utils.logging import logger, open_original_stderr, redirect_stderr_to_logger
-
-    from .mcp import get_global_mcp_config_file
 
     # Don't redirect stderr during argument parsing. Our stderr redirector
     # replaces fd=2 with a pipe, which would swallow Click/Typer startup errors.
@@ -648,25 +691,6 @@ def pythinker(
     elif config_file is not None:
         config = config_file
 
-    file_configs = list(mcp_config_file or [])
-    raw_mcp_config = list(mcp_config or [])
-
-    # Use default MCP config file if no MCP config is provided
-    if not file_configs:
-        default_mcp_file = get_global_mcp_config_file()
-        if default_mcp_file.exists():
-            file_configs.append(default_mcp_file)
-
-    try:
-        mcp_configs = [json.loads(conf.read_text(encoding="utf-8")) for conf in file_configs]
-    except json.JSONDecodeError as e:
-        raise typer.BadParameter(f"Invalid JSON: {e}", param_hint="--mcp-config-file") from e
-
-    try:
-        mcp_configs += [json.loads(conf) for conf in raw_mcp_config]
-    except json.JSONDecodeError as e:
-        raise typer.BadParameter(f"Invalid JSON: {e}", param_hint="--mcp-config") from e
-
     # Honor --no-telemetry by exporting the env var before any subsystem (Sentry,
     # OTel, sink) reads it during PythinkerCLI.create.
     if no_telemetry:
@@ -747,6 +771,8 @@ def pythinker(
                         changed = True
                 if changed:
                     session.save_state()
+
+            mcp_configs = _load_mcp_configs_from_cli_inputs(mcp_config_file, mcp_config)
 
             # Redirect stderr *before* PythinkerCLI.create() so that MCP server
             # subprocesses (e.g. mcp-remote OAuth debug logs) write to the log
@@ -899,9 +925,11 @@ def pythinker(
                         timeout=5,
                     )
 
-                if not preserve_background_tasks:
+                if preserve_background_tasks:
+                    await instance.cleanup_runtime_resources()
+                else:
                     await instance.shutdown_background_tasks()
-                    await instance.await_bg_tasks_shutdown()
+                await instance.await_bg_tasks_shutdown()
 
             return session, exit_code
         finally:

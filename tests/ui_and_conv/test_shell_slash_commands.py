@@ -9,10 +9,12 @@ from typing import Any
 from unittest.mock import Mock
 
 import pytest
+from pydantic import SecretStr
 from pythinker_core.message import Message
 from pythinker_host.path import HostPath
 
 from pythinker_code.cli import Reload
+from pythinker_code.config import Config, LLMModel, LLMProvider
 from pythinker_code.session import Session
 from pythinker_code.subagents.models import AgentTypeDefinition, ToolPolicy
 from pythinker_code.ui.shell.slash import ShellSlashCmdFunc, shell_mode_registry
@@ -87,6 +89,90 @@ def test_blackbox_style_slash_aliases_are_registered() -> None:
         command = shell_slash_registry.find_command(alias)
         assert command is not None, alias
         assert command.name == canonical
+
+
+async def test_model_switch_starts_fresh_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Changing models should reload into a new session so old context is not reused."""
+    from pythinker_code.soul.pythinkersoul import PythinkerSoul
+    from pythinker_code.ui.shell import model_picker
+    from pythinker_code.ui.shell import slash as shell_slash
+
+    config = Config(
+        is_from_default_location=True,
+        default_model="model-a",
+        providers={
+            "test-provider": LLMProvider(
+                type="pythinker",
+                base_url="https://example.test",
+                api_key=SecretStr("test-key"),
+            )
+        },
+        models={
+            "model-a": LLMModel(
+                provider="test-provider",
+                model="model-a",
+                max_context_size=100_000,
+            ),
+            "model-b": LLMModel(
+                provider="test-provider",
+                model="model-b",
+                max_context_size=100_000,
+            ),
+        },
+    )
+    current_session = SimpleNamespace(
+        id="current-session",
+        work_dir=HostPath("/tmp/work"),
+        state=SimpleNamespace(additional_dirs=["/extra"]),
+    )
+    mock_soul = Mock(spec=PythinkerSoul)
+    mock_soul.runtime = SimpleNamespace(
+        config=config,
+        llm=SimpleNamespace(model_config=config.models["model-a"]),
+        session=current_session,
+    )
+    mock_soul.thinking_effort = "off"
+    mock_soul.thinking = False
+    shell = SimpleNamespace(soul=mock_soul)
+
+    class _ModelPicker:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        async def run(self) -> str:
+            return "model-b"
+
+    saved_configs: list[Config] = []
+
+    async def fake_refresh_managed_models(_config: Config) -> None:
+        return None
+
+    fresh_session = SimpleNamespace(
+        id="fresh-session",
+        state=SimpleNamespace(additional_dirs=[]),
+        save_state=Mock(),
+    )
+
+    async def fake_create_session(work_dir: HostPath) -> SimpleNamespace:
+        assert work_dir == current_session.work_dir
+        return fresh_session
+
+    monkeypatch.setattr(shell_slash, "refresh_managed_models", fake_refresh_managed_models)
+    monkeypatch.setattr(model_picker, "ModelPickerApp", _ModelPicker)
+    monkeypatch.setattr(shell_slash, "load_config", lambda: config.model_copy(deep=True))
+    monkeypatch.setattr(shell_slash, "save_config", saved_configs.append)
+    monkeypatch.setattr(shell_slash.Session, "create", fake_create_session)
+    monkeypatch.setattr(shell_slash.console, "print", Mock())
+
+    cmd = shell_slash_registry.find_command("model")
+    assert cmd is not None
+    with pytest.raises(Reload) as exc_info:
+        await _invoke_slash_command(cmd, shell)
+
+    assert exc_info.value.session_id == "fresh-session"
+    assert fresh_session.state.additional_dirs == ["/extra"]
+    fresh_session.save_state.assert_called_once_with()
+    assert saved_configs[-1].default_model == "model-b"
 
 
 async def test_mcp_slash_persists_only_final_snapshot(
