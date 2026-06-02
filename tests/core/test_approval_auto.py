@@ -35,6 +35,19 @@ def test_tool_destructive_reason_ignores_unregistered_tool() -> None:
     )
 
 
+def test_deliberation_scope_sets_and_restores_contextvar() -> None:
+    from pythinker_code.soul.approval import (
+        DeliberationScope,
+        _current_deliberation_scope,
+        deliberation_scope,
+    )
+
+    assert _current_deliberation_scope.get() is None
+    with deliberation_scope("root", 3):
+        assert _current_deliberation_scope.get() == DeliberationScope("root", 3)
+    assert _current_deliberation_scope.get() is None
+
+
 def test_yolo_only() -> None:
     approval = Approval(yolo=True)
     assert approval.is_yolo() is True

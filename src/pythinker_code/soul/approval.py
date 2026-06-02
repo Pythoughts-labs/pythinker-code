@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Literal
 
 from pythinker_core.utils.typing import JsonType
@@ -28,6 +31,33 @@ _DELIBERATION_FEEDBACK = (
     "enumerate the realistic alternatives, weigh them against the current task, and commit "
     "to the best one. If this exact action is still right, re-issue it and it will run."
 )
+
+
+@dataclass(frozen=True)
+class DeliberationScope:
+    """Execution context + LLM generation a deliberation decision is scoped to.
+
+    ``context_id`` separates the main agent from each subagent (approval state is shared
+    via ``Approval.share()``); ``generation`` is the step number within that context.
+    """
+
+    context_id: str
+    generation: int
+
+
+_current_deliberation_scope: ContextVar[DeliberationScope | None] = ContextVar(
+    "deliberation_scope", default=None
+)
+
+
+@contextmanager
+def deliberation_scope(context_id: str, generation: int) -> Iterator[None]:
+    """Bind the active deliberation scope for the duration of one step's tool execution."""
+    token = _current_deliberation_scope.set(DeliberationScope(context_id, generation))
+    try:
+        yield
+    finally:
+        _current_deliberation_scope.reset(token)
 
 
 class ApprovalResult:
