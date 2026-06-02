@@ -2,82 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from pythinker_review.engine.token_budget import clip_text
+from pythinker_review.security_scan.knowledge import TECH_HIGHLIGHTS
+from pythinker_review.security_scan.tech import detect_tech, language_for_path
 from pythinker_review.signals.models import Signal
-from pythinker_review.signals.tech import detect_tech, language_for_path
 
 _FRAMEWORK_BUDGET = 6_000
-
-_HIGHLIGHTS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
-    "nextjs": (
-        "Next.js",
-        ("typescript", "javascript"),
-        (
-            "Check route handlers, server actions, middleware-only auth, internal headers, "
-            "and image/page-data fetchers for bypasses.",
-            "Treat client/server boundaries carefully; secrets and privileged fetches must "
-            "stay server-only.",
-        ),
-    ),
-    "react": (
-        "React",
-        ("typescript", "javascript"),
-        (
-            "Review dangerouslySetInnerHTML, unsafe JSON-in-HTML, postMessage origins, and "
-            "client-side trust assumptions.",
-        ),
-    ),
-    "express": (
-        "Express/Fastify-style Node services",
-        ("typescript", "javascript"),
-        (
-            "Route middleware must wrap the handler directly; edge/proxy/WAF assumptions "
-            "are not sufficient evidence of auth.",
-        ),
-    ),
-    "django": (
-        "Django",
-        ("python",),
-        (
-            "Check view decorators/permissions, ORM raw SQL, DEBUG leaks, CSRF boundaries, "
-            "and object ownership checks.",
-        ),
-    ),
-    "flask": (
-        "Flask",
-        ("python",),
-        (
-            "Check route decorators, request data flowing into SQL/files/templates/redirects, "
-            "and app debug configuration.",
-        ),
-    ),
-    "fastapi": (
-        "FastAPI",
-        ("python",),
-        (
-            "Check Depends-based auth on each route, background tasks, Pydantic mass "
-            "assignment, and user-controlled outbound URLs.",
-        ),
-    ),
-    "go": (
-        "Go services",
-        ("go",),
-        (
-            "Check http handlers, gorilla/chi routes, SQL string building, SSRF via net/http, "
-            "and path/file joins.",
-        ),
-    ),
-    "mcp": (
-        "MCP/agent tools",
-        ("typescript", "javascript", "python"),
-        (
-            "Treat tool inputs and prompt content as untrusted; ensure tool schemas, "
-            "allowlists, and execution caps exist.",
-        ),
-    ),
-}
 
 _SLUG_NOTES: dict[str, str] = {
     "missing-auth-public-handler": "Check handler-level auth, not only edge middleware.",
@@ -117,12 +50,12 @@ def build_advisor_context(*, repo: Path, signals_by_file: dict[str, list[Signal]
     return "\n\n".join(sections)
 
 
-def _framework_highlights(tags: tuple[str, ...], languages: list[str]) -> str:
+def _framework_highlights(tags: Sequence[str], languages: list[str]) -> str:
     lang_set = set(languages)
     blocks: list[str] = []
     included: list[str] = []
     for tag in tags:
-        highlight = _HIGHLIGHTS.get(tag)
+        highlight = TECH_HIGHLIGHTS.get(tag)
         if highlight is None:
             continue
         title, allowed_languages, bullets = highlight

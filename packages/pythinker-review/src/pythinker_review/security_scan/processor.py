@@ -12,6 +12,7 @@ from typing import Any
 from pythinker_review.diagnostics.parser import redact_secrets
 from pythinker_review.engine.token_budget import clip_text
 from pythinker_review.llm.protocol import ReviewLLM
+from pythinker_review.security_scan.matchers import create_default_registry
 from pythinker_review.security_scan.models import (
     AnalysisEntry,
     FileRecord,
@@ -32,6 +33,8 @@ from pythinker_review.security_scan.store import (
     write_run_meta,
 )
 from pythinker_review.security_scan.tech import read_tech_json
+
+_NOISE_SCORE = {"precise": 0, "normal": 1, "noisy": 2}
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,7 +99,9 @@ async def process_project(
     root = Path(project.root_path)
     settings = read_project_settings(project_id, data_root=data_root)
     records = _records_to_process(
-        load_all_file_records(project_id, data_root=data_root), reinvestigate
+        load_all_file_records(project_id, data_root=data_root),
+        reinvestigate,
+        priority_paths=settings.priority_paths,
     )
     if limit is not None:
         records = records[:limit]
@@ -491,12 +496,56 @@ async def triage_project(
     )
 
 
-def _records_to_process(records: list[FileRecord], reinvestigate: bool) -> list[FileRecord]:
+def _records_to_process(
+    records: list[FileRecord],
+    reinvestigate: bool,
+    *,
+    priority_paths: list[str] | None = None,
+) -> list[FileRecord]:
     if reinvestigate:
-        return [record for record in records if record.candidates]
-    return [
-        record for record in records if record.candidates and record.status in {"pending", "error"}
-    ]
+        selected = [record for record in records if record.candidates]
+    else:
+        selected = [
+            record
+            for record in records
+            if record.candidates and record.status in {"pending", "error"}
+        ]
+    return _sort_records_for_processing(selected, priority_paths=priority_paths or [])
+
+
+def _sort_records_for_processing(
+    records: list[FileRecord], *, priority_paths: list[str]
+) -> list[FileRecord]:
+    registry = create_default_registry()
+    matcher_scores = {
+        matcher.slug: _NOISE_SCORE.get(matcher.noise_tier, _NOISE_SCORE["normal"])
+        for matcher in registry.get_all()
+    }
+
+    def noise_score(record: FileRecord) -> int:
+        return min(
+            (
+                matcher_scores.get(candidate.vuln_slug, _NOISE_SCORE["normal"])
+                for candidate in record.candidates
+            ),
+            default=_NOISE_SCORE["normal"],
+        )
+
+    def priority_score(record: FileRecord) -> int:
+        for index, prefix in enumerate(priority_paths):
+            if record.file_path.startswith(prefix):
+                return index
+        return len(priority_paths)
+
+    return sorted(
+        records,
+        key=lambda record: (
+            noise_score(record),
+            priority_score(record),
+            -len(record.candidates),
+            record.file_path,
+        ),
+    )
 
 
 def _merge_findings(record: FileRecord, new_findings: list[Finding]) -> None:

@@ -576,7 +576,9 @@ class _LiveView:
         if not line:
             return
         console.print()
-        console.print(Text(sanitize_ansi(line), style=tui_rich_style("muted") + Style(italic=True)))
+        console.print(
+            Markdown(sanitize_ansi(line), style=tui_rich_style("muted") + Style(italic=True))
+        )
         console.print()
 
     def _working_indicator(self) -> RenderableType:

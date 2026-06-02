@@ -34,9 +34,11 @@ from pythinker_review.reviewflow.models import (
     derive_finding_triage,
 )
 from pythinker_review.reviewflow.provider import (
+    ReviewDrop,
+    ReviewPromptManifest,
     plan_fix,
     revalidate_finding,
-    review_feature,
+    review_feature_partitioned,
     validation_commands_for_feature,
 )
 from pythinker_review.reviewflow.reporting import (
@@ -75,7 +77,6 @@ from pythinker_review.reviewflow.utils import (
     discover_git,
     git_output,
     now_iso,
-    read_text_bounded,
     run_id,
     run_process,
     run_shell_command,
@@ -99,6 +100,27 @@ class ReviewflowWorkflowError(RuntimeError):
         self.code = code
 
 
+class _AsyncRateLimiter:
+    """Small in-process start-rate limiter for provider calls."""
+
+    def __init__(self, per_minute: int | None) -> None:
+        self._interval_s = 0.0 if per_minute is None or per_minute <= 0 else 60.0 / per_minute
+        self._lock = asyncio.Lock()
+        self._next_start_at = 0.0
+
+    async def wait(self) -> None:
+        if self._interval_s <= 0:
+            return
+        async with self._lock:
+            loop = asyncio.get_running_loop()
+            now = loop.time()
+            if self._next_start_at > now:
+                await asyncio.sleep(self._next_start_at - now)
+                now = loop.time()
+            self._next_start_at = max(self._next_start_at, now) + self._interval_s
+
+
+_NONFATAL_REVIEW_ERROR_CODES = {"schema-drop", "validation-drop"}
 _DEFAULT_STATE_DIR = ".pythinker-review-flow"
 _LEGACY_STATE_DIR = ".clawpatch"
 
@@ -323,6 +345,8 @@ async def review_project(
     mode: str = "default",
     dry_run: bool = False,
     per_feature_timeout_s: float = 180.0,
+    custom_prompt: str | None = None,
+    rate_limit_per_minute: int | None = None,
 ) -> dict[str, Any]:
     loaded = load_project_state(root=root.resolve(), state_dir=state_dir, config_path=config_path)
     features = select_review_features(
@@ -346,6 +370,7 @@ async def review_project(
     run.claimed_feature_ids = [feature.feature_id for feature in features]
     write_run(loaded.paths, run)
     semaphore = asyncio.Semaphore(max(1, min(jobs, max(len(features), 1))))
+    limiter = _AsyncRateLimiter(rate_limit_per_minute)
     finding_ids: list[str] = []
     errors: list[RunError] = []
 
@@ -364,19 +389,33 @@ async def review_project(
                     ),
                     allow_non_pending=feature_id is not None,
                 )
-                produced = await review_feature(
+                await limiter.wait()
+                produced = await review_feature_partitioned(
                     llm=llm,
                     root=loaded.root,
                     feature=locked,
                     config=loaded.config,
                     mode=mode,
                     timeout_s=per_feature_timeout_s,
+                    custom_prompt=custom_prompt,
                 )
-                valid = _validated_review_findings(loaded.root, locked, produced.findings)
+                valid, validation_drops = _validated_review_findings(
+                    loaded.root,
+                    produced.manifest,
+                    produced.output.findings,
+                )
+                for drop in (*produced.dropped_findings, *validation_drops):
+                    errors.append(_drop_run_error(locked.feature_id, drop))
                 ids = _merge_review_findings(loaded, locked, valid, current_run_id)
                 finding_ids.extend(ids)
                 _mark_feature_reviewed(
-                    loaded, locked, ids, current_run_id, provider=llm.model_display_name
+                    loaded,
+                    locked,
+                    ids,
+                    current_run_id,
+                    provider=llm.model_display_name,
+                    manifest=produced.manifest,
+                    dropped=len(produced.dropped_findings) + len(validation_drops),
                 )
                 release_feature_lock(loaded.paths, locked.feature_id)
                 locked = None
@@ -394,7 +433,8 @@ async def review_project(
                     write_feature(loaded.paths, feature)
 
     await asyncio.gather(*(worker(feature) for feature in features))
-    run.status = "failed" if errors else "completed"
+    fatal_errors = [error for error in errors if error.code not in _NONFATAL_REVIEW_ERROR_CODES]
+    run.status = "failed" if fatal_errors else "completed"
     run.finished_at = now_iso()
     run.finding_ids = finding_ids
     run.errors = errors
@@ -402,8 +442,10 @@ async def review_project(
     report_path = _write_markdown_report(
         loaded.paths, read_findings(loaded.paths), read_features(loaded.paths)
     )
-    if errors:
-        raise ReviewflowWorkflowError(errors[0].message, errors[0].code or "review-failed")
+    if fatal_errors:
+        raise ReviewflowWorkflowError(
+            fatal_errors[0].message, fatal_errors[0].code or "review-failed"
+        )
     return {
         "run": current_run_id,
         "reviewed": len(features),
@@ -937,40 +979,113 @@ def _new_run(command: str, loaded: LoadedState, current_run_id: str) -> RunRecor
     )
 
 
+def _drop_run_error(feature_id: str, drop: ReviewDrop) -> RunError:
+    return RunError(
+        message=(
+            f"dropped 1 finding from feature {feature_id} at "
+            f"{'.'.join(str(item) for item in drop.path)}: {drop.message}"
+        ),
+        code=f"{drop.layer}-drop",
+    )
+
+
 def _validated_review_findings(
-    root: Path, feature: FeatureRecord, findings: list[Any]
-) -> list[Any]:
-    allowed = {ref.path for ref in feature.owned_files} | {
-        ref.path for ref in feature.context_files
-    }
+    root: Path,
+    manifest: ReviewPromptManifest,
+    findings: list[Any],
+) -> tuple[list[Any], list[ReviewDrop]]:
     out: list[Any] = []
-    for finding in findings:
+    drops: list[ReviewDrop] = []
+    for idx, finding in enumerate(findings):
         if not finding.evidence:
+            drops.append(
+                ReviewDrop(
+                    path=("findings", idx, "evidence"),
+                    message="finding has no evidence",
+                    layer="validation",
+                )
+            )
             continue
-        if all(_valid_evidence(root, evidence, allowed) for evidence in finding.evidence):
-            out.append(finding)
-    return out
+        failures = [
+            reason
+            for evidence in finding.evidence
+            if (reason := _evidence_validation_failure(root, evidence, manifest)) is not None
+        ]
+        if failures:
+            drops.append(
+                ReviewDrop(
+                    path=("findings", idx, "evidence"),
+                    message=failures[0],
+                    layer="validation",
+                )
+            )
+            continue
+        out.append(finding)
+    return out, drops
 
 
-def _valid_evidence(root: Path, evidence: EvidenceRef, allowed: set[str]) -> bool:
-    if evidence.path not in allowed:
-        return False
+def _evidence_validation_failure(
+    root: Path, evidence: EvidenceRef, manifest: ReviewPromptManifest
+) -> str | None:
+    prompt_file = next(
+        (
+            file
+            for file in manifest.included_files
+            if file.path == _normalize_repo_path(evidence.path)
+        ),
+        None,
+    )
+    if prompt_file is None:
+        return f"evidence file was not included in review context: {evidence.path}"
+    if not prompt_file.readable:
+        return f"evidence file was not readable in review context: {evidence.path}"
     try:
         resolved = (root / evidence.path).resolve()
         resolved.relative_to(root.resolve())
     except ValueError:
-        return False
+        return f"evidence file escapes repository root: {evidence.path}"
     if not resolved.is_file():
-        return False
-    text = read_text_bounded(resolved, limit_chars=100_000)
-    lines = text.splitlines()
-    if (
-        evidence.start_line is not None
-        and evidence.end_line is not None
-        and (evidence.start_line < 1 or evidence.end_line > len(lines))
-    ):
-        return False
-    return not (evidence.quote and evidence.quote not in text)
+        return f"evidence file is not readable inside repository: {evidence.path}"
+    text = resolved.read_text(encoding="utf-8", errors="replace")
+    if evidence.start_line is None and evidence.end_line is None:
+        if not evidence.quote or not evidence.quote.strip():
+            return f"evidence must include a line range or quote: {evidence.path}"
+    elif evidence.start_line is None or evidence.end_line is None:
+        return f"evidence line range must include both startLine and endLine: {evidence.path}"
+    else:
+        if evidence.start_line > evidence.end_line:
+            return f"evidence line range is inverted: {evidence.path}"
+        if evidence.end_line > _review_line_count(text):
+            return f"evidence line range exceeds file length: {evidence.path}"
+        if not _range_included(evidence.start_line, evidence.end_line, prompt_file):
+            return f"evidence line range was not included in review context: {evidence.path}"
+    if evidence.quote and evidence.quote.strip():
+        target = prompt_file.included_text
+        if evidence.start_line is not None and evidence.end_line is not None:
+            target = "\n".join(text.splitlines()[evidence.start_line - 1 : evidence.end_line])
+        if evidence.quote not in target and _compact_whitespace(
+            evidence.quote
+        ) not in _compact_whitespace(target):
+            return f"evidence quote does not match file contents: {evidence.path}"
+    return None
+
+
+def _review_line_count(contents: str) -> int:
+    if contents == "":
+        return 1
+    count = contents.count("\n")
+    return count if contents.endswith("\n") else count + 1
+
+
+def _range_included(start_line: int, end_line: int, prompt_file: Any) -> bool:
+    return any(
+        start_line >= line_range.start_line and end_line <= line_range.end_line
+        for line_range in prompt_file.included_line_ranges
+    )
+
+
+def _compact_whitespace(value: str) -> str:
+    return " ".join(value.split())
 
 
 def _merge_review_findings(
@@ -1034,6 +1149,8 @@ def _mark_feature_reviewed(
     run_id_value: str,
     *,
     provider: str,
+    manifest: ReviewPromptManifest,
+    dropped: int,
 ) -> None:
     all_ids = sorted({*feature.finding_ids, *finding_ids})
     feature.finding_ids = all_ids
@@ -1044,7 +1161,11 @@ def _mark_feature_reviewed(
         AnalysisEntry(
             run_id=run_id_value,
             kind="review",
-            summary=f"Reviewed with {len(finding_ids)} findings.",
+            summary=(
+                f"Reviewed with {len(finding_ids)} findings; dropped {dropped}; "
+                f"context {len(manifest.included_files)} files, "
+                f"~{manifest.approximate_tokens} tokens."
+            ),
             provider=provider,
             model=loaded.config.provider.model,
             reasoning_effort=loaded.config.provider.reasoning_effort,

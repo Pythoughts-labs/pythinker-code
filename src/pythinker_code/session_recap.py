@@ -230,18 +230,20 @@ def build_turn_recap_line(
     assistant_source = _recap_source_text(assistant_text)
     request_source = _recap_source_text(request)
     source = (
-        _outcome_sentence(assistant_source) or _outcome_sentence(request_source) or request_source
+        _outcome_summary(assistant_source, require_action=True)
+        or _outcome_sentence(request_source)
+        or request_source
     )
     if not source:
         return None
-    summary = shorten(source, width=180)
+    summary = shorten(source, width=220)
     deltas: list[str] = []
     if files_changed > 0:
         deltas.append(f"{files_changed} file{'s' if files_changed != 1 else ''} changed")
     if step_count is not None and step_count > 0:
         deltas.append(f"{step_count} step{'s' if step_count != 1 else ''}")
     suffix = f" · {' · '.join(deltas)}" if deltas else ""
-    return f"※ recap: {summary}{suffix} (disable recaps in /settings)"
+    return f"※ recap: {summary}{suffix} (disable recaps in /config)"
 
 
 def _last_substantive_thread(items: list[SessionRecapItem]) -> str:
@@ -254,13 +256,34 @@ def _last_substantive_thread(items: list[SessionRecapItem]) -> str:
 _MIN_RECAP_SENTENCE_CHARS = 16
 _FENCE_START_RE = re.compile(r"^ {0,3}(```+|~~~+)")
 _TABLE_DELIMITER_RE = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$")
+_MARKDOWN_RULE_RE = re.compile(r"^\s{0,3}(?:[-*_]\s*){3,}$")
+_ATX_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+.+?\s*#*\s*$")
+_ACTION_OUTCOME_RE = re.compile(
+    r"\b(implemented|fixed|updated|added|removed|renamed|released|published|created|"
+    r"opened|pushed|committed|merged|verified|validated|ran|completed|finished|"
+    r"generated|adjusted|resolved|repaired|improved|changed|patched|hardened|rendered|wired|made|"
+    r"aligned|preserved|stripped|switched|migrated|refactored|restored|documented|"
+    r"configured|enabled|disabled)\b",
+    re.IGNORECASE,
+)
+_STATUS_OUTCOME_RE = re.compile(
+    r"^(no\s+|all\s+|nothing\s+|everything\s+|tests?\s+passed\b|there\s+(?:is|are)\s+no\s+)",
+    re.IGNORECASE,
+)
+_MARKDOWN_INLINE_PREFIX_RE = re.compile(r"^\s*(?:[-*_]{3,}\s+)?#{1,6}\s+")
+_OPTION_HEADING_RE = re.compile(
+    r"^\s*(?:[-*_]{3,}\s+)?(?:#{1,6}\s+)?(?:option|variant|concept|direction)\s+\d+\s*:",
+    re.IGNORECASE,
+)
+_PARENTHETICAL_RE = re.compile(r"\([^)]*\)")
 
 
 def _recap_source_text(text: str) -> str:
     """Return one-line recap input with bulky structured blocks removed."""
     without_fences = _strip_fenced_blocks(text)
     without_tables = _strip_markdown_tables(without_fences)
-    without_ticks = without_tables.replace("`", "")
+    without_structure = _strip_markdown_structure(without_tables)
+    without_ticks = without_structure.replace("`", "")
     return " ".join(without_ticks.split())
 
 
@@ -308,6 +331,16 @@ def _strip_markdown_tables(text: str) -> str:
         kept.append(line)
         index += 1
     return "\n".join(kept)
+
+
+def _strip_markdown_structure(text: str) -> str:
+    lines: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if _MARKDOWN_RULE_RE.match(stripped) or _ATX_HEADING_RE.match(stripped):
+            continue
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _first_sentence(text: str) -> str:
@@ -368,7 +401,48 @@ def _is_outcome_sentence(sentence: str) -> bool:
     lowered = candidate.lower().replace("’", "'")
     if lowered.startswith(_SKIP_SENTENCE_PREFIXES):
         return False
+    if _MARKDOWN_INLINE_PREFIX_RE.match(candidate) or _OPTION_HEADING_RE.match(candidate):
+        return False
     return not any(len(token) > _MAX_RECAP_TOKEN_CHARS for token in candidate.split())
+
+
+def _is_action_outcome_sentence(sentence: str) -> bool:
+    prose = _PARENTHETICAL_RE.sub(" ", sentence)
+    return _ACTION_OUTCOME_RE.search(prose) is not None
+
+
+def _is_status_outcome_sentence(sentence: str) -> bool:
+    return _STATUS_OUTCOME_RE.match(sentence.strip()) is not None
+
+
+def _outcome_summary(text: str, *, require_action: bool = False) -> str:
+    sentences = _iter_sentences(text)
+    outcomes = [
+        (index, sentence)
+        for index, sentence in enumerate(sentences)
+        if _is_outcome_sentence(sentence)
+    ]
+    if not outcomes:
+        return "" if require_action else _first_sentence(text)
+    if not require_action:
+        return outcomes[-1][1]
+
+    action_outcomes = [item for item in outcomes if _is_action_outcome_sentence(item[1])]
+    if not action_outcomes:
+        return ""
+
+    start_index, first = action_outcomes[-1]
+    selected = [first]
+    for sentence in sentences[start_index + 1 :]:
+        if len(selected) >= 2:
+            break
+        if not _is_outcome_sentence(sentence):
+            break
+        if _is_action_outcome_sentence(sentence) or _is_status_outcome_sentence(sentence):
+            selected.append(sentence)
+            continue
+        break
+    return " ".join(selected)
 
 
 def _outcome_sentence(text: str) -> str:
@@ -377,10 +451,7 @@ def _outcome_sentence(text: str) -> str:
     Falls back to the first sentence when nothing reads like an outcome, so a
     terse or interrupted turn still produces a line.
     """
-    outcomes = [s for s in _iter_sentences(text) if _is_outcome_sentence(s)]
-    if outcomes:
-        return outcomes[-1]
-    return _first_sentence(text)
+    return _outcome_summary(text)
 
 
 def _session_outcome(item: SessionRecapItem) -> str:

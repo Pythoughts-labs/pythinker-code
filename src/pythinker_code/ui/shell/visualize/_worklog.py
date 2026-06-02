@@ -72,6 +72,7 @@ _TOOL_STYLES: dict[str, ToolStyle] = {
     "TaskList": ToolStyle("Tasks", "☷", "info"),
     "TaskOutput": ToolStyle("TaskOutput", "☷", "info"),
     "TaskStop": ToolStyle("TaskStop", "■", "warning"),
+    "ReadSkill": ToolStyle("Skill", "◇", "info"),
     "Skill": ToolStyle("Skill", "◇", "info"),
 }
 

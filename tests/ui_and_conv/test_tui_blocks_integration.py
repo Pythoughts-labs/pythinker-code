@@ -183,7 +183,7 @@ def test_card_style_running_subagent_uses_solid_circle(_force_card_style, monkey
     rendered = render_plain(block.compose(), width=80)
     spinner_frames = set("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
 
-    assert "Agent(" in rendered
+    assert "Agent " in rendered
     assert "Audit UI" in rendered
     assert "●" in rendered
     assert not any(frame in rendered for frame in spinner_frames)
@@ -210,7 +210,7 @@ def test_card_style_finished_subagent_shows_compact_result(_force_card_style, mo
     block.finish(_ok_result("done"))
     rendered = render_plain(block.compose(), width=80)
 
-    assert "● Agent(coder · Audit UI)" in rendered
+    assert "● Agent coder · Audit UI" in rendered
     assert "⎿  done" in rendered
     assert "Agent finished" not in rendered
 
@@ -232,7 +232,7 @@ def test_card_style_running_task_output_uses_solid_circle(_force_card_style, mon
     rendered = render_plain(block.compose(), width=80)
     spinner_frames = set("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
 
-    assert "TaskOutput(" in rendered
+    assert "TaskOutput " in rendered
     assert "agent-123" in rendered
     assert "●" in rendered
     assert not any(frame in rendered for frame in spinner_frames)
@@ -257,9 +257,9 @@ def test_card_style_running_subagent_marker_pulses(_force_card_style, monkeypatc
     second = render_plain(block.compose(), width=80)
 
     assert first != second
-    assert "Agent(" in first
+    assert "Agent " in first
     assert "●" in first
-    assert "Agent(" in second
+    assert "Agent " in second
     assert "●" not in second
 
 

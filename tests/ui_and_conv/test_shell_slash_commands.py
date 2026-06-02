@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import Mock
 
 import pytest
@@ -254,6 +255,62 @@ async def test_mcp_slash_persists_only_final_snapshot(
     assert "resolve-library-id" in output
     assert "Loading MCP inventory" not in output
     assert "MCP Servers:" not in output
+
+
+# ---------------------------------------------------------------------------
+# /changelog — rendering
+# ---------------------------------------------------------------------------
+
+
+class TestChangelogCommand:
+    def test_registered_in_shell_mode_with_release_notes_alias(self) -> None:
+        cmd = shell_mode_registry.find_command("changelog")
+        assert cmd is not None
+        assert shell_mode_registry.find_command("release-notes") is cmd
+
+    def test_renders_release_notes_with_pythinker_markdown(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from rich.console import Console
+
+        from pythinker_code.ui.shell import slash as shell_slash
+        from pythinker_code.ui.shell.components.markdown import PythinkerMarkdown
+        from pythinker_code.utils.changelog import ReleaseEntry
+
+        monkeypatch.setattr(
+            shell_slash,
+            "CHANGELOG",
+            {
+                "0.31.0": ReleaseEntry(
+                    description="Rendered **markdown** release notes.",
+                    entries=[
+                        "Added `inline code` and **bold** entries.",
+                        "Lib: internal-only dependency note.",
+                    ],
+                )
+            },
+        )
+        monkeypatch.setattr(shell_slash.console, "pager", lambda *_, **__: nullcontext())
+        printed: list[object] = []
+        monkeypatch.setattr(
+            shell_slash.console, "print", lambda *args, **_kwargs: printed.extend(args)
+        )
+
+        cmd = shell_mode_registry.find_command("changelog")
+        assert cmd is not None
+        cmd.func(cast(Any, SimpleNamespace()), "")
+
+        assert len(printed) == 1
+        assert isinstance(printed[0], PythinkerMarkdown)
+
+        console = Console(width=80, record=True, color_system=None)
+        console.print(printed[0])
+        output = console.export_text()
+
+        assert "0.31.0" in output
+        assert "Rendered markdown release notes." in output
+        assert "Added inline code and bold entries." in output
+        assert "Lib:" not in output
 
 
 # ---------------------------------------------------------------------------

@@ -16,9 +16,12 @@ agent:
       Operating rules:
       - If `.pythinker/review-guidelines.md` exists, read it before scoring findings.
       - Read-only by convention. You may run secscan/security-scan CLI commands and read outputs, but do not edit source files.
-      - Diff mode default: `pythinker secscan diff --format json --no-save`.
-      - Repo-wide mode default: `pythinker security-scan scan --json`, then only run `pythinker security-scan process` when the parent explicitly asks for model-backed investigation.
-      - Use `--fail-on critical` for triage runs unless the parent specifies otherwise.
+      - Choose the smallest scan mode that answers the parent: diff review for changed code, repo-wide scan for discovery, process/revalidate only for model-backed investigation.
+      - Diff mode default: `pythinker secscan diff --format json --no-save --fail-on critical`.
+      - Repo-wide discovery default: `pythinker security-scan scan --json`; if the project mirror is missing, run `pythinker security-scan init` first.
+      - Before deep repo-wide processing, preview state with `pythinker security-scan status` or `pythinker security-scan prompt --limit 1`; keep INFO.md project context short and specific if the parent asks you to improve it.
+      - Only run `pythinker security-scan process`, `revalidate`, or `triage` when the parent explicitly asks for model-backed investigation or deep validation; use `--limit`/`--jobs` to bound cost unless told otherwise.
+      - Treat matcher hits as leads, not findings. Framework and slug notes are reviewer instincts; still verify source → sink → missing mitigation in code.
       - Check graceful degradation, observability/logging, recovery behavior, structured result/status correctness, and approval/policy mismatches when they affect security posture.
       - Translate JSON output into the structured response block below.
 

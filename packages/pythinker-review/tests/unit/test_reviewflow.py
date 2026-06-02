@@ -5,6 +5,7 @@ import pytest
 from pythinker_review.reviewflow.mapping import detect_project, map_features
 from pythinker_review.reviewflow.models import (
     EvidenceRef,
+    FeatureFileRef,
     FeatureLock,
     FeatureRecord,
     FindingRecord,
@@ -13,6 +14,7 @@ from pythinker_review.reviewflow.models import (
     RunRecord,
     derive_finding_triage,
 )
+from pythinker_review.reviewflow.provider import build_feature_review_prompt_bundle
 from pythinker_review.reviewflow.reporting import next_finding, render_report
 from pythinker_review.reviewflow.state import (
     claim_feature,
@@ -47,6 +49,37 @@ def test_reviewflow_models_preserve_camel_case_aliases() -> None:
     assert dumped["startLine"] == 3
     assert dumped["endLine"] == 4
     assert derive_finding_triage("security", "high") == "confirmed-bug"
+
+
+def test_reviewflow_prompt_manifest_uses_line_numbered_bounded_evidence(tmp_path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "src").mkdir()
+    (root / "src" / "app.py").write_text("one\ntwo\nthree\n", encoding="utf-8")
+    now = now_iso()
+    feature = FeatureRecord(
+        feature_id="feat_prompt",
+        title="Prompt feature",
+        summary="Prompt manifest feature",
+        kind="library",
+        owned_files=[FeatureFileRef(path="src/app.py", reason="primary implementation")],
+        created_at=now,
+        updated_at=now,
+    )
+
+    bundle = build_feature_review_prompt_bundle(
+        root=root,
+        feature=feature,
+        config=ReviewflowConfig(),
+        mode="default",
+        custom_prompt="Focus on configuration regressions.",
+    )
+
+    assert "Focus on configuration regressions." in bundle.prompt
+    assert "    1 | one" in bundle.prompt
+    assert bundle.manifest.included_files[0].path == "src/app.py"
+    assert bundle.manifest.included_files[0].included_line_ranges[0].end_line == 3
+    assert bundle.manifest.approximate_tokens > 0
 
 
 def test_reviewflow_mapping_detects_project_and_features(tmp_path) -> None:

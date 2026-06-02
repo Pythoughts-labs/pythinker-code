@@ -25,6 +25,7 @@ pythinker-review show-finding <finding-id>
 pythinker-review init
 pythinker-review map
 pythinker-review review --limit 3 --jobs 3
+pythinker-review review --limit 3 --jobs 3 --prompt-file review-guidance.md --rate-limit-per-minute 6  # optional guidance/rate cap
 pythinker-review report --status open
 pythinker-review show --finding <finding-id>
 pythinker-review triage --finding <finding-id> --status false-positive
@@ -100,8 +101,9 @@ The stateful Reviewflow workflow writes `.pythinker-review-flow/` by default:
 
 Phase 1 now ports the highest-value behavior from the mounted blackbox repos:
 
-- Reviewflow-style evidence validation rejects findings outside the reviewed chunk/feature, unsafe
-  paths, stale line ranges, or non-matching evidence snippets.
+- Reviewflow-style evidence validation uses line-numbered prompt manifests and rejects findings
+  outside the reviewed chunk/feature, unsafe paths, omitted/truncated line ranges, or non-matching
+  evidence snippets; invalid sibling findings are recorded as drops without failing the whole run.
 - Reviewflow pure-Python stateful commands cover `init`, `map`, `status`, `review`, `ci`,
   `report`, `show --finding`, `next`, `triage`, `revalidate`, `fix`, `open-pr`, `doctor`, and
   `clean-locks`.

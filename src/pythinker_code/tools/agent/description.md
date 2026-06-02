@@ -20,6 +20,7 @@ ${BUILTIN_AGENT_TYPES_MD}
 - Provide the subagent all required context and success criteria. New subagents do not inherit your transcript automatically.
 - Brief the agent like a capable teammate joining mid-task: state the goal, why it matters, what you already learned or ruled out, exact paths/commands when known, and the output format you need.
 - Include a prompt packet for non-trivial work: Goal, Evidence/Context, Scope and non-goals, Constraints, Expected Output, Verification, and Risks/Blockers.
+- For review or fix orchestration, prefer durable feature/finding IDs when available (`pythinker review map`, `review`, `next`, `show`). They make delegated work bounded, resumable, and evidence-checkable.
 - Keep each delegated prompt to one objective. Split unrelated goals into separate agents so each result is reviewable.
 - Do not delegate synthesis with vague prompts such as "based on your findings, fix it". First understand the finding yourself, then give the subagent a concrete scoped task.
 - Spawn multiple subagents in the same turn when they can investigate independent regions concurrently, but keep background launches within available task slots.
@@ -46,6 +47,7 @@ Recommended workflows:
 - Implement → Review → Fix → Verify → Judge: run `implementer`, then `review`, then resume/launch `implementer` to apply feedback, then `verifier` for the relevant gate, then `judge` for final answer/report quality.
 - Parallel scouting: launch multiple `explore` agents for independent questions, then synthesize their findings before editing. If a background batch exceeds available slots, RunAgents launches what fits and reports deferred children for a follow-up batch.
 - Parallel review/verification: when review and tests do not depend on each other, run `review` and `verifier` concurrently, then pass both summaries to `judge`.
+- Stateful review loop: for repo-wide quality work, map feature slices first, review bounded slices, triage findings, then dispatch one fix at a time with the finding ID and minimum fix scope. Revalidate before claiming fixed.
 
 When chaining manually, include the previous agent's summary in the next agent prompt. Newly-created
 subagents do not see your current context automatically.

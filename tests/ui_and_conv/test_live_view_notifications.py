@@ -5,6 +5,7 @@ from pythinker_core.tooling import ToolResult, ToolReturnValue
 from rich.console import Console, Group
 
 from pythinker_code.tools.display import TodoDisplayBlock, TodoDisplayItem
+from pythinker_code.ui.shell.components.markdown import PythinkerMarkdown
 from pythinker_code.ui.shell.console import console as shell_console
 from pythinker_code.ui.shell.keyboard import KeyEvent
 from pythinker_code.ui.shell.visualize import _live_view as live_view_module
@@ -332,16 +333,17 @@ def test_live_view_prints_turn_recap_when_enabled(monkeypatch):
     view.dispatch_wire_message(TurnEnd())
     view.cleanup(is_interrupt=False)
 
-    plain = "\n".join(getattr(item, "plain", str(item)) for item in printed if item is not None)
+    plain = "\n".join(_render(item) for item in printed if item is not None)
     assert "※ recap: Implemented a /recap command." in plain
     assert "Implemented a  /recap" not in plain
-    assert "disable recaps in /settings" in plain
+    assert "disable recaps in /config" in plain
 
     recap_index = next(
         index
         for index, item in enumerate(printed)
-        if item is not None and "※ recap:" in getattr(item, "plain", str(item))
+        if item is not None and "※ recap:" in _render(item)
     )
+    assert isinstance(printed[recap_index], PythinkerMarkdown)
     assert printed[recap_index - 1] is None
     assert printed[recap_index + 1] is None
 

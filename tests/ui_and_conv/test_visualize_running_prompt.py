@@ -733,9 +733,14 @@ async def test_prompt_live_view_prints_turn_recap_after_turn_end(monkeypatch) ->
 
     await view.visualize_loop(cast(Any, _Wire()))
 
-    plain = "\n".join(getattr(item, "plain", str(item)) for item in printed)
+    from rich.console import Console
+
+    output = Console(width=100, record=True, color_system=None)
+    for item in printed:
+        output.print(item)
+    plain = output.export_text()
     assert "※ recap: Implemented a /recap command." in plain
-    assert "disable recaps in /settings" in plain
+    assert "disable recaps in /config" in plain
     assert invalidations
 
 

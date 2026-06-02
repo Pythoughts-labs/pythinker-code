@@ -34,11 +34,12 @@ Two contract tests exposed real gaps; both were resolved with explicit approval
   `_normalize_table_block`). The escaper is proven *monotonic on cell count*, so
   it can never corrupt a well-formed table; residual corruption only on
   already-malformed input is intrinsic to a regex approach.
-- **Long-cell test reframed to data integrity.** The narrow stacked-record table
-  renderer folds cell text mid-word and drops the continuation indent at widths
-  < ~40 (deferred defect **D1** in the spec — cosmetic, *no data loss*). The
-  long-cell guard therefore pins the stated contract ("wrap, not truncate"):
-  every character survives, whitespace-insensitive, regardless of wrap.
+- **Long-cell test reframed to data integrity.** The bordered-grid table renderer
+  folds long cell text across grid rows, drawing a vertical separator (│) between
+  the fold lines, and may fold mid-word at widths < ~40 (cosmetic, *no data loss*).
+  The long-cell guard therefore pins the stated contract ("wrap, not truncate"):
+  every character survives — insensitive to whitespace *and* box-drawing glyphs —
+  regardless of wrap.
 
 ## Known-weak guard (intentional, tracked)
 

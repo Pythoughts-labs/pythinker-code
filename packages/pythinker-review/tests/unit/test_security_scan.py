@@ -6,7 +6,9 @@ from pathlib import Path
 
 from pythinker_review.llm.fake import FakeReviewLLM
 from pythinker_review.security_scan.matchers import create_default_registry
+from pythinker_review.security_scan.models import FileRecord
 from pythinker_review.security_scan.processor import (
+    _sort_records_for_processing,
     parse_investigate_results,
     process_project,
     triage_project,
@@ -364,6 +366,72 @@ def test_security_scan_prompt_includes_system_policy_and_file(tmp_path: Path) ->
     assert "Pythinker Security Scan" in assembled.system
     assert "FastAPI" in assembled.system
     assert "app.py" in assembled.user
+
+
+def test_security_scan_process_order_prioritizes_precise_matchers_then_priority_paths() -> None:
+    def record(file_path: str, slugs: list[str]) -> FileRecord:
+        return FileRecord.model_validate(
+            {
+                "filePath": file_path,
+                "projectId": "repo",
+                "candidates": [
+                    {
+                        "vulnSlug": slug,
+                        "lineNumbers": [1],
+                        "snippet": "hit",
+                        "matchedPattern": "test",
+                    }
+                    for slug in slugs
+                ],
+            }
+        )
+
+    records = [
+        record("noisy/one.ts", ["js-koa-route"]),
+        record("other/secret.ts", ["secrets-plaintext-exposure"]),
+        record("priority/secret.ts", ["github-workflow-security"]),
+        record("normal/loop.ts", ["agent-loop-no-cap"]),
+        record("noisy/two.ts", ["js-koa-route", "all-route-handlers"]),
+    ]
+
+    ordered = _sort_records_for_processing(records, priority_paths=["priority/"])
+
+    assert [record.file_path for record in ordered] == [
+        "priority/secret.ts",
+        "other/secret.ts",
+        "normal/loop.ts",
+        "noisy/two.ts",
+        "noisy/one.ts",
+    ]
+
+
+def test_security_scan_prompt_includes_ported_framework_and_slug_notes(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "package.json").write_text('{"dependencies":{"koa":"^2.15.0"}}\n', encoding="utf-8")
+    (repo / "server.ts").write_text(
+        "import Koa from 'koa';\n"
+        "const app = new Koa();\n"
+        "router.get('/admin', async (ctx) => { ctx.body = ctx.request.body });\n",
+        encoding="utf-8",
+    )
+    data_root = tmp_path / "state" / "data"
+    scan_project(project_id="repo", root=repo, data_root=data_root, matcher_slugs=["js-koa-route"])
+    records = load_all_file_records("repo", data_root=data_root)
+    tech = detect_tech(repo)
+
+    assembled = assemble_prompt(
+        detected_tags=tech.tags,
+        batch_slugs=[c.vuln_slug for r in records for c in r.candidates],
+        batch_languages=batch_languages(records),
+        records=records,
+        project_root=repo,
+    )
+
+    assert "### Koa" in assembled.system
+    assert "middleware order matters" in assembled.system
+    assert "`js-koa-route`" in assembled.system
+    assert "Weak entry-point candidate" in assembled.system
 
 
 def test_security_scan_parse_adds_empty_results_for_missing_files() -> None:
