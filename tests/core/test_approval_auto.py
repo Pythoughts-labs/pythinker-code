@@ -15,6 +15,26 @@ def _shell_call(cmd: str) -> ToolCall:
     )
 
 
+def test_tool_destructive_reason_gates_background_shell() -> None:
+    from pythinker_code.soul.permission import tool_destructive_reason
+
+    # Background shell is the same "Shell" tool (run_in_background=true); a destructive
+    # background command must still be classified as destructive.
+    reason = tool_destructive_reason(
+        "Shell", {"command": "rm -rf build", "run_in_background": True}
+    )
+    assert reason is not None
+
+
+def test_tool_destructive_reason_ignores_unregistered_tool() -> None:
+    from pythinker_code.soul.permission import tool_destructive_reason
+
+    assert (
+        tool_destructive_reason("WriteFile", {"path": "x", "content": "y", "mode": "overwrite"})
+        is None
+    )
+
+
 def test_yolo_only() -> None:
     approval = Approval(yolo=True)
     assert approval.is_yolo() is True
