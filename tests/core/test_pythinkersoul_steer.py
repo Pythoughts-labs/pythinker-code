@@ -5,14 +5,24 @@ from pathlib import Path
 
 import pytest
 from pythinker_core import StepResult
-from pythinker_core.message import ContentPart, Message
+from pythinker_core.message import ContentPart, Message, ToolCall
+from pythinker_core.tooling import ToolOk, ToolResult
 from pythinker_core.tooling.empty import EmptyToolset
 
 import pythinker_code.soul.pythinkersoul as pythinkersoul_module
+from pythinker_code.approval_runtime import (
+    ApprovalSource,
+    reset_current_approval_source,
+    set_current_approval_source,
+)
 from pythinker_code.llm import LLM, ModelCapability
 from pythinker_code.soul import LLMNotSupported, run_soul
 from pythinker_code.soul.agent import Agent, Runtime
-from pythinker_code.soul.approval import Approval
+from pythinker_code.soul.approval import (
+    Approval,
+    DeliberationScope,
+    _current_deliberation_scope,
+)
 from pythinker_code.soul.context import Context
 from pythinker_code.soul.dynamic_injection import DynamicInjection
 from pythinker_code.soul.message import is_system_reminder_message
@@ -369,6 +379,49 @@ async def test_step_merges_plain_steer_with_dynamic_injection_in_model_history(
         TextPart(text="Follow user note"),
         TextPart(text="<system-reminder>\nInternal reminder\n</system-reminder>"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_step_binds_deliberation_scope_when_tool_future_is_created(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    soul = _make_soul(runtime, tmp_path)
+    captured_in_step: list[DeliberationScope | None] = []
+    captured_in_tool_task: list[DeliberationScope | None] = []
+    tool_call = ToolCall(
+        id="call-1",
+        function=ToolCall.FunctionBody(name="Noop", arguments="{}"),
+    )
+
+    async def fake_tool_task() -> ToolResult:
+        captured_in_tool_task.append(_current_deliberation_scope.get())
+        return ToolResult(tool_call_id="call-1", return_value=ToolOk(output="ok"))
+
+    async def fake_pythinker_core_step(chat_provider, system_prompt, toolset, history, **kwargs):
+        captured_in_step.append(_current_deliberation_scope.get())
+        return StepResult(
+            id="step-1",
+            message=Message(role="assistant", content=[TextPart(text="done")]),
+            usage=None,
+            tool_calls=[tool_call],
+            _tool_result_futures={"call-1": asyncio.create_task(fake_tool_task())},
+        )
+
+    monkeypatch.setattr(pythinkersoul_module.pythinker_core, "step", fake_pythinker_core_step)
+    monkeypatch.setattr(pythinkersoul_module, "wire_send", lambda _msg: None)
+    token = set_current_approval_source(ApprovalSource(kind="foreground_turn", id="turn-1"))
+    try:
+        outcome = await soul._step()
+    finally:
+        reset_current_approval_source(token)
+
+    assert outcome is None
+    expected = DeliberationScope("foreground_turn:turn-1", 1)
+    assert captured_in_step == [expected]
+    assert captured_in_tool_task == [expected]
+    assert _current_deliberation_scope.get() is None
 
 
 class _SequenceStreamedMessage:

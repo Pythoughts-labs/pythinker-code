@@ -17,6 +17,10 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Auto-mode destructive actions deliberate per turn and context.** Auto-deliberation now
+  scopes destructive-command one-shots to the active execution context and LLM generation,
+  so duplicate destructive calls in one response keep bouncing while later deliberate retries
+  and isolated subagent calls are handled independently.
 - **Release packaging keeps SDK/core pins in lockstep.** The SDK's `pythinker-core`
   dependency is now updated by release automation and checked by CI/release validation,
   preventing no-sources binary builds from resolving against a stale core pin.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import shlex
+from collections.abc import Callable
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -497,18 +498,27 @@ def shell_destructive_reason(command: str) -> str | None:
     return None
 
 
+def _shell_args_destructive_reason(arguments: dict[str, Any]) -> str | None:
+    command = arguments.get("command")
+    return shell_destructive_reason(command) if isinstance(command, str) else None
+
+
+# The single, auditable place where a tool opts into auto-deliberation. Today only the
+# irreversible surface (Shell, including background shell — same tool name) is classified;
+# reversible file tools (WriteFile/StrReplaceFile: restore-point + VCS backed) are
+# intentionally excluded. A future destructive tool adds one entry here.
+_DESTRUCTIVE_CLASSIFIERS: dict[str, Callable[[dict[str, Any]], str | None]] = {
+    "Shell": _shell_args_destructive_reason,
+}
+
+
 def tool_destructive_reason(tool_name: str, arguments: dict[str, Any]) -> str | None:
     """Reason a tool call is irreversibly destructive (warrants deliberation), else ``None``.
 
-    Tool-agnostic dispatch point for the auto-deliberation gate. Today only ``Shell``
-    is classified; a future destructive tool registers its own argument classifier
-    here instead of the gate hard-coding a single tool name.
+    Declarative dispatch: classification lives in ``_DESTRUCTIVE_CLASSIFIERS``.
     """
-    if tool_name == "Shell":
-        command = arguments.get("command")
-        if isinstance(command, str):
-            return shell_destructive_reason(command)
-    return None
+    classifier = _DESTRUCTIVE_CLASSIFIERS.get(tool_name)
+    return classifier(arguments) if classifier is not None else None
 
 
 def _segment_destructive_reason(tokens: list[str]) -> str | None:
