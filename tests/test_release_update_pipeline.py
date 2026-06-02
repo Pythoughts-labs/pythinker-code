@@ -14,6 +14,25 @@ BUILDER_WORKFLOWS = (
 )
 
 
+def _step_block(workflow: str, name_fragment: str) -> str:
+    """Return the YAML of the first step whose ``name:`` contains *name_fragment*,
+    up to (but excluding) the next ``- name:`` step. Lets assertions target one
+    step instead of the whole file, so an unrelated step can't satisfy or break
+    them."""
+    lines = workflow.splitlines()
+    start = next(
+        i
+        for i, line in enumerate(lines)
+        if line.lstrip().startswith("- name:") and name_fragment in line
+    )
+    block = [lines[start]]
+    for line in lines[start + 1 :]:
+        if line.lstrip().startswith("- name:"):
+            break
+        block.append(line)
+    return "\n".join(block)
+
+
 def test_builders_create_release_as_prerelease() -> None:
     """Each builder must mark the Release prerelease.
 
@@ -86,11 +105,15 @@ def test_site_dispatch_uses_scoped_github_app_token_and_degrades_gracefully() ->
     assert re.search(r"permissions:\s+contents:\s*read", workflow)
 
     # Best-effort and non-blocking: a missing/rotated App must never red-line
-    # main. The token step continues on error and the sync degrades (exit 0)
-    # rather than failing loud — the daily pythinker-home cron is the real sync
-    # guarantee.
-    assert "continue-on-error: true" in workflow
-    assert "exit 1" not in workflow
+    # main. Scoped to the relevant steps so unrelated steps can't satisfy/break
+    # them: the token step continues on error, and the dispatch step degrades
+    # (exit 0) rather than failing loud — the daily pythinker-home cron is the
+    # real sync guarantee.
+    token_step = _step_block(workflow, "Mint GitHub App token")
+    assert "continue-on-error: true" in token_step
+    dispatch_step = _step_block(workflow, "Trigger pythinker-home sync")
+    assert "exit 1" not in dispatch_step
+    assert "exit 0" in dispatch_step
 
     # ...but degradation is SURFACED, not silently swallowed: a step-summary
     # warning plus a Slack alert keep a broken App visible.
