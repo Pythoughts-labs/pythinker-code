@@ -261,7 +261,8 @@ jobs:
             --root-pyproject pyproject.toml \
             --pythinker-core-pyproject packages/pythinker-core/pyproject.toml \
             --pythinker-host-pyproject packages/pythinker-host/pyproject.toml \
-            --pythinker-review-pyproject packages/pythinker-review/pyproject.toml
+            --pythinker-review-pyproject packages/pythinker-review/pyproject.toml \
+            --pythinker-sdk-pyproject sdks/pythinker-sdk/pyproject.toml
 
       - name: Check pythinker-code version alignment
         if: steps.version.outputs.bump == 'true'

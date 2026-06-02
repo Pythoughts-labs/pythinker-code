@@ -46,6 +46,7 @@ def main() -> int:
     parser.add_argument("--pythinker-core-pyproject", type=Path, required=True)
     parser.add_argument("--pythinker-host-pyproject", type=Path, required=True)
     parser.add_argument("--pythinker-review-pyproject", type=Path, required=True)
+    parser.add_argument("--pythinker-sdk-pyproject", type=Path, required=True)
     args = parser.parse_args()
 
     try:
@@ -63,6 +64,7 @@ def main() -> int:
         return 1
 
     errors: list[str] = []
+    package_versions: dict[str, str] = {}
     for name, pyproject_path in (
         ("pythinker-core", args.pythinker_core_pyproject),
         ("pythinker-host", args.pythinker_host_pyproject),
@@ -73,6 +75,7 @@ def main() -> int:
         except ValueError as exc:
             errors.append(str(exc))
             continue
+        package_versions[name] = package_version
 
         pinned_version = find_pinned_dependency(deps, name)
         if pinned_version is None:
@@ -84,6 +87,28 @@ def main() -> int:
                 f"{name} version mismatch: root depends on {pinned_version}, "
                 f"but {pyproject_path} has {package_version}."
             )
+
+    try:
+        sdk_project = load_project_table(args.pythinker_sdk_pyproject)
+    except ValueError as exc:
+        errors.append(str(exc))
+    else:
+        sdk_deps = sdk_project.get("dependencies", [])
+        if not isinstance(sdk_deps, list):
+            errors.append(
+                f"project.dependencies must be a list in {args.pythinker_sdk_pyproject}"
+            )
+        elif core_version := package_versions.get("pythinker-core"):
+            sdk_core_pin = find_pinned_dependency(sdk_deps, "pythinker-core")
+            if sdk_core_pin is None:
+                errors.append(
+                    f"Missing pinned dependency for pythinker-core in {args.pythinker_sdk_pyproject}."
+                )
+            elif sdk_core_pin != core_version:
+                errors.append(
+                    f"pythinker-sdk core dependency mismatch: sdk depends on {sdk_core_pin}, "
+                    f"but {args.pythinker_core_pyproject} has {core_version}."
+                )
 
     if errors:
         for error in errors:
