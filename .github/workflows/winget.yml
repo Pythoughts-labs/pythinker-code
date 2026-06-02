@@ -35,7 +35,7 @@ jobs:
             exit 1
           fi
 
-      - name: Submit manifest update with wingetcreate
+      - name: Submit manifest to WinGet (new or update)
         shell: pwsh
         env:
           WINGET_TOKEN: ${{ secrets.WINGET_SUBMIT_TOKEN }}
@@ -53,10 +53,44 @@ jobs:
           if ($actualHash -ne $wingetCreateSha256) {
             throw "wingetcreate.exe SHA-256 mismatch: expected $wingetCreateSha256, got $actualHash"
           }
-          # PackageIdentifier must match the existing winget-pkgs entry; create it
-          # once manually via `wingetcreate new` before the first automated update.
-          .\wingetcreate.exe update PythoughtsLabs.PythinkerCode `
-            --version $env:VERSION `
-            --urls "$installerUrl" `
-            --submit `
-            --token $env:WINGET_TOKEN
+
+          # Detect whether the package already exists in winget-pkgs.
+          $manifestPath = "manifests/p/PythoughtsLabs/PythinkerCode"
+          $headers = @{
+            Authorization = "token $env:WINGET_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          $packageExists = $false
+          try {
+            $null = Invoke-WebRequest -Uri "https://api.github.com/repos/microsoft/winget-pkgs/contents/$manifestPath" `
+              -Headers $headers -ErrorAction Stop
+            $packageExists = $true
+          } catch {
+            # Only treat 404 as "package not yet submitted". Any other status
+            # (401, 403, 5xx) or network failure means something is wrong — fail loudly.
+            $response = $_.Exception.Response
+            if ($null -ne $response -and [int]$response.StatusCode -eq 404) {
+              $packageExists = $false
+            } else {
+              throw
+            }
+          }
+
+          if ($packageExists) {
+            Write-Host "Package exists in winget-pkgs — running wingetcreate update"
+            .\wingetcreate.exe update PythoughtsLabs.PythinkerCode `
+              --version $env:VERSION `
+              --urls "$installerUrl" `
+              --submit `
+              --token $env:WINGET_TOKEN
+          } else {
+            # wingetcreate new is interactive and not safe to run in CI.
+            # The initial submission must be done once manually:
+            #   wingetcreate new <installerUrl> --token <PAT>
+            # After that PR is merged into winget-pkgs, this workflow handles
+            # all subsequent updates automatically via wingetcreate update.
+            throw "Package 'PythoughtsLabs.PythinkerCode' not found in winget-pkgs. " + `
+                  "Submit the initial manifest manually: " + `
+                  "wingetcreate new $installerUrl --token <WINGET_SUBMIT_TOKEN>"
+          }
