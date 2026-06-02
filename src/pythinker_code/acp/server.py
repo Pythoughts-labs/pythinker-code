@@ -376,9 +376,18 @@ class ACPServer:
     async def close_session(
         self, session_id: str, **kwargs: Any
     ) -> acp.schema.CloseSessionResponse | None:
-        """Drop a session from the in-memory registry (ACP 0.10 session/close)."""
+        """Close a session: cancel in-flight work, then free its resources (ACP 0.10).
+
+        The ``session/close`` spec requires the agent to cancel any ongoing work
+        (as if ``session/cancel`` was called) and then release the resources
+        associated with the session before dropping it from the registry.
+        """
         logger.info("Closing session: {id}", id=session_id)
-        self.sessions.pop(session_id, None)
+        entry = self.sessions.pop(session_id, None)
+        if entry is not None:
+            acp_session, _ = entry
+            await acp_session.cancel()
+            await acp_session.cli.cleanup_runtime_resources()
         return None
 
     async def set_config_option(
@@ -469,7 +478,10 @@ class ACPServer:
                 raise acp.RequestError.auth_required(
                     {
                         "message": "Please complete login in terminal first",
-                        "authMethods": self._auth_methods,
+                        "authMethods": [
+                            m.model_dump(by_alias=True, exclude_none=True)
+                            for m in self._auth_methods
+                        ],
                     }
                 )
 

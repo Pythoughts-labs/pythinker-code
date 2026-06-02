@@ -170,6 +170,33 @@ async def test_authenticate_rejects_expired_token_without_refresh(server: ACPSer
 
 
 @pytest.mark.asyncio
+async def test_authenticate_auth_required_data_is_json_serializable(server: ACPServer) -> None:
+    """The AUTH_REQUIRED error from authenticate() must carry JSON-serializable
+    ``authMethods`` (plain dicts), not raw Pydantic models.
+
+    The JSON-RPC connection layer encodes the error ``data`` with a plain
+    ``json.dumps`` (no Pydantic-aware default encoder), so raw models would raise
+    ``TypeError`` while building the error response — crashing the agent process.
+    """
+    import json
+
+    token = _make_token(expires_at=time.time() - 100, refresh_token="")
+
+    with (
+        patch("pythinker_code.acp.server.load_config", return_value=Config()),
+        patch("pythinker_code.acp.server.load_tokens", return_value=token),
+        pytest.raises(acp.RequestError) as exc_info,
+    ):
+        await server.authenticate(method_id="login")
+
+    data = exc_info.value.data
+    assert isinstance(data, dict)
+    # Must not raise TypeError on encode (the bug: raw Pydantic models).
+    json.dumps(data)
+    assert all(isinstance(m, dict) for m in data["authMethods"])
+
+
+@pytest.mark.asyncio
 async def test_authenticate_accepts_valid_token(server: ACPServer) -> None:
     """authenticate('login') should succeed for a valid, non-expired token."""
     token = _make_token()
