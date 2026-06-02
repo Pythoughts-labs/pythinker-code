@@ -1,7 +1,23 @@
 from rich.color import Color
 
-from pythinker_code.ui.shell.motion import shimmer_prompt_fragments, shimmer_spinner_style
+from pythinker_code.ui.shell.motion import (
+    _SHIMMER_HIGHLIGHT,
+    _SHIMMER_INTERVAL_S,
+    _SHIMMER_MID,
+    _shimmer_segments,
+    shimmer_prompt_fragments,
+    shimmer_spinner_style,
+)
 from pythinker_code.ui.theme import set_active_theme
+
+
+def _frame_colors(label: str, frame: int) -> list[str | None]:
+    """Per-character colors at a given integer animation frame."""
+    elapsed = (frame + 0.5) * _SHIMMER_INTERVAL_S
+    colors: list[str | None] = []
+    for color, text in _shimmer_segments(label, elapsed, reduced_motion=False):
+        colors.extend([color] * len(text))
+    return colors
 
 
 def _color_hex(color: Color | None) -> str:
@@ -26,13 +42,61 @@ def test_shimmer_varies_over_time_when_motion_enabled(monkeypatch):
     assert first != later or first != "#e6b450"
 
 
-def test_prompt_shimmer_fragments_share_muted_yellow_palette(monkeypatch):
+def test_prompt_shimmer_fragments_share_warm_violet_palette(monkeypatch):
     monkeypatch.delenv("PYTHINKER_REDUCED_MOTION", raising=False)
 
     fragments = shimmer_prompt_fragments("Schlepping…", 0.88)
     styles = {style.lower() for style, text in fragments if text.strip()}
 
     assert "fg:#e6b450" in styles
-    assert "fg:#ebc46e" in styles
-    assert "fg:#f3d89a" in styles
+    assert "fg:#e8876a" in styles
+    assert "fg:#c084d8" in styles
     assert "".join(text for _style, text in fragments) == "Schlepping…"
+
+
+def test_splash_originates_at_center_and_widens(monkeypatch):
+    monkeypatch.delenv("PYTHINKER_REDUCED_MOTION", raising=False)
+    label = "abcdefg"  # n=7, center index 3, no spaces
+    wave_len = len(label) + 6  # phase B (first splash) starts here
+
+    first = _frame_colors(label, wave_len)
+    highlighted_first = [i for i, c in enumerate(first) if c == _SHIMMER_HIGHLIGHT]
+    assert highlighted_first == [3]  # bloom begins at the center char
+
+    second = _frame_colors(label, wave_len + 1)
+    highlighted_second = [i for i, c in enumerate(second) if c == _SHIMMER_HIGHLIGHT]
+    assert highlighted_second == [2, 4]  # wavefront expands symmetrically outward
+    assert second[3] == _SHIMMER_MID  # interior fills behind the front
+
+
+def test_phase_c_trail_mirrors_phase_a(monkeypatch):
+    monkeypatch.delenv("PYTHINKER_REDUCED_MOTION", raising=False)
+    label = "abcdefg"
+    n = len(label)
+    wave_len = n + 6
+    splash_len = (n + 1) // 2 + 3
+
+    # Phase A (right-to-left) and phase C (left-to-right) with the head at index 3.
+    phase_a = _frame_colors(label, n + 2 - 3)
+    phase_c = _frame_colors(label, wave_len + splash_len + (3 + 2))
+
+    assert phase_a[3] == _SHIMMER_HIGHLIGHT
+    assert phase_c[3] == _SHIMMER_HIGHLIGHT
+
+    a_mid = [i for i, c in enumerate(phase_a) if c == _SHIMMER_MID]
+    c_mid = [i for i, c in enumerate(phase_c) if c == _SHIMMER_MID]
+    # Phase A trail leans right of the head; phase C trail is mirrored to the left.
+    assert max(a_mid) > 3
+    assert min(c_mid) < 3
+    assert a_mid != c_mid
+
+
+def test_cycle_returns_to_start(monkeypatch):
+    monkeypatch.delenv("PYTHINKER_REDUCED_MOTION", raising=False)
+    label = "Reticulating"
+    n = len(label)
+    cycle_len = 2 * (n + 6) + 2 * ((n + 1) // 2 + 3)
+
+    assert _frame_colors(label, 3) == _frame_colors(label, 3 + cycle_len)
+    # A frame mid-cycle differs from the start (the animation actually moves).
+    assert _frame_colors(label, 3) != _frame_colors(label, 3 + cycle_len // 2)

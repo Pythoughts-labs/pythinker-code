@@ -31,24 +31,24 @@ _FRAME_INTERVAL_S = SPINNER_FRAME_INTERVAL_S
 
 
 def verb_spinner_style() -> Style:
-    """Muted yellow style for the active verb spinner word."""
+    """Warm amber style for the active verb spinner word."""
     if colors_disabled():
         return Style()
-    return Style(color=Color.parse("#E6B450"))  # brand-exception: muted yellow verb shimmer
+    return Style(color=Color.parse(_SHIMMER_BASE))
 
 
-# ChatGPT-like clean shimmer: a subtle muted-yellow sweep on the active verb only.
-_SHIMMER_BASE = "#E6B450"  # brand-exception: muted yellow shimmer literal
-_SHIMMER_MID = "#EBC46E"  # brand-exception: muted yellow shimmer literal
-_SHIMMER_HIGHLIGHT = "#F3D89A"  # brand-exception: muted yellow shimmer literal
+# Terminal-native shimmer: a restrained amber-to-pink-violet sweep on the active verb only.
+_SHIMMER_BASE = "#E6B450"  # brand-exception: warm amber shimmer literal
+_SHIMMER_MID = "#E8876A"  # brand-exception: muted orange-coral shimmer literal
+_SHIMMER_HIGHLIGHT = "#C084D8"  # brand-exception: soft pink-violet shimmer literal
 _SHIMMER_INTERVAL_S = 0.22
 _SPINNER_SILVER_STYLE = Style(color=Color.parse("#C0C0C0"))  # brand-exception: silver spinner
 
 
 def shimmer_spinner_style(elapsed_s: float, *, reduced_motion: bool = False) -> Style:
-    """Clean muted-yellow shimmer color for active verb text.
+    """Clean warm shimmer color for active verb text.
 
-    Reduced motion pins to the base muted yellow so the word stays calm.
+    Reduced motion pins to the base amber so the word stays calm.
     """
     if colors_disabled():
         return Style()
@@ -59,13 +59,72 @@ def shimmer_spinner_style(elapsed_s: float, *, reduced_motion: bool = False) -> 
     return Style(color=Color.parse(palette[idx]))
 
 
+def _wave_colors(chars: list[str], local_phase: int, *, rightward: bool) -> list[str | None]:
+    """Per-character colors for a single traveling-wave sweep.
+
+    One bright highlight crosses the label with an asymmetric, slightly wider
+    trail behind it — an angled sheen rather than a flat pulse. ``rightward``
+    flips both the travel direction and the trailing side so the trail always
+    lags behind the head.
+    """
+    n = len(chars)
+    if rightward:
+        head = local_phase - 2
+        trail = (1, -1, -2, -3)
+    else:
+        head = n + 2 - local_phase
+        trail = (-1, 1, 2, 3)
+    colors: list[str | None] = []
+    for i, char in enumerate(chars):
+        if char.isspace():
+            colors.append(None)
+            continue
+        offset = i - head
+        if offset == 0:
+            colors.append(_SHIMMER_HIGHLIGHT)
+        elif offset in trail:
+            colors.append(_SHIMMER_MID)
+        else:
+            colors.append(_SHIMMER_BASE)
+    return colors
+
+
+def _splash_colors(chars: list[str], local_phase: int) -> list[str | None]:
+    """Per-character colors for the center-out splash bloom.
+
+    A wavefront expands from the middle of the label toward both edges, leaving
+    a filled coral interior behind it, then settles the whole word to base amber.
+    """
+    n = len(chars)
+    fill_frames = (n + 1) // 2 + 1  # frames for the wavefront to clear both edges
+    center = (n - 1) / 2
+    if local_phase >= fill_frames:  # settle beat before the next wave launches
+        return [None if char.isspace() else _SHIMMER_BASE for char in chars]
+    radius = local_phase
+    colors: list[str | None] = []
+    for i, char in enumerate(chars):
+        if char.isspace():
+            colors.append(None)
+            continue
+        dist = abs(i - center)
+        if radius - 0.5 <= dist <= radius + 0.5:
+            colors.append(_SHIMMER_HIGHLIGHT)
+        elif dist < radius - 0.5:
+            colors.append(_SHIMMER_MID)
+        else:
+            colors.append(_SHIMMER_BASE)
+    return colors
+
+
 def _shimmer_segments(
     label: str, elapsed_s: float, *, reduced_motion: bool
 ) -> list[tuple[str | None, str]]:
     """Return coalesced ``(hex_color, text)`` shimmer segments.
 
     This is shared by Rich renderables and prompt_toolkit fragments so every
-    active-work label uses the same visual language.
+    active-work label uses the same visual language. The motion is a four-phase
+    loop that reads like traveling waves: a wave sweeps right-to-left, splashes
+    outward from the middle, sweeps back left-to-right, splashes again, repeat.
     """
     if not label:
         return []
@@ -75,22 +134,22 @@ def _shimmer_segments(
         return [(_SHIMMER_BASE, label)]
 
     chars = list(label)
-    # Sweep one bright highlight right-to-left with an asymmetric, slightly
-    # wider trail. The uneven trail reads like an angled sheen instead of a flat pulse.
-    phase = int(max(0.0, elapsed_s) / _SHIMMER_INTERVAL_S) % (len(chars) + 6)
-    head = len(chars) + 2 - phase
+    n = len(chars)
+    wave_len = n + 6
+    splash_len = (n + 1) // 2 + 3
+    cycle_len = 2 * wave_len + 2 * splash_len
+    frame = int(max(0.0, elapsed_s) / _SHIMMER_INTERVAL_S) % cycle_len
+    if frame < wave_len:
+        colors = _wave_colors(chars, frame, rightward=False)
+    elif frame < wave_len + splash_len:
+        colors = _splash_colors(chars, frame - wave_len)
+    elif frame < 2 * wave_len + splash_len:
+        colors = _wave_colors(chars, frame - wave_len - splash_len, rightward=True)
+    else:
+        colors = _splash_colors(chars, frame - 2 * wave_len - splash_len)
+
     segments: list[tuple[str | None, str]] = []
-    for i, char in enumerate(chars):
-        if char.isspace():
-            color: str | None = None
-        else:
-            offset = i - head
-            if offset == 0:
-                color = _SHIMMER_HIGHLIGHT
-            elif offset in (-1, 1, 2, 3):
-                color = _SHIMMER_MID
-            else:
-                color = _SHIMMER_BASE
+    for char, color in zip(chars, colors, strict=True):
         if segments and segments[-1][0] == color:
             segments[-1] = (color, segments[-1][1] + char)
         else:
