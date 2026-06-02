@@ -68,7 +68,7 @@ _REGISTRY: dict[str, tuple[str, ...]] = {
 _BINDING_DESCRIPTIONS: dict[str, str] = {
     "app.prompt.help": "show shortcuts",
     "app.mode.toggle": "toggle agent/shell prompt",
-    "app.thinking.cycle": "cycle thinking level",
+    "app.thinking.cycle": "change thinking effort",
     "app.shell.oneshot": "run one shell command",
     "app.editor.external": "open prompt in editor",
     "app.prompt.newline": "insert newline",

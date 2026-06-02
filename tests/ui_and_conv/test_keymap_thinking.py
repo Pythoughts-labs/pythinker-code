@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pythinker_code.ui.shell.keymap import (
     all_keybindings,
-    keybinding_description,
     key_text,
+    keybinding_description,
 )
 
 
@@ -17,4 +17,4 @@ def test_shift_tab_bound_to_thinking_cycle_not_plan() -> None:
 
 
 def test_thinking_cycle_has_help_description() -> None:
-    assert keybinding_description("app.thinking.cycle") == "cycle thinking level"
+    assert keybinding_description("app.thinking.cycle") == "change thinking effort"

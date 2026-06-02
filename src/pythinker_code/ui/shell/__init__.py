@@ -682,6 +682,11 @@ class Shell:
                 return await self.soul.toggle_plan_mode_from_manual()
             return False
 
+        async def _thinking_effort_cycle() -> str | None:
+            if isinstance(self.soul, PythinkerSoul):
+                return self.soul.cycle_thinking_effort_from_manual()
+            return None
+
         def _mcp_status_block(columns: int):
             if not isinstance(self.soul, PythinkerSoul):
                 return None
@@ -729,6 +734,9 @@ class Shell:
                 else None,
             ),
             thinking=self.soul.thinking or False,
+            thinking_effort=(
+                self.soul.thinking_effort if isinstance(self.soul, PythinkerSoul) else None
+            ),
             agent_mode_slash_commands=list(self._available_slash_commands.values()),
             shell_mode_slash_commands=shell_mode_registry.list_commands(),
             editor_command_provider=lambda: (
@@ -737,6 +745,7 @@ class Shell:
                 else ""
             ),
             plan_mode_toggle_callback=_plan_mode_toggle,
+            thinking_effort_cycle_callback=_thinking_effort_cycle,
             history_enabled=(
                 self.soul.runtime.config.tui.prompt_history_enabled
                 if isinstance(self.soul, PythinkerSoul)

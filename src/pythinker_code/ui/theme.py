@@ -574,23 +574,25 @@ def tui_rich_style(token: str, *, theme: ThemeName | None = None) -> RichStyle:
 # ---------------------------------------------------------------------------
 
 _THINKING_FRAME_DARK: dict[str, str] = {
-    "off": "#5F6B7E",  # grey
-    "minimal": "#7A8595",  # dim grey
-    "low": "#A3A3A3",  # lighter grey
-    "medium": "#7FB6E6",  # light blue
-    "high": "#A78BFA",  # violet
-    "xhigh": "#C4B5FD",  # lighter purple
-    "max": "#F0ABFC",  # bright magenta
+    # Cool-to-warm ramp: quiet slate when disabled, then increasingly vivid
+    # thinking states as the model spends more effort.
+    "off": "#94A3B8",  # slate
+    "minimal": "#60A5FA",  # blue
+    "low": "#22D3EE",  # cyan
+    "medium": "#34D399",  # emerald
+    "high": "#FBBF24",  # amber
+    "xhigh": "#FB7185",  # rose
+    "max": "#F472B6",  # pink
 }
 
 _THINKING_FRAME_LIGHT: dict[str, str] = {
-    "off": "#8A93A0",
-    "minimal": "#6E7A88",
-    "low": "#666666",
-    "medium": "#2F6F8F",
-    "high": "#7C3AED",
-    "xhigh": "#9061F9",
-    "max": "#B83280",
+    "off": "#475569",  # slate
+    "minimal": "#0369A1",  # blue
+    "low": "#0E7490",  # cyan
+    "medium": "#047857",  # emerald
+    "high": "#92400E",  # amber
+    "xhigh": "#9F1239",  # rose
+    "max": "#9D174D",  # pink
 }
 
 
