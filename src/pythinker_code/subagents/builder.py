@@ -24,6 +24,7 @@ class SubagentBuilder:
             session_id=self._root_runtime.session.id,
             oauth=self._root_runtime.oauth,
             thinking=launch_spec.thinking,
+            thinking_effort=launch_spec.thinking_effort,
         )
         runtime = self._root_runtime.copy_for_subagent(
             agent_id=agent_id,

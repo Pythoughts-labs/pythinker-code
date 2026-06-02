@@ -129,7 +129,7 @@ async def test_builder_model_priority_prefers_override_then_type_default_then_in
     captured_thinking: list[bool | None] = []
 
     def fake_clone_llm_with_model_alias(
-        llm, config, model_alias, *, session_id, oauth, thinking=None
+        llm, config, model_alias, *, session_id, oauth, thinking=None, thinking_effort=None
     ):
         captured_aliases.append(model_alias)
         captured_thinking.append(thinking)

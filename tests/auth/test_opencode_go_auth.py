@@ -104,7 +104,10 @@ def test_apply_opencode_go_config_writes_two_providers_and_default():
     assert openai_provider.api_key.get_secret_value() == "ocgo-test"
     assert anthropic_provider.api_key.get_secret_value() == "ocgo-test"
     assert config.models["opencode-go/kimi-k2.6"].provider == OPENCODE_GO_OPENAI_PROVIDER_KEY
+    assert config.models["opencode-go/kimi-k2.6"].capabilities is None
+    assert config.models["opencode-go/glm-5"].capabilities == {"always_thinking"}
     assert config.models["opencode-go/minimax-m2.7"].provider == OPENCODE_GO_ANTHROPIC_PROVIDER_KEY
+    assert config.models["opencode-go/minimax-m2.7"].capabilities == {"always_thinking"}
     assert config.default_model == "opencode-go/kimi-k2.6"
 
 
@@ -329,6 +332,14 @@ def test_build_models_falls_back_to_catalog_then_heuristic_without_metadata():
     assert by_id["minimax-m9.9"].provider_key == OPENCODE_GO_ANTHROPIC_PROVIDER_KEY
 
 
+def test_native_thinking_capabilities_cover_glm_and_minimax_only():
+    from pythinker_code.auth.opencode_go import _native_thinking_capabilities
+
+    assert _native_thinking_capabilities("glm-5") == {"always_thinking"}
+    assert _native_thinking_capabilities("minimax-m2.7") == {"always_thinking"}
+    assert _native_thinking_capabilities("kimi-k2.6") is None
+
+
 def test_parse_models_dev_metadata_extracts_name_context_and_shape():
     from pythinker_code.auth.opencode_go import _ModelsDevMeta, _parse_models_dev_metadata
 
@@ -501,6 +512,7 @@ def test_apply_opencode_go_models_adds_new_and_corrects_shape_preserving_user_pr
     # New model now present on the Anthropic-shaped provider.
     assert config.models["opencode-go/qwen3.7-max"].provider == OPENCODE_GO_ANTHROPIC_PROVIDER_KEY
     assert config.models["opencode-go/qwen3.7-max"].max_context_size == 1_000_000
+    assert config.models["opencode-go/qwen3.7-max"].capabilities is None
     # Existing Qwen corrected from OpenAI → Anthropic shape.
     assert config.models["opencode-go/qwen3.5-plus"].provider == OPENCODE_GO_ANTHROPIC_PROVIDER_KEY
     # User preferences untouched.

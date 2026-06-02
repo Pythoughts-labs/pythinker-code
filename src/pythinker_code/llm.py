@@ -7,9 +7,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast, get_args
 
-from pythinker_core.chat_provider import ChatProvider
+from pythinker_core.chat_provider import ChatProvider, ThinkingEffort
 
 from pythinker_code.constant import USER_AGENT
+from pythinker_code.thinking import (
+    DEFAULT_THINKING_EFFORT,
+    bool_to_thinking_effort,
+    normalize_thinking_effort,
+    thinking_effort_enabled,
+)
 from pythinker_code.utils.logging import logger
 
 if TYPE_CHECKING:
@@ -42,6 +48,7 @@ class LLM:
     model_config: LLMModel | None = None
     provider_config: LLMProvider | None = None
     thinking: bool | None = None
+    thinking_effort: ThinkingEffort | None = None
 
     @property
     def model_name(self) -> str:
@@ -157,6 +164,7 @@ def create_llm(
     model: LLMModel,
     *,
     thinking: bool | None = None,
+    thinking_effort: ThinkingEffort | None = None,
     session_id: str | None = None,
     oauth: OAuthManager | None = None,
 ) -> LLM | None:
@@ -317,22 +325,38 @@ def create_llm(
 
     capabilities = derive_model_capabilities(model)
 
-    # Apply thinking if specified or if model always requires thinking
-    thinking_on = "always_thinking" in capabilities or (
-        thinking is True and "thinking" in capabilities
+    requested_effort = (
+        normalize_thinking_effort(thinking_effort)
+        if thinking_effort is not None
+        else bool_to_thinking_effort(thinking)
     )
+    if thinking_effort is not None and requested_effort is None:
+        raise ValueError(f"Invalid thinking effort: {thinking_effort!r}")
+
+    supports_thinking = "thinking" in capabilities
+    if "always_thinking" in capabilities:
+        # Always-thinking models cannot be disabled. Preserve an explicit
+        # non-off effort; otherwise keep the legacy high-effort default.
+        effective_effort = (
+            requested_effort
+            if requested_effort is not None and requested_effort != "off"
+            else DEFAULT_THINKING_EFFORT
+        )
+    elif supports_thinking:
+        effective_effort = requested_effort
+    else:
+        # Match pi-main's clamp-to-model behavior: non-reasoning models have
+        # only the off level, so explicit non-off requests become off instead of
+        # being recorded as active but ignored by the provider.
+        effective_effort = "off" if requested_effort is not None else None
+
+    thinking_on = thinking_effort_enabled(effective_effort)
     is_kimi_openai_legacy = provider.type == "openai_legacy" and _is_kimi_k2_model(model.model)
-    if thinking_on and not is_kimi_openai_legacy:
-        chat_provider = chat_provider.with_thinking("high")
-    elif thinking is False and "thinking" in capabilities and not is_kimi_openai_legacy:
-        # Only explicitly send `reasoning_effort: null` for models that actually
-        # support reasoning. For models without the thinking capability, omit
-        # the field entirely — some providers (e.g., Alibaba via OpenAI-compat)
-        # reject explicit nulls with `'reasoning_effort' must be an object ...
-        # or a String`.
-        chat_provider = chat_provider.with_thinking("off")
-    # If thinking is None, or thinking is False on a non-reasoning model, leave
-    # the chat provider's default reasoning_effort (Omit) untouched.
+    if effective_effort is not None and supports_thinking and not is_kimi_openai_legacy:
+        # Only explicitly send thinking controls for models that advertise
+        # reasoning. Some OpenAI-compatible non-reasoning models reject even a
+        # null reasoning_effort field.
+        chat_provider = chat_provider.with_thinking(effective_effort)
 
     # Kimi K2.5/K2.6 use an OpenAI-compatible API but their thinking toggle is
     # the provider-specific `thinking.type` body field rather than OpenAI's
@@ -340,12 +364,10 @@ def create_llm(
     # config says thinking is off we must send the explicit Kimi switch;
     # otherwise multi-step tool calls can still enter thinking mode and require
     # `reasoning_content` on replayed tool-call turns.
-    if is_kimi_openai_legacy:
-        thinking_type = "enabled" if thinking_on else "disabled" if thinking is False else None
-        if thinking_type is not None:
-            chat_provider = cast(Any, chat_provider).with_generation_kwargs(
-                extra_body={"thinking": {"type": thinking_type}}
-            )
+    if is_kimi_openai_legacy and effective_effort is not None:
+        chat_provider = cast(Any, chat_provider).with_generation_kwargs(
+            extra_body={"thinking": {"type": "enabled" if thinking_on else "disabled"}}
+        )
 
     # Apply Pythinker AI-specific ``thinking.keep`` (preserved thinking) only when
     # the model is actually in thinking mode; otherwise the API would see a
@@ -364,7 +386,10 @@ def create_llm(
         capabilities=capabilities,
         model_config=model,
         provider_config=provider,
-        thinking=thinking,
+        thinking=thinking_effort_enabled(effective_effort)
+        if effective_effort is not None
+        else thinking,
+        thinking_effort=effective_effort,
     )
 
 
@@ -376,6 +401,7 @@ def clone_llm_with_model_alias(
     session_id: str,
     oauth: OAuthManager | None,
     thinking: bool | None = None,
+    thinking_effort: ThinkingEffort | None = None,
 ) -> LLM | None:
     if model_alias is None:
         return llm
@@ -383,16 +409,19 @@ def clone_llm_with_model_alias(
         raise KeyError(f"Unknown model alias: {model_alias}")
     model = config.models[model_alias]
     provider = config.providers[model.provider]
-    if thinking is None and llm is not None:
-        thinking = llm.thinking
-    if thinking is None and llm is not None:
+    if thinking_effort is None and thinking is None and llm is not None:
+        thinking_effort = llm.thinking_effort
+    if thinking_effort is None and thinking is None and llm is not None:
         effort = getattr(llm.chat_provider, "thinking_effort", None)
         if effort is not None:
-            thinking = effort != "off"
+            thinking_effort = effort
+    if thinking_effort is None and thinking is None and llm is not None:
+        thinking = llm.thinking
     return create_llm(
         provider,
         model,
         thinking=thinking,
+        thinking_effort=thinking_effort,
         session_id=session_id,
         oauth=oauth,
     )

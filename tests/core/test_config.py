@@ -23,6 +23,7 @@ def test_default_config_dump():
         {
             "default_model": "",
             "default_thinking": False,
+            "default_thinking_effort": None,
             "agent_execution_profile": "default",
             "default_yolo": False,
             "ask_user_question_policy": "ask_except_auto",

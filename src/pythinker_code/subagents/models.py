@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from pythinker_core.chat_provider import ThinkingEffort
+
 type ToolPolicyMode = Literal["inherit", "allowlist"]
 type SubagentStatus = Literal[
     "idle",
@@ -40,6 +42,7 @@ class AgentLaunchSpec:
     model_override: str | None
     effective_model: str | None
     thinking: bool | None = None
+    thinking_effort: ThinkingEffort | None = None
     variant: str | None = None
     parent_agent_id: str | None = None
     created_at: float = field(default_factory=time.time)

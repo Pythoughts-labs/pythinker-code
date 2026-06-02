@@ -11,6 +11,7 @@ from pydantic import SecretStr
 from pythinker_code.auth import OPENROUTER_PLATFORM_ID
 from pythinker_code.auth.oauth import OAuthEvent
 from pythinker_code.config import Config, LLMModel, LLMProvider, save_config
+from pythinker_code.thinking import apply_login_thinking_defaults
 from pythinker_code.utils.aiohttp import new_client_session
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -99,7 +100,7 @@ def _apply_openrouter_config(
         config.default_model = OPENROUTER_DEFAULT_MODEL_ALIAS
     else:
         config.default_model = fallback
-    config.default_thinking = False
+    apply_login_thinking_defaults(config, thinking=False, effort="off")
 
 
 def _model_by_id() -> dict[str, OpenRouterModel]:

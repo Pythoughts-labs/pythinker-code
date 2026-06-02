@@ -457,6 +457,30 @@ def test_create_llm_openai_legacy_thinking_false_keeps_off_for_reasoning_model()
     assert "reasoning_effort" in llm.chat_provider.model_parameters
 
 
+def test_create_llm_openai_legacy_thinking_effort_xhigh_is_preserved():
+    """Explicit effort levels should reach the provider instead of collapsing
+    every enabled thinking request to high."""
+    provider = LLMProvider(
+        type="openai_legacy",
+        base_url="https://api.example.com/v1",
+        api_key=SecretStr("test-key"),
+    )
+    model = LLMModel(
+        provider="managed:example",
+        model="example-pro-flash",
+        max_context_size=128000,
+        capabilities={"thinking"},
+    )
+
+    llm = create_llm(provider, model, thinking_effort="xhigh")
+
+    assert llm is not None
+    assert isinstance(llm.chat_provider, OpenAILegacy)
+    assert llm.chat_provider.model_parameters.get("reasoning_effort") == "xhigh"
+    assert llm.thinking is True
+    assert llm.thinking_effort == "xhigh"
+
+
 def _make_pythinker_thinking_model() -> tuple[LLMProvider, LLMModel]:
     """Helper: build a pythinker provider + always-thinking model pair."""
     provider = LLMProvider(
@@ -606,6 +630,34 @@ def test_create_llm_pythinker_thinking_keep_injected_on_explicit_thinking_true(m
     assert llm.chat_provider.model_parameters.get("extra_body") == snapshot(
         {"thinking": {"type": "enabled", "keep": "all"}}
     )
+
+
+def test_derive_model_capabilities_preserves_native_thinking_without_effort_dial():
+    model = LLMModel(
+        provider="managed:minimax-anthropic",
+        model="MiniMax-M2.7",
+        max_context_size=192_000,
+        capabilities={"always_thinking"},
+    )
+
+    assert derive_model_capabilities(model) == {"always_thinking"}
+
+
+def test_create_llm_native_thinking_model_uses_active_internal_default():
+    provider = LLMProvider(type="_echo", base_url="", api_key=SecretStr(""))
+    model = LLMModel(
+        provider="_echo",
+        model="native-model",
+        max_context_size=1234,
+        capabilities={"always_thinking"},
+    )
+
+    llm = create_llm(provider, model, thinking=False)
+
+    assert llm is not None
+    assert llm.capabilities == {"always_thinking"}
+    assert llm.thinking is True
+    assert llm.thinking_effort == "high"
 
 
 def test_derive_model_capabilities_marks_kimi_k2_as_toggleable_thinking():

@@ -60,3 +60,33 @@ def test_thinking_frame_style_is_ptk_fg_directive() -> None:
     from pythinker_code.ui.theme import thinking_frame_style
 
     assert thinking_frame_style("high", theme="dark") == "fg:#A78BFA"
+
+
+def test_core_thinking_cycle_uses_available_model_levels() -> None:
+    from pythinker_code.thinking import next_thinking_level
+
+    assert next_thinking_level("off", ("off", "high", "xhigh")) == "high"
+    assert next_thinking_level("high", ("off", "high", "xhigh")) == "xhigh"
+    assert next_thinking_level("xhigh", ("off", "high", "xhigh")) == "off"
+
+
+def test_core_thinking_clamps_unsupported_level_up_then_down() -> None:
+    from pythinker_code.thinking import clamp_thinking_effort
+
+    assert clamp_thinking_effort("low", ("off", "high")) == "high"
+    assert clamp_thinking_effort("xhigh", ("off", "high")) == "high"
+    assert clamp_thinking_effort("off", ("minimal", "low", "high")) == "minimal"
+
+
+def test_effective_config_thinking_effort_treats_effort_as_source_of_truth() -> None:
+    from pythinker_code.thinking import effective_config_thinking_effort
+
+    # The explicit effort field wins whenever it is set (it is the SSOT; every
+    # writer keeps the legacy bool in sync). The bool is only a fallback when the
+    # effort is unset (configs written before the effort field existed).
+    assert effective_config_thinking_effort(False, "high") == "high"
+    assert effective_config_thinking_effort(True, None) == "high"
+    # Explicit "off" must beat the legacy bool (was the Finding 3 regression).
+    assert effective_config_thinking_effort(True, "off") == "off"
+    assert effective_config_thinking_effort(True, "xhigh") == "xhigh"
+    assert effective_config_thinking_effort(False, None) == "off"

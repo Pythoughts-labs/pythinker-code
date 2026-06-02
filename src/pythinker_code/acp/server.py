@@ -24,6 +24,7 @@ from pythinker_code.llm import create_llm, derive_model_capabilities
 from pythinker_code.session import Session
 from pythinker_code.soul.slash import registry as soul_slash_registry
 from pythinker_code.soul.toolset import PythinkerToolset
+from pythinker_code.thinking import DEFAULT_THINKING_EFFORT, effective_config_thinking_effort
 from pythinker_code.utils.logging import logger
 
 
@@ -380,11 +381,21 @@ class ACPServer:
             )
             raise acp.RequestError.invalid_params({"model_id": "Model's provider not found"})
 
+        if model_id_conv.thinking:
+            # Preserve the user's configured effort when switching to a thinking
+            # model; only fall back to the default when thinking was previously off.
+            current_effort = effective_config_thinking_effort(
+                config.default_thinking, config.default_thinking_effort
+            )
+            thinking_effort = current_effort if current_effort != "off" else DEFAULT_THINKING_EFFORT
+        else:
+            thinking_effort = "off"
         new_llm = create_llm(
             new_provider,
             new_model,
             session_id=acp_session.id,
             thinking=model_id_conv.thinking,
+            thinking_effort=thinking_effort,
             oauth=cli_instance.soul.runtime.oauth,
         )
         cli_instance.soul.runtime.llm = new_llm
@@ -392,12 +403,14 @@ class ACPServer:
 
         config.default_model = model_id_conv.model_key
         config.default_thinking = model_id_conv.thinking
+        config.default_thinking_effort = thinking_effort
         assert config.is_from_default_location, (
             "`pythinker acp` must use the default config location"
         )
         config_for_save = load_config()
         config_for_save.default_model = model_id_conv.model_key
         config_for_save.default_thinking = model_id_conv.thinking
+        config_for_save.default_thinking_effort = thinking_effort
         save_config(config_for_save)
 
     async def authenticate(self, method_id: str, **kwargs: Any) -> acp.AuthenticateResponse | None:

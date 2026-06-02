@@ -17,6 +17,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pythinker_core.chat_provider import ThinkingEffort
 from tomlkit.exceptions import TOMLKitError
 
 from pythinker_code.exception import ConfigError
@@ -352,6 +353,13 @@ class Config(BaseModel):
     )
     default_model: str = Field(default="", description="Default model to use")
     default_thinking: bool = Field(default=False, description="Default thinking mode")
+    default_thinking_effort: ThinkingEffort | None = Field(
+        default=None,
+        description=(
+            "Default thinking effort level. When unset, default_thinking=true maps to high "
+            "and default_thinking=false maps to off for backward compatibility."
+        ),
+    )
     agent_execution_profile: AgentExecutionProfile = Field(
         default="default",
         description=(

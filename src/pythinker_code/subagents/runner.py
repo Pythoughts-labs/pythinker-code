@@ -412,6 +412,9 @@ class ForegroundSubagentRunner:
                 model_override=req.model,
                 effective_model=req.model or type_def.default_model,
                 thinking=self._runtime.llm.thinking if self._runtime.llm is not None else None,
+                thinking_effort=(
+                    self._runtime.llm.thinking_effort if self._runtime.llm is not None else None
+                ),
                 parent_agent_id=self._runtime.subagent_id,
             ),
         )

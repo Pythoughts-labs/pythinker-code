@@ -1,36 +1,27 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, cast
 
+from pythinker_code.thinking import (
+    LEVEL_DESCRIPTIONS,
+)
+from pythinker_code.thinking import (
+    THINKING_LEVELS as CORE_THINKING_LEVELS,
+)
+from pythinker_code.thinking import (
+    next_thinking_level as _next_thinking_level,
+)
 from pythinker_code.ui.shell.selector import SelectorConfig, SelectorItem, run_selector
 
 ThinkingLevel = Literal["off", "minimal", "low", "medium", "high", "xhigh"]
 
-THINKING_LEVELS: tuple[ThinkingLevel, ...] = (
-    "off",
-    "minimal",
-    "low",
-    "medium",
-    "high",
-    "xhigh",
-)
+THINKING_LEVELS: tuple[ThinkingLevel, ...] = cast(tuple[ThinkingLevel, ...], CORE_THINKING_LEVELS)
 """Canonical low→high order used by the Shift+Tab cycle."""
 
 
 def next_thinking_level(current: ThinkingLevel) -> ThinkingLevel:
     """Return the next level in the cycle, wrapping ``xhigh`` back to ``off``."""
-    index = THINKING_LEVELS.index(current)
-    return THINKING_LEVELS[(index + 1) % len(THINKING_LEVELS)]
-
-
-LEVEL_DESCRIPTIONS: dict[str, str] = {
-    "off": "No reasoning",
-    "minimal": "Very brief reasoning (~1k tokens)",
-    "low": "Light reasoning (~2k tokens)",
-    "medium": "Moderate reasoning (~8k tokens)",
-    "high": "Deep reasoning (~16k tokens)",
-    "xhigh": "Maximum reasoning (~32k tokens)",
-}
+    return cast(ThinkingLevel, _next_thinking_level(current, THINKING_LEVELS))
 
 
 def _build_thinking_config(

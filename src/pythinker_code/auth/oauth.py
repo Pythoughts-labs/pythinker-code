@@ -39,6 +39,7 @@ from pythinker_code.config import (
 )
 from pythinker_code.constant import VERSION
 from pythinker_code.share import get_share_dir
+from pythinker_code.thinking import apply_login_thinking_defaults
 from pythinker_code.utils.aiohttp import new_client_session
 from pythinker_code.utils.logging import logger
 
@@ -601,7 +602,7 @@ def _apply_pythinker_code_config(
         )
 
     config.default_model = managed_model_key(platform.id, selected_model.id)
-    config.default_thinking = thinking
+    apply_login_thinking_defaults(config, thinking=thinking, effort="high" if thinking else "off")
 
     if platform.search_url:
         config.services.pythinker_ai_search = PythinkerAISearchConfig(

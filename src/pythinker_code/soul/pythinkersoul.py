@@ -20,6 +20,7 @@ from pythinker_core.chat_provider import (
     APIStatusError,
     APITimeoutError,
     RetryableChatProvider,
+    ThinkingEffort,
 )
 from pythinker_core.message import Message, ToolCall
 from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wait_exponential_jitter
@@ -32,7 +33,7 @@ from pythinker_code.approval_runtime import (
 )
 from pythinker_code.background import build_active_task_snapshot
 from pythinker_code.hooks.engine import HookEngine
-from pythinker_code.llm import ModelCapability
+from pythinker_code.llm import ModelCapability, create_llm
 from pythinker_code.notifications import (
     NotificationView,
     build_notification_message,
@@ -85,6 +86,13 @@ from pythinker_code.soul.permission import (
 )
 from pythinker_code.soul.slash import registry as soul_slash_registry
 from pythinker_code.soul.toolset import PythinkerToolset
+from pythinker_code.thinking import (
+    available_thinking_levels,
+    bool_to_thinking_effort,
+    clamp_thinking_effort,
+    next_thinking_level,
+    thinking_effort_enabled,
+)
 from pythinker_code.tools.dmail import NAME as SendDMail_NAME
 from pythinker_code.tools.utils import ToolRejectedError
 from pythinker_code.utils.logging import logger
@@ -636,13 +644,87 @@ class PythinkerSoul:
         return True
 
     @property
-    def thinking(self) -> bool | None:
-        """Whether thinking mode is enabled."""
+    def thinking_effort(self) -> ThinkingEffort | None:
+        """Current thinking effort level, if known."""
         if self._runtime.llm is None:
             return None
+        if self._runtime.llm.thinking_effort is not None:
+            return self._runtime.llm.thinking_effort
         if thinking_effort := self._runtime.llm.chat_provider.thinking_effort:
-            return thinking_effort != "off"
+            return thinking_effort
+        return bool_to_thinking_effort(self._runtime.llm.thinking)
+
+    @property
+    def thinking(self) -> bool | None:
+        """Whether thinking mode is enabled."""
+        effort = self.thinking_effort
+        if effort is not None:
+            return thinking_effort_enabled(effort)
         return None
+
+    def available_thinking_efforts(self) -> tuple[ThinkingEffort, ...]:
+        """Selectable thinking levels for the current model."""
+        if self._runtime.llm is None:
+            return ("off",)
+        return available_thinking_levels(self._runtime.llm.capabilities)
+
+    def set_thinking_effort_from_manual(self, effort: ThinkingEffort) -> ThinkingEffort | None:
+        """Apply a user-selected thinking level to the live runtime.
+
+        Returns the effective/clamped level, or ``None`` when no LLM/model is
+        active. Best-effort persistence mirrors pi-main's settings update, but
+        a config write failure must not prevent the current session from using
+        the new level.
+        """
+        if self._runtime.llm is None or self._runtime.llm.model_config is None:
+            return None
+        model = self._runtime.llm.model_config
+        provider = self._runtime.config.providers.get(model.provider)
+        if provider is None:
+            provider = self._runtime.llm.provider_config
+        if provider is None:
+            return None
+
+        levels = self.available_thinking_efforts()
+        effective_effort = clamp_thinking_effort(effort, levels)
+        new_llm = create_llm(
+            provider,
+            model,
+            thinking=thinking_effort_enabled(effective_effort),
+            thinking_effort=effective_effort,
+            session_id=self._runtime.session.id,
+            oauth=self._runtime.oauth,
+        )
+        if new_llm is None:
+            return None
+        self._runtime.llm = new_llm
+        self._runtime.config.default_thinking = thinking_effort_enabled(effective_effort)
+        self._runtime.config.default_thinking_effort = effective_effort
+
+        config_file = self._runtime.config.source_file
+        if config_file is not None:
+            from pythinker_code.config import load_config, save_config
+            from pythinker_code.exception import ConfigError
+
+            try:
+                config_for_save = load_config(config_file)
+                config_for_save.default_thinking = thinking_effort_enabled(effective_effort)
+                config_for_save.default_thinking_effort = effective_effort
+                save_config(config_for_save, config_file)
+            except (ConfigError, OSError) as exc:
+                logger.warning(
+                    "Failed to persist thinking effort change: {error}",
+                    error=exc,
+                )
+        return effective_effort
+
+    def cycle_thinking_effort_from_manual(self) -> ThinkingEffort | None:
+        """Cycle to the next thinking level for the current model."""
+        levels = self.available_thinking_efforts()
+        if levels == ("off",):
+            return None
+        current = self.thinking_effort or "off"
+        return self.set_thinking_effort_from_manual(next_thinking_level(current, levels))
 
     @property
     def status(self) -> StatusSnapshot:

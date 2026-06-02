@@ -6,6 +6,7 @@ import aiohttp
 from prompt_toolkit import PromptSession
 from prompt_toolkit.shortcuts.choice_input import ChoiceInput
 from pydantic import SecretStr
+from pythinker_core.chat_provider import ThinkingEffort
 from rich.markup import escape
 
 from pythinker_code.auth import PYTHINKER_CODE_PLATFORM_ID
@@ -59,8 +60,14 @@ async def setup_platform(platform: Platform) -> bool:
         return False
 
     _apply_setup_result(result)
+    from pythinker_code.thinking import model_uses_native_thinking
+
     _t = _get_tui_tokens()
-    thinking_label = "on" if result.thinking else "off"
+    thinking_label = (
+        "native reasoning"
+        if model_uses_native_thinking(result.selected_model.capabilities)
+        else result.thinking_effort
+    )
     console.print(f"[{_t.success}]✓ Setup complete![/]")
     console.print(f"  Platform: [bold]{escape(result.platform.name)}[/bold]")
     console.print(f"  Model:    [bold]{escape(result.selected_model.id)}[/bold]")
@@ -75,6 +82,7 @@ class _SetupResult(NamedTuple):
     selected_model: ModelInfo
     models: list[ModelInfo]
     thinking: bool
+    thinking_effort: ThinkingEffort
 
 
 async def _setup_platform(platform: Platform) -> _SetupResult | None:
@@ -118,22 +126,21 @@ async def _setup_platform(platform: Platform) -> _SetupResult | None:
 
     selected_model = model_map[model_id]
 
-    # Determine thinking mode based on model capabilities
-    capabilities = selected_model.capabilities
-    thinking: bool
+    # Determine thinking effort based on model capabilities
+    from pythinker_code.thinking import available_thinking_levels
 
-    if "always_thinking" in capabilities:
-        thinking = True
-    elif "thinking" in capabilities:
-        thinking_selection = await _prompt_choice(
-            header="Enable thinking mode? (↑↓ navigate, Enter select, Ctrl+C cancel):",
-            choices=["on", "off"],
-        )
-        if not thinking_selection:
-            return None
-        thinking = thinking_selection == "on"
+    available_efforts = available_thinking_levels(selected_model.capabilities)
+    if available_efforts == ("off",):
+        thinking_effort = "off"
     else:
-        thinking = False
+        thinking_selection = await _prompt_choice(
+            header="Select thinking level (↑↓ navigate, Enter select, Ctrl+C cancel):",
+            choices=list(available_efforts),
+        )
+        if not thinking_selection or thinking_selection not in available_efforts:
+            return None
+        thinking_effort = thinking_selection
+    thinking = thinking_effort != "off"
 
     return _SetupResult(
         platform=platform,
@@ -141,6 +148,7 @@ async def _setup_platform(platform: Platform) -> _SetupResult | None:
         selected_model=selected_model,
         models=models,
         thinking=thinking,
+        thinking_effort=thinking_effort,
     )
 
 
@@ -166,6 +174,7 @@ def _apply_setup_result(result: _SetupResult) -> None:
         )
     config.default_model = model_key
     config.default_thinking = result.thinking
+    config.default_thinking_effort = result.thinking_effort
 
     if result.platform.search_url:
         config.services.pythinker_ai_search = PythinkerAISearchConfig(
