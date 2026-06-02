@@ -30,9 +30,9 @@ There are no admin/secret/App actions in P1.
 - `tests/test_release_py.py` — unit tests for the pure functions of `scripts/release.py` (and the extended dep-check script).
 
 **Modified**
-- `scripts/check_pythinker_dependency_versions.py` — add a `--pythinker-review-pyproject` arg + a third `("pythinker-review", ...)` tuple so the `pythinker-review==0.1.0` pin must match `packages/pythinker-review`.
-- `.github/workflows/ci-pythinker-cli.yml:253-256` — pass `--pythinker-review-pyproject` to the dep-check call (or argparse fails CI red, since the new arg is `required=True`).
-- `.github/workflows/release-pythinker-cli.yml:57-60` — same new arg for the release-time dep-check call.
+- `scripts/check_pythinker_dependency_versions.py` — add required dep-check args for `pythinker-review` and SDK/core lockstep so `pythinker-review==0.1.0` and the SDK `pythinker-core` pin must match their package versions.
+- `.github/workflows/ci-pythinker-cli.yml:253-256` — pass the required review and SDK pyproject args to the dep-check call (or argparse fails CI red).
+- `.github/workflows/release-pythinker-cli.yml:57-60` — same required args for the release-time dep-check call.
 - `src/pythinker_code/ui/shell/update.py` — `MANAGED_CHANNEL_MARKER` constant (after `NATIVE_INSTALLER_MARKER:61`); `PYTHINKER_MANAGED` env read at the top of `_detect_upgrade_command()` (line 95); a managed-channel branch in `_update_prompt_text()` (line 615) so the rendered "Update method" is a real channel-native hint; a managed-channel early-return in `do_update()` (after the detection at line 1215, before the readiness gate at line 1216) so a managed install neither mis-fires the PyPI readiness check nor tries to exec the marker. Brew path left unchanged.
 - `tests/ui_and_conv/test_shell_update.py` — add the brew-unchanged + `PYTHINKER_MANAGED` regression tests (this is the file that actually imports `update`; `tests/test_release_update_pipeline.py` is workflow-text only and does NOT import `update`).
 - `tests/test_release_update_pipeline.py` — add a test asserting `changelog-entry-required.yml` skips on both the `chore(release)*` title (line 54) and the `release/*` head branch (line 57) — the skip-contract that `release.py.open_pr()` depends on. (Workflow-text file, the correct home for this assertion.)
@@ -90,11 +90,18 @@ There are no admin/secret/App actions in P1.
        core = _write(tmp_path, "core.toml", '[project]\nname="pythinker-core"\nversion="1.1.1"\n')
        host = _write(tmp_path, "host.toml", '[project]\nname="pythinker-host"\nversion="1.0.0"\n')
        review = _write(tmp_path, "review.toml", '[project]\nname="pythinker-review"\nversion="0.1.0"\n')
+       sdk = _write(
+           tmp_path,
+           "sdk.toml",
+           '[project]\nname="pythinker-sdk"\nversion="1.1.0"\n'
+           'dependencies=["pythinker-core==1.1.1"]\n',
+       )
        result = _run_dep_check(
            "--root-pyproject", str(root),
            "--pythinker-core-pyproject", str(core),
            "--pythinker-host-pyproject", str(host),
            "--pythinker-review-pyproject", str(review),
+           "--pythinker-sdk-pyproject", str(sdk),
        )
        assert result.returncode == 0, result.stderr
 
@@ -110,11 +117,18 @@ There are no admin/secret/App actions in P1.
        core = _write(tmp_path, "core.toml", '[project]\nname="pythinker-core"\nversion="1.1.1"\n')
        host = _write(tmp_path, "host.toml", '[project]\nname="pythinker-host"\nversion="1.0.0"\n')
        review = _write(tmp_path, "review.toml", '[project]\nname="pythinker-review"\nversion="0.2.0"\n')
+       sdk = _write(
+           tmp_path,
+           "sdk.toml",
+           '[project]\nname="pythinker-sdk"\nversion="1.1.0"\n'
+           'dependencies=["pythinker-core==1.1.1"]\n',
+       )
        result = _run_dep_check(
            "--root-pyproject", str(root),
            "--pythinker-core-pyproject", str(core),
            "--pythinker-host-pyproject", str(host),
            "--pythinker-review-pyproject", str(review),
+           "--pythinker-sdk-pyproject", str(sdk),
        )
        assert result.returncode == 1
        assert "pythinker-review version mismatch" in result.stderr
@@ -126,6 +140,7 @@ There are no admin/secret/App actions in P1.
 
    ```python
        parser.add_argument("--pythinker-review-pyproject", type=Path, required=True)
+       parser.add_argument("--pythinker-sdk-pyproject", type=Path, required=True)
    ```
 
 5. - [ ] Add the third tuple. Change the loop header (lines 65-68) from:
@@ -148,18 +163,19 @@ There are no admin/secret/App actions in P1.
    ```
 
 6. - [ ] Run and see it pass. `uv run pytest tests/test_release_py.py -q` → `2 passed`.
-7. - [ ] Update the CI caller. In `.github/workflows/ci-pythinker-cli.yml`, change the existing dependency-check block to use the project-managed launcher and include review:
+7. - [ ] Update the CI caller. In `.github/workflows/ci-pythinker-cli.yml`, change the existing dependency-check block to use the project-managed launcher and include review and SDK paths:
 
    ```yaml
            uv run python scripts/check_pythinker_dependency_versions.py \
              --root-pyproject pyproject.toml \
              --pythinker-core-pyproject packages/pythinker-core/pyproject.toml \
              --pythinker-host-pyproject packages/pythinker-host/pyproject.toml \
-             --pythinker-review-pyproject packages/pythinker-review/pyproject.toml
+             --pythinker-review-pyproject packages/pythinker-review/pyproject.toml \
+             --pythinker-sdk-pyproject sdks/pythinker-sdk/pyproject.toml
    ```
 
-8. - [ ] Update the release caller. In `.github/workflows/release-pythinker-cli.yml`, apply the identical change to the block at lines 57-60 (same trailing-`\` addition on the host line + the new review line).
-9. - [ ] Sanity-check the real workspace passes. `uv run python scripts/check_pythinker_dependency_versions.py --root-pyproject pyproject.toml --pythinker-core-pyproject packages/pythinker-core/pyproject.toml --pythinker-host-pyproject packages/pythinker-host/pyproject.toml --pythinker-review-pyproject packages/pythinker-review/pyproject.toml` → `ok: pythinker-code dependencies match workspace package versions`.
+8. - [ ] Update the release caller. In `.github/workflows/release-pythinker-cli.yml`, apply the identical change to the block at lines 57-60 (same trailing-`\` addition on the host and review lines + the new SDK line).
+9. - [ ] Sanity-check the real workspace passes. `uv run python scripts/check_pythinker_dependency_versions.py --root-pyproject pyproject.toml --pythinker-core-pyproject packages/pythinker-core/pyproject.toml --pythinker-host-pyproject packages/pythinker-host/pyproject.toml --pythinker-review-pyproject packages/pythinker-review/pyproject.toml --pythinker-sdk-pyproject sdks/pythinker-sdk/pyproject.toml` → `ok: pythinker-code dependencies match workspace package versions`.
 10. - [ ] Lint the workflows. `uvx actionlint .github/workflows/ci-pythinker-cli.yml .github/workflows/release-pythinker-cli.yml` (if `actionlint` is unavailable, fall back to `uv run python -c "import yaml,sys; [yaml.safe_load(open(f)) for f in sys.argv[1:]]" .github/workflows/ci-pythinker-cli.yml .github/workflows/release-pythinker-cli.yml`) → no output / exit 0.
 11. - [ ] Commit. `git add scripts/check_pythinker_dependency_versions.py tests/test_release_py.py .github/workflows/ci-pythinker-cli.yml .github/workflows/release-pythinker-cli.yml && git commit -m "feat(release): enforce pythinker-review pin in dependency check"`
 
@@ -639,11 +655,12 @@ The git/gh/uv orchestration is genuine I/O and is verified by `--dry-run` + a re
    GATES = [
        ["python", "scripts/check_version_tag.py", "--pyproject", "pyproject.toml",
         "--expected-version", "{target}"],
-       ["python", "scripts/check_pythinker_dependency_versions.py",
+       ["uv", "run", "python", "scripts/check_pythinker_dependency_versions.py",
         "--root-pyproject", "pyproject.toml",
         "--pythinker-core-pyproject", "packages/pythinker-core/pyproject.toml",
         "--pythinker-host-pyproject", "packages/pythinker-host/pyproject.toml",
-        "--pythinker-review-pyproject", "packages/pythinker-review/pyproject.toml"],
+        "--pythinker-review-pyproject", "packages/pythinker-review/pyproject.toml",
+        "--pythinker-sdk-pyproject", "sdks/pythinker-sdk/pyproject.toml"],
        ["uv", "sync", "--frozen", "--all-extras", "--all-packages"],
        ["uv", "run", "pytest", "tests/test_version_lockstep.py", "-q"],
    ]
@@ -1065,7 +1082,7 @@ Brew must NOT set `PYTHINKER_MANAGED`; it keeps its existing cellar path-sniff (
 Because every task committed to the single `p1/release-tool` branch (Task 1 onward), the required dep-check arg and both workflow-caller edits are atomic in one PR — there is no cherry-pick or stacked-PR reconciliation to do.
 
 1. - [ ] Confirm the full local gate set is green before pushing. `uv run pytest tests/test_release_py.py tests/test_version_lockstep.py tests/ui_and_conv/test_shell_update.py tests/test_release_update_pipeline.py -q` → all pass; `uv run ruff check scripts/release.py tests/test_release_py.py tests/test_version_lockstep.py && uv run ruff format --check scripts/release.py tests/test_release_py.py tests/test_version_lockstep.py` → exit 0; `uv run pyright src/pythinker_code/ui/shell/update.py` → 0 errors.
-2. - [ ] Confirm the workspace version checks pass exactly as CI will run them: `uv run python scripts/check_pythinker_dependency_versions.py --root-pyproject pyproject.toml --pythinker-core-pyproject packages/pythinker-core/pyproject.toml --pythinker-host-pyproject packages/pythinker-host/pyproject.toml --pythinker-review-pyproject packages/pythinker-review/pyproject.toml` → `ok: pythinker-code dependencies match workspace package versions`.
+2. - [ ] Confirm the workspace version checks pass exactly as CI will run them: `uv run python scripts/check_pythinker_dependency_versions.py --root-pyproject pyproject.toml --pythinker-core-pyproject packages/pythinker-core/pyproject.toml --pythinker-host-pyproject packages/pythinker-host/pyproject.toml --pythinker-review-pyproject packages/pythinker-review/pyproject.toml --pythinker-sdk-pyproject sdks/pythinker-sdk/pyproject.toml` → `ok: pythinker-code dependencies match workspace package versions`.
 3. - [ ] Confirm the branch history is one coherent stack. `git log --oneline -8 p1/release-tool` shows the dep-check, release.py (validation/rewrites/promotion/asset/orchestration), lockstep, skip-contract, updater, and SKILL commits all on `p1/release-tool`. Push: `git push -u origin p1/release-tool`.
 4. - [ ] Open the PR. `gh pr create --base main --head p1/release-tool --title "feat(release): release.py + version lockstep SSOT (P1)" --body "Adds scripts/release.py (4-phase SSOT release orchestrator), tests/test_version_lockstep.py (every-PR version guard), the pythinker-review dependency-check tuple (with both CI callers updated atomically), the changelog-workflow skip-contract assertion, and the PYTHINKER_MANAGED updater hook with a brew-unchanged regression test and a managed-channel rendered hint. No new agent runtime deps (C3)."`
 5. - [ ] Wait for CI and CodeRabbit. Confirm required checks (`check`, `test`, `changelog`, `release-validate` as applicable) pass and the `CodeRabbit` commit status on the PR head SHA is `success` (C2) before merging. Read CodeRabbit's "Actionable comments" and resolve or surface them — do not merge past unresolved findings. Per the project CLAUDE.md / MEMORY note, reject a CodeRabbit camelCase-for-Python finding if one appears (false positive; codebase is snake_case).

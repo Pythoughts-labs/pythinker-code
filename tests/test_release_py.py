@@ -44,6 +44,12 @@ def test_dep_check_passes_when_review_pin_matches(tmp_path: Path) -> None:
     review = _write(
         tmp_path, "review.toml", '[project]\nname="pythinker-review"\nversion="0.1.0"\n'
     )
+    sdk = _write(
+        tmp_path,
+        "sdk.toml",
+        '[project]\nname="pythinker-sdk"\nversion="1.1.0"\n'
+        'dependencies=["pythinker-core==1.1.1"]\n',
+    )
     result = _run_dep_check(
         "--root-pyproject",
         str(root),
@@ -53,6 +59,8 @@ def test_dep_check_passes_when_review_pin_matches(tmp_path: Path) -> None:
         str(host),
         "--pythinker-review-pyproject",
         str(review),
+        "--pythinker-sdk-pyproject",
+        str(sdk),
     )
     assert result.returncode == 0, result.stderr
 
@@ -70,6 +78,12 @@ def test_dep_check_fails_when_review_pin_drifts(tmp_path: Path) -> None:
     review = _write(
         tmp_path, "review.toml", '[project]\nname="pythinker-review"\nversion="0.2.0"\n'
     )
+    sdk = _write(
+        tmp_path,
+        "sdk.toml",
+        '[project]\nname="pythinker-sdk"\nversion="1.1.0"\n'
+        'dependencies=["pythinker-core==1.1.1"]\n',
+    )
     result = _run_dep_check(
         "--root-pyproject",
         str(root),
@@ -79,9 +93,46 @@ def test_dep_check_fails_when_review_pin_drifts(tmp_path: Path) -> None:
         str(host),
         "--pythinker-review-pyproject",
         str(review),
+        "--pythinker-sdk-pyproject",
+        str(sdk),
     )
     assert result.returncode == 1
     assert "pythinker-review version mismatch" in result.stderr
+
+
+def test_dep_check_fails_when_sdk_core_pin_drifts(tmp_path: Path) -> None:
+    root = _write(
+        tmp_path,
+        "root.toml",
+        '[project]\nname="pythinker-code"\nversion="0.29.0"\n'
+        'dependencies=["pythinker-core[contrib]==1.2.0","pythinker-host==1.0.0",'
+        '"pythinker-review==0.1.0"]\n',
+    )
+    core = _write(tmp_path, "core.toml", '[project]\nname="pythinker-core"\nversion="1.2.0"\n')
+    host = _write(tmp_path, "host.toml", '[project]\nname="pythinker-host"\nversion="1.0.0"\n')
+    review = _write(
+        tmp_path, "review.toml", '[project]\nname="pythinker-review"\nversion="0.1.0"\n'
+    )
+    sdk = _write(
+        tmp_path,
+        "sdk.toml",
+        '[project]\nname="pythinker-sdk"\nversion="1.1.0"\n'
+        'dependencies=["pythinker-core==1.1.1"]\n',
+    )
+    result = _run_dep_check(
+        "--root-pyproject",
+        str(root),
+        "--pythinker-core-pyproject",
+        str(core),
+        "--pythinker-host-pyproject",
+        str(host),
+        "--pythinker-review-pyproject",
+        str(review),
+        "--pythinker-sdk-pyproject",
+        str(sdk),
+    )
+    assert result.returncode == 1
+    assert "pythinker-sdk core dependency mismatch" in result.stderr
 
 
 def test_parse_semver_accepts_xyz() -> None:

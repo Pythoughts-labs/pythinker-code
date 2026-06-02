@@ -15,6 +15,10 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Release packaging keeps SDK/core pins in lockstep.** The SDK's `pythinker-core`
+  dependency is now updated by release automation and checked by CI/release validation,
+  preventing no-sources binary builds from resolving against a stale core pin.
+
 ## 0.29.0 (2026-06-01)
 
 ### What changed in this release
