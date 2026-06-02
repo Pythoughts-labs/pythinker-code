@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 import acp.schema
 import pytest
 
@@ -34,14 +37,30 @@ async def test_initialize_advertises_terminal_auth_method():
     assert auth_method.env == {}
 
 
-async def test_close_session_drops_session_from_registry():
-    """ACP 0.10 session/close removes the session from the in-memory registry."""
+async def test_close_session_cancels_and_releases_resources():
+    """ACP 0.10 session/close must cancel in-flight work and free per-session
+    resources before dropping the session.
+
+    The spec mandates the agent "must cancel any ongoing work related to the
+    session (treat it as if ``session/cancel`` was called) and then free up any
+    resources associated with the session."
+    """
     server = ACPServer()
-    server.sessions["sess-1"] = ("placeholder",)  # type: ignore[assignment]
+    cli = SimpleNamespace(cleanup_runtime_resources=AsyncMock())
+    acp_session = SimpleNamespace(cancel=AsyncMock(), cli=cli)
+    # Registry stores ``tuple[ACPSession, _ModelIDConv]``.
+    server.sessions["sess-1"] = (acp_session, object())  # type: ignore[assignment]
 
     result = await server.close_session("sess-1")
 
     assert result is None
     assert "sess-1" not in server.sessions
-    # Closing an unknown session is a no-op (must not raise).
+    acp_session.cancel.assert_awaited_once()
+    cli.cleanup_runtime_resources.assert_awaited_once()
+
+
+async def test_close_session_unknown_is_noop():
+    """Closing an unknown session must be a no-op (no raise, no cleanup)."""
+    server = ACPServer()
+
     assert await server.close_session("missing") is None
