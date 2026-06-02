@@ -72,6 +72,7 @@ _TOOL_STYLES: dict[str, ToolStyle] = {
     "TaskList": ToolStyle("Tasks", "☷", "info"),
     "TaskOutput": ToolStyle("TaskOutput", "☷", "info"),
     "TaskStop": ToolStyle("TaskStop", "■", "warning"),
+    "ReadSkill": ToolStyle("Skill", "◇", "info"),
     "Skill": ToolStyle("Skill", "◇", "info"),
 }
 
@@ -245,19 +246,26 @@ def render_display_blocks(
             idx += 1
             continue
         if isinstance(block, TodoDisplayBlock):
-            lines: list[str] = []
-            for todo in block.items:
+            body = Text()
+            for index, todo in enumerate(block.items):
+                if index:
+                    body.append("\n")
                 match todo.status:
                     case "done":
-                        marker = "✓"
+                        body.append("✓", style=tui_rich_style("muted"))
+                        body.append(" ")
+                        body.append(todo.title, style=tui_rich_style("muted") + Style(strike=True))
                     case "in_progress":
-                        marker = "→"
+                        body.append("→", style=tui_rich_style("activity_verb"))
+                        body.append(" ")
+                        body.append(
+                            todo.title, style=tui_rich_style("activity_label") + Style(bold=True)
+                        )
                     case _:
-                        marker = "·"
-                lines.append(f"{marker} {todo.title}")
-            rendered.append(
-                render_worklog_card("Todos", Text("\n".join(lines), style=tui_rich_style("muted")))
-            )
+                        body.append("·", style=tui_rich_style("muted"))
+                        body.append(" ")
+                        body.append(todo.title, style=tui_rich_style("muted"))
+            rendered.append(render_worklog_card("Todos", body))
             idx += 1
             continue
         if isinstance(block, BackgroundTaskDisplayBlock):

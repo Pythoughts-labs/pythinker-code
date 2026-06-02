@@ -54,3 +54,18 @@ def test_advisor_context_detects_python_stack(tmp_path) -> None:
     context = build_advisor_context(repo=tmp_path, signals_by_file=signals)
     assert "fastapi" in context
     assert "Threat highlights" in context
+
+
+def test_advisor_context_uses_ported_framework_highlights(tmp_path) -> None:
+    (tmp_path / "package.json").write_text('{"dependencies":{"koa":"^2.15.0"}}')
+    signals = {
+        "server.ts": scan_signals(
+            file_path="server.ts",
+            added_lines=[(1, "el.innerHTML = req.query.html")],
+        )
+    }
+
+    context = build_advisor_context(repo=tmp_path, signals_by_file=signals)
+
+    assert "### Koa" in context
+    assert "middleware order matters" in context

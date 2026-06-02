@@ -5,6 +5,7 @@ from rich.console import Console, ConsoleOptions, Group, RenderableType, RenderR
 from rich.measure import Measurement
 from rich.text import Text
 
+from pythinker_code.ui.shell.components.markdown import PythinkerMarkdown
 from pythinker_code.ui.shell.prompt import PROMPT_SYMBOL_AGENT_INPUT
 from pythinker_code.ui.shell.spacing import BLANK_ROW
 from pythinker_code.utils.message import message_stringify
@@ -17,7 +18,9 @@ class UserEcho:
     def __init__(self, text: str) -> None:
         self._text = text
         self.plain = f"{PROMPT_SYMBOL_AGENT_INPUT} {text}"
-        self._body = BulletColumns(Text(text), bullet=Text(PROMPT_SYMBOL_AGENT_INPUT), padding=1)
+        self._body = BulletColumns(
+            PythinkerMarkdown(text), bullet=Text(PROMPT_SYMBOL_AGENT_INPUT), padding=1
+        )
 
     def __rich_measure__(self, console: Console, options: ConsoleOptions) -> Measurement:
         return Measurement.get(console, options, self._body)

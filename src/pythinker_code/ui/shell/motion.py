@@ -23,44 +23,69 @@ from pythinker_code.ui.shell.glyphs import (
     TRANSCRIPT_ACTIVE_MARKER,
 )
 from pythinker_code.ui.terminal_capabilities import colors_disabled, motion_disabled
-from pythinker_code.ui.theme import tui_rich_style
+from pythinker_code.ui.theme import get_tui_tokens, tui_rich_style
 from pythinker_code.utils.datetime import format_elapsed
 
 _FRAMES = SPINNER_FRAMES
 _FRAME_INTERVAL_S = SPINNER_FRAME_INTERVAL_S
 
 
+def _activity_color_tokens() -> tuple[str, str, str, str]:
+    """Return theme-standardized activity colors.
+
+    The active verb uses a premium champagne/platinum ramp in dark mode and a
+    contrast-safe bronze/ink ramp in light mode. Keep these in theme tokens so
+    Rich and prompt_toolkit renderers stay visually aligned.
+    """
+    tokens = get_tui_tokens()
+    return (
+        tokens.activity_verb,
+        tokens.activity_verb_mid,
+        tokens.activity_verb_highlight,
+        tokens.activity_spinner,
+    )
+
+
 def verb_spinner_style() -> Style:
-    """Muted orange-yellow style for the active verb spinner word."""
+    """Theme-standardized style for the active verb spinner word."""
     if colors_disabled():
         return Style()
-    return Style(color=Color.parse(_SHIMMER_BASE))
+    base, _mid, _highlight, _spinner = _activity_color_tokens()
+    return Style(color=Color.parse(base))
 
 
-# Terminal-native shimmer: a restrained silver sheen sweeping over the muted
-# orange-yellow active verb.
-_SHIMMER_BASE = "#D49E5A"  # brand-exception: muted orange-yellow verb literal
-_SHIMMER_MID = "#E2C18A"  # brand-exception: light warm amber sheen-trail literal
-_SHIMMER_HIGHLIGHT = "#D8DCE2"  # brand-exception: silver sheen highlight literal
+# Backwards-compatible dark-theme constants used by tests and older callers.
+_SHIMMER_BASE = "#C8B176"
+_SHIMMER_MID = "#E1CC94"
+_SHIMMER_HIGHLIGHT = "#EEF2F7"
 _SHIMMER_INTERVAL_S = 0.22
-_SPINNER_SILVER_STYLE = Style(color=Color.parse("#C0C0C0"))  # brand-exception: silver spinner
+_SPINNER_SILVER = "#B8C0CC"
 
 
 def shimmer_spinner_style(elapsed_s: float, *, reduced_motion: bool = False) -> Style:
     """Clean shimmer color for active verb text.
 
-    Reduced motion pins to the base muted orange-yellow so the word stays calm.
+    Reduced motion pins to the base activity color so the word stays calm.
     """
     if colors_disabled():
         return Style()
+    base, mid, highlight, _spinner = _activity_color_tokens()
     if reduced_motion or reduced_motion_enabled():
-        return Style(color=Color.parse(_SHIMMER_BASE))
-    palette = (_SHIMMER_BASE, _SHIMMER_MID, _SHIMMER_HIGHLIGHT, _SHIMMER_MID)
+        return Style(color=Color.parse(base))
+    palette = (base, mid, highlight, mid)
     idx = int(max(0.0, elapsed_s) / _SHIMMER_INTERVAL_S) % len(palette)
     return Style(color=Color.parse(palette[idx]))
 
 
-def _wave_colors(chars: list[str], local_phase: int, *, rightward: bool) -> list[str | None]:
+def _wave_colors(
+    chars: list[str],
+    local_phase: int,
+    *,
+    rightward: bool,
+    base: str,
+    mid: str,
+    highlight: str,
+) -> list[str | None]:
     """Per-character colors for a single traveling-wave sweep.
 
     One bright highlight crosses the label with an asymmetric, slightly wider
@@ -82,25 +107,27 @@ def _wave_colors(chars: list[str], local_phase: int, *, rightward: bool) -> list
             continue
         offset = i - head
         if offset == 0:
-            colors.append(_SHIMMER_HIGHLIGHT)
+            colors.append(highlight)
         elif offset in trail:
-            colors.append(_SHIMMER_MID)
+            colors.append(mid)
         else:
-            colors.append(_SHIMMER_BASE)
+            colors.append(base)
     return colors
 
 
-def _splash_colors(chars: list[str], local_phase: int) -> list[str | None]:
+def _splash_colors(
+    chars: list[str], local_phase: int, *, base: str, mid: str, highlight: str
+) -> list[str | None]:
     """Per-character colors for the center-out splash bloom.
 
     A wavefront expands from the middle of the label toward both edges, leaving
-    a filled coral interior behind it, then settles the whole word to base amber.
+    a filled sheen behind it, then settles the whole word to the base activity color.
     """
     n = len(chars)
     fill_frames = (n + 1) // 2 + 1  # frames for the wavefront to clear both edges
     center = (n - 1) / 2
     if local_phase >= fill_frames:  # settle beat before the next wave launches
-        return [None if char.isspace() else _SHIMMER_BASE for char in chars]
+        return [None if char.isspace() else base for char in chars]
     radius = local_phase
     colors: list[str | None] = []
     for i, char in enumerate(chars):
@@ -109,11 +136,11 @@ def _splash_colors(chars: list[str], local_phase: int) -> list[str | None]:
             continue
         dist = abs(i - center)
         if radius - 0.5 <= dist <= radius + 0.5:
-            colors.append(_SHIMMER_HIGHLIGHT)
+            colors.append(highlight)
         elif dist < radius - 0.5:
-            colors.append(_SHIMMER_MID)
+            colors.append(mid)
         else:
-            colors.append(_SHIMMER_BASE)
+            colors.append(base)
     return colors
 
 
@@ -131,8 +158,9 @@ def _shimmer_segments(
         return []
     if colors_disabled():
         return [(None, label)]
+    base, mid, highlight, _spinner = _activity_color_tokens()
     if reduced_motion or reduced_motion_enabled():
-        return [(_SHIMMER_BASE, label)]
+        return [(base, label)]
 
     chars = list(label)
     n = len(chars)
@@ -141,13 +169,24 @@ def _shimmer_segments(
     cycle_len = 2 * wave_len + 2 * splash_len
     frame = int(max(0.0, elapsed_s) / _SHIMMER_INTERVAL_S) % cycle_len
     if frame < wave_len:
-        colors = _wave_colors(chars, frame, rightward=False)
+        colors = _wave_colors(
+            chars, frame, rightward=False, base=base, mid=mid, highlight=highlight
+        )
     elif frame < wave_len + splash_len:
-        colors = _splash_colors(chars, frame - wave_len)
+        colors = _splash_colors(chars, frame - wave_len, base=base, mid=mid, highlight=highlight)
     elif frame < 2 * wave_len + splash_len:
-        colors = _wave_colors(chars, frame - wave_len - splash_len, rightward=True)
+        colors = _wave_colors(
+            chars,
+            frame - wave_len - splash_len,
+            rightward=True,
+            base=base,
+            mid=mid,
+            highlight=highlight,
+        )
     else:
-        colors = _splash_colors(chars, frame - 2 * wave_len - splash_len)
+        colors = _splash_colors(
+            chars, frame - 2 * wave_len - splash_len, base=base, mid=mid, highlight=highlight
+        )
 
     segments: list[tuple[str | None, str]] = []
     for char, color in zip(chars, colors, strict=True):
@@ -257,8 +296,12 @@ def activity_status_line(snapshot: ActivitySnapshot, *, width: int | None = None
         # Composing / Thinking: neutral muted grey, not the bright coral verb accent.
         glyph_style = thinking_style
     else:
-        # The dotted braille spinner is a marker; keep it silver while the verb shimmers.
-        glyph_style = Style() if colors_disabled() else _SPINNER_SILVER_STYLE
+        # The dotted braille spinner is a marker; keep it platinum while the verb shimmers.
+        if colors_disabled():
+            glyph_style = Style()
+        else:
+            _base, _mid, _highlight, spinner = _activity_color_tokens()
+            glyph_style = Style(color=Color.parse(spinner))
     if snapshot.label_style is not None:
         label_style = snapshot.label_style
     elif snapshot.spinner == "shape":

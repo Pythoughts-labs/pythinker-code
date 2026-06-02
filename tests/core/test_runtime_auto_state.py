@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from unittest.mock import AsyncMock
 
 import pytest
@@ -9,6 +11,14 @@ import pytest
 import pythinker_code.soul.agent as agent_module
 from pythinker_code.auth.oauth import OAuthManager
 from pythinker_code.soul.agent import Runtime
+from pythinker_code.wire.types import ToolCall
+
+
+def _shell_call(cmd: str) -> ToolCall:
+    return ToolCall(
+        id="call-1",
+        function=ToolCall.FunctionBody(name="Shell", arguments=json.dumps({"command": cmd})),
+    )
 
 
 @pytest.fixture
@@ -84,6 +94,59 @@ async def test_runtime_auto_overlay_does_not_persist_to_session_state(
 
     assert session.state.approval.yolo is True
     assert session.state.approval.auto is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("auto", "runtime_auto"), [(True, False), (False, True)])
+async def test_unattended_runtime_in_default_safe_mode_denies_without_waiting(
+    config,
+    session,
+    lightweight_runtime_create,
+    auto: bool,
+    runtime_auto: bool,
+) -> None:
+    from tests.conftest import tool_call_context
+
+    runtime = await Runtime.create(
+        config,
+        OAuthManager(config),
+        llm=None,
+        session=session,
+        yolo=False,
+        auto=auto,
+        runtime_auto=runtime_auto,
+    )
+
+    assert runtime.approval.is_auto() is True
+    assert runtime.approval.is_auto_approve() is False
+    with tool_call_context("Shell", arguments={"command": "echo hello"}):
+        result = await asyncio.wait_for(
+            runtime.approval.request("Shell", "run command", "Run command `echo hello`"),
+            timeout=0.1,
+        )
+
+    assert not result
+    assert runtime.approval.runtime.list_pending() == []
+    assert "safe mode prevents auto-approval" in result.rejection_error().message
+
+
+@pytest.mark.asyncio
+async def test_runtime_create_enables_destructive_deliberation_from_config(
+    config,
+    session,
+    lightweight_runtime_create,
+) -> None:
+    config.auto_deliberate_destructive_actions = True
+
+    runtime = await Runtime.create(
+        config,
+        OAuthManager(config),
+        llm=None,
+        session=session,
+        yolo=True,
+    )
+
+    assert runtime.approval.deliberation_gate(_shell_call("rm -rf build")) is not None
 
 
 @pytest.mark.asyncio

@@ -64,7 +64,7 @@ from pythinker_host.path import HostPath
 from pythinker_code.llm import ModelCapability
 from pythinker_code.share import get_share_dir
 from pythinker_code.soul import StatusSnapshot, format_context_status
-from pythinker_code.thinking import model_uses_native_thinking
+from pythinker_code.thinking import available_thinking_levels, model_uses_native_thinking
 from pythinker_code.tools.display import TodoDisplayItem
 from pythinker_code.ui.shell import placeholders as prompt_placeholders
 from pythinker_code.ui.shell.console import console
@@ -2438,10 +2438,17 @@ class CustomPromptSession:
     def _uses_native_thinking(self) -> bool:
         return model_uses_native_thinking(getattr(self, "_model_capabilities", None))
 
+    def _supports_thinking_effort(self) -> bool:
+        return available_thinking_levels(getattr(self, "_model_capabilities", None)) != ("off",)
+
     def _prompt_separator_style(self, fallback: str) -> str:
         if getattr(self, "_mode", PromptMode.AGENT) != PromptMode.AGENT:
             return fallback
-        level = "high" if self._uses_native_thinking() else self._current_thinking_effort()
+        if not self._supports_thinking_effort():
+            # Non-effort models use the standard input frame color (#3A506D in dark mode)
+            # instead of borrowing a thinking level color.
+            return "class:compact-input.frame"
+        level = self._current_thinking_effort()
         return thinking_frame_style(level) or fallback
 
     def _thinking_footer_label(self) -> str:
@@ -2861,6 +2868,10 @@ class CustomPromptSession:
         muted_style = f"fg:{tokens.muted}" if tokens.muted else ""
         warning_style = f"fg:{tokens.warning}" if tokens.warning else muted_style
         success_style = f"fg:{tokens.success}" if tokens.success else muted_style
+        activity_style = f"fg:{tokens.activity_verb}" if tokens.activity_verb else warning_style
+        active_title_style = (
+            f"fg:{tokens.activity_label} bold" if tokens.activity_label else activity_style
+        )
         text_style = (
             f"fg:{tokens.text or tokens.activity_label}"
             if tokens.text or tokens.activity_label
@@ -2881,8 +2892,8 @@ class CustomPromptSession:
                 title_style = muted_style
             elif todo.status == "in_progress":
                 icon = "◼"
-                icon_style = warning_style
-                title_style = warning_style
+                icon_style = activity_style
+                title_style = active_title_style
             else:
                 icon = "◻"
                 icon_style = muted_style
@@ -2932,7 +2943,7 @@ class CustomPromptSession:
             detail = f"{counts.bash} background bash task{'s' if counts.bash != 1 else ''}"
         tokens = _get_tui_tokens()
         muted_style = f"fg:{tokens.muted}" if tokens.muted else ""
-        frame_style = f"fg:{tokens.thinking_text}" if tokens.thinking_text else muted_style
+        frame_style = f"fg:{tokens.activity_spinner}" if tokens.activity_spinner else muted_style
         frame_text = f"{frame} "
         if show_verb:
             verb_text = spinner_message(now)

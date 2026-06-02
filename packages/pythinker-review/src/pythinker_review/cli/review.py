@@ -127,6 +127,17 @@ def _resolve_llm() -> ReviewLLM:
     raise typer.Exit(code=3)
 
 
+def _read_text_option(path: Path | None) -> str | None:
+    if path is None:
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ReviewflowWorkflowError(
+            f"failed to read --prompt-file {path}: {exc}", "invalid-usage"
+        ) from exc
+
+
 def _emit(fmt: OutputFormat, *, meta: RunMeta, findings: list[Finding], no_color: bool) -> str:
     if fmt is OutputFormat.json:
         return render_json(meta, findings)
@@ -412,6 +423,20 @@ def review_stateful(
     dry_run: bool = typer.Option(False, "--dry-run"),
     include_dirty: bool = typer.Option(False, "--include-dirty"),
     timeout_s: float = typer.Option(180.0, "--timeout-s", min=1.0),
+    prompt_file: Path | None = typer.Option(
+        None,
+        "--prompt-file",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Additional reviewer guidance for stateful feature review.",
+    ),
+    rate_limit_per_minute: int | None = typer.Option(
+        None,
+        "--rate-limit-per-minute",
+        min=1,
+        help="Maximum provider review starts per rolling minute.",
+    ),
     repo: Path = typer.Option(Path.cwd(), "--repo", "--root"),
     state_dir: str = typer.Option(".pythinker-review-flow", "--state-dir"),
     config: Path | None = typer.Option(None, "--config"),
@@ -434,6 +459,8 @@ def review_stateful(
                 mode=mode.value,
                 dry_run=dry_run,
                 per_feature_timeout_s=timeout_s,
+                custom_prompt=_read_text_option(prompt_file),
+                rate_limit_per_minute=rate_limit_per_minute,
             )
         )
     except ReviewflowWorkflowError as exc:

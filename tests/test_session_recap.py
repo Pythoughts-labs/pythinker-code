@@ -67,7 +67,7 @@ def test_build_turn_recap_line_uses_assistant_text() -> None:
 
     assert line == (
         "※ recap: Implemented a /recap command and a shell recap banner. · 3 steps "
-        "(disable recaps in /settings)"
+        "(disable recaps in /config)"
     )
 
 
@@ -84,7 +84,51 @@ def test_build_turn_recap_line_strips_report_blocks() -> None:
         step_count=28,
     )
 
-    assert line == ("※ recap: Deep scan completed. · 28 steps (disable recaps in /settings)")
+    assert line == ("※ recap: Deep scan completed. · 28 steps (disable recaps in /config)")
+
+
+def test_build_turn_recap_line_strips_markdown_tables_from_request() -> None:
+    line = build_turn_recap_line(
+        request=(
+            "| Step | Level | Hex |\n"
+            "| --- | --- | --- |\n"
+            "| off | Off | #475569 |\n"
+            "| high | High | #cc704b |\n"
+        ),
+        assistant_text="",
+    )
+
+    assert line is None
+
+
+def test_build_turn_recap_line_ignores_markdown_option_heading() -> None:
+    line = build_turn_recap_line(
+        request="revise the design direction",
+        assistant_text=(
+            "--- ### Option 2: The Modern Cyberpunk (Updated) Swapping the harsh neon "
+            "orange for a dusty, low-key copper tone that blends smoothly between yellow "
+            "and pink."
+        ),
+    )
+
+    assert line == "※ recap: revise the design direction (disable recaps in /config)"
+
+
+def test_build_turn_recap_line_preserves_action_summary_with_status() -> None:
+    line = build_turn_recap_line(
+        request="release 0.30.0",
+        assistant_text=(
+            "Released 0.30.0 to PyPI and GitHub, then fixed release automation so "
+            "future releases promote to Latest automatically without manual intervention. "
+            "No open PRs or pending actions remain."
+        ),
+    )
+
+    assert line == (
+        "※ recap: Released 0.30.0 to PyPI and GitHub, then fixed release automation so "
+        "future releases promote to Latest automatically without manual intervention. "
+        "No open PRs or pending actions remain. (disable recaps in /config)"
+    )
 
 
 def test_build_turn_recap_line_prefers_closing_summary_over_opening_intent() -> None:
@@ -103,7 +147,7 @@ def test_build_turn_recap_line_prefers_closing_summary_over_opening_intent() -> 
 
     assert line == (
         "※ recap: Generated three fresh report files and refreshed the scan index. "
-        "· 4 files changed · 67 steps (disable recaps in /settings)"
+        "· 4 files changed · 67 steps (disable recaps in /config)"
     )
 
 
@@ -119,7 +163,7 @@ def test_build_turn_recap_line_skips_trailing_question() -> None:
 
     assert line == (
         "※ recap: Refactored the auth module and added regression tests. · 5 steps "
-        "(disable recaps in /settings)"
+        "(disable recaps in /config)"
     )
 
 
@@ -133,7 +177,7 @@ def test_build_turn_recap_line_singular_deltas() -> None:
 
     assert line == (
         "※ recap: Adjusted the spinner interval to feel calmer on slow terminals. "
-        "· 1 file changed · 1 step (disable recaps in /settings)"
+        "· 1 file changed · 1 step (disable recaps in /config)"
     )
 
 
@@ -283,7 +327,7 @@ def test_format_recap_light_day_is_reported_plainly() -> None:
 
 def test_build_turn_recap_line_falls_back_to_request_and_handles_empty() -> None:
     assert build_turn_recap_line(request="fix the bug", assistant_text="") == (
-        "※ recap: fix the bug (disable recaps in /settings)"
+        "※ recap: fix the bug (disable recaps in /config)"
     )
     assert build_turn_recap_line(request="", assistant_text="") is None
 

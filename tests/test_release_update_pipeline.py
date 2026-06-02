@@ -14,6 +14,28 @@ BUILDER_WORKFLOWS = (
 )
 
 
+def _step_block(workflow: str, name_fragment: str) -> str:
+    """Return the YAML of the first step whose ``name:`` contains *name_fragment*,
+    up to (but excluding) the next ``- name:`` step. Lets assertions target one
+    step instead of the whole file, so an unrelated step can't satisfy or break
+    them."""
+    lines = workflow.splitlines()
+    try:
+        start = next(
+            i
+            for i, line in enumerate(lines)
+            if line.lstrip().startswith("- name:") and name_fragment in line
+        )
+    except StopIteration:
+        raise AssertionError(f"Step containing {name_fragment!r} not found in workflow") from None
+    block = [lines[start]]
+    for line in lines[start + 1 :]:
+        if line.lstrip().startswith("- name:"):
+            break
+        block.append(line)
+    return "\n".join(block)
+
+
 def test_builders_create_release_as_prerelease() -> None:
     """Each builder must mark the Release prerelease.
 
@@ -68,17 +90,40 @@ def test_install_scripts_gate_on_asset_readiness() -> None:
     assert (ROOT / "web" / "public" / "install.sh").read_text() == sh
 
 
-def test_site_dispatch_uses_scoped_github_app_token_and_fails_loud() -> None:
+def test_site_dispatch_uses_scoped_github_app_token_and_degrades_gracefully() -> None:
     workflow = (WORKFLOWS / "dispatch-pythinker-home-sync.yml").read_text()
 
+    # Auth is the org-owned pythinker-release-bot App, never a personal PAT.
     assert "PYTHINKER_HOME_REPO_DISPATCH_TOKEN" not in workflow
-    assert "actions/create-github-app-token" not in workflow
-    assert re.search(r"permissions\s*:\s*\{[^}]*contents\s*:\s*\"write\"", workflow)
     assert "PYTHINKER_RELEASE_BOT_APP_ID" in workflow
     assert "PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY" in workflow
-    assert "Missing PYTHINKER_RELEASE_BOT_APP_ID" in workflow
-    assert "exit 1" in workflow
-    assert "Skipping pythinker-home sync" not in workflow
+
+    # The minted token is scoped to a single repo with contents-only write, and
+    # the action is pinned by full commit SHA (not a floating tag) — supply chain.
+    assert re.search(r"uses:\s*actions/create-github-app-token@[0-9a-f]{40}\b", workflow)
+    assert "repositories: ${{ env.DISPATCH_REPO }}" in workflow
+    assert "permission-contents: write" in workflow
+    # The job's own GITHUB_TOKEN stays read-only; write is delegated to the
+    # narrowly-scoped App token above.
+    assert re.search(r"permissions:\s+contents:\s*read", workflow)
+
+    # Best-effort and non-blocking: a missing/rotated App must never red-line
+    # main. Scoped to the relevant steps so unrelated steps can't satisfy/break
+    # them: the token step continues on error, and the dispatch step degrades
+    # (exit 0) rather than failing loud — the daily pythinker-home cron is the
+    # real sync guarantee.
+    token_step = _step_block(workflow, "Mint GitHub App token")
+    assert "continue-on-error: true" in token_step
+    dispatch_step = _step_block(workflow, "Trigger pythinker-home sync")
+    assert "exit 1" not in dispatch_step
+    assert "exit 0" in dispatch_step
+
+    # ...but degradation is SURFACED, not silently swallowed: a step-summary
+    # warning plus a Slack alert keep a broken App visible.
+    assert "::warning" in workflow
+    assert "GITHUB_STEP_SUMMARY" in workflow
+    assert "SLACK_WEBHOOK_URL" in workflow
+    assert "Non-blocking" in workflow
 
 
 def test_windows_installer_signs_update_artifacts_when_credentials_are_available() -> None:

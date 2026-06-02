@@ -13,31 +13,54 @@ if TYPE_CHECKING:
 _AUTO_INJECTION_TYPE = "auto_mode"
 
 _AUTO_PROMPT = (
-    "You are running in auto mode. No user is present to answer "
-    "questions or approve actions. All tool calls are auto-approved by "
-    "the harness.\n"
-    "- Do NOT call AskUserQuestion — it will be auto-dismissed with no "
-    "answer, wasting a turn. Make your best judgment and proceed.\n"
-    "- You CAN use EnterPlanMode / ExitPlanMode normally. They will be "
-    "auto-approved. Planning still helps you think before acting; use "
-    "it for non-trivial tasks, then exit and execute.\n"
-    "- Finish the user's request end-to-end in this run. Do not defer "
-    "decisions to a human."
+    "You are running in auto mode. No user is present to answer questions or "
+    "approve actions.\n"
+    "- Do NOT call AskUserQuestion — it will be auto-dismissed with no answer, "
+    "wasting a turn. Make your best judgment and proceed.\n"
+    "- Tool calls are auto-approved only when the current trust/safe-mode policy "
+    "allows. If approval is unavailable, the tool fails closed instead of "
+    "waiting forever; choose a safe alternative or explain the required explicit "
+    "trust/yolo step.\n"
+    "- Outside-workspace file writes are not auto-approved by auto mode.\n"
+    "- You CAN use EnterPlanMode / ExitPlanMode normally when available. Planning "
+    "still helps you think before acting; use it for non-trivial tasks, then "
+    "exit and execute.\n"
+    "- Finish the user's request end-to-end in this run. Do not defer decisions "
+    "to a human."
+)
+
+_AUTO_PROMPT_DESTRUCTIVE_DELIBERATE = (
+    "You are running in auto mode. No user is present to answer questions or "
+    "approve actions.\n"
+    "- Do NOT call AskUserQuestion — it will be auto-dismissed with no answer, "
+    "wasting a turn. Make your best judgment and proceed.\n"
+    "- Tool calls are auto-approved only when the current trust/safe-mode policy "
+    "allows. If approval is unavailable, the tool fails closed instead of "
+    "waiting forever; choose a safe alternative or explain the required explicit "
+    "trust/yolo step.\n"
+    "- Irreversible auto-approved actions may be bounced once for deliberation. "
+    "Weigh alternatives, then retry only if the exact action is still right.\n"
+    "- Outside-workspace file writes are not auto-approved by auto mode.\n"
+    "- Finish the user's request end-to-end in this run. Do not defer decisions "
+    "to a human."
 )
 
 _AUTO_PROMPT_DELIBERATE = (
-    "You are running in auto mode. No user is present to answer "
-    "questions or approve actions. Most tool calls are auto-approved by "
-    "the harness; irreversible ones may be bounced once for deliberation.\n"
+    "You are running in auto mode. No user is present to answer questions or "
+    "approve actions.\n"
+    "- Tool calls are auto-approved only when the current trust/safe-mode policy "
+    "allows. If approval is unavailable, the tool fails closed instead of "
+    "waiting forever; choose a safe alternative or explain the required explicit "
+    "trust/yolo step.\n"
+    "- Irreversible auto-approved actions may be bounced once for deliberation. "
+    "Weigh alternatives, then retry only if the exact action is still right.\n"
     "- At a genuine, consequential, hard-to-reverse fork, you MAY call "
-    "AskUserQuestion: it triggers an advisor-assisted self-decision (you "
-    "still decide). Do NOT ask routine confirmations or progress "
-    "check-ins — proceed instantly on trivial, reversible choices.\n"
-    "- You CAN use EnterPlanMode / ExitPlanMode normally. They will be "
-    "auto-approved. Planning still helps you think before acting; use "
-    "it for non-trivial tasks, then exit and execute.\n"
-    "- Finish the user's request end-to-end in this run. Do not defer "
-    "decisions to a human."
+    "AskUserQuestion: it triggers an advisor-assisted self-decision (you still "
+    "decide). Do NOT ask routine confirmations or progress check-ins — proceed "
+    "instantly on trivial, reversible choices.\n"
+    "- Outside-workspace file writes are not auto-approved by auto mode.\n"
+    "- Finish the user's request end-to-end in this run. Do not defer decisions "
+    "to a human."
 )
 
 AUTO_DISABLED_REMINDER = (
@@ -66,17 +89,24 @@ class AutoModeInjectionProvider(DynamicInjectionProvider):
         _ = history
         if not soul.is_auto:
             return []
-        if not soul.is_auto_flag:
-            return []
 
         if self._injected:
             return []
         self._injected = True
         # Under the auto_deliberate policy AskUserQuestion self-decides (advisor-
         # assisted) instead of being dismissed, so invite it at consequential
-        # forks; every other policy keeps the "do not call it" guidance.
-        deliberate = soul.runtime.config.ask_user_question_policy == "auto_deliberate"
-        content = _AUTO_PROMPT_DELIBERATE if deliberate else _AUTO_PROMPT
+        # forks. Destructive deliberation can also be enabled independently while
+        # AskUserQuestion remains auto-dismissed.
+        ask_deliberate = soul.runtime.config.ask_user_question_policy == "auto_deliberate"
+        destructive_deliberate = (
+            soul.runtime.config.auto_deliberate_destructive_actions or ask_deliberate
+        )
+        if ask_deliberate:
+            content = _AUTO_PROMPT_DELIBERATE
+        elif destructive_deliberate:
+            content = _AUTO_PROMPT_DESTRUCTIVE_DELIBERATE
+        else:
+            content = _AUTO_PROMPT
         return [DynamicInjection(type=_AUTO_INJECTION_TYPE, content=content)]
 
     async def on_context_compacted(self) -> None:

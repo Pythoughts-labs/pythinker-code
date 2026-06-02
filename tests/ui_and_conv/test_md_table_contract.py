@@ -16,6 +16,10 @@ from pythinker_code.ui.shell.components.markdown import (
 )
 from tests.ui_and_conv._md_contract_helpers import WIDTHS, render_plain
 
+# Box-drawing glyphs the bordered grid uses for edges, junctions, and rules.
+# Stripped (alongside whitespace) when asserting cell content survived a wrap.
+_BOX_DRAWING_GLYPHS = "┌┬┐├┼┤└┴┘─│"
+
 
 def test_table_with_piped_inline_code_keeps_columns():
     """Bug class: 'tables breaking on piped inline code'."""
@@ -109,8 +113,9 @@ def test_table_alignment_markers_position_value_left_center_right():
     right = _value_column_offset("---:")
 
     assert left < center < right, (left, center, right)
-    # Left-aligned hugs the column start (only the 1-cell left padding precedes it).
-    assert left == 1
+    # Left-aligned hugs the column start: the bordered grid's left edge (│) plus
+    # the single cell of left padding are the only columns that precede it.
+    assert left == 2
 
 
 @pytest.mark.parametrize("width", WIDTHS)
@@ -145,20 +150,17 @@ def test_table_long_cell_wraps_without_dropping_content(width):
 
     This pins the *data-integrity* contract the bug class names ("wrap, not
     truncate"): every character of the long cell survives in order, regardless
-    of how the narrow stacked-record layout wraps it. We compare with all
-    whitespace removed so a wrap (whether at a word boundary or, at very narrow
-    widths, mid-word) still counts as survival — wrapping is not data loss.
-
-    Known deferred renderer-polish defect (NOT data loss, so not guarded here):
-    at widths < ~40 the stacked-record table path folds cell text mid-word
-    (``theta`` -> ``t\\nheta``) and omits the continuation-line indent. Tracked
-    in tests/ui_and_conv/README_contract_registry.md and the design spec's
-    deferred-defects note.
+    of how the bordered grid folds it. The grid draws a vertical separator (│)
+    between a cell's fold lines, so we strip box-drawing glyphs as well as
+    whitespace before comparing — a wrap (at a word boundary or, at very narrow
+    widths, mid-word) still counts as survival; wrapping is not data loss.
     """
     long_cell = "alpha beta gamma delta epsilon zeta eta theta iota kappa"
     md = f"| Name | Note |\n| --- | --- |\n| item | {long_cell} |\n"
     out = render_plain(pythinker_markdown(md), width=width)
-    # No character of the long cell is dropped (truncation), independent of wrap.
+    # No character of the long cell is dropped (truncation), independent of how
+    # the bordered grid wraps and separates the fold lines.
+    cleaned = out.translate({ord(glyph): None for glyph in _BOX_DRAWING_GLYPHS})
     stripped_cell = "".join(long_cell.split())
-    stripped_out = "".join(out.split())
+    stripped_out = "".join(cleaned.split())
     assert stripped_cell in stripped_out, f"long cell content truncated at width={width}"

@@ -159,6 +159,7 @@ def register_builtin_renderers() -> None:
         grep,
         plan,
         read,
+        skill,
         think,
         todo,
         web,
@@ -172,6 +173,7 @@ def register_builtin_renderers() -> None:
     register_tool_renderer(grep.GREP_RENDERER)
     register_tool_renderer(find.FIND_RENDERER)
     register_tool_renderer(bash.SHELL_RENDERER)
+    register_tool_renderer(skill.SKILL_RENDERER)
     register_tool_renderer(agent.AGENT_RENDERER)
     register_tool_renderer(agent.RUN_AGENTS_RENDERER)
     register_tool_renderer(ask_user.ASK_USER_RENDERER)

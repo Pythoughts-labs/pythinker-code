@@ -374,10 +374,16 @@ class Config(BaseModel):
             description=(
                 "Controls AskUserQuestion behavior: always ask, ask except in auto mode, "
                 "never pause (best judgment), or auto_deliberate (in auto mode, run an "
-                "advisor-assisted self-decision instead of dismissing, and bounce "
-                "destructive actions once for deliberation)."
+                "advisor-assisted self-decision instead of dismissing)."
             ),
         )
+    )
+    auto_deliberate_destructive_actions: bool = Field(
+        default=False,
+        description=(
+            "When true, destructive auto-approved actions are bounced once for agent "
+            "deliberation before running. This is independent of AskUserQuestion policy."
+        ),
     )
     skip_auto_prompt_injection: bool = Field(
         default=False,
@@ -481,12 +487,10 @@ class Config(BaseModel):
             if "default_yolo" not in fields_set:
                 self.default_yolo = True
             if "ask_user_question_policy" not in fields_set:
-                # NOTE: spec §6 #1 proposes shifting this to "auto_deliberate", but
-                # that is only safe once the profile also enables auto mode (so
-                # AskUserQuestion's Entry A self-decision engages and never blocks a
-                # headless run waiting for an absent user). Until that auto-from-
-                # profile path exists, keep the robust "never" (always dismiss).
+                # Preserve no-human AskUserQuestion behavior for headless autonomy.
                 self.ask_user_question_policy = "never"
+            if "auto_deliberate_destructive_actions" not in fields_set:
+                self.auto_deliberate_destructive_actions = True
         elif profile == "plan_only":
             if "default_plan_mode" not in fields_set:
                 self.default_plan_mode = True

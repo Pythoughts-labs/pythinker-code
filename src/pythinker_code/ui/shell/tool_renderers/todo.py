@@ -48,7 +48,7 @@ def _icon_token(status: str) -> str:
     if status == "done":
         return "success"
     if status == "in_progress":
-        return "accent"
+        return "activity_verb"
     return "muted"
 
 
@@ -68,7 +68,7 @@ def _status_title(status: str, title: str) -> Text:
     if status == "done":
         return fg("muted", title)
     if status == "in_progress":
-        out = fg("accent", title)
+        out = fg("activity_label", title)
         out.stylize("bold")
         return out
     return fg("tool_output", title)

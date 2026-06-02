@@ -390,9 +390,11 @@ def pythinker(
         typer.Option(
             "--auto",
             help=(
-                "Run in auto mode: no user is present, AskUserQuestion is auto-dismissed, "
-                "and tool calls are auto-approved. Use when running unattended "
-                "(scripts, CI, scheduled jobs). Default: no."
+                "Run in auto mode: no user is present and AskUserQuestion is "
+                "auto-dismissed. Tool calls are auto-approved only when current "
+                "trust/safe-mode policy permits; otherwise approval-required actions "
+                "fail closed. Use when running unattended (scripts, CI, scheduled jobs). "
+                "Default: no."
             ),
         ),
     ] = False,
@@ -412,7 +414,9 @@ def pythinker(
             "--print",
             help=(
                 "Run in print mode (non-interactive). Print mode auto-dismisses "
-                "AskUserQuestion and auto-approves tool calls for this invocation."
+                "AskUserQuestion and enables invocation-only auto mode; approval-required "
+                "tool calls still follow trust/safe-mode policy and fail closed when "
+                "approval is unavailable."
             ),
         ),
     ] = False,

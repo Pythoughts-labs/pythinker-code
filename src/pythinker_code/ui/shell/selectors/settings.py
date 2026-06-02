@@ -133,6 +133,13 @@ def _build_settings_config(config: Config) -> SettingsListConfig:
             values=_BOOL_VALUES,
         ),
         SettingItem(
+            id="auto_deliberate_destructive_actions",
+            label="Destructive deliberation",
+            description="Bounce destructive auto-approved actions once for deliberation.",
+            current_value=_bool(config.auto_deliberate_destructive_actions),
+            values=_BOOL_VALUES,
+        ),
+        SettingItem(
             id="default_plan_mode",
             label="Default plan mode",
             description="Start sessions in read-only planning mode by default.",
@@ -315,6 +322,11 @@ def apply_settings_changes(config: Config, changes: dict[str, str]) -> list[str]
                 new = value == "true"
                 if config.default_yolo != new:
                     config.default_yolo = new
+                    mark(setting_id)
+            case "auto_deliberate_destructive_actions":
+                new = value == "true"
+                if config.auto_deliberate_destructive_actions != new:
+                    config.auto_deliberate_destructive_actions = new
                     mark(setting_id)
             case "default_plan_mode":
                 new = value == "true"

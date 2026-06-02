@@ -300,7 +300,10 @@ class Runtime:
             auto=session.state.approval.auto,
             runtime_auto=runtime_auto,
             safe_mode=effective_safe_mode,
-            auto_deliberate=config.ask_user_question_policy == "auto_deliberate",
+            auto_deliberate=(
+                config.auto_deliberate_destructive_actions
+                or config.ask_user_question_policy == "auto_deliberate"
+            ),
             auto_approve_actions=saved_actions,
             on_change=_on_approval_change,
         )

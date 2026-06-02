@@ -35,19 +35,21 @@ def test_next_thinking_level_cycles_and_wraps(
 def test_thinking_frame_color_maps_each_level_dark() -> None:
     from pythinker_code.ui.theme import thinking_frame_color
 
-    assert thinking_frame_color("off", theme="dark") == "#94A3B8"  # slate
-    assert thinking_frame_color("minimal", theme="dark") == "#60A5FA"  # blue
-    assert thinking_frame_color("low", theme="dark") == "#22D3EE"  # cyan
-    assert thinking_frame_color("medium", theme="dark") == "#34D399"  # emerald
-    assert thinking_frame_color("high", theme="dark") == "#FBBF24"  # amber
-    assert thinking_frame_color("xhigh", theme="dark") == "#FB7185"  # rose
+    assert thinking_frame_color("off", theme="dark") == "#64748b"  # slate-500
+    assert thinking_frame_color("min", theme="dark") == "#cbd5e1"  # slate-300 alias
+    assert thinking_frame_color("minimal", theme="dark") == "#cbd5e1"  # slate-300 canonical
+    assert thinking_frame_color("low", theme="dark") == "#3b82f6"  # blue-500
+    assert thinking_frame_color("medium", theme="dark") == "#22d3ee"  # cyan-400
+    assert thinking_frame_color("high", theme="dark") == "#c4b5fd"  # violet-300
+    assert thinking_frame_color("xhigh", theme="dark") == "#a855f7"  # purple-500
+    assert thinking_frame_color("max", theme="dark") == "#6d28d9"  # violet-700
 
 
-def test_thinking_frame_color_light_differs_from_dark() -> None:
+def test_thinking_frame_color_light_uses_same_standard_scale() -> None:
     from pythinker_code.ui.theme import thinking_frame_color
 
-    assert thinking_frame_color("high", theme="light") == "#92400E"
-    assert thinking_frame_color("high", theme="light") != thinking_frame_color("high", theme="dark")
+    assert thinking_frame_color("high", theme="light") == "#c4b5fd"
+    assert thinking_frame_color("high", theme="light") == thinking_frame_color("high", theme="dark")
 
 
 def test_thinking_frame_color_unknown_level_falls_back_to_border() -> None:
@@ -59,7 +61,7 @@ def test_thinking_frame_color_unknown_level_falls_back_to_border() -> None:
 def test_thinking_frame_style_is_ptk_fg_directive() -> None:
     from pythinker_code.ui.theme import thinking_frame_style
 
-    assert thinking_frame_style("high", theme="dark") == "fg:#FBBF24"
+    assert thinking_frame_style("high", theme="dark") == "fg:#c4b5fd"
 
 
 def test_core_thinking_cycle_uses_available_model_levels() -> None:

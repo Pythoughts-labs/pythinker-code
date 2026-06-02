@@ -79,11 +79,11 @@ def tool_call_header(
     summary: str | Text | None = None,
     *,
     style_token: str = "success",
-    paren_style_token: str = "muted",
+    summary_style_token: str = "muted",
 ) -> Text:
-    """Return the Blackbox/Claude-style tool-use row.
+    """Return the compact tool-use row.
 
-    Shape: ``● Tool(summary)`` for completed rows, ``✘ Tool(summary)`` for
+    Shape: ``● Tool summary`` for completed rows, ``✘ Tool summary`` for
     failed rows. The surrounding ``ToolExecutionComponent`` owns result
     gutters; individual renderers should keep this row compact.
     """
@@ -91,13 +91,11 @@ def tool_call_header(
     header.append(f"{_status_marker(style_token)} ", style=tui_rich_style(style_token))
     header.append_text(tool_title(name))
     if summary is not None:
-        paren_style = tui_rich_style(paren_style_token)
-        header.append("(", style=paren_style)
+        header.append(" ")
         if isinstance(summary, Text):
             header.append_text(summary)
         else:
-            header.append(summary)
-        header.append(")", style=paren_style)
+            header.append(summary, style=tui_rich_style(summary_style_token))
     return header
 
 

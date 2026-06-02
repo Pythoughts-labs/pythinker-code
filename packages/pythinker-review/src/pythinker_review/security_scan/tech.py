@@ -26,6 +26,7 @@ LANGUAGE_EXTENSIONS: dict[str, tuple[str, ...]] = {
     "swift": (".swift",),
     "elixir": (".ex", ".exs"),
     "dart": (".dart",),
+    "yaml": (".yml", ".yaml"),
 }
 
 COMMON_SENTINELS = (
@@ -447,6 +448,7 @@ def _languages_from_tags(tags: set[str]) -> set[str]:
         "jvm": {"java"},
         "dotnet": {"csharp"},
         "terraform": {"terraform"},
+        "github-actions": {"yaml"},
         "swift": {"swift"},
         "elixir": {"elixir"},
         "dart": {"dart"},

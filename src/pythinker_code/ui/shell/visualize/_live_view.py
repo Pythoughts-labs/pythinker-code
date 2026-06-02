@@ -576,7 +576,9 @@ class _LiveView:
         if not line:
             return
         console.print()
-        console.print(Text(sanitize_ansi(line), style=tui_rich_style("muted") + Style(italic=True)))
+        console.print(
+            Markdown(sanitize_ansi(line), style=tui_rich_style("muted") + Style(italic=True))
+        )
         console.print()
 
     def _working_indicator(self) -> RenderableType:
@@ -597,6 +599,7 @@ class _LiveView:
                 label,
                 elapsed_s=elapsed,
                 width=width,
+                shimmer_label=active_todo_title is None,
             )
             if todo_block is not None:
                 return Group(line, todo_block)
@@ -618,7 +621,9 @@ class _LiveView:
         tip.append(current_tip(now), style=tui_rich_style("dim"))
         return Group(line, tip)
 
-    def _todo_activity_line(self, label: str, *, elapsed_s: float, width: int) -> Text:
+    def _todo_activity_line(
+        self, label: str, *, elapsed_s: float, width: int, shimmer_label: bool = True
+    ) -> Text:
         label = _todo_activity_label(label)
         parts = [format_elapsed(elapsed_s)]
         if self._latest_context_tokens:
@@ -629,14 +634,17 @@ class _LiveView:
         label_width = max(1, width - cell_width(prefix) - cell_width(suffix))
 
         label_text = truncate_to_width(label, label_width)
-        line = Text(prefix, style=tui_rich_style("thinking_text"))
-        line.append_text(
-            shimmer_text(
-                label_text,
-                elapsed_s,
-                reduced_motion=reduced_motion_enabled(),
+        line = Text(prefix, style=tui_rich_style("activity_spinner"))
+        if shimmer_label:
+            line.append_text(
+                shimmer_text(
+                    label_text,
+                    elapsed_s,
+                    reduced_motion=reduced_motion_enabled(),
+                )
             )
-        )
+        else:
+            line.append(label_text, style=tui_rich_style("activity_label") + Style(bold=True))
         line.append(suffix, style=tui_rich_style("muted"))
         return line
 
@@ -717,7 +725,7 @@ class _LiveView:
             title_style = tui_rich_style("muted") + Style(strike=True)
         elif todo.status == "in_progress":
             icon = "■"
-            icon_token = "warning"
+            icon_token = "activity_verb"
             title_style = tui_rich_style("activity_label") + Style(bold=True)
         else:
             icon = "□"

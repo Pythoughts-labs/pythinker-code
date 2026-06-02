@@ -62,7 +62,7 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
 
     style_token = "error" if ctx.is_error else "success" if ctx.has_result else "muted"
     header = tool_call_header(
-        "Agent", summary, style_token=style_token, paren_style_token=secondary_token
+        "Agent", summary, style_token=style_token, summary_style_token=secondary_token
     )
 
     missing: list[RenderableType] = []

@@ -523,33 +523,21 @@ async def editor(app: Shell, args: str):
 @shell_mode_registry.command(aliases=["release-notes"])
 def changelog(app: Shell, args: str):
     """Show release notes"""
-    from rich.console import Group, RenderableType
-    from rich.text import Text
+    from pythinker_code.ui.shell.components.markdown import PythinkerMarkdown
 
-    from pythinker_code.ui.theme import get_tui_tokens, tui_rich_style
-    from pythinker_code.utils.rich.columns import BulletColumns
-
-    _tok = get_tui_tokens()
-    renderables: list[RenderableType] = []
+    sections: list[str] = []
     for ver, entry in CHANGELOG.items():
-        title = f"[bold]{_rich_escape(ver)}[/bold]"
+        lines = [f"## {ver}"]
         if entry.description:
-            title += f": {_rich_escape(entry.description)}"
-
-        lines: list[RenderableType] = [Text.from_markup(title)]
-        for item in entry.entries:
-            if item.lower().startswith("lib:"):
-                continue
-            lines.append(
-                BulletColumns(
-                    Text.from_markup(f"[{_tok.muted}]{_rich_escape(item)}[/]"),
-                    bullet_style=tui_rich_style("muted"),
-                ),
-            )
-        renderables.append(BulletColumns(Group(*lines)))
+            lines.extend(["", entry.description])
+        items = [item for item in entry.entries if not item.lower().startswith("lib:")]
+        if items:
+            lines.append("")
+            lines.extend(f"- {item}" for item in items)
+        sections.append("\n".join(lines))
 
     with console.pager(styles=True):
-        console.print(Group(*renderables))
+        console.print(PythinkerMarkdown("\n\n".join(sections)))
 
 
 def _feedback_destination(soul: PythinkerSoul) -> tuple[str, dict[str, str]] | None:
