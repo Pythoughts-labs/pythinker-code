@@ -20,11 +20,14 @@ def _step_block(workflow: str, name_fragment: str) -> str:
     step instead of the whole file, so an unrelated step can't satisfy or break
     them."""
     lines = workflow.splitlines()
-    start = next(
-        i
-        for i, line in enumerate(lines)
-        if line.lstrip().startswith("- name:") and name_fragment in line
-    )
+    try:
+        start = next(
+            i
+            for i, line in enumerate(lines)
+            if line.lstrip().startswith("- name:") and name_fragment in line
+        )
+    except StopIteration:
+        raise AssertionError(f"Step containing {name_fragment!r} not found in workflow") from None
     block = [lines[start]]
     for line in lines[start + 1 :]:
         if line.lstrip().startswith("- name:"):

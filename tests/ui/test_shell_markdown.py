@@ -153,7 +153,8 @@ def test_shell_markdown_renders_multi_column_tables_as_bordered_grid() -> None:
     assert "Area" in output and "Accessibil" in output and "ity" in output
     # "Suggested improvement" wraps mid-word in its narrow column; the trailing
     # "t" lands on the next row, so only this leading fragment survives on a line.
-    assert "Suggested" in output and "improvement"[:-1] in output
+    assert "Suggested" in output
+    assert "improvement"[:-1] in output
     assert "Priority" in output and "High" in output
     assert "Issue:" not in output
 
