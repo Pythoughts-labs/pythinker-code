@@ -467,3 +467,21 @@ async def test_pythinker_with_extra_body_non_thinking_key_shallow_merge():
             pass
         body = json.loads(mock.calls.last.request.content.decode())
         assert body["custom"] == snapshot({"b": 2})
+
+
+def test_with_thinking_minimal_round_trips():
+    from pythinker_core.chat_provider.pythinker import Pythinker
+
+    provider = Pythinker(model="pythinker-ai", api_key="test-key", stream=False).with_thinking(
+        "minimal"
+    )
+    assert provider.thinking_effort == "minimal"
+
+
+def test_with_thinking_low_unchanged():
+    from pythinker_core.chat_provider.pythinker import Pythinker
+
+    provider = Pythinker(model="pythinker-ai", api_key="test-key", stream=False).with_thinking(
+        "low"
+    )
+    assert provider.thinking_effort == "low"

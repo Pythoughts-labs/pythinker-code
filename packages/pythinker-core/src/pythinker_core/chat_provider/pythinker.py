@@ -199,7 +199,9 @@ class Pythinker:
         match effort:
             case "off":
                 reasoning_effort = None
-            case "minimal" | "low":
+            case "minimal":
+                reasoning_effort = "minimal"
+            case "low":
                 reasoning_effort = "low"
             case "medium":
                 reasoning_effort = "medium"
