@@ -58,7 +58,10 @@ node_modules/
 static/
 .memo/
 .entire
-.claude
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+!.claude/hooks/**
 .pythinker/
 .worktrees/
 blackbox/

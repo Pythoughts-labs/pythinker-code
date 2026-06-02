@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/check-changelog.sh",
+            "timeout": 15,
+            "statusMessage": "Checking CHANGELOG gate..."
+          }
+        ]
+      }
+    ]
+  }
+}
