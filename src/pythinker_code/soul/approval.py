@@ -31,6 +31,19 @@ _DELIBERATION_FEEDBACK = (
     "enumerate the realistic alternatives, weigh them against the current task, and commit "
     "to the best one. If this exact action is still right, re-issue it and it will run."
 )
+_EDIT_OUTSIDE_ACTION = "edit file outside of working directory"
+_SAFE_MODE_UNATTENDED_FEEDBACK = (
+    "Approval is required for this action, but this run is in auto/non-interactive mode "
+    "and safe mode prevents auto-approval. The action was denied instead of waiting "
+    "indefinitely for a user who is not present. Trust the workspace first or rerun with "
+    "explicit yolo/--yes after verifying the action is safe."
+)
+_OUTSIDE_WORKSPACE_UNATTENDED_FEEDBACK = (
+    "Outside-workspace file changes require explicit approval. Auto mode does not "
+    "auto-approve them, even in a trusted workspace, because they cross the workspace "
+    "trust boundary. Rerun interactively, or use explicit yolo/--yes only after verifying "
+    "the exact path and change are safe."
+)
 
 
 @dataclass(frozen=True)
@@ -63,13 +76,21 @@ def deliberation_scope(context_id: str, generation: int) -> Generator[None, None
 class ApprovalResult:
     """Result of an approval request. Behaves as bool for backward compatibility."""
 
-    __slots__ = ("approved", "feedback", "deliberation")
+    __slots__ = ("approved", "feedback", "deliberation", "user_rejection")
 
-    def __init__(self, approved: bool, feedback: str = "", deliberation: bool = False):
+    def __init__(
+        self,
+        approved: bool,
+        feedback: str = "",
+        deliberation: bool = False,
+        user_rejection: bool = True,
+    ):
         self.approved = approved
         self.feedback = feedback
         self.deliberation = deliberation
         """True when the bounce is an auto-mode deliberation prompt, not a user rejection."""
+        self.user_rejection = user_rejection
+        """True when the denial came from a user-backed approval response."""
 
     def __bool__(self) -> bool:
         return self.approved
@@ -84,6 +105,12 @@ class ApprovalResult:
                 has_feedback=True,
             )
         if self.feedback:
+            if not self.user_rejection:
+                return ToolRejectedError(
+                    message=self.feedback,
+                    brief="Approval unavailable",
+                    has_feedback=True,
+                )
             return ToolRejectedError(
                 message=(f"The tool call is rejected by the user. User feedback: {self.feedback}"),
                 brief=f"Rejected: {self.feedback}",
@@ -128,10 +155,10 @@ class ApprovalState:
         self.auto_deliberate = auto_deliberate
         """When true, destructive auto-approved actions must deliberate once first.
 
-        Wired in ``Runtime.create`` from ``config.ask_user_question_policy ==
-        "auto_deliberate"``. Gates *ahead* of yolo/auto: an irreversible action
-        (``rm -rf``, ``git push --force``, ...) is bounced back once for the agent
-        to weigh alternatives before it runs.
+        Wired in ``Runtime.create`` from the destructive deliberation config flag
+        and the legacy ``ask_user_question_policy == "auto_deliberate"`` mode. Gates
+        *ahead* of yolo/auto: an irreversible action (``rm -rf``, ``git push --force``,
+        ...) is bounced back once for the agent to weigh alternatives before it runs.
         """
         self.auto_approve_actions: set[str] = auto_approve_actions or set()
         """Set of action names that should automatically be approved."""
@@ -225,6 +252,16 @@ class Approval:
     def is_runtime_auto(self) -> bool:
         """True only when auto mode came from this invocation."""
         return self._state.runtime_auto
+
+    def _unattended_denial_feedback(self, action: str) -> str | None:
+        """Fail closed when an unattended run would otherwise wait for approval forever."""
+        if not self.is_auto() or self._state.yolo:
+            return None
+        if str(action) == _EDIT_OUTSIDE_ACTION:
+            return _OUTSIDE_WORKSPACE_UNATTENDED_FEEDBACK
+        if self._state.safe_mode and action not in self._state.auto_approve_actions:
+            return _SAFE_MODE_UNATTENDED_FEEDBACK
+        return None
 
     def is_orchestration_approved(self, fingerprint: str) -> bool:
         return fingerprint in self._state.approved_orchestration_fingerprints
@@ -355,6 +392,16 @@ class Approval:
                 feedback=_DELIBERATION_FEEDBACK.format(reason=reason),
                 deliberation=True,
             )
+        if (feedback := self._unattended_denial_feedback(action)) is not None:
+            from pythinker_code.telemetry import track
+
+            track(
+                "tool_rejected",
+                tool_name=tool_call.function.name,
+                approval_mode="auto_unavailable",
+            )
+            return ApprovalResult(approved=False, feedback=feedback, user_rejection=False)
+
         if self.is_auto_approve():
             from pythinker_code.telemetry import track
 

@@ -1,10 +1,16 @@
 name: Dispatch pythinker-home sync
 
 # Triggers a pythinker-home website sync when the install scripts or README
-# change on main. Release promotion and the post-release sync live in
-# promote-release.yml: a GITHUB_TOKEN-created release never fires a workflow,
-# so the old `release: published` trigger here was dead code that never ran the
-# wait-for-assets / mark-latest steps.
+# change on main. This is a best-effort latency optimization, NOT the source of
+# truth: pythinker-home re-syncs on its own daily cron (sync-upstream-products
+# @ 04:17 UTC) using its own GITHUB_TOKEN, so a failed dispatch here never
+# leaves the website stale. The job therefore degrades gracefully (warns +
+# alerts, exits 0) instead of red-lining main when the org-owned
+# pythinker-release-bot App is missing, uninstalled, or rotated.
+#
+# Release promotion's post-release sync lives in promote-release.yml: a
+# GITHUB_TOKEN-created release never fires a workflow, so the old
+# `release: published` trigger here was dead code that never ran.
 
 on:
   workflow_dispatch:
@@ -28,99 +34,79 @@ jobs:
     steps:
       # Mint a short-lived installation token for the org-owned
       # pythinker-release-bot App (Contents: write on pythinker-home only).
-      # Replaces a personal PAT: org-owned (survives member/org changes),
-      # ~1h TTL, minted fresh each run, scoped to the single private site repo.
+      # `continue-on-error` is deliberate: a missing/rotated App must not fail
+      # the run — the next step detects the empty token and degrades gracefully.
       - name: Mint GitHub App token for pythinker-home
         id: app-token
-        env:
-          APP_ID: ${{ secrets.PYTHINKER_RELEASE_BOT_APP_ID }}
-          APP_PRIVATE_KEY: ${{ secrets.PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY }}
-          DISPATCH_OWNER: ${{ env.DISPATCH_OWNER }}
-          DISPATCH_REPO: ${{ env.DISPATCH_REPO }}
-        run: |
-          set -euo pipefail
-          if [ -z "${APP_ID:-}" ] || [ -z "${APP_PRIVATE_KEY:-}" ]; then
-            echo "::error::Missing PYTHINKER_RELEASE_BOT_APP_ID or PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY. Configure the org-owned pythinker-release-bot App and install it on ${DISPATCH_OWNER}/${DISPATCH_REPO} with Contents: Read and write." >&2
-            exit 1
-          fi
+        continue-on-error: true
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # pinned from v2.2.2
+        with:
+          app-id: ${{ secrets.PYTHINKER_RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ env.DISPATCH_OWNER }}
+          repositories: ${{ env.DISPATCH_REPO }}
+          permission-contents: write
 
-          b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
-          key_file=$(mktemp)
-          trap 'rm -f "$key_file"' EXIT
-          printf '%s\n' "$APP_PRIVATE_KEY" > "$key_file"
-          chmod 600 "$key_file"
-
-          now=$(date +%s)
-          header=$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)
-          payload=$(jq -nc --argjson iat "$((now - 60))" --argjson exp "$((now + 540))" --arg iss "$APP_ID" '{iat:$iat,exp:$exp,iss:$iss}' | b64url)
-          unsigned="${header}.${payload}"
-          signature=$(printf '%s' "$unsigned" | openssl dgst -sha256 -sign "$key_file" | b64url)
-          jwt="${unsigned}.${signature}"
-
-          installation_id=$(curl --fail-with-body -sS \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${jwt}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${DISPATCH_OWNER}/${DISPATCH_REPO}/installation" \
-            | jq -er '.id')
-          token=$(jq -nc --arg repo "$DISPATCH_REPO" '{repositories:[$repo],permissions:{contents:"write"}}' \
-            | curl --fail-with-body -sS \
-                -X POST \
-                -H "Accept: application/vnd.github+json" \
-                -H "Authorization: Bearer ${jwt}" \
-                -H "X-GitHub-Api-Version: 2022-11-28" \
-                "https://api.github.com/app/installations/${installation_id}/access_tokens" \
-                -d @- \
-            | jq -er '.token')
-          echo "::add-mask::$token"
-          echo "token=$token" >> "$GITHUB_OUTPUT"
-
-      - name: Trigger pythinker-home sync
+      - name: Trigger pythinker-home sync (best-effort)
         env:
           DISPATCH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TOKEN_OUTCOME: ${{ steps.app-token.outcome }}
           SOURCE_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.sha }}
           DISPATCH_OWNER: ${{ env.DISPATCH_OWNER }}
           DISPATCH_REPO: ${{ env.DISPATCH_REPO }}
-        run: |
-          set -euo pipefail
-          if [ -z "${DISPATCH_TOKEN:-}" ]; then
-            echo "::error::No dispatch token: the pythinker-release-bot App token mint produced an empty value. Confirm PYTHINKER_RELEASE_BOT_APP_ID and PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY org secrets are set and the App is installed on ${DISPATCH_OWNER}/${DISPATCH_REPO} with Contents: Read and write." >&2
-            exit 1
-          fi
-          payload=$(jq -n \
-            --arg source_repo "$SOURCE_REPO" \
-            --arg tag "$RELEASE_TAG" \
-            '{"event_type":"sync-pythinker-products","client_payload":{"source_repo":$source_repo,"tag":$tag}}')
-          curl --fail-with-body \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $DISPATCH_TOKEN" \
-            "https://api.github.com/repos/${DISPATCH_OWNER}/${DISPATCH_REPO}/dispatches" \
-            -d "$payload"
-
-  notify-failure:
-    name: Notify on failure
-    runs-on: ubuntu-latest
-    needs: dispatch
-    if: failure()
-    steps:
-      - name: Post Slack alert
-        env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          REPO: ${{ github.repository }}
-          TRIGGER: ${{ github.event_name }}
         run: |
-          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+          # No `set -e`: anticipated failures degrade gracefully (warn + alert +
+          # exit 0) so a broken App never red-lines main. The daily cron in
+          # pythinker-home is the real sync guarantee.
+          set -uo pipefail
+
+          degrade() {
+            reason="$1"
+            echo "::warning title=pythinker-home sync skipped::${reason}"
+            {
+              echo "### :warning: pythinker-home sync dispatch skipped"
+              echo ""
+              echo "${reason}"
+              echo ""
+              echo "**Non-blocking:** pythinker-home re-syncs on its daily cron (\`sync-upstream-products\` @ 04:17 UTC) using its own token, so the website is not stale."
+              echo ""
+              echo "**Restore the fast path:** recreate/install the **pythinker-release-bot** App on \`${DISPATCH_OWNER}\` with *Contents: write* on \`${DISPATCH_REPO}\`, then update the \`PYTHINKER_RELEASE_BOT_APP_ID\` and \`PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY\` secrets."
+            } >> "$GITHUB_STEP_SUMMARY"
+            if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
+              alert=$(jq -n --arg run_url "$RUN_URL" --arg repo "$SOURCE_REPO" --arg reason "$reason" \
+                '{"text":":warning: *pythinker-home sync dispatch skipped (non-blocking)*","attachments":[{"color":"warning","fields":[{"title":"Repo","value":$repo,"short":true},{"title":"Reason","value":$reason,"short":false},{"title":"Run","value":"<\($run_url)|View logs>","short":false}]}]}')
+              curl -sS -X POST -H "Content-Type: application/json" -d "$alert" "$SLACK_WEBHOOK_URL" || true
+            fi
             exit 0
+          }
+
+          if [ "${TOKEN_OUTCOME}" != "success" ] || [ -z "${DISPATCH_TOKEN:-}" ]; then
+            degrade "Could not mint a pythinker-release-bot App token (token step outcome: ${TOKEN_OUTCOME}). The App is likely missing/uninstalled on ${DISPATCH_OWNER}, or its credentials are stale."
           fi
-          payload=$(jq -n \
-            --arg run_url "$RUN_URL" \
-            --arg repo "$REPO" \
-            --arg trigger "$TRIGGER" \
-            '{"text":":red_circle: *Dispatch pythinker-home sync failed*","attachments":[{"color":"danger","fields":[{"title":"Repo","value":$repo,"short":true},{"title":"Trigger","value":$trigger,"short":true},{"title":"Run","value":"<\($run_url)|View logs>","short":false}]}]}')
-          curl --fail-with-body -X POST \
-            -H "Content-Type: application/json" \
-            -d "$payload" \
-            "$SLACK_WEBHOOK_URL"
+
+          payload=$(jq -n --arg source_repo "$SOURCE_REPO" --arg tag "$RELEASE_TAG" \
+            '{"event_type":"sync-pythinker-products","client_payload":{"source_repo":$source_repo,"tag":$tag}}')
+
+          # repository_dispatch returns 204 on success. Retry transient errors;
+          # a persistent failure degrades (the cron still backstops the sync).
+          resp=$(mktemp)
+          code="000"
+          for attempt in 1 2 3; do
+            code=$(curl -sS -o "$resp" -w '%{http_code}' \
+              -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $DISPATCH_TOKEN" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${DISPATCH_OWNER}/${DISPATCH_REPO}/dispatches" \
+              -d "$payload") || code="000"
+            if [ "$code" = "204" ]; then
+              echo "Dispatched sync-pythinker-products to ${DISPATCH_OWNER}/${DISPATCH_REPO} (HTTP 204)."
+              exit 0
+            fi
+            echo "Dispatch attempt ${attempt} returned HTTP ${code}: $(head -c 200 "$resp")"
+            [ "$attempt" -lt 3 ] && sleep $((attempt * 3)) || true
+          done
+          degrade "repository_dispatch to ${DISPATCH_OWNER}/${DISPATCH_REPO} failed after 3 attempts (last HTTP ${code}): $(head -c 200 "$resp")"

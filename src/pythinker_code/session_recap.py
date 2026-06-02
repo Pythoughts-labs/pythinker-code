@@ -253,12 +253,14 @@ def _last_substantive_thread(items: list[SessionRecapItem]) -> str:
 
 _MIN_RECAP_SENTENCE_CHARS = 16
 _FENCE_START_RE = re.compile(r"^ {0,3}(```+|~~~+)")
+_TABLE_DELIMITER_RE = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$")
 
 
 def _recap_source_text(text: str) -> str:
-    """Return one-line recap input with machine-readable blocks removed."""
+    """Return one-line recap input with bulky structured blocks removed."""
     without_fences = _strip_fenced_blocks(text)
-    without_ticks = without_fences.replace("`", "")
+    without_tables = _strip_markdown_tables(without_fences)
+    without_ticks = without_tables.replace("`", "")
     return " ".join(without_ticks.split())
 
 
@@ -280,6 +282,32 @@ def _strip_fenced_blocks(text: str) -> str:
             continue
         lines.append(line)
     return "\n".join(lines)
+
+
+def _is_table_delimiter(line: str) -> bool:
+    return _TABLE_DELIMITER_RE.match(line) is not None
+
+
+def _is_table_row(line: str) -> bool:
+    stripped = line.strip()
+    return stripped.startswith("|") and stripped.endswith("|") and stripped.count("|") >= 2
+
+
+def _strip_markdown_tables(text: str) -> str:
+    lines = text.splitlines()
+    kept: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        next_line = lines[index + 1] if index + 1 < len(lines) else ""
+        if _is_table_row(line) and _is_table_delimiter(next_line):
+            index += 2
+            while index < len(lines) and _is_table_row(lines[index]):
+                index += 1
+            continue
+        kept.append(line)
+        index += 1
+    return "\n".join(kept)
 
 
 def _first_sentence(text: str) -> str:

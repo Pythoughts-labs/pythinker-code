@@ -69,6 +69,7 @@ def test_build_settings_config_exposes_backed_settings_only():
     assert "theme" in ids
     assert "tui.style" in ids
     assert "default_thinking" in ids
+    assert "auto_deliberate_destructive_actions" in ids
     assert "telemetry" in ids
     # No-op image controls are intentionally not exposed yet.
     assert "show-images" not in ids
@@ -137,6 +138,7 @@ def test_apply_settings_changes_mutates_config():
             "theme": "light",
             "default_thinking": "high",
             "telemetry": "true",
+            "auto_deliberate_destructive_actions": "true",
             "loop_control.max_retries_per_step": "5",
             "config_file": "/ignored/read-only",
         },
@@ -147,11 +149,13 @@ def test_apply_settings_changes_mutates_config():
     assert changed == [
         "theme",
         "default_thinking",
+        "auto_deliberate_destructive_actions",
         "loop_control.max_retries_per_step",
     ]
     assert config.theme == "light"
     assert config.default_thinking is True
     assert config.telemetry is True
+    assert config.auto_deliberate_destructive_actions is True
     assert config.loop_control.max_retries_per_step == 5
 
 

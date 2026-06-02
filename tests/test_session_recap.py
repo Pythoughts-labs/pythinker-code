@@ -87,6 +87,20 @@ def test_build_turn_recap_line_strips_report_blocks() -> None:
     assert line == ("※ recap: Deep scan completed. · 28 steps (disable recaps in /settings)")
 
 
+def test_build_turn_recap_line_strips_markdown_tables_from_request() -> None:
+    line = build_turn_recap_line(
+        request=(
+            "| Step | Level | Hex |\n"
+            "| --- | --- | --- |\n"
+            "| off | Off | #475569 |\n"
+            "| high | High | #cc704b |\n"
+        ),
+        assistant_text="",
+    )
+
+    assert line is None
+
+
 def test_build_turn_recap_line_prefers_closing_summary_over_opening_intent() -> None:
     # The opening sentence is pure intent; the recap should surface the outcome.
     line = build_turn_recap_line(

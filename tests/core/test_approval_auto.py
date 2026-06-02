@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from pythinker_code.soul.approval import Approval, ApprovalState, deliberation_scope
+from pythinker_code.tools.file import FileActions
 from pythinker_code.wire.types import ToolCall
 
 
@@ -224,6 +226,56 @@ def test_deliberation_gate_conditions() -> None:
     # non-destructive in auto + auto_deliberate -> proceeds untouched
     benign = Approval(state=ApprovalState(auto=True, auto_deliberate=True))
     assert benign.deliberation_gate(safe) is None
+
+
+async def test_auto_safe_mode_denies_approval_without_waiting() -> None:
+    """Unattended safe-mode runs fail closed instead of waiting forever for approval."""
+    from tests.conftest import tool_call_context
+
+    approval = Approval(state=ApprovalState(auto=True, safe_mode=True))
+    with tool_call_context("Shell", arguments={"command": "echo hello"}):
+        result = await asyncio.wait_for(
+            approval.request("Shell", "run command", "Run command `echo hello`"),
+            timeout=0.1,
+        )
+
+    assert not result
+    assert approval.runtime.list_pending() == []
+    error = result.rejection_error()
+    assert "safe mode prevents auto-approval" in error.message
+    assert "rejected by the user" not in error.message
+
+
+async def test_trusted_auto_denies_outside_workspace_write_without_yolo() -> None:
+    """Trusted auto mode still fails closed for outside-workspace file mutations."""
+    from tests.conftest import tool_call_context
+
+    approval = Approval(state=ApprovalState(auto=True, safe_mode=False))
+    with tool_call_context("WriteFile", arguments={"path": "/tmp/out.txt", "content": "x"}):
+        result = await asyncio.wait_for(
+            approval.request("WriteFile", FileActions.EDIT_OUTSIDE, "Write file `/tmp/out.txt`"),
+            timeout=0.1,
+        )
+
+    assert not result
+    assert approval.runtime.list_pending() == []
+    error = result.rejection_error()
+    assert "Outside-workspace file changes require explicit approval" in error.message
+    assert "rejected by the user" not in error.message
+
+
+async def test_explicit_yolo_allows_outside_workspace_auto_write_boundary() -> None:
+    from tests.conftest import tool_call_context
+
+    approval = Approval(state=ApprovalState(auto=True, yolo=True, safe_mode=False))
+    with tool_call_context("WriteFile", arguments={"path": "/tmp/out.txt", "content": "x"}):
+        result = await approval.request(
+            "WriteFile",
+            FileActions.EDIT_OUTSIDE,
+            "Write file `/tmp/out.txt`",
+        )
+
+    assert result
 
 
 async def test_request_bounces_destructive_then_approves_retry() -> None:

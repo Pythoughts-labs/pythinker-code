@@ -11,7 +11,7 @@ def test_markdown_html_block_renders_without_stack_error() -> None:
     assert "<analysis>" in rendered
 
 
-def test_wide_markdown_table_renders_as_readable_records() -> None:
+def test_wide_markdown_table_renders_as_bordered_grid() -> None:
     console = Console(width=72, record=True, color_system=None)
     markdown = Markdown(
         "| Area | Issue | Why it matters | Suggested improvement | Priority | Effort |\n"
@@ -25,12 +25,12 @@ def test_wide_markdown_table_renders_as_readable_records() -> None:
     console.print(markdown)
     output = console.export_text()
 
-    assert "1. Accessibility" in output
-    assert "Issue:" in output
-    assert "Why it matters:" in output
-    assert "Suggested improvement:" in output
-    assert "Priority: High" in output
-    assert "Effort: XS" in output
+    assert "┌" in output and "┬" in output and "┘" in output
+    assert "Area" in output
+    assert "Accessibil" in output and "ity" in output
+    assert "Why it" in output and "matters" in output
+    assert "Priority" in output and "High" in output
+    assert "Issue:" not in output
 
 
 def test_fenced_code_block_renders_as_labeled_report_panel() -> None:

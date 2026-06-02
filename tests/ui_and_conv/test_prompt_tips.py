@@ -608,7 +608,9 @@ def test_card_toolbar_agent_label_is_light_and_context_is_muted(monkeypatch: Any
 def test_card_toolbar_separator_matches_thinking_prompt_color(monkeypatch: Any) -> None:
     from pythinker_code.ui.theme import set_active_theme, thinking_frame_style
 
-    prompt_session = _make_toolbar_session(model_name="fast-model", tips=[])
+    prompt_session = _make_toolbar_session(
+        model_name="fast-model", model_capabilities={"thinking"}, tips=[]
+    )
     prompt_session._thinking = True
     prompt_session._thinking_effort = "xhigh"
 
@@ -630,6 +632,36 @@ def test_card_toolbar_separator_matches_thinking_prompt_color(monkeypatch: Any) 
 
     assert fragments[0] == (
         thinking_frame_style("xhigh", theme="dark"),
+        shell_prompt._prompt_rule(120),
+    )
+
+
+def test_card_toolbar_separator_uses_standard_frame_for_non_thinking_models(
+    monkeypatch: Any,
+) -> None:
+    prompt_session = _make_toolbar_session(
+        model_name="fast-model", model_capabilities=set(), tips=[]
+    )
+    prompt_session._thinking = False
+    prompt_session._thinking_effort = "off"
+
+    class _DummyOutput:
+        @staticmethod
+        def get_size() -> Any:
+            return SimpleNamespace(columns=120)
+
+    monkeypatch.setenv("PYTHINKER_TUI_STYLE", "card")
+    monkeypatch.setattr(
+        shell_prompt, "get_app_or_none", lambda: SimpleNamespace(output=_DummyOutput())
+    )
+    monkeypatch.setattr(shell_prompt, "_get_git_branch", lambda: None)
+    monkeypatch.setattr(shell_prompt, "_shorten_cwd", lambda _: "~/proj")
+    monkeypatch.setattr("pythinker_code.extensions.footer_statuses", lambda: {})
+
+    fragments = list(prompt_session._render_bottom_toolbar())
+
+    assert fragments[0] == (
+        "class:compact-input.frame",
         shell_prompt._prompt_rule(120),
     )
 

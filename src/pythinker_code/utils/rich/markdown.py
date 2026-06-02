@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Iterable, Mapping
-from typing import ClassVar, get_args
+from typing import ClassVar, cast, get_args
 
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
@@ -309,31 +309,23 @@ class TableElement(MarkdownElement):
         return False
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
-        headers = (
-            [column.content.plain.strip() for column in self.header.row.cells]
-            if self.header is not None and self.header.row is not None
-            else []
+        table = Table(
+            box=box.SQUARE,
+            show_edge=True,
+            show_lines=True,
+            border_style="markdown.hr",
+            header_style="markdown.strong",
+            padding=(0, 1),
+            pad_edge=True,
         )
-        rows = [row.cells for row in self.body.rows] if self.body is not None else []
-
-        if headers and rows and _table_should_render_as_records(headers, rows):
-            for row_index, row in enumerate(rows, start=1):
-                yield _record_title(row_index, row)
-                for header, cell in zip(headers[1:], row[1:], strict=False):
-                    value = _cell_plain(cell.content)
-                    if not value:
-                        continue
-                    line = Text("  ")
-                    line.append(f"{header}: ", style="bold")
-                    line.append_text(cell.content)
-                    yield line
-            return
-
-        table = Table(box=box.SIMPLE_HEAVY, show_edge=False)
 
         if self.header is not None and self.header.row is not None:
             for column in self.header.row.cells:
-                table.add_column(column.content)
+                table.add_column(
+                    column.content,
+                    justify=_table_cell_justify(column.justify),
+                    overflow="fold",
+                )
 
         if self.body is not None:
             for row in self.body.rows:
@@ -343,19 +335,10 @@ class TableElement(MarkdownElement):
         yield table
 
 
-def _cell_plain(cell: Text) -> str:
-    return cell.plain.strip()
-
-
-def _table_should_render_as_records(headers: list[str], rows: list[list[TableDataElement]]) -> bool:
-    if len(headers) >= 4:
-        return True
-    return any(len(_cell_plain(cell.content)) > 48 for row in rows for cell in row)
-
-
-def _record_title(row_index: int, row: list[TableDataElement]) -> Text:
-    title = _cell_plain(row[0].content) if row else "Row"
-    return Text(f"{row_index}. {title}", style="bold")
+def _table_cell_justify(justify: str) -> JustifyMethod:
+    normalized = "left" if justify == "default" else justify
+    assert normalized in get_args(JustifyMethod)
+    return cast(JustifyMethod, normalized)
 
 
 class TableHeaderElement(MarkdownElement):

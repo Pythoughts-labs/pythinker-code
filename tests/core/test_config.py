@@ -27,6 +27,7 @@ def test_default_config_dump():
             "agent_execution_profile": "default",
             "default_yolo": False,
             "ask_user_question_policy": "ask_except_auto",
+            "auto_deliberate_destructive_actions": False,
             "default_plan_mode": False,
             "default_editor": "",
             "theme": "dark",
@@ -115,6 +116,7 @@ def test_agent_execution_profile_autonomous_sets_autonomy_defaults():
 
     assert config.default_yolo is True
     assert config.ask_user_question_policy == "never"
+    assert config.auto_deliberate_destructive_actions is True
 
 
 def test_agent_execution_profile_respects_explicit_values():
@@ -124,12 +126,14 @@ def test_agent_execution_profile_respects_explicit_values():
                 'agent_execution_profile = "autonomous_coding"',
                 "default_yolo = false",
                 'ask_user_question_policy = "always"',
+                "auto_deliberate_destructive_actions = false",
             ]
         )
     )
 
     assert config.default_yolo is False
     assert config.ask_user_question_policy == "always"
+    assert config.auto_deliberate_destructive_actions is False
 
 
 def test_agent_execution_profile_plan_only_sets_plan_defaults():

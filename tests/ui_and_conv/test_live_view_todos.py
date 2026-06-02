@@ -15,7 +15,7 @@ from pythinker_code.ui.shell.motion import (
     _SHIMMER_MID,
 )
 from pythinker_code.ui.shell.visualize import _LiveView
-from pythinker_code.ui.theme import tui_rich_style
+from pythinker_code.ui.theme import set_active_theme, tui_rich_style
 from pythinker_code.wire.types import StatusUpdate, TurnBegin
 
 _live_view_module = importlib.import_module("pythinker_code.ui.shell.visualize._live_view")
@@ -172,17 +172,34 @@ def test_finished_todos_move_to_bottom_of_menu(monkeypatch) -> None:
     assert rendered.index("✓ Finished first") < rendered.index("✓ Finished second")
 
 
-def test_active_todo_activity_line_uses_standard_spinner_shimmer() -> None:
+def test_todo_activity_line_uses_standard_spinner_shimmer_for_generic_verbs() -> None:
+    set_active_theme("dark")
     view = _LiveView(StatusUpdate(context_tokens=10_000))
 
     line = view._todo_activity_line("Implement pinned todos", elapsed_s=0.88, width=100)
 
     marker_style = Style.parse(line.style) if isinstance(line.style, str) else line.style
-    assert marker_style.color == tui_rich_style("thinking_text").color
+    assert marker_style.color == tui_rich_style("activity_spinner").color
     assert _span_colors_for(line, "Implement pinned todos") >= _SHIMMER_HEXES
 
 
+def test_active_todo_activity_line_uses_stable_label_not_shimmer() -> None:
+    set_active_theme("dark")
+    view = _LiveView(StatusUpdate(context_tokens=10_000))
+
+    line = view._todo_activity_line(
+        "Implement pinned todos", elapsed_s=0.88, width=100, shimmer_label=False
+    )
+
+    active_color = _color_hex(tui_rich_style("activity_label").color)
+    marker_style = Style.parse(line.style) if isinstance(line.style, str) else line.style
+    assert marker_style.color == tui_rich_style("activity_spinner").color
+    assert _span_colors_for(line, "Implement pinned todos") == {active_color}
+    assert _span_colors_for(line, "Implement pinned todos").isdisjoint(_SHIMMER_HEXES)
+
+
 def test_active_pinned_todo_row_uses_neutral_title_not_shimmer() -> None:
+    set_active_theme("dark")
     view = _LiveView(StatusUpdate())
 
     row = view._pinned_todo_row(
@@ -194,7 +211,7 @@ def test_active_pinned_todo_row_uses_neutral_title_not_shimmer() -> None:
 
     active_color = _color_hex(tui_rich_style("activity_label").color)
     shimmer_colors = _SHIMMER_HEXES
-    assert _span_colors_for(row, "■") == {_color_hex(tui_rich_style("warning").color)}
+    assert _span_colors_for(row, "■") == {_color_hex(tui_rich_style("activity_verb").color)}
     assert _span_colors_for(row, "Implement pinned todos") == {active_color}
     assert _span_colors_for(row, "Implement pinned todos").isdisjoint(shimmer_colors)
     title_start = row.plain.index("Implement pinned todos")

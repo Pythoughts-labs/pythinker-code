@@ -167,6 +167,21 @@ def test_user_echo_wraps_continuation_under_text_start() -> None:
     assert not lines[2].startswith("❯")
 
 
+def test_user_echo_renders_pasted_markdown_tables() -> None:
+    rendered = render_user_echo_text(
+        "| Step | Level | Hex |\n"
+        "| --- | --- | --- |\n"
+        "| off | Off | #475569 |\n"
+        "| high | High | #cc704b |\n"
+    )
+    plain = render_plain(rendered, width=72)
+
+    assert plain.startswith("\n❯ ┌")
+    assert "│ Step" in plain
+    assert "#475569" in plain
+    assert "| --- |" not in plain
+
+
 def test_should_echo_agent_input_for_plain_agent_message() -> None:
     shell = _make_shell()
     assert shell._should_echo_agent_input(_make_user_input("hi")) is True

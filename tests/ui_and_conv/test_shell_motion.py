@@ -130,8 +130,8 @@ def test_activity_status_line_uses_clean_metadata_separator():
     assert "Pythinking… · 30s · ↓ 1.3k tokens" in output
 
 
-def test_activity_status_line_uses_silver_spinner_and_muted_yellow_verb():
-    from pythinker_code.ui.theme import set_active_theme
+def test_activity_status_line_uses_platinum_spinner_and_champagne_verb():
+    from pythinker_code.ui.theme import set_active_theme, tui_rich_style
 
     set_active_theme("dark")
     start = activity_status_line(ActivitySnapshot(label="Cultivating", elapsed_s=0.0))
@@ -139,7 +139,7 @@ def test_activity_status_line_uses_silver_spinner_and_muted_yellow_verb():
     later_sheen = activity_status_line(ActivitySnapshot(label="Cultivating", elapsed_s=1.10))
 
     base_style = Style.parse(start.style) if isinstance(start.style, str) else start.style
-    assert _color_hex(base_style.color) == "#c0c0c0"
+    assert base_style.color == tui_rich_style("activity_spinner").color
     assert _span_colors_for(sheen, "Cultivating") >= _SHIMMER_HEXES
     assert _span_colors_for(later_sheen, "Cultivating") >= _SHIMMER_HEXES
     assert "Cultivating…" in _plain(start)

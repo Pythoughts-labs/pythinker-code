@@ -8,6 +8,7 @@ from pythinker_code.soul.dynamic_injections.auto_mode import (
     _AUTO_INJECTION_TYPE,
     _AUTO_PROMPT,
     _AUTO_PROMPT_DELIBERATE,
+    _AUTO_PROMPT_DESTRUCTIVE_DELIBERATE,
     AutoModeInjectionProvider,
 )
 
@@ -19,6 +20,7 @@ def _mock_soul(
     is_subagent: bool = False,
     has_ask_user: bool = True,
     ask_user_question_policy: str = "ask_except_auto",
+    auto_deliberate_destructive_actions: bool = False,
 ) -> MagicMock:
     soul = MagicMock()
     soul.is_auto = is_auto
@@ -27,6 +29,7 @@ def _mock_soul(
     soul.is_subagent = is_subagent
     soul.has_tool.return_value = has_ask_user
     soul.runtime.config.ask_user_question_policy = ask_user_question_policy
+    soul.runtime.config.auto_deliberate_destructive_actions = auto_deliberate_destructive_actions
     return soul
 
 
@@ -38,6 +41,8 @@ async def test_injects_when_auto_enabled() -> None:
     assert result[0].content == _AUTO_PROMPT
     assert "auto" in result[0].content.lower()
     assert "Do NOT call AskUserQuestion" in result[0].content
+    assert "All tool calls are auto-approved" not in result[0].content
+    assert "fail" in result[0].content.lower()
 
 
 async def test_injects_deliberate_prompt_under_auto_deliberate_policy() -> None:
@@ -49,16 +54,32 @@ async def test_injects_deliberate_prompt_under_auto_deliberate_policy() -> None:
     assert "advisor-assisted self-decision" in result[0].content
 
 
-async def test_runtime_auto_does_not_inject_prompt() -> None:
+async def test_runtime_auto_injects_non_persistent_prompt() -> None:
     provider = AutoModeInjectionProvider()
     result = await provider.get_injections([], _mock_soul(is_auto=True, is_auto_flag=False))
-    assert result == []
+    assert len(result) == 1
+    assert result[0].type == _AUTO_INJECTION_TYPE
+    assert result[0].content == _AUTO_PROMPT
 
 
 async def test_no_injection_when_auto_disabled() -> None:
     provider = AutoModeInjectionProvider()
     result = await provider.get_injections([], _mock_soul(is_auto=False))
     assert result == []
+
+
+async def test_injects_destructive_deliberation_without_ask_user_deliberation() -> None:
+    provider = AutoModeInjectionProvider()
+    soul = _mock_soul(
+        is_auto=True,
+        ask_user_question_policy="never",
+        auto_deliberate_destructive_actions=True,
+    )
+    result = await provider.get_injections([], soul)
+    assert len(result) == 1
+    assert result[0].content == _AUTO_PROMPT_DESTRUCTIVE_DELIBERATE
+    assert "Do NOT call AskUserQuestion" in result[0].content
+    assert "Irreversible auto-approved actions" in result[0].content
 
 
 async def test_persistent_auto_injected_once_even_if_auto_stays_on() -> None:
@@ -69,12 +90,12 @@ async def test_persistent_auto_injected_once_even_if_auto_stays_on() -> None:
     assert second == []
 
 
-async def test_runtime_auto_does_not_rearm_prompt() -> None:
+async def test_runtime_auto_injected_once_even_if_auto_stays_on() -> None:
     provider = AutoModeInjectionProvider()
     soul = _mock_soul(is_auto=True, is_auto_flag=False)
     first = await provider.get_injections([], soul)
     second = await provider.get_injections([], soul)
-    assert first == []
+    assert len(first) == 1
     assert second == []
 
 

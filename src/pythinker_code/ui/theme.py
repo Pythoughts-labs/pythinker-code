@@ -441,6 +441,10 @@ class TuiTokens:
     text: str
     thinking_text: str
     activity_label: str
+    activity_verb: str
+    activity_verb_mid: str
+    activity_verb_highlight: str
+    activity_spinner: str
     # Backgrounds
     selected_bg: str
     user_message_bg: str
@@ -480,6 +484,10 @@ _TUI_TOKENS_DARK = TuiTokens(
     text="",
     thinking_text="#C0C0C0",
     activity_label="#F4F4F5",
+    activity_verb="#C8B176",
+    activity_verb_mid="#E1CC94",
+    activity_verb_highlight="#EEF2F7",
+    activity_spinner="#B8C0CC",
     selected_bg="#243C54",
     user_message_bg="#1B2738",
     user_message_text="",
@@ -513,6 +521,10 @@ _TUI_TOKENS_LIGHT = TuiTokens(
     text="#213853",
     thinking_text="#7A7A7A",
     activity_label="#213853",
+    activity_verb="#7A5C24",
+    activity_verb_mid="#8A6A2D",
+    activity_verb_highlight="#213853",
+    activity_spinner="#6B7280",
     selected_bg="#E6F2F6",
     user_message_bg="#F0E4E4",
     user_message_text="",
@@ -569,31 +581,23 @@ def tui_rich_style(token: str, *, theme: ThemeName | None = None) -> RichStyle:
 
 # ---------------------------------------------------------------------------
 # Thinking-level prompt frame colors (Shift+Tab cycle). Keyed by the plain level
-# string to avoid a theme<->selector import cycle; ThinkingLevel values are
-# exactly these strings.
+# string to avoid a theme<->selector import cycle. ``minimal`` is the canonical
+# ThinkingLevel value; ``min`` is accepted as the compact palette step alias.
 # ---------------------------------------------------------------------------
 
-_THINKING_FRAME_DARK: dict[str, str] = {
-    # Cool-to-warm ramp: quiet slate when disabled, then increasingly vivid
-    # thinking states as the model spends more effort.
-    "off": "#94A3B8",  # slate
-    "minimal": "#60A5FA",  # blue
-    "low": "#22D3EE",  # cyan
-    "medium": "#34D399",  # emerald
-    "high": "#FBBF24",  # amber
-    "xhigh": "#FB7185",  # rose
-    "max": "#F472B6",  # pink
+_THINKING_FRAME_SCALE: dict[str, str] = {
+    "off": "#64748b",  # muted grey / slate-500
+    "min": "#cbd5e1",  # lighter grey / slate-300
+    "minimal": "#cbd5e1",  # canonical value for minimum
+    "low": "#3b82f6",  # rich digital blue / blue-500
+    "medium": "#22d3ee",  # electric light cyan / cyan-400
+    "high": "#c4b5fd",  # whitish purple / violet-300
+    "xhigh": "#a855f7",  # vibrant purple / purple-500
+    "max": "#6d28d9",  # deep violet / violet-700
 }
 
-_THINKING_FRAME_LIGHT: dict[str, str] = {
-    "off": "#475569",  # slate
-    "minimal": "#0369A1",  # blue
-    "low": "#0E7490",  # cyan
-    "medium": "#047857",  # emerald
-    "high": "#92400E",  # amber
-    "xhigh": "#9F1239",  # rose
-    "max": "#9D174D",  # pink
-}
+_THINKING_FRAME_DARK: dict[str, str] = _THINKING_FRAME_SCALE
+_THINKING_FRAME_LIGHT: dict[str, str] = _THINKING_FRAME_SCALE
 
 
 def thinking_frame_color(level: str, *, theme: ThemeName | None = None) -> str:

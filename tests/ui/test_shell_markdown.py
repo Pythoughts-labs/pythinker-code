@@ -138,7 +138,7 @@ def test_shell_markdown_keeps_emoji_icons_in_code() -> None:
     assert "● High" in output
 
 
-def test_shell_markdown_keeps_rich_fork_table_records() -> None:
+def test_shell_markdown_renders_multi_column_tables_as_bordered_grid() -> None:
     output = _render_text(
         PythinkerMarkdown(
             "| Area | Issue | Why it matters | Suggested improvement | Priority | Effort |\n"
@@ -149,12 +149,11 @@ def test_shell_markdown_keeps_rich_fork_table_records() -> None:
         )
     )
 
-    assert "1. Accessibility" in output
-    assert "Issue:" in output
-    assert "Why it matters:" in output
-    assert "Suggested improvement:" in output
-    assert "Priority: High" in output
-    assert "Effort: XS" in output
+    assert "┌" in output and "┬" in output and "┘" in output
+    assert "Area" in output and "Accessibil" in output and "ity" in output
+    assert "Suggested" in output and "improvemen" in output
+    assert "Priority" in output and "High" in output
+    assert "Issue:" not in output
 
 
 def test_shell_markdown_repairs_report_heading_crammed_into_table_header() -> None:
@@ -169,11 +168,12 @@ def test_shell_markdown_repairs_report_heading_crammed_into_table_header() -> No
     )
 
     assert "● MEDIUM — address soon" in output
-    assert "1. M1" in output
-    assert "File: approval.py:208–228" in output
-    assert "CWE: CWE-285" in output
-    assert "Finding: No per-subagent approval isolation." in output
-    assert "Evidence: auto approve broadens scope" in output
+    assert "┌" in output and "┬" in output and "┘" in output
+    assert "M1" in output
+    assert "approval.py:208–228" in output
+    assert "CWE-285" in output
+    assert "No per-subagent" in output and "approval" in output and "isolation." in output
+    assert "auto approve" in output and "broadens scope" in output
     assert "| # | File" not in output
 
 

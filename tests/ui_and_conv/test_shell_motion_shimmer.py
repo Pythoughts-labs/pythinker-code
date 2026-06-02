@@ -45,6 +45,7 @@ def test_shimmer_varies_over_time_when_motion_enabled(monkeypatch):
 
 def test_prompt_shimmer_fragments_share_silver_sheen_palette(monkeypatch):
     monkeypatch.delenv("PYTHINKER_REDUCED_MOTION", raising=False)
+    set_active_theme("dark")
 
     fragments = shimmer_prompt_fragments("Schlepping…", 0.88)
     styles = {style.lower() for style, text in fragments if text.strip()}
@@ -55,8 +56,25 @@ def test_prompt_shimmer_fragments_share_silver_sheen_palette(monkeypatch):
     assert "".join(text for _style, text in fragments) == "Schlepping…"
 
 
+def test_shimmer_fragments_use_light_theme_activity_tokens(monkeypatch):
+    from pythinker_code.ui.theme import get_tui_tokens
+
+    monkeypatch.delenv("PYTHINKER_REDUCED_MOTION", raising=False)
+    set_active_theme("light")
+
+    fragments = shimmer_prompt_fragments("Schlepping…", 0.88)
+    styles = {style.lower() for style, text in fragments if text.strip()}
+    tokens = get_tui_tokens("light")
+
+    assert f"fg:{tokens.activity_verb.lower()}" in styles
+    assert f"fg:{tokens.activity_verb_mid.lower()}" in styles
+    assert f"fg:{tokens.activity_verb_highlight.lower()}" in styles
+    assert "".join(text for _style, text in fragments) == "Schlepping…"
+
+
 def test_splash_originates_at_center_and_widens(monkeypatch):
     monkeypatch.delenv("PYTHINKER_REDUCED_MOTION", raising=False)
+    set_active_theme("dark")
     label = "abcdefg"  # n=7, center index 3, no spaces
     wave_len = len(label) + 6  # phase B (first splash) starts here
 
@@ -72,6 +90,7 @@ def test_splash_originates_at_center_and_widens(monkeypatch):
 
 def test_phase_c_trail_mirrors_phase_a(monkeypatch):
     monkeypatch.delenv("PYTHINKER_REDUCED_MOTION", raising=False)
+    set_active_theme("dark")
     label = "abcdefg"
     n = len(label)
     wave_len = n + 6
@@ -94,6 +113,7 @@ def test_phase_c_trail_mirrors_phase_a(monkeypatch):
 
 def test_cycle_returns_to_start(monkeypatch):
     monkeypatch.delenv("PYTHINKER_REDUCED_MOTION", raising=False)
+    set_active_theme("dark")
     label = "Reticulating"
     n = len(label)
     cycle_len = 2 * (n + 6) + 2 * ((n + 1) // 2 + 3)

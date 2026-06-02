@@ -39,6 +39,10 @@ def test_dark_tokens_have_brand_values():
     assert t.error == "#EF5E62"
     assert t.thinking_text == "#C0C0C0"  # lighter neutral grey, not purple-tinted muted
     assert t.thinking_text != t.muted
+    assert t.activity_verb == "#C8B176"  # champagne activity verb
+    assert t.activity_verb_mid == "#E1CC94"
+    assert t.activity_verb_highlight == "#EEF2F7"
+    assert t.activity_spinner == "#B8C0CC"
     assert t.tool_title == t.activity_label
     assert t.tool_pending_bg == "#1B2230"
     assert t.tool_error_bg == "#2E1D24"
@@ -53,6 +57,10 @@ def test_light_tokens_have_brand_values():
     assert t.error == "#C0392B"
     assert t.thinking_text == "#7A7A7A"  # lighter neutral grey, not blue/purple muted
     assert t.thinking_text != t.muted
+    assert t.activity_verb == "#7A5C24"  # contrast-safe bronze activity verb
+    assert t.activity_verb_mid == "#8A6A2D"
+    assert t.activity_verb_highlight == "#213853"
+    assert t.activity_spinner == "#6B7280"
     assert t.tool_title == t.activity_label
     assert t.tool_pending_bg == "#EFE7E8"
 
@@ -146,6 +154,13 @@ def test_info_token_exists_and_is_cyan():
 
 def test_code_block_bg_in_token_names():
     assert "code_block_bg" in TUI_TOKEN_NAMES
+
+
+def test_activity_tokens_in_token_names():
+    assert "activity_verb" in TUI_TOKEN_NAMES
+    assert "activity_verb_mid" in TUI_TOKEN_NAMES
+    assert "activity_verb_highlight" in TUI_TOKEN_NAMES
+    assert "activity_spinner" in TUI_TOKEN_NAMES
 
 
 def test_code_block_bg_dark_value():
