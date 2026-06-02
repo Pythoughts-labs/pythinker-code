@@ -480,8 +480,10 @@ class PythinkerCLI:
 
         toolset = self._soul.agent.toolset
         if isinstance(toolset, PythinkerToolset):
-            with contextlib.suppress(Exception):
+            try:
                 await toolset.cleanup()
+            except Exception:
+                logger.exception("Failed to cleanup MCP toolset during reload")
 
     async def shutdown_background_tasks(self) -> None:
         """Kill active background tasks on exit, unless keep_alive_on_exit is configured.

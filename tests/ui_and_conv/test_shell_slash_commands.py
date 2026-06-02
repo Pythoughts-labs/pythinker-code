@@ -152,16 +152,22 @@ async def test_model_switch_starts_fresh_session(monkeypatch: pytest.MonkeyPatch
         state=SimpleNamespace(additional_dirs=[]),
         save_state=Mock(),
     )
+    threaded_calls: list[Any] = []
 
     async def fake_create_session(work_dir: HostPath) -> SimpleNamespace:
         assert work_dir == current_session.work_dir
         return fresh_session
+
+    async def fake_to_thread(func: Any, /, *args: Any, **kwargs: Any) -> Any:
+        threaded_calls.append(func)
+        return func(*args, **kwargs)
 
     monkeypatch.setattr(shell_slash, "refresh_managed_models", fake_refresh_managed_models)
     monkeypatch.setattr(model_picker, "ModelPickerApp", _ModelPicker)
     monkeypatch.setattr(shell_slash, "load_config", lambda: config.model_copy(deep=True))
     monkeypatch.setattr(shell_slash, "save_config", saved_configs.append)
     monkeypatch.setattr(shell_slash.Session, "create", fake_create_session)
+    monkeypatch.setattr(shell_slash.asyncio, "to_thread", fake_to_thread)
     monkeypatch.setattr(shell_slash.console, "print", Mock())
 
     cmd = shell_slash_registry.find_command("model")
@@ -171,6 +177,7 @@ async def test_model_switch_starts_fresh_session(monkeypatch: pytest.MonkeyPatch
 
     assert exc_info.value.session_id == "fresh-session"
     assert fresh_session.state.additional_dirs == ["/extra"]
+    assert threaded_calls == [fresh_session.save_state]
     fresh_session.save_state.assert_called_once_with()
     assert saved_configs[-1].default_model == "model-b"
 

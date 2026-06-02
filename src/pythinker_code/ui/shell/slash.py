@@ -360,7 +360,7 @@ async def model(app: Shell, args: str):
         session = await Session.create(current_session.work_dir)
         session.state.additional_dirs = list(current_session.state.additional_dirs)
         if session.state.additional_dirs:
-            session.save_state()
+            await asyncio.to_thread(session.save_state)
         console.print(f"[{_t.success}]Starting fresh session for the new model...[/]")
         raise Reload(session_id=session.id)
 
