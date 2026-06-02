@@ -51,6 +51,7 @@ from pythinker_code.soul import (
     wire_send,
 )
 from pythinker_code.soul.agent import Agent, Runtime
+from pythinker_code.soul.approval import deliberation_scope
 from pythinker_code.soul.compaction import (
     CompactionResult,
     SimpleCompaction,
@@ -311,6 +312,7 @@ class PythinkerSoul:
         self._approval = agent.runtime.approval
         self._context = context
         self._loop_control = agent.runtime.config.loop_control
+        self._current_step_no = 0
         self._sleep_inhibitor = SleepInhibitor(enabled=agent.runtime.config.prevent_idle_sleep)
         self._compaction = SimpleCompaction()  # TODO: maybe configurable and composable
 
@@ -1491,7 +1493,16 @@ class PythinkerSoul:
 
         # wait for all tool results (may be interrupted)
         plan_mode_before_tools = self._plan_mode
-        results = await result.tool_results()
+        # Scope the deliberation one-shot to this context + step. The same loop runs for
+        # main and subagents; foreground subagents push/pop their own scope (the finally
+        # restores ours), background subagents run in a copied context.
+        context_id = self._runtime.subagent_id
+        if context_id is None:
+            context_id = (
+                "root" if self._runtime.role == "root" else f"subagent:{self._runtime.session.id}"
+            )
+        with deliberation_scope(context_id, self._current_step_no):
+            results = await result.tool_results()
         logger.debug("Got tool results: {results}", results=results)
 
         # If a tool (EnterPlanMode/ExitPlanMode) changed plan mode during execution,
