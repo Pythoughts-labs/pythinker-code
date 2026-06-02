@@ -22,7 +22,7 @@ def server() -> ACPServer:
             name="Test Login",
             description="Test description",
             type="terminal",
-            args=["pythinker", "login"],
+            args=["login"],
             env={},
         )
     ]
