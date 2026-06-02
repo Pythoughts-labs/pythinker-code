@@ -17,6 +17,7 @@ from pythinker_code.session_recap import (
     _format_duration,
     _format_tool_counts,
     _last_substantive_thread,
+    _outcome_sentence,
     _tool_label,
     build_turn_recap_line,
     format_recap,
@@ -65,9 +66,96 @@ def test_build_turn_recap_line_uses_assistant_text() -> None:
     )
 
     assert line == (
-        "※ recap: Implemented a /recap command and a shell recap banner. (3 steps) "
+        "※ recap: Implemented a /recap command and a shell recap banner. · 3 steps "
         "(disable recaps in /settings)"
     )
+
+
+def test_build_turn_recap_line_strips_report_blocks() -> None:
+    line = build_turn_recap_line(
+        request="run deep scan",
+        assistant_text=(
+            "Deep scan completed. Full report saved here:\n"
+            "  `.pythinker/reports/deep-code-scan-pr-auto-mode-deliberation-clean.md`\n"
+            "```report\n"
+            '{"title": "Deep Code Scan Results", "findings": []}\n'
+            "```\n"
+        ),
+        step_count=28,
+    )
+
+    assert line == ("※ recap: Deep scan completed. · 28 steps (disable recaps in /settings)")
+
+
+def test_build_turn_recap_line_prefers_closing_summary_over_opening_intent() -> None:
+    # The opening sentence is pure intent; the recap should surface the outcome.
+    line = build_turn_recap_line(
+        request="run a deep scan",
+        assistant_text=(
+            "I'll start by gathering the current state of the repository before "
+            "kicking off a fresh deep scan. "
+            "I read every existing report and traced the imports. "
+            "Generated three fresh report files and refreshed the scan index."
+        ),
+        step_count=67,
+        files_changed=4,
+    )
+
+    assert line == (
+        "※ recap: Generated three fresh report files and refreshed the scan index. "
+        "· 4 files changed · 67 steps (disable recaps in /settings)"
+    )
+
+
+def test_build_turn_recap_line_skips_trailing_question() -> None:
+    line = build_turn_recap_line(
+        request="refactor auth",
+        assistant_text=(
+            "Refactored the auth module and added regression tests. "
+            "Want me to also update the docs?"
+        ),
+        step_count=5,
+    )
+
+    assert line == (
+        "※ recap: Refactored the auth module and added regression tests. · 5 steps "
+        "(disable recaps in /settings)"
+    )
+
+
+def test_build_turn_recap_line_singular_deltas() -> None:
+    line = build_turn_recap_line(
+        request="tweak",
+        assistant_text="Adjusted the spinner interval to feel calmer on slow terminals.",
+        step_count=1,
+        files_changed=1,
+    )
+
+    assert line == (
+        "※ recap: Adjusted the spinner interval to feel calmer on slow terminals. "
+        "· 1 file changed · 1 step (disable recaps in /settings)"
+    )
+
+
+def test_outcome_sentence_picks_last_substantive_declarative() -> None:
+    # Skips intent opener and a path-dominated trailing line.
+    text = (
+        "Let me trace the failure first. "
+        "Patched the off-by-one in the cursor math and added a guard. "
+        "See logs/very-long-trace-file-name-that-exceeds-the-token-limit.txt"
+    )
+    assert _outcome_sentence(text) == (
+        "Patched the off-by-one in the cursor math and added a guard."
+    )
+
+
+def test_outcome_sentence_skips_curly_apostrophe_intent() -> None:
+    # Models emit a typographic apostrophe; the trailing intent must still skip.
+    text = (
+        "Patched the cursor math and added a regression guard. "
+        "Now I’ll run the full suite to confirm."
+    )
+    assert _outcome_sentence(text) == "Patched the cursor math and added a regression guard."
 
 
 _UTC = ZoneInfo("UTC")
@@ -138,8 +226,9 @@ def test_tool_label_known_and_passthrough() -> None:
 
 
 def test_first_sentence_boundaries() -> None:
-    # Separator before index 40 is ignored; the whole string is kept.
+    # Very short separators are ignored; the whole string is kept.
     assert _first_sentence("Too short. Then more text here") == "Too short. Then more text here"
+    assert _first_sentence("Deep scan completed. Full report saved here") == "Deep scan completed."
     # No punctuation -> whole (collapsed) string.
     assert _first_sentence("a plain line with no terminator at all") == (
         "a plain line with no terminator at all"
@@ -157,6 +246,39 @@ def test_last_substantive_thread_empty() -> None:
 def test_format_recap_empty_items() -> None:
     out = format_recap([], parse_recap_range("today", now=_NOW))
     assert "No Pythinker sessions found" in out
+
+
+def test_format_recap_leads_bullet_with_outcome_not_first_message() -> None:
+    item = SessionRecapItem(title="renderer work", session_id="s1")
+    item.start_ts, item.end_ts = 100.0, 100.0 + 90 * 60  # 90 min -> not a light day
+    item.turn_count = 6
+    item.first_user_message = "the table rendering looks wrong"
+    item.last_user_message = "thanks"
+    item.assistant_snippets = [
+        "Let me look at the renderer.",
+        "Repaired the markdown table pipeline and added a contract test.",
+    ]
+
+    out = format_recap([item], parse_recap_range("today", now=_NOW))
+
+    assert "Repaired the markdown table pipeline and added a contract test." in out
+    assert "the table rendering looks wrong" not in out
+
+
+def test_format_recap_light_day_is_reported_plainly() -> None:
+    item = SessionRecapItem(title="quick planning", session_id="s1")
+    item.start_ts, item.end_ts = 100.0, 100.0 + 11 * 60  # ~11 min
+    item.turn_count = 2
+    item.first_user_message = "let's sketch the content automation system"
+    item.assistant_snippets = ["Outlined the pipeline stages and open questions."]
+
+    out = format_recap([item], parse_recap_range("today", now=_NOW))
+
+    assert "Light day" in out
+    assert "1 session" in out or "one session" in out
+    assert "2 turns" in out
+    # Light days skip the heavy bulleted structure.
+    assert "**What you worked on:**" not in out
 
 
 def test_build_turn_recap_line_falls_back_to_request_and_handles_empty() -> None:

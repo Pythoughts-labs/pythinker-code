@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -162,12 +163,14 @@ def format_recap(items: list[SessionRecapItem], recap_range: RecapRange) -> str:
 
     total_minutes = sum(item.duration_minutes for item in items)
     total_turns = sum(item.turn_count for item in items)
+    if _is_light_day(items, total_minutes, total_turns):
+        return _format_light_recap(title, items[0], total_minutes, total_turns)
     lines = [title, "", "**What you worked on:**"]
     for item in items:
         duration = _format_duration(item.duration_minutes)
         tools = _format_tool_counts(item.tool_counts)
-        first = shorten(item.first_user_message, width=150)
-        line = f"- **{item.title}** ({duration}, {item.turn_count} turns) — {first}"
+        outcome = shorten(_session_outcome(item), width=150)
+        line = f"- **{item.title}** ({duration}, {item.turn_count} turns) — {outcome}"
         if tools:
             line += f" Tools: {tools}."
         if item.files_modified:
@@ -188,16 +191,57 @@ def format_recap(items: list[SessionRecapItem], recap_range: RecapRange) -> str:
     return "\n".join(lines)
 
 
+_LIGHT_DAY_MAX_MINUTES = 30
+_LIGHT_DAY_MAX_TURNS = 4
+
+
+def _is_light_day(items: list[SessionRecapItem], total_minutes: int, total_turns: int) -> bool:
+    """A single short session that changed nothing reads as a light day."""
+    return (
+        len(items) == 1
+        and total_turns < _LIGHT_DAY_MAX_TURNS
+        and total_minutes < _LIGHT_DAY_MAX_MINUTES
+        and not any(item.files_modified for item in items)
+    )
+
+
+def _format_light_recap(title: str, item: SessionRecapItem, minutes: int, turns: int) -> str:
+    lines = [
+        title,
+        "",
+        (
+            f"Light day — one session, {turns} turn{'s' if turns != 1 else ''}, "
+            f"{_format_duration(minutes)}."
+        ),
+    ]
+    summary = _session_outcome(item)
+    if summary:
+        lines.extend(["", shorten(summary, width=220)])
+    return "\n".join(lines)
+
+
 def build_turn_recap_line(
-    *, request: str, assistant_text: str = "", step_count: int | None = None
+    *,
+    request: str,
+    assistant_text: str = "",
+    step_count: int | None = None,
+    files_changed: int = 0,
 ) -> str | None:
-    source = _first_sentence(assistant_text) or request.strip()
+    assistant_source = _recap_source_text(assistant_text)
+    request_source = _recap_source_text(request)
+    source = (
+        _outcome_sentence(assistant_source) or _outcome_sentence(request_source) or request_source
+    )
     if not source:
         return None
-    summary = shorten(" ".join(source.split()), width=180)
+    summary = shorten(source, width=180)
+    deltas: list[str] = []
+    if files_changed > 0:
+        deltas.append(f"{files_changed} file{'s' if files_changed != 1 else ''} changed")
     if step_count is not None and step_count > 0:
-        summary += f" ({step_count} step{'s' if step_count != 1 else ''})"
-    return f"※ recap: {summary} (disable recaps in /settings)"
+        deltas.append(f"{step_count} step{'s' if step_count != 1 else ''}")
+    suffix = f" · {' · '.join(deltas)}" if deltas else ""
+    return f"※ recap: {summary}{suffix} (disable recaps in /settings)"
 
 
 def _last_substantive_thread(items: list[SessionRecapItem]) -> str:
@@ -207,15 +251,117 @@ def _last_substantive_thread(items: list[SessionRecapItem]) -> str:
     return ""
 
 
+_MIN_RECAP_SENTENCE_CHARS = 16
+_FENCE_START_RE = re.compile(r"^ {0,3}(```+|~~~+)")
+
+
+def _recap_source_text(text: str) -> str:
+    """Return one-line recap input with machine-readable blocks removed."""
+    without_fences = _strip_fenced_blocks(text)
+    without_ticks = without_fences.replace("`", "")
+    return " ".join(without_ticks.split())
+
+
+def _strip_fenced_blocks(text: str) -> str:
+    lines: list[str] = []
+    in_fence = False
+    fence_marker = ""
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        match = _FENCE_START_RE.match(line)
+        if in_fence:
+            if stripped.startswith(fence_marker):
+                in_fence = False
+                fence_marker = ""
+            continue
+        if match is not None:
+            in_fence = True
+            fence_marker = match.group(1)[0] * len(match.group(1))
+            continue
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def _first_sentence(text: str) -> str:
     cleaned = " ".join(text.split())
     if not cleaned:
         return ""
     for sep in (". ", "! ", "? "):
         idx = cleaned.find(sep)
-        if idx >= 40:
+        if idx >= _MIN_RECAP_SENTENCE_CHARS:
             return cleaned[: idx + 1]
     return cleaned
+
+
+# A turn's text opens with intent and ends with a summary. These openers mark
+# intent/offer sentences that describe what *will* happen, not what was done.
+_SKIP_SENTENCE_PREFIXES = (
+    "i'll",
+    "i will",
+    "let me",
+    "let's",
+    "now i'll",
+    "now let",
+    "i'm going to",
+    "i am going to",
+    "i'm going",
+    "to start",
+    "starting by",
+    "first, i",
+    "next, i",
+    "want me",
+    "let me know",
+    "shall i",
+    "should i",
+    "do you want",
+    "would you like",
+)
+# A single token longer than this is almost always a path/URL/hash, not prose.
+_MAX_RECAP_TOKEN_CHARS = 30
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _iter_sentences(text: str) -> list[str]:
+    cleaned = " ".join(text.split())
+    if not cleaned:
+        return []
+    return [part for part in _SENTENCE_SPLIT_RE.split(cleaned) if part.strip()]
+
+
+def _is_outcome_sentence(sentence: str) -> bool:
+    """True when the sentence reads like a result rather than intent or noise."""
+    candidate = sentence.strip()
+    if len(candidate) < _MIN_RECAP_SENTENCE_CHARS:
+        return False
+    if candidate.endswith("?"):
+        return False
+    # Models emit a typographic apostrophe (U+2019); normalize so intent
+    # openers like "I'll" / "I’ll" are skipped identically.
+    lowered = candidate.lower().replace("’", "'")
+    if lowered.startswith(_SKIP_SENTENCE_PREFIXES):
+        return False
+    return not any(len(token) > _MAX_RECAP_TOKEN_CHARS for token in candidate.split())
+
+
+def _outcome_sentence(text: str) -> str:
+    """Return the closing outcome sentence, skipping intent/offer/noise lines.
+
+    Falls back to the first sentence when nothing reads like an outcome, so a
+    terse or interrupted turn still produces a line.
+    """
+    outcomes = [s for s in _iter_sentences(text) if _is_outcome_sentence(s)]
+    if outcomes:
+        return outcomes[-1]
+    return _first_sentence(text)
+
+
+def _session_outcome(item: SessionRecapItem) -> str:
+    """What the session accomplished — its closing summary, not the first ask."""
+    combined = " ".join(item.assistant_snippets[-3:])
+    sentence = _outcome_sentence(combined)
+    if sentence and _is_outcome_sentence(sentence):
+        return sentence
+    return item.first_user_message
 
 
 def _format_duration(minutes: int) -> str:

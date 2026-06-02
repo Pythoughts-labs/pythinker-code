@@ -8,7 +8,7 @@ from rich.color import Color
 from rich.console import Console, Group
 from rich.style import Style
 
-from pythinker_code.tools.display import TodoDisplayBlock, TodoDisplayItem
+from pythinker_code.tools.display import DiffDisplayBlock, TodoDisplayBlock, TodoDisplayItem
 from pythinker_code.ui.shell.motion import (
     _SHIMMER_BASE,
     _SHIMMER_HIGHLIGHT,
@@ -268,3 +268,28 @@ def test_toggle_pinned_todos_hides_todo_rows() -> None:
     rendered = _render(view._working_indicator())
     assert "Implement pinned todos" not in rendered
     assert "…" in rendered
+
+
+def test_turn_recap_tracks_and_clears_modified_files() -> None:
+    view = _LiveView(StatusUpdate())
+    result = ToolResult(
+        tool_call_id="1",
+        return_value=ToolReturnValue(
+            is_error=False,
+            output="ok",
+            message="ok",
+            display=[
+                DiffDisplayBlock(
+                    path="src/a.py", old_text="", new_text="x", old_start=1, new_start=1
+                )
+            ],
+        ),
+    )
+
+    view._track_recap_modified_files(result)
+    view._track_recap_modified_files(result)  # idempotent — backed by a set
+    assert view._recap_files_modified == {"src/a.py"}
+
+    # A fresh top-level turn resets the per-turn delta state.
+    view.dispatch_wire_message(TurnBegin(user_input="next ask"))
+    assert view._recap_files_modified == set()

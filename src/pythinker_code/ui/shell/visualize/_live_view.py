@@ -27,7 +27,7 @@ from rich.text import Text
 
 from pythinker_code.session_recap import build_turn_recap_line
 from pythinker_code.soul import format_token_count
-from pythinker_code.tools.display import TodoDisplayBlock, TodoDisplayItem
+from pythinker_code.tools.display import DiffDisplayBlock, TodoDisplayBlock, TodoDisplayItem
 from pythinker_code.ui.shell.components.render_utils import (
     cell_width,
     sanitize_ansi,
@@ -43,6 +43,7 @@ from pythinker_code.ui.shell.motion import (
     active_marker_frame,
     activity_status_line,
     reduced_motion_enabled,
+    shimmer_text,
 )
 from pythinker_code.ui.shell.spacing import BLANK_ROW
 from pythinker_code.ui.shell.spinner_words import spinner_message
@@ -137,6 +138,12 @@ def _append_action_block(
     blocks.append(block)
 
 
+def _print_action_block(block: RenderableType) -> None:
+    """Commit a completed action block to scrollback with one leading blank row."""
+    console.print()
+    console.print(block)
+
+
 def _format_step_retry(retry: StepRetry) -> Text:
     reason = _step_retry_reason(retry)
     wait = format_elapsed(retry.wait_s)
@@ -208,6 +215,7 @@ class _LiveView:
         self._recap_user_input = ""
         self._recap_text_parts: list[str] = []
         self._recap_tool_counts: Counter[str] = Counter()
+        self._recap_files_modified: set[str] = set()
         self._pending_turn_recap = False
 
         self._current_content_block: _ContentBlock | None = None
@@ -505,7 +513,10 @@ class _LiveView:
         if self._mcp_loading_spinner is not None:
             _append_action_block(blocks, self._mcp_loading_spinner)
         elif self._compaction_block is not None:
-            _append_action_block(blocks, self._compaction_block)
+            # Compaction starts after prior assistant/tool text has usually just
+            # committed to scrollback. Keep the same one-row seam the rest of
+            # the live stream uses instead of letting it touch the previous line.
+            _append_action_block(blocks, self._compaction_block, leading=True)
         else:
             current_step_retry = getattr(self, "_current_step_retry", None)
             if current_step_retry is not None:
@@ -543,18 +554,30 @@ class _LiveView:
             _append_action_block(blocks, notification.compose())
         return blocks
 
+    def _track_recap_modified_files(self, result: ToolResult) -> None:
+        """Record files a tool reported changing, for the turn-recap deltas."""
+        for block in getattr(result.return_value, "display", []) or []:
+            if isinstance(block, DiffDisplayBlock) and block.path:
+                self._recap_files_modified.add(block.path)
+
     def _print_turn_recap(self) -> None:
         if not self._show_turn_recaps:
             return
-        assistant_text = "\n".join(self._recap_text_parts).strip()
+        # TextPart values are streaming deltas, not paragraphs. Concatenate them
+        # directly; joining with spaces/newlines can split BPE-sized chunks into
+        # unreadable recap text such as `. py think er /re ports ...`.
+        assistant_text = "".join(self._recap_text_parts).strip()
         line = build_turn_recap_line(
             request=self._recap_user_input,
             assistant_text=assistant_text,
             step_count=sum(self._recap_tool_counts.values()) or None,
+            files_changed=len(self._recap_files_modified),
         )
         if not line:
             return
+        console.print()
         console.print(Text(sanitize_ansi(line), style=tui_rich_style("muted") + Style(italic=True)))
+        console.print()
 
     def _working_indicator(self) -> RenderableType:
         now = time.monotonic()
@@ -605,9 +628,15 @@ class _LiveView:
         suffix = f" {metadata}"
         label_width = max(1, width - cell_width(prefix) - cell_width(suffix))
 
-        accent = tui_rich_style("warning")
-        line = Text(prefix, style=accent)
-        line.append(truncate_to_width(label, label_width), style=accent)
+        label_text = truncate_to_width(label, label_width)
+        line = Text(prefix, style=tui_rich_style("thinking_text"))
+        line.append_text(
+            shimmer_text(
+                label_text,
+                elapsed_s,
+                reduced_motion=reduced_motion_enabled(),
+            )
+        )
         line.append(suffix, style=tui_rich_style("muted"))
         return line
 
@@ -684,11 +713,11 @@ class _LiveView:
     ) -> Text:
         if todo.status == "done":
             icon = "✓"
-            icon_token = "success"
+            icon_token = "muted"
             title_style = tui_rich_style("muted") + Style(strike=True)
         elif todo.status == "in_progress":
             icon = "■"
-            icon_token = None
+            icon_token = "warning"
             title_style = tui_rich_style("activity_label") + Style(bold=True)
         else:
             icon = "□"
@@ -700,14 +729,6 @@ class _LiveView:
         title_budget = max(1, width - cell_width(prefix) - 2)
         title = truncate_to_width(todo.title.strip(), title_budget)
         row = Text(prefix, style=tui_rich_style("muted"))
-        if todo.status == "in_progress":
-            row.append(icon, style=tui_rich_style("warning"))
-            row.append(" ")
-            row.append(title, style=title_style)
-            return row
-        # icon_token is only None on the in_progress branch above, which
-        # early-returned. Narrow for pyright with an explicit assert.
-        assert icon_token is not None
         row.append(icon, style=tui_rich_style(icon_token))
         row.append(" ")
         row.append(title, style=title_style)
@@ -774,6 +795,7 @@ class _LiveView:
                     )
                     self._recap_text_parts.clear()
                     self._recap_tool_counts.clear()
+                    self._recap_files_modified.clear()
                     self._pending_turn_recap = False
                 self._active_turn_depth += 1
                 self.flush_content()
@@ -828,7 +850,7 @@ class _LiveView:
                 truncated_q = (q[:50] + "...") if len(q) > 50 else q
                 self._btw_question = None
                 if response:
-                    console.print(
+                    _print_action_block(
                         Panel(
                             Markdown(response),
                             title=f"[dim]btw: {rich_escape(truncated_q)}[/dim]",
@@ -838,7 +860,7 @@ class _LiveView:
                         )
                     )
                 elif error:
-                    console.print(
+                    _print_action_block(
                         Panel(
                             Text(error, style=tui_rich_style("error")),
                             title="[dim]btw (error)[/dim]",
@@ -882,6 +904,7 @@ class _LiveView:
             case ToolOutputPart():
                 self.append_tool_output_part(msg)
             case ToolResult():
+                self._track_recap_modified_files(msg)
                 self.append_tool_result(msg)
             case ApprovalResponse():
                 self._reconcile_approval_requests()
@@ -1043,8 +1066,7 @@ class _LiveView:
         for tool_call_id in list(self._tool_call_blocks.keys()):
             block = self._tool_call_blocks.pop(tool_call_id)
             self._archive_completed_tool_card(block)
-            console.print()
-            console.print(block.compose())
+            _print_action_block(block.compose())
             self.refresh_soon()
         self.flush_notifications()
         if not is_interrupt and self._active_turn_depth == 0 and self._pending_turn_recap:
@@ -1115,8 +1137,7 @@ class _LiveView:
 
             self._archive_completed_tool_card(block)
             self._tool_call_blocks.pop(tool_call_id)
-            console.print()
-            console.print(block.compose())
+            _print_action_block(block.compose())
             if self._last_tool_call_block == block:
                 self._last_tool_call_block = None
             self.refresh_soon()
@@ -1125,8 +1146,7 @@ class _LiveView:
         """Flush rendered notifications to terminal history."""
         self._live_notification_blocks.clear()
         while self._notification_blocks:
-            console.print()
-            console.print(self._notification_blocks.popleft().compose())
+            _print_action_block(self._notification_blocks.popleft().compose())
             self.refresh_soon()
 
     def append_content(self, part: ContentPart) -> None:
@@ -1230,23 +1250,20 @@ class _LiveView:
                 )
             )
         block.resolve(event)
-        console.print()
-        console.print(block.compose())
+        _print_action_block(block.compose())
         self.refresh_soon()
 
     def display_question_answered(self, event: QuestionAnswered) -> None:
         self.flush_content()
         block = _QuestionAnsweredBlock(event)
-        console.print()
-        console.print(block.compose())
+        _print_action_block(block.compose())
         self.refresh_soon()
 
     def display_progress_note(self, event: ProgressNote) -> None:
         self.flush_content()
         self.flush_finished_tool_calls()
         block = _ProgressNoteBlock(event)
-        console.print()
-        console.print(block.compose())
+        _print_action_block(block.compose())
         self.refresh_soon()
 
     def request_approval(self, request: ApprovalRequest) -> None:
@@ -1305,7 +1322,7 @@ class _LiveView:
             subtitle=msg.file_path,
             border_style=tui_rich_style("border"),
         )
-        console.print(panel)
+        _print_action_block(panel)
 
     def request_question(self, request: QuestionRequest) -> None:
         self._question_request_queue.append(request)
