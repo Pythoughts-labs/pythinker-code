@@ -4,9 +4,14 @@ name: Promote release
 # release-pythinker-cli) create the GitHub Release as a PRERELEASE so it stays
 # out of the date-based /releases/latest endpoint (which ignores make_latest)
 # until every install channel is ready. This workflow waits for exact release
-# assets, PyPI, and the Homebrew formula, then clears `prerelease` and marks the
-# release latest — the single point where a version becomes resolvable by the
-# install scripts and in-app updater.
+# assets and PyPI, then clears `prerelease` and marks the release latest — the
+# single point where a version becomes resolvable by the install scripts and
+# in-app updater.
+#
+# Homebrew is checked best-effort AFTER promotion: a broken tap (lost token,
+# org migration, etc.) must not hold the GitHub Latest badge and install scripts
+# hostage. The Homebrew check emits a warning annotation and step summary note
+# so the gap is visible without blocking.
 #
 # It runs on the tag push (not `release: published`, which a GITHUB_TOKEN-created
 # release never fires) so promotion always happens. workflow_dispatch allows a
@@ -93,7 +98,6 @@ jobs:
             "pythinker-${version}-x86_64-apple-darwin-onedir.tar.gz.sha256"
           )
           pypi_url="https://pypi.org/pypi/pythinker-code/${version}/json"
-          homebrew_formula_url="https://raw.githubusercontent.com/Pythoughts-labs/homebrew-pythinker/main/Formula/pythinker-code.rb"
           # The budget must comfortably exceed the slowest platform build, since
           # this job runs on the tag push in parallel with them. The long pole is
           # linux-installer's emulated arm64 .deb/.rpm step: on the 0.26.0 release
@@ -101,6 +105,9 @@ jobs:
           # timed out — leaving the release stuck as a prerelease. 80x30s=40m
           # gives ~2x margin; a genuinely stuck build still surfaces as a failed
           # build workflow, and workflow_dispatch allows a manual re-promote.
+          #
+          # Homebrew is NOT checked here — it is best-effort and checked after
+          # promotion so a broken tap never blocks the GitHub Latest badge.
           max_attempts=80
           poll_interval=30
           budget_min=$(( max_attempts * poll_interval / 60 ))
@@ -120,15 +127,9 @@ jobs:
               pypi_ready=true
             fi
 
-            homebrew_ready=false
-            formula_text=$(curl -fsSL --retry 2 --retry-delay 2 "$homebrew_formula_url" 2>/dev/null || true)
-            if grep -qF "version \"${version}\"" <<<"$formula_text"; then
-              homebrew_ready=true
-            fi
-
-            if [[ "${#missing_assets[@]}" -eq 0 && "$pypi_ready" == "true" && "$homebrew_ready" == "true" ]]; then
+            if [[ "${#missing_assets[@]}" -eq 0 && "$pypi_ready" == "true" ]]; then
               all_ready=true
-              echo "All install channels ready (attempt $i)"
+              echo "All required install channels ready (attempt $i)"
               break
             fi
 
@@ -138,9 +139,6 @@ jobs:
             fi
             if [[ "$pypi_ready" != "true" ]]; then
               echo "PyPI is not serving ${version} yet: $pypi_url"
-            fi
-            if [[ "$homebrew_ready" != "true" ]]; then
-              echo "Homebrew tap formula is not at ${version} yet: $homebrew_formula_url"
             fi
             if [[ "$i" -lt "$max_attempts" ]]; then
               echo "Retrying in ${poll_interval}s..."
@@ -163,74 +161,124 @@ jobs:
           gh api -X PATCH "repos/$REPO/releases/$release_id" -F prerelease=false -f make_latest=true
           echo "Promoted $TAG: prerelease=false, make_latest=true (all platform assets present)."
 
+      # Best-effort Homebrew check. The release is ALREADY promoted above; a
+      # broken tap (lost token, org migration, etc.) must not re-block it.
+      # This step emits a warning annotation and step summary note so the gap
+      # is visible, then exits 0. The tap is repaired separately via
+      # HOMEBREW_TAP_TOKEN; this step just surfaces when it lags behind.
+      - name: Check Homebrew tap (best-effort)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SOURCE_REPO: ${{ github.repository }}
+        run: |
+          # No `set -e`: this step must never fail the job.
+          set -uo pipefail
+          version="${TAG#v}"
+          homebrew_formula_url="https://raw.githubusercontent.com/Pythoughts-labs/homebrew-pythinker/main/Formula/pythinker-code.rb"
+          formula_text=$(curl -fsSL --retry 2 --retry-delay 2 "$homebrew_formula_url" 2>/dev/null || true)
+          if grep -qF "version \"${version}\"" <<<"$formula_text"; then
+            echo "Homebrew tap is at ${version}. ✓"
+            exit 0
+          fi
+          # Tap is behind — warn but do not fail.
+          reason="Homebrew tap formula is not yet at ${version}: ${homebrew_formula_url}"
+          echo "::warning title=Homebrew tap lagging::${reason}"
+          {
+            echo "### :warning: Homebrew tap is not yet at ${version} (non-blocking)"
+            echo ""
+            echo "${reason}"
+            echo ""
+            echo "**Non-blocking:** the GitHub Release has already been promoted to Latest."
+            echo "The tap updates automatically once \`HOMEBREW_TAP_TOKEN\` is valid and the"
+            echo "\`homebrew-tap\` workflow runs. To fix: restore the token secret and"
+            echo "re-run the \`homebrew-tap\` workflow for this tag via \`workflow_dispatch\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
+            alert=$(jq -n --arg run_url "$RUN_URL" --arg repo "$SOURCE_REPO" \
+              --arg version "$version" --arg url "$homebrew_formula_url" \
+              '{"text":":warning: *Homebrew tap lagging (non-blocking)*","attachments":[{"color":"warning","fields":[{"title":"Repo","value":$repo,"short":true},{"title":"Expected version","value":$version,"short":true},{"title":"Formula URL","value":$url,"short":false},{"title":"Run","value":"<\($run_url)|View logs>","short":false}]}]}')
+            curl -sS -X POST -H "Content-Type: application/json" -d "$alert" "$SLACK_WEBHOOK_URL" || true
+          fi
+          exit 0
+
+      # Best-effort website sync trigger. The release is ALREADY promoted above;
+      # this only accelerates the pythinker-home mirror, which also re-syncs on
+      # its own daily cron. So a missing/rotated App degrades gracefully here
+      # rather than failing an otherwise-successful promotion.
       - name: Mint GitHub App token for pythinker-home
         id: app-token
-        env:
-          APP_ID: ${{ secrets.PYTHINKER_RELEASE_BOT_APP_ID }}
-          APP_PRIVATE_KEY: ${{ secrets.PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY }}
-          DISPATCH_OWNER: Pythoughts-labs
-          DISPATCH_REPO: pythinker-home
-        run: |
-          set -euo pipefail
-          if [ -z "${APP_ID:-}" ] || [ -z "${APP_PRIVATE_KEY:-}" ]; then
-            echo "::error::Missing PYTHINKER_RELEASE_BOT_APP_ID or PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY. Configure the org-owned pythinker-release-bot App and install it on ${DISPATCH_OWNER}/${DISPATCH_REPO} with Contents: Read and write." >&2
-            exit 1
-          fi
+        continue-on-error: true
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # pinned from v2.2.2
+        with:
+          app-id: ${{ secrets.PYTHINKER_RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY }}
+          owner: Pythoughts-labs
+          repositories: pythinker-home
+          permission-contents: write
 
-          b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
-          key_file=$(mktemp)
-          trap 'rm -f "$key_file"' EXIT
-          printf '%s\n' "$APP_PRIVATE_KEY" > "$key_file"
-          chmod 600 "$key_file"
-
-          now=$(date +%s)
-          header=$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)
-          payload=$(jq -nc --argjson iat "$((now - 60))" --argjson exp "$((now + 540))" --arg iss "$APP_ID" '{iat:$iat,exp:$exp,iss:$iss}' | b64url)
-          unsigned="${header}.${payload}"
-          signature=$(printf '%s' "$unsigned" | openssl dgst -sha256 -sign "$key_file" | b64url)
-          jwt="${unsigned}.${signature}"
-
-          installation_id=$(curl --fail-with-body -sS \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${jwt}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${DISPATCH_OWNER}/${DISPATCH_REPO}/installation" \
-            | jq -er '.id')
-          token=$(jq -nc --arg repo "$DISPATCH_REPO" '{repositories:[$repo],permissions:{contents:"write"}}' \
-            | curl --fail-with-body -sS \
-                -X POST \
-                -H "Accept: application/vnd.github+json" \
-                -H "Authorization: Bearer ${jwt}" \
-                -H "X-GitHub-Api-Version: 2022-11-28" \
-                "https://api.github.com/app/installations/${installation_id}/access_tokens" \
-                -d @- \
-            | jq -er '.token')
-          echo "::add-mask::$token"
-          echo "token=$token" >> "$GITHUB_OUTPUT"
-
-      - name: Trigger pythinker-home sync
+      - name: Trigger pythinker-home sync (best-effort)
         env:
           DISPATCH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TOKEN_OUTCOME: ${{ steps.app-token.outcome }}
           SOURCE_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
           DISPATCH_OWNER: Pythoughts-labs
           DISPATCH_REPO: pythinker-home
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          set -euo pipefail
-          if [ -z "${DISPATCH_TOKEN:-}" ]; then
-            echo "::error::No dispatch token: the pythinker-release-bot App token mint produced an empty value. Confirm PYTHINKER_RELEASE_BOT_APP_ID and PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY org secrets are set and the App is installed on ${DISPATCH_OWNER}/${DISPATCH_REPO} with Contents: Read and write." >&2
-            exit 1
+          # No `set -e`: a failed website-sync trigger must not fail an already
+          # successful release promotion. The daily cron in pythinker-home is
+          # the real sync guarantee; here we warn + alert and exit 0.
+          set -uo pipefail
+
+          degrade() {
+            reason="$1"
+            echo "::warning title=pythinker-home sync skipped::${reason}"
+            {
+              echo "### :warning: pythinker-home sync dispatch skipped (release was still promoted)"
+              echo ""
+              echo "${reason}"
+              echo ""
+              echo "**Non-blocking:** pythinker-home re-syncs on its daily cron (\`sync-upstream-products\` @ 04:17 UTC), so the website is not stale."
+              echo ""
+              echo "**Restore the fast path:** recreate/install the **pythinker-release-bot** App on \`${DISPATCH_OWNER}\` with *Contents: write* on \`${DISPATCH_REPO}\`, then update the \`PYTHINKER_RELEASE_BOT_APP_ID\` and \`PYTHINKER_RELEASE_BOT_APP_PRIVATE_KEY\` secrets."
+            } >> "$GITHUB_STEP_SUMMARY"
+            if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
+              alert=$(jq -n --arg run_url "$RUN_URL" --arg repo "$SOURCE_REPO" --arg reason "$reason" \
+                '{"text":":warning: *pythinker-home sync dispatch skipped (non-blocking)*","attachments":[{"color":"warning","fields":[{"title":"Repo","value":$repo,"short":true},{"title":"Reason","value":$reason,"short":false},{"title":"Run","value":"<\($run_url)|View logs>","short":false}]}]}')
+              curl -sS -X POST -H "Content-Type: application/json" -d "$alert" "$SLACK_WEBHOOK_URL" || true
+            fi
+            exit 0
+          }
+
+          if [ "${TOKEN_OUTCOME}" != "success" ] || [ -z "${DISPATCH_TOKEN:-}" ]; then
+            degrade "Could not mint a pythinker-release-bot App token (token step outcome: ${TOKEN_OUTCOME}). The App is likely missing/uninstalled on ${DISPATCH_OWNER}, or its credentials are stale."
           fi
-          payload=$(jq -n \
-            --arg source_repo "$SOURCE_REPO" \
-            --arg tag "$RELEASE_TAG" \
+
+          payload=$(jq -n --arg source_repo "$SOURCE_REPO" --arg tag "$RELEASE_TAG" \
             '{"event_type":"sync-pythinker-products","client_payload":{"source_repo":$source_repo,"tag":$tag}}')
-          curl --fail-with-body \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $DISPATCH_TOKEN" \
-            "https://api.github.com/repos/${DISPATCH_OWNER}/${DISPATCH_REPO}/dispatches" \
-            -d "$payload"
+
+          resp=$(mktemp)
+          code="000"
+          for attempt in 1 2 3; do
+            code=$(curl -sS -o "$resp" -w '%{http_code}' \
+              -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $DISPATCH_TOKEN" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${DISPATCH_OWNER}/${DISPATCH_REPO}/dispatches" \
+              -d "$payload") || code="000"
+            if [ "$code" = "204" ]; then
+              echo "Dispatched sync-pythinker-products to ${DISPATCH_OWNER}/${DISPATCH_REPO} (HTTP 204)."
+              exit 0
+            fi
+            echo "Dispatch attempt ${attempt} returned HTTP ${code}: $(head -c 200 "$resp")"
+            [ "$attempt" -lt 3 ] && sleep $((attempt * 3)) || true
+          done
+          degrade "repository_dispatch to ${DISPATCH_OWNER}/${DISPATCH_REPO} failed after 3 attempts (last HTTP ${code}): $(head -c 200 "$resp")"
 
   notify-failure:
     name: Notify on failure
