@@ -15,11 +15,17 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.31.0 (2026-06-02)
+
+### What changed in this release
+
 - **Release promotion no longer stalls when the Homebrew tap is broken.** The `promote-release` workflow now gates only on platform assets and PyPI; a lagging or broken Homebrew tap emits a warning annotation and step summary note but no longer blocks the GitHub Release from reaching Latest.
 - **Calmer, theme-aligned TUI rendering.** Transcript, recap, and tool-header output now use theme-standardized activity colors instead of hardcoded values, and Markdown tables render as a bordered grid (wide tables no longer collapse into a stacked-record list).
 - **Auto-mode tool approval fails closed when unattended.** In auto/non-interactive runs, an action that still needs approval under the active safe-mode/trust policy is denied with guidance instead of waiting indefinitely for an absent user, and outside-workspace writes are never auto-approved. A destructive auto-approved action is now bounced once for deliberation whenever no user is present (regardless of config), so the obvious `--yolo --auto` combination is no longer more dangerous than the `autonomous_coding` profile; the `auto_deliberate_destructive_actions` setting extends that backstop to interactive `--yolo` sessions, where a user is present but approvals are skipped.
 - **Yolo + auto mode hardened against silent over-reach.** Entering plan mode now requires confirmation in an interactive `--yolo` session (matching exit), so the plan-review checkpoint is preserved when a user is present. A `--yolo` run no longer clears or persists the workspace's safe-mode/trust state. A new `--no-yolo` flag forces yolo off for a run — overriding the `--yolo` flag, the `default_yolo` config, and any resumed session state. Resuming a session that restores yolo and/or auto now surfaces a startup warning so it is never silent.
 - **`pythinker review` validates finding evidence.** Reviewflow assembles prompts from a shared security-knowledge manifest and validates findings, handling invalid ones without failing the whole review.
+
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.31.0`, or use the native installer for your OS (see the README install table).
 
 ## 0.30.0 (2026-06-02)
 
