@@ -7,6 +7,7 @@ from typing import Any, cast
 import click
 import typer
 from click.core import HelpFormatter
+from typer._click.core import Command as _TyperCommand  # typer 0.26 vendors its own click
 from typer.main import get_command
 
 
@@ -62,21 +63,37 @@ class LazySubcommandGroup(typer.core.TyperGroup):
         "web",
     )
 
-    # Click options that support optional values.  When the flag is present
-    # without a following argument the parser returns the mapped *flag_value*
-    # instead of raising "requires an argument".
-    _optional_value_options: dict[str, str] = {
-        "session_id": "",  # --session / --resume without value → picker mode
-    }
+    # `--session`/`--resume` accept an *optional* value: with an ID they resume
+    # that session, without one they open the interactive picker. Typer 0.26
+    # reimplemented option parsing with a parser that always consumes the next
+    # token as the value (no optional-value support), so we normalise argv before
+    # parsing: when one of these flags is used without a usable value (it is the
+    # last token, or is followed by another option) we inject an empty-string
+    # sentinel that the root callback maps to picker mode.
+    _optional_value_flags: frozenset[str] = frozenset({"--session", "--resume", "-S", "-r"})
 
     def make_context(
         self, info_name: str | None, args: list[str], parent: click.Context | None = None, **extra
     ) -> click.Context:
-        for param in self.params:
-            if isinstance(param, click.Option) and param.name in self._optional_value_options:
-                param._flag_needs_value = True
-                param.flag_value = self._optional_value_options[param.name]
+        args = self._inject_optional_value_sentinels(args)
         return super().make_context(info_name, args, parent=parent, **extra)
+
+    def _inject_optional_value_sentinels(self, args: list[str]) -> list[str]:
+        """Insert an empty-string value after optional-value flags used without one."""
+        result: list[str] = []
+        seen_terminator = False
+        for i, arg in enumerate(args):
+            result.append(arg)
+            if seen_terminator:
+                continue
+            if arg == "--":
+                seen_terminator = True
+                continue
+            if arg in self._optional_value_flags:
+                nxt = args[i + 1] if i + 1 < len(args) else None
+                if nxt is None or nxt.startswith("-"):
+                    result.append("")
+        return result
 
     def list_commands(self, ctx: click.Context) -> list[str]:
         commands = list(super().list_commands(ctx))
@@ -85,7 +102,7 @@ class LazySubcommandGroup(typer.core.TyperGroup):
                 commands.append(name)
         return commands
 
-    def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command | None:
+    def get_command(self, ctx: click.Context, cmd_name: str) -> _TyperCommand | None:
         command = super().get_command(ctx, cmd_name)
         if command is not None:
             return command
