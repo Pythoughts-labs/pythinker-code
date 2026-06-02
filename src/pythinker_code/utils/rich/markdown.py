@@ -24,7 +24,11 @@ from rich.syntax import Syntax, SyntaxTheme
 from rich.table import Table
 from rich.text import Text, TextType
 
-from pythinker_code.utils.rich.syntax import PYTHINKER_ANSI_THEME_NAME, resolve_code_theme
+from pythinker_code.utils.rich.syntax import (
+    PYTHINKER_ANSI_THEME_NAME,
+    get_active_code_theme,
+    resolve_code_theme,
+)
 
 LIST_INDENT_WIDTH = 2
 
@@ -655,8 +659,9 @@ class Markdown(JupyterMixin):
 
     Args:
         markup (str): A string containing markdown.
-        code_theme (str, optional): Pygments theme for code blocks. Defaults to "pythinker-ansi".
-            See https://pygments.org/styles/ for code themes.
+        code_theme (str, optional): Pygments theme for code blocks. Defaults to None,
+            which defers to the process-wide active code theme (``pythinker-ansi``
+            unless overridden by config). See https://pygments.org/styles/ for code themes.
         justify (JustifyMethod, optional): Justify value for paragraphs. Defaults to None.
         style (Union[str, Style], optional): Optional style to apply to markdown.
         hyperlinks (bool, optional): Enable hyperlinks. Defaults to ``True``.
@@ -690,22 +695,25 @@ class Markdown(JupyterMixin):
     def __init__(
         self,
         markup: str,
-        code_theme: str = PYTHINKER_ANSI_THEME_NAME,
+        code_theme: str | None = None,
         justify: JustifyMethod | None = None,
         style: str | Style = "none",
         hyperlinks: bool = True,
         inline_code_lexer: str | None = None,
         inline_code_theme: str | None = None,
     ) -> None:
+        # ``None`` defers to the process-wide active code theme (set at startup
+        # from ``config.tui.code_theme``); pass an explicit name to override.
+        resolved_name = code_theme if code_theme is not None else get_active_code_theme()
         parser = MarkdownIt().enable("strikethrough").enable("table")
         self.markup = markup
         self.parsed = parser.parse(markup)
-        self.code_theme = resolve_code_theme(code_theme)
+        self.code_theme = resolve_code_theme(resolved_name)
         self.justify: JustifyMethod | None = justify
         self.style = style
         self.hyperlinks = hyperlinks
         self.inline_code_lexer = inline_code_lexer
-        self.inline_code_theme = resolve_code_theme(inline_code_theme or code_theme)
+        self.inline_code_theme = resolve_code_theme(inline_code_theme or resolved_name)
 
     def _flatten_tokens(self, tokens: Iterable[Token]) -> Iterable[Token]:
         """Flattens the token stream."""

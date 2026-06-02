@@ -201,6 +201,10 @@ class _LiveView:
         self._cancel_event = cancel_event
         self._show_thinking_stream = show_thinking_stream
         self._show_turn_recaps = show_turn_recaps
+        # Paced reveal of streamed composing text. Off by default; the
+        # interactive prompt view enables it (it owns the reveal tick), so the
+        # non-interactive Rich Live path stays byte-for-byte unchanged.
+        self._stream_pacing = False
 
         self._active_turn_depth = 0
         self._turn_start_time: float | None = None
@@ -379,6 +383,17 @@ class _LiveView:
 
     def refresh_soon(self) -> None:
         self._need_recompose = True
+
+    def advance_stream_reveal(self) -> bool:
+        """Advance paced reveal of the active composing block by one tick.
+
+        Returns ``True`` when new text was revealed so the caller can refresh.
+        No-op unless a paced composing block is active.
+        """
+        block = self._current_content_block
+        if block is None:
+            return False
+        return block.reveal_tick()
 
     def _on_question_panel_state_changed(self) -> None:
         """Hook for subclasses to react when question panel visibility changes."""
@@ -644,7 +659,10 @@ class _LiveView:
                 )
             )
         else:
-            line.append(label_text, style=tui_rich_style("activity_label") + Style(bold=True))
+            # The active-todo title uses the blue ``accent`` highlight (the same
+            # tone as other highlighted text) so the pinned line stands out from
+            # neutral body text.
+            line.append(label_text, style=tui_rich_style("accent") + Style(bold=True))
         line.append(suffix, style=tui_rich_style("muted"))
         return line
 
@@ -1117,6 +1135,10 @@ class _LiveView:
     def flush_content(self) -> None:
         """Flush the current content block."""
         if self._current_content_block is not None:
+            # Finalize must show everything: reveal any still-buffered paced text
+            # so the committed block is complete (no text stranded behind the
+            # reveal cursor).
+            self._current_content_block.reveal_all()
             if self._current_content_block.has_pending():
                 # One blank row before the block (matching tool cards) so steps
                 # are separated — unless this block already streamed earlier
@@ -1169,13 +1191,17 @@ class _LiveView:
                 self._current_step_retry = None
                 if self._current_content_block is None:
                     self._current_content_block = _ContentBlock(
-                        is_think, show_thinking_stream=self._show_thinking_stream
+                        is_think,
+                        show_thinking_stream=self._show_thinking_stream,
+                        paced=self._stream_pacing,
                     )
                     self.refresh_soon()
                 elif self._current_content_block.is_think != is_think:
                     self.flush_content()
                     self._current_content_block = _ContentBlock(
-                        is_think, show_thinking_stream=self._show_thinking_stream
+                        is_think,
+                        show_thinking_stream=self._show_thinking_stream,
+                        paced=self._stream_pacing,
                     )
                     self.refresh_soon()
                 if text:

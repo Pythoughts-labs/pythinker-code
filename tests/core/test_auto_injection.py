@@ -6,7 +6,6 @@ from unittest.mock import MagicMock
 
 from pythinker_code.soul.dynamic_injections.auto_mode import (
     _AUTO_INJECTION_TYPE,
-    _AUTO_PROMPT,
     _AUTO_PROMPT_DELIBERATE,
     _AUTO_PROMPT_DESTRUCTIVE_DELIBERATE,
     AutoModeInjectionProvider,
@@ -38,10 +37,12 @@ async def test_injects_when_auto_enabled() -> None:
     result = await provider.get_injections([], _mock_soul(is_auto=True))
     assert len(result) == 1
     assert result[0].type == _AUTO_INJECTION_TYPE
-    assert result[0].content == _AUTO_PROMPT
+    # Under auto, the destructive backstop is always active, so the guidance always
+    # surfaces the deliberation behavior (not the bare prompt).
+    assert result[0].content == _AUTO_PROMPT_DESTRUCTIVE_DELIBERATE
     assert "auto" in result[0].content.lower()
     assert "Do NOT call AskUserQuestion" in result[0].content
-    assert "All tool calls are auto-approved" not in result[0].content
+    assert "Irreversible auto-approved actions" in result[0].content
     assert "fail" in result[0].content.lower()
 
 
@@ -59,7 +60,7 @@ async def test_runtime_auto_injects_non_persistent_prompt() -> None:
     result = await provider.get_injections([], _mock_soul(is_auto=True, is_auto_flag=False))
     assert len(result) == 1
     assert result[0].type == _AUTO_INJECTION_TYPE
-    assert result[0].content == _AUTO_PROMPT
+    assert result[0].content == _AUTO_PROMPT_DESTRUCTIVE_DELIBERATE
 
 
 async def test_no_injection_when_auto_disabled() -> None:

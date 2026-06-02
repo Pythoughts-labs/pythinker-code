@@ -39,6 +39,14 @@ for pkg in (
     except Exception:
         pass
 
+# Pygments loads a style module dynamically when config.tui.code_theme names a
+# stock style (e.g. monokai); collect_submodules("rich") does not pull these in,
+# so without this the frozen binary raises ClassNotFound on opted-in code themes.
+try:
+    hiddenimports.extend(collect_submodules("pygments.styles"))
+except Exception:
+    pass
+
 a = Analysis(
     ["entrypoint.py"],
     pathex=[],

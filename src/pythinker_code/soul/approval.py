@@ -289,9 +289,11 @@ class Approval:
     def deliberation_gate(self, tool_call: ToolCall) -> str | None:
         """Reason a destructive auto-approved action must deliberate once, else ``None``.
 
-        Fires only when ``auto_deliberate`` is on, the action would otherwise be
-        auto-approved (auto *or* yolo — so it gates ahead of the yolo bypass), and the
-        tool call is destructive per the tool-agnostic classifier in ``permission``
+        Fires when the action would otherwise be auto-approved (auto *or* yolo — so it
+        gates ahead of the yolo bypass), it is destructive, and either no user is present
+        (``is_auto`` — no human to veto, so deliberation is mandatory) or ``auto_deliberate``
+        is on (which extends deliberation to the interactive-yolo case). Destructiveness is
+        classified by the tool-agnostic classifier in ``permission``
         (today only ``Shell``; other destructive tools register their classifier there).
         One-shot, scoped to (execution context, generation): the first sighting and any
         same-generation duplicate are bounced; only a re-issue in a later generation of the
@@ -299,7 +301,12 @@ class Approval:
         permanently whitelisted, while two identical calls in one model response both
         deliberate and a subagent cannot consume the main agent's one-shot.
         """
-        if not self._state.auto_deliberate:
+        # The destructive backstop must hold whenever an irreversible action would be
+        # auto-approved with NO user present (``is_auto``): there is no human to veto it,
+        # so the model must deliberate once first. The ``auto_deliberate`` config flag
+        # only EXTENDS this to the interactive-yolo case (a user IS present but approvals
+        # are skipped), where the human would otherwise see the action at approval time.
+        if not (self._state.auto_deliberate or self.is_auto()):
             return None
         if not self.is_auto_approve():
             return None

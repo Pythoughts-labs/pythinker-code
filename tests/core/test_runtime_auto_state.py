@@ -167,3 +167,120 @@ async def test_runtime_set_auto_persists_to_session_state(
 
     assert runtime.approval.is_auto() is True
     assert session.state.approval.auto is True
+
+
+@pytest.mark.asyncio
+async def test_yolo_run_does_not_corrupt_persisted_safe_mode(
+    config,
+    session,
+    lightweight_runtime_create,
+) -> None:
+    """Hypothesis B3a: a ``--yolo`` invocation must not silently downgrade the workspace's
+    persisted trust posture.
+
+    Yolo bypasses safe mode *functionally* (is_auto_approve / _unattended_denial_feedback
+    short-circuit on yolo before reading safe_mode), so there is no need to force
+    ``safe_mode=False`` at runtime — and doing so used to get persisted back to
+    ``session.state.trust.safe_mode`` via the on-change callback, corrupting trust state.
+    """
+    session.state.trust.safe_mode = True
+
+    runtime = await Runtime.create(
+        config,
+        OAuthManager(config),
+        llm=None,
+        session=session,
+        yolo=True,
+    )
+
+    # Yolo still auto-approves — no deadlock behind safe mode.
+    assert runtime.approval.is_yolo() is True
+    assert runtime.approval.is_auto_approve() is True
+
+    # An approval-state change persists state; the workspace trust posture must survive.
+    runtime.approval.set_auto(True)
+    assert session.state.trust.safe_mode is True
+
+
+@pytest.mark.asyncio
+async def test_no_yolo_forces_yolo_off_over_persisted_state(
+    config,
+    session,
+    lightweight_runtime_create,
+) -> None:
+    """Hypothesis B3c: ``--no-yolo`` forces yolo off for the run even when persisted state
+    (or config ``default_yolo``) would otherwise enable it."""
+    session.state.approval.yolo = True
+
+    runtime = await Runtime.create(
+        config,
+        OAuthManager(config),
+        llm=None,
+        session=session,
+        yolo=False,
+        no_yolo=True,
+    )
+
+    assert runtime.approval.is_yolo() is False
+
+
+@pytest.mark.asyncio
+async def test_default_config_yolo_auto_deliberates_destructive_actions(
+    config,
+    session,
+    lightweight_runtime_create,
+) -> None:
+    """Hypothesis B1 (fixed): the obvious manual combo (``--yolo --auto``, default
+    config) now has the destructive backstop.
+
+    ``auto_deliberate_destructive_actions`` still defaults False (config.py:381-382), but
+    the deliberation gate fires whenever an irreversible action would be auto-approved
+    with no user present (``is_auto``), regardless of the config flag. So a destructive
+    ``rm -rf`` is bounced once for deliberation instead of running blind. This matches the
+    purpose-built ``autonomous_coding`` profile rather than being more dangerous than it.
+    """
+    assert config.auto_deliberate_destructive_actions is False  # still the default
+    session.state.approval.auto = True
+
+    runtime = await Runtime.create(
+        config,
+        OAuthManager(config),
+        llm=None,
+        session=session,
+        yolo=True,
+    )
+
+    assert runtime.approval.is_yolo() is True
+    assert runtime.approval.is_auto() is True
+    assert runtime.approval.is_auto_approve() is True
+    # No user present + would auto-approve a destructive action -> the backstop bounces it.
+    assert runtime.approval.deliberation_gate(_shell_call("rm -rf build")) is not None
+
+
+@pytest.mark.asyncio
+async def test_runtime_create_silently_resumes_both_yolo_and_auto(
+    config,
+    session,
+    lightweight_runtime_create,
+) -> None:
+    """Hypothesis B3: a session that persisted both yolo and auto silently resumes
+    fully unsupervised, with no flags passed and no re-confirmation.
+
+    ``effective_yolo = yolo or session.state.approval.yolo`` (agent.py:282) and auto is
+    read straight from persisted state (agent.py:300). There is no CLI flag to force a
+    persisted yolo off.
+    """
+    session.state.approval.yolo = True
+    session.state.approval.auto = True
+
+    runtime = await Runtime.create(
+        config,
+        OAuthManager(config),
+        llm=None,
+        session=session,
+        yolo=False,  # no --yolo on this invocation
+    )
+
+    assert runtime.approval.is_yolo() is True  # restored from disk regardless
+    assert runtime.approval.is_auto() is True
+    assert runtime.approval.is_auto_approve() is True

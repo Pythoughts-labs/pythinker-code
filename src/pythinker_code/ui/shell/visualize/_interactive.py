@@ -29,6 +29,7 @@ from pythinker_code.ui.shell.prompt import (
     CustomPromptSession,
     UserInput,
 )
+from pythinker_code.ui.shell.visualize._blocks import smooth_streaming_enabled
 from pythinker_code.ui.shell.visualize._btw_panel import _BtwModalDelegate
 from pythinker_code.ui.shell.visualize._input_router import InputAction, classify_input
 from pythinker_code.ui.shell.visualize._live_view import _LiveView
@@ -56,6 +57,9 @@ BtwRunner = Callable[[str, Callable[[str], None] | None], Awaitable[tuple[str | 
 
 _STATUS_REFRESH_INTERVAL_S = 0.22
 _STATUS_REFRESH_REDUCED_INTERVAL_S = 1.0
+# Fast tick while paced streamed text is actively revealing (~25 fps) so the
+# reveal animates smoothly; falls back to the status cadence when idle.
+_STREAM_REVEAL_INTERVAL_S = 0.04
 
 
 class _PromptLiveView(_LiveView):
@@ -88,6 +92,10 @@ class _PromptLiveView(_LiveView):
             show_thinking_stream=show_thinking_stream,
             show_turn_recaps=show_turn_recaps,
         )
+        # The interactive view owns the reveal tick (_status_refresh_loop), so it
+        # is the only view that paces streamed text. Disable pacing under reduced
+        # motion so motion-sensitive users get immediate reveal, not a typewriter.
+        self._stream_pacing = smooth_streaming_enabled() and not reduced_motion_enabled()
         self._prompt_session = prompt_session
         self._steer = steer
         self._btw_runner = btw_runner
@@ -187,6 +195,15 @@ class _PromptLiveView(_LiveView):
         """
         try:
             while True:
+                # Drain buffered paced text smoothly, even past TurnEnd, so the
+                # tail flows out instead of popping when the block finally
+                # commits. advance_stream_reveal() is a no-op unless a paced block
+                # has backlog, so reduced-motion / unpaced turns fall straight
+                # through to the calm status cadence below.
+                if self.advance_stream_reveal():
+                    self._prompt_session.invalidate()
+                    await asyncio.sleep(_STREAM_REVEAL_INTERVAL_S)
+                    continue
                 interval = (
                     _STATUS_REFRESH_REDUCED_INTERVAL_S
                     if reduced_motion_enabled()

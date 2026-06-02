@@ -211,6 +211,36 @@ class TestContentBlockTokenCount:
         block.append("world")  # 1.25
         assert block._token_count == pytest.approx(1.75)
 
+    def test_activity_snapshot_uses_recent_token_rate_window(self, monkeypatch):
+        import importlib
+
+        blocks_mod = importlib.import_module("pythinker_code.ui.shell.visualize._blocks")
+
+        class Clock:
+            now = 0.0
+
+            def monotonic(self) -> float:
+                return self.now
+
+        clock = Clock()
+        monkeypatch.setattr(blocks_mod.time, "monotonic", clock.monotonic)
+
+        block = _ContentBlock(is_think=False)
+        block.append("a" * 40)  # 10 tokens
+        assert block._activity_snapshot("Composing").token_rate is None
+
+        clock.now = 0.5
+        block.append("b" * 40)  # 20 cumulative tokens, 2 samples
+        assert block._activity_snapshot("Composing").token_rate is None
+
+        clock.now = 1.0
+        block.append("c" * 40)  # 30 cumulative tokens over the 0.0-1.0s window
+        assert block._activity_snapshot("Composing").token_rate == 20
+
+        clock.now = 2.0
+        block.append("d" * 40)  # Oldest sample is trimmed; use the recent 1.5s window.
+        assert block._activity_snapshot("Composing").token_rate == 13
+
 
 def test_composing_live_label_uses_professional_activity_wording():
     block = _ContentBlock(is_think=False)
@@ -348,6 +378,34 @@ class TestContentBlockCommitment:
         assert output.startswith("\n")
         assert "Deep Code Scan Results" in output
 
+    def test_streamed_prose_blocks_match_single_pass_spacing(self, monkeypatch):
+        """Regression: streamed multi-paragraph bodies used to render every
+        paragraph crammed onto consecutive lines. Each committed block and the
+        final tail must keep the one-row gap a single markdown pass puts
+        between blocks."""
+        import importlib
+
+        # ``visualize`` re-exports a function of the same name that shadows the
+        # submodule for attribute walking, so resolve the module via sys.modules.
+        blocks_mod = importlib.import_module("pythinker_code.ui.shell.visualize._blocks")
+        rec = Console(record=True, width=80, color_system=None)
+        monkeypatch.setattr(blocks_mod, "console", rec)
+
+        block = _ContentBlock(is_think=False)
+        body = (
+            "First paragraph here.\n\nSecond paragraph here.\n\nThird and final paragraph here.\n"
+        )
+        for ch in body:  # char-by-char: the worst case for commit seams
+            block.append(ch)
+        rec.print(block.compose_final())
+
+        lines = [line.rstrip() for line in rec.export_text().splitlines()]
+        markers = ("First paragraph", "Second paragraph", "Third and final")
+        idxs = [next(i for i, line in enumerate(lines) if marker in line) for marker in markers]
+        for first, second in zip(idxs, idxs[1:], strict=False):
+            assert second - first >= 2, f"paragraphs at lines {first},{second} are crammed"
+            assert any(lines[j] == "" for j in range(first + 1, second))
+
     def test_composing_no_commit_without_newline(self):
         block = _ContentBlock(is_think=False)
         block.append("just some text without newlines")
@@ -403,6 +461,55 @@ class TestContentBlockCommitment:
 # ---------------------------------------------------------------------------
 # show_thinking_stream toggle (legacy streaming reasoning preview)
 # ---------------------------------------------------------------------------
+
+
+class TestProductionPathBoundaryContract:
+    """Validate that _ContentBlock never commits a GFM table header row
+    without its data row."""
+
+    _FULL_TABLE = "Intro paragraph.\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nAfter.\n"
+
+    @staticmethod
+    def _assert_no_mid_table_commit(block: _ContentBlock) -> None:
+        # Check at the offset layer — never at rendered output (Rich converts
+        # GFM table syntax to box-drawing chars, so "---" won't appear in text).
+        table_header_start = block.raw_text.find("| A | B |")
+        table_data_end_idx = block.raw_text.find("| 1 | 2 |")
+        if table_header_start == -1 or table_data_end_idx == -1:
+            return
+        table_data_end = table_data_end_idx + len("| 1 | 2 |")
+        committed_at = block._committed_len
+        assert not (table_header_start < committed_at < table_data_end), (
+            f"header-only table committed at offset {committed_at} "
+            f"before data row arrived (data row ends at {table_data_end})"
+        )
+
+    def test_unpaced_composing_block_does_not_commit_table_mid_row(self, monkeypatch):
+        import importlib
+
+        blocks_mod = importlib.import_module("pythinker_code.ui.shell.visualize._blocks")
+        rec = Console(record=True, width=120, color_system=None)
+        monkeypatch.setattr(blocks_mod, "console", rec)
+
+        block = _ContentBlock(is_think=False)
+        for ch in self._FULL_TABLE:
+            block.append(ch)
+            self._assert_no_mid_table_commit(block)
+
+    def test_paced_composing_block_does_not_commit_table_mid_row(self, monkeypatch):
+        import importlib
+
+        blocks_mod = importlib.import_module("pythinker_code.ui.shell.visualize._blocks")
+        rec = Console(record=True, width=120, color_system=None)
+        monkeypatch.setattr(blocks_mod, "console", rec)
+
+        block = _ContentBlock(is_think=False, paced=True)
+        for ch in self._FULL_TABLE:
+            block.append(ch)
+            block.reveal_tick()
+            self._assert_no_mid_table_commit(block)
+        while block.reveal_tick():
+            self._assert_no_mid_table_commit(block)
 
 
 class TestShowThinkingStream:

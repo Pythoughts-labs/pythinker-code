@@ -328,6 +328,39 @@ class TUIConfig(BaseModel):
         default=True,
         description="Show a compact recap line after completed interactive shell turns.",
     )
+    code_theme: str = Field(
+        default="pythinker-ansi",
+        description=(
+            "Syntax-highlighting theme for assistant code blocks. Default "
+            "'pythinker-ansi' keeps the terminal-adaptive, transparent look. "
+            "Set to any Pygments style name (e.g. 'monokai', 'material', "
+            "'dracula', 'one-dark') to render code fences with that style on a "
+            "solid dark background block."
+        ),
+    )
+    smooth_streaming: bool = Field(
+        default=True,
+        description=(
+            "Pace streamed assistant text so it reveals smoothly instead of "
+            "landing in bursty delta-sized clumps. Keeps up with the model "
+            "(bounded catch-up). Set false to reveal each delta immediately."
+        ),
+    )
+
+    @field_validator("code_theme")
+    @classmethod
+    def _validate_code_theme(cls, value: str) -> str:
+        from pythinker_code.utils.rich.syntax import available_code_themes
+
+        allowed = available_code_themes()
+        if value in allowed:
+            return value
+        if value.lower() in allowed:
+            return value.lower()
+        raise ValueError(
+            f"Unknown code_theme {value!r}. Choose 'pythinker-ansi' or a Pygments "
+            f"style name. Available: {', '.join(allowed)}"
+        )
 
 
 class MCPConfig(BaseModel):

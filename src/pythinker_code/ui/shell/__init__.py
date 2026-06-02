@@ -588,14 +588,18 @@ class Shell:
         # Initialize theme + TUI style from config
         if isinstance(self.soul, PythinkerSoul):
             from pythinker_code.extensions import run_pending_extensions
+            from pythinker_code.ui.shell.visualize._blocks import set_smooth_streaming
             from pythinker_code.ui.theme import set_active_theme
             from pythinker_code.ui.tui_config import (
                 is_card_style,
                 set_active_tui_style,
             )
+            from pythinker_code.utils.rich.syntax import set_active_code_theme
 
             set_active_theme(self.soul.runtime.config.theme)
             set_active_tui_style(self.soul.runtime.config.tui.style)
+            set_active_code_theme(self.soul.runtime.config.tui.code_theme)
+            set_smooth_streaming(self.soul.runtime.config.tui.smooth_streaming)
             if is_card_style():
                 from pythinker_code.ui.shell.tool_renderers import (
                     register_builtin_renderers,
@@ -1895,7 +1899,7 @@ _LOGO = (
 class WelcomeInfoItem:
     class Level(Enum):
         INFO = "grey50"
-        WARN = "yellow"
+        WARN = _LOGO_CORAL  # muted coral, matching the robot's antenna accent
         ERROR = "red"
 
     name: str
@@ -2032,7 +2036,7 @@ def _print_welcome_info(
         f"[{_t.muted}]Review · Secure · Diagnose · Build with confidence.[/]"
     )
     help_text = Text.from_markup(f"[{_t.muted}]Type /help for commands.[/]")
-    help_text.highlight_regex(r"/help\b", f"bold {_t.warning}")
+    help_text.highlight_regex(r"/help\b", f"bold {_LOGO_CORAL}")
 
     rows: list[RenderableType] = []
     if content_width >= 68:
@@ -2078,7 +2082,7 @@ def _print_welcome_info(
         for item in tips:
             for index, line in enumerate(_welcome_tip_lines(item.value, tip_width)):
                 tip_text = Text(line, style=item.level.value, no_wrap=True)
-                tip_text.highlight_regex(r"/[A-Za-z][A-Za-z0-9_-]*", "yellow bold")
+                tip_text.highlight_regex(r"/[A-Za-z][A-Za-z0-9_-]*", f"bold {_LOGO_CORAL}")
                 tips_table.add_row("  • " if index == 0 else "    ", tip_text)
         rows.append(tips_table)
 

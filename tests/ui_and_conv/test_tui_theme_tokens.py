@@ -39,9 +39,9 @@ def test_dark_tokens_have_brand_values():
     assert t.error == "#EF5E62"
     assert t.thinking_text == "#C0C0C0"  # lighter neutral grey, not purple-tinted muted
     assert t.thinking_text != t.muted
-    assert t.activity_verb == "#C8B176"  # champagne activity verb
-    assert t.activity_verb_mid == "#E1CC94"
-    assert t.activity_verb_highlight == "#EEF2F7"
+    assert t.activity_verb == "#EE9983"  # muted coral resting (robot antenna accent)
+    assert t.activity_verb_mid == "#F4B5A5"  # light coral
+    assert t.activity_verb_highlight == "#FBD9CE"  # soft coral spark
     assert t.activity_spinner == "#B8C0CC"
     assert t.tool_title == t.activity_label
     assert t.tool_pending_bg == "#1B2230"
@@ -57,9 +57,9 @@ def test_light_tokens_have_brand_values():
     assert t.error == "#C0392B"
     assert t.thinking_text == "#7A7A7A"  # lighter neutral grey, not blue/purple muted
     assert t.thinking_text != t.muted
-    assert t.activity_verb == "#7A5C24"  # contrast-safe bronze activity verb
-    assert t.activity_verb_mid == "#8A6A2D"
-    assert t.activity_verb_highlight == "#213853"
+    assert t.activity_verb == "#C56B4F"  # contrast-safe coral activity verb
+    assert t.activity_verb_mid == "#B0573C"  # deeper coral
+    assert t.activity_verb_highlight == "#8F3A26"  # deep-coral spark (max contrast on light)
     assert t.activity_spinner == "#6B7280"
     assert t.tool_title == t.activity_label
     assert t.tool_pending_bg == "#EFE7E8"

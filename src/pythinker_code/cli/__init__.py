@@ -378,6 +378,16 @@ def pythinker(
             help="Automatically approve all actions. Default: no.",
         ),
     ] = False,
+    no_yolo: Annotated[
+        bool,
+        typer.Option(
+            "--no-yolo",
+            help=(
+                "Force yolo OFF for this run, overriding --yolo, config default_yolo, and "
+                "any persisted/resumed yolo state. Default: no."
+            ),
+        ),
+    ] = False,
     plan: Annotated[
         bool,
         typer.Option(
@@ -844,6 +854,7 @@ def pythinker(
                 thinking=thinking,
                 thinking_effort=normalized_thinking_effort,
                 yolo=yolo,
+                no_yolo=no_yolo,
                 auto=auto,
                 runtime_auto=ui == "print",
                 plan_mode=plan,

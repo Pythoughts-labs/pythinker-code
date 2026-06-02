@@ -15,6 +15,11 @@ hiddenimports = (
     # `cli/__init__.py` resolves _lazy_group via `import_module(f"{__name__}._lazy_group")`,
     # which PyInstaller's static analysis can't follow.
     + ["pythinker_code.cli._lazy_group", "setproctitle"]
+    # Pygments resolves a style module dynamically (e.g. `import
+    # pygments.styles.monokai`) when config.tui.code_theme names a stock style,
+    # so static analysis misses it and the frozen binary raises ClassNotFound.
+    # Collect all style modules so any opted-in code_theme resolves.
+    + collect_submodules("pygments.styles")
 )
 datas = (
     collect_data_files(

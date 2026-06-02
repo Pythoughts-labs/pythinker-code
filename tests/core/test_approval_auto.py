@@ -205,25 +205,37 @@ def test_unscoped_destructive_calls_always_bounce_fail_closed() -> None:
 
 
 def test_deliberation_gate_conditions() -> None:
-    """The gate fires only when the feature is on, we would otherwise auto-approve
-    (auto OR yolo), and the command is destructive."""
+    """The gate fires when an irreversible action would be auto-approved and either no
+    user is present (auto) or the deliberate flag is set."""
     rm = _shell_call("rm -rf x")
     safe = _shell_call("ls -la")
 
-    # feature off -> never deliberates (full back-compat)
-    off = Approval(state=ApprovalState(auto=True, auto_deliberate=False))
-    assert off.deliberation_gate(rm) is None
+    # no user present (auto) -> the destructive backstop holds even with the flag off:
+    # there is no human to veto, so the model must deliberate once first.
+    unattended = Approval(state=ApprovalState(auto=True, auto_deliberate=False))
+    assert unattended.deliberation_gate(rm) is not None
 
-    # human present (not auto, not yolo) -> normal interactive approval shows the rm -rf;
-    # no self-deliberation needed
+    # interactive yolo, flag off -> a user IS present (approvals merely skipped), so no
+    # self-deliberation is forced.
+    interactive_yolo = Approval(state=ApprovalState(yolo=True, auto=False, auto_deliberate=False))
+    assert interactive_yolo.deliberation_gate(rm) is None
+
+    # interactive yolo + flag on -> the flag EXTENDS deliberation to the user-present case.
+    interactive_yolo_flag = Approval(
+        state=ApprovalState(yolo=True, auto=False, auto_deliberate=True)
+    )
+    assert interactive_yolo_flag.deliberation_gate(rm) is not None
+
+    # human present, no yolo/auto -> not auto-approved at all; normal approval shows the
+    # rm -rf, so no self-deliberation is needed.
     human = Approval(state=ApprovalState(auto=False, auto_deliberate=True))
     assert human.deliberation_gate(rm) is None
 
-    # yolo + auto_deliberate -> gates AHEAD of the yolo bypass
-    yolo = Approval(state=ApprovalState(yolo=True, auto_deliberate=True))
-    assert yolo.deliberation_gate(rm) is not None
+    # yolo + auto -> gates AHEAD of the yolo bypass, flag or no flag
+    yolo_auto = Approval(state=ApprovalState(yolo=True, auto=True, auto_deliberate=False))
+    assert yolo_auto.deliberation_gate(rm) is not None
 
-    # non-destructive in auto + auto_deliberate -> proceeds untouched
+    # non-destructive when no user present -> proceeds untouched
     benign = Approval(state=ApprovalState(auto=True, auto_deliberate=True))
     assert benign.deliberation_gate(safe) is None
 
@@ -298,8 +310,31 @@ async def test_request_bounces_destructive_then_approves_retry() -> None:
         assert second, "one-shot consumed in a later generation: the deliberated retry runs"
 
 
+async def test_request_bounces_destructive_background_shell_under_default_auto() -> None:
+    """B1 end-to-end on the path it actually changed: plain auto with the deliberate flag
+    OFF (the default). A destructive BACKGROUND shell still bounces once and then runs on
+    the deliberated retry -- it does NOT hit the fail-closed unscoped branch, because the
+    approval is requested inline at tool-call time, inside the step's deliberation scope,
+    before the background task is spawned."""
+    from tests.conftest import tool_call_context
+
+    approval = Approval(state=ApprovalState(auto=True, auto_deliberate=False))
+    args = {"command": "rm -rf build", "run_in_background": True}
+    with tool_call_context("Shell", arguments=args):
+        with deliberation_scope("root", 1):
+            first = await approval.request("Shell", "run command", "Run command `rm -rf build`")
+        assert not first, "default-auto destructive bg shell is bounced for deliberation"
+        assert first.deliberation is True
+
+        with deliberation_scope("root", 2):
+            second = await approval.request("Shell", "run command", "Run command `rm -rf build`")
+        assert second, "deliberated retry in a later generation runs (no fail-closed loop)"
+
+
 def test_approval_state_honors_auto_deliberate_flag() -> None:
-    on = Approval(state=ApprovalState(auto=True, auto_deliberate=True))
+    # With no user present (auto) the destructive backstop is always on, so the flag's
+    # distinct effect is on the INTERACTIVE-yolo case (a user is present, approvals skipped).
+    on = Approval(state=ApprovalState(yolo=True, auto=False, auto_deliberate=True))
     assert on.deliberation_gate(_shell_call("rm -rf build")) is not None
-    off = Approval(state=ApprovalState(auto=True, auto_deliberate=False))
+    off = Approval(state=ApprovalState(yolo=True, auto=False, auto_deliberate=False))
     assert off.deliberation_gate(_shell_call("rm -rf build")) is None

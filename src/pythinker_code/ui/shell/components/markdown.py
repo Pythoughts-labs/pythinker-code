@@ -8,10 +8,11 @@ Wraps Rich's ``Markdown`` element with three changes:
 2. Inline elements (headings, strong, emphasis, links, inline code, block
    quotes) resolve against ``pythinker_code.ui.theme.get_markdown_colors``
    so dark/light themes share the same renderer.
-3. A small streaming helper, :class:`PythinkerMarkdownStream`, buffers
-   incoming deltas and flushes when a safe boundary appears — either a
-   blank line *or* a sentence-final character outside of any open fence,
-   so long paragraphs no longer stall the visible stream.
+3. The public function :func:`markdown_commit_boundary` returns the safe
+   commit offset for streamed markdown; the production rendering path in
+   ``_ContentBlock._flush_committed`` calls it directly.  The lower-level
+   :class:`PythinkerMarkdownStream` class is an internal/testing helper and
+   is not part of the public API.
 """
 
 from __future__ import annotations
@@ -36,7 +37,6 @@ from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
 from pythinker_code.ui.shell.spacing import CODE_BLOCK_PADDING, blank_row
 from pythinker_code.ui.theme import ThemeName, get_markdown_colors
 from pythinker_code.utils.rich.markdown import CodeBlock, Markdown
-from pythinker_code.utils.rich.syntax import PYTHINKER_ANSI_THEME_NAME
 
 _MARKDOWN_ICON_REPLACEMENTS: dict[str, str] = {
     "⏺": "•",
@@ -85,7 +85,6 @@ _HEADER_RE = re.compile(r"^(?P<prefix>.*?)(?P<cells>(?:\|[^\n|]*)+\|)\s*$")
 
 __all__ = [
     "PythinkerMarkdown",
-    "PythinkerMarkdownStream",
     "pythinker_markdown",
 ]
 
@@ -222,9 +221,17 @@ class _BorderedCodeBlock(CodeBlock):
 
         colors = get_markdown_colors()
         border_style = RichStyle(color=colors.code_block_border, bold=True)
-        panel_style = (
-            RichStyle(bgcolor=colors.code_block_bg) if colors.code_block_bg else RichStyle()
-        )
+        # ``self.theme`` is a str only for an opted-in stock Pygments style; the
+        # default ANSI theme resolves to a ``SyntaxTheme`` instance. For a stock
+        # style, paint the panel with the style's own background so the code and
+        # its padding share one uniform dark block (Aider-style); otherwise keep
+        # the calm ``code_block_bg`` tint.
+        if isinstance(self.theme, str):
+            panel_style = Syntax.get_theme(self.theme).get_background_style()
+        else:
+            panel_style = (
+                RichStyle(bgcolor=colors.code_block_bg) if colors.code_block_bg else RichStyle()
+            )
 
         syntax = Syntax(
             code_text,
@@ -561,10 +568,11 @@ class PythinkerMarkdown(Markdown):
             yield from super().__rich_console__(console, options)
 
 
-def pythinker_markdown(
-    text: str, *, code_theme: str = PYTHINKER_ANSI_THEME_NAME
-) -> PythinkerMarkdown:
-    """Build a :class:`PythinkerMarkdown` with the palette pre-wired."""
+def pythinker_markdown(text: str, *, code_theme: str | None = None) -> PythinkerMarkdown:
+    """Build a :class:`PythinkerMarkdown` with the palette pre-wired.
+
+    ``code_theme=None`` defers to the active code theme (``config.tui.code_theme``).
+    """
     return PythinkerMarkdown(text, code_theme=code_theme)
 
 
@@ -646,7 +654,12 @@ def _find_stream_safe_boundary(text: str) -> int | None:
 
 @dataclass(slots=True)
 class PythinkerMarkdownStream:
-    """Buffer streamed markdown deltas and yield safe-to-render slices."""
+    """Buffer streamed markdown deltas and yield safe-to-render slices.
+
+    Internal testing fixture for markdown boundary behavior. The production
+    rendering path in ``_ContentBlock._flush_committed`` calls
+    :func:`markdown_commit_boundary` directly.
+    """
 
     pending: str = field(default="")
 

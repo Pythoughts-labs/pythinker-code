@@ -33,9 +33,10 @@ _FRAME_INTERVAL_S = SPINNER_FRAME_INTERVAL_S
 def _activity_color_tokens() -> tuple[str, str, str, str]:
     """Return theme-standardized activity colors.
 
-    The active verb uses a premium champagne/platinum ramp in dark mode and a
-    contrast-safe bronze/ink ramp in light mode. Keep these in theme tokens so
-    Rich and prompt_toolkit renderers stay visually aligned.
+    The active verb uses a coral ramp — muted coral resting (matching the
+    robot's antenna accent), sweeping to a soft light-coral spark in dark mode,
+    and a contrast-safe deep-coral ramp in light mode. Keep these in theme
+    tokens so Rich and prompt_toolkit renderers stay visually aligned.
     """
     tokens = get_tui_tokens()
     return (
@@ -55,10 +56,12 @@ def verb_spinner_style() -> Style:
 
 
 # Backwards-compatible dark-theme constants used by tests and older callers.
-_SHIMMER_BASE = "#C8B176"
-_SHIMMER_MID = "#E1CC94"
-_SHIMMER_HIGHLIGHT = "#EEF2F7"
-_SHIMMER_INTERVAL_S = 0.22
+# These MUST stay in lockstep with the dark `activity_verb*` theme tokens so the
+# shimmer renders the same warm ember ramp everywhere.
+_SHIMMER_BASE = "#EE9983"
+_SHIMMER_MID = "#F4B5A5"
+_SHIMMER_HIGHLIGHT = "#FBD9CE"
+_SHIMMER_INTERVAL_S = 0.15
 _SPINNER_SILVER = "#B8C0CC"
 
 
