@@ -17,6 +17,11 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **ACP session close and auth errors are spec-compliant.** `session/close` now cancels any
+  in-flight work and frees the session's runtime resources (MCP toolset, background refresh)
+  before dropping it, instead of leaking them, per the ACP `session/close` requirement. The
+  `authenticate` failure path now serializes its `authMethods` to plain dicts so the JSON-RPC
+  error response no longer raises `TypeError` on encode.
 - **Auto-mode destructive actions deliberate per turn and context.** Auto-deliberation now
   scopes destructive-command one-shots to the active execution context and LLM generation,
   so duplicate destructive calls in one response keep bouncing while later deliberate retries
