@@ -95,14 +95,13 @@ def main() -> int:
     else:
         sdk_deps = sdk_project.get("dependencies", [])
         if not isinstance(sdk_deps, list):
-            errors.append(
-                f"project.dependencies must be a list in {args.pythinker_sdk_pyproject}"
-            )
+            errors.append(f"project.dependencies must be a list in {args.pythinker_sdk_pyproject}")
         elif core_version := package_versions.get("pythinker-core"):
             sdk_core_pin = find_pinned_dependency(sdk_deps, "pythinker-core")
             if sdk_core_pin is None:
                 errors.append(
-                    f"Missing pinned dependency for pythinker-core in {args.pythinker_sdk_pyproject}."
+                    "Missing pinned dependency for pythinker-core in "
+                    f"{args.pythinker_sdk_pyproject}."
                 )
             elif sdk_core_pin != core_version:
                 errors.append(
