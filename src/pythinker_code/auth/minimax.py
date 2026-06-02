@@ -11,6 +11,8 @@ from pydantic import SecretStr
 from pythinker_code.auth import MINIMAX_PLATFORM_ID
 from pythinker_code.auth.oauth import OAuthEvent
 from pythinker_code.config import Config, LLMModel, LLMProvider, save_config
+from pythinker_code.llm import ModelCapability
+from pythinker_code.thinking import apply_login_thinking_defaults
 from pythinker_code.utils.aiohttp import new_client_session
 
 MINIMAX_ANTHROPIC_BASE_URL = "https://api.minimax.io/anthropic"
@@ -22,6 +24,7 @@ MINIMAX_DEFAULT_MODEL_ALIAS = "minimax/m2.7"
 MINIMAX_DEFAULT_CONTEXT = 192_000
 MINIMAX_TOKEN_PLAN_KEY_PREFIX = "sk-cp-"
 MINIMAX_MODEL_DISCOVERY_TIMEOUT = aiohttp.ClientTimeout(total=15, sock_connect=8, sock_read=10)
+MINIMAX_NATIVE_THINKING_CAPABILITIES: frozenset[ModelCapability] = frozenset({"always_thinking"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +34,7 @@ class MiniMaxModel:
     display_name: str
     provider_key: str = MINIMAX_ANTHROPIC_PROVIDER_KEY
     max_context_size: int = MINIMAX_DEFAULT_CONTEXT
+    capabilities: frozenset[ModelCapability] = MINIMAX_NATIVE_THINKING_CAPABILITIES
 
     @property
     def alias(self) -> str:
@@ -73,6 +77,7 @@ def _apply_minimax_config(
             provider=model.provider_key,
             model=model.model_id,
             max_context_size=model.max_context_size,
+            capabilities=set(model.capabilities) or None,
             display_name=model.display_name,
         )
 
@@ -87,7 +92,7 @@ def _apply_minimax_config(
             config.default_model = fallback
     elif config.default_model not in config.models:
         config.default_model = next(iter(config.models), "")
-    config.default_thinking = False
+    apply_login_thinking_defaults(config, thinking=False, effort="off")
 
 
 def _model_by_id() -> dict[str, MiniMaxModel]:
@@ -182,6 +187,9 @@ def _parse_discovered_models(data: object) -> tuple[MiniMaxModel, ...]:
                 display_name=display_name,
                 provider_key=current.provider_key if current else MINIMAX_ANTHROPIC_PROVIDER_KEY,
                 max_context_size=max_context_size,
+                capabilities=(
+                    current.capabilities if current else MINIMAX_NATIVE_THINKING_CAPABILITIES
+                ),
             )
         )
     return tuple(result)
@@ -260,6 +268,7 @@ def apply_minimax_models(config: Config, models: tuple[MiniMaxModel, ...]) -> bo
                 provider=model.provider_key,
                 model=model.model_id,
                 max_context_size=model.max_context_size,
+                capabilities=set(model.capabilities) or None,
                 display_name=model.display_name,
             )
             changed = True
@@ -272,6 +281,10 @@ def apply_minimax_models(config: Config, models: tuple[MiniMaxModel, ...]) -> bo
             changed = True
         if existing.max_context_size != model.max_context_size:
             existing.max_context_size = model.max_context_size
+            changed = True
+        capabilities = set(model.capabilities) or None
+        if existing.capabilities != capabilities:
+            existing.capabilities = capabilities
             changed = True
         if existing.display_name != model.display_name:
             existing.display_name = model.display_name

@@ -11,6 +11,8 @@ from pydantic import SecretStr
 from pythinker_code.auth import OPENCODE_GO_PLATFORM_ID
 from pythinker_code.auth.oauth import OAuthEvent
 from pythinker_code.config import Config, LLMModel, LLMProvider, save_config
+from pythinker_code.llm import ModelCapability
+from pythinker_code.thinking import apply_login_thinking_defaults
 from pythinker_code.utils.aiohttp import new_client_session
 
 # OpenAI-compatible base: the OpenAI SDK appends "/chat/completions" (and the
@@ -107,6 +109,7 @@ def _apply_opencode_go_config(
             provider=model.provider_key,
             model=model.model_id,
             max_context_size=model.max_context_size,
+            capabilities=_native_thinking_capabilities(model.model_id),
             display_name=model.display_name,
         )
 
@@ -115,7 +118,7 @@ def _apply_opencode_go_config(
     else:
         fallback = next((model.alias for model in models), next(iter(config.models), ""))
         config.default_model = fallback
-    config.default_thinking = False
+    apply_login_thinking_defaults(config, thinking=False, effort="off")
 
 
 def _model_by_id() -> dict[str, OpenCodeGoModel]:
@@ -138,6 +141,14 @@ class _ModelsDevMeta:
 
 
 MODELS_DEV_ANTHROPIC_NPM = "@ai-sdk/anthropic"
+
+
+def _native_thinking_capabilities(model_id: str) -> set[ModelCapability] | None:
+    """Model families whose reasoning is built in, not controlled by Pythinker."""
+    normalized = model_id.lower().replace("_", "-")
+    if normalized.startswith(("glm-", "minimax-")):
+        return {"always_thinking"}
+    return None
 
 
 def _heuristic_provider_key(model_id: str) -> str:
@@ -336,6 +347,7 @@ def apply_opencode_go_models(config: Config, models: tuple[OpenCodeGoModel, ...]
                 provider=model.provider_key,
                 model=model.model_id,
                 max_context_size=model.max_context_size,
+                capabilities=_native_thinking_capabilities(model.model_id),
                 display_name=model.display_name,
             )
             changed = True
@@ -348,6 +360,10 @@ def apply_opencode_go_models(config: Config, models: tuple[OpenCodeGoModel, ...]
             changed = True
         if existing.max_context_size != model.max_context_size:
             existing.max_context_size = model.max_context_size
+            changed = True
+        capabilities = _native_thinking_capabilities(model.model_id)
+        if existing.capabilities != capabilities:
+            existing.capabilities = capabilities
             changed = True
         if existing.display_name != model.display_name:
             existing.display_name = model.display_name

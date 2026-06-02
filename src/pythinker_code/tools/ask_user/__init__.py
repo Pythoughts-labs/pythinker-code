@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Literal, override
 from uuid import uuid4
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 NAME = "AskUserQuestion"
 
-AskUserPolicy = Literal["always", "ask_except_auto", "never"]
+AskUserPolicy = Literal["always", "ask_except_auto", "never", "auto_deliberate"]
 
 _BASE_DESCRIPTION = load_desc(Path(__file__).parent / "description.md")
 
@@ -76,6 +76,7 @@ class AskUserQuestion(CallableTool2[Params]):
         super().__init__()
         self._is_auto: Callable[[], bool] | None = None
         self._policy: AskUserPolicy = "ask_except_auto"
+        self._advisor: Callable[[list[QuestionItem]], Awaitable[str | None]] | None = None
 
     def bind_auto(
         self,
@@ -86,8 +87,52 @@ class AskUserQuestion(CallableTool2[Params]):
         self._is_auto = is_auto
         self._policy = policy
 
+    def bind_deliberation(
+        self,
+        advisor: Callable[[list[QuestionItem]], Awaitable[str | None]],
+    ) -> None:
+        """Late-bind the blind advisor used under the ``auto_deliberate`` policy."""
+        self._advisor = advisor
+
+    def _build_question_items(self, params: Params) -> list[QuestionItem]:
+        return [
+            QuestionItem(
+                question=q.question,
+                header=q.header,
+                options=[
+                    QuestionOption(label=o.label, description=o.description) for o in q.options
+                ],
+                multi_select=q.multi_select,
+            )
+            for q in params.questions
+        ]
+
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
+        in_auto = bool(self._is_auto and self._is_auto())
+        if self._policy == "auto_deliberate" and in_auto:
+            # Entry A: no user is present, but instead of dismissing we run an
+            # independent blind advisor over the options and hand the verdict
+            # back so the agent makes a reasoned self-decision on its next turn.
+            items = self._build_question_items(params)
+            verdict = await self._advisor(items) if self._advisor else None
+            payload: dict[str, object] = {
+                "answers": {},
+                "note": (
+                    "No user is present. You are the decider: commit to one option with a "
+                    "one-line justification, then proceed. Do not call AskUserQuestion again "
+                    "for this decision."
+                ),
+            }
+            if verdict:
+                payload["advisor"] = verdict
+            return ToolReturnValue(
+                is_error=False,
+                output=json.dumps(payload, ensure_ascii=False),
+                message="Auto-deliberation: advisor consulted; agent decides.",
+                display=[BriefDisplayBlock(text="Deliberating (advisor consulted)")],
+            )
+
         if self._policy == "never" or (
             self._policy == "ask_except_auto" and self._is_auto and self._is_auto()
         ):
@@ -117,17 +162,7 @@ class AskUserQuestion(CallableTool2[Params]):
                 brief="Invalid context",
             )
 
-        questions = [
-            QuestionItem(
-                question=q.question,
-                header=q.header,
-                options=[
-                    QuestionOption(label=o.label, description=o.description) for o in q.options
-                ],
-                multi_select=q.multi_select,
-            )
-            for q in params.questions
-        ]
+        questions = self._build_question_items(params)
 
         request = QuestionRequest(
             id=str(uuid4()),

@@ -25,6 +25,21 @@ _AUTO_PROMPT = (
     "decisions to a human."
 )
 
+_AUTO_PROMPT_DELIBERATE = (
+    "You are running in auto mode. No user is present to answer "
+    "questions or approve actions. Most tool calls are auto-approved by "
+    "the harness; irreversible ones may be bounced once for deliberation.\n"
+    "- At a genuine, consequential, hard-to-reverse fork, you MAY call "
+    "AskUserQuestion: it triggers an advisor-assisted self-decision (you "
+    "still decide). Do NOT ask routine confirmations or progress "
+    "check-ins — proceed instantly on trivial, reversible choices.\n"
+    "- You CAN use EnterPlanMode / ExitPlanMode normally. They will be "
+    "auto-approved. Planning still helps you think before acting; use "
+    "it for non-trivial tasks, then exit and execute.\n"
+    "- Finish the user's request end-to-end in this run. Do not defer "
+    "decisions to a human."
+)
+
 AUTO_DISABLED_REMINDER = (
     "Auto mode is now disabled. The user is back at the terminal and CAN answer "
     "AskUserQuestion.\n"
@@ -57,7 +72,12 @@ class AutoModeInjectionProvider(DynamicInjectionProvider):
         if self._injected:
             return []
         self._injected = True
-        return [DynamicInjection(type=_AUTO_INJECTION_TYPE, content=_AUTO_PROMPT)]
+        # Under the auto_deliberate policy AskUserQuestion self-decides (advisor-
+        # assisted) instead of being dismissed, so invite it at consequential
+        # forks; every other policy keeps the "do not call it" guidance.
+        deliberate = soul.runtime.config.ask_user_question_policy == "auto_deliberate"
+        content = _AUTO_PROMPT_DELIBERATE if deliberate else _AUTO_PROMPT
+        return [DynamicInjection(type=_AUTO_INJECTION_TYPE, content=content)]
 
     async def on_context_compacted(self) -> None:
         # Compaction rewrites history; the prior auto-mode reminder may have

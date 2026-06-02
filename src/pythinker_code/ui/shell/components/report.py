@@ -24,13 +24,16 @@ from typing import TYPE_CHECKING, Any, Literal, cast, get_args
 if TYPE_CHECKING:
     from markdown_it import MarkdownIt
 
+from rich import box
 from rich.console import Group, RenderableType
 from rich.padding import Padding
+from rich.panel import Panel
 from rich.rule import Rule
 from rich.style import Style as RichStyle
 from rich.text import Text
 
 from pythinker_code.ui.shell.components.markdown import pythinker_markdown
+from pythinker_code.ui.shell.spacing import REPORT_PANEL_PADDING
 from pythinker_code.ui.theme import ThemeName, tui_rich_style
 
 _log = logging.getLogger(__name__)
@@ -160,7 +163,12 @@ def _render_finding(finding: ReportFinding, theme: ThemeName | None) -> Renderab
     rows.append(title)
 
     if finding.location:
-        rows.append(Text(f"  {finding.location}", style=tui_rich_style("dim", theme=theme)))
+        # Keep wrapped file paths in the same hanging-indent column. A raw
+        # leading-space Text only indents the first physical line after Rich
+        # wraps, which makes long locations drift left inside wide reports.
+        rows.append(
+            Padding(Text(finding.location, style=tui_rich_style("dim", theme=theme)), (0, 0, 0, 2))
+        )
 
     if finding.body.strip():
         rows.append(Padding(pythinker_markdown(finding.body.strip()), (0, 0, 0, 2)))
@@ -169,17 +177,15 @@ def _render_finding(finding: ReportFinding, theme: ThemeName | None) -> Renderab
 
 
 def render_report(report: Report, *, theme: ThemeName | None = None) -> RenderableType:
-    """Render *report* as a muted, roomy Rich renderable (no outer box)."""
+    """Render *report* as a padded, syntax-friendly Rich report panel."""
     counts = _counts(report.findings)
     border = tui_rich_style("border_muted", theme=theme)
     blank = Text("")
 
-    rows: list[RenderableType] = [
-        Text(report.title, style=tui_rich_style("text", theme=theme) + RichStyle(bold=True)),
-    ]
+    rows: list[RenderableType] = []
     if report.scope:
-        rows += [blank, Text(report.scope, style=tui_rich_style("dim", theme=theme))]
-    rows += [blank, _summary_line(counts, theme)]
+        rows += [Text(report.scope, style=tui_rich_style("dim", theme=theme)), blank]
+    rows.append(_summary_line(counts, theme))
 
     for severity in _SEVERITY_ORDER:
         group = [f for f in report.findings if f.severity == severity]
@@ -198,9 +204,16 @@ def render_report(report: Report, *, theme: ThemeName | None = None) -> Renderab
             Text(report.note, style=tui_rich_style("muted", theme=theme)),
         ]
 
-    # One column of left breathing room; vertical roominess comes from the
-    # blank rows between sections and findings.
-    return Padding(Group(*rows), (0, 0, 0, 1))
+    title = Text(report.title, style=tui_rich_style("text", theme=theme) + RichStyle(bold=True))
+    return Panel(
+        Group(*rows),
+        title=title,
+        title_align="left",
+        border_style=border,
+        box=box.ROUNDED,
+        padding=REPORT_PANEL_PADDING,
+        expand=True,
+    )
 
 
 def parse_report_block(payload: str) -> Report | None:

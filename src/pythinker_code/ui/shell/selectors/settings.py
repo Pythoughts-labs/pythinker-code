@@ -10,6 +10,12 @@ from __future__ import annotations
 from typing import Any, cast
 
 from pythinker_code.config import Config
+from pythinker_code.llm import derive_model_capabilities
+from pythinker_code.thinking import (
+    EXTENDED_THINKING_LEVELS,
+    effective_config_thinking_effort,
+    model_uses_native_thinking,
+)
 from pythinker_code.ui.shell.components.settings_list import (
     SettingItem,
     SettingsListConfig,
@@ -44,6 +50,35 @@ def _build_settings_config(config: Config) -> SettingsListConfig:
     """Build the settings-list config from a Pythinker ``Config`` object."""
     model_values = [_NONE_MODEL_VALUE, *sorted(config.models)]
     current_model = config.default_model or _NONE_MODEL_VALUE
+    current_model_cfg = config.models.get(config.default_model) if config.default_model else None
+    default_model_uses_native_thinking = bool(
+        current_model_cfg
+        and model_uses_native_thinking(derive_model_capabilities(current_model_cfg))
+    )
+    default_thinking_value = (
+        "native reasoning"
+        if default_model_uses_native_thinking
+        else effective_config_thinking_effort(
+            config.default_thinking, config.default_thinking_effort
+        )
+    )
+    default_thinking_values = (
+        None
+        if default_model_uses_native_thinking
+        else (
+            "off",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+        )
+    )
+    default_thinking_description = (
+        "Current default model uses built-in reasoning; no effort toggle is available."
+        if default_model_uses_native_thinking
+        else "Default reasoning effort for thinking-capable models."
+    )
 
     items = [
         SettingItem(
@@ -79,12 +114,9 @@ def _build_settings_config(config: Config) -> SettingsListConfig:
         SettingItem(
             id="default_thinking",
             label="Default thinking",
-            description=(
-                "Default reasoning mode. Pythinker currently persists this as bool, "
-                "so settings exposes off/high only."
-            ),
-            current_value="high" if config.default_thinking else "off",
-            values=("off", "high"),
+            description=default_thinking_description,
+            current_value=default_thinking_value,
+            values=default_thinking_values,
         ),
         SettingItem(
             id="show_thinking_stream",
@@ -267,9 +299,12 @@ def apply_settings_changes(config: Config, changes: dict[str, str]) -> list[str]
                     config.default_model = model
                     mark(setting_id)
             case "default_thinking":
+                if value not in EXTENDED_THINKING_LEVELS:
+                    continue
                 enabled = value != "off"
-                if config.default_thinking != enabled:
+                if config.default_thinking != enabled or config.default_thinking_effort != value:
                     config.default_thinking = enabled
+                    config.default_thinking_effort = value
                     mark(setting_id)
             case "show_thinking_stream":
                 new = value == "true"

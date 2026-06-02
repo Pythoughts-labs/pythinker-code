@@ -23,6 +23,7 @@ def test_default_config_dump():
         {
             "default_model": "",
             "default_thinking": False,
+            "default_thinking_effort": None,
             "agent_execution_profile": "default",
             "default_yolo": False,
             "ask_user_question_policy": "ask_except_auto",
@@ -241,3 +242,8 @@ def test_load_config_compaction_trigger_ratio_too_low():
 def test_load_config_compaction_trigger_ratio_too_high():
     with pytest.raises(ConfigError, match="compaction_trigger_ratio"):
         load_config_from_string('{"loop_control": {"compaction_trigger_ratio": 1.0}}')
+
+
+def test_auto_deliberate_is_a_valid_policy() -> None:
+    c = Config(ask_user_question_policy="auto_deliberate")
+    assert c.ask_user_question_policy == "auto_deliberate"

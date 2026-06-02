@@ -102,13 +102,62 @@ async def test_shell_setup_routes_to_openai_api_key(monkeypatch):
     assert api_key.call_args.args[1] == "sk-test"
 
 
+def _configure_minimax(config: Config) -> None:
+    from pydantic import SecretStr
+
+    from pythinker_code.auth.minimax import MINIMAX_ANTHROPIC_PROVIDER_KEY
+    from pythinker_code.config import LLMProvider
+
+    config.providers[MINIMAX_ANTHROPIC_PROVIDER_KEY] = LLMProvider(
+        type="anthropic",
+        base_url="https://api.minimax.io/anthropic",
+        api_key=SecretStr("mx-saved"),
+    )
+
+
+def test_provider_status_reflects_saved_provider_key():
+    config = Config(is_from_default_location=True)
+    assert shell_oauth._get_provider_status(config, "minimax").source == "unconfigured"
+    _configure_minimax(config)
+    assert shell_oauth._get_provider_status(config, "minimax").source == "configured"
+    assert shell_oauth._get_provider_status(config, "deepseek").source == "unconfigured"
+
+
 @pytest.mark.asyncio
-async def test_shell_logout_routes_to_openai_logout(monkeypatch):
+async def test_shell_logout_no_args_opens_selector(monkeypatch):
+    app = _app()
+    _configure_minimax(app.soul.runtime.config)
+    logout = Mock(side_effect=_success_event)
+    monkeypatch.setattr(shell_oauth, "logout_minimax", logout, raising=False)
+    monkeypatch.setattr(shell_oauth, "run_oauth_selector", lambda *a, **kw: _async_value("minimax"))
+
+    with pytest.raises(Reload):
+        await cast(Any, shell_oauth.logout)(app, "")
+
+    assert logout.called
+
+
+@pytest.mark.asyncio
+async def test_shell_logout_no_args_without_providers_returns_silently(monkeypatch):
+    logout = Mock(side_effect=_success_event)
+    monkeypatch.setattr(shell_oauth, "logout_openai", logout, raising=False)
+    selector = Mock()
+    monkeypatch.setattr(shell_oauth, "run_oauth_selector", selector)
+
+    # Nothing is logged in: must not open the selector and must not log anyone out.
+    await cast(Any, shell_oauth.logout)(_app(), "")
+
+    assert not selector.called
+    assert not logout.called
+
+
+@pytest.mark.asyncio
+async def test_shell_logout_openai_routes_to_openai_logout(monkeypatch):
     logout = Mock(side_effect=_success_event)
     monkeypatch.setattr(shell_oauth, "logout_openai", logout, raising=False)
 
     with pytest.raises(Reload):
-        await cast(Any, shell_oauth.logout)(_app(), "")
+        await cast(Any, shell_oauth.logout)(_app(), "openai")
 
     assert logout.called
 

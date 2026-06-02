@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 from prompt_toolkit.completion import Completion
 
+from pythinker_code.llm import ModelCapability
 from pythinker_code.soul import StatusSnapshot
 from pythinker_code.ui.shell import prompt as shell_prompt
 from pythinker_code.ui.shell.prompt import (
@@ -72,6 +73,25 @@ def test_prompt_continuation_aligns_wrapped_input_with_text_start() -> None:
     )
 
     assert "".join(fragment[1] for fragment in fragments) == "  "
+
+
+def test_agent_input_text_keeps_default_color_when_thinking_changes() -> None:
+    prompt_session = object.__new__(CustomPromptSession)
+    prompt_session._mode = PromptMode.AGENT
+    prompt_session._thinking_effort = "high"
+    prompt_session._thinking = True
+
+    assert prompt_session._thinking_input_style() == "class:compact-input"
+    assert prompt_session._thinking_prompt_prefix_style() == "class:compact-input.prompt"
+
+
+def test_shell_input_keeps_default_compact_input_style() -> None:
+    prompt_session = object.__new__(CustomPromptSession)
+    prompt_session._mode = PromptMode.SHELL
+    prompt_session._thinking_effort = "high"
+    prompt_session._thinking = True
+
+    assert prompt_session._thinking_input_style() == "class:compact-input"
 
 
 def test_prompt_right_padding_margin_reserves_blank_edge_columns() -> None:
@@ -168,11 +188,17 @@ class _DummyReadOnlyModal:
         raise AssertionError("Should not be called in this test")
 
 
-def _make_toolbar_session(*, model_name: str | None = None, tips: list[str] | None = None) -> Any:
+def _make_toolbar_session(
+    *,
+    model_name: str | None = None,
+    model_capabilities: set[ModelCapability] | None = None,
+    tips: list[str] | None = None,
+) -> Any:
     """Build a minimal CustomPromptSession for toolbar rendering tests."""
     prompt_session = object.__new__(CustomPromptSession)
     prompt_session._mode = PromptMode.AGENT
     prompt_session._model_name = model_name
+    prompt_session._model_capabilities = model_capabilities or set()
     prompt_session._thinking = False
     prompt_session._status_provider = lambda: StatusSnapshot(context_usage=0.0)
     prompt_session._background_task_count_provider = None
@@ -245,7 +271,7 @@ def test_build_toolbar_tips_without_clipboard() -> None:
     assert _build_toolbar_tips(clipboard_available=False) == [
         "?: shortcuts",
         "ctrl+x: toggle mode",
-        "shift+tab: plan mode",
+        "shift+tab: change thinking effort",
         "!: shell command",
         "ctrl+o: editor",
         "ctrl+t: toggle todos",
@@ -260,7 +286,7 @@ def test_build_toolbar_tips_with_clipboard() -> None:
     assert _build_toolbar_tips(clipboard_available=True) == [
         "?: shortcuts",
         "ctrl+x: toggle mode",
-        "shift+tab: plan mode",
+        "shift+tab: change thinking effort",
         "!: shell command",
         "ctrl+o: editor",
         "ctrl+t: toggle todos",
@@ -270,6 +296,12 @@ def test_build_toolbar_tips_with_clipboard() -> None:
         "ctrl+v: paste clipboard",
         "@: mention files",
     ]
+
+
+def test_working_spinner_tip_mentions_thinking_effort_shortcut() -> None:
+    from pythinker_code.ui.shell.tips import current_tip
+
+    assert current_tip(0) == "Shift+Tab changes thinking effort levels"
 
 
 # ── _display_width ─────────────────────────────────────────────────────────────
@@ -567,7 +599,39 @@ def test_card_toolbar_agent_label_is_light_and_context_is_muted(monkeypatch: Any
     fragments = list(prompt_session._render_bottom_toolbar())
 
     assert (f"fg:{tokens.muted}", "context: 0.0%") in fragments
-    assert (f"fg:{tokens.text or tokens.activity_label}", "agent fast-model ○") in fragments
+    assert (
+        f"fg:{tokens.text or tokens.activity_label}",
+        "agent fast-model • thinking off",
+    ) in fragments
+
+
+def test_card_toolbar_separator_matches_thinking_prompt_color(monkeypatch: Any) -> None:
+    from pythinker_code.ui.theme import set_active_theme, thinking_frame_style
+
+    prompt_session = _make_toolbar_session(model_name="fast-model", tips=[])
+    prompt_session._thinking = True
+    prompt_session._thinking_effort = "xhigh"
+
+    class _DummyOutput:
+        @staticmethod
+        def get_size() -> Any:
+            return SimpleNamespace(columns=120)
+
+    set_active_theme("dark")
+    monkeypatch.setenv("PYTHINKER_TUI_STYLE", "card")
+    monkeypatch.setattr(
+        shell_prompt, "get_app_or_none", lambda: SimpleNamespace(output=_DummyOutput())
+    )
+    monkeypatch.setattr(shell_prompt, "_get_git_branch", lambda: None)
+    monkeypatch.setattr(shell_prompt, "_shorten_cwd", lambda _: "~/proj")
+    monkeypatch.setattr("pythinker_code.extensions.footer_statuses", lambda: {})
+
+    fragments = list(prompt_session._render_bottom_toolbar())
+
+    assert fragments[0] == (
+        thinking_frame_style("xhigh", theme="dark"),
+        shell_prompt._prompt_rule(120),
+    )
 
 
 def test_bottom_toolbar_drops_agent_badge_before_bash_when_narrow(monkeypatch: Any) -> None:
@@ -588,12 +652,27 @@ def test_bottom_toolbar_drops_agent_badge_before_bash_when_narrow(monkeypatch: A
 
 
 def test_mode_shows_full_with_model_name_on_wide_terminal(monkeypatch: Any) -> None:
-    """On a wide terminal the full mode string (with model name and thinking dot) is shown."""
+    """On a wide terminal the full mode string includes model and thinking effort."""
     session = _make_toolbar_session(model_name="fast-model")
     session._thinking = False
     lines = _render_toolbar_lines(session, 80, monkeypatch)
     assert "fast-model" in lines[1], f"model name missing on wide terminal: {lines[1]!r}"
-    assert "○" in lines[1], f"thinking dot missing on wide terminal: {lines[1]!r}"
+    assert "thinking off" in lines[1], f"thinking effort missing on wide terminal: {lines[1]!r}"
+
+
+def test_native_reasoning_model_does_not_show_thinking_off(monkeypatch: Any) -> None:
+    session = _make_toolbar_session(
+        model_name="MiniMax M2.7",
+        model_capabilities={"always_thinking"},
+    )
+    session._thinking = False
+    session._thinking_effort = "off"
+
+    lines = _render_toolbar_lines(session, 100, monkeypatch)
+
+    assert "MiniMax M2.7" in lines[1]
+    assert "native reasoning" in lines[1]
+    assert "thinking off" not in lines[1]
 
 
 def test_toolbar_mode_is_light_and_secondary_text_is_muted(monkeypatch: Any) -> None:
@@ -604,15 +683,18 @@ def test_toolbar_mode_is_light_and_secondary_text_is_muted(monkeypatch: Any) -> 
     session = _make_toolbar_session(model_name="fast-model", tips=["?: shortcuts"])
     fragments = _render_toolbar_fragments(session, 120, monkeypatch)
 
-    assert (f"fg:{tokens.text or tokens.activity_label}", "agent (fast-model ○)") in fragments
+    assert (
+        f"fg:{tokens.text or tokens.activity_label}",
+        "agent (fast-model • thinking off)",
+    ) in fragments
     assert (f"fg:{tokens.muted} bold", "?") in fragments
     assert (f"fg:{tokens.muted}", ": shortcuts") in fragments
 
 
 def test_mode_drops_model_name_on_narrow_terminal(monkeypatch: Any) -> None:
     """On a terminal too narrow for the full mode string, model name is dropped but
-    the thinking dot is still shown."""
-    # "agent (a-very-long-model-name-that-is-40-chars ○)" is ~50 cols;
+    the thinking effort is still shown."""
+    # "agent (a-very-long-model-name-that-is-40-chars • high)" is ~55 cols;
     # a 30-col terminal forces mid-level degradation.
     long_model = "a-very-long-model-name-that-is-40-chars"
     session = _make_toolbar_session(model_name=long_model)
@@ -621,7 +703,7 @@ def test_mode_drops_model_name_on_narrow_terminal(monkeypatch: Any) -> None:
     assert long_model not in lines[1], (
         f"model name should be dropped on 30-col terminal: {lines[1]!r}"
     )
-    assert "●" in lines[1], f"thinking dot should still appear at mid level: {lines[1]!r}"
+    assert "high" in lines[1], f"thinking effort should still appear at mid level: {lines[1]!r}"
     assert _display_width(lines[1]) <= 30
 
 
@@ -1036,7 +1118,9 @@ def test_prompt_buffer_window_can_grow_to_five_visible_rows() -> None:
     height = cast(shell_prompt.Dimension, buffer_window.height)
     assert height.min == 1
     assert height.max == 5
-    assert buffer_window.style == "class:compact-input"
+    style = buffer_window.style
+    assert callable(style)
+    assert cast(Callable[[], str], style)() == prompt_session._thinking_input_style()
 
 
 @pytest.mark.asyncio
@@ -1251,6 +1335,12 @@ def test_modal_prompt_suspends_and_restores_existing_draft_when_input_is_hidden(
     assert prompt_session._suspended_buffer_document is None
 
 
+def test_prompt_rule_keeps_rightmost_column_clear() -> None:
+    assert shell_prompt._prompt_rule(0) == ""
+    assert shell_prompt._prompt_rule(1) == ""
+    assert shell_prompt._prompt_rule(8) == "─" * 7
+
+
 def test_idle_agent_prompt_uses_same_codex_input_layout(monkeypatch: Any) -> None:
     width = 64
     prompt_session = object.__new__(CustomPromptSession)
@@ -1269,7 +1359,9 @@ def test_idle_agent_prompt_uses_same_codex_input_layout(monkeypatch: Any) -> Non
 
     rendered_message = prompt_session._render_agent_prompt_message()
     plain_message = "".join(fragment[1] for fragment in rendered_message)
-    assert plain_message == f"{'─' * width}\n  ❯ "
+    # Keep the rightmost terminal column clear. Full-width prompt-toolkit chrome
+    # is prone to resize artifacts in non-fullscreen prompts.
+    assert plain_message == f"{'─' * (width - 1)}\n  ❯ "
     assert "input" not in plain_message
 
 

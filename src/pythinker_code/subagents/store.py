@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from pydantic import BaseModel, ValidationError
+from pythinker_core.chat_provider import ThinkingEffort
 
 from pythinker_code.session import Session
 from pythinker_code.subagents.models import AgentInstanceRecord, AgentLaunchSpec, SubagentStatus
@@ -20,6 +21,7 @@ class _AgentLaunchSpecPayload(BaseModel):
     model_override: str | None
     effective_model: str | None
     thinking: bool | None = None
+    thinking_effort: ThinkingEffort | None = None
     variant: str | None = None
     parent_agent_id: str | None = None
     created_at: float
@@ -60,6 +62,7 @@ def _record_from_dict(data: dict[str, Any]) -> AgentInstanceRecord:
             model_override=payload.launch_spec.model_override,
             effective_model=payload.launch_spec.effective_model,
             thinking=payload.launch_spec.thinking,
+            thinking_effort=payload.launch_spec.thinking_effort,
             variant=payload.launch_spec.variant,
             parent_agent_id=payload.launch_spec.parent_agent_id,
             created_at=payload.launch_spec.created_at,

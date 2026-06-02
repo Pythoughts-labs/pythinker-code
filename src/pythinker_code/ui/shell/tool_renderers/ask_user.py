@@ -7,6 +7,7 @@ from typing import Any, cast
 from rich.console import Group, RenderableType
 from rich.text import Text
 
+from pythinker_code.ui.shell.spacing import blank_row
 from pythinker_code.ui.shell.tool_renderers import (
     ToolRenderContext,
     ToolRenderDefinition,
@@ -75,8 +76,10 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
         style_token="error" if ctx.is_error else "success" if ctx.has_result else "muted",
     )
 
-    children: list[RenderableType] = [header]
-    for q in qs[:2]:
+    children: list[RenderableType] = [header, blank_row()]
+    for index, q in enumerate(qs[:2]):
+        if index:
+            children.append(blank_row())
         question_text = as_str(q.get("question")) or ""
         if question_text:
             children.append(fg("accent", f"? {question_text}"))

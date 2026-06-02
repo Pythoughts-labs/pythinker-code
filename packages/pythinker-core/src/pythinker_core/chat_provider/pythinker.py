@@ -140,6 +140,8 @@ class Pythinker:
         if reasoning_effort is None:
             return None
         match reasoning_effort:
+            case "minimal":
+                return "minimal"
             case "low":
                 return "low"
             case "medium":
@@ -197,6 +199,8 @@ class Pythinker:
         match effort:
             case "off":
                 reasoning_effort = None
+            case "minimal":
+                reasoning_effort = "minimal"
             case "low":
                 reasoning_effort = "low"
             case "medium":

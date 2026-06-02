@@ -42,6 +42,7 @@ def build_active_llm(*, model_name: str | None = None) -> ReviewLLM | None:
     from pythinker_code.auth.oauth import OAuthManager
     from pythinker_code.config import LLMModel, LLMProvider, load_config
     from pythinker_code.llm import augment_provider_with_env_vars, create_llm, model_display_name
+    from pythinker_code.thinking import effective_config_thinking_effort
 
     config = load_config()
     selected = model_name or config.default_model
@@ -56,6 +57,10 @@ def build_active_llm(*, model_name: str | None = None) -> ReviewLLM | None:
         provider,
         model,
         thinking=config.default_thinking,
+        thinking_effort=effective_config_thinking_effort(
+            config.default_thinking,
+            config.default_thinking_effort,
+        ),
         session_id=None,
         oauth=OAuthManager(config),
     )

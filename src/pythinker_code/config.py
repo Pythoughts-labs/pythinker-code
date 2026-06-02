@@ -17,6 +17,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pythinker_core.chat_provider import ThinkingEffort
 from tomlkit.exceptions import TOMLKitError
 
 from pythinker_code.exception import ConfigError
@@ -352,6 +353,13 @@ class Config(BaseModel):
     )
     default_model: str = Field(default="", description="Default model to use")
     default_thinking: bool = Field(default=False, description="Default thinking mode")
+    default_thinking_effort: ThinkingEffort | None = Field(
+        default=None,
+        description=(
+            "Default thinking effort level. When unset, default_thinking=true maps to high "
+            "and default_thinking=false maps to off for backward compatibility."
+        ),
+    )
     agent_execution_profile: AgentExecutionProfile = Field(
         default="default",
         description=(
@@ -360,12 +368,16 @@ class Config(BaseModel):
         ),
     )
     default_yolo: bool = Field(default=False, description="Default yolo (auto-approve) mode")
-    ask_user_question_policy: Literal["always", "ask_except_auto", "never"] = Field(
-        default="ask_except_auto",
-        description=(
-            "Controls AskUserQuestion behavior: always ask, ask except in auto mode, "
-            "or never pause and let the agent use best judgment."
-        ),
+    ask_user_question_policy: Literal["always", "ask_except_auto", "never", "auto_deliberate"] = (
+        Field(
+            default="ask_except_auto",
+            description=(
+                "Controls AskUserQuestion behavior: always ask, ask except in auto mode, "
+                "never pause (best judgment), or auto_deliberate (in auto mode, run an "
+                "advisor-assisted self-decision instead of dismissing, and bounce "
+                "destructive actions once for deliberation)."
+            ),
+        )
     )
     skip_auto_prompt_injection: bool = Field(
         default=False,
@@ -469,6 +481,11 @@ class Config(BaseModel):
             if "default_yolo" not in fields_set:
                 self.default_yolo = True
             if "ask_user_question_policy" not in fields_set:
+                # NOTE: spec §6 #1 proposes shifting this to "auto_deliberate", but
+                # that is only safe once the profile also enables auto mode (so
+                # AskUserQuestion's Entry A self-decision engages and never blocks a
+                # headless run waiting for an absent user). Until that auto-from-
+                # profile path exists, keep the robust "never" (always dismiss).
                 self.ask_user_question_policy = "never"
         elif profile == "plan_only":
             if "default_plan_mode" not in fields_set:

@@ -119,6 +119,8 @@ def thinking_effort_to_reasoning_effort(effort: ThinkingEffort) -> ReasoningEffo
     match effort:
         case "off":
             return None
+        case "minimal":
+            return "minimal"
         case "low":
             return "low"
         case "medium":
@@ -137,7 +139,9 @@ def thinking_effort_to_reasoning_effort(effort: ThinkingEffort) -> ReasoningEffo
 
 def reasoning_effort_to_thinking_effort(effort: ReasoningEffort) -> ThinkingEffort:
     match effort:
-        case "low" | "minimal":
+        case "minimal":
+            return "minimal"
+        case "low":
             return "low"
         case "medium":
             return "medium"

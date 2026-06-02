@@ -99,6 +99,35 @@ def test_build_settings_config_model_values_include_config_models():
     assert "beta" in item.values
 
 
+def test_build_settings_config_labels_native_reasoning_as_read_only():
+    config = Config(
+        providers={
+            "p": LLMProvider(
+                type="anthropic",
+                base_url="https://example.test",
+                api_key=SecretStr("k"),
+            )
+        },
+        models={
+            "minimax/m2.7": LLMModel(
+                provider="p",
+                model="MiniMax-M2.7",
+                max_context_size=192_000,
+                capabilities={"always_thinking"},
+            ),
+        },
+        default_model="minimax/m2.7",
+        default_thinking=False,
+        default_thinking_effort="off",
+    )
+
+    settings = _build_settings_config(config)
+    item = next(item for item in settings.items if item.id == "default_thinking")
+
+    assert item.current_value == "native reasoning"
+    assert item.values is None
+
+
 def test_apply_settings_changes_mutates_config():
     config = Config()
 

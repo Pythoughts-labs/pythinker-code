@@ -7,6 +7,8 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from pythinker_core.chat_provider import ThinkingEffort
+
 from pythinker_code.hooks.engine import HookEngine
 from pythinker_code.utils.aioqueue import QueueShutDown
 from pythinker_code.utils.logging import logger
@@ -123,6 +125,11 @@ class Soul(Protocol):
         Whether thinking mode is currently enabled.
         None if LLM is not set or thinking mode is not set explicitly.
         """
+        ...
+
+    @property
+    def thinking_effort(self) -> ThinkingEffort | None:
+        """Current thinking effort level, if known."""
         ...
 
     @property

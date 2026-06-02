@@ -29,6 +29,7 @@ def test_minimax_model_catalog_contains_four_current_models():
     }
 
     assert all(m.provider_key == "managed:minimax-anthropic" for m in MINIMAX_MODELS)
+    assert all(m.capabilities == {"always_thinking"} for m in MINIMAX_MODELS)
 
 
 def test_minimax_env_key_uses_minimax_api_key(monkeypatch):
@@ -62,6 +63,7 @@ def test_apply_minimax_config_writes_provider_and_default():
     assert provider.api_key.get_secret_value() == "mx-test"
     assert config.models["minimax/m2.7"].provider == MINIMAX_ANTHROPIC_PROVIDER_KEY
     assert config.models["minimax/m2.7"].model == "MiniMax-M2.7"
+    assert config.models["minimax/m2.7"].capabilities == {"always_thinking"}
     assert config.default_model == "minimax/m2.7"
 
 
@@ -195,6 +197,7 @@ async def test_login_minimax_uses_discovered_context_length(monkeypatch, tmp_pat
 
     assert events[-1].type == "success"
     assert config.models["minimax/m2.7"].max_context_size == 512_000
+    assert config.models["minimax/m2.7"].capabilities == {"always_thinking"}
 
 
 @pytest.mark.asyncio

@@ -33,6 +33,7 @@ from pythinker_code.auth.platforms import (
 )
 from pythinker_code.config import Config, LLMModel, LLMProvider, OAuthRef, save_config
 from pythinker_code.constant import USER_AGENT
+from pythinker_code.thinking import apply_login_thinking_defaults
 from pythinker_code.utils.aiohttp import new_client_session
 
 OPENAI_API_BASE_URL = "https://api.openai.com/v1"
@@ -412,7 +413,7 @@ def _apply_openai_config(
         )
 
     config.default_model = managed_model_key(platform_id, selected_model.id)
-    config.default_thinking = thinking
+    apply_login_thinking_defaults(config, thinking=thinking, effort="high" if thinking else "off")
 
 
 async def _request_device_code() -> DeviceCode:

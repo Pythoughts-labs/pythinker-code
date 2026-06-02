@@ -178,7 +178,8 @@ class GoogleGenAI:
                 case "off":
                     # use default thinking config
                     pass
-                case "low":
+                case "minimal" | "low":
+                    # Gemini has no 'minimal'; map to its lowest level.
                     thinking_config.thinking_level = ThinkingLevel.LOW
                 case "medium":
                     # FIXME: medium not supported yet, use high
@@ -191,7 +192,8 @@ class GoogleGenAI:
                 case "off":
                     thinking_config.thinking_budget = 0
                     thinking_config.include_thoughts = False
-                case "low":
+                case "minimal" | "low":
+                    # Gemini has no 'minimal'; use its lowest thinking budget.
                     thinking_config.thinking_budget = 1024
                     thinking_config.include_thoughts = True
                 case "medium":

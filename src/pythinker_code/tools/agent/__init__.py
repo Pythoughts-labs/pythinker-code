@@ -374,6 +374,11 @@ class AgentTool(CallableTool2[Params]):
                         thinking=self._runtime.llm.thinking
                         if self._runtime.llm is not None
                         else None,
+                        thinking_effort=(
+                            self._runtime.llm.thinking_effort
+                            if self._runtime.llm is not None
+                            else None
+                        ),
                         parent_agent_id=self._runtime.subagent_id,
                     ),
                 )
@@ -457,6 +462,7 @@ class AgentTool(CallableTool2[Params]):
 def _run_agents_fingerprint(params: RunAgentsParams) -> str:
     payload = {
         "summary": params.summary,
+        "base_prompt": params.base_prompt,
         "agent_count": len(params.agents),
         "agent_names": [agent.name for agent in params.agents],
         "subagent_types": [agent.subagent_type or "coder" for agent in params.agents],

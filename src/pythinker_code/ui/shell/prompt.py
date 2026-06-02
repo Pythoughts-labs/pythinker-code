@@ -64,6 +64,7 @@ from pythinker_host.path import HostPath
 from pythinker_code.llm import ModelCapability
 from pythinker_code.share import get_share_dir
 from pythinker_code.soul import StatusSnapshot, format_context_status
+from pythinker_code.thinking import model_uses_native_thinking
 from pythinker_code.tools.display import TodoDisplayItem
 from pythinker_code.ui.shell import placeholders as prompt_placeholders
 from pythinker_code.ui.shell.console import console
@@ -80,7 +81,7 @@ from pythinker_code.ui.shell.placeholders import (
 )
 from pythinker_code.ui.shell.spacing import ensure_prompt_newline
 from pythinker_code.ui.shell.spinner_words import spinner_message
-from pythinker_code.ui.theme import get_prompt_style, get_toolbar_colors
+from pythinker_code.ui.theme import get_prompt_style, get_toolbar_colors, thinking_frame_style
 from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
 from pythinker_code.ui.tui_config import is_card_style
 from pythinker_code.utils.clipboard import (
@@ -314,6 +315,17 @@ def _card_side_padding() -> int:
 
 def _card_side_indent() -> str:
     return " " * _card_side_padding()
+
+
+def _prompt_rule(columns: int) -> str:
+    """Return a prompt-toolkit-safe horizontal rule for the current terminal width.
+
+    prompt_toolkit can leave resize artifacts when non-fullscreen prompts draw
+    visible content through the last terminal column; full-width bottom bars make
+    the duplicated prompt spam especially obvious. Keep the rightmost column
+    blank for prompt-owned chrome while still visually reading as a full rule.
+    """
+    return "─" * max(0, columns - 1)
 
 
 def _truncate_to_width(text: str, width: int) -> str:
@@ -1803,7 +1815,7 @@ def _build_toolbar_tips(clipboard_available: bool) -> list[str]:
     tips = [
         _tip("app.prompt.help", "?", "shortcuts"),
         _tip("app.mode.toggle", "ctrl-x", "toggle mode"),
-        _tip("app.plan.toggle", "shift-tab", "plan mode"),
+        _tip("app.thinking.cycle", "shift-tab", "change thinking effort"),
         _tip("app.shell.oneshot", "!", "shell command"),
         _tip("app.editor.external", "ctrl-o", "editor"),
         _tip("app.todos.toggle", "ctrl-t", "toggle todos"),
@@ -1831,10 +1843,12 @@ class CustomPromptSession:
         model_capabilities: set[ModelCapability],
         model_name: str | None,
         thinking: bool,
-        agent_mode_slash_commands: Sequence[SlashCommand[Any]],
+        thinking_effort: str | None = None,
+        agent_mode_slash_commands: Sequence[SlashCommand[Any]] = (),
         shell_mode_slash_commands: Sequence[SlashCommand[Any]],
         editor_command_provider: Callable[[], str] = lambda: "",
         plan_mode_toggle_callback: Callable[[], Awaitable[bool]] | None = None,
+        thinking_effort_cycle_callback: Callable[[], Awaitable[str | None]] | None = None,
         history_enabled: bool = True,
     ) -> None:
         history_dir = get_share_dir() / "user-history"
@@ -1854,11 +1868,13 @@ class CustomPromptSession:
         self._background_task_count_provider = background_task_count_provider
         self._editor_command_provider = editor_command_provider
         self._plan_mode_toggle_callback = plan_mode_toggle_callback
+        self._thinking_effort_cycle_callback = thinking_effort_cycle_callback
         self._model_capabilities = model_capabilities
         self._model_name = model_name
         self._last_history_content: str | None = None
         self._mode: PromptMode = PromptMode.AGENT
         self._thinking = thinking
+        self._thinking_effort = thinking_effort or ("high" if thinking else "off")
         self._placeholder_manager = PromptPlaceholderManager()
         # Keep the old attribute for test compatibility and for any external imports.
         self._attachment_cache = self._placeholder_manager.attachment_cache
@@ -1984,24 +2000,41 @@ class CustomPromptSession:
 
         @_kb.add("s-tab", eager=True)
         def _(event: KeyPressEvent) -> None:
-            """Toggle plan mode with Shift+Tab."""
+            """Cycle thinking effort with Shift+Tab."""
             if self._active_prompt_delegate() is not None:
                 return
-            if self._plan_mode_toggle_callback is not None:
+            if self._thinking_effort_cycle_callback is not None:
 
-                async def _toggle() -> None:
-                    assert self._plan_mode_toggle_callback is not None
-                    new_state = await self._plan_mode_toggle_callback()
+                async def _cycle() -> None:
+                    assert self._thinking_effort_cycle_callback is not None
+                    new_level = await self._thinking_effort_cycle_callback()
                     from pythinker_code.telemetry import track
 
-                    track("shortcut_plan_toggle", enabled=new_state)
-                    if new_state:
-                        toast("plan mode ON", topic="plan_mode", duration=3.0, immediate=True)
+                    if new_level is None:
+                        message = (
+                            "Current model uses native reasoning"
+                            if self._uses_native_thinking()
+                            else "Current model does not support thinking"
+                        )
+                        toast(
+                            message,
+                            topic="thinking_level",
+                            duration=3.0,
+                            immediate=True,
+                        )
                     else:
-                        toast("plan mode OFF", topic="plan_mode", duration=3.0, immediate=True)
+                        self._thinking_effort = new_level
+                        self._thinking = new_level != "off"
+                        track("shortcut_thinking_cycle", level=new_level)
+                        toast(
+                            f"Thinking level: {new_level}",
+                            topic="thinking_level",
+                            duration=3.0,
+                            immediate=True,
+                        )
                     event.app.invalidate()
 
-                event.app.create_background_task(_toggle())
+                event.app.create_background_task(_cycle())
             event.app.invalidate()
 
         @_kb.add("escape", "enter", eager=True)
@@ -2365,7 +2398,7 @@ class CustomPromptSession:
             buffer_window = buffer_container.content
             buffer_window.height = Dimension(min=1, max=5)
             buffer_window.dont_extend_height = Condition(lambda: True)
-            buffer_window.style = "class:compact-input"
+            buffer_window.style = self._thinking_input_style
             buffer_window.right_margins = [
                 *buffer_window.right_margins,
                 _PromptRightPaddingMargin(self._input_right_padding),
@@ -2389,6 +2422,39 @@ class CustomPromptSession:
     def _input_right_padding(self) -> int:
         return _INPUT_RIGHT_PADDING
 
+    def _current_thinking_effort(self) -> str:
+        return getattr(self, "_thinking_effort", None) or (
+            "high" if getattr(self, "_thinking", False) else "off"
+        )
+
+    def _thinking_input_style(self) -> str:
+        """Keep typed input text on the normal prompt color, independent of thinking effort."""
+        return "class:compact-input"
+
+    def _thinking_prompt_prefix_style(self) -> str:
+        """Keep the prompt marker on the normal prompt color, independent of thinking effort."""
+        return "class:compact-input.prompt"
+
+    def _uses_native_thinking(self) -> bool:
+        return model_uses_native_thinking(getattr(self, "_model_capabilities", None))
+
+    def _prompt_separator_style(self, fallback: str) -> str:
+        if getattr(self, "_mode", PromptMode.AGENT) != PromptMode.AGENT:
+            return fallback
+        level = "high" if self._uses_native_thinking() else self._current_thinking_effort()
+        return thinking_frame_style(level) or fallback
+
+    def _thinking_footer_label(self) -> str:
+        if self._uses_native_thinking():
+            return "native reasoning"
+        level = self._current_thinking_effort()
+        return "thinking off" if level == "off" else level
+
+    def _mode_model_thinking_label(self) -> str:
+        if not self._model_name:
+            return str(self._mode)
+        return f"{self._mode} {self._model_name} • {self._thinking_footer_label()}"
+
     def _render_prompt_continuation(
         self,
         width: int,
@@ -2397,7 +2463,7 @@ class CustomPromptSession:
     ) -> FormattedText:
         """Indent wrapped input rows to the same column as the first text row."""
         del line_number, is_soft_wrap
-        return FormattedText([("class:compact-input", " " * max(0, width))])
+        return FormattedText([(self._thinking_input_style(), " " * max(0, width))])
 
     def _render_message(self) -> FormattedText:
         if self._mode == PromptMode.SHELL:
@@ -2442,7 +2508,7 @@ class CustomPromptSession:
         if is_card_style():
             ensure_prompt_newline(fragments)
             tc = get_toolbar_colors()
-            fragments.append((tc.separator, "─" * columns))
+            fragments.append((tc.separator, _prompt_rule(columns)))
             fragments.append(("", "\n"))
         elif preamble:
             fragments.append(("", "\n"))
@@ -2649,12 +2715,12 @@ class CustomPromptSession:
         if is_card_style():
             ensure_prompt_newline(fragments)
             tc = get_toolbar_colors()
-            fragments.append((tc.separator, "─" * columns))
+            fragments.append((self._prompt_separator_style(tc.separator), _prompt_rule(columns)))
             fragments.append(("", "\n"))
             fragments.append(("", _card_side_indent()))
         else:
             fragments.append(("", "\n"))
-        fragments.append(("class:compact-input.prompt", f"{PROMPT_SYMBOL_AGENT_INPUT} "))
+        fragments.append((self._thinking_prompt_prefix_style(), f"{PROMPT_SYMBOL_AGENT_INPUT} "))
         return fragments
 
     def _render_shortcut_help(self, columns: int) -> FormattedText:
@@ -2668,7 +2734,7 @@ class CustomPromptSession:
         help_ids = {
             "app.prompt.help",
             "app.mode.toggle",
-            "app.plan.toggle",
+            "app.thinking.cycle",
             "app.shell.oneshot",
             "app.editor.external",
             "app.prompt.newline",
@@ -3226,7 +3292,7 @@ class CustomPromptSession:
         fragments: list[tuple[str, str]] = []
         tc = get_toolbar_colors()
 
-        fragments.append((tc.separator, "─" * columns))
+        fragments.append((self._prompt_separator_style(tc.separator), _prompt_rule(columns)))
         fragments.append(("", "\n"))
 
         remaining = columns
@@ -3257,14 +3323,14 @@ class CustomPromptSession:
         secondary_style = f"fg:{tokens.muted}"
         mode = str(self._mode)
         if self._mode == PromptMode.AGENT and self._model_name:
-            thinking_dot = TRANSCRIPT_ACTIVE_MARKER if self._thinking else "○"
-            mode_full = f"{mode} ({self._model_name} {thinking_dot})"
-            mode_mid = f"{mode} {thinking_dot}"
+            thinking_label = self._thinking_footer_label()
+            mode_full = f"{mode} ({self._model_name} • {thinking_label})"
+            mode_mid = f"{mode} {thinking_label}"
             if _display_width(mode_full) <= remaining - 2:
                 mode = mode_full
             elif _display_width(mode_mid) <= remaining - 2:
                 mode = mode_mid
-            # else: keep bare mode name — model_name and dot are both dropped
+            # else: keep bare mode name — model_name and thinking label are both dropped
         fragments.extend([(mode_style, mode), ("", "  ")])
         remaining -= _display_width(mode) + 2
 
@@ -3368,7 +3434,7 @@ class CustomPromptSession:
         mode_style = f"fg:{tokens.text or tokens.activity_label}"
         secondary_style = f"fg:{tokens.muted}"
 
-        fragments.append((tc.separator, "─" * columns))
+        fragments.append((self._prompt_separator_style(tc.separator), _prompt_rule(columns)))
         fragments.append(("", "\n"))
 
         # ── line 1: cwd + git + status flags ───────────────────────────────
@@ -3427,9 +3493,7 @@ class CustomPromptSession:
             )
             _append_right(secondary_style, ctx_compact)
         if self._model_name:
-            thinking_dot = TRANSCRIPT_ACTIVE_MARKER if self._thinking else "○"
-            mode = str(self._mode)
-            _append_right(mode_style, f"{mode} {self._model_name} {thinking_dot}")
+            _append_right(mode_style, self._mode_model_thinking_label())
         right_text = "  ".join(right_parts)
         right_width = _display_width(right_text)
         if right_width > columns:

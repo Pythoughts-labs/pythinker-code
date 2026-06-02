@@ -22,14 +22,16 @@ from pythinker_core.contrib.chat_provider.openai_legacy import OpenAILegacy
 class TestThinkingEffortMapping:
     """OpenAI's reasoning_effort accepts: none, minimal, low, medium, high, xhigh
     (xhigh added for models after gpt-5.1-codex-max). Pythinker Core's ThinkingEffort
-    is: off, low, medium, high, xhigh, max. The bidirectional mapping must
-    preserve xhigh round-trip and clamp max sensibly.
+    is: off, minimal, low, medium, high, xhigh, max. The bidirectional mapping must
+    preserve the minimal and xhigh round-trips and clamp max sensibly.
     """
 
     @pytest.mark.parametrize(
         "thinking_effort,expected_reasoning",
         [
             ("off", None),
+            # OpenAI supports minimal natively — first-class round-trip.
+            ("minimal", "minimal"),
             ("low", "low"),
             ("medium", "medium"),
             ("high", "high"),
@@ -56,7 +58,8 @@ class TestThinkingEffortMapping:
         [
             (None, "off"),
             ("none", "off"),
-            ("minimal", "low"),
+            # OpenAI supports minimal natively — first-class round-trip.
+            ("minimal", "minimal"),
             ("low", "low"),
             ("medium", "medium"),
             ("high", "high"),

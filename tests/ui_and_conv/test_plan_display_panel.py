@@ -24,7 +24,7 @@ def test_plan_display_uses_worklog_plan_title(monkeypatch):
         return panel
 
     monkeypatch.setattr(_live_view, "render_worklog_card", fake_render_worklog_card)
-    monkeypatch.setattr(_live_view.console, "print", printed.append)
+    monkeypatch.setattr(_live_view.console, "print", lambda *args, **kwargs: printed.extend(args))
     view = _live_view._LiveView(StatusUpdate())
 
     view.display_plan(PlanDisplay(content="# Steps\n\n- Step one", file_path="plans/one.md"))
@@ -32,6 +32,9 @@ def test_plan_display_uses_worklog_plan_title(monkeypatch):
     assert card_call["title"] == "Plan"
     assert card_call["subtitle"] == "plans/one.md"
     assert card_call["border_style"] == tui_rich_style("border")
+    # _print_action_block emits a leading blank line (zero-arg console.print())
+    # before the panel; only positional args are captured, so printed holds the
+    # panel alone.
     assert printed == [card_call["panel"]]
 
     console = Console(record=True, width=120, color_system=None)

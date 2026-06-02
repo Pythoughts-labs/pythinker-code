@@ -175,6 +175,11 @@ def _clamp_effort(effort: "ThinkingEffort", model: str) -> "ThinkingEffort":
         return effort
     if effort in _supported_efforts(model):
         return effort
+    if effort == "minimal":
+        # Anthropic has no 'minimal' effort; 'low' is the floor of every
+        # _supported_efforts() set. Map down to it rather than clamping up to
+        # 'high', which would request a far larger budget than the user asked for.
+        return "low"
     return "high"
 
 

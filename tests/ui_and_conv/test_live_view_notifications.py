@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pythinker_core.message import ToolCall
 from pythinker_core.tooling import ToolResult, ToolReturnValue
-from rich.console import Console
+from rich.console import Console, Group
 
 from pythinker_code.tools.display import TodoDisplayBlock, TodoDisplayItem
 from pythinker_code.ui.shell.console import console as shell_console
@@ -10,6 +10,7 @@ from pythinker_code.ui.shell.keyboard import KeyEvent
 from pythinker_code.ui.shell.visualize import _live_view as live_view_module
 from pythinker_code.ui.shell.visualize import _LiveView, _PromptLiveView
 from pythinker_code.wire.types import (
+    CompactionBegin,
     HookOutput,
     HookResolved,
     HookTriggered,
@@ -318,19 +319,31 @@ def test_prompt_live_view_keeps_non_background_task_notifications(monkeypatch):
 
 def test_live_view_prints_turn_recap_when_enabled(monkeypatch):
     printed = []
-    monkeypatch.setattr(
-        live_view_module.console, "print", lambda *args, **_kwargs: printed.extend(args)
-    )
+
+    def fake_print(*args, **_kwargs):
+        printed.append(args[0] if args else None)
+
+    monkeypatch.setattr(live_view_module.console, "print", fake_print)
 
     view = _LiveView(StatusUpdate(), show_turn_recaps=True)
     view.dispatch_wire_message(TurnBegin(user_input="implement recaps"))
-    view.dispatch_wire_message(TextPart(text="Implemented a /recap command."))
+    view.dispatch_wire_message(TextPart(text="Implemented a "))
+    view.dispatch_wire_message(TextPart(text="/recap command."))
     view.dispatch_wire_message(TurnEnd())
     view.cleanup(is_interrupt=False)
 
-    plain = "\n".join(getattr(item, "plain", str(item)) for item in printed)
+    plain = "\n".join(getattr(item, "plain", str(item)) for item in printed if item is not None)
     assert "※ recap: Implemented a /recap command." in plain
+    assert "Implemented a  /recap" not in plain
     assert "disable recaps in /settings" in plain
+
+    recap_index = next(
+        index
+        for index, item in enumerate(printed)
+        if item is not None and "※ recap:" in getattr(item, "plain", str(item))
+    )
+    assert printed[recap_index - 1] is None
+    assert printed[recap_index + 1] is None
 
 
 def test_cleanup_flushes_notifications_to_terminal_history(monkeypatch):
@@ -369,6 +382,15 @@ def test_cleanup_flushes_all_notifications_even_when_live_view_shows_only_latest
     rendered = "\n".join(_render(item) for item in printed)
     for index in range(1, 6):
         assert f"Background task completed: build project {index}" in rendered
+
+
+def test_compaction_status_keeps_one_blank_row_above_live_block():
+    view = _LiveView(StatusUpdate(context_tokens=221_300))
+
+    view.dispatch_wire_message(CompactionBegin())
+
+    rendered = _render(Group(*view.compose_agent_output(include_working_indicator=False)))
+    assert rendered.startswith("\n· Compacting conversation…")
 
 
 def test_compose_inserts_gap_under_agent_output_before_nonempty_status():

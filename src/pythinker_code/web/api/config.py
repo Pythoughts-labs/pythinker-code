@@ -6,6 +6,7 @@ import re as _re
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
+from pythinker_core.chat_provider import ThinkingEffort
 
 from pythinker_code.config import LLMModel, get_config_file, load_config, save_config
 from pythinker_code.llm import ProviderType, derive_model_capabilities
@@ -33,6 +34,10 @@ class GlobalConfig(BaseModel):
 
     default_model: str = Field(description="Current default model key")
     default_thinking: bool = Field(description="Current default thinking mode")
+    default_thinking_effort: ThinkingEffort | None = Field(
+        default=None,
+        description="Current default thinking effort level",
+    )
     models: list[ConfigModel] = Field(description="All configured models")
 
 
@@ -41,6 +46,10 @@ class UpdateGlobalConfigRequest(BaseModel):
 
     default_model: str | None = Field(default=None, description="New default model key")
     default_thinking: bool | None = Field(default=None, description="New default thinking mode")
+    default_thinking_effort: ThinkingEffort | None = Field(
+        default=None,
+        description="New default thinking effort level",
+    )
     restart_running_sessions: bool | None = Field(
         default=None, description="Whether to restart running sessions"
     )
@@ -109,6 +118,7 @@ def _build_global_config() -> GlobalConfig:
     return GlobalConfig(
         default_model=config.default_model,
         default_thinking=config.default_thinking,
+        default_thinking_effort=config.default_thinking_effort,
         models=models,
     )
 
@@ -152,9 +162,15 @@ async def update_global_config(
             )
         config.default_model = request.default_model
 
-    # Update default_thinking
-    if request.default_thinking is not None:
+    # Update thinking. The effort field is the source of truth: when provided
+    # (including an explicit "off") it wins, and default_thinking is derived from
+    # it. Otherwise fall back to the legacy bool and derive a sensible effort.
+    if request.default_thinking_effort is not None:
+        config.default_thinking_effort = request.default_thinking_effort
+        config.default_thinking = request.default_thinking_effort != "off"
+    elif request.default_thinking is not None:
         config.default_thinking = request.default_thinking
+        config.default_thinking_effort = "high" if request.default_thinking else "off"
 
     # Save config
     save_config(config)

@@ -13,27 +13,34 @@ from pythinker_code.auth import (
     LM_STUDIO_PLATFORM_ID,
     MINIMAX_PLATFORM_ID,
     OLLAMA_PLATFORM_ID,
+    OPENAI_API_PLATFORM_ID,
+    OPENAI_CHATGPT_PLATFORM_ID,
     OPENCODE_GO_PLATFORM_ID,
     OPENROUTER_PLATFORM_ID,
 )
 from pythinker_code.auth.anthropic_direct import (
+    ANTHROPIC_PROVIDER_KEY,
     login_anthropic_api_key,
     logout_anthropic,
 )
 from pythinker_code.auth.deepseek import (
+    DEEPSEEK_PROVIDER_KEY,
     login_deepseek_api_key,
     logout_deepseek,
 )
 from pythinker_code.auth.lm_studio import (
+    LM_STUDIO_PROVIDER_KEY,
     login_lm_studio,
     logout_lm_studio,
 )
 from pythinker_code.auth.minimax import (
+    MINIMAX_ANTHROPIC_PROVIDER_KEY,
     login_minimax_api_key,
     logout_minimax,
 )
 from pythinker_code.auth.oauth import OAuthEvent
 from pythinker_code.auth.ollama import (
+    OLLAMA_PROVIDER_KEY,
     login_ollama,
     logout_ollama,
 )
@@ -44,13 +51,17 @@ from pythinker_code.auth.openai import (
     logout_openai,
 )
 from pythinker_code.auth.opencode_go import (
+    OPENCODE_GO_ANTHROPIC_PROVIDER_KEY,
+    OPENCODE_GO_OPENAI_PROVIDER_KEY,
     login_opencode_go_api_key,
     logout_opencode_go,
 )
 from pythinker_code.auth.openrouter import (
+    OPENROUTER_PROVIDER_KEY,
     login_openrouter_api_key,
     logout_openrouter,
 )
+from pythinker_code.auth.platforms import managed_provider_key
 from pythinker_code.cli import Reload
 from pythinker_code.ui.shell.console import console
 from pythinker_code.ui.shell.selectors.oauth import (
@@ -62,6 +73,7 @@ from pythinker_code.ui.shell.slash import ensure_pythinker_soul, registry
 from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
 
 if TYPE_CHECKING:
+    from pythinker_code.config import Config
     from pythinker_code.soul.pythinkersoul import PythinkerSoul
     from pythinker_code.ui.shell import Shell
 
@@ -121,7 +133,45 @@ _SELECTOR_PROVIDER_ENTRIES: list[OAuthProviderEntry] = [
 ]
 
 
-def _get_provider_status(provider_id: str) -> OAuthProviderStatus:
+# Selector/command id -> the managed provider keys whose presence in the config
+# means that provider is logged in. The OpenAI ChatGPT OAuth login (browser and
+# device-code) and the OpenAI API-key login store distinct provider keys; the
+# "openai" logout entry covers both.
+_PROVIDER_KEYS: dict[str, tuple[str, ...]] = {
+    "browser": (managed_provider_key(OPENAI_CHATGPT_PLATFORM_ID),),
+    "headless": (managed_provider_key(OPENAI_CHATGPT_PLATFORM_ID),),
+    "api-key": (managed_provider_key(OPENAI_API_PLATFORM_ID),),
+    "openai": (
+        managed_provider_key(OPENAI_API_PLATFORM_ID),
+        managed_provider_key(OPENAI_CHATGPT_PLATFORM_ID),
+    ),
+    "opencode-go": (OPENCODE_GO_OPENAI_PROVIDER_KEY, OPENCODE_GO_ANTHROPIC_PROVIDER_KEY),
+    "minimax": (MINIMAX_ANTHROPIC_PROVIDER_KEY,),
+    "deepseek": (DEEPSEEK_PROVIDER_KEY,),
+    "anthropic": (ANTHROPIC_PROVIDER_KEY,),
+    "openrouter": (OPENROUTER_PROVIDER_KEY,),
+    "lm-studio": (LM_STUDIO_PROVIDER_KEY,),
+    "ollama": (OLLAMA_PROVIDER_KEY,),
+}
+
+# Providers offered by the no-argument /logout selector, one entry per provider
+# (a single OpenAI entry that clears both OpenAI credentials).
+_LOGOUT_PROVIDER_ENTRIES: list[OAuthProviderEntry] = [
+    OAuthProviderEntry(id="openai", name="OpenAI", auth_type="oauth"),
+    OAuthProviderEntry(id="opencode-go", name="OpenCode Go", auth_type="api_key"),
+    OAuthProviderEntry(id="minimax", name="MiniMax", auth_type="api_key"),
+    OAuthProviderEntry(id="deepseek", name="DeepSeek", auth_type="api_key"),
+    OAuthProviderEntry(id="anthropic", name="Anthropic", auth_type="api_key"),
+    OAuthProviderEntry(id="openrouter", name="OpenRouter", auth_type="api_key"),
+    OAuthProviderEntry(id="lm-studio", name="LM Studio", auth_type="api_key"),
+    OAuthProviderEntry(id="ollama", name="Ollama", auth_type="api_key"),
+]
+
+
+def _get_provider_status(config: Config, provider_id: str) -> OAuthProviderStatus:
+    keys = _PROVIDER_KEYS.get(provider_id, ())
+    if any(key in config.providers for key in keys):
+        return OAuthProviderStatus(source="configured")
     return OAuthProviderStatus(source="unconfigured")
 
 
@@ -141,11 +191,12 @@ async def login(app: Shell, args: str) -> None:
     soul = ensure_pythinker_soul(app)
     if soul is None:
         return
+    config = soul.runtime.config
     mode = args.strip().lower()
     if mode == "":
         chosen = await run_oauth_selector(
             _SELECTOR_PROVIDER_ENTRIES,
-            _get_provider_status,
+            lambda provider_id: _get_provider_status(config, provider_id),
             action="login",
         )
         if chosen is None:
@@ -239,7 +290,27 @@ async def logout(app: Shell, args: str) -> None:
         )
         return
     mode = args.strip().lower()
-    if mode == "openrouter":
+    if mode == "":
+        configured = [
+            entry
+            for entry in _LOGOUT_PROVIDER_ENTRIES
+            if _get_provider_status(config, entry.id).source == "configured"
+        ]
+        if not configured:
+            console.print(f"[{_t.info}]No providers are logged in.[/]")
+            return
+        chosen = await run_oauth_selector(
+            configured,
+            lambda provider_id: _get_provider_status(config, provider_id),
+            action="logout",
+        )
+        if chosen is None:
+            return
+        mode = chosen
+
+    if mode == "openai":
+        ok = await _render_oauth_events(logout_openai(config))
+    elif mode == "openrouter":
         ok = await _render_oauth_events(logout_openrouter(config))
     elif mode == "anthropic":
         ok = await _render_oauth_events(logout_anthropic(config))
@@ -259,12 +330,10 @@ async def logout(app: Shell, args: str) -> None:
         delete_github_feedback_token()
         console.print(f"[{_t.success}]Logged out of GitHub feedback.[/]")
         ok = True
-    elif mode == "":
-        ok = await _render_oauth_events(logout_openai(config))
     else:
         console.print(
             f"[{_t.error}]Usage: /logout "
-            "[opencode-go|minimax|deepseek|anthropic|openrouter|lm-studio|ollama|"
+            "[openai|opencode-go|minimax|deepseek|anthropic|openrouter|lm-studio|ollama|"
             "github-feedback][/]"
         )
         return

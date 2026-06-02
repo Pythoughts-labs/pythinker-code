@@ -226,7 +226,8 @@ def agents(app: Shell, args: str):
 @registry.command
 async def model(app: Shell, args: str):
     """Switch LLM model or thinking mode"""
-    from pythinker_code.llm import derive_model_capabilities
+    from pythinker_code.llm import ModelCapability, derive_model_capabilities
+    from pythinker_code.thinking import model_uses_native_thinking
     from pythinker_code.ui.theme import get_tui_tokens as _get_tok
 
     _t = _get_tok()
@@ -257,7 +258,12 @@ async def model(app: Shell, args: str):
             if model_cfg == curr_model_cfg:
                 curr_model_name = name
                 break
-    curr_thinking = soul.thinking
+    curr_capabilities: set[ModelCapability] = (
+        derive_model_capabilities(curr_model_cfg) if curr_model_cfg else set()
+    )
+    curr_effort = soul.thinking_effort or ("high" if soul.thinking else "off")
+    if model_uses_native_thinking(curr_capabilities):
+        curr_effort = "off"
 
     # Step 1: Pick a model — single grouped picker with type-to-filter.
     from pythinker_code.ui.shell.model_picker import ModelPickerApp, build_provider_groups
@@ -281,52 +287,56 @@ async def model(app: Shell, args: str):
         )
         return
 
-    # Step 2: Determine thinking mode
+    # Step 2: Determine thinking effort
     capabilities = derive_model_capabilities(selected_model_cfg)
-    new_thinking: bool
+    from pythinker_code.thinking import available_thinking_levels, clamp_thinking_effort
+    from pythinker_code.ui.shell.selectors.thinking import ThinkingLevel, run_thinking_selector
 
-    if "always_thinking" in capabilities:
-        new_thinking = True
-    elif "thinking" in capabilities:
-        from pythinker_code.ui.shell.selectors.thinking import ThinkingLevel, run_thinking_selector
-
-        _curr_level: ThinkingLevel = "high" if curr_thinking else "off"
+    native_thinking = model_uses_native_thinking(capabilities)
+    available_efforts = available_thinking_levels(capabilities)
+    if native_thinking or available_efforts == ("off",):
+        new_effort = "off"
+    else:
+        current_level = clamp_thinking_effort(curr_effort, available_efforts)
         _level = await run_thinking_selector(
-            current_level=_curr_level,
-            available_levels=["off", "minimal", "low", "medium", "high", "xhigh"],
+            current_level=cast(ThinkingLevel, current_level),
+            available_levels=[cast(ThinkingLevel, level) for level in available_efforts],
         )
         if _level is None:
             return
-
-        new_thinking = _level != "off"
-    else:
-        new_thinking = False
+        new_effort = _level
+    new_thinking = new_effort != "off"
+    thinking_label = "native reasoning" if native_thinking else f"thinking {new_effort}"
 
     # Check if anything changed
     model_changed = curr_model_name != selected_model_name
-    thinking_changed = curr_thinking != new_thinking
+    thinking_changed = curr_effort != new_effort
     selected_display = selected_model_cfg.display_name or selected_model_cfg.model
 
     if not model_changed and not thinking_changed:
         console.print(
             f"[{_t.warning}]Already using {_rich_escape(selected_display)} "
-            f"with thinking {'on' if new_thinking else 'off'}.[/]"
+            f"with {thinking_label}.[/]"
         )
         return
 
     # Save and reload
     prev_model = config.default_model
     prev_thinking = config.default_thinking
+    prev_effort = config.default_thinking_effort
     config.default_model = selected_model_name
     config.default_thinking = new_thinking
+    config.default_thinking_effort = new_effort
     try:
         config_for_save = load_config()
         config_for_save.default_model = selected_model_name
         config_for_save.default_thinking = new_thinking
+        config_for_save.default_thinking_effort = new_effort
         save_config(config_for_save)
     except (ConfigError, OSError) as exc:
         config.default_model = prev_model
         config.default_thinking = prev_thinking
+        config.default_thinking_effort = prev_effort
         console.print(f"[{_t.error}]Failed to save config: {_rich_escape(exc)}[/]")
         return
 
@@ -335,11 +345,9 @@ async def model(app: Shell, args: str):
     if model_changed:
         track("model_switch", model=selected_model_name)
     if thinking_changed:
-        track("thinking_toggle", enabled=new_thinking)
+        track("thinking_toggle", enabled=new_thinking, level=new_effort)
     console.print(
-        f"[{_t.success}]Switched to {selected_display} "
-        f"with thinking {'on' if new_thinking else 'off'}. "
-        "Reloading...[/]"
+        f"[{_t.success}]Switched to {selected_display} with {thinking_label}. Reloading...[/]"
     )
 
     # Pre-load LM Studio models so the user doesn't hit a 10-60s wait on
@@ -1037,21 +1045,42 @@ async def thinking(app: Shell, args: str) -> None:
     if soul is None:
         return
 
+    from pythinker_code.thinking import (
+        available_thinking_levels,
+        clamp_thinking_effort,
+        model_uses_native_thinking,
+    )
     from pythinker_code.ui.shell.selectors.thinking import ThinkingLevel, run_thinking_selector
     from pythinker_code.ui.theme import get_tui_tokens as _get_tok_think
 
     _t_think = _get_tok_think()
 
-    curr_level: ThinkingLevel = "high" if soul.thinking else "off"
+    if soul.runtime.llm is None:
+        console.print(f"[{_t_think.error}]LLM is not set.[/]")
+        return
+    capabilities = soul.runtime.llm.capabilities
+    available_efforts = available_thinking_levels(capabilities)
+    if available_efforts == ("off",):
+        if model_uses_native_thinking(capabilities):
+            console.print(
+                f"[{_t_think.warning}]Current model uses native reasoning; "
+                "there is no effort setting to change.[/]"
+            )
+        else:
+            console.print(f"[{_t_think.warning}]Current model does not support thinking.[/]")
+        return
+
+    curr_effort = soul.thinking_effort or ("high" if soul.thinking else "off")
+    curr_level = clamp_thinking_effort(curr_effort, available_efforts)
     level = await run_thinking_selector(
-        current_level=curr_level,
-        available_levels=["off", "minimal", "low", "medium", "high", "xhigh"],
+        current_level=cast(ThinkingLevel, curr_level),
+        available_levels=[cast(ThinkingLevel, effort) for effort in available_efforts],
     )
     if level is None:
         return
 
     new_thinking = level != "off"
-    if new_thinking == soul.thinking:
+    if level == curr_effort:
         console.print(f"[{_t_think.warning}]Thinking setting unchanged.[/]")
         return
 
@@ -1066,6 +1095,7 @@ async def thinking(app: Shell, args: str) -> None:
     try:
         config_for_save = load_config(config_file)
         config_for_save.default_thinking = new_thinking
+        config_for_save.default_thinking_effort = level
         save_config(config_for_save, config_file)
     except (ConfigError, OSError) as exc:
         console.print(f"[{_t_think.error}]Failed to save config: {_rich_escape(exc)}[/]")
@@ -1073,10 +1103,8 @@ async def thinking(app: Shell, args: str) -> None:
 
     from pythinker_code.telemetry import track
 
-    track("thinking_toggle", enabled=new_thinking)
-    console.print(
-        f"[{_t_think.success}]Thinking {'enabled' if new_thinking else 'disabled'}. Reloading...[/]"
-    )
+    track("thinking_toggle", enabled=new_thinking, level=level)
+    console.print(f"[{_t_think.success}]Thinking level set to {level}. Reloading...[/]")
     raise Reload(session_id=soul.runtime.session.id)
 
 
@@ -1215,7 +1243,24 @@ async def settings(app: Shell, args: str):
         table.add_row("TUI style", get_active_tui_style())
         table.add_row("Default model", config.default_model or "(none)")
         table.add_row("Telemetry", "on" if config.telemetry else "off")
-        table.add_row("Default thinking", "on" if config.default_thinking else "off")
+        from pythinker_code.llm import derive_model_capabilities
+        from pythinker_code.thinking import (
+            effective_config_thinking_effort,
+            model_uses_native_thinking,
+        )
+
+        default_model_cfg = (
+            config.models.get(config.default_model) if config.default_model else None
+        )
+        default_thinking_label = (
+            "native reasoning"
+            if default_model_cfg
+            and model_uses_native_thinking(derive_model_capabilities(default_model_cfg))
+            else effective_config_thinking_effort(
+                config.default_thinking, config.default_thinking_effort
+            )
+        )
+        table.add_row("Default thinking", default_thinking_label)
         table.add_row("Show thinking stream", "on" if config.show_thinking_stream else "off")
         table.add_row("Turn recaps", "on" if config.tui.turn_recaps else "off")
         table.add_row("Default yolo", "on" if config.default_yolo else "off")

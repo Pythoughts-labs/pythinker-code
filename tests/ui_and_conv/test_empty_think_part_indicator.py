@@ -382,8 +382,9 @@ def test_compaction_takes_priority_over_moon():
     # Compaction starts — should show compaction, not moon
     view.dispatch_wire_message(CompactionBegin())
     agent_blocks = view.compose_agent_output()
-    # Should be the compaction block, not the moon
-    assert len(agent_blocks) == 1
+    # Should be the compaction block, not the moon. Compaction commits with a
+    # leading seam (blank row + block), so there are two blocks.
+    assert len(agent_blocks) == 2
     assert view._compaction_block is not None
 
 

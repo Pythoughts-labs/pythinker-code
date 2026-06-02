@@ -8,12 +8,19 @@ from rich.color import Color
 from rich.console import Console, Group
 from rich.style import Style
 
-from pythinker_code.tools.display import TodoDisplayBlock, TodoDisplayItem
+from pythinker_code.tools.display import DiffDisplayBlock, TodoDisplayBlock, TodoDisplayItem
+from pythinker_code.ui.shell.motion import (
+    _SHIMMER_BASE,
+    _SHIMMER_HIGHLIGHT,
+    _SHIMMER_MID,
+)
 from pythinker_code.ui.shell.visualize import _LiveView
 from pythinker_code.ui.theme import tui_rich_style
 from pythinker_code.wire.types import StatusUpdate, TurnBegin
 
 _live_view_module = importlib.import_module("pythinker_code.ui.shell.visualize._live_view")
+
+_SHIMMER_HEXES = {_SHIMMER_BASE.lower(), _SHIMMER_MID.lower(), _SHIMMER_HIGHLIGHT.lower()}
 
 
 def _render(renderable) -> str:
@@ -165,17 +172,17 @@ def test_finished_todos_move_to_bottom_of_menu(monkeypatch) -> None:
     assert rendered.index("✓ Finished first") < rendered.index("✓ Finished second")
 
 
-def test_active_todo_activity_line_uses_warning_accent() -> None:
+def test_active_todo_activity_line_uses_standard_spinner_shimmer() -> None:
     view = _LiveView(StatusUpdate(context_tokens=10_000))
 
     line = view._todo_activity_line("Implement pinned todos", elapsed_s=0.88, width=100)
 
-    assert _span_colors_for(line, "Implement pinned todos") == {
-        _color_hex(tui_rich_style("warning").color)
-    }
+    marker_style = Style.parse(line.style) if isinstance(line.style, str) else line.style
+    assert marker_style.color == tui_rich_style("thinking_text").color
+    assert _span_colors_for(line, "Implement pinned todos") >= _SHIMMER_HEXES
 
 
-def test_active_pinned_todo_row_uses_accent_icon_and_white_title() -> None:
+def test_active_pinned_todo_row_uses_neutral_title_not_shimmer() -> None:
     view = _LiveView(StatusUpdate())
 
     row = view._pinned_todo_row(
@@ -184,11 +191,20 @@ def test_active_pinned_todo_row_uses_accent_icon_and_white_title() -> None:
         width=100,
         elapsed_s=0.88,
     )
-    title_style = _style_for(row, "Implement pinned todos")
 
+    active_color = _color_hex(tui_rich_style("activity_label").color)
+    shimmer_colors = _SHIMMER_HEXES
     assert _span_colors_for(row, "■") == {_color_hex(tui_rich_style("warning").color)}
-    assert title_style.color == tui_rich_style("activity_label").color
-    assert title_style.bold is True
+    assert _span_colors_for(row, "Implement pinned todos") == {active_color}
+    assert _span_colors_for(row, "Implement pinned todos").isdisjoint(shimmer_colors)
+    title_start = row.plain.index("Implement pinned todos")
+    title_end = title_start + len("Implement pinned todos")
+    assert any(
+        span.start <= title_start
+        and span.end >= title_end
+        and (Style.parse(span.style) if isinstance(span.style, str) else span.style).bold
+        for span in row.spans
+    )
 
 
 def test_pinned_todo_rows_align_icons_and_titles() -> None:
@@ -236,6 +252,7 @@ def test_completed_todo_row_is_muted_and_struck() -> None:
     )
     title_style = _style_for(row, "Finished task")
 
+    assert _span_colors_for(row, "✓") == {_color_hex(tui_rich_style("muted").color)}
     assert title_style.strike is True
     assert title_style.color == tui_rich_style("muted").color
 
@@ -251,3 +268,28 @@ def test_toggle_pinned_todos_hides_todo_rows() -> None:
     rendered = _render(view._working_indicator())
     assert "Implement pinned todos" not in rendered
     assert "…" in rendered
+
+
+def test_turn_recap_tracks_and_clears_modified_files() -> None:
+    view = _LiveView(StatusUpdate())
+    result = ToolResult(
+        tool_call_id="1",
+        return_value=ToolReturnValue(
+            is_error=False,
+            output="ok",
+            message="ok",
+            display=[
+                DiffDisplayBlock(
+                    path="src/a.py", old_text="", new_text="x", old_start=1, new_start=1
+                )
+            ],
+        ),
+    )
+
+    view._track_recap_modified_files(result)
+    view._track_recap_modified_files(result)  # idempotent — backed by a set
+    assert view._recap_files_modified == {"src/a.py"}
+
+    # A fresh top-level turn resets the per-turn delta state.
+    view.dispatch_wire_message(TurnBegin(user_input="next ask"))
+    assert view._recap_files_modified == set()

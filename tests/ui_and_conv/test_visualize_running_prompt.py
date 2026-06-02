@@ -9,6 +9,7 @@ from prompt_toolkit.document import Document
 from rich.text import Text
 
 from pythinker_code.tools.display import TodoDisplayItem
+from pythinker_code.ui.shell.motion import _SHIMMER_BASE, _SHIMMER_HIGHLIGHT, _SHIMMER_MID
 from pythinker_code.ui.shell.prompt import BgTaskCounts, CustomPromptSession, PromptMode, UserInput
 from pythinker_code.wire.types import (
     ApprovalRequest,
@@ -141,6 +142,63 @@ def test_render_pinned_status_tail_empty_when_turn_inactive() -> None:
     assert view2.render_pinned_status_tail(80).value == ""
 
 
+@pytest.mark.asyncio
+async def test_prompt_live_view_status_refresh_invalidates_active_turn(monkeypatch) -> None:
+    invalidations: list[str] = []
+
+    class _PromptSession:
+        def invalidate(self) -> None:
+            invalidations.append("invalidate")
+
+    monkeypatch.setattr(_interactive_mod, "_STATUS_REFRESH_INTERVAL_S", 0.001)
+    view = _PromptLiveView(
+        StatusUpdate(),
+        prompt_session=cast(Any, _PromptSession()),
+        steer=lambda _content: None,
+    )
+    view._active_turn_depth = 1
+    view._turn_ended = False
+
+    task = asyncio.create_task(view._status_refresh_loop())
+    try:
+        for _ in range(20):
+            if invalidations:
+                break
+            await asyncio.sleep(0.002)
+        assert invalidations
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
+async def test_prompt_live_view_status_refresh_skips_inactive_turn(monkeypatch) -> None:
+    invalidations: list[str] = []
+
+    class _PromptSession:
+        def invalidate(self) -> None:
+            invalidations.append("invalidate")
+
+    monkeypatch.setattr(_interactive_mod, "_STATUS_REFRESH_INTERVAL_S", 0.001)
+    view = _PromptLiveView(
+        StatusUpdate(),
+        prompt_session=cast(Any, _PromptSession()),
+        steer=lambda _content: None,
+    )
+    view._active_turn_depth = 0
+    view._turn_ended = False
+
+    task = asyncio.create_task(view._status_refresh_loop())
+    try:
+        await asyncio.sleep(0.006)
+        assert invalidations == []
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+
 def test_pinned_tail_survives_preamble_clip() -> None:
     """A clipped agent stream must not hide the pinned verb spinner: the spinner
     text stays visible *after* the clip hint instead of being covered by it."""
@@ -264,7 +322,11 @@ def test_background_status_splits_verb_and_count_styles(monkeypatch) -> None:
     muted_style = f"fg:{get_tui_tokens('dark').muted}"
     shimmer_styles = {style.lower() for style, text in fragments if text.strip(" …")}
 
-    assert {"fg:#e6b450", "fg:#ebc46e", "fg:#f3d89a"} <= shimmer_styles
+    assert {
+        f"fg:{_SHIMMER_BASE.lower()}",
+        f"fg:{_SHIMMER_MID.lower()}",
+        f"fg:{_SHIMMER_HIGHLIGHT.lower()}",
+    } <= shimmer_styles
     assert any(style == muted_style and "2 background agents" in text for style, text in fragments)
     assert all(style != "ansicyan" for style, _ in fragments)
 

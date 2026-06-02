@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 import pythinker_host
 from pydantic import SecretStr
+from pythinker_core.chat_provider import ThinkingEffort
 from pythinker_host.path import HostPath
 
 from pythinker_code.agentspec import DEFAULT_AGENT_FILE
@@ -27,6 +28,7 @@ from pythinker_code.soul import RunCancelled, run_soul
 from pythinker_code.soul.agent import Runtime, load_agent
 from pythinker_code.soul.context import Context
 from pythinker_code.soul.pythinkersoul import PythinkerSoul
+from pythinker_code.thinking import bool_to_thinking_effort, effective_config_thinking_effort
 from pythinker_code.utils.aioqueue import QueueShutDown
 from pythinker_code.utils.logging import logger, open_original_stderr, redirect_stderr_to_logger
 from pythinker_code.utils.path import shorten_home
@@ -148,6 +150,7 @@ class PythinkerCLI:
         config: Config | Path | None = None,
         model_name: str | None = None,
         thinking: bool | None = None,
+        thinking_effort: ThinkingEffort | None = None,
         # Run mode
         yolo: bool = False,
         auto: bool = False,
@@ -176,6 +179,8 @@ class PythinkerCLI:
                 Defaults to None.
             model_name (str | None, optional): Name of the model to use. Defaults to None.
             thinking (bool | None, optional): Whether to enable thinking mode. Defaults to None.
+            thinking_effort (ThinkingEffort | None, optional): Reasoning effort override.
+                Defaults to None.
             yolo (bool, optional): Dangerously skip permission approvals. The user is still
                 reachable via ``AskUserQuestion``. Defaults to False.
             auto (bool, optional): Invocation-level auto mode (no user is present to answer
@@ -256,8 +261,19 @@ class PythinkerCLI:
         assert model is not None
         env_overrides = augment_provider_with_env_vars(provider, model, provider_key=model.provider)
 
-        # determine thinking mode
-        thinking = config.default_thinking if thinking is None else thinking
+        # determine thinking mode / effort. The bool flag is kept for CLI and
+        # config compatibility; the effort string is the source of truth for new
+        # sessions when present.
+        if thinking_effort is None:
+            thinking_effort = (
+                bool_to_thinking_effort(thinking)
+                if thinking is not None
+                else effective_config_thinking_effort(
+                    config.default_thinking,
+                    config.default_thinking_effort,
+                )
+            )
+        thinking = thinking_effort != "off"
 
         # determine yolo mode
         yolo = yolo if yolo else config.default_yolo
@@ -270,6 +286,7 @@ class PythinkerCLI:
             provider,
             model,
             thinking=thinking,
+            thinking_effort=thinking_effort,
             session_id=session.id,
             oauth=oauth,
         )
@@ -277,6 +294,7 @@ class PythinkerCLI:
             logger.info("Using LLM provider: {provider}", provider=provider)
             logger.info("Using LLM model: {model}", model=model)
             logger.info("Thinking mode: {thinking}", thinking=thinking)
+            logger.info("Thinking effort: {thinking_effort}", thinking_effort=thinking_effort)
 
         if startup_progress is not None:
             startup_progress("Scanning workspace...")

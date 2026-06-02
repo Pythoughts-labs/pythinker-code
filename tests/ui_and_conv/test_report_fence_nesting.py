@@ -65,5 +65,7 @@ def test_report_fence_with_exotic_line_separator_does_not_leak_delimiter():
     assert "Real" in out
     assert "1 medium" in out
     # No leaked closing fence -> no spurious bordered code block under the report.
+    # The report itself renders as a single rounded Panel (one ╭/╰ pair); a leaked
+    # fence would render as a second bordered box, so the count must stay at one.
     assert "```" not in out
-    assert "╭" not in out and "╰" not in out
+    assert out.count("╭") == 1 and out.count("╰") == 1

@@ -343,3 +343,83 @@ async def test_ask_user_yolo_only_does_not_dismiss():
         wire.shutdown()
         current_tool_call.reset(tc_token)
         _current_wire.reset(wire_token)
+
+
+async def test_auto_deliberate_returns_verdict_not_empty_dismiss() -> None:
+    tool = AskUserQuestion()
+    tool.bind_auto(lambda: True, policy="auto_deliberate")
+
+    async def fake_advisor(questions):
+        return "Ranking: 1) SQLite (simplest), 2) Postgres."
+
+    tool.bind_deliberation(fake_advisor)
+
+    params = Params(
+        questions=[
+            QuestionParam(
+                question="Which DB?",
+                header="DB",
+                options=[
+                    QuestionOptionParam(label="SQLite"),
+                    QuestionOptionParam(label="Postgres"),
+                ],
+            )
+        ]
+    )
+    result = await tool(params)
+    assert isinstance(result.output, str)
+    payload = json.loads(result.output)
+    assert payload["answers"] == {}  # still no human answer
+    assert "SQLite" in payload["advisor"]  # advisor verdict present
+    assert "decider" in payload["note"].lower()
+
+
+async def test_auto_deliberate_falls_back_when_no_advisor() -> None:
+    tool = AskUserQuestion()
+    tool.bind_auto(lambda: True, policy="auto_deliberate")  # no advisor bound
+    params = Params(
+        questions=[
+            QuestionParam(
+                question="Which DB?",
+                header="DB",
+                options=[
+                    QuestionOptionParam(label="SQLite"),
+                    QuestionOptionParam(label="Postgres"),
+                ],
+            )
+        ]
+    )
+    result = await tool(params)
+    assert isinstance(result.output, str)
+    payload = json.loads(result.output)
+    assert payload["answers"] == {}
+    assert "advisor" not in payload  # no advisor -> safe self-decision prompt only
+    assert "decider" in payload["note"].lower()
+
+
+async def test_auto_deliberate_interactive_does_not_short_circuit() -> None:
+    # policy auto_deliberate but a user IS present (not auto): Entry A must NOT
+    # fire — the tool should proceed to the normal ask path.
+    tool = AskUserQuestion()
+    tool.bind_auto(lambda: False, policy="auto_deliberate")
+
+    async def fake_advisor(questions):
+        return "should not be called"
+
+    tool.bind_deliberation(fake_advisor)
+    params = Params(
+        questions=[
+            QuestionParam(
+                question="Which DB?",
+                header="DB",
+                options=[
+                    QuestionOptionParam(label="SQLite"),
+                    QuestionOptionParam(label="Postgres"),
+                ],
+            )
+        ]
+    )
+    # No wire bound -> the normal path returns a Wire-unavailable error, proving
+    # Entry A did not short-circuit.
+    result = await tool(params)
+    assert result.is_error or "Wire" in (result.message or "")

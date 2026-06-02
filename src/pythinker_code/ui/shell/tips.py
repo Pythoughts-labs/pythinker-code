@@ -8,7 +8,7 @@ from typing import Final
 #: Short feature hints surfaced while the agent is working. Keep each one
 #: actionable and tied to a real Pythinker feature / shortcut.
 FEATURE_TIPS: Final = (
-    "Shift+Tab toggles plan mode for multi-step work",
+    "Shift+Tab changes thinking effort levels",
     "Subagents keep your main context clean",
     "/verify before declaring work done",
     "/learn captures a lesson after a correction",

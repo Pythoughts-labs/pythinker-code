@@ -302,6 +302,14 @@ def pythinker(
             help="Enable thinking mode. Default: default thinking mode set in config file.",
         ),
     ] = None,
+    thinking_effort: Annotated[
+        str | None,
+        typer.Option(
+            "--thinking-effort",
+            "--thinking-level",
+            help="Thinking effort level: off, minimal, low, medium, high, xhigh, or max.",
+        ),
+    ] = None,
     no_telemetry: Annotated[
         bool,
         typer.Option(
@@ -788,11 +796,23 @@ def pythinker(
                 scratch_exists=scratch_exists_before_start,
             )
 
+            normalized_thinking_effort = None
+            if thinking_effort is not None:
+                from pythinker_code.thinking import normalize_thinking_effort
+
+                normalized_thinking_effort = normalize_thinking_effort(thinking_effort)
+                if normalized_thinking_effort is None:
+                    raise typer.BadParameter(
+                        "expected one of: off, minimal, low, medium, high, xhigh, max",
+                        param_hint="--thinking-effort",
+                    )
+
             instance = await PythinkerCLI.create(
                 session,
                 config=config,
                 model_name=model_name,
                 thinking=thinking,
+                thinking_effort=normalized_thinking_effort,
                 yolo=yolo,
                 auto=auto,
                 runtime_auto=ui == "print",

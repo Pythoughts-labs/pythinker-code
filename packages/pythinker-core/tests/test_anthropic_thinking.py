@@ -103,6 +103,11 @@ def test_supports_adaptive_thinking(model: str, expected: bool) -> None:
         ("claude-opus-4-7", "low", "low"),
         ("claude-opus-4-6", "medium", "medium"),
         ("claude-sonnet-4-20250514", "low", "low"),
+        # minimal has no Anthropic equivalent; clamp DOWN to the lowest ('low'),
+        # not up to 'high' (which would request a far larger budget).
+        ("claude-opus-4-5", "minimal", "low"),
+        ("claude-sonnet-4-6", "minimal", "low"),
+        ("claude-opus-4-7", "minimal", "low"),
         # Future 4.8+ inherits Opus 4.7-like behavior only if name signals opus-4-7+
         # 4.8 is not automatically assumed to support xhigh; only guaranteed max.
         ("claude-opus-4-8", "xhigh", "high"),

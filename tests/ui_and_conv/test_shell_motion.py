@@ -13,11 +13,16 @@ from pythinker_code.ui.shell.glyphs import (
     SPINNER_FRAMES,
 )
 from pythinker_code.ui.shell.motion import (
+    _SHIMMER_BASE,
+    _SHIMMER_HIGHLIGHT,
+    _SHIMMER_MID,
     ActivitySnapshot,
     active_marker_frame,
     activity_status_line,
     spinner_frame_at,
 )
+
+_SHIMMER_HEXES = {_SHIMMER_BASE.lower(), _SHIMMER_MID.lower(), _SHIMMER_HIGHLIGHT.lower()}
 
 
 def _plain(renderable) -> str:
@@ -135,8 +140,8 @@ def test_activity_status_line_uses_silver_spinner_and_muted_yellow_verb():
 
     base_style = Style.parse(start.style) if isinstance(start.style, str) else start.style
     assert _color_hex(base_style.color) == "#c0c0c0"
-    assert _span_colors_for(sheen, "Cultivating") >= {"#e6b450", "#ebc46e", "#f3d89a"}
-    assert _span_colors_for(later_sheen, "Cultivating") >= {"#e6b450", "#ebc46e", "#f3d89a"}
+    assert _span_colors_for(sheen, "Cultivating") >= _SHIMMER_HEXES
+    assert _span_colors_for(later_sheen, "Cultivating") >= _SHIMMER_HEXES
     assert "Cultivating…" in _plain(start)
 
 
