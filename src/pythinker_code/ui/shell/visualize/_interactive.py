@@ -24,6 +24,7 @@ from rich.text import Text
 from pythinker_code.ui.shell.console import console, render_to_ansi
 from pythinker_code.ui.shell.echo import render_user_echo_text
 from pythinker_code.ui.shell.keyboard import KeyEvent
+from pythinker_code.ui.shell.motion import reduced_motion_enabled
 from pythinker_code.ui.shell.prompt import (
     CustomPromptSession,
     UserInput,
@@ -52,6 +53,9 @@ from pythinker_code.wire.types import (
 
 BtwRunner = Callable[[str, Callable[[str], None] | None], Awaitable[tuple[str | None, str | None]]]
 """async (question, on_text_chunk) -> (response, error). Used for direct btw execution."""
+
+_STATUS_REFRESH_INTERVAL_S = 0.22
+_STATUS_REFRESH_REDUCED_INTERVAL_S = 1.0
 
 
 class _PromptLiveView(_LiveView):
@@ -97,6 +101,7 @@ class _PromptLiveView(_LiveView):
         self._btw_dismiss_event: asyncio.Event | None = None
         self._btw_refresh_task: asyncio.Task[None] | None = None
         self._btw_run_task: asyncio.Task[None] | None = None
+        self._status_refresh_task: asyncio.Task[None] | None = None
 
     # -- Helpers -------------------------------------------------------------
 
@@ -164,11 +169,32 @@ class _PromptLiveView(_LiveView):
             self._prompt_session.invalidate()
 
     async def _btw_refresh_loop(self) -> None:
-        """Periodically invalidate prompt so the spinner animates."""
+        """Periodically invalidate prompt so the btw modal spinner animates."""
         try:
             while True:
                 await asyncio.sleep(0.08)
                 self._prompt_session.invalidate()
+        except asyncio.CancelledError:
+            pass
+
+    async def _status_refresh_loop(self) -> None:
+        """Periodically invalidate prompt so pinned status shimmer is frame-based.
+
+        Wire events are bursty: a long-running subagent can leave the prompt
+        untouched for seconds, which freezes shimmer even though the turn is
+        still active. Keep this loop prompt-scoped and cheap; Rich Live mode has
+        its own refresh clock.
+        """
+        try:
+            while True:
+                interval = (
+                    _STATUS_REFRESH_REDUCED_INTERVAL_S
+                    if reduced_motion_enabled()
+                    else _STATUS_REFRESH_INTERVAL_S
+                )
+                await asyncio.sleep(interval)
+                if self._active_turn_depth > 0 and not self._turn_ended:
+                    self._prompt_session.invalidate()
         except asyncio.CancelledError:
             pass
 
@@ -207,9 +233,12 @@ class _PromptLiveView(_LiveView):
         # Declare outside try so finally can always cancel them.
         wire_task: asyncio.Task[WireMessage] | None = None
         external_task: asyncio.Task[WireMessage] | None = None
+        status_refresh_task: asyncio.Task[None] | None = None
         try:
             wire_task = asyncio.create_task(wire.receive())
             external_task = asyncio.create_task(self._external_messages.get())
+            status_refresh_task = asyncio.create_task(self._status_refresh_loop())
+            self._status_refresh_task = status_refresh_task
             while True:
                 try:
                     done, _ = await asyncio.wait(
@@ -256,12 +285,13 @@ class _PromptLiveView(_LiveView):
             # returns, because run_soul gives ui_task only a 0.5s timeout.
         finally:
             self._external_messages.shutdown(immediate=True)
-            for task in (wire_task, external_task):
+            for task in (wire_task, external_task, status_refresh_task):
                 if task is None:
                     continue
                 task.cancel()
                 with suppress(asyncio.CancelledError, QueueShutDown):
                     await task
+            self._status_refresh_task = None
             self._pending_local_steer_count = 0
             # Do NOT dismiss btw here — the shell will call
             # wait_for_btw_dismiss() after visualize_loop returns.
