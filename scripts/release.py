@@ -27,6 +27,7 @@ ROOT_PYPROJECT = REPO_ROOT / "pyproject.toml"
 CORE_PYPROJECT = REPO_ROOT / "packages" / "pythinker-core" / "pyproject.toml"
 HOST_PYPROJECT = REPO_ROOT / "packages" / "pythinker-host" / "pyproject.toml"
 REVIEW_PYPROJECT = REPO_ROOT / "packages" / "pythinker-review" / "pyproject.toml"
+SDK_PYPROJECT = REPO_ROOT / "sdks" / "pythinker-sdk" / "pyproject.toml"
 
 # Single source for the three hand-authored changelog files. validate() asserts
 # the `## Unreleased` anchor in ALL of them before any write, and rewrite()
@@ -206,6 +207,7 @@ def rewrite(target: str, *, bump_core: str | None, bump_host: str | None) -> Non
     if bump_core:
         set_root_version(CORE_PYPROJECT, bump_core)
         set_dependency_pin(ROOT_PYPROJECT, "pythinker-core", bump_core)
+        set_dependency_pin(SDK_PYPROJECT, "pythinker-core", bump_core)
     if bump_host:
         set_root_version(HOST_PYPROJECT, bump_host)
         set_dependency_pin(ROOT_PYPROJECT, "pythinker-host", bump_host)
@@ -247,6 +249,8 @@ GATES = [
         "packages/pythinker-host/pyproject.toml",
         "--pythinker-review-pyproject",
         "packages/pythinker-review/pyproject.toml",
+        "--pythinker-sdk-pyproject",
+        "sdks/pythinker-sdk/pyproject.toml",
     ],
     ["uv", "sync", "--frozen", "--all-extras", "--all-packages"],
     ["uv", "run", "pytest", "tests/test_version_lockstep.py", "-q"],

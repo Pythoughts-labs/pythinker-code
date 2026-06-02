@@ -13,13 +13,17 @@ def _version(rel: str) -> str:
         return tomllib.load(fh)["project"]["version"]
 
 
-def _root_deps() -> list[str]:
-    with (REPO_ROOT / "pyproject.toml").open("rb") as fh:
+def _deps(rel: str) -> list[str]:
+    with (REPO_ROOT / rel).open("rb") as fh:
         return tomllib.load(fh)["project"]["dependencies"]
 
 
-def _pin(name: str) -> str:
-    for dep in _root_deps():
+def _root_deps() -> list[str]:
+    return _deps("pyproject.toml")
+
+
+def _pin_in(deps: list[str], name: str) -> str:
+    for dep in deps:
         head = dep.split("==", 1)
         if len(head) == 2 and head[0].split("[")[0] == name:
             return head[1].split(";")[0].strip()
@@ -39,8 +43,18 @@ def test_subpackage_pins_match_versions() -> None:
     assert _pin("pythinker-review") == _version("packages/pythinker-review/pyproject.toml")
 
 
+def _pin(name: str) -> str:
+    return _pin_in(_root_deps(), name)
+
+
 def test_review_is_frozen_at_0_1_0() -> None:
     assert _pin("pythinker-review") == "0.1.0"
+
+
+def test_sdk_core_pin_matches_core_version() -> None:
+    assert _pin_in(_deps("sdks/pythinker-sdk/pyproject.toml"), "pythinker-core") == _version(
+        "packages/pythinker-core/pyproject.toml"
+    )
 
 
 def test_readme_heading_and_pip_snippet() -> None:
