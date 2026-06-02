@@ -98,7 +98,6 @@ async def test_runtime_auto_overlay_does_not_persist_to_session_state(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("auto", "runtime_auto"), [(True, False), (False, True)])
-@pytest.mark.asyncio
 async def test_unattended_runtime_in_default_safe_mode_denies_without_waiting(
     config,
     session,

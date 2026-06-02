@@ -16,6 +16,9 @@ GitHub Releases page; `0.8.0` is the new starting line.
 ## Unreleased
 
 - **Release promotion no longer stalls when the Homebrew tap is broken.** The `promote-release` workflow now gates only on platform assets and PyPI; a lagging or broken Homebrew tap emits a warning annotation and step summary note but no longer blocks the GitHub Release from reaching Latest.
+- **Calmer, theme-aligned TUI rendering.** Transcript, recap, and tool-header output now use theme-standardized activity colors instead of hardcoded values, and Markdown tables render as a bordered grid (wide tables no longer collapse into a stacked-record list).
+- **Auto-mode tool approval fails closed when unattended.** In auto/non-interactive runs, an action that still needs approval under the active safe-mode/trust policy is denied with guidance instead of waiting indefinitely for an absent user, and outside-workspace writes are never auto-approved. A new `auto_deliberate_destructive_actions` setting can additionally bounce destructive auto-approved actions once for deliberation before they run.
+- **`pythinker review` validates finding evidence.** Reviewflow assembles prompts from a shared security-knowledge manifest and validates findings, handling invalid ones without failing the whole review.
 
 ## 0.30.0 (2026-06-02)
 
