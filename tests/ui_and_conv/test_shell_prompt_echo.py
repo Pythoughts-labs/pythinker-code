@@ -152,7 +152,11 @@ def test_card_style_user_echo_renders_transcript_prompt_symbol() -> None:
     finally:
         set_active_tui_style(original)
 
-    assert plain == "\n❯ apply\n"
+    lines = plain.split("\n")
+    assert lines[0] == ""
+    # The submitted prompt sits in a full-width tinted block, so the row carries
+    # surrounding padding around the marker and message.
+    assert lines[1].strip() == "❯ apply"
     assert "✨" not in plain
 
 
@@ -162,9 +166,11 @@ def test_user_echo_wraps_continuation_under_text_start() -> None:
     lines = plain.splitlines()
 
     assert lines[0] == ""
-    assert lines[1].startswith("❯ ")
-    assert lines[2].startswith("  ")
-    assert not lines[2].startswith("❯")
+    assert lines[1].lstrip().startswith("❯ ")
+    # Continuation wraps under the message text, not under the prompt marker,
+    # and stays column-aligned with the first line inside the tinted block.
+    assert not lines[2].lstrip().startswith("❯")
+    assert lines[1].index("abcdefghij") == lines[2].index("klmnopqrst")
 
 
 def test_user_echo_renders_pasted_markdown_tables() -> None:
@@ -175,11 +181,31 @@ def test_user_echo_renders_pasted_markdown_tables() -> None:
         "| high | High | #cc704b |\n"
     )
     plain = render_plain(rendered, width=72)
+    lines = plain.splitlines()
 
-    assert plain.startswith("\n❯ ┌")
+    assert lines[0] == ""
+    assert lines[1].lstrip().startswith("❯ ┌")
     assert "│ Step" in plain
     assert "#475569" in plain
     assert "| --- |" not in plain
+
+
+def test_user_echo_wraps_message_in_tinted_block() -> None:
+    from rich.console import Console
+
+    from pythinker_code.ui.theme import tui_rich_style
+
+    expected = tui_rich_style("user_message_bg").bgcolor
+    assert expected is not None
+
+    console = Console(force_terminal=True, color_system="truecolor", width=40)
+    lines = console.render_lines(render_user_echo_text("apply"), console.options)
+
+    # The submitted message itself, not just surrounding padding, is painted on
+    # the shared user_message_bg block.
+    apply_segment = next(segment for line in lines for segment in line if "apply" in segment.text)
+    assert apply_segment.style is not None
+    assert apply_segment.style.bgcolor == expected
 
 
 def test_should_echo_agent_input_for_plain_agent_message() -> None:

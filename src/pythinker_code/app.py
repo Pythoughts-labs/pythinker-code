@@ -63,6 +63,23 @@ def _safe_git_branch(cwd: str | Path | HostPath) -> str | None:
     return branch or None
 
 
+def _resumed_unsupervised_notice(*, resumed: bool, yolo: bool, auto: bool) -> str | None:
+    """Welcome-banner warning when a resumed session is running unsupervised.
+
+    Resuming restores ``yolo``/``auto`` from persisted state, so a session can come back
+    unattended and, under YOLO, auto-approving actions with no prompt. Surface that
+    prominently at startup (it also fires when the modes were passed explicitly on the
+    resume command — acceptable over-notification). ``None`` when not a resume or no
+    unsupervised mode is active.
+    """
+    if not resumed or not (yolo or auto):
+        return None
+    modes = " + ".join(name for name, active in (("YOLO", yolo), ("auto", auto)) if active)
+    if yolo:
+        return f"{modes} active — actions auto-approved; toggle with /yolo /auto"
+    return "auto active — interactive approvals still required; toggle with /auto"
+
+
 def _patch_session_id(record: dict[str, Any]) -> None:
     """Inject the current session ID (from ContextVar) into log records."""
     try:
@@ -153,6 +170,7 @@ class PythinkerCLI:
         thinking_effort: ThinkingEffort | None = None,
         # Run mode
         yolo: bool = False,
+        no_yolo: bool = False,
         auto: bool = False,
         runtime_auto: bool = False,
         plan_mode: bool = False,
@@ -183,6 +201,8 @@ class PythinkerCLI:
                 Defaults to None.
             yolo (bool, optional): Dangerously skip permission approvals. The user is still
                 reachable via ``AskUserQuestion``. Defaults to False.
+            no_yolo (bool, optional): Force yolo OFF for this run, overriding the ``yolo``
+                flag, config ``default_yolo``, and persisted session state. Defaults to False.
             auto (bool, optional): Invocation-level auto mode (no user is present to answer
                 questions or approve actions). Implies auto-approve. Defaults to False.
             runtime_auto (bool, optional): Internal invocation-only auto-mode overlay, used by
@@ -307,6 +327,7 @@ class PythinkerCLI:
             yolo,
             auto=auto,
             runtime_auto=runtime_auto,
+            no_yolo=no_yolo,
             skills_dirs=skills_dirs,
             scratchpad_section=scratchpad_section,
         )
@@ -783,6 +804,14 @@ class PythinkerCLI:
         if branch_name:
             welcome_info.append(WelcomeInfoItem(name="Branch", value=branch_name))
         welcome_info.append(WelcomeInfoItem(name="Session", value=self._runtime.session.id))
+        if notice := _resumed_unsupervised_notice(
+            resumed=self._runtime.resumed,
+            yolo=self._runtime.approval.is_yolo(),
+            auto=self._runtime.approval.is_auto(),
+        ):
+            welcome_info.append(
+                WelcomeInfoItem(name="Mode", value=notice, level=WelcomeInfoItem.Level.WARN)
+            )
         try:
             auto_save_path = str(
                 shorten_home(HostPath.unsafe_from_local_path(self._runtime.session.context_file))

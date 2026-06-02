@@ -73,6 +73,30 @@ from pythinker_code.wire.types import (
 _ELLIPSIS = "..."
 _THINKING_PREVIEW_LINES = 6
 _COMPOSING_PREVIEW_LINES = 12
+
+# Smooth-streaming reveal pacing (composing text only). Deltas arrive bursty;
+# instead of revealing each whole chunk at once, a paced reveal cursor advances
+# a little per refresh tick so text flows smoothly. "Keep up" pacing: the step
+# scales with the backlog so a fast model never lags noticeably behind.
+_STREAM_REVEAL_MIN_CELLS = 2
+_STREAM_REVEAL_CATCHUP_TICKS = 2
+_TOKEN_RATE_WINDOW_S = 1.5
+_TOKEN_RATE_MIN_SAMPLES = 3
+
+_smooth_streaming_enabled = False
+
+
+def set_smooth_streaming(enabled: bool) -> None:
+    """Set whether interactive assistant text reveal is paced for smooth streaming."""
+    global _smooth_streaming_enabled
+    _smooth_streaming_enabled = enabled
+
+
+def smooth_streaming_enabled() -> bool:
+    """Return whether paced streaming is enabled (set at shell startup from config)."""
+    return _smooth_streaming_enabled
+
+
 MAX_SUBAGENT_TOOL_CALLS_TO_SHOW = 4
 _MAX_RUNNING_ROWS = 2
 _MAX_SUB_OUTPUT_CHARS = 200
@@ -160,11 +184,6 @@ def _find_committed_boundary(text: str) -> int | None:
     return markdown_commit_boundary(text)
 
 
-def _starts_with_report_fence(text: str) -> bool:
-    stripped = text.lstrip().casefold()
-    return stripped.startswith(("```report", "~~~report"))
-
-
 def _tail_lines(text: str, n: int) -> str:
     """Extract the last *n* lines from *text* via reverse scanning (O(n))."""
     pos = len(text)
@@ -173,6 +192,20 @@ def _tail_lines(text: str, n: int) -> str:
         if pos == -1:
             return text
     return text[pos + 1 :]
+
+
+def _advance_by_display_cells(text: str, start: int, cell_budget: int) -> int:
+    """Return a character offset advanced by roughly ``cell_budget`` terminal cells."""
+    from rich.cells import cell_len
+
+    if cell_budget <= 0:
+        return start
+    width = 0
+    for index in range(start, len(text)):
+        width += cell_len(text[index])
+        if width >= cell_budget:
+            return index + 1
+    return len(text)
 
 
 class _ContentBlock:
@@ -196,25 +229,81 @@ class _ContentBlock:
     to history when the block ends.
     """
 
-    def __init__(self, is_think: bool, *, show_thinking_stream: bool = False):
+    def __init__(self, is_think: bool, *, show_thinking_stream: bool = False, paced: bool = False):
         self.is_think = is_think
         self._show_thinking_stream = show_thinking_stream
+        # When paced, composing text is revealed gradually by ``reveal_tick``
+        # instead of all at once on each delta, for smooth streaming.
+        self._paced = paced and not is_think
         self.raw_text = ""
         # Accumulated float estimate — avoids per-chunk int truncation.
         self._token_count: float = 0.0
         self._start_time = time.monotonic()
         # Incremental commitment state (composing only).
         self._committed_len = 0
+        # Characters of raw_text revealed for display/commit. Unpaced blocks keep
+        # this equal to len(raw_text); paced blocks advance it via reveal_tick().
+        self._revealed_len = 0
         self._has_printed_bullet = False
+        # Sliding window for smooth token-rate display: stores (timestamp, cumulative_tokens)
+        # pairs to compute rate over the last ~1.5s. Float cumulative_tokens avoids
+        # per-sample truncation.
+        self._token_samples: deque[tuple[float, float]] = deque()
 
     # -- Public API ----------------------------------------------------------
 
     def append(self, content: str) -> None:
         self.raw_text += content
         self._token_count += _estimate_tokens(content)
+        if self._paced:
+            # Reveal is paced by reveal_tick() for smooth streaming; just buffer
+            # the raw text here. Commit happens as text is revealed.
+            return
+        # Unpaced (and all thinking blocks): reveal immediately (legacy behavior).
+        self._revealed_len = len(self.raw_text)
         # Block boundaries require newlines; skip parse for mid-line chunks.
         if not self.is_think and "\n" in content:
             self._flush_committed()
+
+    def reveal_tick(self) -> bool:
+        """Advance the paced reveal cursor toward the buffered text.
+
+        Reveals a slice sized to the backlog (keep-up pacing) so the display
+        stays close to a fast model while still animating smoothly, committing
+        any completed markdown blocks as they are revealed. Returns ``True`` when
+        new text was revealed (the caller should refresh). No-op for unpaced or
+        thinking blocks.
+        """
+        if not self._paced:
+            return False
+        from rich.cells import cell_len
+
+        hidden = self.raw_text[self._revealed_len :]
+        backlog_cells = cell_len(hidden)
+        if backlog_cells <= 0:
+            return False
+        step_cells = max(
+            _STREAM_REVEAL_MIN_CELLS,
+            -(-backlog_cells // _STREAM_REVEAL_CATCHUP_TICKS),
+        )
+        self._revealed_len = _advance_by_display_cells(
+            self.raw_text,
+            self._revealed_len,
+            step_cells,
+        )
+        self._flush_committed()
+        return True
+
+    def reveal_all(self) -> bool:
+        """Reveal all buffered text immediately (block finalize / fast-drain).
+
+        Returns ``True`` if the reveal cursor moved. Commitment of the remaining
+        text is left to the finalize path (``compose_final``), matching the
+        unpaced behavior so no block is committed twice.
+        """
+        changed = self._revealed_len < len(self.raw_text)
+        self._revealed_len = len(self.raw_text)
+        return changed
 
     def compose(self) -> RenderableType:
         """Render the transient Live area content.
@@ -255,7 +344,10 @@ class _ContentBlock:
         if not remaining:
             return Text("")
         rendered = self._wrap_bullet(render_agent_body(remaining))
-        if self._has_printed_bullet and _starts_with_report_fence(remaining):
+        if self._has_printed_bullet:
+            # Re-create the one-row gap a single markdown pass puts between
+            # blocks: earlier slices already committed, so the tail needs a
+            # seam to avoid cramming against the previous block.
             return Group(BLANK_ROW, rendered)
         return rendered
 
@@ -270,7 +362,7 @@ class _ContentBlock:
     # -- Private -------------------------------------------------------------
 
     def _pending_text(self) -> str:
-        return self.raw_text[self._committed_len :]
+        return self.raw_text[self._committed_len : self._revealed_len]
 
     def _wrap_bullet(self, renderable: RenderableType) -> BulletColumns:
         """First call gets the ``•`` bullet; subsequent calls get a space."""
@@ -305,26 +397,21 @@ class _ContentBlock:
         if boundary is None:
             return
         committed_text = pending[:boundary]
-        if not self._has_printed_bullet:
-            # Leading blank row separates this step from the previous block.
-            console.print()
-        elif _starts_with_report_fence(committed_text):
-            # If prose streamed earlier and the next committed slice begins with
-            # a report fence, preserve the same one-row seam users get when the
-            # prose and report render together in a single markdown pass.
-            console.print()
+        # A blank seam precedes every committed slice: on the first commit it
+        # separates this step from the previous block; on later commits it
+        # re-creates the one-row gap a single markdown pass puts between blocks
+        # (committing each slice with its own console.print() drops it).
+        console.print()
         console.print(self._wrap_bullet(render_agent_body(committed_text)))
         self._committed_len += boundary
 
     def _activity_snapshot(
         self, label: str, *, label_style: Style | None = None
     ) -> ActivitySnapshot:
-        elapsed = time.monotonic() - self._start_time
+        now = time.monotonic()
+        elapsed = now - self._start_time
         tokens_int = int(self._token_count)
-        token_rate = None
-        if elapsed > 0.5 and tokens_int > 0:
-            rate = int(tokens_int / elapsed)
-            token_rate = rate if rate > 0 else None
+        token_rate = self._record_token_rate_sample(now)
         return ActivitySnapshot(
             label=label,
             elapsed_s=elapsed,
@@ -335,13 +422,41 @@ class _ContentBlock:
             spinner="shape",
         )
 
+    def _record_token_rate_sample(self, now: float) -> int | None:
+        """Return a stable recent tokens/sec estimate, or None until enough data exists."""
+        self._token_samples.append((now, self._token_count))
+        while (
+            len(self._token_samples) > 1 and now - self._token_samples[0][0] > _TOKEN_RATE_WINDOW_S
+        ):
+            self._token_samples.popleft()
+        if len(self._token_samples) < _TOKEN_RATE_MIN_SAMPLES:
+            return None
+        first_t, first_tokens = self._token_samples[0]
+        last_t, last_tokens = self._token_samples[-1]
+        elapsed = last_t - first_t
+        if elapsed <= 0:
+            return None
+        token_delta = last_tokens - first_tokens
+        if token_delta <= 0:
+            return None
+        rate = int(token_delta / elapsed)
+        return rate if rate > 0 else None
+
     def _compose_composing(self) -> RenderableType:
         spinner = self._compose_spinner()
         pending = self._pending_text()
         if not pending:
             return spinner
         preview = self._build_preview(pending, max_lines=_COMPOSING_PREVIEW_LINES)
-        return Group(spinner, BLANK_ROW, self._wrap_preview_bullet(Markdown(preview)))
+        if self._paced:
+            # At the fast reveal cadence, re-parsing markdown every frame makes
+            # partial syntax (``**bol`` → ``**bold``, half-open ``` fences)
+            # flicker char-by-char. Render the uncommitted tail as plain text;
+            # completed blocks still commit to full markdown via render_agent_body.
+            body: RenderableType = Text(sanitize_ansi(preview))
+        else:
+            body = Markdown(preview)
+        return Group(spinner, BLANK_ROW, self._wrap_preview_bullet(body))
 
     def _compose_spinner(self) -> Text:
         return activity_status_line(

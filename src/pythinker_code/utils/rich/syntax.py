@@ -84,10 +84,41 @@ def resolve_code_theme(theme: str | SyntaxTheme) -> str | SyntaxTheme:
     return theme
 
 
+def available_code_themes() -> list[str]:
+    """Accepted ``code_theme`` values: the ANSI sentinel plus every stock Pygments style.
+
+    Imported lazily so the (modest) Pygments style enumeration cost is only paid
+    when a config value is validated, not on every ``syntax`` import.
+    """
+    from pygments.styles import get_all_styles
+
+    return [PYTHINKER_ANSI_THEME_NAME, *sorted(get_all_styles())]
+
+
+# Process-wide default code-fence theme, resolved once at shell startup from
+# ``config.tui.code_theme``. Mirrors ``ui.theme`` set_active_theme/get_active_theme
+# so renderers pick up the configured theme without threading config through
+# every call site. ``PYTHINKER_ANSI_THEME_NAME`` keeps today's transparent look.
+_active_code_theme: str = PYTHINKER_ANSI_THEME_NAME
+
+
+def set_active_code_theme(theme: str) -> None:
+    """Set the process-wide default code-fence theme (Pygments style name or ANSI sentinel)."""
+    global _active_code_theme
+    _active_code_theme = theme
+
+
+def get_active_code_theme() -> str:
+    """Return the active code-fence theme name (defaults to the ANSI sentinel)."""
+    return _active_code_theme
+
+
 class PythinkerSyntax(Syntax):
     def __init__(self, code: str, lexer: str, **kwargs: Any) -> None:
         if "theme" not in kwargs or kwargs["theme"] is None:
-            kwargs["theme"] = PYTHINKER_ANSI_THEME
+            kwargs["theme"] = resolve_code_theme(
+                get_active_code_theme() or PYTHINKER_ANSI_THEME_NAME
+            )
         super().__init__(code, lexer, **kwargs)
 
 

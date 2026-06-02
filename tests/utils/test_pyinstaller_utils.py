@@ -240,9 +240,22 @@ def test_pyinstaller_datas():
 
 
 def test_pyinstaller_hiddenimports():
+    import pkgutil
+
+    import pygments.styles
+
     from pythinker_code.utils.pyinstaller import hiddenimports
 
-    assert sorted(hiddenimports) == snapshot(
+    # Pygments style list is owned by the Pygments package and changes with upgrades;
+    # enumerate actual sub-modules (matching collect_submodules) rather than the style
+    # registry names (get_all_styles uses hyphens, modules use underscores).
+    expected_pygments = {"pygments.styles"} | {
+        f"pygments.styles.{mod.name}" for mod in pkgutil.iter_modules(pygments.styles.__path__)
+    }
+    assert expected_pygments <= set(hiddenimports)
+
+    project_entries = sorted(set(hiddenimports) - expected_pygments)
+    assert project_entries == snapshot(
         [
             "pythinker_code.cli._lazy_group",
             "pythinker_code.cli.debug",

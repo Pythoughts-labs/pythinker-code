@@ -191,7 +191,7 @@ def test_active_todo_activity_line_uses_stable_label_not_shimmer() -> None:
         "Implement pinned todos", elapsed_s=0.88, width=100, shimmer_label=False
     )
 
-    active_color = _color_hex(tui_rich_style("activity_label").color)
+    active_color = _color_hex(tui_rich_style("accent").color)
     marker_style = Style.parse(line.style) if isinstance(line.style, str) else line.style
     assert marker_style.color == tui_rich_style("activity_spinner").color
     assert _span_colors_for(line, "Implement pinned todos") == {active_color}

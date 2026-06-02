@@ -1831,6 +1831,13 @@ def _build_toolbar_tips(clipboard_available: bool) -> list[str]:
 
 _TIP_SEPARATOR = " | "
 
+# Cap prompt redraws at ~30 fps. Smooth streaming calls ``invalidate()`` on a
+# fast cadence; without this, prompt_toolkit redraws on *every* invalidate,
+# which (per its own docs) "could cause a lot of terminal output, which some
+# terminals are not able to process" — the classic streaming flicker/lag. With
+# it, rapid invalidations coalesce into at most one redraw per interval.
+_MIN_REDRAW_INTERVAL_S = 1 / 30
+
 
 class CustomPromptSession:
     def __init__(
@@ -2261,6 +2268,11 @@ class CustomPromptSession:
             bottom_toolbar=self._render_bottom_toolbar,
             style=get_prompt_style(),
         )
+        # Throttle redraws so the fast streaming-reveal cadence can't overwhelm
+        # slower terminals (best practice for "invalidate is called a lot").
+        # prompt_toolkit's renderer is already differential (only emits changed
+        # cells), so this caps frame rate without forcing full repaints.
+        self._session.app.min_redraw_interval = _MIN_REDRAW_INTERVAL_S
         self._session.default_buffer.read_only = Condition(
             lambda: (
                 (delegate := self._active_prompt_delegate()) is not None

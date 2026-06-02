@@ -218,6 +218,7 @@ class Runtime:
         yolo: bool,
         auto: bool = False,
         runtime_auto: bool = False,
+        no_yolo: bool = False,
         skills_dirs: list[HostPath] | None = None,
         scratchpad_section: str | None = None,
     ) -> Runtime:
@@ -278,18 +279,26 @@ class Runtime:
                 parts.append(f"### `{d}`\n\n```\n{dir_ls}\n```")
             additional_dirs_info = "\n\n".join(parts)
 
-        # Merge invocation flags with persisted session state.
-        effective_yolo = yolo or session.state.approval.yolo
-        # An explicit --yolo invocation is already a deliberate trust decision for
-        # this run, so it must not deadlock non-interactive/e2e flows behind safe mode.
-        effective_safe_mode = False if yolo else session.state.trust.safe_mode
+        # Merge invocation flags with persisted session state. ``--no-yolo`` is an explicit
+        # force-off that beats the flag, config ``default_yolo``, and persisted state.
+        original_persisted_yolo = session.state.approval.yolo
+        effective_yolo = (yolo or original_persisted_yolo) and not no_yolo
+        # Do NOT force safe_mode off under yolo: yolo already bypasses safe mode in the
+        # decision path (is_auto_approve / _unattended_denial_feedback short-circuit on
+        # yolo before reading safe_mode), so there is no deadlock to avoid — and forcing it
+        # False here used to get persisted back to trust state, silently downgrading the
+        # workspace's trust posture.
+        effective_safe_mode = session.state.trust.safe_mode
         if auto and not session.state.approval.auto:
             session.state.approval.auto = True
             session.save_state()
         saved_actions = set(session.state.approval.auto_approve_actions)
 
         def _on_approval_change() -> None:
-            session.state.approval.yolo = approval_state.yolo
+            if not no_yolo:
+                session.state.approval.yolo = approval_state.yolo
+            else:
+                session.state.approval.yolo = original_persisted_yolo
             session.state.approval.auto = approval_state.auto
             session.state.approval.auto_approve_actions = set(approval_state.auto_approve_actions)
             session.state.trust.safe_mode = approval_state.safe_mode

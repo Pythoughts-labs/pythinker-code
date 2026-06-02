@@ -541,7 +541,10 @@ class PythinkerSoul:
                 self.toggle_plan_mode,
                 path_getter,
                 checker,
-                self._approval.is_auto_approve,
+                # Match ExitPlanMode: gate on user presence (is_auto), not is_auto_approve.
+                # Yolo skips approvals but the user is still present, so an interactive
+                # yolo session should not silently slip into plan mode without confirming.
+                self._approval.is_auto,
             )
 
         # AskUserQuestion — bind auto-mode checker for auto-dismiss.

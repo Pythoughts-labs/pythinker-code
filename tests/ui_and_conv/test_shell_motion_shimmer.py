@@ -43,7 +43,7 @@ def test_shimmer_varies_over_time_when_motion_enabled(monkeypatch):
     assert first != later or first != _SHIMMER_BASE.lower()
 
 
-def test_prompt_shimmer_fragments_share_silver_sheen_palette(monkeypatch):
+def test_prompt_shimmer_fragments_share_ember_ramp_palette(monkeypatch):
     monkeypatch.delenv("PYTHINKER_REDUCED_MOTION", raising=False)
     set_active_theme("dark")
 
