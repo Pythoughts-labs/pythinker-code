@@ -20,7 +20,7 @@ from pythinker_code.ui.shell.components.markdown import PythinkerMarkdown as Mar
 from pythinker_code.ui.shell.design_system import ShellTone, StatusName, shell_style, status_icon
 from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ACTIVE_MARKER
 from pythinker_code.ui.shell.motion import reduced_motion_enabled
-from pythinker_code.ui.shell.spacing import WORKLOG_PANEL_PADDING
+from pythinker_code.ui.shell.spacing import REPORT_PANEL_PADDING, WORKLOG_PANEL_PADDING
 from pythinker_code.ui.theme import get_tui_tokens, tui_rich_style
 from pythinker_code.utils.rich.columns import BulletColumns
 from pythinker_code.utils.rich.diff_render import (
@@ -170,6 +170,7 @@ def render_worklog_card(
     *,
     subtitle: str | None = None,
     border_style: StyleType = "grey39",
+    padding: tuple[int, int] = WORKLOG_PANEL_PADDING,
 ) -> Panel:
     return Panel(
         body,
@@ -179,7 +180,7 @@ def render_worklog_card(
         subtitle_align="left",
         border_style=border_style,
         box=box.ROUNDED,
-        padding=WORKLOG_PANEL_PADDING,
+        padding=padding,
         expand=False,
     )
 
@@ -236,6 +237,7 @@ def render_display_blocks(
                             border_style=tui_rich_style("error")
                             if is_error
                             else tui_rich_style("dim"),
+                            padding=REPORT_PANEL_PADDING,
                         )
                     )
                 else:

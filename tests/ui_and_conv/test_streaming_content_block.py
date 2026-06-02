@@ -335,6 +335,23 @@ class TestContentBlockCommitment:
         pending = block.raw_text[block._committed_len :]
         assert "Third." in pending
 
+    def test_report_fence_continuation_keeps_gap_after_streamed_prose(self, monkeypatch):
+        from importlib import import_module
+
+        blocks_module = import_module("pythinker_code.ui.shell.visualize._blocks")
+        output_console = Console(record=True, width=100, color_system=None)
+        monkeypatch.setattr(blocks_module, "console", output_console)
+
+        block = _ContentBlock(is_think=False)
+        block.append("Deep scan completed. Full report saved here:\n")
+        block.append("  .pythinker/reports/deep-code-scan.md\n")
+        block.append('```report\n{"title": "Deep Code Scan Results", "findings": []}\n```\n\n')
+        output_console.print(block.compose_final())
+        output = output_console.export_text()
+
+        assert "Deep scan completed" in output
+        assert "\n\n  ╭─ Deep Code Scan Results" in output
+
     def test_composing_no_commit_without_newline(self):
         block = _ContentBlock(is_think=False)
         block.append("just some text without newlines")

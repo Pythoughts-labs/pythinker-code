@@ -70,6 +70,36 @@ def test_render_report_summary_tally_and_no_critical_high():
     assert "no critical or high" in out
 
 
+def test_render_report_uses_padded_reading_surface():
+    out = _plain(render_report(_sample_report()), width=100)
+
+    assert "╭" in out
+    assert "Code Review Results" in out
+    assert "│  Reviewed 17 files across 3 clusters" in out
+
+
+def test_render_report_hanging_indents_wrapped_locations():
+    report = Report(
+        title="Deep Code Scan Results",
+        findings=(
+            ReportFinding(
+                "Pythinker provider loses minimal round-trip",
+                "medium",
+                location=(
+                    "packages/pythinker-core/src/pythinker_core/chat_provider/pythinker.py:138-148; "
+                    "packages/pythinker-core/src/pythinker_core/chat_provider/pythinker.py:198-209"
+                ),
+            ),
+        ),
+    )
+
+    out = _plain(render_report(report), width=120)
+    location_lines = [line for line in out.splitlines() if "pythinker.py" in line]
+
+    assert len(location_lines) >= 2
+    assert location_lines[0].index("packages") == location_lines[1].index("packages")
+
+
 def test_render_report_groups_in_severity_order_regardless_of_input():
     report = Report(
         title="t",

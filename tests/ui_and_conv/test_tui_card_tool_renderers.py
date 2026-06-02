@@ -861,7 +861,7 @@ def test_ask_user_renders_question_and_options():
         },
     )
     assert "● Ask(1 question)" in rendered
-    assert "Which auth method?" in rendered
+    assert "● Ask(1 question)\n\n? Which auth method?" in rendered
     assert "OAuth" in rendered
     assert "API key" in rendered
 

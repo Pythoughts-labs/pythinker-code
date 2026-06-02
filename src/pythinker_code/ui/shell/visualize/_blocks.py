@@ -160,6 +160,11 @@ def _find_committed_boundary(text: str) -> int | None:
     return markdown_commit_boundary(text)
 
 
+def _starts_with_report_fence(text: str) -> bool:
+    stripped = text.lstrip().casefold()
+    return stripped.startswith("```report") or stripped.startswith("~~~report")
+
+
 def _tail_lines(text: str, n: int) -> str:
     """Extract the last *n* lines from *text* via reverse scanning (O(n))."""
     pos = len(text)
@@ -249,7 +254,10 @@ class _ContentBlock:
         remaining = self._pending_text()
         if not remaining:
             return Text("")
-        return self._wrap_bullet(render_agent_body(remaining))
+        rendered = self._wrap_bullet(render_agent_body(remaining))
+        if self._has_printed_bullet and _starts_with_report_fence(remaining):
+            return Group(BLANK_ROW, rendered)
+        return rendered
 
     def has_pending(self) -> bool:
         """Whether there is uncommitted content to flush."""
@@ -299,6 +307,11 @@ class _ContentBlock:
         committed_text = pending[:boundary]
         if not self._has_printed_bullet:
             # Leading blank row separates this step from the previous block.
+            console.print()
+        elif _starts_with_report_fence(committed_text):
+            # If prose streamed earlier and the next committed slice begins with
+            # a report fence, preserve the same one-row seam users get when the
+            # prose and report render together in a single markdown pass.
             console.print()
         console.print(self._wrap_bullet(render_agent_body(committed_text)))
         self._committed_len += boundary
