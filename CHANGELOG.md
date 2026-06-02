@@ -15,10 +15,16 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.29.0 (2026-06-01)
+
+### What changed in this release
+
 - **Reloads pick up MCP and model changes cleanly.** `/reload` now re-reads MCP server configuration added after startup, cleans up stale MCP/model-refresh resources during same-process reloads, and `/model` starts a fresh session when switching models so old context does not carry across providers.
 - **Thinking effort controls and safer auto-mode decisions.** Thinking effort is now a first-class setting across the CLI, ACP, web config, and supported providers; Shift+Tab cycles available efforts in the shell, and auto-mode can deliberate with advisor feedback before sensitive or destructive approval flows.
 - **Shell sessions get cleaner recaps and rendering.** The interactive shell can show turn recaps, includes hook stdout/stderr in the transcript, improves prompt/file-mention and tool-output spacing, and uses branded browser-login result pages.
 - **MiniMax Token Plan model availability stays current.** MiniMax login and startup refresh now use the authenticated model catalog so Token Plan keys only keep models actually available to that key, while preserving user model preferences and isolating discovery failures from other provider refreshes.
+
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.29.0`, or use the native installer for your OS (see the README install table).
 
 ## 0.28.0 (2026-05-31)
 
