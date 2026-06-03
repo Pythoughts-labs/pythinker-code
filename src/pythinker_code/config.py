@@ -226,6 +226,14 @@ def _load_scoped(project_root: Path | None) -> Config:
     user_file = default_user_file
     user_dict = _read_toml(user_file)
 
+    # If the user config file still doesn't exist after migration (e.g. corrupt JSON
+    # was backed up but no TOML was written), seed it with defaults so subsequent
+    # runs have a concrete starting point — matching the legacy single-file behaviour.
+    if not user_file.exists():
+        default_cfg = get_default_config()
+        logger.debug("No config file found, creating default config: {config}", config=default_cfg)
+        save_config(default_cfg, user_file)
+
     project_file: Path | None = None
     local_file: Path | None = None
     project_dict: dict = {}
@@ -821,27 +829,26 @@ def get_default_config() -> Config:
 
 
 def load_config(config_file: Path | None = None) -> Config:
+    """Load configuration, resolving up to three scopes when no explicit file is given.
+
+    When *config_file* is None (the default), the scoped pipeline runs:
+    User (~/.pythinker/config.toml) → Project (.pythinker/config.toml) →
+    Local (.pythinker/config.local.toml), merged with type-based rules.
+
+    When *config_file* is given explicitly (e.g. via --config), that single
+    file is loaded directly with no scope resolution — preserving the legacy
+    behaviour used by tests and the CLI --config flag.
     """
-    Load configuration from config file.
-    If the config file does not exist, create it with default configuration.
-
-    Args:
-        config_file (Path | None): Path to the configuration file. If None, use default path.
-
-    Returns:
-        Validated Config object.
-
-    Raises:
-        ConfigError: If the configuration file is invalid.
-    """
-    default_config_file = get_config_file().expanduser().resolve(strict=False)
     if config_file is None:
-        config_file = default_config_file
+        project_root = _find_project_root(Path.cwd())
+        return _load_scoped(project_root)
+
+    # ── Explicit path: legacy single-file load (unchanged) ────────────────
+    default_config_file = get_config_file().expanduser().resolve(strict=False)
     config_file = config_file.expanduser().resolve(strict=False)
     is_default_config_file = config_file == default_config_file
     logger.debug("Loading config from file: {file}", file=config_file)
 
-    # If the user hasn't provided an explicit config path, migrate legacy JSON config once.
     if is_default_config_file and not config_file.exists():
         migration_error = _migrate_json_config_to_toml()
         if migration_error is not None:

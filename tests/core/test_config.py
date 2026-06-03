@@ -595,3 +595,24 @@ def test_load_scoped_source_scopes_populated(tmp_path, monkeypatch):
     assert "user" in config.source_scopes
     assert "project" in config.source_scopes
     assert "local" not in config.source_scopes  # local file absent
+
+
+def test_load_config_explicit_path_bypasses_scoping(tmp_path):
+    """--config flag must bypass scope resolution entirely."""
+    config_file = tmp_path / "explicit.toml"
+    config_file.write_text('theme = "light"\n', encoding="utf-8")
+    config = load_config(config_file)
+    assert config.theme == "light"
+    assert config.source_file == config_file.resolve()
+    # source_scopes is empty because no scope pipeline was run
+    assert config.source_scopes == {}
+
+
+def test_load_config_no_args_uses_scope_resolution(tmp_path, monkeypatch):
+    """load_config() with no args routes through scoped pipeline."""
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    (tmp_path / "config.toml").write_text('theme = "light"\n', encoding="utf-8")
+    # No git root in tmp_path — falls back to user-only
+    config = load_config()
+    assert config.theme == "light"
+    assert "user" in config.source_scopes
