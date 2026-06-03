@@ -105,8 +105,8 @@ def test_parse_discovered_z_ai_models_uses_context_length_when_positive():
     result = _parse_discovered_models(payload)
     by_id = {m.model_id: m for m in result}
     assert by_id["glm-5.1"].max_context_size == 400_000
-    assert by_id["glm-4.5-air"].max_context_size == 98_304   # fallback to hardcoded
-    assert by_id["glm-4.7"].max_context_size == 131_072       # fallback to hardcoded
+    assert by_id["glm-4.5-air"].max_context_size == 98_304  # fallback to hardcoded
+    assert by_id["glm-4.7"].max_context_size == 131_072  # fallback to hardcoded
 
 
 def test_parse_discovered_z_ai_models_accepts_unknown_glm_future_models():

@@ -352,7 +352,7 @@ async def logout(app: Shell, args: str) -> None:
         console.print(
             f"[{_t.error}]Usage: /logout "
             "[openai|opencode-go|minimax|deepseek|z-ai|anthropic|openrouter|lm-studio|ollama|"
-            "github-feedback][/]]"
+            "github-feedback][/]"
         )
         return
     if not ok:
