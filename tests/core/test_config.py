@@ -5,6 +5,7 @@ from inline_snapshot import snapshot
 
 from pythinker_code.config import (
     Config,
+    _find_project_root,
     get_default_config,
     load_config,
     load_config_from_string,
@@ -258,3 +259,21 @@ def test_load_config_compaction_trigger_ratio_too_high():
 def test_auto_deliberate_is_a_valid_policy() -> None:
     c = Config(ask_user_question_policy="auto_deliberate")
     assert c.ask_user_question_policy == "auto_deliberate"
+
+
+def test_find_project_root_finds_git_root(tmp_path):
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    subdir = tmp_path / "src" / "pkg"
+    subdir.mkdir(parents=True)
+    assert _find_project_root(subdir) == tmp_path
+
+
+def test_find_project_root_returns_none_outside_git(tmp_path):
+    # tmp_path itself has no .git ancestor in practice
+    assert _find_project_root(tmp_path) is None
+
+
+def test_find_project_root_finds_root_in_cwd(tmp_path):
+    (tmp_path / ".git").mkdir()
+    assert _find_project_root(tmp_path) == tmp_path

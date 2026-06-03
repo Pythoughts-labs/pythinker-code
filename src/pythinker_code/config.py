@@ -30,6 +30,23 @@ from pythinker_code.llm import ModelCapability, ProviderType
 from pythinker_code.share import get_share_dir
 from pythinker_code.utils.logging import logger
 
+
+def _find_project_root(cwd: Path) -> Path | None:
+    """Walk up from cwd to find the nearest directory containing .git/.
+
+    Returns None when no .git marker is found before reaching the filesystem
+    root, so callers can skip project/local scopes without a fallback.
+    """
+    current = cwd.resolve()
+    while True:
+        if (current / ".git").exists():
+            return current
+        parent = current.parent
+        if parent == current:
+            return None
+        current = parent
+
+
 AgentExecutionProfile = Literal[
     "default",
     "review_safe",
