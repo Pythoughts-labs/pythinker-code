@@ -50,6 +50,108 @@ def get_z_ai_api_key_from_env() -> str | None:
     return None
 
 
+def _is_supported_z_ai_model(model_id: str) -> bool:
+    return model_id.lower().startswith("glm-")
+
+
+def _model_by_id() -> dict[str, ZaiModel]:
+    return {model.model_id: model for model in ZAI_MODELS}
+
+
+def _derive_alias_suffix(model_id: str) -> str:
+    return model_id.lower().strip()
+
+
+def _derive_display_name(model_id: str) -> str:
+    parts = model_id.split("-")
+    return "-".join(
+        p.upper() if p.lower() == "glm" else p.capitalize() for p in parts
+    )
+
+
+def _to_positive_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _context_size_from_item(item: Mapping[str, Any], fallback: int) -> int:
+    for key in ("context_length", "max_context_length", "context_window"):
+        parsed = _to_positive_int(item.get(key))
+        if parsed is not None:
+            return parsed
+    return fallback
+
+
+def _display_name_from_item(item: Mapping[str, Any], fallback: str) -> str:
+    for key in ("display_name", "name"):
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return fallback
+
+
+def _parse_discovered_models(data: object) -> tuple[ZaiModel, ...]:
+    if not isinstance(data, dict):
+        return ()
+    raw_items = cast(dict[str, Any], data).get("data")
+    if not isinstance(raw_items, list):
+        return ()
+
+    known = _model_by_id()
+    seen: set[str] = set()
+    result: list[ZaiModel] = []
+    for raw_item in cast(list[Any], raw_items):
+        if not isinstance(raw_item, Mapping):
+            continue
+        item = cast(Mapping[str, Any], raw_item)
+        model_id = item.get("id")
+        if not isinstance(model_id, str) or not model_id.strip():
+            continue
+        model_id = model_id.strip()
+        if model_id in seen or not _is_supported_z_ai_model(model_id):
+            continue
+        seen.add(model_id)
+
+        current = known.get(model_id)
+        alias_suffix = current.alias_suffix if current else _derive_alias_suffix(model_id)
+        display_name = _display_name_from_item(
+            item,
+            current.display_name if current else _derive_display_name(model_id),
+        )
+        max_context_size = _context_size_from_item(
+            item,
+            current.max_context_size if current else 131_072,
+        )
+        result.append(
+            ZaiModel(
+                model_id=model_id,
+                alias_suffix=alias_suffix,
+                display_name=display_name,
+                provider_key=current.provider_key if current else ZAI_PROVIDER_KEY,
+                max_context_size=max_context_size,
+            )
+        )
+    return tuple(result)
+
+
+async def _discover_z_ai_models(api_key: str) -> tuple[ZaiModel, ...]:
+    async with (
+        new_client_session(timeout=ZAI_MODEL_DISCOVERY_TIMEOUT) as session,
+        session.get(
+            ZAI_MODELS_URL,
+            headers={"x-api-key": api_key},
+            raise_for_status=True,
+        ) as response,
+    ):
+        payload = await response.json(content_type=None)
+    return _parse_discovered_models(payload)
+
+
 def _apply_z_ai_config(
     config: Config,
     api_key: SecretStr,
