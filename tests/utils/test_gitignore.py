@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 from pythinker_code.utils.gitignore import ensure_gitignored
 
 
@@ -30,7 +26,7 @@ def test_no_op_when_pattern_already_present(tmp_path):
     gi.write_text(".pythinker/config.local.toml\n", encoding="utf-8")
     ensure_gitignored(tmp_path, ".pythinker/config.local.toml")
     # No duplicate
-    lines = [l for l in gi.read_text().splitlines() if l == ".pythinker/config.local.toml"]
+    lines = [line for line in gi.read_text().splitlines() if line == ".pythinker/config.local.toml"]
     assert len(lines) == 1
 
 
