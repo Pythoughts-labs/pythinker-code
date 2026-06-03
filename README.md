@@ -14,7 +14,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-16a34a.svg?style=for-the-badge)](https://github.com/Pythoughts-labs/pythinker-code/blob/main/LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/Pythoughts-labs/pythinker-code/ci-pythinker-cli.yml?branch=main&label=CI&style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/Pythoughts-labs/pythinker-code/actions/workflows/ci-pythinker-cli.yml?query=branch%3Amain)
 
-[![PyPI downloads](https://assets.piptrends.com/get-last-month-downloads-badge/pythinker-code.svg)](https://piptrends.com/package/pythinker-code)
+[![PyPI Downloads](https://static.pepy.tech/badge/pythinker-code)](https://pepy.tech/projects/pythinker-code)
 [![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-f59e0b.svg?style=flat-square&logo=ruff&logoColor=white)](https://docs.astral.sh/ruff/)
 [![ACP ready](https://img.shields.io/badge/ACP-ready-7c3aed.svg?style=flat-square)](https://github.com/agentclientprotocol/agent-client-protocol)
 [![MCP tools](https://img.shields.io/badge/MCP-tools-0891b2.svg?style=flat-square)](https://modelcontextprotocol.io/)
@@ -50,15 +50,14 @@ It speaks the [**Agent Client Protocol (ACP)**](https://github.com/agentclientpr
 
 ---
 
-## 🆕 What's New in 0.31.0
+## 🆕 What's New in 0.32.0
 
-- **Release promotion no longer stalls when the Homebrew tap is broken.** The `promote-release` workflow now gates only on platform assets and PyPI; a lagging or broken Homebrew tap emits a warning annotation but no longer blocks the GitHub Release from reaching Latest.
-- **Calmer, theme-aligned TUI rendering.** Transcript, recap, and tool-header output now use theme-standardized activity colors, and Markdown tables render as a bordered grid (wide tables no longer collapse into a stacked-record list).
-- **Auto-mode tool approval fails closed when unattended.** In auto/non-interactive runs, actions still needing approval are denied with guidance instead of waiting indefinitely; the `auto_deliberate_destructive_actions` setting extends this backstop to interactive `--yolo` sessions.
-- **Yolo + auto mode hardened against silent over-reach.** Entering plan mode requires confirmation in interactive `--yolo` sessions; a new `--no-yolo` flag overrides yolo globally; resuming a yolo/auto session surfaces a startup warning.
-- **`pythinker review` validates finding evidence.** Reviewflow assembles prompts from a shared security-knowledge manifest and validates findings without failing the whole review on invalid ones.
+- **`pythinker mcp add` no longer crashes on Windows and Linux native builds.** `copy_metadata()` replaces the fragile `collect_data_files()` approach in all three PyInstaller specs, so `fastmcp` and `mcp` dist-info are bundled and `importlib.metadata` resolves correctly in frozen binaries.
+- **Pythinker work directories are automatically gitignored on startup.** `.pythinker/`, `.pythinker-review/`, and `.pythinker-review-flow/` are silently added to the project's `.gitignore` when the agent starts inside a git repo, keeping the working tree clean.
+- **Old sessions and plan files are swept on startup.** Archives older than `session_retention_days` (default 30) are removed non-interactively at launch. Set `session_retention_days = 0` to disable.
+- **Windows upgrade version display fix.** Inno Setup now wipes `_internal` before installing new files, so in-place upgrades no longer show a stale version number or re-trigger the update prompt.
 
-Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.31.0`, or use the native installer for your platform from the [Releases page](https://github.com/Pythoughts-labs/pythinker-code/releases/latest).
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.32.0`, or use the native installer for your platform from the [Releases page](https://github.com/Pythoughts-labs/pythinker-code/releases/latest).
 
 
 ---
@@ -148,7 +147,7 @@ matches your OS — no Python, Node, or `uv` prerequisite.
 
 | Platform | Recommended install | Artifact source |
 |---|---|---|
-| **🪟 Windows** | `irm https://pythinker.com/install.ps1 \| iex` | `PythinkerSetup-0.31.0.exe` from [Releases](https://github.com/Pythoughts-labs/pythinker-code/releases/latest) |
+| **🪟 Windows** | `irm https://pythinker.com/install.ps1 \| iex` | `PythinkerSetup-0.32.0.exe` from [Releases](https://github.com/Pythoughts-labs/pythinker-code/releases/latest) |
 | **<img src="https://img.shields.io/badge/-macOS-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS"> / <img src="https://img.shields.io/badge/-Linux-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux">** | `curl -fsSL https://pythinker.com/install.sh \| bash` | native tarball from [Releases](https://github.com/Pythoughts-labs/pythinker-code/releases/latest) |
 | **<img src="https://img.shields.io/badge/-macOS-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS"> — Homebrew** | `brew install Pythoughts-labs/pythinker/pythinker-code` | auto-published Homebrew tap |
 | **🐳 Docker** | `docker run --rm -it ghcr.io/pythoughts-labs/pythinker-code` | GHCR multi-arch image |
@@ -176,7 +175,7 @@ pythinker                      # start the interactive TUI
 
 ### 🪟 Windows — native installer
 
-`PythinkerSetup-0.31.0.exe` is a signed* Inno Setup wizard. Installs per-user
+`PythinkerSetup-0.32.0.exe` is a signed* Inno Setup wizard. Installs per-user
 into `%LOCALAPPDATA%\Programs\Pythinker`, registers `pythinker` on your user
 PATH (`HKCU\Environment`), broadcasts `WM_SETTINGCHANGE` so new shells see
 the change. **No UAC prompt.**
@@ -187,13 +186,13 @@ irm https://pythinker.com/install.ps1 | iex
 
 # Or manually download the installer + checksum from the Releases page,
 # verify with Get-FileHash, then run:
-.\PythinkerSetup-0.31.0.exe
+.\PythinkerSetup-0.32.0.exe
 
 # Open a fresh PowerShell
 pythinker --version
 ```
 
-**Per-machine install** (IT-managed boxes): `.\PythinkerSetup-0.31.0.exe /ALLUSERS`
+**Per-machine install** (IT-managed boxes): `.\PythinkerSetup-0.32.0.exe /ALLUSERS`
 installs to `%ProgramFiles%\Pythinker` and writes PATH to HKLM (requires admin).
 
 **Upgrade:** `pythinker update` from inside the running app — it downloads
@@ -244,26 +243,26 @@ attached to every GitHub Release.
 
 ```sh
 # Debian / Ubuntu (x86_64)
-sudo dpkg -i pythinker-code_0.31.0_amd64.deb
+sudo dpkg -i pythinker-code_0.32.0_amd64.deb
 sudo apt-get install -f       # only if dpkg reports missing deps
 
 # Debian / Ubuntu (ARM64)
-sudo dpkg -i pythinker-code_0.31.0_arm64.deb
+sudo dpkg -i pythinker-code_0.32.0_arm64.deb
 
 # Fedora / RHEL / openSUSE (x86_64)
-curl -LO https://github.com/Pythoughts-labs/pythinker-code/releases/download/v0.31.0/pythinker-code-0.31.0.x86_64.rpm
-curl -LO https://github.com/Pythoughts-labs/pythinker-code/releases/download/v0.31.0/pythinker-code-0.31.0.x86_64.rpm.sha256
-sha256sum -c pythinker-code-0.31.0.x86_64.rpm.sha256
+curl -LO https://github.com/Pythoughts-labs/pythinker-code/releases/download/v0.32.0/pythinker-code-0.32.0.x86_64.rpm
+curl -LO https://github.com/Pythoughts-labs/pythinker-code/releases/download/v0.32.0/pythinker-code-0.32.0.x86_64.rpm.sha256
+sha256sum -c pythinker-code-0.32.0.x86_64.rpm.sha256
 # Fedora / RHEL:
-sudo dnf install ./pythinker-code-0.31.0.x86_64.rpm
+sudo dnf install ./pythinker-code-0.32.0.x86_64.rpm
 # openSUSE:
-sudo zypper install ./pythinker-code-0.31.0.x86_64.rpm
+sudo zypper install ./pythinker-code-0.32.0.x86_64.rpm
 
 # Fedora / RHEL (aarch64)
-curl -LO https://github.com/Pythoughts-labs/pythinker-code/releases/download/v0.31.0/pythinker-code-0.31.0.aarch64.rpm
-curl -LO https://github.com/Pythoughts-labs/pythinker-code/releases/download/v0.31.0/pythinker-code-0.31.0.aarch64.rpm.sha256
-sha256sum -c pythinker-code-0.31.0.aarch64.rpm.sha256
-sudo dnf install ./pythinker-code-0.31.0.aarch64.rpm
+curl -LO https://github.com/Pythoughts-labs/pythinker-code/releases/download/v0.32.0/pythinker-code-0.32.0.aarch64.rpm
+curl -LO https://github.com/Pythoughts-labs/pythinker-code/releases/download/v0.32.0/pythinker-code-0.32.0.aarch64.rpm.sha256
+sha256sum -c pythinker-code-0.32.0.aarch64.rpm.sha256
+sudo dnf install ./pythinker-code-0.32.0.aarch64.rpm
 ```
 
 Both packages drop a small `/usr/bin/pythinker` launcher that execs the real
@@ -272,8 +271,8 @@ binary under `/usr/lib/pythinker/`, so your `$PATH` stays tidy.
 **Verify before install:**
 
 ```sh
-sha256sum -c pythinker-code_0.31.0_amd64.deb.sha256        # Debian/Ubuntu
-sha256sum -c pythinker-code-0.31.0.x86_64.rpm.sha256       # Fedora/RHEL
+sha256sum -c pythinker-code_0.32.0_amd64.deb.sha256        # Debian/Ubuntu
+sha256sum -c pythinker-code-0.32.0.x86_64.rpm.sha256       # Fedora/RHEL
 ```
 
 **Upgrade:** download the new `.deb`/`.rpm` from Releases and `dpkg -i` /
