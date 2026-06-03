@@ -22,4 +22,5 @@ jobs:
           if ($actualHash -ne $wingetCreateSha256) {
             throw "wingetcreate.exe SHA-256 mismatch: expected $wingetCreateSha256, got $actualHash"
           }
-          .\wingetcreate.exe new "$installerUrl" --token $env:WINGET_TOKEN --submit
+          # --token triggers auto-submit to winget-pkgs; --no-open suppresses browser
+          .\wingetcreate.exe new "$installerUrl" --token $env:WINGET_TOKEN --no-open
