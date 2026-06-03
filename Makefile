@@ -124,6 +124,26 @@ test-pythinker-review: ## Run pythinker-review tests.
 test-pythinker-sdk: ## Run pythinker-sdk tests.
 	@echo "==> Running pythinker-sdk tests"
 	@uv run --directory sdks/pythinker-sdk pytest tests -vv
+
+.PHONY: cov cov-pythinker-code cov-pythinker-core cov-pythinker-host cov-pythinker-sdk
+cov: cov-pythinker-code cov-pythinker-core cov-pythinker-host cov-pythinker-sdk ## Run all test suites with coverage.
+cov-pythinker-code: ## Run Pythinker Code tests with coverage.
+	@echo "==> Running Pythinker Code tests with coverage"
+	@uv run pytest tests tests_e2e \
+		--cov --cov-report=xml:coverage.xml --cov-report=term-missing -vv
+cov-pythinker-core: ## Run Pythinker Core tests with coverage.
+	@echo "==> Running Pythinker Core tests with coverage"
+	@uv run --directory packages/pythinker-core pytest --doctest-modules \
+		--cov --cov-report=xml:coverage.xml -vv
+cov-pythinker-host: ## Run Pythinker Host tests with coverage.
+	@echo "==> Running Pythinker Host tests with coverage"
+	@uv run --directory packages/pythinker-host pytest tests \
+		--cov --cov-report=xml:coverage.xml -vv
+cov-pythinker-sdk: ## Run Pythinker SDK tests with coverage.
+	@echo "==> Running Pythinker SDK tests with coverage"
+	@uv run --directory sdks/pythinker-sdk pytest tests \
+		--cov --cov-report=xml:coverage.xml -vv
+
 .PHONY: build build-pythinker-code build-pythinker-core build-pythinker-host build-pythinker-review build-pythinker-sdk build-bin build-bin-onedir
 build: build-web build-vis build-pythinker-code build-pythinker-core build-pythinker-host build-pythinker-review build-pythinker-sdk ## Build Python packages for release.
 build-pythinker-code: build-web build-vis ## Build the pythinker-code sdist and wheel.
