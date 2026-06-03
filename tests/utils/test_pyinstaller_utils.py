@@ -52,16 +52,14 @@ def test_pyinstaller_datas():
             f"{pkg_dist}/METADATA must be bundled so importlib.metadata works in the frozen app"
         )
 
+    dist_info_dirs = {f"{pkg}-{version(pkg)}.dist-info" for pkg in ("fastmcp", "mcp")}
     datas = [
         (p, d)
         for p, d in datas
         if "web/static" not in d
         and "vis/static" not in d
         and d != "justext/stoplists"
-        and not any(
-            d == f"{pkg}-{version(pkg)}.dist-info" or d.startswith(f"{pkg}-{version(pkg)}.dist-info/")
-            for pkg in ("fastmcp", "mcp")
-        )
+        and not any(d == di or d.startswith(di + "/") for di in dist_info_dirs)
     ]
 
     expected_datas = [
