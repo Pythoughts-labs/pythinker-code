@@ -101,6 +101,17 @@ def test_default_config_dump():
     )
 
 
+def test_config_source_scopes_default_empty():
+    config = get_default_config()
+    assert config.source_scopes == {}
+
+
+def test_config_source_scopes_not_in_dump():
+    config = get_default_config()
+    dumped = config.model_dump()
+    assert "source_scopes" not in dumped
+
+
 def test_load_config_text_toml():
     config = load_config_from_string('default_model = ""\n')
     assert config == get_default_config()

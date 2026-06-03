@@ -549,6 +549,14 @@ class Config(BaseModel):
         description="Path to the loaded config file. None when loaded from --config text.",
         exclude=True,
     )
+    source_scopes: dict[str, Path] = Field(
+        default_factory=dict,
+        description=(
+            "Paths of config files that contributed to this resolved config, keyed by scope name. "
+            "e.g. {'user': Path('~/.pythinker/config.toml'), 'project': Path('.pythinker/config.toml')}."
+        ),
+        exclude=True,
+    )
     default_model: str = Field(default="", description="Default model to use")
     default_thinking: bool = Field(default=False, description="Default thinking mode")
     default_thinking_effort: ThinkingEffort | None = Field(
