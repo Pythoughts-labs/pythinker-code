@@ -243,6 +243,12 @@ async def refresh_managed_models(config: Config) -> bool:
         apply_opencode_go_models,
         refresh_opencode_go_models,
     )
+    from pythinker_code.auth.z_ai import (
+        ZAI_PROVIDER_KEY,
+        ZaiModel,
+        apply_z_ai_models,
+        refresh_z_ai_models,
+    )
 
     managed_providers = {
         key: provider for key, provider in config.providers.items() if is_managed_provider_key(key)
@@ -258,9 +264,9 @@ async def refresh_managed_models(config: Config) -> bool:
         # generic `managed:<platform>` path can't express OpenCode Go's
         # two-provider split, and MiniMax's provider key intentionally includes
         # the wire-shape suffix (`managed:minimax-anthropic`).
-        if (
-            provider_key in OPENCODE_GO_PROVIDER_KEYS
-            or provider_key == MINIMAX_ANTHROPIC_PROVIDER_KEY
+        if provider_key in OPENCODE_GO_PROVIDER_KEYS or provider_key in (
+            MINIMAX_ANTHROPIC_PROVIDER_KEY,
+            ZAI_PROVIDER_KEY,
         ):
             continue
         platform_id = parse_managed_provider_key(provider_key)
@@ -417,6 +423,14 @@ async def refresh_managed_models(config: Config) -> bool:
     if minimax_models is not None and apply_minimax_models(config, minimax_models):
         changed = True
 
+    z_ai_models: tuple[ZaiModel, ...] | None = None
+    try:
+        z_ai_models = await refresh_z_ai_models(config)
+    except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+        logger.warning("Failed to refresh Z AI models: {error}", error=exc)
+    if z_ai_models is not None and apply_z_ai_models(config, z_ai_models):
+        changed = True
+
     if changed:
         config_for_save = load_config()
         save_changed = False
@@ -426,6 +440,8 @@ async def refresh_managed_models(config: Config) -> bool:
         if opencode_go_models and apply_opencode_go_models(config_for_save, opencode_go_models):
             save_changed = True
         if minimax_models is not None and apply_minimax_models(config_for_save, minimax_models):
+            save_changed = True
+        if z_ai_models is not None and apply_z_ai_models(config_for_save, z_ai_models):
             save_changed = True
         if save_changed:
             save_config(config_for_save)
