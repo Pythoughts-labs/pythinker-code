@@ -14,93 +14,69 @@ jobs:
           WINGET_TOKEN: ${{ secrets.WINGET_SUBMIT_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
-          $version    = "0.30.0"
-          $pkgId      = "PythoughtsLabs.PythinkerCode"
+          $version      = "0.30.0"
+          $pkgId        = "PythoughtsLabs.PythinkerCode"
           $installerUrl = "https://github.com/Pythoughts-labs/pythinker-code/releases/download/v$version/PythinkerSetup-$version.exe"
 
-          # Download wingetcreate (pinned SHA)
-          $wcUrl  = "https://github.com/microsoft/winget-create/releases/download/v1.12.8.0/wingetcreate.exe"
-          $wcSha  = "8BD738851B524885410112678E3771B341C5C716DE60FBBECB88AB0A363ED85D"
+          $wcUrl = "https://github.com/microsoft/winget-create/releases/download/v1.12.8.0/wingetcreate.exe"
+          $wcSha = "8BD738851B524885410112678E3771B341C5C716DE60FBBECB88AB0A363ED85D"
           Invoke-WebRequest -Uri $wcUrl -OutFile wingetcreate.exe
-          if ((Get-FileHash wingetcreate.exe -Algorithm SHA256).Hash -ne $wcSha) {
-            throw "wingetcreate.exe hash mismatch"
-          }
+          if ((Get-FileHash wingetcreate.exe -Algorithm SHA256).Hash -ne $wcSha) { throw "hash mismatch" }
 
-          # Get installer SHA256 from release sidecar
           $sha256 = ((Invoke-WebRequest -Uri "$installerUrl.sha256").Content.Trim() -split '\s+')[0]
-          Write-Host "Installer SHA256: $sha256"
+          Write-Host "SHA256: $sha256"
 
-          # Detect installer type by inspecting the binary header
           Invoke-WebRequest -Uri $installerUrl -OutFile installer.exe
-          $bytes   = [System.IO.File]::ReadAllBytes("installer.exe")
-          $header  = [System.Text.Encoding]::ASCII.GetString($bytes[0..65535])
-          if ($header -match "Inno Setup") {
-            $installerType = "inno"
-          } elseif ($header -match "Nullsoft") {
-            $installerType = "nullsoft"
-          } else {
-            $installerType = "exe"
-          }
-          Write-Host "Detected installer type: $installerType"
+          $header = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes("installer.exe")[0..65535])
+          $installerType = if ($header -match "Inno Setup") { "inno" } elseif ($header -match "Nullsoft") { "nullsoft" } else { "exe" }
+          $silentSwitch  = if ($installerType -eq "inno") { "/VERYSILENT /NORESTART" } else { "/S" }
+          Write-Host "Installer type: $installerType"
 
-          # Build manifest directory
           $dir = "manifests\p\PythoughtsLabs\PythinkerCode\$version"
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
 
-          # version manifest
-          @"
-PackageIdentifier: $pkgId
-PackageVersion: $version
-DefaultLocale: en-US
-ManifestType: version
-ManifestVersion: 1.6.0
-"@ | Set-Content "$dir\$pkgId.yaml" -Encoding UTF8
+          @("PackageIdentifier: $pkgId",
+            "PackageVersion: $version",
+            "DefaultLocale: en-US",
+            "ManifestType: version",
+            "ManifestVersion: 1.6.0") -join "`n" |
+            Set-Content -Path "$dir\$pkgId.yaml" -Encoding UTF8
 
-          # installer manifest
-          $silentSwitch = if ($installerType -eq "inno") { "/VERYSILENT /NORESTART" }
-                          elseif ($installerType -eq "nullsoft") { "/S" }
-                          else { "/S" }
-          @"
-PackageIdentifier: $pkgId
-PackageVersion: $version
-Platform:
-- Windows.Desktop
-MinimumOSVersion: 10.0.17763.0
-InstallerType: $installerType
-Installers:
-- Architecture: x64
-  InstallerUrl: $installerUrl
-  InstallerSha256: $sha256
-  InstallerSwitches:
-    Silent: $silentSwitch
-    SilentWithProgress: $silentSwitch
-ManifestType: installer
-ManifestVersion: 1.6.0
-"@ | Set-Content "$dir\$pkgId.installer.yaml" -Encoding UTF8
+          @("PackageIdentifier: $pkgId",
+            "PackageVersion: $version",
+            "Platform:",
+            "- Windows.Desktop",
+            "MinimumOSVersion: 10.0.17763.0",
+            "InstallerType: $installerType",
+            "Installers:",
+            "- Architecture: x64",
+            "  InstallerUrl: $installerUrl",
+            "  InstallerSha256: $sha256",
+            "  InstallerSwitches:",
+            "    Silent: $silentSwitch",
+            "    SilentWithProgress: $silentSwitch",
+            "ManifestType: installer",
+            "ManifestVersion: 1.6.0") -join "`n" |
+            Set-Content -Path "$dir\$pkgId.installer.yaml" -Encoding UTF8
 
-          # locale manifest
-          @"
-PackageIdentifier: $pkgId
-PackageVersion: $version
-PackageLocale: en-US
-Publisher: Pythoughts Labs
-PublisherUrl: https://pythinker.com
-PackageName: Pythinker Code
-PackageUrl: https://pythinker.com
-License: Apache-2.0
-LicenseUrl: https://github.com/Pythoughts-labs/pythinker-code/blob/main/LICENSE
-ShortDescription: Terminal-native review-first AI engineering agent
-Moniker: pythinker
-Tags:
-- ai
-- agent
-- cli
-ManifestType: defaultLocale
-ManifestVersion: 1.6.0
-"@ | Set-Content "$dir\$pkgId.locale.en-US.yaml" -Encoding UTF8
+          @("PackageIdentifier: $pkgId",
+            "PackageVersion: $version",
+            "PackageLocale: en-US",
+            "Publisher: Pythoughts Labs",
+            "PublisherUrl: https://pythinker.com",
+            "PackageName: Pythinker Code",
+            "PackageUrl: https://pythinker.com",
+            "License: Apache-2.0",
+            "LicenseUrl: https://github.com/Pythoughts-labs/pythinker-code/blob/main/LICENSE",
+            "ShortDescription: Terminal-native review-first AI engineering agent",
+            "Moniker: pythinker",
+            "Tags:",
+            "- ai",
+            "- agent",
+            "- cli",
+            "ManifestType: defaultLocale",
+            "ManifestVersion: 1.6.0") -join "`n" |
+            Set-Content -Path "$dir\$pkgId.locale.en-US.yaml" -Encoding UTF8
 
-          Write-Host "Manifest files generated:"
-          Get-ChildItem $dir
-
-          # Submit via wingetcreate submit (non-interactive)
+          Write-Host "Generated:"; Get-ChildItem $dir
           .\wingetcreate.exe submit $dir --token $env:WINGET_TOKEN
