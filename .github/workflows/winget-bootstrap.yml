@@ -1,7 +1,8 @@
 name: WinGet bootstrap (one-off, delete after use)
 
 on:
-  workflow_dispatch:
+  push:
+    branches: ["ci/winget-bootstrap"]
 
 jobs:
   bootstrap:
