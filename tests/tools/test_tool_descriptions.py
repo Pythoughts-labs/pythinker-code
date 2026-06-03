@@ -140,7 +140,7 @@ def test_set_todo_list_description(set_todo_list_tool: SetTodoList):
     """Test the description of SetTodoList tool."""
     assert set_todo_list_tool.base.description == snapshot(
         """\
-Manage your todo list for tracking task progress during execution.
+# Manage your todo list for tracking task progress during execution.
 
 **When to set todos (Update mode):**
 Set the todo list **only after the user has explicitly agreed on the plan**. The todo list marks the start of execution — it is not a planning scratch-pad. Do not call this tool while exploring, gathering context, presenting options, or waiting for user feedback. The moment the user says "yes", "do it", "go ahead", or otherwise confirms the approach, set the list and begin.
