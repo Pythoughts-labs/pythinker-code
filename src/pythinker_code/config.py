@@ -271,9 +271,9 @@ def _load_scoped(project_root: Path | None) -> Config:
     if user_file.exists():
         config.source_scopes["user"] = user_file
     if project_file is not None and project_file.exists():
-        config.source_scopes["project"] = project_file
+        config.source_scopes["project"] = project_file.resolve(strict=False)
     if local_file is not None and local_file.exists():
-        config.source_scopes["local"] = local_file
+        config.source_scopes["local"] = local_file.resolve(strict=False)
         # Auto-gitignore local config so it is never accidentally committed
         ensure_gitignored(
             project_root,  # type: ignore[arg-type]
