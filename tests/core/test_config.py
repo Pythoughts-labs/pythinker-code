@@ -597,6 +597,19 @@ def test_load_scoped_source_scopes_populated(tmp_path, monkeypatch):
     assert "local" not in config.source_scopes  # local file absent
 
 
+def test_load_scoped_gitignores_local_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    _write_toml(tmp_path / "config.toml", {})
+    project_root = tmp_path / "myproject"
+    _write_toml(project_root / ".pythinker" / "config.local.toml", {})
+
+    _load_scoped(project_root=project_root)
+
+    gitignore = project_root / ".gitignore"
+    assert gitignore.exists()
+    assert ".pythinker/config.local.toml" in gitignore.read_text(encoding="utf-8")
+
+
 def test_load_config_explicit_path_bypasses_scoping(tmp_path):
     """--config flag must bypass scope resolution entirely."""
     config_file = tmp_path / "explicit.toml"
