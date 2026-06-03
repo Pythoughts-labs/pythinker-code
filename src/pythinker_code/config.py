@@ -96,7 +96,7 @@ def _set_nested(d: dict, path: tuple[str, ...], value: object) -> None:
     node[path[-1]] = value
 
 
-def _lookup_provenance(prov: "dict | str", loc: tuple) -> str:
+def _lookup_provenance(prov: dict | str, loc: tuple) -> str:
     """Recursively follow *loc* through the provenance map.
 
     Integer elements (Pydantic list indices) are skipped — we map them back
