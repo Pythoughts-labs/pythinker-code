@@ -40,42 +40,31 @@ def test_pyinstaller_datas():
         "justext English stoplist missing from the PyInstaller datas"
     )
 
+    # fastmcp and mcp call importlib.metadata.version() at module import time;
+    # copy_metadata() bundles their dist-info so importlib.metadata can resolve
+    # them in the frozen binary. The exact file set is version-dependent (like
+    # justext stoplists), so assert METADATA presence rather than pinning every
+    # file. copy_metadata() produces clean paths ({dist-info}/FILE) — no
+    # fastmcp/../ prefix that the old collect_data_files workaround created.
+    # copy_metadata() returns a single directory entry per package (the whole
+    # dist-info dir), so check that the dest dir name matches — not a file inside it.
+    for pkg in ("fastmcp", "mcp"):
+        pkg_dist = f"{pkg}-{version(pkg)}.dist-info"
+        assert any(d == pkg_dist for p, d in datas), (
+            f"{pkg_dist} must be bundled so importlib.metadata works in the frozen app"
+        )
+
+    dist_info_dirs = {f"{pkg}-{version(pkg)}.dist-info" for pkg in ("fastmcp", "mcp")}
     datas = [
         (p, d)
         for p, d in datas
-        if "web/static" not in d and "vis/static" not in d and d != "justext/stoplists"
+        if "web/static" not in d
+        and "vis/static" not in d
+        and d != "justext/stoplists"
+        and not any(d == di or d.startswith(di + "/") for di in dist_info_dirs)
     ]
 
-    fastmcp_dist = f"fastmcp-{version('fastmcp')}.dist-info"
     expected_datas = [
-        (
-            f"{site_packages}/fastmcp/../{fastmcp_dist}/INSTALLER",
-            f"fastmcp/../{fastmcp_dist}",
-        ),
-        (
-            f"{site_packages}/fastmcp/../{fastmcp_dist}/METADATA",
-            f"fastmcp/../{fastmcp_dist}",
-        ),
-        (
-            f"{site_packages}/fastmcp/../{fastmcp_dist}/RECORD",
-            f"fastmcp/../{fastmcp_dist}",
-        ),
-        (
-            f"{site_packages}/fastmcp/../{fastmcp_dist}/REQUESTED",
-            f"fastmcp/../{fastmcp_dist}",
-        ),
-        (
-            f"{site_packages}/fastmcp/../{fastmcp_dist}/WHEEL",
-            f"fastmcp/../{fastmcp_dist}",
-        ),
-        (
-            f"{site_packages}/fastmcp/../{fastmcp_dist}/entry_points.txt",
-            f"fastmcp/../{fastmcp_dist}",
-        ),
-        (
-            f"{site_packages}/fastmcp/../{fastmcp_dist}/licenses/LICENSE",
-            f"fastmcp/../{fastmcp_dist}/licenses",
-        ),
         (
             f"{site_packages}/trafilatura/data/tei_corpus.dtd",
             "trafilatura/data",

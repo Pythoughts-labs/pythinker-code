@@ -68,3 +68,5 @@ blackbox/
 
 # pythinker-review
 .pythinker-review/
+# pythinker — local agent state (do not commit)
+.pythinker-review-flow/

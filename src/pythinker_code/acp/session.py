@@ -215,7 +215,7 @@ class ACPSession:
                     case _:
                         pass
         except LLMNotSet as e:
-            logger.exception("LLM not set:")
+            logger.warning("LLM not set — user has no provider configured")
             raise acp.RequestError.auth_required() from e
         except LLMNotSupported as e:
             logger.exception("LLM not supported:")

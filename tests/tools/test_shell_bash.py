@@ -194,6 +194,19 @@ async def test_output_truncation_on_failure(shell_tool: Shell):
     assert "Command failed with exit code:" in result.message
 
 
+async def test_oversized_output_line(shell_tool: Shell):
+    """A single output line exceeding asyncio's 64 KB readline limit must not crash the tool."""
+    # asyncio.StreamReader's default limit is 65536 bytes; emit a 70 KB line.
+    result = await shell_tool(
+        Params(command="python3 -c \"print('X' * 70000)\""),
+    )
+    # The tool must return a result (not raise), and the oversized content must
+    # appear in the output rather than being silently dropped.
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    assert "X" in result.output
+
+
 async def test_timeout_parameter_validation_bounds(shell_tool: Shell):
     """Test timeout parameter validation (bounds checking)."""
     # Test timeout < 1 (should fail validation)
@@ -250,6 +263,11 @@ async def test_cancelled_command_kills_process(shell_tool: Shell, monkeypatch: p
 
     class BlockingReadable:
         async def readline(self) -> bytes:
+            started.set()
+            await asyncio.Event().wait()
+            raise AssertionError("unreachable")
+
+        async def read(self, n: int = -1) -> bytes:
             started.set()
             await asyncio.Event().wait()
             raise AssertionError("unreachable")

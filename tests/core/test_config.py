@@ -82,6 +82,7 @@ def test_default_config_dump():
             "merge_all_available_skills": True,
             "extra_skill_dirs": [],
             "telemetry": True,
+            "session_retention_days": 30,
             "skip_auto_prompt_injection": False,
             "tui": {
                 "style": "card",

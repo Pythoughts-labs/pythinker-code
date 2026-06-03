@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 
 from pythinker_code.cli._lazy_group import LazySubcommandGroup
 
@@ -43,10 +43,12 @@ datas = (
         "dateparser",
         includes=["**/*.pkl"],
     )
-    + collect_data_files(
-        "fastmcp",
-        includes=["../fastmcp-*.dist-info/*"],
-    )
+    # fastmcp calls importlib.metadata.version("fastmcp") at module import time.
+    # copy_metadata() is the PyInstaller-standard hook for making
+    # importlib.metadata work in frozen apps; it bundles the dist-info sibling
+    # directory that collect_data_files() silently skips.
+    + copy_metadata("fastmcp")
+    + copy_metadata("mcp")
     + collect_data_files("trafilatura")
     # justext is trafilatura's fallback extractor. It loads its per-language
     # stoplists by os.listdir()-ing justext/stoplists/, so without the data

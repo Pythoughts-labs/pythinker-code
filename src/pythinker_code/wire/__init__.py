@@ -140,9 +140,12 @@ class _WireRecorder:
         while True:
             try:
                 msg = await queue.get()
-                await self._record(msg)
             except QueueShutDown:
                 break
+            try:
+                await self._record(msg)
+            except Exception:
+                logger.exception("Wire recorder failed to persist message:")
 
     async def _record(self, msg: WireMessage) -> None:
         await self._wire_file.append_message(msg)

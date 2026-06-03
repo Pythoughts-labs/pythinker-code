@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 from typing import TextIO
 
@@ -80,6 +81,13 @@ class FindingsStore:
                 "findings_count": meta.findings_count,
             },
         )
+        # Collect run IDs that are about to fall off the index before truncating.
+        overflow_ids = [str(r["id"]) for r in runs[_INDEX_LIMIT:] if isinstance(r.get("id"), str)]
         tmp = idx_path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps({"runs": runs[:_INDEX_LIMIT]}, indent=2), encoding="utf-8")
         os.replace(tmp, idx_path)
+        # Delete physical run directories for entries that overflowed the cap.
+        for run_id in overflow_ids:
+            run_dir = self._run_dir(run_id)
+            if run_dir.is_dir():
+                shutil.rmtree(run_dir, ignore_errors=True)

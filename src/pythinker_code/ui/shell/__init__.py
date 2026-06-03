@@ -1275,7 +1275,7 @@ class Shell:
             return True
         except LLMNotSet:
             _t = _get_tui_tokens()
-            logger.exception("LLM not set:")
+            logger.warning("LLM not set — user has no provider configured")
             console.print(f'[{_t.error}]LLM not set, send "/login" to login[/]')
         except LLMNotSupported as e:
             # actually unsupported input/mode should already be blocked by prompt session
