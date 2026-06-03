@@ -79,3 +79,19 @@ include = [
     "src/**/*.py",
     "tests/**/*.py",
 ]
+
+[tool.coverage.run]
+source_pkgs = ["pythinker_host"]
+branch = true
+relative_files = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+    "\\.\\.\\.",
+]

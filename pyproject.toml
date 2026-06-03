@@ -189,3 +189,19 @@ updat = "updat"
 examin = "examin"
 continu = "continu"
 
+[tool.coverage.run]
+source_pkgs = ["pythinker_code"]
+branch = true
+relative_files = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+    "\\.\\.\\.",
+]
+
