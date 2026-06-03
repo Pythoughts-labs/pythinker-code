@@ -281,12 +281,12 @@ class Shell(CallableTool2[Params]):
         timeout: int,
     ) -> int:
         async def _read_stream(stream: AsyncReadable, cb: Callable[[bytes], None]):
-            while True:
-                line = await stream.readline()
-                if line:
-                    cb(line)
-                else:
-                    break
+            # Use read() instead of readline() to avoid asyncio's 64 KB per-line
+            # limit (raises LimitOverrunError / ValueError depending on Python
+            # version). The callbacks only accumulate text, so chunk boundaries
+            # do not matter for correctness.
+            while chunk := await stream.read(65536):
+                cb(chunk)
 
         process = await pythinker_host.exec(
             *self._shell_args(command), env=get_noninteractive_env()

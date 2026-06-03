@@ -129,6 +129,18 @@ FLOW_COMMAND_PREFIX = "flow:"
 DEFAULT_MAX_FLOW_MOVES = 1000
 
 
+def _safe_cwd(fallback: str) -> str:
+    """Return the current working directory as a string.
+
+    Falls back to *fallback* if the process CWD has been deleted (e.g. the
+    project directory was removed mid-session by a shell command).
+    """
+    try:
+        return str(Path.cwd())
+    except FileNotFoundError:
+        return str(fallback)
+
+
 def classify_llm_system(chat_provider: object | None) -> str:
     """Classify a chat provider into a stable gen_ai.system telemetry value."""
     try:
@@ -875,7 +887,7 @@ class PythinkerSoul:
                     matcher_value=text_input_for_hook,
                     input_data=events.user_prompt_submit(
                         session_id=self._runtime.session.id,
-                        cwd=str(Path.cwd()),
+                        cwd=_safe_cwd(str(self._runtime.session.work_dir)),
                         prompt=text_input_for_hook,
                     ),
                 )
@@ -917,7 +929,7 @@ class PythinkerSoul:
                     "Stop",
                     input_data=events.stop(
                         session_id=self._runtime.session.id,
-                        cwd=str(Path.cwd()),
+                        cwd=_safe_cwd(str(self._runtime.session.work_dir)),
                         stop_hook_active=False,
                     ),
                 )
@@ -1298,7 +1310,7 @@ class PythinkerSoul:
                     matcher_value=type(e).__name__,
                     input_data=_hook_events.stop_failure(
                         session_id=self._runtime.session.id,
-                        cwd=str(Path.cwd()),
+                        cwd=_safe_cwd(str(self._runtime.session.work_dir)),
                         error_type=type(e).__name__,
                         error_message=str(e),
                     ),
@@ -1361,7 +1373,7 @@ class PythinkerSoul:
                     matcher_value=view.event.type,
                     input_data=events.notification(
                         session_id=self._runtime.session.id,
-                        cwd=str(Path.cwd()),
+                        cwd=_safe_cwd(str(self._runtime.session.work_dir)),
                         sink="llm",
                         notification_type=view.event.type,
                         title=view.event.title,
@@ -1706,7 +1718,7 @@ class PythinkerSoul:
             matcher_value=trigger_reason,
             input_data=events.pre_compact(
                 session_id=self._runtime.session.id,
-                cwd=str(Path.cwd()),
+                cwd=_safe_cwd(str(self._runtime.session.work_dir)),
                 trigger=trigger_reason,
                 token_count=before_tokens,
                 custom_instructions=custom_instruction,
@@ -1763,7 +1775,7 @@ class PythinkerSoul:
                 matcher_value=trigger_reason,
                 input_data=events.post_compact(
                     session_id=self._runtime.session.id,
-                    cwd=str(Path.cwd()),
+                    cwd=_safe_cwd(str(self._runtime.session.work_dir)),
                     trigger=trigger_reason,
                     estimated_token_count=estimated_token_count,
                     compact_summary=summary_text,
@@ -1774,7 +1786,7 @@ class PythinkerSoul:
                 matcher_value="compact",
                 input_data=events.session_start(
                     session_id=self._runtime.session.id,
-                    cwd=str(Path.cwd()),
+                    cwd=_safe_cwd(str(self._runtime.session.work_dir)),
                     source="compact",
                 ),
             )

@@ -17,6 +17,7 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 - **`pythinker mcp add` no longer crashes on Windows and Linux native builds.** The PyInstaller specs were using `collect_data_files()` which silently omits the `fastmcp-*.dist-info/` sibling directory; fastmcp calls `importlib.metadata.version("fastmcp")` at import time, so every `mcp add` / `mcp list` invocation raised `PackageNotFoundError`. Switched all three specs (Windows installer, Linux installer, macOS/tarball) to `copy_metadata()` — the PyInstaller-standard hook for bundling dist-info.
 - **Pythinker work directories are automatically gitignored on startup.** When the agent starts inside a git repository, `.pythinker/`, `.pythinker-review/`, and `.pythinker-review-flow/` are silently appended to the project's `.gitignore` if missing, preventing local agent state from making the working tree dirty.
+- **Old sessions and plan files are swept on startup.** Archived session directories under `~/.pythinker/sessions/` and hero-name plan files under `~/.pythinker/plans/` older than `session_retention_days` (default 30) are removed non-interactively at startup. Set `session_retention_days = 0` to disable.
 - **Windows upgrade version display fix.** In-place upgrades no longer show a stale version number or re-trigger the update prompt. Inno Setup now wipes `_internal` before installing new files, preventing old `dist-info` directories from accumulating and causing `importlib.metadata` to report the previous version.
 
 ## 0.31.0 (2026-06-02)

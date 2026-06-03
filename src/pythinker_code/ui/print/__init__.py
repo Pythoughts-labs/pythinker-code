@@ -408,7 +408,7 @@ class Print:
 
                 command = None
         except LLMNotSet as e:
-            logger.exception("LLM not set:")
+            logger.warning("LLM not set — user has no provider configured")
             print(str(e))
             return ExitCode.FAILURE
         except LLMNotSupported as e:
