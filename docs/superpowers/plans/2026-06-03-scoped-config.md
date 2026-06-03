@@ -477,8 +477,8 @@ def _check_scope_locks(scope_dict: dict, scope_name: str) -> None:
                 scope_label = scope_name
             raise ConfigError(
                 f"'{field_path}' cannot be set in {scope_name} ({scope_label}).\n"
-                f"  Move it to ~/.pythinker/config.toml or set "
-                f"PYTHINKER_PROVIDER_<NAME>_API_KEY in the environment."
+                f"  Move it to ~/.pythinker/config.toml or set the corresponding "
+                f"PYTHINKER_* environment variable."
             )
 ```
 
@@ -1021,7 +1021,9 @@ def _load_scoped(project_root: Path | None) -> Config:
     return config
 ```
 
-- [ ] **Step 4: Verify `import copy` is present** (we use `_type_based_merge` which mutates in-place, so no `copy` needed — but double-check the imports at the top of `config.py` include `os` which `_apply_env_vars` uses)
+- [ ] **Step 4: Verify `import os` is present**
+
+Check that `config.py` imports `os` (required by `_apply_env_vars`). Note: `_type_based_merge` mutates in-place, so `import copy` is not needed.
 
 ```bash
 grep "^import os" /home/ai/Projects/pythinker-code-main/src/pythinker_code/config.py

@@ -14,7 +14,7 @@ Pythinker currently loads a single flat config from `~/.pythinker/config.toml` (
 
 ## Scope Hierarchy
 
-```
+```text
 Priority    Scope       File Location                             Secrets Allowed?
 ──────────────────────────────────────────────────────────────────────────────────
   1 (high)  Env Vars    PYTHINKER_* environment variables         ✅ yes
@@ -32,7 +32,7 @@ Priority    Scope       File Location                             Secrets Allowe
 
 ## File Locations
 
-```
+```text
 ~/.pythinker/
 └── config.toml               ← User scope (existing file, unchanged format)
 
@@ -78,7 +78,8 @@ SCOPE_LOCKED_PATHS: frozenset[tuple[str, ...]] = frozenset({
 Non-secret feedback fields (`endpoint_url`, `github_client_id`, `github_repo`) are **allowed** in project scope.
 
 **Violation error message:**
-```
+
+```text
 ConfigError: 'providers' cannot be set in .pythinker/config.toml (project scope).
   Move it to ~/.pythinker/config.toml or set PYTHINKER_PROVIDER_<NAME>_API_KEY
   in the environment.
@@ -107,7 +108,7 @@ Env var provenance is recorded as `f"env {env_key}"` (e.g. `"env PYTHINKER_THEME
 
 ## Resolution Pipeline
 
-```
+```text
 cwd → _find_project_root()
         found: /my-project/.git  →  project_root = /my-project
         not found                →  project_root = None  (skip project + local)
@@ -159,24 +160,30 @@ except ValidationError as exc:
 ## Key Internal Functions
 
 ### `_find_project_root(cwd: Path) -> Path | None`
+
 Walks parent directories from `cwd` looking for `.git/`. Returns the directory containing `.git/`, or `None`.
 
 ### `_check_scope_locks(scope_dict: dict, scope_name: str) -> None`
+
 For each path in `SCOPE_LOCKED_PATHS`, walks `scope_dict` following the path tuple. Raises `ConfigError` on the first found violation. Check is on raw dict keys before Pydantic validation.
 
 ### `_type_based_merge(base: dict, overlay: dict, provenance: dict, scope: str) -> dict`
+
 Recursive merge with type dispatch:
 - **Scalar:** `base[key] = overlay[key]`; `provenance[key] = scope`
 - **List:** `base[key] = base[key] + overlay[key]`; apply `dict.fromkeys()` if key in `DEDUP_LIST_FIELDS`; `provenance[key] = f"{existing}+{scope}" if existing else scope`
 - **Dict:** recurse into `_type_based_merge(base[key], overlay[key], provenance.setdefault(key, {}), scope)`
 
 ### `_apply_env_vars(merged: dict, provenance: dict) -> None`
+
 Iterates `ENV_FIELD_MAP`. For each key present in `os.environ`, calls `_set_nested` on both `merged` and `provenance`. Stores the raw string; Pydantic coerces the type during `model_validate()`.
 
 ### `_set_nested(d: dict, path: tuple[str, ...], value: object) -> None`
+
 Walks `path` into `d`, creating intermediate dicts as needed, sets the leaf.
 
 ### `_lookup_provenance(prov: dict | str, loc: tuple) -> str`
+
 ```python
 def _lookup_provenance(prov: dict | str, loc: tuple) -> str:
     if not loc or isinstance(prov, str):
@@ -194,7 +201,7 @@ def _lookup_provenance(prov: dict | str, loc: tuple) -> str:
 
 ## `utils/gitignore.py` — `ensure_gitignored`
 
-```
+```text
 ensure_gitignored(git_root: Path, pattern: str, comment: str = "") -> None
 ```
 
@@ -205,6 +212,7 @@ ensure_gitignored(git_root: Path, pattern: str, comment: str = "") -> None
 5. Append `# {comment}\n{pattern}\n` (comment line omitted if `comment` is empty).
 
 Called during `_load_scoped` when local config is first written or detected, with:
+
 ```python
 ensure_gitignored(project_root, ".pythinker/config.local.toml", comment="Added by pythinker")
 ```
@@ -257,7 +265,7 @@ No call sites in `cli/__init__.py`, `app.py`, or elsewhere need changes — exis
 
 ## Error Message Examples
 
-```
+```text
 # Scope-lock violation
 ConfigError: 'providers' cannot be set in .pythinker/config.toml (project scope).
   Move it to ~/.pythinker/config.toml or set PYTHINKER_PROVIDER_<NAME>_API_KEY

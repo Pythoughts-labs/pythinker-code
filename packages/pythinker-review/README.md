@@ -106,7 +106,9 @@ Phase 1 now ports the highest-value behavior from the mounted blackbox repos:
   evidence snippets; invalid sibling findings are recorded as drops without failing the whole run.
 - Reviewflow pure-Python stateful commands cover `init`, `map`, `status`, `review`, `ci`,
   `report`, `show --finding`, `next`, `triage`, `revalidate`, `fix`, `open-pr`, `doctor`,
-  `clean-locks`, and `clean` (removes unexpected entries from `.pythinker-review/`).
+  and `clean-locks` (all operate on `.pythinker-review-flow/`).
+- `clean` command removes unexpected entries from the diff-save state dir (`.pythinker-review/`),
+  which is a separate directory from the Reviewflow state.
 - Code-review prompt parity covers partial-diff caveats, concrete trigger scenarios, test analysis,
   suggested regression tests, and minimum fix scope.
 - Code-reviewr PR assistant parity adds read-only `describe`, `improve`/`suggest`, `ask`,
