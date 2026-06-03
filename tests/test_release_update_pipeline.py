@@ -137,6 +137,14 @@ def test_windows_installer_signs_update_artifacts_when_credentials_are_available
     assert re.search(r"NewPath\s*:=\s*Param\s*\+\s*';'\s*\+\s*OrigPath", installer_script)
     assert not re.search(r"NewPath\s*:=\s*OrigPath\s*\+\s*';'\s*\+\s*Param", installer_script)
     assert not re.search(r"StringChangeEx\(\s*OrigPath\s*,\s*Param\s*,", installer_script)
+    # [InstallDelete] must wipe _internal before [Files] runs so that in-place
+    # upgrades never accumulate stale dist-info dirs (pythinker_code-0.28.0.dist-info
+    # alongside 0.31.0 makes importlib.metadata pick the old version first).
+    assert re.search(
+        r"\[InstallDelete\].*filesandordirs.*\{app\}\\_internal",
+        installer_script,
+        re.DOTALL,
+    )
 
     # Signing only the final setup executable leaves Smart App Control and AV
     # heuristics to inspect unsigned bundled/native helper files. Keep signing
