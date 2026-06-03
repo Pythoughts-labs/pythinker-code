@@ -93,7 +93,7 @@ jobs:
         run: make cov-pythinker-code
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # pinned from v5.5.4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml
