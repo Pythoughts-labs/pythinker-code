@@ -445,9 +445,7 @@ async def _append_gitignore_entries(work_dir: HostPath) -> None:
     """
     gitignore_path = Path(str(work_dir)) / ".gitignore"
     try:
-        await with_retries(
-            lambda: asyncio.to_thread(_write_gitignore_entries, gitignore_path)
-        )
+        await with_retries(lambda: asyncio.to_thread(_write_gitignore_entries, gitignore_path))
     except Exception:
         logger.debug("scratchpad .gitignore update failed")
 

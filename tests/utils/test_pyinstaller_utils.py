@@ -46,10 +46,12 @@ def test_pyinstaller_datas():
     # justext stoplists), so assert METADATA presence rather than pinning every
     # file. copy_metadata() produces clean paths ({dist-info}/FILE) — no
     # fastmcp/../ prefix that the old collect_data_files workaround created.
+    # copy_metadata() returns a single directory entry per package (the whole
+    # dist-info dir), so check that the dest dir name matches — not a file inside it.
     for pkg in ("fastmcp", "mcp"):
         pkg_dist = f"{pkg}-{version(pkg)}.dist-info"
-        assert any(d == pkg_dist and p.endswith("/METADATA") for p, d in datas), (
-            f"{pkg_dist}/METADATA must be bundled so importlib.metadata works in the frozen app"
+        assert any(d == pkg_dist for p, d in datas), (
+            f"{pkg_dist} must be bundled so importlib.metadata works in the frozen app"
         )
 
     dist_info_dirs = {f"{pkg}-{version(pkg)}.dist-info" for pkg in ("fastmcp", "mcp")}
