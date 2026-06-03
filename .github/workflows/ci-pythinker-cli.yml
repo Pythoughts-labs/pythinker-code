@@ -90,7 +90,16 @@ jobs:
         env:
           UV_PYTHON: ${{ steps.setup-python.outputs.python-path }}
           PYTHONUTF8: "1"
-        run: make test-pythinker-code
+        run: make cov-pythinker-code
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          flags: pythinker-code
+          name: pythinker-code-${{ matrix.python-version }}
+          fail_ci_if_error: false
 
   build:
     strategy:
