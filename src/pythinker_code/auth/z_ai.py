@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping, cast
+from typing import Any, cast
 
 import aiohttp
 from pydantic import SecretStr
@@ -64,9 +64,7 @@ def _derive_alias_suffix(model_id: str) -> str:
 
 def _derive_display_name(model_id: str) -> str:
     parts = model_id.split("-")
-    return "-".join(
-        p.upper() if p.lower() == "glm" else p.capitalize() for p in parts
-    )
+    return "-".join(p.upper() if p.lower() == "glm" else p.capitalize() for p in parts)
 
 
 def _to_positive_int(value: Any) -> int | None:
