@@ -15,6 +15,7 @@ from rich.text import Text
 from pythinker_code.ui.shell.components.markdown import PythinkerMarkdown as Markdown
 from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
 from pythinker_code.ui.shell.console import console, render_to_ansi
+from pythinker_code.ui.shell.glyphs import QUESTION_MARKER
 from pythinker_code.ui.shell.keyboard import KeyEvent
 from pythinker_code.ui.shell.keymap import key_text
 from pythinker_code.ui.shell.spacing import blank_row
@@ -139,7 +140,8 @@ class QuestionRequestPanel:
             lines.append(Text.from_markup("  ".join(tab_parts)))
             lines.append(blank_row())
 
-        lines.append(Text.from_markup(f"[{_tok.warning}]? {_safe_markup_text(q.question)}[/]"))
+        q_markup = f"[{_tok.warning}]{QUESTION_MARKER} {_safe_markup_text(q.question)}[/]"
+        lines.append(Text.from_markup(q_markup))
         if q.multi_select:
             lines.append(Text("  (SPACE to toggle, ENTER to submit)", style="dim italic"))
         lines.append(blank_row())
@@ -304,9 +306,8 @@ class QuestionRequestPanel:
 def show_question_body_in_pager(panel: QuestionRequestPanel) -> None:
     _warn = get_tui_tokens().warning
     with console.screen(), console.pager(styles=True):
-        console.print(
-            Text.from_markup(f"[{_warn}]? {_safe_markup_text(panel.current_question_text)}[/]")
-        )
+        q_markup = f"[{_warn}]{QUESTION_MARKER} {_safe_markup_text(panel.current_question_text)}[/]"
+        console.print(Text.from_markup(q_markup))
         console.print()
         for renderable in panel.render_full_body():
             console.print(renderable)
@@ -314,7 +315,8 @@ def show_question_body_in_pager(panel: QuestionRequestPanel) -> None:
 
 async def prompt_other_input(question_text: str) -> str:
     _warn = get_tui_tokens().warning
-    console.print(Text.from_markup(f"\n[{_warn}]? {_safe_markup_text(question_text)}[/]"))
+    q_markup = f"\n[{_warn}]{QUESTION_MARKER} {_safe_markup_text(question_text)}[/]"
+    console.print(Text.from_markup(q_markup))
     console.print(Text("  Enter your answer:", style="dim"))
     try:
         session: PromptSession[str] = PromptSession()

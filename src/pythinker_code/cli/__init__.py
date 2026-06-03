@@ -983,10 +983,16 @@ def pythinker(
     async def _post_run(
         last_session: Session, exit_code: int, *, cleanup_scratchpad: bool = False
     ) -> None:
-        # Session scratchpads are retained as compact history for future recall.
-        # ``cleanup_scratchpad`` is kept for call-site compatibility but no longer
-        # triggers automatic deletion after a successful run.
+        # Always clean up this session's scratch file on exit (success or interruption)
+        # so files never accumulate. Todo list and context persist separately.
         _ = cleanup_scratchpad
+        from pythinker_code.scratchpad import cleanup_session_scratch
+
+        await cleanup_session_scratch(
+            last_session.work_dir,
+            session_id=last_session.id,
+            session_title=last_session.title,
+        )
         if exit_code == ExitCode.SUCCESS and getattr(
             getattr(config, "memory", None), "journal_recaps", False
         ):

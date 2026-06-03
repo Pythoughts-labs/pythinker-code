@@ -7,6 +7,7 @@ from typing import Any, cast
 from rich.console import Group, RenderableType
 from rich.text import Text
 
+from pythinker_code.ui.shell.glyphs import QUESTION_MARKER
 from pythinker_code.ui.shell.spacing import blank_row
 from pythinker_code.ui.shell.tool_renderers import (
     ToolRenderContext,
@@ -82,7 +83,7 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
             children.append(blank_row())
         question_text = as_str(q.get("question")) or ""
         if question_text:
-            children.append(fg("accent", f"● {question_text}"))
+            children.append(fg("accent", f"{QUESTION_MARKER} {question_text}"))
         opts = q.get("options")
         if isinstance(opts, list):
             opts_list = cast("list[Any]", opts)
