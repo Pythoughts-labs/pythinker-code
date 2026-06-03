@@ -1,0 +1,24 @@
+name: WinGet bootstrap (one-off, delete after use)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  bootstrap:
+    runs-on: windows-latest
+    steps:
+      - name: Run wingetcreate new
+        shell: pwsh
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_SUBMIT_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installerUrl = "https://github.com/Pythoughts-labs/pythinker-code/releases/download/v0.30.0/PythinkerSetup-0.30.0.exe"
+          $wingetCreateUrl = "https://github.com/microsoft/winget-create/releases/download/v1.12.8.0/wingetcreate.exe"
+          $wingetCreateSha256 = "8BD738851B524885410112678E3771B341C5C716DE60FBBECB88AB0A363ED85D"
+          Invoke-WebRequest -Uri $wingetCreateUrl -OutFile wingetcreate.exe
+          $actualHash = (Get-FileHash -Algorithm SHA256 wingetcreate.exe).Hash
+          if ($actualHash -ne $wingetCreateSha256) {
+            throw "wingetcreate.exe SHA-256 mismatch: expected $wingetCreateSha256, got $actualHash"
+          }
+          .\wingetcreate.exe new "$installerUrl" --token $env:WINGET_TOKEN --submit
