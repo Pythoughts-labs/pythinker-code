@@ -23,7 +23,7 @@ jobs:
           Invoke-WebRequest -Uri $wcUrl -OutFile wingetcreate.exe
           if ((Get-FileHash wingetcreate.exe -Algorithm SHA256).Hash -ne $wcSha) { throw "hash mismatch" }
 
-          $sha256 = ((Invoke-WebRequest -Uri "$installerUrl.sha256").Content.Trim() -split '\s+')[0]
+          $sha256 = [System.Text.Encoding]::UTF8.GetString((Invoke-WebRequest -Uri "$installerUrl.sha256").Content).Trim().Split()[0]
           Write-Host "SHA256: $sha256"
 
           Invoke-WebRequest -Uri $installerUrl -OutFile installer.exe
