@@ -17,6 +17,7 @@ from pythinker_code.auth import (
     OPENAI_CHATGPT_PLATFORM_ID,
     OPENCODE_GO_PLATFORM_ID,
     OPENROUTER_PLATFORM_ID,
+    ZAI_PLATFORM_ID,
 )
 from pythinker_code.auth.anthropic_direct import (
     ANTHROPIC_PROVIDER_KEY,
@@ -62,6 +63,11 @@ from pythinker_code.auth.openrouter import (
     logout_openrouter,
 )
 from pythinker_code.auth.platforms import managed_provider_key
+from pythinker_code.auth.z_ai import (
+    ZAI_PROVIDER_KEY,
+    login_z_ai_api_key,
+    logout_z_ai,
+)
 from pythinker_code.cli import Reload
 from pythinker_code.ui.shell.console import console
 from pythinker_code.ui.shell.selectors.oauth import (
@@ -126,6 +132,7 @@ _SELECTOR_PROVIDER_ENTRIES: list[OAuthProviderEntry] = [
     OAuthProviderEntry(id="opencode-go", name="OpenCode Go", auth_type="api_key"),
     OAuthProviderEntry(id="minimax", name="MiniMax", auth_type="api_key"),
     OAuthProviderEntry(id="deepseek", name="DeepSeek", auth_type="api_key"),
+    OAuthProviderEntry(id="z-ai", name="Z AI", auth_type="api_key"),
     OAuthProviderEntry(id="anthropic", name="Anthropic", auth_type="api_key"),
     OAuthProviderEntry(id="openrouter", name="OpenRouter", auth_type="api_key"),
     OAuthProviderEntry(id="lm-studio", name="LM Studio", auth_type="api_key"),
@@ -148,6 +155,7 @@ _PROVIDER_KEYS: dict[str, tuple[str, ...]] = {
     "opencode-go": (OPENCODE_GO_OPENAI_PROVIDER_KEY, OPENCODE_GO_ANTHROPIC_PROVIDER_KEY),
     "minimax": (MINIMAX_ANTHROPIC_PROVIDER_KEY,),
     "deepseek": (DEEPSEEK_PROVIDER_KEY,),
+    "z-ai": (ZAI_PROVIDER_KEY,),
     "anthropic": (ANTHROPIC_PROVIDER_KEY,),
     "openrouter": (OPENROUTER_PROVIDER_KEY,),
     "lm-studio": (LM_STUDIO_PROVIDER_KEY,),
@@ -161,6 +169,7 @@ _LOGOUT_PROVIDER_ENTRIES: list[OAuthProviderEntry] = [
     OAuthProviderEntry(id="opencode-go", name="OpenCode Go", auth_type="api_key"),
     OAuthProviderEntry(id="minimax", name="MiniMax", auth_type="api_key"),
     OAuthProviderEntry(id="deepseek", name="DeepSeek", auth_type="api_key"),
+    OAuthProviderEntry(id="z-ai", name="Z AI", auth_type="api_key"),
     OAuthProviderEntry(id="anthropic", name="Anthropic", auth_type="api_key"),
     OAuthProviderEntry(id="openrouter", name="OpenRouter", auth_type="api_key"),
     OAuthProviderEntry(id="lm-studio", name="LM Studio", auth_type="api_key"),
@@ -238,6 +247,13 @@ async def login(app: Shell, args: str) -> None:
             return
         ok = await _render_oauth_events(login_deepseek_api_key(soul.runtime.config, api_key))
         provider = DEEPSEEK_PLATFORM_ID
+    elif mode == "z-ai":
+        api_key = await _prompt_api_key("Z AI")
+        if not api_key:
+            console.print(f"[{_t.error}]No Z AI API key entered.[/]")
+            return
+        ok = await _render_oauth_events(login_z_ai_api_key(soul.runtime.config, api_key))
+        provider = ZAI_PLATFORM_ID
     elif mode == "anthropic":
         api_key = await _prompt_api_key("Anthropic")
         if not api_key:
@@ -261,7 +277,7 @@ async def login(app: Shell, args: str) -> None:
     else:
         console.print(
             f"[{_t.error}]Usage: /login "
-            "[browser|headless|api-key|opencode-go|minimax|deepseek|anthropic|openrouter|"
+            "[browser|headless|api-key|opencode-go|minimax|deepseek|z-ai|anthropic|openrouter|"
             "lm-studio|ollama][/]"
         )
         return
@@ -316,6 +332,8 @@ async def logout(app: Shell, args: str) -> None:
         ok = await _render_oauth_events(logout_anthropic(config))
     elif mode == "deepseek":
         ok = await _render_oauth_events(logout_deepseek(config))
+    elif mode == "z-ai":
+        ok = await _render_oauth_events(logout_z_ai(config))
     elif mode == "minimax":
         ok = await _render_oauth_events(logout_minimax(config))
     elif mode in ("opencode-go", "opencode", "go"):
@@ -333,8 +351,8 @@ async def logout(app: Shell, args: str) -> None:
     else:
         console.print(
             f"[{_t.error}]Usage: /logout "
-            "[openai|opencode-go|minimax|deepseek|anthropic|openrouter|lm-studio|ollama|"
-            "github-feedback][/]"
+            "[openai|opencode-go|minimax|deepseek|z-ai|anthropic|openrouter|lm-studio|ollama|"
+            "github-feedback][/]]"
         )
         return
     if not ok:
