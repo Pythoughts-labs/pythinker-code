@@ -51,11 +51,10 @@ except Exception:
 # collect_data_files() only collects files inside the package directory; the
 # dist-info lives alongside it in site-packages. copy_metadata() is the
 # PyInstaller-standard hook for making importlib.metadata work in frozen apps.
+# Do NOT suppress errors here: a missing dist-info produces a broken binary,
+# so let PackageNotFoundError surface and fail the build loudly.
 for pkg in ("fastmcp", "mcp"):
-    try:
-        datas += copy_metadata(pkg)
-    except Exception:
-        pass
+    datas += copy_metadata(pkg)
 
 a = Analysis(
     ["entrypoint.py"],
