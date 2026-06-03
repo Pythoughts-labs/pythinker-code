@@ -5,6 +5,7 @@ from inline_snapshot import snapshot
 
 from pythinker_code.config import (
     Config,
+    _check_scope_locks,
     _find_project_root,
     _lookup_provenance,
     _set_nested,
@@ -330,3 +331,37 @@ def test_lookup_provenance_empty_loc():
 def test_lookup_provenance_unknown():
     prov: dict = {}
     assert _lookup_provenance(prov, ("missing_key",)) == "unknown scope"
+
+
+def test_scope_lock_providers_in_project():
+    with pytest.raises(ConfigError, match="'providers'.*project scope"):
+        _check_scope_locks({"providers": {"openai": {}}}, ".pythinker/config.toml")
+
+
+def test_scope_lock_services_in_local():
+    with pytest.raises(ConfigError, match="'services'.*local scope"):
+        _check_scope_locks({"services": {"pythinker_ai_search": {}}}, ".pythinker/config.local.toml")
+
+
+def test_scope_lock_feedback_api_key():
+    with pytest.raises(ConfigError, match="'feedback.api_key'"):
+        _check_scope_locks(
+            {"feedback": {"api_key": "secret"}}, ".pythinker/config.toml"
+        )
+
+
+def test_scope_lock_feedback_url_allowed():
+    # feedback.endpoint_url is NOT locked — should not raise
+    _check_scope_locks(
+        {"feedback": {"endpoint_url": "https://internal.example.com"}},
+        ".pythinker/config.toml",
+    )
+
+
+def test_scope_lock_clean_dict():
+    _check_scope_locks({"theme": "light", "default_model": "gpt-4"}, ".pythinker/config.toml")
+
+
+def test_scope_lock_error_mentions_env_var():
+    with pytest.raises(ConfigError, match="PYTHINKER_"):
+        _check_scope_locks({"providers": {}}, ".pythinker/config.toml")

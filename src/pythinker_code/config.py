@@ -113,6 +113,34 @@ def _lookup_provenance(prov: dict | str, loc: tuple) -> str:
     return "unknown scope"
 
 
+def _check_scope_locks(scope_dict: dict, scope_name: str) -> None:
+    """Raise ConfigError if *scope_dict* contains any scope-locked field paths.
+
+    Checks every path in SCOPE_LOCKED_PATHS by walking the raw dict before
+    Pydantic validation, so secrets are blocked before they can be merged.
+    """
+    for path in SCOPE_LOCKED_PATHS:
+        node: object = scope_dict
+        for part in path:
+            if not isinstance(node, dict) or part not in node:
+                break
+            node = node[part]
+        else:
+            field_path = ".".join(path)
+            # Derive a short scope label for the error message
+            if "local" in scope_name:
+                scope_label = "local scope"
+            elif "project" in scope_name or scope_name.startswith(".pythinker"):
+                scope_label = "project scope"
+            else:
+                scope_label = scope_name
+            raise ConfigError(
+                f"'{field_path}' cannot be set in {scope_name} ({scope_label}).\n"
+                f"  Move it to ~/.pythinker/config.toml or set the corresponding "
+                f"PYTHINKER_* environment variable."
+            )
+
+
 AgentExecutionProfile = Literal[
     "default",
     "review_safe",
