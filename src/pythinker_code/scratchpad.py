@@ -32,6 +32,11 @@ SESSION_SCRATCH_DIR_REL_PATH = ".pythinker/scratch"
 SESSION_SCRATCH_IGNORE_PATTERN = f"{SESSION_SCRATCH_DIR_REL_PATH}/*.md"
 _SESSION_SCRATCH_IGNORE_SAMPLE = f"{SESSION_SCRATCH_DIR_REL_PATH}/session.md"
 
+# Patterns written to the project .gitignore when the agent starts in a git repo.
+# These directories are local-only agent state and must never be committed.
+_GITIGNORE_ENTRIES = (".pythinker/", ".pythinker-review/", ".pythinker-review-flow/")
+_GITIGNORE_SECTION_HEADER = "# pythinker — local agent state (do not commit)"
+
 StatusReason = Literal[
     "available_non_git",
     "available_git_ignored",
@@ -337,6 +342,9 @@ async def ensure_git_excluded(
                 ignored=False,
             )
 
+        # Ensure pythinker work dirs are gitignored in the project before any files are created.
+        await _append_gitignore_entries(work_dir)
+
         for candidate in (SCRATCH_REL_PATH, _SESSION_SCRATCH_IGNORE_SAMPLE):
             tracked = await runner(["ls-files", "--error-unmatch", "--", candidate])
             if not tracked.ok:
@@ -427,6 +435,38 @@ def _exclude_lock(path: Path) -> Generator[None]:
                     fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
     finally:
         fh.close()
+
+
+async def _append_gitignore_entries(work_dir: HostPath) -> None:
+    """Best-effort: append pythinker work-dir patterns to work_dir/.gitignore if missing.
+
+    Called once at agent startup to prevent pythinker's local state directories
+    from making the project's git working tree dirty. Never raises.
+    """
+    gitignore_path = Path(str(work_dir)) / ".gitignore"
+    try:
+        await with_retries(lambda: _write_gitignore_entries(gitignore_path))
+    except Exception:
+        logger.debug("scratchpad .gitignore update failed")
+
+
+async def _write_gitignore_entries(gitignore_path: Path) -> None:
+    try:
+        with _exclude_lock(gitignore_path):
+            existing = gitignore_path.read_text(encoding="utf-8") if gitignore_path.exists() else ""
+            existing_lines = {line.strip() for line in existing.splitlines()}
+            missing = [e for e in _GITIGNORE_ENTRIES if e not in existing_lines]
+            if not missing:
+                return
+            prefix = "" if not existing or existing.endswith("\n") else "\n"
+            with gitignore_path.open("a", encoding="utf-8") as fh:
+                fh.write(f"{prefix}{_GITIGNORE_SECTION_HEADER}\n")
+                for entry in missing:
+                    fh.write(f"{entry}\n")
+    except OSError as exc:
+        if is_transient_oserror(exc):
+            raise TransientScratchpadError(str(exc)) from exc
+        raise
 
 
 @contextlib.contextmanager
