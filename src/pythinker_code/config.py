@@ -195,6 +195,95 @@ def _apply_env_vars(merged: dict, provenance: dict) -> None:
             _set_nested(provenance, path, f"env {env_key}")
 
 
+def _load_scoped(project_root: Path | None) -> Config:
+    """Run the five-step scoped config resolution pipeline.
+
+    Steps: Ingest → Guard → Merge → Env → Validate.
+    Returns a fully-validated Config with source_scopes populated.
+    """
+    from pythinker_code.utils.gitignore import ensure_gitignored
+
+    # ── INGEST ────────────────────────────────────────────────────────────
+    default_user_file = get_config_file().expanduser().resolve(strict=False)
+    # Trigger JSON→TOML migration if needed (existing logic)
+    if not default_user_file.exists():
+        migration_error = _migrate_json_config_to_toml()
+        if migration_error is not None:
+            raise ConfigError(
+                f"Legacy config file has incompatible settings; please fix or "
+                f"rename/delete {migration_error.config_file} to continue. "
+                f"Errors: {migration_error.errors}"
+            ) from None
+
+    def _read_toml(path: Path) -> dict:
+        if not path.exists():
+            return {}
+        try:
+            return dict(tomlkit.loads(path.read_text(encoding="utf-8")))
+        except TOMLKitError as exc:
+            raise ConfigError(f"Invalid TOML in {path}: {exc}") from exc
+
+    user_file = default_user_file
+    user_dict = _read_toml(user_file)
+
+    project_file: Path | None = None
+    local_file: Path | None = None
+    project_dict: dict = {}
+    local_dict: dict = {}
+
+    if project_root is not None:
+        project_file = project_root / ".pythinker" / "config.toml"
+        local_file = project_root / ".pythinker" / "config.local.toml"
+        project_dict = _read_toml(project_file)
+        local_dict = _read_toml(local_file)
+
+    # ── GUARD ─────────────────────────────────────────────────────────────
+    if project_file is not None:
+        _check_scope_locks(project_dict, str(project_file))
+    if local_file is not None:
+        _check_scope_locks(local_dict, str(local_file))
+
+    # ── MERGE ─────────────────────────────────────────────────────────────
+    provenance: dict = {}
+    merged = _type_based_merge({}, user_dict, provenance, str(user_file))
+    if project_dict:
+        merged = _type_based_merge(merged, project_dict, provenance, str(project_file))
+    if local_dict:
+        merged = _type_based_merge(merged, local_dict, provenance, str(local_file))
+
+    # ── ENV OVERLAY ───────────────────────────────────────────────────────
+    _apply_env_vars(merged, provenance)
+
+    # ── VALIDATE ──────────────────────────────────────────────────────────
+    try:
+        config = Config.model_validate(merged)
+    except ValidationError as exc:
+        enriched: list[str] = []
+        for err in exc.errors():
+            scope = _lookup_provenance(provenance, tuple(err["loc"]))
+            field = ".".join(str(p) for p in err["loc"])
+            enriched.append(f"  {field}: {err['msg']}  [from {scope}]")
+        raise ConfigError("Invalid configuration:\n" + "\n".join(enriched)) from exc
+
+    # ── METADATA ──────────────────────────────────────────────────────────
+    config.is_from_default_location = True
+    config.source_file = user_file
+    if user_file.exists():
+        config.source_scopes["user"] = user_file
+    if project_file is not None and project_file.exists():
+        config.source_scopes["project"] = project_file
+    if local_file is not None and local_file.exists():
+        config.source_scopes["local"] = local_file
+        # Auto-gitignore local config so it is never accidentally committed
+        ensure_gitignored(
+            project_root,  # type: ignore[arg-type]
+            ".pythinker/config.local.toml",
+            comment="Added by pythinker",
+        )
+
+    return config
+
+
 AgentExecutionProfile = Literal[
     "default",
     "review_safe",
@@ -553,7 +642,8 @@ class Config(BaseModel):
         default_factory=dict,
         description=(
             "Paths of config files that contributed to this resolved config, keyed by scope name. "
-            "e.g. {'user': Path('~/.pythinker/config.toml'), 'project': Path('.pythinker/config.toml')}."
+            "e.g. {'user': Path('~/.pythinker/config.toml'), "
+            "'project': Path('.pythinker/config.toml')}."
         ),
         exclude=True,
     )
