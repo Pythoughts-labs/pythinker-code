@@ -9,6 +9,7 @@ from pythinker_code.config import (
     _find_project_root,
     _lookup_provenance,
     _set_nested,
+    _type_based_merge,
     get_default_config,
     load_config,
     load_config_from_string,
@@ -365,3 +366,70 @@ def test_scope_lock_clean_dict():
 def test_scope_lock_error_mentions_env_var():
     with pytest.raises(ConfigError, match="PYTHINKER_"):
         _check_scope_locks({"providers": {}}, ".pythinker/config.toml")
+
+
+def test_merge_scalar_override():
+    prov: dict = {}
+    result = _type_based_merge({"theme": "dark"}, {"theme": "light"}, prov, ".pythinker/config.local.toml")
+    assert result["theme"] == "light"
+    assert prov["theme"] == ".pythinker/config.local.toml"
+
+
+def test_merge_scalar_three_scopes():
+    prov: dict = {}
+    base = _type_based_merge({}, {"theme": "dark"}, prov, "~/.pythinker/config.toml")
+    base = _type_based_merge(base, {"theme": "solarized"}, prov, ".pythinker/config.toml")
+    base = _type_based_merge(base, {"theme": "light"}, prov, ".pythinker/config.local.toml")
+    assert base["theme"] == "light"
+    assert prov["theme"] == ".pythinker/config.local.toml"
+
+
+def test_merge_list_concat():
+    prov: dict = {}
+    base = _type_based_merge({}, {"hooks": [{"event": "Stop", "command": "a"}]}, prov, "~/.pythinker/config.toml")
+    base = _type_based_merge(base, {"hooks": [{"event": "Stop", "command": "b"}]}, prov, ".pythinker/config.toml")
+    assert len(base["hooks"]) == 2
+    assert base["hooks"][0]["command"] == "a"
+    assert base["hooks"][1]["command"] == "b"
+
+
+def test_merge_list_concat_provenance():
+    prov: dict = {}
+    base = _type_based_merge({}, {"hooks": []}, prov, "~/.pythinker/config.toml")
+    base = _type_based_merge(base, {"hooks": []}, prov, ".pythinker/config.toml")
+    assert prov["hooks"] == "~/.pythinker/config.toml+.pythinker/config.toml"
+
+
+def test_merge_list_base_case_provenance():
+    prov: dict = {}
+    _type_based_merge({}, {"hooks": []}, prov, "~/.pythinker/config.toml")
+    assert prov["hooks"] == "~/.pythinker/config.toml"
+
+
+def test_merge_list_dedup_extra_skill_dirs():
+    prov: dict = {}
+    base = _type_based_merge({}, {"extra_skill_dirs": ["/a", "/b"]}, prov, "~/.pythinker/config.toml")
+    base = _type_based_merge(base, {"extra_skill_dirs": ["/b", "/c"]}, prov, ".pythinker/config.toml")
+    # /b appears in both — should appear only once (first occurrence kept)
+    assert base["extra_skill_dirs"] == ["/a", "/b", "/c"]
+
+
+def test_merge_dict_deep():
+    prov: dict = {}
+    base = _type_based_merge(
+        {}, {"tui": {"style": "pythinker", "smooth_streaming": True}}, prov, "~/.pythinker/config.toml"
+    )
+    base = _type_based_merge(
+        base, {"tui": {"style": "card"}}, prov, ".pythinker/config.toml"
+    )
+    assert base["tui"]["style"] == "card"
+    assert base["tui"]["smooth_streaming"] is True  # sibling preserved
+    assert prov["tui"]["style"] == ".pythinker/config.toml"
+    assert prov["tui"]["smooth_streaming"] == "~/.pythinker/config.toml"
+
+
+def test_merge_key_only_in_overlay():
+    prov: dict = {}
+    result = _type_based_merge({}, {"theme": "dark"}, prov, "~/.pythinker/config.toml")
+    assert result["theme"] == "dark"
+    assert prov["theme"] == "~/.pythinker/config.toml"

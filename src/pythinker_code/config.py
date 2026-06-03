@@ -141,6 +141,46 @@ def _check_scope_locks(scope_dict: dict, scope_name: str) -> None:
             )
 
 
+def _type_based_merge(base: dict, overlay: dict, provenance: dict, scope: str) -> dict:
+    """Merge *overlay* into *base* using type-based rules, tracking provenance.
+
+    Rules:
+    - Scalar (str/bool/int/float/None): overlay wins, provenance records scope.
+    - List: base + overlay concatenated; DEDUP_LIST_FIELDS deduplicated
+      (order-preserving, first occurrence wins).
+    - Dict: recurse so nested keys can be independently overridden.
+
+    Mutates *base* and *provenance* in place; also returns *base* for chaining.
+    """
+    for key, value in overlay.items():
+        if isinstance(value, dict):
+            # For dicts, always recurse to track individual nested keys
+            if key not in base:
+                base[key] = {}
+            if key not in provenance or not isinstance(provenance[key], dict):
+                provenance[key] = {}
+            _type_based_merge(
+                base[key],
+                value,
+                provenance[key],
+                scope,
+            )
+        elif key not in base:
+            base[key] = value
+            provenance[key] = scope
+        elif isinstance(value, list) and isinstance(base[key], list):
+            combined = base[key] + value
+            if key in DEDUP_LIST_FIELDS:
+                combined = list(dict.fromkeys(combined))
+            base[key] = combined
+            existing = provenance.get(key)
+            provenance[key] = f"{existing}+{scope}" if existing else scope
+        else:
+            base[key] = value
+            provenance[key] = scope
+    return base
+
+
 AgentExecutionProfile = Literal[
     "default",
     "review_safe",
