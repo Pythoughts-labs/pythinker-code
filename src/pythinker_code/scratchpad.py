@@ -445,12 +445,14 @@ async def _append_gitignore_entries(work_dir: HostPath) -> None:
     """
     gitignore_path = Path(str(work_dir)) / ".gitignore"
     try:
-        await with_retries(lambda: _write_gitignore_entries(gitignore_path))
+        await with_retries(
+            lambda: asyncio.to_thread(_write_gitignore_entries, gitignore_path)
+        )
     except Exception:
         logger.debug("scratchpad .gitignore update failed")
 
 
-async def _write_gitignore_entries(gitignore_path: Path) -> None:
+def _write_gitignore_entries(gitignore_path: Path) -> None:
     try:
         with _exclude_lock(gitignore_path):
             existing = gitignore_path.read_text(encoding="utf-8") if gitignore_path.exists() else ""
@@ -460,7 +462,10 @@ async def _write_gitignore_entries(gitignore_path: Path) -> None:
                 return
             prefix = "" if not existing or existing.endswith("\n") else "\n"
             with gitignore_path.open("a", encoding="utf-8") as fh:
-                fh.write(f"{prefix}{_GITIGNORE_SECTION_HEADER}\n")
+                if _GITIGNORE_SECTION_HEADER not in existing_lines:
+                    fh.write(f"{prefix}{_GITIGNORE_SECTION_HEADER}\n")
+                elif prefix:
+                    fh.write(prefix)
                 for entry in missing:
                     fh.write(f"{entry}\n")
     except OSError as exc:
