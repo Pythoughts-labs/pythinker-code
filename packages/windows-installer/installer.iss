@@ -47,6 +47,16 @@ Name: "modifypath"; Description: "Add Pythinker to your PATH"; \
 Name: "modifypathmachine"; Description: "Add Pythinker to the system PATH"; \
   GroupDescription: "Shell integration:"; Check: IsAdminInstallMode
 
+[InstallDelete]
+; Remove the entire _internal directory before installing new files so that
+; in-place upgrades do not accumulate stale version-stamped dist-info dirs
+; (e.g. pythinker_code-0.28.0.dist-info alongside 0.31.0.dist-info).
+; importlib.metadata.version() picks the first match it finds, which is the
+; alphabetically-lower (older) version, causing the UI to display a stale
+; version number and re-trigger the update prompt after every upgrade.
+; _internal is 100% app payload — no user data lives there.
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
 Source: "..\..\dist\pythinker\*"; DestDir: "{app}"; \
   Flags: ignoreversion recursesubdirs createallsubdirs

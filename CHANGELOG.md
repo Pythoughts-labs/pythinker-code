@@ -15,6 +15,8 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Windows upgrade version display fix.** In-place upgrades no longer show a stale version number or re-trigger the update prompt. Inno Setup now wipes `_internal` before installing new files, preventing old `dist-info` directories from accumulating and causing `importlib.metadata` to report the previous version.
+
 ## 0.31.0 (2026-06-02)
 
 ### What changed in this release
