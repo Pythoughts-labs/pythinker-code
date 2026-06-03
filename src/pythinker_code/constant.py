@@ -4,6 +4,8 @@ from functools import cache
 from typing import TYPE_CHECKING
 
 NAME = "Pythinker CLI"
+ORGANIZATION = "Pythoughts-labs"
+CONTACT = "hello@pythoughts.com"
 
 if TYPE_CHECKING:
     VERSION: str
@@ -30,4 +32,12 @@ def __getattr__(name: str) -> str:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["NAME", "VERSION", "USER_AGENT", "get_version", "get_user_agent"]
+__all__ = [
+    "NAME",
+    "ORGANIZATION",
+    "CONTACT",
+    "VERSION",
+    "USER_AGENT",
+    "get_version",
+    "get_user_agent",
+]

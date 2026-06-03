@@ -4,7 +4,7 @@ import contextlib
 import json
 import os
 from pathlib import Path
-from typing import Literal, Self
+from typing import Any, Literal, Self, cast
 
 import tomlkit
 from pydantic import (
@@ -86,7 +86,7 @@ ENV_FIELD_MAP: dict[str, tuple[str, ...]] = {
 # ---------------------------------------------------------------------------
 
 
-def _set_nested(d: dict, path: tuple[str, ...], value: object) -> None:
+def _set_nested(d: dict[str, Any], path: tuple[str, ...], value: object) -> None:
     """Walk *path* into *d*, creating intermediate dicts, then set the leaf."""
     node = d
     for part in path[:-1]:
@@ -96,7 +96,7 @@ def _set_nested(d: dict, path: tuple[str, ...], value: object) -> None:
     node[path[-1]] = value
 
 
-def _lookup_provenance(prov: dict | str, loc: tuple) -> str:
+def _lookup_provenance(prov: dict[str, Any] | str, loc: tuple[str | int, ...]) -> str:
     """Recursively follow *loc* through the provenance map.
 
     Integer elements (Pydantic list indices) are skipped — we map them back
@@ -108,23 +108,23 @@ def _lookup_provenance(prov: dict | str, loc: tuple) -> str:
     head, *tail = loc
     if isinstance(head, int):
         return prov if isinstance(prov, str) else _lookup_provenance(prov, tuple(tail))
-    if isinstance(prov, dict) and head in prov:
+    if head in prov:
         return _lookup_provenance(prov[head], tuple(tail))
     return "unknown scope"
 
 
-def _check_scope_locks(scope_dict: dict, scope_name: str) -> None:
+def _check_scope_locks(scope_dict: dict[str, Any], scope_name: str) -> None:
     """Raise ConfigError if *scope_dict* contains any scope-locked field paths.
 
     Checks every path in SCOPE_LOCKED_PATHS by walking the raw dict before
     Pydantic validation, so secrets are blocked before they can be merged.
     """
     for path in SCOPE_LOCKED_PATHS:
-        node: object = scope_dict
+        node: Any = scope_dict
         for part in path:
             if not isinstance(node, dict) or part not in node:
                 break
-            node = node[part]
+            node = cast(Any, node[part])
         else:
             field_path = ".".join(path)
             # Derive a short scope label for the error message
@@ -141,7 +141,12 @@ def _check_scope_locks(scope_dict: dict, scope_name: str) -> None:
             )
 
 
-def _type_based_merge(base: dict, overlay: dict, provenance: dict, scope: str) -> dict:
+def _type_based_merge(
+    base: dict[str, Any],
+    overlay: dict[str, Any],
+    provenance: dict[str, Any],
+    scope: str,
+) -> dict[str, Any]:
     """Merge *overlay* into *base* using type-based rules, tracking provenance.
 
     Rules:
@@ -160,9 +165,9 @@ def _type_based_merge(base: dict, overlay: dict, provenance: dict, scope: str) -
             if key not in provenance or not isinstance(provenance[key], dict):
                 provenance[key] = {}
             _type_based_merge(
-                base[key],
-                value,
-                provenance[key],
+                cast(dict[str, Any], base[key]),
+                cast(dict[str, Any], value),
+                cast(dict[str, Any], provenance[key]),
                 scope,
             )
         elif key not in base:
@@ -181,7 +186,7 @@ def _type_based_merge(base: dict, overlay: dict, provenance: dict, scope: str) -
     return base
 
 
-def _apply_env_vars(merged: dict, provenance: dict) -> None:
+def _apply_env_vars(merged: dict[str, Any], provenance: dict[str, Any]) -> None:
     """Overlay PYTHINKER_* env vars onto *merged*, updating *provenance*.
 
     Values are stored as raw strings; Pydantic coerces them during
@@ -215,7 +220,7 @@ def _load_scoped(project_root: Path | None) -> Config:
                 f"Errors: {migration_error.errors}"
             ) from None
 
-    def _read_toml(path: Path) -> dict:
+    def _read_toml(path: Path) -> dict[str, Any]:
         if not path.exists():
             return {}
         try:
@@ -236,8 +241,8 @@ def _load_scoped(project_root: Path | None) -> Config:
 
     project_file: Path | None = None
     local_file: Path | None = None
-    project_dict: dict = {}
-    local_dict: dict = {}
+    project_dict: dict[str, Any] = {}
+    local_dict: dict[str, Any] = {}
 
     if project_root is not None:
         project_file = project_root / ".pythinker" / "config.toml"
@@ -252,7 +257,7 @@ def _load_scoped(project_root: Path | None) -> Config:
         _check_scope_locks(local_dict, str(local_file))
 
     # ── MERGE ─────────────────────────────────────────────────────────────
-    provenance: dict = {}
+    provenance: dict[str, Any] = {}
     merged = _type_based_merge({}, user_dict, provenance, str(user_file))
     if project_dict:
         merged = _type_based_merge(merged, project_dict, provenance, str(project_file))

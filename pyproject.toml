@@ -1,12 +1,12 @@
 [project]
 name = "pythinker-code"
 version = "0.32.0"
-description = "Pythinker Code is your next CLI agent."
+description = "Pythinker — an agentic CLI developed by Pythoughts-labs."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
-authors = [{ name = "Mohamed Elkholy", email = "moelkholy1995@gmail.com" }]
+authors = [{ name = "Pythoughts-labs", email = "hello@pythoughts.com" }]
 keywords = ["cli", "agent", "ai", "coding-assistant", "llm", "claude", "openai", "terminal"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
