@@ -181,6 +181,20 @@ def _type_based_merge(base: dict, overlay: dict, provenance: dict, scope: str) -
     return base
 
 
+def _apply_env_vars(merged: dict, provenance: dict) -> None:
+    """Overlay PYTHINKER_* env vars onto *merged*, updating *provenance*.
+
+    Values are stored as raw strings; Pydantic coerces them during
+    model_validate(). Only keys in ENV_FIELD_MAP are recognised; all others
+    are silently ignored.
+    """
+    for env_key, path in ENV_FIELD_MAP.items():
+        value = os.environ.get(env_key)
+        if value is not None:
+            _set_nested(merged, path, value)
+            _set_nested(provenance, path, f"env {env_key}")
+
+
 AgentExecutionProfile = Literal[
     "default",
     "review_safe",

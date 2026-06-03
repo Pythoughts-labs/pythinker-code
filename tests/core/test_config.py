@@ -5,6 +5,7 @@ from inline_snapshot import snapshot
 
 from pythinker_code.config import (
     Config,
+    _apply_env_vars,
     _check_scope_locks,
     _find_project_root,
     _lookup_provenance,
@@ -433,3 +434,39 @@ def test_merge_key_only_in_overlay():
     result = _type_based_merge({}, {"theme": "dark"}, prov, "~/.pythinker/config.toml")
     assert result["theme"] == "dark"
     assert prov["theme"] == "~/.pythinker/config.toml"
+
+
+def test_apply_env_vars_known_key(monkeypatch):
+    monkeypatch.setenv("PYTHINKER_THEME", "light")
+    merged: dict = {}
+    prov: dict = {}
+    _apply_env_vars(merged, prov)
+    assert merged["theme"] == "light"
+    assert prov["theme"] == "env PYTHINKER_THEME"
+
+
+def test_apply_env_vars_unknown_key_ignored(monkeypatch):
+    monkeypatch.setenv("PYTHINKER_XYZZY_UNKNOWN", "whatever")
+    merged: dict = {}
+    prov: dict = {}
+    _apply_env_vars(merged, prov)
+    assert "xyzzy_unknown" not in merged
+
+
+def test_apply_env_vars_bool_coercion(monkeypatch):
+    monkeypatch.setenv("PYTHINKER_DEFAULT_YOLO", "true")
+    merged: dict = {}
+    prov: dict = {}
+    _apply_env_vars(merged, prov)
+    # Stored as string; Pydantic coerces during model_validate
+    assert merged["default_yolo"] == "true"
+    assert prov["default_yolo"] == "env PYTHINKER_DEFAULT_YOLO"
+
+
+def test_apply_env_vars_overrides_existing(monkeypatch):
+    monkeypatch.setenv("PYTHINKER_THEME", "light")
+    merged = {"theme": "dark"}
+    prov = {"theme": "~/.pythinker/config.toml"}
+    _apply_env_vars(merged, prov)
+    assert merged["theme"] == "light"
+    assert prov["theme"] == "env PYTHINKER_THEME"
