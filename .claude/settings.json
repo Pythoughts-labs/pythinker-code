@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/check-changelog.sh",
+            "command": "bash -c 'root=$(git rev-parse --show-toplevel 2>/dev/null || echo .); bash \"$root/.claude/hooks/check-changelog.sh\"'",
             "timeout": 15,
             "statusMessage": "Checking CHANGELOG gate..."
           }

@@ -34,6 +34,7 @@ from pythinker_review.security_scan.scanner import scan_project
 from pythinker_review.security_scan.store import (
     ensure_project,
     load_all_file_records,
+    purge_stale_projects,
     read_info,
     read_project_settings,
     write_info,
@@ -90,6 +91,13 @@ def init(
     info_path = data_root / pid / "INFO.md"
     if force_info or not info_path.exists():
         write_info(pid, _default_info(pid, detected.tags), data_root=data_root)
+    removed = purge_stale_projects(data_root=data_root, keep_project_id=pid)
+    if removed:
+        typer.secho(
+            f"purged stale project data: {', '.join(removed)}",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
     typer.echo(
         json.dumps(
             {"projectId": pid, "dataRoot": str(data_root), "techTags": detected.tags},
