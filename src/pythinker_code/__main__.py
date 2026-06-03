@@ -67,9 +67,9 @@ def main(argv: Sequence[str] | None = None) -> int | str | None:
     args = list(sys.argv[1:] if argv is None else argv)
 
     if len(args) == 1 and args[0] in {"--version", "-V"}:
-        from pythinker_code.constant import get_version
+        from pythinker_code.constant import ORGANIZATION, get_version
 
-        print(f"pythinker, version {get_version()}")
+        print(f"pythinker, version {get_version()} — by {ORGANIZATION}")
         return 0
 
     if len(args) == 1 and args[0] in {"--help", "-h"}:

@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
+import tomlkit
 from inline_snapshot import snapshot
 
 from pythinker_code.config import (
     Config,
+    _apply_env_vars,
+    _check_scope_locks,
+    _find_project_root,
+    _load_scoped,
+    _lookup_provenance,
+    _set_nested,
+    _type_based_merge,
     get_default_config,
     load_config,
     load_config_from_string,
@@ -93,6 +103,17 @@ def test_default_config_dump():
             },
         }
     )
+
+
+def test_config_source_scopes_default_empty():
+    config = get_default_config()
+    assert config.source_scopes == {}
+
+
+def test_config_source_scopes_not_in_dump():
+    config = get_default_config()
+    dumped = config.model_dump()
+    assert "source_scopes" not in dumped
 
 
 def test_load_config_text_toml():
@@ -258,3 +279,353 @@ def test_load_config_compaction_trigger_ratio_too_high():
 def test_auto_deliberate_is_a_valid_policy() -> None:
     c = Config(ask_user_question_policy="auto_deliberate")
     assert c.ask_user_question_policy == "auto_deliberate"
+
+
+def test_find_project_root_finds_git_root(tmp_path):
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    subdir = tmp_path / "src" / "pkg"
+    subdir.mkdir(parents=True)
+    assert _find_project_root(subdir) == tmp_path
+
+
+def test_find_project_root_returns_none_outside_git(tmp_path):
+    # tmp_path itself has no .git ancestor in practice
+    assert _find_project_root(tmp_path) is None
+
+
+def test_find_project_root_finds_root_in_cwd(tmp_path):
+    (tmp_path / ".git").mkdir()
+    assert _find_project_root(tmp_path) == tmp_path
+
+
+def test_set_nested_flat():
+    d: dict = {}
+    _set_nested(d, ("theme",), "light")
+    assert d == {"theme": "light"}
+
+
+def test_set_nested_deep():
+    d: dict = {}
+    _set_nested(d, ("tui", "style"), "card")
+    assert d == {"tui": {"style": "card"}}
+
+
+def test_set_nested_overwrites_existing():
+    d = {"tui": {"style": "pythinker", "smooth_streaming": True}}
+    _set_nested(d, ("tui", "style"), "card")
+    assert d["tui"]["style"] == "card"
+    assert d["tui"]["smooth_streaming"] is True  # sibling preserved
+
+
+def test_lookup_provenance_scalar():
+    prov = {"theme": ".pythinker/config.local.toml"}
+    assert _lookup_provenance(prov, ("theme",)) == ".pythinker/config.local.toml"
+
+
+def test_lookup_provenance_nested():
+    prov = {"tui": {"style": ".pythinker/config.toml"}}
+    assert _lookup_provenance(prov, ("tui", "style")) == ".pythinker/config.toml"
+
+
+def test_lookup_provenance_list_index():
+    # Pydantic gives loc=("hooks", 0, "command") for a bad list element.
+    # Should return the collection scope, not crash.
+    prov = {"hooks": "~/.pythinker/config.toml+.pythinker/config.toml"}
+    assert (
+        _lookup_provenance(prov, ("hooks", 0, "command"))
+        == "~/.pythinker/config.toml+.pythinker/config.toml"
+    )
+
+
+def test_lookup_provenance_partial_path():
+    prov = {"tui": {"style": ".pythinker/config.toml"}}
+    assert _lookup_provenance(prov, ("tui", "nonexistent")) == "unknown scope"
+
+
+def test_lookup_provenance_empty_loc():
+    prov = "~/.pythinker/config.toml"
+    assert _lookup_provenance(prov, ()) == "~/.pythinker/config.toml"
+
+
+def test_lookup_provenance_unknown():
+    prov: dict = {}
+    assert _lookup_provenance(prov, ("missing_key",)) == "unknown scope"
+
+
+def test_scope_lock_providers_in_project():
+    with pytest.raises(ConfigError, match="'providers'.*project scope"):
+        _check_scope_locks({"providers": {"openai": {}}}, ".pythinker/config.toml")
+
+
+def test_scope_lock_services_in_local():
+    with pytest.raises(ConfigError, match="'services'.*local scope"):
+        _check_scope_locks(
+            {"services": {"pythinker_ai_search": {}}}, ".pythinker/config.local.toml"
+        )
+
+
+def test_scope_lock_feedback_api_key():
+    with pytest.raises(ConfigError, match="'feedback.api_key'"):
+        _check_scope_locks({"feedback": {"api_key": "secret"}}, ".pythinker/config.toml")
+
+
+def test_scope_lock_feedback_url_allowed():
+    # feedback.endpoint_url is NOT locked — should not raise
+    _check_scope_locks(
+        {"feedback": {"endpoint_url": "https://internal.example.com"}},
+        ".pythinker/config.toml",
+    )
+
+
+def test_scope_lock_clean_dict():
+    _check_scope_locks({"theme": "light", "default_model": "gpt-4"}, ".pythinker/config.toml")
+
+
+def test_scope_lock_error_mentions_env_var():
+    with pytest.raises(ConfigError, match="PYTHINKER_"):
+        _check_scope_locks({"providers": {}}, ".pythinker/config.toml")
+
+
+def test_merge_scalar_override():
+    prov: dict = {}
+    result = _type_based_merge(
+        {"theme": "dark"}, {"theme": "light"}, prov, ".pythinker/config.local.toml"
+    )
+    assert result["theme"] == "light"
+    assert prov["theme"] == ".pythinker/config.local.toml"
+
+
+def test_merge_scalar_three_scopes():
+    prov: dict = {}
+    base = _type_based_merge({}, {"theme": "dark"}, prov, "~/.pythinker/config.toml")
+    base = _type_based_merge(base, {"theme": "solarized"}, prov, ".pythinker/config.toml")
+    base = _type_based_merge(base, {"theme": "light"}, prov, ".pythinker/config.local.toml")
+    assert base["theme"] == "light"
+    assert prov["theme"] == ".pythinker/config.local.toml"
+
+
+def test_merge_list_concat():
+    prov: dict = {}
+    base = _type_based_merge(
+        {}, {"hooks": [{"event": "Stop", "command": "a"}]}, prov, "~/.pythinker/config.toml"
+    )
+    base = _type_based_merge(
+        base, {"hooks": [{"event": "Stop", "command": "b"}]}, prov, ".pythinker/config.toml"
+    )
+    assert len(base["hooks"]) == 2
+    assert base["hooks"][0]["command"] == "a"
+    assert base["hooks"][1]["command"] == "b"
+
+
+def test_merge_list_concat_provenance():
+    prov: dict = {}
+    base = _type_based_merge({}, {"hooks": []}, prov, "~/.pythinker/config.toml")
+    base = _type_based_merge(base, {"hooks": []}, prov, ".pythinker/config.toml")
+    assert prov["hooks"] == "~/.pythinker/config.toml+.pythinker/config.toml"
+
+
+def test_merge_list_base_case_provenance():
+    prov: dict = {}
+    _type_based_merge({}, {"hooks": []}, prov, "~/.pythinker/config.toml")
+    assert prov["hooks"] == "~/.pythinker/config.toml"
+
+
+def test_merge_list_dedup_extra_skill_dirs():
+    prov: dict = {}
+    base = _type_based_merge(
+        {}, {"extra_skill_dirs": ["/a", "/b"]}, prov, "~/.pythinker/config.toml"
+    )
+    base = _type_based_merge(
+        base, {"extra_skill_dirs": ["/b", "/c"]}, prov, ".pythinker/config.toml"
+    )
+    # /b appears in both — should appear only once (first occurrence kept)
+    assert base["extra_skill_dirs"] == ["/a", "/b", "/c"]
+
+
+def test_merge_dict_deep():
+    prov: dict = {}
+    base = _type_based_merge(
+        {},
+        {"tui": {"style": "pythinker", "smooth_streaming": True}},
+        prov,
+        "~/.pythinker/config.toml",
+    )
+    base = _type_based_merge(base, {"tui": {"style": "card"}}, prov, ".pythinker/config.toml")
+    assert base["tui"]["style"] == "card"
+    assert base["tui"]["smooth_streaming"] is True  # sibling preserved
+    assert prov["tui"]["style"] == ".pythinker/config.toml"
+    assert prov["tui"]["smooth_streaming"] == "~/.pythinker/config.toml"
+
+
+def test_merge_key_only_in_overlay():
+    prov: dict = {}
+    result = _type_based_merge({}, {"theme": "dark"}, prov, "~/.pythinker/config.toml")
+    assert result["theme"] == "dark"
+    assert prov["theme"] == "~/.pythinker/config.toml"
+
+
+def test_apply_env_vars_known_key(monkeypatch):
+    monkeypatch.setenv("PYTHINKER_THEME", "light")
+    merged: dict = {}
+    prov: dict = {}
+    _apply_env_vars(merged, prov)
+    assert merged["theme"] == "light"
+    assert prov["theme"] == "env PYTHINKER_THEME"
+
+
+def test_apply_env_vars_unknown_key_ignored(monkeypatch):
+    monkeypatch.setenv("PYTHINKER_XYZZY_UNKNOWN", "whatever")
+    merged: dict = {}
+    prov: dict = {}
+    _apply_env_vars(merged, prov)
+    assert "xyzzy_unknown" not in merged
+
+
+def test_apply_env_vars_bool_coercion(monkeypatch):
+    monkeypatch.setenv("PYTHINKER_DEFAULT_YOLO", "true")
+    merged: dict = {}
+    prov: dict = {}
+    _apply_env_vars(merged, prov)
+    # Stored as string; Pydantic coerces during model_validate
+    assert merged["default_yolo"] == "true"
+    assert prov["default_yolo"] == "env PYTHINKER_DEFAULT_YOLO"
+
+
+def test_apply_env_vars_overrides_existing(monkeypatch):
+    monkeypatch.setenv("PYTHINKER_THEME", "light")
+    merged = {"theme": "dark"}
+    prov = {"theme": "~/.pythinker/config.toml"}
+    _apply_env_vars(merged, prov)
+    assert merged["theme"] == "light"
+    assert prov["theme"] == "env PYTHINKER_THEME"
+
+
+# ---------------------------------------------------------------------------
+# _load_scoped integration tests
+# ---------------------------------------------------------------------------
+
+
+def _write_toml(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(tomlkit.dumps(data), encoding="utf-8")  # type: ignore[arg-type]
+
+
+def test_load_scoped_user_only(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    _write_toml(tmp_path / "config.toml", {"theme": "light"})
+    config = _load_scoped(project_root=None)
+    assert config.theme == "light"
+    assert config.source_scopes["user"] == (tmp_path / "config.toml").resolve()
+
+
+def test_load_scoped_project_overrides_user(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    _write_toml(tmp_path / "config.toml", {"theme": "dark"})
+    project_root = tmp_path / "myproject"
+    _write_toml(project_root / ".pythinker" / "config.toml", {"theme": "light"})
+    config = _load_scoped(project_root=project_root)
+    assert config.theme == "light"
+
+
+def test_load_scoped_local_overrides_project(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    _write_toml(tmp_path / "config.toml", {"theme": "dark"})
+    project_root = tmp_path / "myproject"
+    _write_toml(project_root / ".pythinker" / "config.toml", {"theme": "dark"})
+    _write_toml(project_root / ".pythinker" / "config.local.toml", {"theme": "light"})
+    config = _load_scoped(project_root=project_root)
+    assert config.theme == "light"
+
+
+def test_load_scoped_hooks_concatenate(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    _write_toml(tmp_path / "config.toml", {"hooks": [{"event": "Stop", "command": "user-hook"}]})
+    project_root = tmp_path / "myproject"
+    _write_toml(
+        project_root / ".pythinker" / "config.toml",
+        {"hooks": [{"event": "Stop", "command": "project-hook"}]},
+    )
+    config = _load_scoped(project_root=project_root)
+    commands = [h.command for h in config.hooks]
+    assert "user-hook" in commands
+    assert "project-hook" in commands
+
+
+def test_load_scoped_scope_lock_violation(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    _write_toml(tmp_path / "config.toml", {})
+    project_root = tmp_path / "myproject"
+    _write_toml(
+        project_root / ".pythinker" / "config.toml",
+        {"providers": {"bad": {"type": "openai", "base_url": "x", "api_key": "sk-x"}}},
+    )
+    with pytest.raises(ConfigError, match="'providers'"):
+        _load_scoped(project_root=project_root)
+
+
+def test_load_scoped_validation_error_attributes_scope(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    _write_toml(tmp_path / "config.toml", {})
+    project_root = tmp_path / "myproject"
+    _write_toml(
+        project_root / ".pythinker" / "config.local.toml",
+        {"theme": "neon"},  # invalid value
+    )
+    with pytest.raises(ConfigError, match="config.local.toml"):
+        _load_scoped(project_root=project_root)
+
+
+def test_load_scoped_env_override(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    monkeypatch.setenv("PYTHINKER_THEME", "light")
+    _write_toml(tmp_path / "config.toml", {"theme": "dark"})
+    project_root = tmp_path / "myproject"
+    _write_toml(project_root / ".pythinker" / "config.toml", {"theme": "dark"})
+    config = _load_scoped(project_root=project_root)
+    assert config.theme == "light"  # env beats all file scopes
+
+
+def test_load_scoped_source_scopes_populated(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    _write_toml(tmp_path / "config.toml", {})
+    project_root = tmp_path / "myproject"
+    _write_toml(project_root / ".pythinker" / "config.toml", {})
+    config = _load_scoped(project_root=project_root)
+    assert "user" in config.source_scopes
+    assert "project" in config.source_scopes
+    assert "local" not in config.source_scopes  # local file absent
+
+
+def test_load_scoped_gitignores_local_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    _write_toml(tmp_path / "config.toml", {})
+    project_root = tmp_path / "myproject"
+    _write_toml(project_root / ".pythinker" / "config.local.toml", {})
+
+    _load_scoped(project_root=project_root)
+
+    gitignore = project_root / ".gitignore"
+    assert gitignore.exists()
+    assert ".pythinker/config.local.toml" in gitignore.read_text(encoding="utf-8")
+
+
+def test_load_config_explicit_path_bypasses_scoping(tmp_path):
+    """--config flag must bypass scope resolution entirely."""
+    config_file = tmp_path / "explicit.toml"
+    config_file.write_text('theme = "light"\n', encoding="utf-8")
+    config = load_config(config_file)
+    assert config.theme == "light"
+    assert config.source_file == config_file.resolve()
+    # source_scopes is empty because no scope pipeline was run
+    assert config.source_scopes == {}
+
+
+def test_load_config_no_args_uses_scope_resolution(tmp_path, monkeypatch):
+    """load_config() with no args routes through scoped pipeline."""
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    monkeypatch.chdir(tmp_path)  # no .git in tmp_path → user-only scope
+    (tmp_path / "config.toml").write_text('theme = "light"\n', encoding="utf-8")
+    config = load_config()
+    assert config.theme == "light"
+    assert "user" in config.source_scopes

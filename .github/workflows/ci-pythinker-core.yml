@@ -57,7 +57,16 @@ jobs:
       - name: Run tests
         env:
           UV_PYTHON: ${{ steps.setup-python.outputs.python-path }}
-        run: make test-pythinker-core
+        run: make cov-pythinker-core
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # pinned from v5.5.4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: packages/pythinker-core/coverage.xml
+          flags: pythinker-core
+          name: pythinker-core-${{ matrix.python-version }}
+          fail_ci_if_error: false
 
   docs:
     runs-on: ubuntu-latest

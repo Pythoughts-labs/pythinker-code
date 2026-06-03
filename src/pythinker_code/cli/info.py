@@ -9,6 +9,7 @@ import typer
 
 class InfoData(TypedDict):
     pythinker_code_version: str
+    organization: str
     agent_spec_versions: list[str]
     wire_protocol_version: str
     python_version: str
@@ -16,11 +17,12 @@ class InfoData(TypedDict):
 
 def _collect_info() -> InfoData:
     from pythinker_code.agentspec import SUPPORTED_AGENT_SPEC_VERSIONS
-    from pythinker_code.constant import get_version
+    from pythinker_code.constant import ORGANIZATION, get_version
     from pythinker_code.wire.protocol import WIRE_PROTOCOL_VERSION
 
     return {
         "pythinker_code_version": get_version(),
+        "organization": ORGANIZATION,
         "agent_spec_versions": [str(version) for version in SUPPORTED_AGENT_SPEC_VERSIONS],
         "wire_protocol_version": WIRE_PROTOCOL_VERSION,
         "python_version": platform.python_version(),
@@ -37,6 +39,7 @@ def _emit_info(json_output: bool) -> None:
 
     lines = [
         f"pythinker-code version: {info['pythinker_code_version']}",
+        f"developed by: {info['organization']}",
         f"agent spec versions: {agent_versions_text}",
         f"wire protocol: {info['wire_protocol_version']}",
         f"python version: {info['python_version']}",

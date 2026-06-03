@@ -1,12 +1,12 @@
 [project]
 name = "pythinker-code"
 version = "0.32.0"
-description = "Pythinker Code is your next CLI agent."
+description = "Pythinker — an agentic CLI developed by Pythoughts-labs."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
-authors = [{ name = "Mohamed Elkholy", email = "moelkholy1995@gmail.com" }]
+authors = [{ name = "Pythoughts-labs", email = "hello@pythoughts.com" }]
 keywords = ["cli", "agent", "ai", "coding-assistant", "llm", "claude", "openai", "terminal"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -72,6 +72,7 @@ dev = [
     "ty>=0.0.9",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
+    "pytest-cov>=6.0",
     "ruff>=0.14.10,<0.15",
 ]
 
@@ -187,4 +188,20 @@ provid = "provid"
 updat = "updat"
 examin = "examin"
 continu = "continu"
+
+[tool.coverage.run]
+source_pkgs = ["pythinker_code"]
+branch = true
+relative_files = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+    "\\.\\.\\.",
+]
 

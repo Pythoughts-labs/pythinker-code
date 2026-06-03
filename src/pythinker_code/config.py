@@ -4,7 +4,7 @@ import contextlib
 import json
 import os
 from pathlib import Path
-from typing import Literal, Self
+from typing import Any, Literal, Self, cast
 
 import tomlkit
 from pydantic import (
@@ -29,6 +29,279 @@ from pythinker_code.hooks.config import HookDef
 from pythinker_code.llm import ModelCapability, ProviderType
 from pythinker_code.share import get_share_dir
 from pythinker_code.utils.logging import logger
+
+
+def _find_project_root(cwd: Path) -> Path | None:
+    """Walk up from cwd to find the nearest directory containing .git/.
+
+    Returns None when no .git marker is found before reaching the filesystem
+    root, so callers can skip project/local scopes without a fallback.
+    """
+    current = cwd.resolve()
+    while True:
+        if (current / ".git").exists():
+            return current
+        parent = current.parent
+        if parent == current:
+            return None
+        current = parent
+
+
+# ---------------------------------------------------------------------------
+# Scope system constants
+# ---------------------------------------------------------------------------
+
+SCOPE_LOCKED_PATHS: frozenset[tuple[str, ...]] = frozenset(
+    {
+        ("providers",),  # contains api_key per provider — must stay in user scope
+        ("services",),  # contains api_key fields — must stay in user scope
+        ("feedback", "api_key"),  # only the key, not the whole feedback section
+    }
+)
+
+DEDUP_LIST_FIELDS: frozenset[str] = frozenset({"allowed_domains", "extra_skill_dirs"})
+
+ENV_FIELD_MAP: dict[str, tuple[str, ...]] = {
+    "PYTHINKER_DEFAULT_MODEL": ("default_model",),
+    "PYTHINKER_DEFAULT_THINKING": ("default_thinking",),
+    "PYTHINKER_DEFAULT_THINKING_EFFORT": ("default_thinking_effort",),
+    "PYTHINKER_AGENT_EXECUTION_PROFILE": ("agent_execution_profile",),
+    "PYTHINKER_DEFAULT_YOLO": ("default_yolo",),
+    "PYTHINKER_ASK_USER_QUESTION_POLICY": ("ask_user_question_policy",),
+    "PYTHINKER_AUTO_DELIBERATE_DESTRUCTIVE_ACTIONS": ("auto_deliberate_destructive_actions",),
+    "PYTHINKER_SKIP_AUTO_PROMPT_INJECTION": ("skip_auto_prompt_injection",),
+    "PYTHINKER_DEFAULT_PLAN_MODE": ("default_plan_mode",),
+    "PYTHINKER_DEFAULT_EDITOR": ("default_editor",),
+    "PYTHINKER_THEME": ("theme",),
+    "PYTHINKER_SHOW_THINKING_STREAM": ("show_thinking_stream",),
+    "PYTHINKER_PREVENT_IDLE_SLEEP": ("prevent_idle_sleep",),
+    "PYTHINKER_TELEMETRY": ("telemetry",),
+    "PYTHINKER_SESSION_RETENTION_DAYS": ("session_retention_days",),
+    "PYTHINKER_MERGE_ALL_AVAILABLE_SKILLS": ("merge_all_available_skills",),
+}
+
+
+# ---------------------------------------------------------------------------
+# Pipeline helpers
+# ---------------------------------------------------------------------------
+
+
+def _set_nested(d: dict[str, Any], path: tuple[str, ...], value: object) -> None:
+    """Walk *path* into *d*, creating intermediate dicts, then set the leaf."""
+    node = d
+    for part in path[:-1]:
+        if part not in node or not isinstance(node[part], dict):
+            node[part] = {}
+        node = node[part]
+    node[path[-1]] = value
+
+
+def _lookup_provenance(prov: dict[str, Any] | str, loc: tuple[str | int, ...]) -> str:
+    """Recursively follow *loc* through the provenance map.
+
+    Integer elements (Pydantic list indices) are skipped — we map them back
+    to the parent collection's scope string so error messages stay useful.
+    Returns "unknown scope" when the path cannot be fully resolved.
+    """
+    if not loc or isinstance(prov, str):
+        return prov if isinstance(prov, str) else "unknown scope"
+    head, *tail = loc
+    if isinstance(head, int):
+        return prov if isinstance(prov, str) else _lookup_provenance(prov, tuple(tail))
+    if head in prov:
+        return _lookup_provenance(prov[head], tuple(tail))
+    return "unknown scope"
+
+
+def _check_scope_locks(scope_dict: dict[str, Any], scope_name: str) -> None:
+    """Raise ConfigError if *scope_dict* contains any scope-locked field paths.
+
+    Checks every path in SCOPE_LOCKED_PATHS by walking the raw dict before
+    Pydantic validation, so secrets are blocked before they can be merged.
+    """
+    for path in SCOPE_LOCKED_PATHS:
+        node: Any = scope_dict
+        for part in path:
+            if not isinstance(node, dict) or part not in node:
+                break
+            node = cast(Any, node[part])
+        else:
+            field_path = ".".join(path)
+            # Derive a short scope label for the error message
+            if "local" in scope_name:
+                scope_label = "local scope"
+            elif "project" in scope_name or scope_name.startswith(".pythinker"):
+                scope_label = "project scope"
+            else:
+                scope_label = scope_name
+            raise ConfigError(
+                f"'{field_path}' cannot be set in {scope_name} ({scope_label}).\n"
+                f"  Move it to ~/.pythinker/config.toml or set the corresponding "
+                f"PYTHINKER_* environment variable."
+            )
+
+
+def _type_based_merge(
+    base: dict[str, Any],
+    overlay: dict[str, Any],
+    provenance: dict[str, Any],
+    scope: str,
+) -> dict[str, Any]:
+    """Merge *overlay* into *base* using type-based rules, tracking provenance.
+
+    Rules:
+    - Scalar (str/bool/int/float/None): overlay wins, provenance records scope.
+    - List: base + overlay concatenated; DEDUP_LIST_FIELDS deduplicated
+      (order-preserving, first occurrence wins).
+    - Dict: recurse so nested keys can be independently overridden.
+
+    Mutates *base* and *provenance* in place; also returns *base* for chaining.
+    """
+    for key, value in overlay.items():
+        if isinstance(value, dict):
+            # Normalize any scalar/list at this key to an empty dict before recursing;
+            # recursing into a non-dict crashes with TypeError, and leaving provenance[key]
+            # as a string would crash a subsequent dict-merge on the same key.
+            if key in base and not isinstance(base[key], dict):
+                base[key] = {}
+                provenance[key] = {}
+            # For dicts, always recurse to track individual nested keys
+            if key not in base:
+                base[key] = {}
+            if key not in provenance or not isinstance(provenance[key], dict):
+                provenance[key] = {}
+            _type_based_merge(
+                cast(dict[str, Any], base[key]),
+                cast(dict[str, Any], value),
+                cast(dict[str, Any], provenance[key]),
+                scope,
+            )
+        elif key not in base:
+            base[key] = value
+            provenance[key] = scope
+        elif isinstance(value, list) and isinstance(base[key], list):
+            combined = base[key] + value
+            if key in DEDUP_LIST_FIELDS:
+                combined = list(dict.fromkeys(combined))
+            base[key] = combined
+            existing = provenance.get(key)
+            provenance[key] = f"{existing}+{scope}" if existing else scope
+        else:
+            base[key] = value
+            provenance[key] = scope
+    return base
+
+
+def _apply_env_vars(merged: dict[str, Any], provenance: dict[str, Any]) -> None:
+    """Overlay PYTHINKER_* env vars onto *merged*, updating *provenance*.
+
+    Values are stored as raw strings; Pydantic coerces them during
+    model_validate(). Only keys in ENV_FIELD_MAP are recognised; all others
+    are silently ignored.
+    """
+    for env_key, path in ENV_FIELD_MAP.items():
+        value = os.environ.get(env_key)
+        if value is not None:
+            _set_nested(merged, path, value)
+            _set_nested(provenance, path, f"env {env_key}")
+
+
+def _load_scoped(project_root: Path | None) -> Config:
+    """Run the five-step scoped config resolution pipeline.
+
+    Steps: Ingest → Guard → Merge → Env → Validate.
+    Returns a fully-validated Config with source_scopes populated.
+    """
+    from pythinker_code.utils.gitignore import ensure_gitignored
+
+    # ── INGEST ────────────────────────────────────────────────────────────
+    default_user_file = get_config_file().expanduser().resolve(strict=False)
+    # Trigger JSON→TOML migration if needed (existing logic)
+    if not default_user_file.exists():
+        migration_error = _migrate_json_config_to_toml()
+        if migration_error is not None:
+            raise ConfigError(
+                f"Legacy config file has incompatible settings; please fix or "
+                f"rename/delete {migration_error.config_file} to continue. "
+                f"Errors: {migration_error.errors}"
+            ) from None
+
+    def _read_toml(path: Path) -> dict[str, Any]:
+        if not path.exists():
+            return {}
+        try:
+            return dict(tomlkit.loads(path.read_text(encoding="utf-8")))
+        except TOMLKitError as exc:
+            raise ConfigError(f"Invalid TOML in {path}: {exc}") from exc
+
+    user_file = default_user_file
+    user_dict = _read_toml(user_file)
+
+    # If the user config file still doesn't exist after migration (e.g. corrupt JSON
+    # was backed up but no TOML was written), seed it with defaults so subsequent
+    # runs have a concrete starting point — matching the legacy single-file behaviour.
+    if not user_file.exists():
+        default_cfg = get_default_config()
+        logger.debug("No config file found, creating default config: {config}", config=default_cfg)
+        save_config(default_cfg, user_file)
+
+    project_file: Path | None = None
+    local_file: Path | None = None
+    project_dict: dict[str, Any] = {}
+    local_dict: dict[str, Any] = {}
+
+    if project_root is not None:
+        project_file = project_root / ".pythinker" / "config.toml"
+        local_file = project_root / ".pythinker" / "config.local.toml"
+        project_dict = _read_toml(project_file)
+        local_dict = _read_toml(local_file)
+
+    # ── GUARD ─────────────────────────────────────────────────────────────
+    if project_file is not None:
+        _check_scope_locks(project_dict, str(project_file))
+    if local_file is not None:
+        _check_scope_locks(local_dict, str(local_file))
+
+    # ── MERGE ─────────────────────────────────────────────────────────────
+    provenance: dict[str, Any] = {}
+    merged = _type_based_merge({}, user_dict, provenance, str(user_file))
+    if project_dict:
+        merged = _type_based_merge(merged, project_dict, provenance, str(project_file))
+    if local_dict:
+        merged = _type_based_merge(merged, local_dict, provenance, str(local_file))
+
+    # ── ENV OVERLAY ───────────────────────────────────────────────────────
+    _apply_env_vars(merged, provenance)
+
+    # ── VALIDATE ──────────────────────────────────────────────────────────
+    try:
+        config = Config.model_validate(merged)
+    except ValidationError as exc:
+        enriched: list[str] = []
+        for err in exc.errors():
+            scope = _lookup_provenance(provenance, tuple(err["loc"]))
+            field = ".".join(str(p) for p in err["loc"])
+            enriched.append(f"  {field}: {err['msg']}  [from {scope}]")
+        raise ConfigError("Invalid configuration:\n" + "\n".join(enriched)) from exc
+
+    # ── METADATA ──────────────────────────────────────────────────────────
+    config.is_from_default_location = True
+    config.source_file = user_file
+    if user_file.exists():
+        config.source_scopes["user"] = user_file
+    if project_file is not None and project_file.exists():
+        config.source_scopes["project"] = project_file.resolve(strict=False)
+    if local_file is not None and local_file.exists():
+        config.source_scopes["local"] = local_file.resolve(strict=False)
+        # Auto-gitignore local config so it is never accidentally committed
+        ensure_gitignored(
+            project_root,  # type: ignore[arg-type]
+            ".pythinker/config.local.toml",
+            comment="Added by pythinker",
+        )
+
+    return config
+
 
 AgentExecutionProfile = Literal[
     "default",
@@ -384,6 +657,15 @@ class Config(BaseModel):
         description="Path to the loaded config file. None when loaded from --config text.",
         exclude=True,
     )
+    source_scopes: dict[str, Path] = Field(
+        default_factory=dict,
+        description=(
+            "Paths of config files that contributed to this resolved config, keyed by scope name. "
+            "e.g. {'user': Path('~/.pythinker/config.toml'), "
+            "'project': Path('.pythinker/config.toml')}."
+        ),
+        exclude=True,
+    )
     default_model: str = Field(default="", description="Default model to use")
     default_thinking: bool = Field(default=False, description="Default thinking mode")
     default_thinking_effort: ThinkingEffort | None = Field(
@@ -558,27 +840,26 @@ def get_default_config() -> Config:
 
 
 def load_config(config_file: Path | None = None) -> Config:
+    """Load configuration, resolving up to three scopes when no explicit file is given.
+
+    When *config_file* is None (the default), the scoped pipeline runs:
+    User (~/.pythinker/config.toml) → Project (.pythinker/config.toml) →
+    Local (.pythinker/config.local.toml), merged with type-based rules.
+
+    When *config_file* is given explicitly (e.g. via --config), that single
+    file is loaded directly with no scope resolution — preserving the legacy
+    behaviour used by tests and the CLI --config flag.
     """
-    Load configuration from config file.
-    If the config file does not exist, create it with default configuration.
-
-    Args:
-        config_file (Path | None): Path to the configuration file. If None, use default path.
-
-    Returns:
-        Validated Config object.
-
-    Raises:
-        ConfigError: If the configuration file is invalid.
-    """
-    default_config_file = get_config_file().expanduser().resolve(strict=False)
     if config_file is None:
-        config_file = default_config_file
+        project_root = _find_project_root(Path.cwd())
+        return _load_scoped(project_root)
+
+    # ── Explicit path: legacy single-file load (unchanged) ────────────────
+    default_config_file = get_config_file().expanduser().resolve(strict=False)
     config_file = config_file.expanduser().resolve(strict=False)
     is_default_config_file = config_file == default_config_file
     logger.debug("Loading config from file: {file}", file=config_file)
 
-    # If the user hasn't provided an explicit config path, migrate legacy JSON config once.
     if is_default_config_file and not config_file.exists():
         migration_error = _migrate_json_config_to_toml()
         if migration_error is not None:

@@ -112,4 +112,14 @@ jobs:
       - name: Run tests
         env:
           UV_PYTHON: ${{ steps.setup-python.outputs.python-path }}
-        run: make test-pythinker-host
+        run: make cov-pythinker-host
+
+      - name: Upload coverage to Codecov
+        if: matrix.runner == 'ubuntu-22.04'
+        uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # pinned from v5.5.4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: packages/pythinker-host/coverage.xml
+          flags: pythinker-host
+          name: pythinker-host-${{ matrix.python-version }}
+          fail_ci_if_error: false
