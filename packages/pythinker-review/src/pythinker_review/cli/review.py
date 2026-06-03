@@ -75,7 +75,7 @@ from pythinker_review.reviewflow.workflow import (
     status_project,
     triage_project,
 )
-from pythinker_review.store.findings_store import FindingsStore
+from pythinker_review.store.findings_store import _ALLOWED_NAMES, FindingsStore
 from pythinker_review.store.gitignore import ensure_gitignored
 from pythinker_review.store.models import SEVERITY_ORDER, Finding, Pass, RunMeta
 
@@ -363,6 +363,33 @@ def diff(
     raise typer.Exit(
         code=exit_code(meta=output.meta, findings=output.findings, fail_on=fail_on, llm_error=False)
     )
+
+
+@app.command(name="clean")
+def clean(
+    repo: Path = typer.Option(Path.cwd(), "--repo", "--root"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+) -> None:
+    """Remove unexpected files from .pythinker-review/ that are not part of its schema.
+
+    Safe to run at any time. Use --dry-run to preview without deleting.
+    """
+    store = FindingsStore(repo_root=repo.resolve())
+    if dry_run:
+        if not store.state_dir.exists():
+            typer.echo("nothing to clean (.pythinker-review/ does not exist)")
+            return
+        unknown = [e.name for e in store.state_dir.iterdir() if e.name not in _ALLOWED_NAMES]
+        if unknown:
+            typer.echo("would remove: " + ", ".join(sorted(unknown)))
+        else:
+            typer.echo("nothing to clean")
+        return
+    removed = store.purge_unknown()
+    if removed:
+        typer.secho(f"removed: {', '.join(sorted(removed))}", fg=typer.colors.YELLOW)
+    else:
+        typer.echo("nothing to clean")
 
 
 @app.command(name="init")

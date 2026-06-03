@@ -55,6 +55,11 @@ TRANSCRIPT_TOOL_GUTTER: Final = "|" if _ASCII_GLYPHS else "⎿"
 #: List/detail bullet (U+2022) used in status panels; falls back to an asterisk
 #: under ASCII mode so legacy code pages and ``TERM=dumb`` stay clean.
 LIST_BULLET: Final = "*" if _ASCII_GLYPHS else "•"
+#: Canonical glyph shown before a question prompt (AskUserQuestion tool).
+#: Unambiguously signals "this is a question" in every context: transcript
+#: inline view, interactive dialog body, pager, and ``prompt_other_input``.
+#: ASCII mode falls back to plain ``?`` for legacy terminals.
+QUESTION_MARKER: Final = "?" if _ASCII_GLYPHS else "❓"
 
 __all__ = [
     "SPINNER_FRAMES",
@@ -72,4 +77,5 @@ __all__ = [
     "TRANSCRIPT_ACTIVE_MARKER",
     "TRANSCRIPT_TOOL_GUTTER",
     "LIST_BULLET",
+    "QUESTION_MARKER",
 ]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -12,6 +13,7 @@ from pythinker_review.store.models import Finding, RunMeta
 
 _STATE_DIR = ".pythinker-review"
 _INDEX_LIMIT = 200
+_ALLOWED_NAMES = frozenset({"index.json", "runs", "security-scan"})
 
 
 class FindingsStore:
@@ -91,3 +93,25 @@ class FindingsStore:
             run_dir = self._run_dir(run_id)
             if run_dir.is_dir():
                 shutil.rmtree(run_dir, ignore_errors=True)
+
+    def purge_unknown(self) -> list[str]:
+        """Remove entries in state_dir that are not part of the expected structure.
+
+        Returns the names of whatever was deleted. Safe to call at any time;
+        does nothing if state_dir does not exist yet.
+        """
+        if not self.state_dir.exists():
+            return []
+        removed: list[str] = []
+        for entry in self.state_dir.iterdir():
+            if entry.name not in _ALLOWED_NAMES:
+                try:
+                    if entry.is_dir():
+                        shutil.rmtree(entry)
+                    else:
+                        entry.unlink(missing_ok=True)
+                except OSError:
+                    logging.getLogger(__name__).warning("Failed to remove unknown entry %s", entry)
+                    continue
+                removed.append(entry.name)
+        return removed

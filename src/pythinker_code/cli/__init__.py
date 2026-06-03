@@ -980,13 +980,16 @@ def pythinker(
         if not session.is_empty():
             _emit_fatal_error(f"\nTo resume this session: pythinker -r {session.id}")
 
-    async def _post_run(
-        last_session: Session, exit_code: int, *, cleanup_scratchpad: bool = False
-    ) -> None:
-        # Session scratchpads are retained as compact history for future recall.
-        # ``cleanup_scratchpad`` is kept for call-site compatibility but no longer
-        # triggers automatic deletion after a successful run.
-        _ = cleanup_scratchpad
+    async def _post_run(last_session: Session, exit_code: int) -> None:
+        # Always clean up this session's scratch file on exit (success or interruption)
+        # so files never accumulate. Todo list and context persist separately.
+        from pythinker_code.scratchpad import cleanup_session_scratch
+
+        await cleanup_session_scratch(
+            last_session.work_dir,
+            session_id=last_session.id,
+            session_title=last_session.title,
+        )
         if exit_code == ExitCode.SUCCESS and getattr(
             getattr(config, "memory", None), "journal_recaps", False
         ):
@@ -1058,11 +1061,7 @@ def pythinker(
                             await _post_run(session, ExitCode.SUCCESS)
                     return "vis", ExitCode.SUCCESS
             assert last_session is not None
-            await _post_run(
-                last_session,
-                exit_code,
-                cleanup_scratchpad=(ui == "print" and prompt is not None),
-            )
+            await _post_run(last_session, exit_code)
             return None, exit_code
         except (SwitchToWeb, SwitchToVis):
             # Currently handled inside the loop (return), but re-raise explicitly

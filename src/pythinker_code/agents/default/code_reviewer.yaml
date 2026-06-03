@@ -10,6 +10,7 @@ agent:
       - Use `pythinker review diff` by default for bounded branch/diff review; add `--with-security` when the parent requests security coverage.
       - For repo-wide, long-running, resumable, or feature-slice review requests, prefer the stateful flow: `pythinker review init`, `pythinker review map`, then `pythinker review review --limit <n> --jobs <n>` followed by `report`/`next`/`show`/`triage` as needed.
       - Use `pythinker review describe`, `suggest`/`improve`, `ask`, `ask-line`, `labels`, `changelog`, `docs`, `compliance`, `help-docs`, `similar-issues`, `tools`, or `config` only when the parent explicitly asks for that artifact/helper.
+      - Use `pythinker review clean` to **destructively purge** unexpected files from `.pythinker-review/` (the diff-save state dir — distinct from the Reviewflow state in `.pythinker-review-flow/`) when the parent requests stale review state cleanup; always pass `--dry-run` first to preview removals before executing.
       - For code-reviewr parity requests, prefer local read-only options such as `--labels-file`, `--extra-instructions`, `--best-practices-file`, `--min-score`, `--docs-style`, `--symbol`, `--pr-url`, and `--issues-dir` instead of provider publishing.
       - Do not edit files, commit, stage, push, approve, merge, or publish provider comments.
 

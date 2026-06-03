@@ -78,3 +78,36 @@ def test_begin_twice_without_finalize_raises(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="begin\\(\\) called twice"):
         store.begin(meta)
     store.finalize(meta)
+
+
+def test_purge_unknown_noop_when_state_dir_missing(tmp_path: Path) -> None:
+    store = FindingsStore(repo_root=tmp_path)
+    assert store.purge_unknown() == []
+
+
+def test_purge_unknown_keeps_allowed_names(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".pythinker-review"
+    state_dir.mkdir()
+    (state_dir / "index.json").write_text("{}", encoding="utf-8")
+    (state_dir / "runs").mkdir()
+    (state_dir / "security-scan").mkdir()
+    store = FindingsStore(repo_root=tmp_path)
+    assert store.purge_unknown() == []
+    assert (state_dir / "index.json").exists()
+    assert (state_dir / "runs").exists()
+    assert (state_dir / "security-scan").exists()
+
+
+def test_purge_unknown_removes_unknown_file_and_dir(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".pythinker-review"
+    state_dir.mkdir()
+    stray_file = state_dir / "stray.json"
+    stray_file.write_text("{}", encoding="utf-8")
+    stray_dir = state_dir / "old-report"
+    stray_dir.mkdir()
+    (stray_dir / "data.txt").write_text("x", encoding="utf-8")
+    store = FindingsStore(repo_root=tmp_path)
+    removed = store.purge_unknown()
+    assert set(removed) == {"stray.json", "old-report"}
+    assert not stray_file.exists()
+    assert not stray_dir.exists()

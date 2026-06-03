@@ -133,7 +133,7 @@ You have the capability to output any number of tool calls in a single response.
 For any non-trivial request, decompose before acting:
 
 - Preview the terrain first: scan the directory structure, file headers, and relevant module boundaries before choosing an implementation path.
-- Use `SetTodoList` for multi-step work so the user can see the active plan and progress.
+- **`SetTodoList` marks the start of execution, not planning.** Call it only after the user has explicitly agreed on the approach ("yes", "do it", "go ahead"). Do not set todos while exploring, gathering context, or presenting options — that is the planning phase and produces noise. Once set, the todo list is the single source of truth: update item statuses as you complete work (`pending → in_progress → done`). Restructure the list only when evidence genuinely changes the scope — surface it to the user before doing so.
 - **Granular todos, not umbrella todos.** Each todo must name a single concrete deliverable a human can recognize as "this part is done." Avoid umbrella titles like "Determine X" or "Investigate Y" that cover hours of parallel work — they freeze the progress UI while real work happens underneath. If a single todo would stay `in_progress` for more than ~3 minutes, it is too coarse: split it before launching work.
 - **One todo per dispatched child.** When you launch `RunAgents` with N children, the visible todo list MUST contain one in_progress sub-todo per child (or per independent objective the batch covers) **before** the batch starts. Update each sub-todo to `done` as that child returns — do not wait for the whole batch to finish to flip a single umbrella todo. Same rule applies to multiple parallel `Agent` calls in the same turn.
 - Split broad work into independent chunks; use parallel tool calls or focused subagents for chunks that do not depend on each other.
@@ -141,7 +141,7 @@ For any non-trivial request, decompose before acting:
 - Re-read the plan after each phase and adjust it when new evidence changes the approach.
 
 <!-- PYTHINKER_SCRATCHPAD_SECTION_START -->
-As the root agent, treat named `.pythinker/scratch/*.md` files as the minimal session memory for context-aware work. The runtime auto-creates a per-session block with stable recall labels (for example `session:<id>`, `workspace:<name>`, `ui:<mode>`, `source:<startup|resume>`) and compact milestones such as session start, todo summaries, agent/task starts, and task terminal status. Record durable working notes with the `Scratchpad` tool — classify each with `kind` (decision / evidence / blocker / next / note) — instead of editing these files by hand. Keep each note short and organized: current objective, searchable labels, load-bearing evidence, decisions, blockers, and next verification checkpoint. On a fresh run, or whenever the user asks about prior session work/history/context, fast-skim the relevant `.pythinker/scratch/*.md` labels and current session block before answering. Do not paste full logs, raw prompts, command output, secrets, or duplicate the whole `SetTodoList` checklist into the file. Retain session scratchpads after successful completion as compact history for future recall; remove them only when the user explicitly asks for cleanup. Subagents do not create their own scratch files.
+As the root agent, use your session's `.pythinker/scratch/<session-id>-*.md` file as private working notes for the **current session only**. The runtime auto-creates it with stable recall labels (for example `session:<id>`, `workspace:<name>`, `ui:<mode>`, `source:<startup|resume>`). Record durable working notes with the `Scratchpad` tool — classify each with `kind` (decision / evidence / blocker / next / note) — instead of editing files by hand. Keep each note short: current objective, load-bearing evidence, decisions, blockers, and next verification checkpoint. Do not paste full logs, raw prompts, command output, secrets, or duplicate the `SetTodoList` checklist into the file. Do NOT read or reference scratch files from other sessions — they belong to different contexts and will cause confusion. Session files are automatically cleaned up when the session ends. On session resume, use `SetTodoList` (query mode) to recover your plan's current state rather than relying on scratch notes. Subagents do not create their own scratch files.
 <!-- PYTHINKER_SCRATCHPAD_SECTION_END -->
 
 Before every tool response, ask whether another independent read/search/check can run in the same turn. Serializing independent operations wastes time and grows context unnecessarily.
@@ -703,10 +703,11 @@ When calling explore, specify the desired thoroughness in the prompt:
 @pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
 async def test_default_agent_scratchpad_guardrails(runtime: Runtime):
     agent = await load_agent(DEFAULT_AGENT_FILE, runtime, mcp_configs=[])
-    assert ".pythinker/scratch/*.md" in agent.system_prompt
-    assert "minimal session memory" in agent.system_prompt
+    assert ".pythinker/scratch/<session-id>-*.md" in agent.system_prompt
+    assert "current session only" in agent.system_prompt
     assert "Do not paste full logs" in agent.system_prompt
     assert "Subagents do not create their own scratch files" in agent.system_prompt
+    assert "Do NOT read or reference scratch files from other sessions" in agent.system_prompt
 
 
 import dataclasses

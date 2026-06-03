@@ -595,11 +595,11 @@ _UNAVAILABLE = ScratchpadStatus(False, "disabled_tracked", True, True, False)
 def test_render_available_matches_default_constant():
     text = render_scratchpad_section(_AVAILABLE)
     assert text == DEFAULT_SCRATCHPAD_SECTION
-    assert "minimal session memory" in text
-    assert ".pythinker/scratch/*.md" in text
+    assert "current session only" in text
+    assert ".pythinker/scratch/<session-id>-*.md" in text
     assert "SetTodoList" in text
     assert "full logs" in text
-    assert "Retain session scratchpads" in text
+    assert "automatically cleaned up" in text
 
 
 def test_render_unavailable_is_the_guard_line():
@@ -612,8 +612,8 @@ def test_render_unavailable_is_the_guard_line():
 def test_render_available_with_existing_scratchpad_adds_recovery_instruction():
     text = render_scratchpad_section(_AVAILABLE, scratch_exists=True)
     assert DEFAULT_SCRATCHPAD_SECTION in text
-    assert "prior scratchpad history exists" in text
-    assert "fast-skim labels" in text
+    assert "Recovery: a scratch file exists" in text
+    assert "Read only your own session's" in text
 
 
 def test_refresh_replaces_existing_marked_scratchpad_block():

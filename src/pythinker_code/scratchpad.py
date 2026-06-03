@@ -1018,6 +1018,28 @@ async def append_scratch_event(
     )
 
 
+async def cleanup_session_scratch(
+    work_dir: HostPath,
+    *,
+    session_id: str,
+    session_title: str | None = None,
+) -> None:
+    """Delete only the current session's scratch file on exit. Never raises.
+
+    Called on every session exit (success and interruption) so files never
+    accumulate across sessions. The todo list and conversation context persist
+    separately in session state and are unaffected.
+    """
+    if not _is_local_host():
+        return
+    try:
+        path = session_scratch_path(work_dir, session_id=session_id, session_title=session_title)
+        if path.is_file() and not path.is_symlink():
+            path.unlink(missing_ok=True)
+    except Exception:
+        logger.debug("scratchpad session cleanup failed")
+
+
 async def cleanup_scratch(
     work_dir: HostPath, *, git_runner: GitRunner | None = None
 ) -> ScratchpadCleanupResult:
@@ -1098,23 +1120,22 @@ SCRATCHPAD_SECTION_START = "<!-- PYTHINKER_SCRATCHPAD_SECTION_START -->"
 SCRATCHPAD_SECTION_END = "<!-- PYTHINKER_SCRATCHPAD_SECTION_END -->"
 
 DEFAULT_SCRATCHPAD_SECTION = (
-    "As the root agent, treat named `.pythinker/scratch/*.md` files as the "
-    "minimal session memory for context-aware work. The runtime auto-creates a per-session block "
-    "with stable recall labels (for example `session:<id>`, `workspace:<name>`, "
-    "`ui:<mode>`, `source:<startup|resume>`) and compact milestones such as "
-    "session start, todo summaries, agent/task starts, and task terminal status. "
+    "As the root agent, use your session's `.pythinker/scratch/<session-id>-*.md` "
+    "file as private working notes for the **current session only**. "
+    "The runtime auto-creates it with stable recall labels (for example `session:<id>`, "
+    "`workspace:<name>`, `ui:<mode>`, `source:<startup|resume>`). "
     "Record durable working notes with the `Scratchpad` tool — classify each with "
-    "`kind` (decision / evidence / blocker / next / note) — instead of editing these "
-    "files by hand. Keep each note short and organized: current objective, searchable "
-    "labels, load-bearing evidence, decisions, blockers, and next verification "
-    "checkpoint. On a fresh run, or whenever the user asks about prior session "
-    "work/history/context, fast-skim the relevant `.pythinker/scratch/*.md` "
-    "labels and current session block before answering. Do not paste full logs, "
-    "raw prompts, command output, secrets, or duplicate the whole `SetTodoList` "
-    "checklist into the file. Retain session scratchpads after successful "
-    "completion as compact history for future recall; remove them only when the "
-    "user explicitly asks for cleanup. Subagents do not create their own scratch "
-    "files."
+    "`kind` (decision / evidence / blocker / next / note) — instead of editing files by hand. "
+    "Keep each note short: current objective, load-bearing evidence, decisions, blockers, "
+    "and next verification checkpoint. "
+    "Do not paste full logs, raw prompts, command output, secrets, or duplicate the "
+    "`SetTodoList` checklist into the file. "
+    "Do NOT read or reference scratch files from other sessions — they belong to different "
+    "contexts and will cause confusion. "
+    "Session files are automatically cleaned up when the session ends. "
+    "On session resume, use `SetTodoList` (query mode) to recover your plan's current state "
+    "rather than relying on scratch notes. "
+    "Subagents do not create their own scratch files."
 )
 
 _SECTION_UNAVAILABLE = (
@@ -1123,11 +1144,10 @@ _SECTION_UNAVAILABLE = (
 )
 
 _SCRATCHPAD_RECOVERY_NOTE = (
-    "Startup recovery: prior scratchpad history exists under `.pythinker/scratch/` "
-    "or legacy `.pythinker/scratch.md`. If you are the root agent, fast-skim labels "
-    "and the current/relevant session block before planning or answering so you "
-    "can recover context; keep the history unless the user explicitly asks for "
-    "cleanup."
+    "Recovery: a scratch file exists for your session. Read only your own session's "
+    "file (the one whose name starts with your session short ID) to recover working "
+    "notes. Ignore any files belonging to other sessions — they are stale and will "
+    "be auto-cleaned."
 )
 
 

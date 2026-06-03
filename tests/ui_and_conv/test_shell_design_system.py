@@ -14,6 +14,7 @@ from pythinker_code.ui.shell.design_system import (
     shell_style,
     status_icon,
 )
+from pythinker_code.ui.shell.glyphs import QUESTION_MARKER
 
 
 def _plain(renderable, *, width: int = 80) -> str:
@@ -37,8 +38,8 @@ def test_status_icon_names_are_stable():
     assert status_icon("denied").plain == "×"
     assert status_icon("interrupted").plain == "■"
     assert status_icon("waiting").plain == "○"
-    assert status_icon("question").plain == "?"
-    assert status_icon("approval").plain == "?"
+    assert status_icon("question").plain == QUESTION_MARKER
+    assert status_icon("approval").plain == QUESTION_MARKER
 
 
 def test_running_and_failed_status_icons_use_expected_tones():

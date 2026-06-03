@@ -7,8 +7,10 @@ shell-heavy wrappers.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import secrets
+import shutil
 import socket
 import subprocess
 from collections.abc import Iterable
@@ -260,6 +262,28 @@ def iter_report_paths(project_id: str, *, data_root: Path) -> Iterable[Path]:
     if not root.exists():
         return ()
     return root.iterdir()
+
+
+def purge_stale_projects(*, data_root: Path, keep_project_id: str) -> list[str]:
+    """Remove every project directory in data_root whose name != keep_project_id.
+
+    Called automatically by the CLI init command so stale project IDs from renamed
+    or one-off audit runs do not accumulate in .pythinker-review/security-scan/data/.
+    Returns the list of project IDs that were deleted.
+    """
+    if not data_root.exists():
+        return []
+    removed: list[str] = []
+    for entry in data_root.iterdir():
+        if not entry.is_dir() or entry.name == keep_project_id:
+            continue
+        try:
+            shutil.rmtree(entry)
+        except OSError:
+            logging.getLogger(__name__).warning("Failed to remove stale project %s", entry.name)
+            continue
+        removed.append(entry.name)
+    return removed
 
 
 def _dump(model: Any) -> dict[str, Any]:

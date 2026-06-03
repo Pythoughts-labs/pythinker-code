@@ -18,6 +18,7 @@ from pythinker_code.ui.shell.components import (
     render_diff,
     render_plain,
 )
+from pythinker_code.ui.shell.glyphs import QUESTION_MARKER
 from pythinker_code.ui.shell.tool_renderers import (
     ToolResultPayload,
     clear_tool_renderers,
@@ -881,7 +882,7 @@ def test_ask_user_renders_question_and_options():
         },
     )
     assert "● Ask 1 question" in rendered
-    assert "● Ask 1 question\n\n● Which auth method?" in rendered
+    assert f"● Ask 1 question\n\n{QUESTION_MARKER} Which auth method?" in rendered
     assert "OAuth" in rendered
     assert "API key" in rendered
 
