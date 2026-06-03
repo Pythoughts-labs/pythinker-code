@@ -10,6 +10,7 @@ ANTHROPIC_PLATFORM_ID = "anthropic"
 OPENROUTER_PLATFORM_ID = "openrouter"
 LM_STUDIO_PLATFORM_ID = "lm-studio"
 OLLAMA_PLATFORM_ID = "ollama"
+ZAI_PLATFORM_ID = "z-ai"
 
 __all__ = [
     "ANTHROPIC_PLATFORM_ID",
@@ -22,4 +23,5 @@ __all__ = [
     "OPENCODE_GO_PLATFORM_ID",
     "OPENROUTER_PLATFORM_ID",
     "PYTHINKER_CODE_PLATFORM_ID",
+    "ZAI_PLATFORM_ID",
 ]
