@@ -803,8 +803,14 @@ def pythinker(
                 render_scratchpad_section,
                 scratch_file_exists,
             )
+            from pythinker_code.session_cleanup import sweep_old_plans, sweep_old_sessions
 
             scratchpad_status = await ensure_git_excluded(work_dir)
+
+            # Sweep old archived sessions and plan files on startup (best-effort, non-blocking).
+            _retention = config.session_retention_days if isinstance(config, Config) else 30
+            await asyncio.to_thread(sweep_old_sessions, _retention)
+            await asyncio.to_thread(sweep_old_plans, _retention)
             scratch_exists_before_start = scratch_file_exists(work_dir)
             if scratchpad_status.available:
                 session_source = "resume" if resumed else "startup"

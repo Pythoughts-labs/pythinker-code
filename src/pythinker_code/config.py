@@ -497,6 +497,15 @@ class Config(BaseModel):
             "Enable anonymous telemetry to help improve pythinker-code. Set to false to opt out."
         ),
     )
+    session_retention_days: int = Field(
+        default=30,
+        ge=0,
+        description=(
+            "Archived session directories in ~/.pythinker/sessions/ older than this many days "
+            "are removed on startup. Plan files older than this many days are also pruned. "
+            "0 disables cleanup."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
