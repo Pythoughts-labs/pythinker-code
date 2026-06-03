@@ -185,3 +185,72 @@ def _apply_z_ai_config(
     else:
         config.default_model = fallback
     apply_login_thinking_defaults(config, thinking=False, effort="off")
+
+
+def apply_z_ai_models(config: Config, models: tuple[ZaiModel, ...]) -> bool:
+    """Upsert the live Z AI catalog and prune models no longer returned.
+
+    Preserves user preferences unless the selected Z AI model disappeared.
+    """
+    changed = False
+    aliases: list[str] = []
+    for model in models:
+        alias = model.alias
+        aliases.append(alias)
+        existing = config.models.get(alias)
+        if existing is None:
+            config.models[alias] = LLMModel(
+                provider=model.provider_key,
+                model=model.model_id,
+                max_context_size=model.max_context_size,
+                display_name=model.display_name,
+            )
+            changed = True
+            continue
+        if existing.provider != model.provider_key:
+            existing.provider = model.provider_key
+            changed = True
+        if existing.model != model.model_id:
+            existing.model = model.model_id
+            changed = True
+        if existing.max_context_size != model.max_context_size:
+            existing.max_context_size = model.max_context_size
+            changed = True
+        if existing.display_name != model.display_name:
+            existing.display_name = model.display_name
+            changed = True
+
+    alias_set = set(aliases)
+    removed_default = False
+    for alias, model_cfg in list(config.models.items()):
+        if model_cfg.provider != ZAI_PROVIDER_KEY:
+            continue
+        if alias in alias_set:
+            continue
+        del config.models[alias]
+        if config.default_model == alias:
+            removed_default = True
+        changed = True
+
+    if removed_default:
+        config.default_model = aliases[0] if aliases else next(iter(config.models), "")
+        changed = True
+    elif config.default_model and config.default_model not in config.models:
+        config.default_model = next(iter(config.models), "")
+        changed = True
+    return changed
+
+
+def _z_ai_api_key(config: Config) -> str | None:
+    provider = config.providers.get(ZAI_PROVIDER_KEY)
+    if provider is None:
+        return None
+    value = provider.api_key.get_secret_value().strip()
+    return value or None
+
+
+async def refresh_z_ai_models(config: Config) -> tuple[ZaiModel, ...] | None:
+    api_key = _z_ai_api_key(config)
+    if api_key is None:
+        return None
+    return await _discover_z_ai_models(api_key)

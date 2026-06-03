@@ -166,3 +166,67 @@ def test_apply_z_ai_config_replaces_existing_z_ai_models():
     z_ai_aliases = [a for a, m in config.models.items() if m.provider == ZAI_PROVIDER_KEY]
     assert z_ai_aliases == ["z-ai/glm-5.1"]
     assert config.models["z-ai/glm-5.1"].max_context_size == 300_000
+
+
+def test_apply_z_ai_models_prunes_stale_models_and_preserves_user_default():
+    from pythinker_code.auth.z_ai import (
+        ZAI_PROVIDER_KEY,
+        ZaiModel,
+        _apply_z_ai_config,
+        apply_z_ai_models,
+    )
+
+    config = Config(is_from_default_location=True)
+    _apply_z_ai_config(config, SecretStr("zai-test"))
+    config.default_model = "z-ai/glm-5.1"
+
+    discovered = (
+        ZaiModel("glm-5.1", "glm-5.1", "GLM-5.1", max_context_size=400_000),
+        ZaiModel("glm-6.0", "glm-6.0", "GLM-6.0", max_context_size=512_000),
+    )
+
+    changed = apply_z_ai_models(config, discovered)
+
+    assert changed is True
+    z_ai_aliases = {a for a, m in config.models.items() if m.provider == ZAI_PROVIDER_KEY}
+    assert z_ai_aliases == {"z-ai/glm-5.1", "z-ai/glm-6.0"}
+    assert config.models["z-ai/glm-5.1"].max_context_size == 400_000
+    assert config.default_model == "z-ai/glm-5.1"
+
+
+def test_apply_z_ai_models_reassigns_default_when_it_disappears():
+    from pythinker_code.auth.z_ai import (
+        ZaiModel,
+        _apply_z_ai_config,
+        apply_z_ai_models,
+    )
+
+    config = Config(is_from_default_location=True)
+    _apply_z_ai_config(
+        config,
+        SecretStr("zai-test"),
+        models=(ZaiModel("glm-5.1", "glm-5.1", "GLM-5.1"),),
+    )
+    config.default_model = "z-ai/glm-5.1"
+
+    changed = apply_z_ai_models(
+        config,
+        (ZaiModel("glm-5-turbo", "glm-5-turbo", "GLM-5-Turbo"),),
+    )
+
+    assert changed is True
+    assert "z-ai/glm-5.1" not in config.models
+    assert config.default_model == "z-ai/glm-5-turbo"
+
+
+def test_apply_z_ai_models_returns_false_for_noop():
+    from pythinker_code.auth.z_ai import (
+        ZAI_MODELS,
+        _apply_z_ai_config,
+        apply_z_ai_models,
+    )
+
+    config = Config(is_from_default_location=True)
+    _apply_z_ai_config(config, SecretStr("zai-test"))
+
+    assert apply_z_ai_models(config, ZAI_MODELS) is False
