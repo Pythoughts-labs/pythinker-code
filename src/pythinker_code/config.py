@@ -159,12 +159,12 @@ def _type_based_merge(
     """
     for key, value in overlay.items():
         if isinstance(value, dict):
-            # If base holds a scalar/list for this key, the overlay dict wins outright
-            # (recursing into a non-dict crashes with TypeError before validation runs).
+            # Normalize any scalar/list at this key to an empty dict before recursing;
+            # recursing into a non-dict crashes with TypeError, and leaving provenance[key]
+            # as a string would crash a subsequent dict-merge on the same key.
             if key in base and not isinstance(base[key], dict):
-                base[key] = value
-                provenance[key] = scope
-                continue
+                base[key] = {}
+                provenance[key] = {}
             # For dicts, always recurse to track individual nested keys
             if key not in base:
                 base[key] = {}
