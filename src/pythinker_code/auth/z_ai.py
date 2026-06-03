@@ -187,6 +187,65 @@ def _apply_z_ai_config(
     apply_login_thinking_defaults(config, thinking=False, effort="off")
 
 
+async def login_z_ai_api_key(
+    config: Config, api_key: str | None = None
+) -> AsyncIterator[OAuthEvent]:
+    if not config.is_from_default_location:
+        yield OAuthEvent(
+            "error",
+            "Login requires the default config file; restart without --config/--config-file.",
+        )
+        return
+
+    resolved_key = (api_key or get_z_ai_api_key_from_env() or "").strip()
+    if not resolved_key:
+        yield OAuthEvent("error", "Z AI API key is required.")
+        return
+
+    models = ZAI_MODELS
+    try:
+        discovered = await _discover_z_ai_models(resolved_key)
+        if discovered:
+            models = discovered
+    except aiohttp.ClientResponseError as exc:
+        if exc.status in {401, 403}:
+            yield OAuthEvent("error", "Invalid Z AI API key; the key was not saved.")
+            return
+        yield OAuthEvent(
+            "info",
+            "Z AI model listing is unavailable; using the built-in model list.",
+        )
+    except (aiohttp.ClientError, TimeoutError, ValueError):
+        yield OAuthEvent(
+            "info",
+            "Z AI model listing is unavailable; using the built-in model list.",
+        )
+
+    _apply_z_ai_config(config, SecretStr(resolved_key), models=models)
+    save_config(config)
+    yield OAuthEvent("success", f"Z AI configured with model {config.default_model}.")
+
+
+async def logout_z_ai(config: Config) -> AsyncIterator[OAuthEvent]:
+    if not config.is_from_default_location:
+        yield OAuthEvent(
+            "error",
+            "Logout requires the default config file; restart without --config/--config-file.",
+        )
+        return
+
+    provider_keys = {ZAI_PROVIDER_KEY}
+    config.providers.pop(ZAI_PROVIDER_KEY, None)
+    for key, model in list(config.models.items()):
+        if model.provider in provider_keys:
+            del config.models[key]
+
+    if config.default_model not in config.models:
+        config.default_model = next(iter(config.models), "")
+    save_config(config)
+    yield OAuthEvent("success", "Logged out of Z AI successfully.")
+
+
 def apply_z_ai_models(config: Config, models: tuple[ZaiModel, ...]) -> bool:
     """Upsert the live Z AI catalog and prune models no longer returned.
 

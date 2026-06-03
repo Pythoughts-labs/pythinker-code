@@ -168,6 +168,151 @@ def test_apply_z_ai_config_replaces_existing_z_ai_models():
     assert config.models["z-ai/glm-5.1"].max_context_size == 300_000
 
 
+@pytest.mark.asyncio
+async def test_login_z_ai_saves_static_models_when_discovery_fails(monkeypatch, tmp_path):
+    from pythinker_code.auth.z_ai import login_z_ai_api_key
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    config = Config(is_from_default_location=True)
+
+    async def fake_discover(api_key: str):
+        assert api_key == "zai-test"
+        raise aiohttp.ClientConnectionError("models unavailable")
+
+    monkeypatch.setattr("pythinker_code.auth.z_ai._discover_z_ai_models", fake_discover)
+
+    events = [event async for event in login_z_ai_api_key(config, "zai-test")]
+
+    assert [e.type for e in events] == ["info", "success"]
+    assert config.default_model == "z-ai/glm-5.1"
+    assert "z-ai/glm-5-turbo" in config.models
+    assert (tmp_path / "config.toml").exists()
+
+
+@pytest.mark.asyncio
+async def test_login_z_ai_falls_back_on_non_auth_response_error(monkeypatch, tmp_path):
+    from pythinker_code.auth.z_ai import login_z_ai_api_key
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    config = Config(is_from_default_location=True)
+
+    async def fake_discover(api_key: str):
+        raise aiohttp.ClientResponseError(
+            _request_info("https://api.z.ai/api/anthropic/v1/models"),
+            (),
+            status=503,
+            message="Service Unavailable",
+        )
+
+    monkeypatch.setattr("pythinker_code.auth.z_ai._discover_z_ai_models", fake_discover)
+
+    events = [event async for event in login_z_ai_api_key(config, "zai-test")]
+
+    assert [e.type for e in events] == ["info", "success"]
+    assert config.default_model == "z-ai/glm-5.1"
+
+
+@pytest.mark.asyncio
+async def test_login_z_ai_rejects_401(monkeypatch, tmp_path):
+    from pythinker_code.auth.z_ai import login_z_ai_api_key
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    config = Config(is_from_default_location=True)
+
+    async def fake_discover(api_key: str):
+        raise aiohttp.ClientResponseError(
+            _request_info("https://api.z.ai/api/anthropic/v1/models"),
+            (),
+            status=401,
+            message="Unauthorized",
+        )
+
+    monkeypatch.setattr("pythinker_code.auth.z_ai._discover_z_ai_models", fake_discover)
+
+    events = [event async for event in login_z_ai_api_key(config, "bad-key")]
+
+    assert events[-1].type == "error"
+    assert "Invalid Z AI API key" in events[-1].message
+    assert config.providers == {}
+    assert config.models == {}
+
+
+@pytest.mark.asyncio
+async def test_login_z_ai_uses_discovered_context_length(monkeypatch, tmp_path):
+    from pythinker_code.auth.z_ai import ZaiModel, login_z_ai_api_key
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    config = Config(is_from_default_location=True)
+
+    async def fake_discover(api_key: str):
+        return (ZaiModel("glm-5.1", "glm-5.1", "GLM-5.1", max_context_size=512_000),)
+
+    monkeypatch.setattr("pythinker_code.auth.z_ai._discover_z_ai_models", fake_discover)
+
+    events = [event async for event in login_z_ai_api_key(config, "zai-test")]
+
+    assert events[-1].type == "success"
+    assert config.models["z-ai/glm-5.1"].max_context_size == 512_000
+
+
+@pytest.mark.asyncio
+async def test_login_z_ai_requires_key(tmp_path):
+    from pythinker_code.auth.z_ai import login_z_ai_api_key
+
+    config = Config(is_from_default_location=True)
+
+    events = [event async for event in login_z_ai_api_key(config, "")]
+
+    assert events[-1].type == "error"
+    assert events[-1].message == "Z AI API key is required."
+
+
+@pytest.mark.asyncio
+async def test_logout_z_ai_removes_only_z_ai(monkeypatch, tmp_path):
+    from pythinker_code.auth.z_ai import (
+        ZAI_PROVIDER_KEY,
+        _apply_z_ai_config,
+        logout_z_ai,
+    )
+    from pythinker_code.config import LLMModel, LLMProvider
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    config = Config(is_from_default_location=True)
+    config.providers["managed:openai"] = LLMProvider(
+        type="openai_responses",
+        base_url="https://api.openai.com/v1",
+        api_key=SecretStr("sk-test"),
+    )
+    config.models["openai/gpt-5.2"] = LLMModel(
+        provider="managed:openai",
+        model="gpt-5.2",
+        max_context_size=400_000,
+    )
+    _apply_z_ai_config(config, SecretStr("zai-test"))
+
+    events = [event async for event in logout_z_ai(config)]
+
+    assert events[-1].type == "success"
+    assert ZAI_PROVIDER_KEY not in config.providers
+    assert "z-ai/glm-5.1" not in config.models
+    assert "managed:openai" in config.providers
+    assert "openai/gpt-5.2" in config.models
+    assert config.default_model == "openai/gpt-5.2"
+
+
+@pytest.mark.asyncio
+async def test_logout_z_ai_rejects_non_default_config_location():
+    from pythinker_code.auth.z_ai import logout_z_ai
+
+    config = Config(is_from_default_location=False)
+
+    events = [event async for event in logout_z_ai(config)]
+
+    assert events[-1].type == "error"
+    assert "default config file" in events[-1].message
+    assert config.providers == {}
+
+
 def test_apply_z_ai_models_prunes_stale_models_and_preserves_user_default():
     from pythinker_code.auth.z_ai import (
         ZAI_PROVIDER_KEY,
