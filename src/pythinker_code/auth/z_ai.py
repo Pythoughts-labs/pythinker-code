@@ -48,3 +48,38 @@ def get_z_ai_api_key_from_env() -> str | None:
     if value and value.strip():
         return value.strip()
     return None
+
+
+def _apply_z_ai_config(
+    config: Config,
+    api_key: SecretStr,
+    models: tuple[ZaiModel, ...] = ZAI_MODELS,
+) -> None:
+    config.providers[ZAI_PROVIDER_KEY] = LLMProvider(
+        type="anthropic",
+        base_url=ZAI_BASE_URL,
+        api_key=api_key,
+    )
+
+    provider_keys = {ZAI_PROVIDER_KEY}
+    for key, model in list(config.models.items()):
+        if model.provider in provider_keys:
+            del config.models[key]
+
+    for model in models:
+        config.models[model.alias] = LLMModel(
+            provider=model.provider_key,
+            model=model.model_id,
+            max_context_size=model.max_context_size,
+            display_name=model.display_name,
+        )
+
+    fallback = next(
+        (m.alias for m in models),
+        next(iter(config.models), ""),
+    )
+    if ZAI_DEFAULT_MODEL_ALIAS in config.models:
+        config.default_model = ZAI_DEFAULT_MODEL_ALIAS
+    else:
+        config.default_model = fallback
+    apply_login_thinking_defaults(config, thinking=False, effort="off")

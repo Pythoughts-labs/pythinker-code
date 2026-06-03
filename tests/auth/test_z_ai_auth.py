@@ -67,3 +67,43 @@ def test_z_ai_env_key_uses_zai_api_key(monkeypatch):
 
     monkeypatch.setenv("ZAI_API_KEY", "")
     assert get_z_ai_api_key_from_env() is None
+
+
+def test_apply_z_ai_config_writes_provider_and_default():
+    from pythinker_code.auth.z_ai import (
+        ZAI_BASE_URL,
+        ZAI_DEFAULT_MODEL_ALIAS,
+        ZAI_PROVIDER_KEY,
+        _apply_z_ai_config,
+    )
+
+    config = Config(is_from_default_location=True)
+    _apply_z_ai_config(config, SecretStr("zai-test"))
+
+    assert set(config.providers) == {ZAI_PROVIDER_KEY}
+    provider = config.providers[ZAI_PROVIDER_KEY]
+    assert provider.type == "anthropic"
+    assert provider.base_url == ZAI_BASE_URL
+    assert provider.api_key.get_secret_value() == "zai-test"
+    assert config.models["z-ai/glm-5.1"].provider == ZAI_PROVIDER_KEY
+    assert config.models["z-ai/glm-5.1"].model == "glm-5.1"
+    assert config.models["z-ai/glm-5.1"].max_context_size == 204_800
+    assert config.default_model == ZAI_DEFAULT_MODEL_ALIAS
+
+
+def test_apply_z_ai_config_replaces_existing_z_ai_models():
+    from pythinker_code.auth.z_ai import (
+        ZAI_PROVIDER_KEY,
+        ZaiModel,
+        _apply_z_ai_config,
+    )
+
+    config = Config(is_from_default_location=True)
+    _apply_z_ai_config(config, SecretStr("zai-test"))
+
+    new_models = (ZaiModel("glm-5.1", "glm-5.1", "GLM-5.1 New", max_context_size=300_000),)
+    _apply_z_ai_config(config, SecretStr("zai-test-2"), models=new_models)
+
+    z_ai_aliases = [a for a, m in config.models.items() if m.provider == ZAI_PROVIDER_KEY]
+    assert z_ai_aliases == ["z-ai/glm-5.1"]
+    assert config.models["z-ai/glm-5.1"].max_context_size == 300_000
