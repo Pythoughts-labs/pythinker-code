@@ -75,7 +75,7 @@ from pythinker_review.reviewflow.workflow import (
     status_project,
     triage_project,
 )
-from pythinker_review.store.findings_store import FindingsStore
+from pythinker_review.store.findings_store import _ALLOWED_NAMES, FindingsStore
 from pythinker_review.store.gitignore import ensure_gitignored
 from pythinker_review.store.models import SEVERITY_ORDER, Finding, Pass, RunMeta
 
@@ -379,11 +379,7 @@ def clean(
         if not store.state_dir.exists():
             typer.echo("nothing to clean (.pythinker-review/ does not exist)")
             return
-        unknown = [
-            e.name
-            for e in store.state_dir.iterdir()
-            if e.name not in {"index.json", "runs", "security-scan"}
-        ]
+        unknown = [e.name for e in store.state_dir.iterdir() if e.name not in _ALLOWED_NAMES]
         if unknown:
             typer.echo("would remove: " + ", ".join(sorted(unknown)))
         else:

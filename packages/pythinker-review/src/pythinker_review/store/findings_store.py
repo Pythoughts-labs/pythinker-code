@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -104,9 +105,13 @@ class FindingsStore:
         removed: list[str] = []
         for entry in self.state_dir.iterdir():
             if entry.name not in _ALLOWED_NAMES:
-                if entry.is_dir():
-                    shutil.rmtree(entry, ignore_errors=True)
-                else:
-                    entry.unlink(missing_ok=True)
+                try:
+                    if entry.is_dir():
+                        shutil.rmtree(entry)
+                    else:
+                        entry.unlink(missing_ok=True)
+                except OSError:
+                    logging.getLogger(__name__).warning("Failed to remove unknown entry %s", entry)
+                    continue
                 removed.append(entry.name)
         return removed

@@ -7,6 +7,7 @@ shell-heavy wrappers.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import secrets
 import shutil
@@ -276,7 +277,11 @@ def purge_stale_projects(*, data_root: Path, keep_project_id: str) -> list[str]:
     for entry in data_root.iterdir():
         if not entry.is_dir() or entry.name == keep_project_id:
             continue
-        shutil.rmtree(entry, ignore_errors=True)
+        try:
+            shutil.rmtree(entry)
+        except OSError:
+            logging.getLogger(__name__).warning("Failed to remove stale project %s", entry.name)
+            continue
         removed.append(entry.name)
     return removed
 
