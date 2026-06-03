@@ -17,6 +17,18 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.33.0 (2026-06-03)
+
+### What changed in this release
+
+- **Three-scope config resolution (User → Project → Local).** `load_config()` now runs a five-step pipeline — Ingest → Guard → Merge → Env → Validate — merging `~/.pythinker/config.toml`, `.pythinker/config.toml`, and `.pythinker/config.local.toml` with type-based rules. Scalars use last-writer-wins; lists are concatenated (deduplication for `allowed_domains` and `extra_skill_dirs`); dicts are recursively merged. Scope-locked fields (`providers.*`, `services.*`, `feedback.api_key`) are blocked from project/local files with a clear error. The resolved config now tracks which files contributed via `source_scopes`. Local config files are auto-gitignored on first use. PYTHINKER_* environment variables overlay all file-sourced values.
+- **Pythinker identity: developed by Pythoughts-labs.** Package metadata, `--version` output, and `pythinker info` now reflect Pythoughts-labs as the author organisation.
+- **❓ question marker standardized across all question surfaces.** A new `QUESTION_MARKER` constant in `glyphs.py` replaces the inconsistent mix of `●` (inline transcript) and `?` (interactive panel, pager, prompt) with a single `❓` glyph (ASCII fallback: `?`) used everywhere.
+- **Scratchpad isolated to current session; cleans up on interruption.** Agents no longer fast-skim all prior sessions' scratch files on startup, eliminating the post-interrupt confusion where stale planning from previous sessions was injected into a new session's context. Scratch files are now deleted on every session exit — success or interruption — so files no longer accumulate.
+- **`SetTodoList` gated behind explicit plan approval.** The tool description and agent system prompt now require that todos are set only after the user agrees on the plan. During planning and exploration the tool must not be called; once set, the list is the single source of truth for execution with status-only updates.
+
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.33.0`, or use the native installer for your OS (see the README install table).
+
 ## 0.32.0 (2026-06-03)
 
 ### What changed in this release
