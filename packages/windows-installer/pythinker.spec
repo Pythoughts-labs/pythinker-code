@@ -2,7 +2,7 @@
 # PyInstaller spec for the Pythinker Code Windows native build.
 # Mode: --onedir (faster startup, fewer AV false-positives than --onefile).
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 
 block_cipher = None
 
@@ -45,6 +45,16 @@ try:
     hiddenimports.extend(collect_submodules("pygments.styles"))
 except Exception:
     pass
+
+# fastmcp calls importlib.metadata.version("fastmcp") at module import time.
+# collect_data_files() only collects files inside the package directory; the
+# dist-info lives alongside it in site-packages. copy_metadata() is the
+# PyInstaller-standard hook for making importlib.metadata work in frozen apps.
+for pkg in ("fastmcp", "mcp"):
+    try:
+        datas += copy_metadata(pkg)
+    except Exception:
+        pass
 
 a = Analysis(
     ["entrypoint.py"],
