@@ -47,6 +47,72 @@ def _find_project_root(cwd: Path) -> Path | None:
         current = parent
 
 
+# ---------------------------------------------------------------------------
+# Scope system constants
+# ---------------------------------------------------------------------------
+
+SCOPE_LOCKED_PATHS: frozenset[tuple[str, ...]] = frozenset(
+    {
+        ("providers",),  # contains api_key per provider — must stay in user scope
+        ("services",),  # contains api_key fields — must stay in user scope
+        ("feedback", "api_key"),  # only the key, not the whole feedback section
+    }
+)
+
+DEDUP_LIST_FIELDS: frozenset[str] = frozenset({"allowed_domains", "extra_skill_dirs"})
+
+ENV_FIELD_MAP: dict[str, tuple[str, ...]] = {
+    "PYTHINKER_DEFAULT_MODEL": ("default_model",),
+    "PYTHINKER_DEFAULT_THINKING": ("default_thinking",),
+    "PYTHINKER_DEFAULT_THINKING_EFFORT": ("default_thinking_effort",),
+    "PYTHINKER_AGENT_EXECUTION_PROFILE": ("agent_execution_profile",),
+    "PYTHINKER_DEFAULT_YOLO": ("default_yolo",),
+    "PYTHINKER_ASK_USER_QUESTION_POLICY": ("ask_user_question_policy",),
+    "PYTHINKER_AUTO_DELIBERATE_DESTRUCTIVE_ACTIONS": ("auto_deliberate_destructive_actions",),
+    "PYTHINKER_SKIP_AUTO_PROMPT_INJECTION": ("skip_auto_prompt_injection",),
+    "PYTHINKER_DEFAULT_PLAN_MODE": ("default_plan_mode",),
+    "PYTHINKER_DEFAULT_EDITOR": ("default_editor",),
+    "PYTHINKER_THEME": ("theme",),
+    "PYTHINKER_SHOW_THINKING_STREAM": ("show_thinking_stream",),
+    "PYTHINKER_PREVENT_IDLE_SLEEP": ("prevent_idle_sleep",),
+    "PYTHINKER_TELEMETRY": ("telemetry",),
+    "PYTHINKER_SESSION_RETENTION_DAYS": ("session_retention_days",),
+    "PYTHINKER_MERGE_ALL_AVAILABLE_SKILLS": ("merge_all_available_skills",),
+}
+
+
+# ---------------------------------------------------------------------------
+# Pipeline helpers
+# ---------------------------------------------------------------------------
+
+
+def _set_nested(d: dict, path: tuple[str, ...], value: object) -> None:
+    """Walk *path* into *d*, creating intermediate dicts, then set the leaf."""
+    node = d
+    for part in path[:-1]:
+        if part not in node or not isinstance(node[part], dict):
+            node[part] = {}
+        node = node[part]
+    node[path[-1]] = value
+
+
+def _lookup_provenance(prov: "dict | str", loc: tuple) -> str:
+    """Recursively follow *loc* through the provenance map.
+
+    Integer elements (Pydantic list indices) are skipped — we map them back
+    to the parent collection's scope string so error messages stay useful.
+    Returns "unknown scope" when the path cannot be fully resolved.
+    """
+    if not loc or isinstance(prov, str):
+        return prov if isinstance(prov, str) else "unknown scope"
+    head, *tail = loc
+    if isinstance(head, int):
+        return prov if isinstance(prov, str) else _lookup_provenance(prov, tuple(tail))
+    if isinstance(prov, dict) and head in prov:
+        return _lookup_provenance(prov[head], tuple(tail))
+    return "unknown scope"
+
+
 AgentExecutionProfile = Literal[
     "default",
     "review_safe",

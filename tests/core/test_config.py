@@ -6,6 +6,8 @@ from inline_snapshot import snapshot
 from pythinker_code.config import (
     Config,
     _find_project_root,
+    _lookup_provenance,
+    _set_nested,
     get_default_config,
     load_config,
     load_config_from_string,
@@ -277,3 +279,54 @@ def test_find_project_root_returns_none_outside_git(tmp_path):
 def test_find_project_root_finds_root_in_cwd(tmp_path):
     (tmp_path / ".git").mkdir()
     assert _find_project_root(tmp_path) == tmp_path
+
+
+def test_set_nested_flat():
+    d: dict = {}
+    _set_nested(d, ("theme",), "light")
+    assert d == {"theme": "light"}
+
+
+def test_set_nested_deep():
+    d: dict = {}
+    _set_nested(d, ("tui", "style"), "card")
+    assert d == {"tui": {"style": "card"}}
+
+
+def test_set_nested_overwrites_existing():
+    d = {"tui": {"style": "pythinker", "smooth_streaming": True}}
+    _set_nested(d, ("tui", "style"), "card")
+    assert d["tui"]["style"] == "card"
+    assert d["tui"]["smooth_streaming"] is True  # sibling preserved
+
+
+def test_lookup_provenance_scalar():
+    prov = {"theme": ".pythinker/config.local.toml"}
+    assert _lookup_provenance(prov, ("theme",)) == ".pythinker/config.local.toml"
+
+
+def test_lookup_provenance_nested():
+    prov = {"tui": {"style": ".pythinker/config.toml"}}
+    assert _lookup_provenance(prov, ("tui", "style")) == ".pythinker/config.toml"
+
+
+def test_lookup_provenance_list_index():
+    # Pydantic gives loc=("hooks", 0, "command") for a bad list element.
+    # Should return the collection scope, not crash.
+    prov = {"hooks": "~/.pythinker/config.toml+.pythinker/config.toml"}
+    assert _lookup_provenance(prov, ("hooks", 0, "command")) == "~/.pythinker/config.toml+.pythinker/config.toml"
+
+
+def test_lookup_provenance_partial_path():
+    prov = {"tui": {"style": ".pythinker/config.toml"}}
+    assert _lookup_provenance(prov, ("tui", "nonexistent")) == "unknown scope"
+
+
+def test_lookup_provenance_empty_loc():
+    prov = "~/.pythinker/config.toml"
+    assert _lookup_provenance(prov, ()) == "~/.pythinker/config.toml"
+
+
+def test_lookup_provenance_unknown():
+    prov: dict = {}
+    assert _lookup_provenance(prov, ("missing_key",)) == "unknown scope"
