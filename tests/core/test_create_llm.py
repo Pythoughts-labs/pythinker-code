@@ -752,3 +752,38 @@ def test_clone_llm_with_model_alias_preserves_kimi_thinking_disabled():
     assert cloned.chat_provider._generation_kwargs.get("extra_body") == {  # pyright: ignore[reportPrivateUsage]
         "thinking": {"type": "disabled"}
     }
+
+
+def test_derive_model_capabilities_marks_kimi_k2_thinking_as_always_on():
+    model = LLMModel(
+        provider="openai-compatible",
+        model="kimi-k2-thinking",
+        max_context_size=262_144,
+        capabilities=None,
+    )
+    assert derive_model_capabilities(model) == {"thinking", "always_thinking"}
+
+
+def test_create_llm_kimi_k2_thinking_ignores_thinking_off():
+    provider = LLMProvider(
+        type="openai_legacy",
+        base_url="https://api.example.com/v1",
+        api_key=SecretStr("test-key"),
+    )
+    model = LLMModel(
+        provider="kimi-provider",
+        model="kimi-k2-thinking",
+        max_context_size=262_144,
+        capabilities=None,
+    )
+    llm = create_llm(provider, model, thinking=False)
+    assert llm is not None
+    assert isinstance(llm.chat_provider, OpenAILegacy)
+    assert llm.capabilities == {"thinking", "always_thinking"}
+    # Always-thinking: "off" is overridden to the default effort, and the
+    # Kimi body switch must say enabled, never disabled.
+    assert llm.thinking is True
+    assert llm.thinking_effort == "high"
+    assert llm.chat_provider._generation_kwargs.get("extra_body") == {  # pyright: ignore[reportPrivateUsage]
+        "thinking": {"type": "enabled"}
+    }

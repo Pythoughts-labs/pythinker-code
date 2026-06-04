@@ -161,6 +161,14 @@ def _apply_z_ai_config(
         api_key=api_key,
     )
 
+    # Z.ai's Anthropic-compatible endpoint defaults thinking OFF (verified
+    # empirically 2026-06-03 against glm-5.1). Pin defaults so that a future
+    # migration to the OpenAI-compatible endpoint (which defaults ON for
+    # GLM-5.x) would surface as a test failure here.
+    if config.default_thinking_effort is None:
+        config.default_thinking = False
+        config.default_thinking_effort = "off"
+
     provider_keys = {ZAI_PROVIDER_KEY}
     for key, model in list(config.models.items()):
         if model.provider in provider_keys:

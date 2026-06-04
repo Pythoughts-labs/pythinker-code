@@ -436,6 +436,10 @@ def derive_model_capabilities(model: LLMModel) -> set[ModelCapability]:
     # switch in create_llm().
     if _is_kimi_k2_model(model.model):
         capabilities.add("thinking")
+        # kimi-k2-thinking is Moonshot's thinking-only variant; unlike the
+        # hybrid K2.5/K2.6 it cannot be switched off.
+        if "thinking" in model_name:
+            capabilities.add("always_thinking")
     # Models with "thinking" in their name are always-thinking models
     elif "thinking" in model_name or "reason" in model_name:
         capabilities.update(("thinking", "always_thinking"))

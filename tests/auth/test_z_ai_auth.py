@@ -375,3 +375,35 @@ def test_apply_z_ai_models_returns_false_for_noop():
     _apply_z_ai_config(config, SecretStr("zai-test"))
 
     assert apply_z_ai_models(config, ZAI_MODELS) is False
+
+
+def test_apply_z_ai_config_defaults_thinking_off():
+    """Z.ai is wired to its Anthropic-compatible endpoint, which (verified
+    empirically 2026-06-03 against glm-5.1) defaults thinking OFF and honors
+    `thinking: {"type": "disabled"}`. The login default of thinking=False /
+    effort="off" therefore matches the endpoint's native behavior. If the
+    provider type or base_url ever moves to the OpenAI-compatible endpoint
+    (which defaults thinking ON for GLM-5.x), these defaults must be
+    re-evaluated.
+    """
+    from pythinker_code.auth.z_ai import _apply_z_ai_config
+
+    config = Config(is_from_default_location=True)
+    assert config.default_thinking_effort is None
+    _apply_z_ai_config(config, SecretStr("zai-test"))
+
+    assert config.providers["managed:z-ai"].type == "anthropic"
+    assert config.default_thinking is False
+    assert config.default_thinking_effort == "off"
+
+
+def test_apply_z_ai_config_preserves_existing_effort_choice():
+    from pythinker_code.auth.z_ai import _apply_z_ai_config
+
+    config = Config(is_from_default_location=True)
+    config.default_thinking = True
+    config.default_thinking_effort = "medium"
+    _apply_z_ai_config(config, SecretStr("zai-test"))
+
+    assert config.default_thinking is True
+    assert config.default_thinking_effort == "medium"
