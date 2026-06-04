@@ -31,6 +31,17 @@ def test_parse_dependency_manifests_reads_python_and_node(tmp_path: Path) -> Non
     assert any(pkg.manifest_path == "requirements.txt" and pkg.line == 1 for pkg in packages)
 
 
+def test_parse_requirements_strips_extras(tmp_path: Path) -> None:
+    (tmp_path / "requirements.txt").write_text(
+        "requests[socks]==2.31.0\nurllib3[secure]\n", encoding="utf-8"
+    )
+    packages = parse_dependency_manifests(tmp_path)
+    names = {pkg.name for pkg in packages}
+    assert "requests" in names
+    assert "urllib3" in names
+    assert not any("[" in pkg.name for pkg in packages)
+
+
 def test_dependency_report_roundtrip(tmp_path: Path) -> None:
     report = DependencyScanReport.model_validate(
         {

@@ -164,10 +164,12 @@ def intel_cve(
 ) -> None:
     """Look up CVE intelligence from NVD, EPSS, KEV, GitHub PoC, and vendor feeds."""
     try:
-        bundle = asyncio.run(lookup_cve_bundle(cve_id, data_root=_data_root(root.resolve(), state_dir)))
+        bundle = asyncio.run(
+            lookup_cve_bundle(cve_id, data_root=_data_root(root.resolve(), state_dir))
+        )
     except Exception as exc:
         typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
     typer.echo(bundle.model_dump_json(exclude_none=True, indent=2))
 
 
@@ -182,10 +184,12 @@ def intel_package(
     """Look up package vulnerability intelligence via OSV."""
     package = PackageRef(name=name, ecosystem=ecosystem, version=version)
     try:
-        result = asyncio.run(lookup_package(package, data_root=_data_root(root.resolve(), state_dir)))
+        result = asyncio.run(
+            lookup_package(package, data_root=_data_root(root.resolve(), state_dir))
+        )
     except Exception as exc:
         typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
     typer.echo(result.model_dump_json(indent=2))
 
 

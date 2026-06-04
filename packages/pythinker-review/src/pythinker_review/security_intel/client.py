@@ -130,8 +130,8 @@ class IntelHttpClient:
                     try:
                         if int(content_length) > self.max_response_bytes:
                             raise IntelClientError("response too large (Content-Length)")
-                    except ValueError:
-                        raise IntelClientError("invalid Content-Length header")
+                    except ValueError as exc:
+                        raise IntelClientError("invalid Content-Length header") from exc
                 data = resp.read(self.max_response_bytes + 1)
                 if len(data) > self.max_response_bytes:
                     raise IntelClientError("response too large (actual body)")

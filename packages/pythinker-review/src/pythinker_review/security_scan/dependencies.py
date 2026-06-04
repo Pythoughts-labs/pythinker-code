@@ -111,7 +111,7 @@ def _parse_requirements(path: Path, rel: str) -> list[PackageRef]:
             version = _clean_version(match.group(3)) if match.group(2) == "==" else ""
             out.append(
                 PackageRef(
-                    name=match.group(1),
+                    name=match.group(1).split("[", 1)[0],
                     ecosystem="PyPI",
                     version=version,
                     manifest_path=rel,
@@ -122,7 +122,12 @@ def _parse_requirements(path: Path, rel: str) -> list[PackageRef]:
         bare = _BARE_REQUIREMENT_RE.match(stripped)
         if bare:
             out.append(
-                PackageRef(name=bare.group(1), ecosystem="PyPI", manifest_path=rel, line=lineno)
+                PackageRef(
+                    name=bare.group(1).split("[", 1)[0],
+                    ecosystem="PyPI",
+                    manifest_path=rel,
+                    line=lineno,
+                )
             )
     return out
 
