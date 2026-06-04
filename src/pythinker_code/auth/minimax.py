@@ -20,11 +20,16 @@ MINIMAX_OPENAI_BASE_URL = "https://api.minimax.io/v1"
 MINIMAX_ANTHROPIC_MODELS_URL = f"{MINIMAX_ANTHROPIC_BASE_URL}/v1/models"
 MINIMAX_OPENAI_MODELS_URL = f"{MINIMAX_OPENAI_BASE_URL}/models"
 MINIMAX_ANTHROPIC_PROVIDER_KEY = "managed:minimax-anthropic"
-MINIMAX_DEFAULT_MODEL_ALIAS = "minimax/m2.7"
-MINIMAX_DEFAULT_CONTEXT = 192_000
+MINIMAX_DEFAULT_MODEL_ALIAS = "minimax/m3"
+# Fallback context size for models without explicit specification (non-M3 models)
+MINIMAX_DEFAULT_CONTEXT = 204_800
 MINIMAX_TOKEN_PLAN_KEY_PREFIX = "sk-cp-"
 MINIMAX_MODEL_DISCOVERY_TIMEOUT = aiohttp.ClientTimeout(total=15, sock_connect=8, sock_read=10)
 MINIMAX_NATIVE_THINKING_CAPABILITIES: frozenset[ModelCapability] = frozenset({"always_thinking"})
+MINIMAX_M3_CAPABILITIES: frozenset[ModelCapability] = frozenset(
+    {"always_thinking", "image_in", "video_in"}
+)
+MINIMAX_M3_CONTEXT_SIZE = 1_000_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +47,13 @@ class MiniMaxModel:
 
 
 MINIMAX_MODELS: tuple[MiniMaxModel, ...] = (
+    MiniMaxModel(
+        "MiniMax-M3",
+        "m3",
+        "MiniMax M3",
+        max_context_size=MINIMAX_M3_CONTEXT_SIZE,
+        capabilities=MINIMAX_M3_CAPABILITIES,
+    ),
     MiniMaxModel("MiniMax-M2.7", "m2.7", "MiniMax M2.7"),
     MiniMaxModel("MiniMax-M2.7-highspeed", "m2.7-highspeed", "MiniMax M2.7 High-Speed"),
     MiniMaxModel("MiniMax-M2.5", "m2.5", "MiniMax M2.5"),

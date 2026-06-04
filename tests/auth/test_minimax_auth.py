@@ -9,11 +9,12 @@ from yarl import URL
 from pythinker_code.config import Config, LLMModel, LLMProvider
 
 
-def test_minimax_model_catalog_contains_four_current_models():
+def test_minimax_model_catalog_contains_current_models():
     from pythinker_code.auth.minimax import MINIMAX_MODELS
 
     aliases = {model.alias for model in MINIMAX_MODELS}
     assert aliases == {
+        "minimax/m3",
         "minimax/m2.7",
         "minimax/m2.7-highspeed",
         "minimax/m2.5",
@@ -22,6 +23,7 @@ def test_minimax_model_catalog_contains_four_current_models():
 
     api_ids = {m.alias: m.model_id for m in MINIMAX_MODELS}
     assert api_ids == {
+        "minimax/m3": "MiniMax-M3",
         "minimax/m2.7": "MiniMax-M2.7",
         "minimax/m2.7-highspeed": "MiniMax-M2.7-highspeed",
         "minimax/m2.5": "MiniMax-M2.5",
@@ -29,7 +31,12 @@ def test_minimax_model_catalog_contains_four_current_models():
     }
 
     assert all(m.provider_key == "managed:minimax-anthropic" for m in MINIMAX_MODELS)
-    assert all(m.capabilities == {"always_thinking"} for m in MINIMAX_MODELS)
+    m3 = next(m for m in MINIMAX_MODELS if m.model_id == "MiniMax-M3")
+    assert m3.capabilities == {"always_thinking", "image_in", "video_in"}
+    assert m3.max_context_size == 1_000_000
+    non_m3 = [m for m in MINIMAX_MODELS if m.model_id != "MiniMax-M3"]
+    assert all(m.capabilities == {"always_thinking"} for m in non_m3)
+    assert all(m.max_context_size == 204_800 for m in non_m3)
 
 
 def test_minimax_env_key_uses_minimax_api_key(monkeypatch):
@@ -61,10 +68,13 @@ def test_apply_minimax_config_writes_provider_and_default():
     assert provider.type == "anthropic"
     assert provider.base_url == MINIMAX_ANTHROPIC_BASE_URL
     assert provider.api_key.get_secret_value() == "mx-test"
-    assert config.models["minimax/m2.7"].provider == MINIMAX_ANTHROPIC_PROVIDER_KEY
-    assert config.models["minimax/m2.7"].model == "MiniMax-M2.7"
+    assert config.models["minimax/m3"].provider == MINIMAX_ANTHROPIC_PROVIDER_KEY
+    assert config.models["minimax/m3"].model == "MiniMax-M3"
+    assert config.models["minimax/m3"].capabilities == {"always_thinking", "image_in", "video_in"}
+    assert config.models["minimax/m3"].max_context_size == 1_000_000
     assert config.models["minimax/m2.7"].capabilities == {"always_thinking"}
-    assert config.default_model == "minimax/m2.7"
+    assert config.models["minimax/m2.7"].max_context_size == 204_800
+    assert config.default_model == "minimax/m3"
 
 
 def test_apply_minimax_config_empty_catalog_preserves_non_minimax_default():
@@ -121,8 +131,9 @@ async def test_login_minimax_saves_static_models_when_discovery_fails(monkeypatc
 
     assert [event.type for event in events] == ["info", "success"]
     assert "mx-test" not in "\n".join(event.json for event in events)
-    assert config.default_model == "minimax/m2.7"
+    assert config.default_model == "minimax/m3"
     assert "minimax/m2.5-highspeed" in config.models
+    assert "minimax/m3" in config.models
     assert (tmp_path / "config.toml").exists()
 
 
@@ -146,7 +157,7 @@ async def test_login_minimax_falls_back_on_non_auth_response_error(monkeypatch, 
     events = [event async for event in login_minimax_api_key(config, "mx-test")]
 
     assert [event.type for event in events] == ["info", "success"]
-    assert config.default_model == "minimax/m2.7"
+    assert config.default_model == "minimax/m3"
 
 
 @pytest.mark.asyncio
@@ -328,8 +339,8 @@ def test_parse_discovered_minimax_models_overrides_context_length_only_for_posit
     }
     result = _parse_discovered_models(payload)
     by_id = {m.model_id: m for m in result}
-    assert by_id["MiniMax-M2.7"].max_context_size == 192_000
-    assert by_id["MiniMax-M2.5"].max_context_size == 192_000
+    assert by_id["MiniMax-M2.7"].max_context_size == 204_800
+    assert by_id["MiniMax-M2.5"].max_context_size == 204_800
     assert by_id["MiniMax-M2.5-highspeed"].max_context_size == 384_000
 
 

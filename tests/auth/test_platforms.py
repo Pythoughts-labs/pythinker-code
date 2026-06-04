@@ -751,7 +751,7 @@ def _make_minimax_config() -> Config:
     )
 
     config = Config(
-        default_model="minimax/m2.7",
+        default_model="minimax/m3",
         default_thinking=True,
         providers={
             MINIMAX_ANTHROPIC_PROVIDER_KEY: LLMProvider(
@@ -761,15 +761,21 @@ def _make_minimax_config() -> Config:
             )
         },
         models={
+            "minimax/m3": LLMModel(
+                provider=MINIMAX_ANTHROPIC_PROVIDER_KEY,
+                model="MiniMax-M3",
+                max_context_size=1_000_000,
+                capabilities={"always_thinking", "image_in", "video_in"},
+            ),
             "minimax/m2.7": LLMModel(
                 provider=MINIMAX_ANTHROPIC_PROVIDER_KEY,
                 model="MiniMax-M2.7",
-                max_context_size=192_000,
+                max_context_size=204_800,
             ),
             "minimax/m2.7-highspeed": LLMModel(
                 provider=MINIMAX_ANTHROPIC_PROVIDER_KEY,
                 model="MiniMax-M2.7-highspeed",
-                max_context_size=192_000,
+                max_context_size=204_800,
             ),
         },
         services=Services(),
@@ -817,7 +823,7 @@ async def test_refresh_managed_models_refreshes_minimax_token_plan_without_relog
     assert "minimax/m2.7-highspeed" not in config.models
     assert config.models["minimax/m2.7"].max_context_size == 205_000
     assert config.models["minimax/m3"].provider == MINIMAX_ANTHROPIC_PROVIDER_KEY
-    assert config.default_model == "minimax/m2.7"
+    assert config.default_model == "minimax/m3"
     assert config.default_thinking is True
     assert len(saved) == 1
     assert "minimax/m3" in saved[0].models
