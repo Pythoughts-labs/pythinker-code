@@ -162,6 +162,25 @@ def test_apply_alibaba_config_empty_catalog_preserves_non_alibaba_default():
     assert not any(k.startswith("alibaba/") for k in config.models)
 
 
+def test_alibaba_oauth_selector_status_uses_provider_key():
+    from pythinker_code.auth.alibaba import ALIBABA_PROVIDER_KEY
+    from pythinker_code.ui.shell import oauth
+
+    login_entries = {entry.id: entry for entry in oauth._SELECTOR_PROVIDER_ENTRIES}
+    logout_entries = {entry.id: entry for entry in oauth._LOGOUT_PROVIDER_ENTRIES}
+    assert login_entries["alibaba"].name == "Alibaba (DashScope)"
+    assert logout_entries["alibaba"].name == "Alibaba (DashScope)"
+
+    config = Config(is_from_default_location=True)
+    assert oauth._get_provider_status(config, "alibaba").source == "unconfigured"
+    config.providers[ALIBABA_PROVIDER_KEY] = LLMProvider(
+        type="openai_legacy",
+        base_url="https://dashscope-us.aliyuncs.com/compatible-mode/v1",
+        api_key=SecretStr("sk-test"),
+    )
+    assert oauth._get_provider_status(config, "alibaba").source == "configured"
+
+
 def _request_info(url: str) -> aiohttp.RequestInfo:
     return aiohttp.RequestInfo(
         url=URL(url),
@@ -171,6 +190,20 @@ def _request_info(url: str) -> aiohttp.RequestInfo:
     )
 
 
+class _FakeAiohttpResponse:
+    def __init__(self, payload: object) -> None:
+        self._payload = payload
+
+    async def __aenter__(self) -> _FakeAiohttpResponse:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        return None
+
+    async def json(self, *, content_type: str | None = None) -> object:
+        return self._payload
+
+
 @pytest.mark.asyncio
 async def test_login_alibaba_saves_static_models_when_discovery_fails(monkeypatch, tmp_path):
     from pythinker_code.auth.alibaba import login_alibaba_api_key
@@ -178,10 +211,10 @@ async def test_login_alibaba_saves_static_models_when_discovery_fails(monkeypatc
     monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
     config = Config(is_from_default_location=True)
 
-    async def fake_discover(api_key):
+    async def fake_request(*args: object, **kwargs: object) -> object:
         raise aiohttp.ClientConnectionError("models unavailable")
 
-    monkeypatch.setattr("pythinker_code.auth.alibaba._discover_alibaba_models", fake_discover)
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
 
     events = [event async for event in login_alibaba_api_key(config, "sk-test")]
 
@@ -200,7 +233,7 @@ async def test_login_alibaba_falls_back_on_non_auth_response_error(monkeypatch, 
     monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
     config = Config(is_from_default_location=True)
 
-    async def fake_discover(api_key):
+    async def fake_request(*args: object, **kwargs: object) -> object:
         raise aiohttp.ClientResponseError(
             _request_info("https://dashscope-us.aliyuncs.com/compatible-mode/v1/models"),
             (),
@@ -208,7 +241,7 @@ async def test_login_alibaba_falls_back_on_non_auth_response_error(monkeypatch, 
             message="Service Unavailable",
         )
 
-    monkeypatch.setattr("pythinker_code.auth.alibaba._discover_alibaba_models", fake_discover)
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
 
     events = [event async for event in login_alibaba_api_key(config, "sk-test")]
 
@@ -223,7 +256,7 @@ async def test_login_alibaba_rejects_401(monkeypatch, tmp_path):
     monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
     config = Config(is_from_default_location=True)
 
-    async def fake_discover(api_key):
+    async def fake_request(*args: object, **kwargs: object) -> object:
         raise aiohttp.ClientResponseError(
             _request_info("https://dashscope-us.aliyuncs.com/compatible-mode/v1/models"),
             (),
@@ -231,7 +264,7 @@ async def test_login_alibaba_rejects_401(monkeypatch, tmp_path):
             message="Unauthorized",
         )
 
-    monkeypatch.setattr("pythinker_code.auth.alibaba._discover_alibaba_models", fake_discover)
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
 
     events = [event async for event in login_alibaba_api_key(config, "bad-key")]
 
@@ -244,23 +277,18 @@ async def test_login_alibaba_rejects_401(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_login_alibaba_uses_discovered_context_length(monkeypatch, tmp_path):
-    from pythinker_code.auth.alibaba import AlibabaModel, login_alibaba_api_key
+    from pythinker_code.auth.alibaba import login_alibaba_api_key
 
     monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
     config = Config(is_from_default_location=True)
 
-    async def fake_discover(api_key):
-        return (
-            AlibabaModel(
-                model_id="qwen3.7-max",
-                alias_suffix="qwen3.7-max",
-                display_name="Qwen3.7 Max",
-                max_context_size=512_000,
-                capabilities=frozenset({"thinking"}),
-            ),
+    async def fake_request(*args: object, **kwargs: object) -> object:
+        assert kwargs["headers"] == {"Authorization": "Bearer sk-test"}
+        return _FakeAiohttpResponse(
+            {"data": [{"id": "qwen3.7-max", "context_length": 512_000}]}
         )
 
-    monkeypatch.setattr("pythinker_code.auth.alibaba._discover_alibaba_models", fake_discover)
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
 
     events = [event async for event in login_alibaba_api_key(config, "sk-test")]
 
