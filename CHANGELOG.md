@@ -15,9 +15,15 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.34.0 (2026-06-03)
+
+### What changed in this release
+
 - **`/stats` usage dashboard.** New slash command opens an interactive prompt_toolkit TUI showing token and cost breakdown by provider/model across Today / This Week / Last Week / All Time. Powered by a static pricing table (`get_cost_usd`) and a session collector that walks `~/.pythinker/sessions/` wire files. `StatusUpdate` wire events now carry optional `model_name` / `provider_key` fields for per-step attribution.
 - **Z AI provider auth.** Login/logout via API key, model discovery, and OAuth selector wired into the TUI and `refresh_managed_models`.
 - **Moonshot provider auth.** Login/logout via API key, model discovery (Kimi K2.x catalog), OAuth selector wired into the TUI and `refresh_managed_models`.
+
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.34.0`, or use the native installer for your OS (see the README install table).
 
 ## 0.33.0 (2026-06-03)
 
