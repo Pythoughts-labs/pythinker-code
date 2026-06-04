@@ -22,6 +22,12 @@ class _Rule:
     severity_hint: str | None = None
 
 
+_CVE_RE = re.compile(r"\bCVE-\d{4}-\d{4,}\b", re.IGNORECASE)
+_DEP_LINE_RE = re.compile(
+    r"(?i)\b(?:dependencies|devDependencies|requires|requirement|package)\b|"
+    r"(?:==|\^|~)\s*\d+\.\d+"
+)
+
 _RULES: tuple[_Rule, ...] = (
     _Rule(
         "sec.signal.secrets_exposure.aws_access_key",
@@ -301,6 +307,36 @@ _RULES: tuple[_Rule, ...] = (
 def scan_signals(*, file_path: str, added_lines: list[tuple[int, str]]) -> list[Signal]:
     out: list[Signal] = []
     for lineno, text in added_lines:
+        for cve in _CVE_RE.findall(text):
+            out.append(
+                Signal(
+                    rule_id="sec.signal.vulnerability_intel.cve_reference",
+                    file=file_path,
+                    line=lineno,
+                    snippet=text.strip(),
+                    reason="CVE identifier added; check whether the vulnerable component/version is introduced or documented as fixed.",
+                    confidence=0.6,
+                    sink_kind="dependency_or_vulnerability_reference",
+                    mitigation_hint="Verify affected package/version evidence before reporting a dependency finding.",
+                    severity_hint="medium",
+                    metadata={"cve": cve.upper()},
+                )
+            )
+        if _is_dependency_file(file_path) and _DEP_LINE_RE.search(text):
+            out.append(
+                Signal(
+                    rule_id="sec.signal.vulnerability_intel.dependency_change",
+                    file=file_path,
+                    line=lineno,
+                    snippet=text.strip(),
+                    reason="Dependency manifest line changed; check OSV/NVD intelligence when online enrichment is enabled.",
+                    confidence=0.45,
+                    sink_kind="dependency_manifest",
+                    mitigation_hint="Pin safe versions and verify vulnerable ranges against advisories.",
+                    severity_hint="medium",
+                    metadata={"manifest": file_path},
+                )
+            )
         for rule in _RULES:
             if rule.pattern.search(text):
                 out.append(
@@ -320,3 +356,19 @@ def scan_signals(*, file_path: str, added_lines: list[tuple[int, str]]) -> list[
                     )
                 )
     return out
+
+
+def _is_dependency_file(file_path: str) -> bool:
+    return file_path.endswith(
+        (
+            "requirements.txt",
+            "pyproject.toml",
+            "package.json",
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+            "pom.xml",
+            "go.mod",
+            "Cargo.lock",
+        )
+    )

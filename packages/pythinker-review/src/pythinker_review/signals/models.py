@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +17,7 @@ class Signal:
     mitigation_hint: str | None = None
     cwe: str | None = None
     severity_hint: str | None = None
+    metadata: dict[str, str] = field(default_factory=dict)
 
     @property
     def slug(self) -> str:

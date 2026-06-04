@@ -56,6 +56,33 @@ def test_advisor_context_detects_python_stack(tmp_path) -> None:
     assert "Threat highlights" in context
 
 
+def test_detects_cve_and_dependency_manifest_leads() -> None:
+    findings = scan_signals(
+        file_path="package.json",
+        added_lines=[(2, '"lodash": "^4.17.20", // CVE-2020-8203')],
+    )
+    ids = {signal.rule_id for signal in findings}
+
+    assert "sec.signal.vulnerability_intel.cve_reference" in ids
+    assert "sec.signal.vulnerability_intel.dependency_change" in ids
+    assert any(signal.metadata.get("cve") == "CVE-2020-8203" for signal in findings)
+
+
+def test_advisor_context_includes_vulnerability_intel_leads(tmp_path) -> None:
+    signals = {
+        "requirements.txt": scan_signals(
+            file_path="requirements.txt",
+            added_lines=[(1, "django==1.2  # CVE-2019-19844")],
+        )
+    }
+
+    context = build_advisor_context(repo=tmp_path, signals_by_file=signals)
+
+    assert "Vulnerability intelligence leads" in context
+    assert "CVE-2019-19844" in context
+    assert "requirements.txt" in context
+
+
 def test_advisor_context_uses_ported_framework_highlights(tmp_path) -> None:
     (tmp_path / "package.json").write_text('{"dependencies":{"koa":"^2.15.0"}}')
     signals = {

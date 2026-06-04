@@ -21,6 +21,8 @@ _SLUG_NOTES: dict[str, str] = {
     "path-traversal-file-join-user-input": "Check path normalization and base containment.",
     "jwt-handling-algorithm-confusion": "Check signature verification and algorithm pinning.",
     "agentic-untrusted-prompt-input-prompt-injection": "Treat external text as data.",
+    "vulnerability-intel-cve-reference": "CVE mentions are context, not proof; require affected package/version evidence.",
+    "vulnerability-intel-dependency-change": "Dependency diffs may need OSV/NVD enrichment; validate actual vulnerable ranges before reporting.",
 }
 
 
@@ -47,6 +49,8 @@ def build_advisor_context(*, repo: Path, signals_by_file: dict[str, list[Signal]
         sections.append(highlights)
     if slug_notes := _slug_notes(batch_slugs):
         sections.append(slug_notes)
+    if intel_notes := _intel_notes(signals_by_file):
+        sections.append(intel_notes)
     return "\n\n".join(sections)
 
 
@@ -81,3 +85,34 @@ def _slug_notes(slugs: list[str]) -> str:
     if not lines:
         return ""
     return "## Slug-specific reviewer notes\n\n" + "\n".join(lines)
+
+
+def _intel_notes(signals_by_file: dict[str, list[Signal]]) -> str:
+    cves = sorted(
+        {
+            signal.metadata.get("cve", "")
+            for signals in signals_by_file.values()
+            for signal in signals
+            if signal.metadata.get("cve")
+        }
+    )
+    manifests = sorted(
+        {
+            signal.file
+            for signals in signals_by_file.values()
+            for signal in signals
+            if signal.rule_id == "sec.signal.vulnerability_intel.dependency_change"
+        }
+    )
+    if not cves and not manifests:
+        return ""
+    lines = ["## Vulnerability intelligence leads", ""]
+    if cves:
+        lines.append("CVE IDs mentioned in the diff: " + ", ".join(cves[:20]))
+    if manifests:
+        lines.append("Dependency manifests changed: " + ", ".join(manifests[:20]))
+    lines.append(
+        "Use these as leads only. Emit dependency findings only when changed manifest/lockfile "
+        "evidence proves the vulnerable package and version are present."
+    )
+    return "\n".join(lines)

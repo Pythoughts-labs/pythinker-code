@@ -13,6 +13,13 @@ import typer
 
 from pythinker_review.llm.fake import FakeReviewLLM
 from pythinker_review.llm.protocol import ReviewLLM
+from pythinker_review.security_intel.models import PackageRef
+from pythinker_review.security_intel.service import lookup_cve_bundle, lookup_package
+from pythinker_review.security_scan.dependencies import (
+    parse_dependency_manifests,
+    read_dependency_report,
+    scan_project_dependencies,
+)
 from pythinker_review.security_scan.matchers import create_default_registry
 from pythinker_review.security_scan.paths import DEFAULT_STATE_DIR, get_data_root
 from pythinker_review.security_scan.processor import (
@@ -42,6 +49,14 @@ from pythinker_review.security_scan.store import (
 from pythinker_review.security_scan.tech import detect_tech, read_tech_json, write_tech_json
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
+deps_app = typer.Typer(
+    add_completion=False, no_args_is_help=True, help="Dependency vulnerability intelligence."
+)
+intel_app = typer.Typer(
+    add_completion=False, no_args_is_help=True, help="CVE and package intelligence lookups."
+)
+app.add_typer(deps_app, name="deps")
+app.add_typer(intel_app, name="intel")
 
 
 def _resolve_llm() -> ReviewLLM:
@@ -72,6 +87,98 @@ def _project_id(root: Path, project_id: str | None) -> str:
         return project_id
     name = root.resolve().name
     return "project" if name in {"", "/"} else name.replace(" ", "-")
+
+
+@deps_app.command("list")
+def deps_list(
+    root: Path = typer.Option(Path.cwd(), "--root", "--repo", exists=True, file_okay=False),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """List dependency manifest entries Pythinker can enrich via OSV."""
+    packages = parse_dependency_manifests(root.resolve())
+    if json_output:
+        typer.echo(json.dumps([pkg.model_dump(exclude_none=True) for pkg in packages], indent=2))
+        return
+    if not packages:
+        typer.echo("No supported dependency manifests found.")
+        return
+    for pkg in packages:
+        loc = f" ({pkg.manifest_path}:{pkg.line})" if pkg.manifest_path and pkg.line else ""
+        typer.echo(f"{pkg.ecosystem}/{pkg.name} {pkg.version or '(unversioned)'}{loc}")
+
+
+@deps_app.command("scan")
+def deps_scan(
+    root: Path = typer.Option(Path.cwd(), "--root", "--repo", exists=True, file_okay=False),
+    project_id: str | None = typer.Option(None, "--project-id"),
+    state_dir: str = typer.Option(DEFAULT_STATE_DIR, "--state-dir"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Scan dependency manifests with OSV and store dependency intelligence."""
+    root = root.resolve()
+    pid = _project_id(root, project_id)
+    report = asyncio.run(
+        scan_project_dependencies(project_id=pid, root=root, data_root=_data_root(root, state_dir))
+    )
+    payload = report.model_dump(by_alias=True)
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2))
+        return
+    typer.echo(
+        f"Dependency scan complete: {report.package_count} packages, "
+        f"{report.vulnerable_count} vulnerable dependencies"
+    )
+    for item in report.dependencies:
+        vulns = ", ".join(v.id for v in item.vulns[:3])
+        typer.echo(f"- {item.package.ecosystem}/{item.package.name}: {vulns}")
+    for error in report.source_errors:
+        typer.secho(error, fg=typer.colors.YELLOW, err=True)
+
+
+@deps_app.command("report")
+def deps_report(
+    root: Path = typer.Option(Path.cwd(), "--root", "--repo", exists=True, file_okay=False),
+    project_id: str | None = typer.Option(None, "--project-id"),
+    state_dir: str = typer.Option(DEFAULT_STATE_DIR, "--state-dir"),
+) -> None:
+    """Print the stored dependency-intelligence report."""
+    root = root.resolve()
+    report = read_dependency_report(
+        _project_id(root, project_id), data_root=_data_root(root, state_dir)
+    )
+    if report is None:
+        typer.secho(
+            "No dependency report found. Run `pythinker security-scan deps scan` first.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    typer.echo(report.model_dump_json(by_alias=True, indent=2))
+
+
+@intel_app.command("cve")
+def intel_cve(
+    cve_id: str = typer.Argument(...),
+    root: Path = typer.Option(Path.cwd(), "--root", "--repo", exists=True, file_okay=False),
+    state_dir: str = typer.Option(DEFAULT_STATE_DIR, "--state-dir"),
+) -> None:
+    """Look up CVE intelligence from NVD, EPSS, KEV, GitHub PoC, and vendor feeds."""
+    bundle = asyncio.run(lookup_cve_bundle(cve_id, data_root=_data_root(root.resolve(), state_dir)))
+    typer.echo(bundle.model_dump_json(exclude_none=True, indent=2))
+
+
+@intel_app.command("package")
+def intel_package(
+    name: str = typer.Argument(...),
+    ecosystem: str = typer.Option(..., "--ecosystem"),
+    version: str = typer.Option("", "--version"),
+    root: Path = typer.Option(Path.cwd(), "--root", "--repo", exists=True, file_okay=False),
+    state_dir: str = typer.Option(DEFAULT_STATE_DIR, "--state-dir"),
+) -> None:
+    """Look up package vulnerability intelligence via OSV."""
+    package = PackageRef(name=name, ecosystem=ecosystem, version=version)
+    result = asyncio.run(lookup_package(package, data_root=_data_root(root.resolve(), state_dir)))
+    typer.echo(result.model_dump_json(indent=2))
 
 
 @app.command()

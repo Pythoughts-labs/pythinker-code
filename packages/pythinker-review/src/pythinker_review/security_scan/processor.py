@@ -12,6 +12,7 @@ from typing import Any
 from pythinker_review.diagnostics.parser import redact_secrets
 from pythinker_review.engine.token_budget import clip_text
 from pythinker_review.llm.protocol import ReviewLLM
+from pythinker_review.security_scan.dependencies import read_dependency_report
 from pythinker_review.security_scan.matchers import create_default_registry
 from pythinker_review.security_scan.models import (
     AnalysisEntry,
@@ -144,7 +145,11 @@ async def process_project(
                     root=root,
                     data_root=data_root,
                     llm=llm,
-                    project_info=read_info(project_id, data_root=data_root),
+                    project_info=_with_dependency_context(
+                        read_info(project_id, data_root=data_root),
+                        project_id=project_id,
+                        data_root=data_root,
+                    ),
                     prompt_append=settings.prompt_append,
                     timeout_s=timeout_s,
                 )
@@ -183,6 +188,25 @@ async def process_project(
 
 def _safe_error_message(exc: Exception) -> str:
     return clip_text(redact_secrets(f"{type(exc).__name__}: {exc}"), 500)
+
+
+def _with_dependency_context(project_info: str, *, project_id: str, data_root: Path) -> str:
+    report = read_dependency_report(project_id, data_root=data_root)
+    if report is None or not report.dependencies:
+        return project_info
+    lines = [project_info.rstrip(), "", "## Dependency vulnerability intelligence", ""]
+    for item in report.dependencies[:20]:
+        vulns = ", ".join(v.id for v in item.vulns[:3])
+        severity = item.vulns[0].severity if item.vulns else "UNKNOWN"
+        lines.append(
+            f"- {item.package.ecosystem}/{item.package.name} "
+            f"{item.package.version or '(unversioned)'}: {severity} ({vulns})"
+        )
+    lines.append(
+        "Treat this as supporting context only: report package issues only when the "
+        "manifest/lock evidence proves the vulnerable dependency is present."
+    )
+    return "\n".join(lines).strip()
 
 
 async def _process_batch(
