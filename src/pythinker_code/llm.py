@@ -352,21 +352,31 @@ def create_llm(
 
     thinking_on = thinking_effort_enabled(effective_effort)
     is_kimi_openai_legacy = provider.type == "openai_legacy" and _is_kimi_k2_model(model.model)
-    if effective_effort is not None and supports_thinking and not is_kimi_openai_legacy:
+    is_glm_openai_legacy = provider.type == "openai_legacy" and _is_glm_model(model.model)
+    if (
+        effective_effort is not None
+        and supports_thinking
+        and not is_kimi_openai_legacy
+        and not is_glm_openai_legacy
+    ):
         # Only explicitly send thinking controls for models that advertise
         # reasoning. Some OpenAI-compatible non-reasoning models reject even a
         # null reasoning_effort field.
         chat_provider = chat_provider.with_thinking(effective_effort)
 
-    # Kimi K2.5/K2.6 use an OpenAI-compatible API but their thinking toggle is
-    # the provider-specific `thinking.type` body field rather than OpenAI's
-    # `reasoning_effort`. Kimi defaults thinking to enabled, so when Pythinker
-    # config says thinking is off we must send the explicit Kimi switch;
-    # otherwise multi-step tool calls can still enter thinking mode and require
-    # `reasoning_content` on replayed tool-call turns.
-    if is_kimi_openai_legacy and effective_effort is not None:
+    # Kimi K2.5/K2.6 and GLM models use OpenAI-compatible APIs but their thinking
+    # toggle is the provider-specific `thinking.type` body field rather than
+    # OpenAI's `reasoning_effort`. Send that field instead of `reasoning_effort`;
+    # otherwise providers such as Z.ai/GLM ignore the generic reasoning knob.
+    if (is_kimi_openai_legacy or is_glm_openai_legacy) and effective_effort is not None:
+        thinking_body: dict[str, object] = {"type": "enabled" if thinking_on else "disabled"}
+        if is_glm_openai_legacy and thinking_on:
+            # Z.ai documents Preserved Thinking for coding/agent scenarios as
+            # `clear_thinking: false`; OpenAILegacy already replays ThinkPart as
+            # `reasoning_content`, which is the required history field.
+            thinking_body["clear_thinking"] = False
         chat_provider = cast(Any, chat_provider).with_generation_kwargs(
-            extra_body={"thinking": {"type": "enabled" if thinking_on else "disabled"}}
+            extra_body={"thinking": thinking_body}
         )
 
     # Apply Pythinker AI-specific ``thinking.keep`` (preserved thinking) only when
@@ -451,6 +461,10 @@ def derive_model_capabilities(model: LLMModel) -> set[ModelCapability]:
 
 def _is_kimi_k2_model(model_name: str) -> bool:
     return "kimi-k2" in model_name.lower().replace("_", "-")
+
+
+def _is_glm_model(model_name: str) -> bool:
+    return model_name.lower().replace("_", "-").startswith("glm-")
 
 
 def _load_scripted_echo_scripts() -> list[str]:

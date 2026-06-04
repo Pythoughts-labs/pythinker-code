@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+ALIBABA_PLATFORM_ID = "alibaba"
 PYTHINKER_CODE_PLATFORM_ID = "pythinker-code"
 OPENAI_API_PLATFORM_ID = "openai"
 OPENAI_CHATGPT_PLATFORM_ID = "openai-chatgpt"
@@ -14,6 +15,7 @@ OLLAMA_PLATFORM_ID = "ollama"
 ZAI_PLATFORM_ID = "z-ai"
 
 __all__ = [
+    "ALIBABA_PLATFORM_ID",
     "ANTHROPIC_PLATFORM_ID",
     "DEEPSEEK_PLATFORM_ID",
     "LM_STUDIO_PLATFORM_ID",
