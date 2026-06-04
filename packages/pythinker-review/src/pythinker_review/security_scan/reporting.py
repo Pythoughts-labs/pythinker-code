@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from pythinker_review.security_scan.dependencies import read_dependency_report
 from pythinker_review.security_scan.models import FileRecord, Finding
 from pythinker_review.security_scan.paths import reports_dir
 from pythinker_review.security_scan.store import load_all_file_records, read_project_config
@@ -67,12 +68,16 @@ def metrics(project_id: str, *, data_root: Path) -> dict[str, Any]:
         for _record, finding in pairs
         if finding.revalidation is not None
     )
+    dependency_report = read_dependency_report(project_id, data_root=data_root)
     return {
         "projectId": project_id,
         "findings": len(pairs),
         "bySeverity": dict(sorted(by_severity.items(), key=lambda item: -_SEVERITY_ORDER[item[0]])),
         "bySlug": dict(by_slug.most_common()),
         "revalidation": dict(revalidation),
+        "dependencyVulnerabilities": dependency_report.vulnerable_count
+        if dependency_report is not None
+        else 0,
     }
 
 
@@ -92,8 +97,7 @@ def render_markdown_report(project_id: str, *, data_root: Path) -> str:
         "",
     ]
     if not pairs:
-        lines.append("No findings recorded.")
-        return "\n".join(lines) + "\n"
+        lines.append("No source findings recorded.")
     for record, finding in pairs:
         verdict = f" — {finding.revalidation.verdict}" if finding.revalidation else ""
         lines.extend(
@@ -110,6 +114,33 @@ def render_markdown_report(project_id: str, *, data_root: Path) -> str:
                 "",
             ]
         )
+    dependency_report = read_dependency_report(project_id, data_root=data_root)
+    if dependency_report is not None:
+        lines.extend(["", "## Dependency vulnerabilities", ""])
+        if not dependency_report.dependencies:
+            lines.append("No vulnerable dependencies recorded.")
+        else:
+            lines.append("| Package | Version | Vulnerabilities | Severity | Manifest |")
+            lines.append("| --- | --- | --- | --- | --- |")
+            for item in dependency_report.dependencies:
+                vulns = ", ".join(v.id for v in item.vulns[:3])
+                severity = item.vulns[0].severity if item.vulns else "UNKNOWN"
+                manifest = item.package.manifest_path or ""
+                if item.package.line:
+                    manifest += f":{item.package.line}"
+                lines.append(
+                    f"| `{item.package.ecosystem}/{item.package.name}` | "
+                    f"`{item.package.version or 'unversioned'}` | {vulns} | {severity} | "
+                    f"`{manifest}` |"
+                )
+        if dependency_report.source_errors:
+            lines.extend(["", "### Dependency intel errors", ""])
+            _MAX_ERRORS = 10
+            shown = dependency_report.source_errors[:_MAX_ERRORS]
+            lines.extend(f"- {error}" for error in shown)
+            remainder = len(dependency_report.source_errors) - len(shown)
+            if remainder > 0:
+                lines.append(f"- and {remainder} more errors")
     return "\n".join(lines).rstrip() + "\n"
 
 

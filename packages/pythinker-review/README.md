@@ -55,6 +55,8 @@ pythinker-secscan diff --format sarif --fail-on critical
 pythinker-security-scan init --root .
 pythinker-security-scan scan --json
 pythinker-security-scan process --limit 10
+pythinker-security-scan deps scan --json       # OSV dependency intelligence, cached locally
+pythinker-security-scan intel cve CVE-2024-3094  # fetches NVD/EPSS/KEV/PoC/vendor details for the CVE
 pythinker-security-scan report --write
 
 # Root-cause debugger over a captured failure log
@@ -114,9 +116,11 @@ Phase 1 now ports the highest-value behavior from the mounted blackbox repos:
 - Code-reviewr PR assistant parity adds read-only `describe`, `improve`/`suggest`, `ask`,
   `labels`, `changelog`, and `docs` artifact commands with strict JSON schemas.
 - Pythinker Security Scan deterministic signals include CWE/severity hints, expanded vulnerability anchors,
-  technology detection, and batch-scoped security advisor context.
+  CVE/dependency-change leads, technology detection, and batch-scoped security advisor context.
 - Python-native Pythinker Security Scan repo-wide commands (`pythinker-security-scan` / `pythinker security-scan`) port the
-  scan/process/revalidate/triage/report/export/status workflow without Node or pnpm runtime glue.
+  scan/process/revalidate/triage/report/export/status workflow without Node or pnpm runtime glue, plus
+  first-class vulnerability intelligence commands for OSV dependency scans and CVE enrichment from NVD,
+  EPSS, CISA KEV, GitHub PoC metadata, and vendor advisory feeds.
 - Fenced/prose-wrapped JSON is cleaned safely, while truly malformed output remains fail-closed.
 
 ## Phase 1
