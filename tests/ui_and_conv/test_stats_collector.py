@@ -130,3 +130,15 @@ def test_collect_session_files_finds_wires(tmp_path):
     files = collect_session_files(tmp_path / "sessions")
     assert w in files
     assert sw in files
+
+
+def test_load_all_stats_returns_all_stats(tmp_path, monkeypatch):
+    from pythinker_code.ui.shell.stats_collector import AllStats, load_all_stats
+    monkeypatch.setattr(
+        "pythinker_code.ui.shell.stats_collector.get_sessions_root",
+        lambda: tmp_path / "sessions",
+    )
+    result = load_all_stats()
+    assert isinstance(result, AllStats)
+    assert "all_time" in result.periods
+    assert "all_time" in result.insights
