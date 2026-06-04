@@ -1509,8 +1509,16 @@ class PythinkerSoul:
             input_tokens=usage.input if usage else "?",
             output_tokens=usage.output if usage else "?",
         )
+        _step_model_name: str | None = chat_provider.model_name
+        _step_provider_key: str | None = None
+        if self._runtime.llm.model_config is not None:
+            _step_provider_key = self._runtime.llm.model_config.provider
         status_update = StatusUpdate(
-            token_usage=usage, message_id=result.id, plan_mode=self._plan_mode
+            token_usage=usage,
+            message_id=result.id,
+            model_name=_step_model_name,
+            provider_key=_step_provider_key,
+            plan_mode=self._plan_mode,
         )
         if usage is not None:
             # mark the token count for the context before the step

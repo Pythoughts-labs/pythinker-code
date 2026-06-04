@@ -1875,6 +1875,7 @@ from . import (  # noqa: E402
     export_import,  # noqa: F401 # type: ignore[reportUnusedImport]
     oauth,  # noqa: F401 # type: ignore[reportUnusedImport]
     setup,  # noqa: F401 # type: ignore[reportUnusedImport]
+    stats,  # noqa: F401 # type: ignore[reportUnusedImport]
     update,  # noqa: F401 # type: ignore[reportUnusedImport]
     usage,  # noqa: F401 # type: ignore[reportUnusedImport]
 )

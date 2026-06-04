@@ -230,6 +230,10 @@ class StatusUpdate(BaseModel):
     """The token usage statistics of the current step."""
     message_id: str | None = None
     """The message ID of the current step."""
+    model_name: str | None = None
+    """The model ID that produced this step (e.g. 'claude-sonnet-4-5')."""
+    provider_key: str | None = None
+    """The provider config key for this step (e.g. 'managed:openai-chatgpt')."""
     plan_mode: bool | None = None
     """Whether plan mode (read-only) is active. None means no change."""
     mcp_status: MCPStatusSnapshot | None = None
