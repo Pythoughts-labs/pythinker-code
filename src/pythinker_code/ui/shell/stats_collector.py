@@ -369,7 +369,13 @@ def load_all_stats() -> AllStats:
     all_steps: list[StepRecord] = []
 
     for wire_path in wire_files:
-        session_id = f"{wire_path.parent.parent.name}/{wire_path.parent.name}"
+        # sessions/<wdhash>/<sessid>/wire.jsonl  →  parents[1]/<sessid>
+        # sessions/<wdhash>/<sessid>/subagents/<agentid>/wire.jsonl
+        #   parents[1] = "subagents", so walk up to parents[3]/parents[2]
+        if wire_path.parent.parent.name == "subagents":
+            session_id = f"{wire_path.parents[3].name}/{wire_path.parents[2].name}"
+        else:
+            session_id = f"{wire_path.parents[1].name}/{wire_path.parents[0].name}"
         for step in parse_wire_file(wire_path, session_id, seen_hashes):
             all_steps.append(step)
 
