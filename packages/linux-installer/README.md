@@ -36,7 +36,7 @@ file at `/usr/share/doc/pythinker-code/LICENSE`.
 ## Build
 
 ```sh
-bash packages/linux-installer/build.sh 0.34.0
+bash packages/linux-installer/build.sh 0.35.0
 ```
 
 Outputs to `dist/`:
@@ -46,7 +46,7 @@ Outputs to `dist/`:
 
 The portable tarball used by `scripts/install-native.sh` is published by
 the existing `release-pythinker-cli.yml` workflow under the cargo-dist
-target-triple naming (e.g. `pythinker-0.34.0-x86_64-unknown-linux-gnu.tar.gz`).
+target-triple naming (e.g. `pythinker-0.35.0-x86_64-unknown-linux-gnu.tar.gz`).
 
 ## CI
 
