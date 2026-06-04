@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import aiohttp
 import pytest
 from multidict import CIMultiDict, CIMultiDictProxy
@@ -283,7 +285,8 @@ async def test_login_alibaba_uses_discovered_context_length(monkeypatch, tmp_pat
     config = Config(is_from_default_location=True)
 
     async def fake_request(*args: object, **kwargs: object) -> object:
-        assert kwargs["headers"].get("Authorization") == "Bearer sk-test"
+        headers = cast("dict[str, object]", kwargs.get("headers", {}))
+        assert headers.get("Authorization") == "Bearer sk-test"
         return _FakeAiohttpResponse({"data": [{"id": "qwen3.7-max", "context_length": 512_000}]})
 
     monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
