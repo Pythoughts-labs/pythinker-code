@@ -17,6 +17,8 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.35.0 (2026-06-04)
+
 ## 0.34.0 (2026-06-03)
 
 ### What changed in this release
