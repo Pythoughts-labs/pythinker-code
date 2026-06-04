@@ -17,7 +17,9 @@ async def fetch_kev_catalog(*, client: IntelHttpClient, cache: IntelCache) -> li
     for url in (CISA_KEV_URL, KEV_FALLBACK):
         try:
             data = await client.get_json(url)
-            entries = [KEVEntry.model_validate(item) for item in data.get("vulnerabilities", [])]
+            if not isinstance(data, dict) or not isinstance(data.get("vulnerabilities"), list):
+                raise ValueError(f"Unexpected KEV catalog shape from {url}")
+            entries = [KEVEntry.model_validate(item) for item in data["vulnerabilities"]]
             cache.set("kev:catalog", [entry.model_dump() for entry in entries], TTL_KEV)
             return entries
         except Exception as exc:  # noqa: BLE001 - fallback source boundary

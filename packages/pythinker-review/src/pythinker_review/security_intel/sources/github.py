@@ -57,9 +57,19 @@ async def check_exploit_availability(
         params={"q": f"{normalized} poc exploit", "sort": "stars", "order": "desc", "per_page": 10},
         headers=_headers(),
     )
+    if not (isinstance(data, dict) and "items" in data and isinstance(data["items"], list)):
+        return ExploitIntel(
+            cve_id=normalized,
+            has_public_exploit=False,
+            poc_count=0,
+            confidence="NONE",
+            references=[],
+        )
     refs: list[str] = []
     scores: list[int] = []
-    for repo in data.get("items", []) if isinstance(data, dict) else []:
+    for repo in data["items"]:
+        if not isinstance(repo, dict):
+            continue
         full_name = repo.get("full_name", "")
         description = repo.get("description") or ""
         if normalized.lower() not in f"{full_name} {description}".lower():

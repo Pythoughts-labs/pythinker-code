@@ -56,7 +56,7 @@ pythinker-security-scan init --root .
 pythinker-security-scan scan --json
 pythinker-security-scan process --limit 10
 pythinker-security-scan deps scan --json       # OSV dependency intelligence, cached locally
-pythinker-security-scan intel cve CVE-2024-3094
+pythinker-security-scan intel cve CVE-2024-3094  # fetches NVD/EPSS/KEV/PoC/vendor details for the CVE
 pythinker-security-scan report --write
 
 # Root-cause debugger over a captured failure log

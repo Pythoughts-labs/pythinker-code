@@ -45,6 +45,11 @@ def test_intel_client_disables_implicit_redirects() -> None:
         is None
     )
 
+    from pythinker_review.security_intel.client import IntelHttpClient
+
+    client = IntelHttpClient()
+    assert any(isinstance(h, _NoRedirectHandler) for h in client._opener.handlers)
+
 
 def test_intel_cache_roundtrip(tmp_path: Path) -> None:
     cache = IntelCache(tmp_path)

@@ -59,8 +59,15 @@ async def search_cves(
     if sev:
         params["cvssV3Severity"] = sev
     data = await client.get_json(NVD_BASE, params=params, headers=_headers())
+    if not isinstance(data, dict):
+        raise ValueError("Unexpected NVD response shape: expected a dict")
+    vulnerabilities = data.get("vulnerabilities", [])
+    if not isinstance(vulnerabilities, list):
+        raise ValueError("Unexpected NVD response shape: 'vulnerabilities' is not a list")
     records = [
-        CVERecord.model_validate(item.get("cve", {})) for item in data.get("vulnerabilities", [])
+        CVERecord.model_validate(item.get("cve", {}))
+        for item in vulnerabilities
+        if isinstance(item, dict)
     ]
     cache.set(key, [record.model_dump() for record in records], TTL_SEARCH)
     return records

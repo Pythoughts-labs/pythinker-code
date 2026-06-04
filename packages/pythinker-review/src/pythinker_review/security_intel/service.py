@@ -59,13 +59,16 @@ async def lookup_cve_bundle(
     exploit = results[3] if include_exploit and len(results) > 3 else None
     vendor_result = results[-1] if include_vendor else None
     epss_score = epss_scores[0] if epss_scores else None
-    risk = score_cve(
-        cve_id=normalized,
-        nvd=nvd_record,
-        epss=epss_score,
-        kev=kev_entry,
-        exploit=exploit,
-    )
+    if any(x is not None for x in (nvd_record, epss_score, kev_entry, exploit)):
+        risk = score_cve(
+            cve_id=normalized,
+            nvd=nvd_record,
+            epss=epss_score,
+            kev=kev_entry,
+            exploit=exploit,
+        )
+    else:
+        risk = None
     return CVEIntelBundle(
         cve_id=normalized,
         nvd=nvd_record,

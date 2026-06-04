@@ -163,7 +163,11 @@ def intel_cve(
     state_dir: str = typer.Option(DEFAULT_STATE_DIR, "--state-dir"),
 ) -> None:
     """Look up CVE intelligence from NVD, EPSS, KEV, GitHub PoC, and vendor feeds."""
-    bundle = asyncio.run(lookup_cve_bundle(cve_id, data_root=_data_root(root.resolve(), state_dir)))
+    try:
+        bundle = asyncio.run(lookup_cve_bundle(cve_id, data_root=_data_root(root.resolve(), state_dir)))
+    except Exception as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
     typer.echo(bundle.model_dump_json(exclude_none=True, indent=2))
 
 
@@ -177,7 +181,11 @@ def intel_package(
 ) -> None:
     """Look up package vulnerability intelligence via OSV."""
     package = PackageRef(name=name, ecosystem=ecosystem, version=version)
-    result = asyncio.run(lookup_package(package, data_root=_data_root(root.resolve(), state_dir)))
+    try:
+        result = asyncio.run(lookup_package(package, data_root=_data_root(root.resolve(), state_dir)))
+    except Exception as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
     typer.echo(result.model_dump_json(indent=2))
 
 

@@ -135,7 +135,12 @@ def render_markdown_report(project_id: str, *, data_root: Path) -> str:
                 )
         if dependency_report.source_errors:
             lines.extend(["", "### Dependency intel errors", ""])
-            lines.extend(f"- {error}" for error in dependency_report.source_errors)
+            _MAX_ERRORS = 10
+            shown = dependency_report.source_errors[:_MAX_ERRORS]
+            lines.extend(f"- {error}" for error in shown)
+            remainder = len(dependency_report.source_errors) - len(shown)
+            if remainder > 0:
+                lines.append(f"- and {remainder} more errors")
     return "\n".join(lines).rstrip() + "\n"
 
 

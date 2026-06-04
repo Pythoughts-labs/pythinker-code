@@ -134,6 +134,11 @@ async def process_project(
     semaphore = asyncio.Semaphore(max(1, jobs))
     counters = {"analysis": 0, "findings": 0, "errors": 0}
     error_messages: list[str] = []
+    project_info = _with_dependency_context(
+        read_info(project_id, data_root=data_root),
+        project_id=project_id,
+        data_root=data_root,
+    )
 
     async def worker(batch: list[FileRecord]) -> None:
         async with semaphore:
@@ -145,11 +150,7 @@ async def process_project(
                     root=root,
                     data_root=data_root,
                     llm=llm,
-                    project_info=_with_dependency_context(
-                        read_info(project_id, data_root=data_root),
-                        project_id=project_id,
-                        data_root=data_root,
-                    ),
+                    project_info=project_info,
                     prompt_append=settings.prompt_append,
                     timeout_s=timeout_s,
                 )

@@ -126,8 +126,12 @@ class IntelHttpClient:
         try:
             with self._opener.open(req, timeout=self.timeout_s) as resp:
                 content_length = resp.headers.get("content-length")
-                if content_length and int(content_length) > self.max_response_bytes:
-                    raise IntelClientError("response too large (Content-Length)")
+                if content_length:
+                    try:
+                        if int(content_length) > self.max_response_bytes:
+                            raise IntelClientError("response too large (Content-Length)")
+                    except ValueError:
+                        raise IntelClientError("invalid Content-Length header")
                 data = resp.read(self.max_response_bytes + 1)
                 if len(data) > self.max_response_bytes:
                     raise IntelClientError("response too large (actual body)")

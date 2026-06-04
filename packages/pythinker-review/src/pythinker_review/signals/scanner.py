@@ -25,7 +25,8 @@ class _Rule:
 _CVE_RE = re.compile(r"\bCVE-\d{4}-\d{4,}\b", re.IGNORECASE)
 _DEP_LINE_RE = re.compile(
     r"(?i)\b(?:dependencies|devDependencies|requires|requirement|package)\b|"
-    r"(?:==|\^|~)\s*\d+\.\d+"
+    r"(?:==|>=|<=|!=|~=|>|<|\^|~)\s*\d+\.\d+(?:\.\d+)?(?:[.\-][A-Za-z0-9]+)*|"
+    r'"[A-Za-z0-9_\-]+"\s*:\s*"\d[\d.]*"'
 )
 
 _RULES: tuple[_Rule, ...] = (

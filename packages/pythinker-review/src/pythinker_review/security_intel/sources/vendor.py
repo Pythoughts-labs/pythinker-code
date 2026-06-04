@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from pythinker_review.security_intel.cache import TTL_VENDOR, IntelCache
 from pythinker_review.security_intel.client import IntelHttpClient
 from pythinker_review.security_intel.models import VendorAdvisoryIntel
@@ -20,10 +22,10 @@ async def get_vendor_advisory(
     cached = cache.get(key)
     if cached is not None:
         return VendorAdvisoryIntel.model_validate(cached)
-    microsoft, redhat, ubuntu = (
-        await _msrc(normalized, client),
-        await _redhat(normalized, client),
-        await _ubuntu(normalized, client),
+    microsoft, redhat, ubuntu = await asyncio.gather(
+        _msrc(normalized, client),
+        _redhat(normalized, client),
+        _ubuntu(normalized, client),
     )
     result = VendorAdvisoryIntel(
         cve_id=normalized, microsoft=microsoft, redhat=redhat, ubuntu=ubuntu
@@ -39,6 +41,8 @@ async def _msrc(cve_id: str, client: IntelHttpClient) -> list[dict]:
         return []
     out: list[dict] = []
     for entry in data.get("value", [])[:20] if isinstance(data, dict) else []:
+        if not isinstance(entry, dict):
+            continue
         out.append(
             {
                 "title": entry.get("cveTitle", ""),
@@ -60,6 +64,8 @@ async def _redhat(cve_id: str, client: IntelHttpClient) -> list[dict]:
         return []
     out: list[dict] = []
     for release in data.get("affected_release", [])[:20]:
+        if not isinstance(release, dict):
+            continue
         out.append(
             {
                 "product_name": release.get("product_name", ""),

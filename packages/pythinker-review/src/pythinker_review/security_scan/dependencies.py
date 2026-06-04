@@ -16,9 +16,9 @@ from pythinker_review.security_scan.paths import data_dir
 
 _VERSION_PREFIX_RE = re.compile(r"^[\^~>=<\s=]+")
 _REQUIREMENT_RE = re.compile(
-    r"^([A-Za-z0-9_.\-]+)\s*(==|>=|<=|~=|!=|>|<)\s*([A-Za-z0-9_.\-+*,<>=]+)"
+    r"^([A-Za-z0-9_.\-]+(?:\[[A-Za-z0-9_,]+\])?)\s*(==|>=|<=|~=|!=|>|<)\s*([A-Za-z0-9_.\-+*,<>=]+)"
 )
-_BARE_REQUIREMENT_RE = re.compile(r"^([A-Za-z0-9_.\-]+)\s*$")
+_BARE_REQUIREMENT_RE = re.compile(r"^([A-Za-z0-9_.\-]+(?:\[[A-Za-z0-9_,]+\])?)\s*$")
 
 
 class DependencyScanReport(BaseModel):
@@ -32,6 +32,13 @@ class DependencyScanReport(BaseModel):
 
 
 def parse_dependency_manifests(root: Path) -> list[PackageRef]:
+    """Parse dependency manifests at the given root directory (non-recursive).
+
+    Only manifest files directly under *root* are considered. Manifests in
+    subdirectories are not discovered; callers that need recursive discovery
+    should walk the tree and call this function (or the individual helpers) per
+    directory.
+    """
     packages: list[PackageRef] = []
     for rel in ("requirements.txt", "requirements-dev.txt"):
         path = root / rel
@@ -248,8 +255,12 @@ def _line_index(path: Path) -> dict[str, int]:
 
 
 def _find_line(path: Path, needle: str) -> int | None:
+    pattern = re.compile(r"\b" + re.escape(needle) + r"\b")
     for lineno, line in enumerate(_read_text(path).splitlines(), start=1):
-        if needle in line:
+        stripped = line.lstrip()
+        if stripped.startswith(("#", "//")):
+            continue
+        if pattern.search(line):
             return lineno
     return None
 
