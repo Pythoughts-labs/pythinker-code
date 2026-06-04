@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -323,8 +324,11 @@ async def stats(app: Shell, args: str) -> None:
     _t = _get_tui_tokens()
 
     try:
-        data = load_all_stats()
+        data = await asyncio.to_thread(load_all_stats)
     except Exception as e:
+        from pythinker_code.utils.logging import logger as _logger
+
+        _logger.exception("Failed to load stats: {error}", error=e)
         console.print(f"[{_t.error}]Failed to load stats: {e}[/]")
         return
 

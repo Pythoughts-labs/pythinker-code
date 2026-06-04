@@ -10,13 +10,14 @@ from pydantic import SecretStr
 
 from pythinker_code.auth import MOONSHOT_PLATFORM_ID
 from pythinker_code.auth.oauth import OAuthEvent
+from pythinker_code.auth.platforms import managed_model_key, managed_provider_key
 from pythinker_code.config import Config, LLMModel, LLMProvider, save_config
 from pythinker_code.thinking import apply_login_thinking_defaults
 from pythinker_code.utils.aiohttp import new_client_session
 
 MOONSHOT_BASE_URL = "https://api.moonshot.ai/v1"
-MOONSHOT_PROVIDER_KEY = "managed:moonshot"
-MOONSHOT_DEFAULT_MODEL_ALIAS = "moonshot/kimi-k2.6"
+MOONSHOT_PROVIDER_KEY = managed_provider_key(MOONSHOT_PLATFORM_ID)
+MOONSHOT_DEFAULT_MODEL_ALIAS = managed_model_key(MOONSHOT_PLATFORM_ID, "kimi-k2.6")
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,13 +86,14 @@ def _model_by_id() -> dict[str, MoonshotModel]:
     return {model.model_id: model for model in MOONSHOT_MODELS}
 
 
-def _parse_discovered_models(data: object) -> tuple[MoonshotModel, ...]:
+def _parse_discovered_models(data: object) -> tuple[MoonshotModel, ...] | None:
+    """Return parsed models, or None if the payload is structurally invalid."""
     if not isinstance(data, dict):
-        return ()
+        return None
     d = cast(dict[str, Any], data)
     items = d.get("data")
     if not isinstance(items, list):
-        return ()
+        return None
     catalog = _model_by_id()
     results: list[MoonshotModel] = []
     for raw_item in items:  # pyright: ignore[reportUnknownVariableType]
@@ -124,7 +126,7 @@ def _parse_discovered_models(data: object) -> tuple[MoonshotModel, ...]:
 
 async def _discover_moonshot_models(
     api_key: str,
-) -> tuple[MoonshotModel, ...]:
+) -> tuple[MoonshotModel, ...] | None:
     async with (
         new_client_session() as session,
         session.get(
@@ -155,7 +157,7 @@ async def login_moonshot_api_key(
     models = MOONSHOT_MODELS
     try:
         discovered = await _discover_moonshot_models(resolved_key)
-        if discovered:
+        if discovered is not None and discovered:
             models = discovered
     except aiohttp.ClientResponseError as exc:
         if exc.status in {401, 403}:

@@ -40,9 +40,9 @@ def test_unknown_model_returns_zero():
 
 
 def test_prefix_match_fallback():
-    # "claude-sonnet-4-5-20250929" should fall back to "claude-sonnet-4-5" prefix
+    # "claude-sonnet-4-5-20251999" is NOT in _PRICE_TABLE, so must hit prefix fallback
     usage = _usage(input_other=1_000_000, output=1_000_000)
-    cost = get_cost_usd("claude-sonnet-4-5-20250929", usage)
+    cost = get_cost_usd("claude-sonnet-4-5-20251999", usage)
     assert cost > 0.0
 
 

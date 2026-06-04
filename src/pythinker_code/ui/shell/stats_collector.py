@@ -11,6 +11,7 @@ from typing import Any, cast
 from pythinker_core.chat_provider import TokenUsage
 
 from pythinker_code.ui.shell.stats_pricing import get_cost_usd
+from pythinker_code.utils.logging import logger
 
 
 def _set_str() -> set[str]:
@@ -76,7 +77,7 @@ class ModelStats:
 
     @property
     def tokens(self) -> int:
-        return self.input_other + self.output + self.input_cache_creation
+        return self.input_other + self.output + self.input_cache_read + self.input_cache_creation
 
 
 @dataclass(slots=True)
@@ -103,7 +104,7 @@ class ProviderStats:
 
     @property
     def tokens(self) -> int:
-        return self.input_other + self.output + self.input_cache_creation
+        return self.input_other + self.output + self.input_cache_read + self.input_cache_creation
 
 
 @dataclass(slots=True)
@@ -224,7 +225,7 @@ def parse_wire_file(
                 total = input_other + output + cache_read + cache_write
                 ts = float(obj.get("timestamp", 0))
 
-                h = f"{ts}:{total}"
+                h = f"{session_id}:{ts}:{total}"
                 if h in seen_hashes:
                     continue
                 seen_hashes.add(h)
@@ -242,8 +243,8 @@ def parse_wire_file(
                     input_cache_read=cache_read,
                     input_cache_creation=cache_write,
                 )
-    except OSError:
-        return
+    except OSError as exc:
+        logger.warning("Failed to read wire file {path}: {error}", path=wire_path, error=exc)
 
 
 def _period_boundaries() -> tuple[float, float, float]:

@@ -72,11 +72,14 @@ def test_z_ai_env_key_uses_zai_api_key(monkeypatch):
 @pytest.mark.parametrize(
     "payload, expected_aliases",
     [
-        (None, set()),
-        ({}, set()),
-        ({"data": "not a list"}, set()),
+        # Structurally invalid → None (no prune should happen)
+        (None, None),
+        ({}, None),
+        ({"data": "not a list"}, None),
+        # Valid structure, no matching models → empty tuple
         ({"data": [{"context_length": 1000}]}, set()),
         ({"data": [{"id": "unknown-model-xyz"}]}, set()),
+        # Valid structure with known models
         ({"data": [{"id": "glm-5.1"}]}, {"z-ai/glm-5.1"}),
         ({"data": [{"id": "glm-5-turbo"}]}, {"z-ai/glm-5-turbo"}),
         (
@@ -89,7 +92,11 @@ def test_parse_discovered_z_ai_models_handles_payloads(payload, expected_aliases
     from pythinker_code.auth.z_ai import _parse_discovered_models
 
     result = _parse_discovered_models(payload)
-    assert {m.alias for m in result} == expected_aliases
+    if expected_aliases is None:
+        assert result is None
+    else:
+        assert result is not None
+        assert {m.alias for m in result} == expected_aliases
 
 
 def test_parse_discovered_z_ai_models_uses_context_length_when_positive():
@@ -103,6 +110,7 @@ def test_parse_discovered_z_ai_models_uses_context_length_when_positive():
         ]
     }
     result = _parse_discovered_models(payload)
+    assert result is not None
     by_id = {m.model_id: m for m in result}
     assert by_id["glm-5.1"].max_context_size == 400_000
     assert by_id["glm-4.5-air"].max_context_size == 98_304  # fallback to hardcoded
@@ -114,6 +122,7 @@ def test_parse_discovered_z_ai_models_accepts_unknown_glm_future_models():
 
     payload = {"data": [{"id": "glm-6.0", "context_length": 512_000}]}
     result = _parse_discovered_models(payload)
+    assert result is not None
     assert len(result) == 1
     assert result[0].model_id == "glm-6.0"
     assert result[0].alias_suffix == "glm-6.0"
@@ -125,6 +134,7 @@ def test_parse_discovered_z_ai_models_deduplicates():
 
     payload = {"data": [{"id": "glm-5.1"}, {"id": "glm-5.1"}]}
     result = _parse_discovered_models(payload)
+    assert result is not None
     assert len(result) == 1
 
 

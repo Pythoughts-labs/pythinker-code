@@ -135,9 +135,11 @@ def test_compute_period_stats_excludes_old(tmp_path):
     assert stats["today"].total_messages == 1
 
 
-def test_get_sessions_root_exists():
+def test_get_sessions_root_path(monkeypatch, tmp_path):
+    monkeypatch.setenv("PYTHINKER_DIR", str(tmp_path))
     root = get_sessions_root()
-    assert root is not None  # may not exist yet, but path should be computed
+    assert root.name == "sessions"
+    assert root.parent == tmp_path
 
 
 def test_collect_session_files_finds_wires(tmp_path):

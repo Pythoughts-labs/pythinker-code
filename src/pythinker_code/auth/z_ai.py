@@ -10,14 +10,15 @@ from pydantic import SecretStr
 
 from pythinker_code.auth import ZAI_PLATFORM_ID
 from pythinker_code.auth.oauth import OAuthEvent
+from pythinker_code.auth.platforms import managed_model_key, managed_provider_key
 from pythinker_code.config import Config, LLMModel, LLMProvider, save_config
 from pythinker_code.thinking import apply_login_thinking_defaults
 from pythinker_code.utils.aiohttp import new_client_session
 
 ZAI_BASE_URL = "https://api.z.ai/api/anthropic"
 ZAI_MODELS_URL = "https://api.z.ai/api/anthropic/v1/models"
-ZAI_PROVIDER_KEY = "managed:z-ai"
-ZAI_DEFAULT_MODEL_ALIAS = "z-ai/glm-5.1"
+ZAI_PROVIDER_KEY = managed_provider_key(ZAI_PLATFORM_ID)
+ZAI_DEFAULT_MODEL_ALIAS = managed_model_key(ZAI_PLATFORM_ID, "glm-5.1")
 ZAI_MODEL_DISCOVERY_TIMEOUT = aiohttp.ClientTimeout(total=15, sock_connect=8, sock_read=10)
 
 
@@ -93,12 +94,13 @@ def _display_name_from_item(item: Mapping[str, Any], fallback: str) -> str:
     return fallback
 
 
-def _parse_discovered_models(data: object) -> tuple[ZaiModel, ...]:
+def _parse_discovered_models(data: object) -> tuple[ZaiModel, ...] | None:
+    """Return parsed models, or None if the payload is structurally invalid."""
     if not isinstance(data, dict):
-        return ()
+        return None
     raw_items = cast(dict[str, Any], data).get("data")
     if not isinstance(raw_items, list):
-        return ()
+        return None
 
     known = _model_by_id()
     seen: set[str] = set()
@@ -137,7 +139,7 @@ def _parse_discovered_models(data: object) -> tuple[ZaiModel, ...]:
     return tuple(result)
 
 
-async def _discover_z_ai_models(api_key: str) -> tuple[ZaiModel, ...]:
+async def _discover_z_ai_models(api_key: str) -> tuple[ZaiModel, ...] | None:
     async with (
         new_client_session(timeout=ZAI_MODEL_DISCOVERY_TIMEOUT) as session,
         session.get(
@@ -211,7 +213,7 @@ async def login_z_ai_api_key(
     models = ZAI_MODELS
     try:
         discovered = await _discover_z_ai_models(resolved_key)
-        if discovered:
+        if discovered is not None and discovered:
             models = discovered
     except aiohttp.ClientResponseError as exc:
         if exc.status in {401, 403}:
