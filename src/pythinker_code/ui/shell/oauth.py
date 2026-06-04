@@ -8,6 +8,7 @@ from prompt_toolkit import PromptSession
 from rich.status import Status
 
 from pythinker_code.auth import (
+    ALIBABA_PLATFORM_ID,
     ANTHROPIC_PLATFORM_ID,
     DEEPSEEK_PLATFORM_ID,
     LM_STUDIO_PLATFORM_ID,
@@ -19,6 +20,11 @@ from pythinker_code.auth import (
     OPENCODE_GO_PLATFORM_ID,
     OPENROUTER_PLATFORM_ID,
     ZAI_PLATFORM_ID,
+)
+from pythinker_code.auth.alibaba import (
+    ALIBABA_PROVIDER_KEY,
+    login_alibaba_api_key,
+    logout_alibaba,
 )
 from pythinker_code.auth.anthropic_direct import (
     ANTHROPIC_PROVIDER_KEY,
@@ -140,6 +146,7 @@ _SELECTOR_PROVIDER_ENTRIES: list[OAuthProviderEntry] = [
     OAuthProviderEntry(id="deepseek", name="DeepSeek", auth_type="api_key"),
     OAuthProviderEntry(id="z-ai", name="Z AI", auth_type="api_key"),
     OAuthProviderEntry(id="moonshot", name="Moonshot", auth_type="api_key"),
+    OAuthProviderEntry(id="alibaba", name="Alibaba (DashScope)", auth_type="api_key"),
     OAuthProviderEntry(id="anthropic", name="Anthropic", auth_type="api_key"),
     OAuthProviderEntry(id="openrouter", name="OpenRouter", auth_type="api_key"),
     OAuthProviderEntry(id="lm-studio", name="LM Studio", auth_type="api_key"),
@@ -164,6 +171,7 @@ _PROVIDER_KEYS: dict[str, tuple[str, ...]] = {
     "deepseek": (DEEPSEEK_PROVIDER_KEY,),
     "z-ai": (ZAI_PROVIDER_KEY,),
     "moonshot": (MOONSHOT_PROVIDER_KEY,),
+    "alibaba": (ALIBABA_PROVIDER_KEY,),
     "anthropic": (ANTHROPIC_PROVIDER_KEY,),
     "openrouter": (OPENROUTER_PROVIDER_KEY,),
     "lm-studio": (LM_STUDIO_PROVIDER_KEY,),
@@ -179,6 +187,7 @@ _LOGOUT_PROVIDER_ENTRIES: list[OAuthProviderEntry] = [
     OAuthProviderEntry(id="deepseek", name="DeepSeek", auth_type="api_key"),
     OAuthProviderEntry(id="z-ai", name="Z AI", auth_type="api_key"),
     OAuthProviderEntry(id="moonshot", name="Moonshot", auth_type="api_key"),
+    OAuthProviderEntry(id="alibaba", name="Alibaba (DashScope)", auth_type="api_key"),
     OAuthProviderEntry(id="anthropic", name="Anthropic", auth_type="api_key"),
     OAuthProviderEntry(id="openrouter", name="OpenRouter", auth_type="api_key"),
     OAuthProviderEntry(id="lm-studio", name="LM Studio", auth_type="api_key"),
@@ -270,6 +279,13 @@ async def login(app: Shell, args: str) -> None:
             return
         ok = await _render_oauth_events(login_moonshot_api_key(soul.runtime.config, api_key))
         provider = MOONSHOT_PLATFORM_ID
+    elif mode == "alibaba":
+        api_key = await _prompt_api_key("Alibaba (DashScope)")
+        if not api_key:
+            console.print(f"[{_t.error}]No Alibaba API key entered.[/]")
+            return
+        ok = await _render_oauth_events(login_alibaba_api_key(soul.runtime.config, api_key))
+        provider = ALIBABA_PLATFORM_ID
     elif mode == "anthropic":
         api_key = await _prompt_api_key("Anthropic")
         if not api_key:
@@ -293,8 +309,8 @@ async def login(app: Shell, args: str) -> None:
     else:
         console.print(
             f"[{_t.error}]Usage: /login "
-            "[browser|headless|api-key|opencode-go|minimax|deepseek|z-ai|moonshot|anthropic|"
-            "openrouter|lm-studio|ollama][/]"
+            "[browser|headless|api-key|opencode-go|minimax|deepseek|z-ai|moonshot|alibaba|"
+            "anthropic|openrouter|lm-studio|ollama][/]"
         )
         return
     if not ok:
@@ -352,6 +368,8 @@ async def logout(app: Shell, args: str) -> None:
         ok = await _render_oauth_events(logout_z_ai(config))
     elif mode == "moonshot":
         ok = await _render_oauth_events(logout_moonshot(config))
+    elif mode == "alibaba":
+        ok = await _render_oauth_events(logout_alibaba(config))
     elif mode == "minimax":
         ok = await _render_oauth_events(logout_minimax(config))
     elif mode in ("opencode-go", "opencode", "go"):
@@ -369,8 +387,8 @@ async def logout(app: Shell, args: str) -> None:
     else:
         console.print(
             f"[{_t.error}]Usage: /logout "
-            "[openai|opencode-go|minimax|deepseek|z-ai|moonshot|anthropic|openrouter|lm-studio|"
-            "ollama|github-feedback][/]"
+            "[openai|opencode-go|minimax|deepseek|z-ai|moonshot|alibaba|anthropic|openrouter|"
+            "lm-studio|ollama|github-feedback][/]"
         )
         return
     if not ok:

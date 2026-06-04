@@ -718,6 +718,54 @@ def test_create_llm_openai_legacy_kimi_sends_enabled_thinking_body():
     }
 
 
+def test_create_llm_openai_legacy_glm_sends_provider_thinking_body():
+    provider = LLMProvider(
+        type="openai_legacy",
+        base_url="https://api.example.com/v1",
+        api_key=SecretStr("test-key"),
+    )
+    model = LLMModel(
+        provider="glm-provider",
+        model="glm-5.1",
+        max_context_size=262_144,
+        capabilities={"thinking"},
+    )
+
+    llm = create_llm(provider, model, thinking_effort="high")
+    assert llm is not None
+    assert isinstance(llm.chat_provider, OpenAILegacy)
+    assert llm.chat_provider.thinking_effort is None
+    assert llm.thinking is True
+    assert llm.thinking_effort == "high"
+    assert llm.chat_provider._generation_kwargs.get("extra_body") == {  # pyright: ignore[reportPrivateUsage]
+        "thinking": {"type": "enabled", "clear_thinking": False}
+    }
+
+
+def test_create_llm_openai_legacy_glm_sends_disabled_provider_thinking_body():
+    provider = LLMProvider(
+        type="openai_legacy",
+        base_url="https://api.example.com/v1",
+        api_key=SecretStr("test-key"),
+    )
+    model = LLMModel(
+        provider="glm-provider",
+        model="glm-5.1",
+        max_context_size=262_144,
+        capabilities={"thinking"},
+    )
+
+    llm = create_llm(provider, model, thinking_effort="off")
+    assert llm is not None
+    assert isinstance(llm.chat_provider, OpenAILegacy)
+    assert llm.chat_provider.thinking_effort is None
+    assert llm.thinking is False
+    assert llm.thinking_effort == "off"
+    assert llm.chat_provider._generation_kwargs.get("extra_body") == {  # pyright: ignore[reportPrivateUsage]
+        "thinking": {"type": "disabled"}
+    }
+
+
 def test_clone_llm_with_model_alias_preserves_kimi_thinking_disabled():
     provider = LLMProvider(
         type="openai_legacy",
