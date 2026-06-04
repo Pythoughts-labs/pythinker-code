@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from prompt_toolkit.application import Application
@@ -9,6 +10,7 @@ from prompt_toolkit.layout import HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 
+from pythinker_code.ui.shell.console import console
 from pythinker_code.ui.shell.slash import registry
 from pythinker_code.ui.shell.stats_collector import (
     AllStats,
@@ -16,10 +18,11 @@ from pythinker_code.ui.shell.stats_collector import (
     ProviderStats,
     load_all_stats,
 )
-from pythinker_code.ui.shell.console import console
 
 if TYPE_CHECKING:
     from pythinker_code.ui.shell import Shell
+
+type _LineFn = Callable[[str, str], None]
 
 # ---------------------------------------------------------------------------
 # Formatting helpers
@@ -52,10 +55,10 @@ def _fmt_tokens(n: int) -> str:
     if n < 1_000:
         return str(n)
     if n < 10_000:
-        return f"{n/1000:.1f}k"
+        return f"{n / 1000:.1f}k"
     if n < 1_000_000:
         return f"{n // 1000}k"
-    return f"{n/1_000_000:.1f}M"
+    return f"{n / 1_000_000:.1f}M"
 
 
 def _fmt_num(n: int) -> str:
@@ -67,6 +70,7 @@ def _fmt_num(n: int) -> str:
 # ---------------------------------------------------------------------------
 # Dashboard model
 # ---------------------------------------------------------------------------
+
 
 class StatsApp:
     """Interactive usage statistics dashboard."""
@@ -111,7 +115,7 @@ class StatsApp:
         line("")
 
         # Tabs
-        tab_parts = []
+        tab_parts: list[str] = []
         for i, key in enumerate(_TAB_KEYS):
             label = _TAB_LABELS[key]
             if i == self._tab_idx:
@@ -132,15 +136,18 @@ class StatsApp:
         if self._view == "insights":
             line("[Tab/←→] period  [v] table view  [q] close", "ansigray")
         else:
-            line("[Tab/←→] period  [↑↓] select  [Enter] expand  [v] insights  [q] close", "ansigray")
+            line(
+                "[Tab/←→] period  [↑↓] select  [Enter] expand  [v] insights  [q] close",
+                "ansigray",
+            )
 
         return parts
 
     def _render_table(
         self,
         parts: StyleAndTextTuples,
-        line,
-        txt,
+        line: _LineFn,
+        txt: _LineFn,
         cur: PeriodStats,
     ) -> None:
         col_w = {"sessions": 9, "msgs": 9, "cost": 9, "tokens": 9, "in": 8, "out": 8}
@@ -168,7 +175,7 @@ class StatsApp:
             parts.append(("ansigray", "  No usage data for this period\n"))
         else:
             for i, (pname, pstats) in enumerate(providers):
-                is_sel = (i == self._selected_idx)
+                is_sel = i == self._selected_idx
                 is_exp = pname in self._expanded
                 arrow = "▾" if is_exp else "▸"
                 style = "bold ansicyan" if is_sel else ""
@@ -178,7 +185,8 @@ class StatsApp:
                 row += _pad_left(_fmt_num(pstats.messages), col_w["msgs"])
                 row += _pad_left(_fmt_cost(pstats.cost), col_w["cost"])
                 row += _pad_left(_fmt_tokens(pstats.tokens), col_w["tokens"])
-                row += _pad_left(_fmt_tokens(pstats.input_other + pstats.input_cache_creation), col_w["in"])
+                in_tokens = pstats.input_other + pstats.input_cache_creation
+                row += _pad_left(_fmt_tokens(in_tokens), col_w["in"])
                 row += _pad_left(_fmt_tokens(pstats.output), col_w["out"])
                 parts.append((style, row + "\n"))
 
@@ -191,7 +199,8 @@ class StatsApp:
                         mrow += _pad_left(_fmt_num(mstats.messages), col_w["msgs"])
                         mrow += _pad_left(_fmt_cost(mstats.cost), col_w["cost"])
                         mrow += _pad_left(_fmt_tokens(mstats.tokens), col_w["tokens"])
-                        mrow += _pad_left(_fmt_tokens(mstats.input_other + mstats.input_cache_creation), col_w["in"])
+                        m_in = mstats.input_other + mstats.input_cache_creation
+                        mrow += _pad_left(_fmt_tokens(m_in), col_w["in"])
                         mrow += _pad_left(_fmt_tokens(mstats.output), col_w["out"])
                         parts.append(("ansigray", mrow + "\n"))
 
@@ -204,18 +213,23 @@ class StatsApp:
         parts.append(("bold", tot + "\n"))
         parts.append(("", "\n"))
 
-    def _render_insights(self, parts: StyleAndTextTuples, line, txt, cur: PeriodStats) -> None:
+    def _render_insights(
+        self, parts: StyleAndTextTuples, line: _LineFn, txt: _LineFn, cur: PeriodStats
+    ) -> None:
         insights = self._data.insights.get(self._tab)
         if cur.total_messages == 0:
             parts.append(("ansigray", "  No usage recorded for this period.\n\n"))
             return
         if cur.total_cost == 0 or insights is None or not insights.insights:
-            parts.append(("ansigray", "  No cost data available (models not yet priced or no sessions).\n\n"))
+            parts.append(
+                ("ansigray", "  No cost data available (models not yet priced or no sessions).\n\n")
+            )
             return
         label = _TAB_LABELS[self._tab]
         parts.append(("ansigray", f"  {label} · weighted by cost (USD)\n\n"))
         for insight in insights.insights:
-            pct_str = f"{insight.percent:.0f}%" if insight.percent >= 10 else f"{insight.percent:.1f}%"
+            pct_fmt = ".0f" if insight.percent >= 10 else ".1f"
+            pct_str = f"{insight.percent:{pct_fmt}}%"
             parts.append(("bold ansicyan", f"  {pct_str} "))
             parts.append(("", insight.headline + "\n"))
             parts.append(("ansigray", f"     {insight.advice}\n\n"))
@@ -244,10 +258,9 @@ class StatsApp:
 
         @kb.add("up")
         def _up(event: KeyPressEvent) -> None:
-            if self._view == "table":
-                if self._selected_idx > 0:
-                    self._selected_idx -= 1
-                    event.app.invalidate()
+            if self._view == "table" and self._selected_idx > 0:
+                self._selected_idx -= 1
+                event.app.invalidate()
 
         @kb.add("down")
         def _down(event: KeyPressEvent) -> None:
@@ -275,6 +288,9 @@ class StatsApp:
             self._view = "insights" if self._view == "table" else "table"
             event.app.invalidate()
 
+        # Mark handlers as used
+        _ = (_quit, _next_tab, _prev_tab, _up, _down, _toggle_expand, _toggle_view)
+
         ctrl = FormattedTextControl(self._render, focusable=False)
         layout = Layout(HSplit([Window(content=ctrl)]))
 
@@ -282,9 +298,11 @@ class StatsApp:
             layout=layout,
             key_bindings=kb,
             full_screen=False,
-            style=Style.from_dict({
-                "": "bg:#1e1e1e fg:#d4d4d4",
-            }),
+            style=Style.from_dict(
+                {
+                    "": "bg:#1e1e1e fg:#d4d4d4",
+                }
+            ),
             mouse_support=False,
         )
 
@@ -296,10 +314,12 @@ class StatsApp:
 # Slash command
 # ---------------------------------------------------------------------------
 
+
 @registry.command(name="stats", aliases=["history"])
 async def stats(app: Shell, args: str) -> None:
     """Show usage statistics dashboard (tokens and cost by provider/model)."""
     from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
+
     _t = _get_tui_tokens()
 
     try:

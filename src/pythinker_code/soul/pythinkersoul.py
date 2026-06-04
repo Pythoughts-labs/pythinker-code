@@ -1509,9 +1509,9 @@ class PythinkerSoul:
             input_tokens=usage.input if usage else "?",
             output_tokens=usage.output if usage else "?",
         )
-        _step_model_name = chat_provider.model_name if chat_provider is not None else None
+        _step_model_name: str | None = chat_provider.model_name
         _step_provider_key: str | None = None
-        if self._runtime.llm is not None and self._runtime.llm.model_config is not None:
+        if self._runtime.llm.model_config is not None:
             _step_provider_key = self._runtime.llm.model_config.provider
         status_update = StatusUpdate(
             token_usage=usage,

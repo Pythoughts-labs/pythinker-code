@@ -4,11 +4,29 @@ import json
 import os
 from collections.abc import Generator
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any, cast
+
+from pythinker_core.chat_provider import TokenUsage
 
 from pythinker_code.ui.shell.stats_pricing import get_cost_usd
-from pythinker_core.chat_provider import TokenUsage
+
+
+def _set_str() -> set[str]:
+    return set()
+
+
+def _dict_model_stats() -> dict[str, ModelStats]:
+    return {}
+
+
+def _dict_provider_stats() -> dict[str, ProviderStats]:
+    return {}
+
+
+def _list_insight() -> list[Insight]:
+    return []
 
 
 @dataclass(slots=True)
@@ -45,7 +63,7 @@ class ModelStats:
     output: int = 0
     input_cache_read: int = 0
     input_cache_creation: int = 0
-    sessions: set[str] = field(default_factory=set)
+    sessions: set[str] = field(default_factory=_set_str)
 
     def add(self, step: StepRecord) -> None:
         self.messages += 1
@@ -69,8 +87,8 @@ class ProviderStats:
     output: int = 0
     input_cache_read: int = 0
     input_cache_creation: int = 0
-    sessions: set[str] = field(default_factory=set)
-    models: dict[str, ModelStats] = field(default_factory=dict)
+    sessions: set[str] = field(default_factory=_set_str)
+    models: dict[str, ModelStats] = field(default_factory=_dict_model_stats)
 
     def add(self, step: StepRecord) -> None:
         self.messages += 1
@@ -93,8 +111,8 @@ class PeriodStats:
     total_messages: int = 0
     total_cost: float = 0.0
     total_sessions: int = 0
-    providers: dict[str, ProviderStats] = field(default_factory=dict)
-    _sessions: set[str] = field(default_factory=set)
+    providers: dict[str, ProviderStats] = field(default_factory=_dict_provider_stats)
+    _sessions: set[str] = field(default_factory=_set_str)
 
     def add(self, step: StepRecord) -> None:
         self.total_messages += 1
@@ -114,7 +132,7 @@ class Insight:
 
 @dataclass(slots=True)
 class PeriodInsights:
-    insights: list[Insight] = field(default_factory=list)
+    insights: list[Insight] = field(default_factory=_list_insight)
 
 
 @dataclass(slots=True)
@@ -131,7 +149,9 @@ class AllStats:
 
 def get_sessions_root() -> Path:
     """Return the path to ~/.pythinker/sessions/."""
-    agent_dir = os.environ.get("PYTHINKER_DIR") or os.path.join(os.path.expanduser("~"), ".pythinker")
+    agent_dir = os.environ.get("PYTHINKER_DIR") or os.path.join(
+        os.path.expanduser("~"), ".pythinker"
+    )
     return Path(agent_dir) / "sessions"
 
 
@@ -176,20 +196,26 @@ def parse_wire_file(
                 if not line:
                     continue
                 try:
-                    obj = json.loads(line)
+                    raw: object = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                msg = obj.get("message")
-                if not isinstance(msg, dict):
+                if not isinstance(raw, dict):
                     continue
+                obj = cast(dict[str, Any], raw)
+                raw_msg: object = obj.get("message")
+                if not isinstance(raw_msg, dict):
+                    continue
+                msg = cast(dict[str, Any], raw_msg)
                 if msg.get("type") != "StatusUpdate":
                     continue
-                payload = msg.get("payload")
-                if not isinstance(payload, dict):
+                raw_payload: object = msg.get("payload")
+                if not isinstance(raw_payload, dict):
                     continue
-                tu = payload.get("token_usage")
-                if not isinstance(tu, dict):
+                payload = cast(dict[str, Any], raw_payload)
+                raw_tu: object = payload.get("token_usage")
+                if not isinstance(raw_tu, dict):
                     continue
+                tu = cast(dict[str, Any], raw_tu)
 
                 input_other = int(tu.get("input_other", 0))
                 output = int(tu.get("output", 0))
@@ -203,8 +229,8 @@ def parse_wire_file(
                     continue
                 seen_hashes.add(h)
 
-                model_name = payload.get("model_name") or "unknown"
-                provider_key = payload.get("provider_key") or "unknown"
+                model_name: str = str(payload.get("model_name") or "unknown")
+                provider_key: str = str(payload.get("provider_key") or "unknown")
 
                 yield StepRecord(
                     session_id=session_id,
@@ -222,7 +248,7 @@ def parse_wire_file(
 
 def _period_boundaries() -> tuple[float, float, float]:
     """Return (today_start, week_start, last_week_start) as UTC timestamps."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     days_since_monday = now.weekday()  # Monday=0
     week_start = today_start - timedelta(days=days_since_monday)
@@ -280,31 +306,40 @@ def compute_insights(steps: list[StepRecord]) -> PeriodInsights:
 
     # Large context
     large_ctx_cost = sum(
-        s.cost_usd for s in steps
+        s.cost_usd
+        for s in steps
         if (s.input_other + s.input_cache_read + s.input_cache_creation) > _LARGE_CONTEXT_THRESHOLD
     )
-    candidates.append(Insight(
-        percent=(large_ctx_cost / total_cost) * 100,
-        headline=f"of your cost was at >{_LARGE_CONTEXT_THRESHOLD // 1000}k context",
-        advice=(
-            "Longer sessions are more expensive even when cached. "
-            "/compact mid-task, /clear when switching to new tasks."
-        ),
-    ))
+    candidates.append(
+        Insight(
+            percent=(large_ctx_cost / total_cost) * 100,
+            headline=f"of your cost was at >{_LARGE_CONTEXT_THRESHOLD // 1000}k context",
+            advice=(
+                "Longer sessions are more expensive even when cached. "
+                "/compact mid-task, /clear when switching to new tasks."
+            ),
+        )
+    )
 
     # Large uncached prompt
     uncached_cost = sum(
-        s.cost_usd for s in steps
+        s.cost_usd
+        for s in steps
         if (s.input_other + s.input_cache_creation) > _LARGE_UNCACHED_THRESHOLD
     )
-    candidates.append(Insight(
-        percent=(uncached_cost / total_cost) * 100,
-        headline=f"of your cost came from >{_LARGE_UNCACHED_THRESHOLD // 1000}k-token uncached prompts",
-        advice=(
-            "Uncached input is expensive. "
-            "/compact before stepping away keeps the cold-start small."
-        ),
-    ))
+    candidates.append(
+        Insight(
+            percent=(uncached_cost / total_cost) * 100,
+            headline=(
+                f"of your cost came from"
+                f" >{_LARGE_UNCACHED_THRESHOLD // 1000}k-token uncached prompts"
+            ),
+            advice=(
+                "Uncached input is expensive. "
+                "/compact before stepping away keeps the cold-start small."
+            ),
+        )
+    )
 
     # Top-N session concentration
     session_costs: dict[str, float] = {}
@@ -312,11 +347,13 @@ def compute_insights(steps: list[StepRecord]) -> PeriodInsights:
         session_costs[s.session_id] = session_costs.get(s.session_id, 0.0) + s.cost_usd
     if len(session_costs) > _TOP_SESSION_COUNT:
         top_cost = sum(sorted(session_costs.values(), reverse=True)[:_TOP_SESSION_COUNT])
-        candidates.append(Insight(
-            percent=(top_cost / total_cost) * 100,
-            headline=f"of your cost came from your top {_TOP_SESSION_COUNT} sessions",
-            advice="A small number of sessions drives most of your spend.",
-        ))
+        candidates.append(
+            Insight(
+                percent=(top_cost / total_cost) * 100,
+                headline=f"of your cost came from your top {_TOP_SESSION_COUNT} sessions",
+                advice="A small number of sessions drives most of your spend.",
+            )
+        )
 
     insights = [i for i in candidates if i.percent >= _MIN_PERCENT]
     insights.sort(key=lambda i: i.percent, reverse=True)
