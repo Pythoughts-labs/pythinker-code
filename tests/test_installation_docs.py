@@ -188,8 +188,8 @@ def test_readme_references_existing_terminal_demo_asset() -> None:
     readme = (ROOT / "README.md").read_text()
 
     assert "docs/media/pythinker-code.gif" not in readme
-    assert "docs/media/pythinker-cli.gif" in readme
-    assert (ROOT / "docs" / "media" / "pythinker-cli.gif").exists()
+    assert "docs/media/pythinker_cli.gif" in readme
+    assert (ROOT / "docs" / "media" / "pythinker_cli.gif").exists()
 
 
 def test_no_old_repo_owner_references() -> None:
