@@ -15,6 +15,8 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Security review vulnerability intelligence.** `pythinker security-scan` can now parse dependency manifests, query OSV package advisories, look up CVE intelligence from NVD/EPSS/CISA KEV/GitHub/vendor feeds, and carry those leads into security-review prompts and reports as evidence-checked context.
+
 ## 0.34.0 (2026-06-03)
 
 ### What changed in this release
