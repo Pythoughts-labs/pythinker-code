@@ -24,6 +24,13 @@ class IntelClientError(RuntimeError):
     pass
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Disable implicit redirects so host allowlisting cannot be bypassed."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        return None
+
+
 @dataclass(frozen=True, slots=True)
 class IntelResponse:
     status: int
@@ -46,6 +53,7 @@ class IntelHttpClient:
     ) -> None:
         self.timeout_s = timeout_s
         self.max_response_bytes = max_response_bytes
+        self._opener = urllib.request.build_opener(_NoRedirectHandler)
 
     async def get_json(
         self,
@@ -116,7 +124,7 @@ class IntelHttpClient:
         req = urllib.request.Request(url, data=body, headers=request_headers, method=method)
         safe_url = sanitize_url_for_log(url)
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:  # noqa: S310 - host allowlisted above
+            with self._opener.open(req, timeout=self.timeout_s) as resp:
                 content_length = resp.headers.get("content-length")
                 if content_length and int(content_length) > self.max_response_bytes:
                     raise IntelClientError("response too large (Content-Length)")

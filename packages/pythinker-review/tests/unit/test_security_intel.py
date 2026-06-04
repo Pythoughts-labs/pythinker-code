@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import urllib.request
+from http.client import HTTPMessage
+from io import BytesIO
 from pathlib import Path
 
 import pytest
 
 from pythinker_review.security_intel.cache import IntelCache
+from pythinker_review.security_intel.client import _NoRedirectHandler
 from pythinker_review.security_intel.models import CVERecord, EPSSScore, ExploitIntel
 from pythinker_review.security_intel.risk import score_cve
 from pythinker_review.security_intel.validators import (
@@ -27,6 +31,19 @@ def test_sanitize_url_for_log_redacts_tokens() -> None:
     assert "api_key=secret" not in redacted
     assert "access_token=tok" not in redacted
     assert redacted.count("***REDACTED***") == 2
+
+
+def test_intel_client_disables_implicit_redirects() -> None:
+    handler = _NoRedirectHandler()
+
+    request = urllib.request.Request("https://services.nvd.nist.gov/")
+
+    assert (
+        handler.redirect_request(
+            request, BytesIO(), 302, "Found", HTTPMessage(), "https://example.test/"
+        )
+        is None
+    )
 
 
 def test_intel_cache_roundtrip(tmp_path: Path) -> None:
