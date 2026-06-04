@@ -222,10 +222,11 @@ def parse_wire_file(
                 output = int(tu.get("output", 0))
                 cache_read = int(tu.get("input_cache_read", 0))
                 cache_write = int(tu.get("input_cache_creation", 0))
-                total = input_other + output + cache_read + cache_write
                 ts = float(obj.get("timestamp", 0))
 
-                h = f"{session_id}:{ts}:{total}"
+                # Include individual token fields so distinct StatusUpdate events
+                # with the same timestamp and equal totals don't collide.
+                h = f"{session_id}:{ts}:{input_other}:{output}:{cache_read}:{cache_write}"
                 if h in seen_hashes:
                     continue
                 seen_hashes.add(h)

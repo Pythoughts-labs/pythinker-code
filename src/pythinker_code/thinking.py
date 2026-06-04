@@ -63,8 +63,16 @@ def apply_login_thinking_defaults(
     cross-session user preference. ``create_llm`` clamps effort to the chosen model's
     capabilities at use-time, so a previously-set value is always safe to keep; only an
     unset (``None``) effort is initialized here.
+
+    Additionally, a user who explicitly enabled thinking (``default_thinking=True``)
+    on the legacy boolean path is not silently downgraded when a provider defaults
+    to ``thinking=False`` — their preference is preserved.
     """
     if config.default_thinking_effort is not None:
+        return
+    # Preserve an explicit user preference for thinking when the provider default
+    # would downgrade it.  The user can still override per-session.
+    if config.default_thinking and not thinking:
         return
     config.default_thinking = thinking
     config.default_thinking_effort = effort
