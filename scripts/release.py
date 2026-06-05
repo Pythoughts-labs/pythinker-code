@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -29,15 +30,14 @@ HOST_PYPROJECT = REPO_ROOT / "packages" / "pythinker-host" / "pyproject.toml"
 REVIEW_PYPROJECT = REPO_ROOT / "packages" / "pythinker-review" / "pyproject.toml"
 SDK_PYPROJECT = REPO_ROOT / "sdks" / "pythinker-sdk" / "pyproject.toml"
 
-# Single source for the three hand-authored changelog files. validate() asserts
-# the `## Unreleased` anchor in ALL of them before any write, and rewrite()
-# promotes the SAME list — defined once so the two can never drift (atomic
-# Phase-2 guarantee: no partial-write if a docs file is missing its anchor).
+# Hand-authored changelog files. The docs changelog is intentionally excluded:
+# docs/en/release-notes/changelog.md is auto-synced from the root CHANGELOG.md
+# by docs/scripts/sync-changelog.mjs and must not be edited directly.
 CHANGELOG_FILES = (
     REPO_ROOT / "CHANGELOG.md",
-    REPO_ROOT / "docs" / "en" / "release-notes" / "changelog.md",
     REPO_ROOT / "docs" / "en" / "release-notes" / "breaking-changes.md",
 )
+DOCS_CHANGELOG_SCRIPT = REPO_ROOT / "docs" / "scripts" / "sync-changelog.mjs"
 
 SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 _DEP_PIN_RE = re.compile(
@@ -157,6 +157,19 @@ def rewrite_version_in_files(paths: list[Path], *, old: str, new: str) -> None:
         path.write_text(rewrite_version_strings(original, old=old, new=new), encoding="utf-8")
 
 
+def require_executable(name: str, *, recovery: str) -> str:
+    path = shutil.which(name)
+    if path is None:
+        raise ReleaseError(f"required executable `{name}` not found on PATH; {recovery}")
+    return path
+
+
+def sync_docs_changelog() -> None:
+    """Regenerate the docs changelog; validate() preflights node before mutations."""
+    node = require_executable("node", recovery="install Node.js or add `node` to PATH")
+    subprocess.run([node, str(DOCS_CHANGELOG_SCRIPT)], cwd=REPO_ROOT / "docs", check=True)
+
+
 def _run(cmd: list[str], *, dry_run: bool, check: bool = True) -> subprocess.CompletedProcess[str]:
     if dry_run:
         print(f"[dry-run] {' '.join(cmd)}")
@@ -174,6 +187,7 @@ def _git_capture(cmd: list[str]) -> str:
 def validate(target: str) -> None:
     """Phase 1 — fail loud, no writes."""
     parse_semver(target)
+    require_executable("node", recovery="install Node.js or add `node` to PATH")
     if _git_capture(["git", "status", "--porcelain"]):
         raise ReleaseError("working tree is not clean; commit or stash first")
     _git_capture(["git", "fetch", "origin"])
@@ -185,8 +199,9 @@ def validate(target: str) -> None:
     if head != remote:
         raise ReleaseError("current HEAD is not origin/main; switch to main before release prep")
     assert_monotonic(current=read_project_version(ROOT_PYPROJECT), target=target)
-    # Assert the `## Unreleased` anchor in ALL changelog files BEFORE any write
-    # (same list rewrite() promotes) so Phase 2 cannot partially rewrite the tree.
+    # Assert the `## Unreleased` anchor in ALL hand-authored changelog files BEFORE
+    # any write (same list rewrite() promotes) so Phase 2 cannot partially rewrite
+    # the tree.
     for changelog in CHANGELOG_FILES:
         if _UNRELEASED_RE.search(changelog.read_text(encoding="utf-8")) is None:
             raise ReleaseError(f"{changelog} has no `## Unreleased` section")
@@ -214,6 +229,7 @@ def rewrite(target: str, *, bump_core: str | None, bump_host: str | None) -> Non
     today = date.today().isoformat()
     for changelog in CHANGELOG_FILES:
         promote_changelog(changelog, target, release_date=today)
+    sync_docs_changelog()
     rewrite_version_in_files(
         [
             REPO_ROOT / "README.md",
