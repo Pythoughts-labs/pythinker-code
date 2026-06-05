@@ -37,6 +37,9 @@ subagents, skills, web/visualization UIs, and multi-provider LLM authentication.
   commit status is `success`, not `pending`/`failure` or absent — and read the review summary and
   any "Actionable comments posted: N" findings. Do not merge while CodeRabbit is still reviewing or
   on an unreviewed commit; surface unresolved actionable findings instead of merging past them.
+- **Do not manually edit auto-synced changelog files.** `docs/en/release-notes/changelog.md` is
+  generated from the root `CHANGELOG.md`; edit `CHANGELOG.md` and run `npm run sync` from `docs/`
+  instead of hand-editing the generated docs changelog.
 - **When working on a PR or GitHub Actions failure, investigate and identify the root cause first.**
   Provide the best-practice, most robust design solution; never provide fast fixes or workarounds.
   This is a hard constraint.
