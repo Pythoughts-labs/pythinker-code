@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -156,8 +157,17 @@ def rewrite_version_in_files(paths: list[Path], *, old: str, new: str) -> None:
         path.write_text(rewrite_version_strings(original, old=old, new=new), encoding="utf-8")
 
 
+def require_executable(name: str, *, recovery: str) -> str:
+    path = shutil.which(name)
+    if path is None:
+        raise ReleaseError(f"required executable `{name}` not found on PATH; {recovery}")
+    return path
+
+
 def sync_docs_changelog() -> None:
-    subprocess.run(["node", str(DOCS_CHANGELOG_SCRIPT)], cwd=REPO_ROOT / "docs", check=True)
+    """Regenerate the docs changelog; validate() preflights node before mutations."""
+    node = require_executable("node", recovery="install Node.js or add `node` to PATH")
+    subprocess.run([node, str(DOCS_CHANGELOG_SCRIPT)], cwd=REPO_ROOT / "docs", check=True)
 
 
 def _run(cmd: list[str], *, dry_run: bool, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -177,6 +187,7 @@ def _git_capture(cmd: list[str]) -> str:
 def validate(target: str) -> None:
     """Phase 1 — fail loud, no writes."""
     parse_semver(target)
+    require_executable("node", recovery="install Node.js or add `node` to PATH")
     if _git_capture(["git", "status", "--porcelain"]):
         raise ReleaseError("working tree is not clean; commit or stash first")
     _git_capture(["git", "fetch", "origin"])
