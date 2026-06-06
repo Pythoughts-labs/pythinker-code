@@ -295,6 +295,97 @@ async def test_login_alibaba_rejects_401(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_login_alibaba_china_key_auto_detected(monkeypatch, tmp_path):
+    """A China-region key that fails on US but succeeds on China is auto-configured."""
+    from pythinker_code.auth.alibaba import ALIBABA_CHINA_BASE_URL, login_alibaba_api_key
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    monkeypatch.delenv("DASHSCOPE_BASE_URL", raising=False)
+    monkeypatch.delenv("ALIBABA_BASE_URL", raising=False)
+    config = Config(is_from_default_location=True)
+
+    async def fake_request(*args: object, **kwargs: object) -> object:
+        url = str(args[2])
+        if "dashscope-us" in url:
+            raise aiohttp.ClientResponseError(
+                _request_info(url), (), status=401, message="Unauthorized"
+            )
+        return _FakeAiohttpResponse({"data": [{"id": "qwen3.6-plus", "context_length": 1_000_000}]})
+
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
+
+    events = [event async for event in login_alibaba_api_key(config, "sk-china-key")]
+
+    types = [e.type for e in events]
+    assert types == ["info", "success"], types
+    assert "China" in events[0].message
+    provider = next(iter(config.providers.values()))
+    assert provider.base_url == ALIBABA_CHINA_BASE_URL
+    assert config.models["alibaba/qwen3.6-plus"].max_context_size == 1_000_000
+    assert (tmp_path / "config.toml").exists()
+
+
+@pytest.mark.asyncio
+async def test_login_alibaba_china_probe_network_error_configures_china(monkeypatch, tmp_path):
+    """When US returns 401 and China is unreachable, we still configure for China."""
+    from pythinker_code.auth.alibaba import ALIBABA_CHINA_BASE_URL, login_alibaba_api_key
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    monkeypatch.delenv("DASHSCOPE_BASE_URL", raising=False)
+    monkeypatch.delenv("ALIBABA_BASE_URL", raising=False)
+    config = Config(is_from_default_location=True)
+
+    async def fake_request(*args: object, **kwargs: object) -> object:
+        url = str(args[2])
+        if "dashscope-us" in url:
+            raise aiohttp.ClientResponseError(
+                _request_info(url), (), status=401, message="Unauthorized"
+            )
+        raise aiohttp.ClientConnectionError("China unreachable")
+
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
+
+    events = [event async for event in login_alibaba_api_key(config, "sk-china-key")]
+
+    types = [e.type for e in events]
+    assert types == ["info", "success"], types
+    assert "China" in events[0].message
+    provider = next(iter(config.providers.values()))
+    assert provider.base_url == ALIBABA_CHINA_BASE_URL
+    assert "alibaba/qwen3.6-plus" in config.models
+    assert (tmp_path / "config.toml").exists()
+
+
+@pytest.mark.asyncio
+async def test_login_alibaba_primary_already_china_401_fails(monkeypatch, tmp_path):
+    """When DASHSCOPE_BASE_URL is already China and it returns 401, fail without probing again."""
+    from pythinker_code.auth.alibaba import ALIBABA_CHINA_BASE_URL, login_alibaba_api_key
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    monkeypatch.setenv("DASHSCOPE_BASE_URL", ALIBABA_CHINA_BASE_URL)
+    config = Config(is_from_default_location=True)
+
+    call_count = 0
+
+    async def fake_request(*args: object, **kwargs: object) -> object:
+        nonlocal call_count
+        call_count += 1
+        url = str(args[2])
+        raise aiohttp.ClientResponseError(
+            _request_info(url), (), status=401, message="Unauthorized"
+        )
+
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
+
+    events = [event async for event in login_alibaba_api_key(config, "bad-key")]
+
+    assert events[-1].type == "error"
+    assert "Alibaba" in events[-1].message
+    assert call_count == 1, "should not probe a second endpoint when primary is already China"
+    assert config.providers == {}
+
+
+@pytest.mark.asyncio
 async def test_login_alibaba_uses_discovered_context_length(monkeypatch, tmp_path):
     from pythinker_code.auth.alibaba import login_alibaba_api_key
 

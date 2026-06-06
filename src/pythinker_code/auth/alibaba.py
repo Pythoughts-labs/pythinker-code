@@ -276,7 +276,8 @@ async def login_alibaba_api_key(
                         models = discovered
                     yield OAuthEvent(
                         "info",
-                        "Detected China-region DashScope key; configured for China (Beijing) endpoint.",
+                        "Detected China-region DashScope key; "
+                        "configured for China (Beijing) endpoint.",
                     )
                 except aiohttp.ClientResponseError as china_exc:
                     if china_exc.status in {401, 403}:
