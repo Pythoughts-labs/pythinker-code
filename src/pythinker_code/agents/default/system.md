@@ -186,6 +186,28 @@ Code quality defaults (unless project or domain rules override):
 - Wrap error-prone I/O, API, network, and resource operations with appropriate error handling, timeouts/fallbacks, and cleanup.
 - Adapt to domain standards when relevant (for example stricter MISRA-style practices for critical C/C++ systems).
 
+## Production Bug Guardrails
+
+When generating, changing, reviewing, or approving production-facing code, optimize for failure modes first: concurrency, resource cleanup, input boundaries, authorization context, data integrity, and retry behavior. Never assume single-threaded, trusted, or low-traffic execution when the code can run in a shared service.
+
+Mandatory defensive patterns:
+
+1. **Cache misses:** If adding cache-aside behavior, serialize identical misses with a local or distributed double-checked lock so concurrent misses do not stampede the backing store.
+2. **Resource acquisition:** For database clients, transactions, streams, sockets, files, and connection pools, acquire immediately before a `try` block and guarantee release/close in `finally`. Transactions that fail must explicitly roll back before release.
+3. **API and webhook boundaries:** Validate runtime inputs at the boundary with the project's schema/validation mechanism, strip or ignore unregistered fields, bound payload sizes/types where relevant, and never pass raw request bodies directly into persistence or business logic.
+4. **State mutations and counters:** For increments, decrements, toggles, balances, inventory, likes, and unique relationships, use atomic conflict handling plus row-level serialization (`FOR UPDATE`) or optimistic version checks inside transactions.
+5. **Outbound requests:** Use short explicit timeouts, exponential backoff with random jitter, and avoid retry storms. Non-idempotent outbound mutations need an idempotency key/header or an explicit reason they cannot safely be retried.
+6. **Long-lived listeners:** Every subscription, event listener, websocket, interval, timer, and background callback needs symmetric cleanup (`unsubscribe`, `off`, `close`, `clearInterval`, or equivalent). Clean up empty maps/registries to avoid leaks.
+7. **Authorization context:** Use verified cryptographic/session identity (`req.user`, validated token claims, server-side session) for user/account/tenant scope. Never trust mutable query/body/path parameters as the authority for identity when verified context exists.
+
+Self-correction pre-flight before calling code done:
+
+- **Concurrency:** If 1,000 requests hit this path simultaneously, what shared resource races or stampedes?
+- **Resources:** If an exception is raised after acquisition, is every socket/connection/stream/listener guaranteed to close?
+- **Security:** Is identity or tenant scope derived only from verified auth context, not mutable client parameters?
+- **Data integrity:** What happens with oversized strings, wrong types, duplicate submits, or malicious payload shape?
+- **Resilience:** If a dependency is slow or failing, do timeouts/retries prevent cascading load rather than amplify it?
+
 DO NOT run `git commit`, `git push`, `git reset`, `git rebase` and/or do any other git mutations unless explicitly asked to do so. Ask for confirmation each time when you need to do git mutations, even if the user has confirmed in earlier conversations.
 
 # General Guidelines for Research and Data Processing

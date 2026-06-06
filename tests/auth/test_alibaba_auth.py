@@ -329,9 +329,9 @@ async def test_login_alibaba_china_key_auto_detected(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_login_alibaba_china_probe_network_error_configures_china(monkeypatch, tmp_path):
-    """When US returns 401 and China is unreachable, we still configure for China."""
-    from pythinker_code.auth.alibaba import ALIBABA_CHINA_BASE_URL, login_alibaba_api_key
+async def test_login_alibaba_china_probe_network_error_fails_closed(monkeypatch, tmp_path):
+    """When US rejects a key and China is unreachable, do not save an unverified endpoint."""
+    from pythinker_code.auth.alibaba import login_alibaba_api_key
 
     monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
     monkeypatch.delenv("DASHSCOPE_BASE_URL", raising=False)
@@ -350,13 +350,42 @@ async def test_login_alibaba_china_probe_network_error_configures_china(monkeypa
 
     events = [event async for event in login_alibaba_api_key(config, "sk-china-key")]
 
-    types = [e.type for e in events]
-    assert types == ["info", "success"], types
-    assert "China" in events[0].message
-    provider = next(iter(config.providers.values()))
-    assert provider.base_url == ALIBABA_CHINA_BASE_URL
-    assert "alibaba/qwen3.6-plus" in config.models
-    assert (tmp_path / "config.toml").exists()
+    assert [event.type for event in events] == ["error"]
+    assert "China endpoint could not be reached" in events[-1].message
+    assert config.providers == {}
+    assert config.models == {}
+    assert not (tmp_path / "config.toml").exists()
+
+
+@pytest.mark.asyncio
+async def test_login_alibaba_custom_endpoint_401_does_not_probe_china(monkeypatch, tmp_path):
+    from pythinker_code.auth.alibaba import login_alibaba_api_key
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    config = Config(is_from_default_location=True)
+    seen_urls: list[str] = []
+
+    async def fake_request(*args: object, **kwargs: object) -> object:
+        url = str(args[2])
+        seen_urls.append(url)
+        raise aiohttp.ClientResponseError(
+            _request_info(url), (), status=401, message="Unauthorized"
+        )
+
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
+
+    events = [
+        event
+        async for event in login_alibaba_api_key(
+            config,
+            "sk-custom-key",
+            base_url="https://custom.example.com/compatible-mode/v1",
+        )
+    ]
+
+    assert [event.type for event in events] == ["error"]
+    assert seen_urls == ["https://custom.example.com/compatible-mode/v1/models"]
+    assert config.providers == {}
 
 
 @pytest.mark.asyncio
@@ -389,8 +418,8 @@ async def test_login_alibaba_primary_already_china_401_fails(monkeypatch, tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_login_alibaba_workspace_key_gives_targeted_error(monkeypatch, tmp_path):
-    """sk-ws- workspace keys get a targeted error with DASHSCOPE_BASE_URL guidance."""
+async def test_login_alibaba_token_plan_key_gives_targeted_error(monkeypatch, tmp_path):
+    """Rejected sk-ws- keys get Token Plan-specific recovery guidance."""
     from pythinker_code.auth.alibaba import login_alibaba_api_key
 
     monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
@@ -418,26 +447,86 @@ async def test_login_alibaba_workspace_key_gives_targeted_error(monkeypatch, tmp
     ]
 
     assert events[-1].type == "error"
-    assert "sk-ws-" in events[-1].message
+    assert "Token Plan" in events[-1].message
     assert "DASHSCOPE_BASE_URL" in events[-1].message
-    assert call_count == 1, "should not probe China for workspace keys"
+    assert call_count == 0, "should not probe any endpoint without the dedicated workspace URL"
     assert config.providers == {}
 
 
 @pytest.mark.asyncio
 async def test_login_alibaba_workspace_key_with_correct_base_url_succeeds(monkeypatch, tmp_path):
-    """sk-ws- key succeeds when DASHSCOPE_BASE_URL is set to the workspace endpoint."""
+    """An explicit Token Plan endpoint takes precedence over the environment."""
     from pythinker_code.auth.alibaba import login_alibaba_api_key
 
     monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
     monkeypatch.setenv(
         "DASHSCOPE_BASE_URL",
-        "ws-kopy0du82ky7144q.ap-southeast-1.maas.aliyuncs.com",
+        "ws-wrong.ap-southeast-1.maas.aliyuncs.com",
     )
+    config = Config(is_from_default_location=True)
+    seen_urls: list[str] = []
+
+    async def fake_request(*args: object, **kwargs: object) -> object:
+        seen_urls.append(str(args[2]))
+        return _FakeAiohttpResponse({"data": [{"id": "qwen3.6-plus"}]})
+
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
+
+    events = [
+        event
+        async for event in login_alibaba_api_key(
+            config,
+            "sk-ws-H.HXDYIP.c9u4.abcdefghijklmnopqrstuvwxyz",
+            base_url="ws-kopy0du82ky7144q.ap-southeast-1.maas.aliyuncs.com",
+        )
+    ]
+
+    assert events[-1].type == "success"
+    provider = next(iter(config.providers.values()))
+    assert "ws-kopy0du82ky7144q" in provider.base_url
+    assert all("ws-wrong" not in url for url in seen_urls)
+    assert (tmp_path / "config.toml").exists()
+
+
+@pytest.mark.asyncio
+async def test_login_alibaba_workspace_hides_unroutable_kimi(monkeypatch, tmp_path):
+    from pythinker_code.auth.alibaba import login_alibaba_api_key
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    monkeypatch.delenv("DASHSCOPE_BASE_URL", raising=False)
+    monkeypatch.delenv("ALIBABA_BASE_URL", raising=False)
     config = Config(is_from_default_location=True)
 
     async def fake_request(*args: object, **kwargs: object) -> object:
-        return _FakeAiohttpResponse({"data": [{"id": "qwen3.6-plus"}]})
+        return _FakeAiohttpResponse({"data": [{"id": "kimi-k2.6"}, {"id": "deepseek-v3.2"}]})
+
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
+
+    events = [
+        event
+        async for event in login_alibaba_api_key(
+            config,
+            "sk-ws-H.HXDYIP.c9u4.abcdefghijklmnopqrstuvwxyz",
+            base_url="ws-example.ap-southeast-1.maas.aliyuncs.com",
+        )
+    ]
+
+    assert events[-1].type == "success"
+    assert "alibaba/kimi-k2.6" not in config.models
+    assert "alibaba/deepseek-v3.2" in config.models
+
+
+@pytest.mark.asyncio
+async def test_login_alibaba_workspace_key_requires_dedicated_base_url(monkeypatch, tmp_path):
+    from pythinker_code.auth.alibaba import login_alibaba_api_key
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    monkeypatch.delenv("DASHSCOPE_BASE_URL", raising=False)
+    monkeypatch.delenv("ALIBABA_BASE_URL", raising=False)
+    config = Config(is_from_default_location=True)
+
+    async def fake_request(*args: object, **kwargs: object) -> object:
+        pytest.fail("workspace login must not probe a generic endpoint")
 
     monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
 
@@ -448,10 +537,10 @@ async def test_login_alibaba_workspace_key_with_correct_base_url_succeeds(monkey
         )
     ]
 
-    assert events[-1].type == "success"
-    provider = next(iter(config.providers.values()))
-    assert "ws-kopy0du82ky7144q" in provider.base_url
-    assert (tmp_path / "config.toml").exists()
+    assert events[-1].type == "error"
+    assert "dedicated Base URL" in events[-1].message
+    assert "DASHSCOPE_BASE_URL" in events[-1].message
+    assert config.providers == {}
 
 
 @pytest.mark.asyncio
@@ -585,3 +674,110 @@ async def test_logout_alibaba_rejects_non_default_config_location():
     assert "default config file" in events[-1].message
     assert config.providers == {}
     assert config.models == {}
+
+
+@pytest.mark.asyncio
+async def test_login_alibaba_coding_plan_key_intl_succeeds(monkeypatch, tmp_path):
+    """A Coding Plan (sk-sp-) key succeeds on the intl endpoint."""
+    from pythinker_code.auth.alibaba import login_alibaba_api_key
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    monkeypatch.delenv("DASHSCOPE_BASE_URL", raising=False)
+    monkeypatch.delenv("ALIBABA_BASE_URL", raising=False)
+    config = Config(is_from_default_location=True)
+
+    async def fake_request(*args: object, **kwargs: object) -> object:
+        url = str(args[2])
+        assert "coding-intl.dashscope.aliyuncs.com/v1" in url
+        return _FakeAiohttpResponse({"data": [{"id": "kimi-k2.6"}]})
+
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
+
+    events = [event async for event in login_alibaba_api_key(config, "sk-sp-test-key")]
+
+    assert events[-1].type == "success"
+    provider = next(iter(config.providers.values()))
+    assert provider.base_url == "https://coding-intl.dashscope.aliyuncs.com/v1"
+    assert (tmp_path / "config.toml").exists()
+
+
+@pytest.mark.asyncio
+async def test_login_alibaba_coding_plan_key_auto_detected(monkeypatch, tmp_path):
+    """A Coding Plan (sk-sp-) key that fails on intl but succeeds on China is auto-configured."""
+    from pythinker_code.auth.alibaba import login_alibaba_api_key
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    monkeypatch.delenv("DASHSCOPE_BASE_URL", raising=False)
+    monkeypatch.delenv("ALIBABA_BASE_URL", raising=False)
+    config = Config(is_from_default_location=True)
+
+    async def fake_request(*args: object, **kwargs: object) -> object:
+        url = str(args[2])
+        if "coding-intl" in url:
+            raise aiohttp.ClientResponseError(
+                _request_info(url), (), status=401, message="Unauthorized"
+            )
+        return _FakeAiohttpResponse({"data": [{"id": "kimi-k2.6", "context_length": 262_144}]})
+
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
+
+    events = [event async for event in login_alibaba_api_key(config, "sk-sp-test-key")]
+
+    types = [e.type for e in events]
+    assert types == ["info", "success"], types
+    assert "China" in events[0].message
+    provider = next(iter(config.providers.values()))
+    assert provider.base_url == "https://coding.dashscope.aliyuncs.com/v1"
+    assert config.models["alibaba/kimi-k2.6"].max_context_size == 262_144
+    assert (tmp_path / "config.toml").exists()
+
+
+@pytest.mark.asyncio
+async def test_login_alibaba_coding_plan_key_rejects_401(monkeypatch, tmp_path):
+    """A Coding Plan (sk-sp-) key that fails on both intl and China endpoints is rejected."""
+    from pythinker_code.auth.alibaba import login_alibaba_api_key
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    monkeypatch.delenv("DASHSCOPE_BASE_URL", raising=False)
+    monkeypatch.delenv("ALIBABA_BASE_URL", raising=False)
+    config = Config(is_from_default_location=True)
+
+    async def fake_request(*args: object, **kwargs: object) -> object:
+        url = str(args[2])
+        raise aiohttp.ClientResponseError(
+            _request_info(url), (), status=401, message="Unauthorized"
+        )
+
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
+
+    events = [event async for event in login_alibaba_api_key(config, "sk-sp-bad-key")]
+
+    assert events[-1].type == "error"
+    assert "Coding Plan" in events[-1].message
+    assert config.providers == {}
+
+
+@pytest.mark.asyncio
+async def test_login_alibaba_coding_plan_probe_network_error_fails_closed(monkeypatch, tmp_path):
+    from pythinker_code.auth.alibaba import login_alibaba_api_key
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    monkeypatch.delenv("DASHSCOPE_BASE_URL", raising=False)
+    monkeypatch.delenv("ALIBABA_BASE_URL", raising=False)
+    config = Config(is_from_default_location=True)
+
+    async def fake_request(*args: object, **kwargs: object) -> object:
+        url = str(args[2])
+        if "coding-intl" in url:
+            raise aiohttp.ClientResponseError(
+                _request_info(url), (), status=401, message="Unauthorized"
+            )
+        raise aiohttp.ClientConnectionError("China unreachable")
+
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
+
+    events = [event async for event in login_alibaba_api_key(config, "sk-sp-test-key")]
+
+    assert [event.type for event in events] == ["error"]
+    assert "China endpoint could not be reached" in events[-1].message
+    assert config.providers == {}

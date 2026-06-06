@@ -225,10 +225,15 @@ def create_llm(
                 if provider.reasoning_key is not None
                 else "reasoning_content"
             )
+            stream = not (
+                _is_alibaba_workspace_endpoint(provider.base_url)
+                and model.model.lower().replace("_", "-") == "deepseek-v3.2"
+            )
             chat_provider = OpenAILegacy(
                 model=model.model,
                 base_url=provider.base_url,
                 api_key=resolved_api_key,
+                stream=stream,
                 reasoning_key=reasoning_key,
                 default_headers=dict(provider.custom_headers) if provider.custom_headers else None,
                 http_client=rl_http_client,
@@ -356,10 +361,13 @@ def create_llm(
     is_dashscope_legacy = provider.type == "openai_legacy" and _is_dashscope_endpoint(
         provider.base_url or ""
     )
-    # Kimi K2.x and GLM use {"thinking": {"type": ...}} on ALL providers
-    # (Moonshot direct, Z AI, and DashScope workspace). reasoning_effort is
-    # never sent for these models regardless of provider.
-    is_kimi_openai_legacy = provider.type == "openai_legacy" and _is_kimi_k2_model(model.model)
+    # Kimi K2.x uses the provider-specific thinking.type field on Moonshot-style
+    # endpoints, but Alibaba's DashScope-compatible routes use enable_thinking.
+    is_kimi_openai_legacy = (
+        provider.type == "openai_legacy"
+        and _is_kimi_k2_model(model.model)
+        and not is_dashscope_legacy
+    )
     is_glm_openai_legacy = provider.type == "openai_legacy" and _is_glm_model(model.model)
     if (
         effective_effort is not None
@@ -373,8 +381,7 @@ def create_llm(
         # null reasoning_effort field.
         chat_provider = chat_provider.with_thinking(effective_effort)
 
-    # Kimi K2.x and GLM use {"thinking": {"type": ...}} on every provider
-    # (Moonshot, Z AI, and DashScope workspace all accept this format).
+    # Kimi K2.x on Moonshot-style endpoints and GLM use thinking.type.
     if (is_kimi_openai_legacy or is_glm_openai_legacy) and effective_effort is not None:
         thinking_body: dict[str, object] = {"type": "enabled" if thinking_on else "disabled"}
         if is_glm_openai_legacy and thinking_on:
@@ -386,8 +393,8 @@ def create_llm(
             extra_body={"thinking": thinking_body}
         )
 
-    # Qwen thinking models on DashScope use enable_thinking (not reasoning_effort).
-    # Other DashScope-proxied models (Kimi, GLM, DeepSeek) use their own formats above.
+    # DashScope-compatible models use enable_thinking unless handled by a
+    # provider-specific format above.
     if (
         is_dashscope_legacy
         and not is_kimi_openai_legacy
@@ -489,6 +496,10 @@ def _is_glm_model(model_name: str) -> bool:
 def _is_dashscope_endpoint(base_url: str) -> bool:
     """True for any Alibaba DashScope endpoint (standard, intl, workspace)."""
     return "aliyuncs.com" in base_url
+
+
+def _is_alibaba_workspace_endpoint(base_url: str) -> bool:
+    return "://ws-" in base_url and ".maas.aliyuncs.com" in base_url
 
 
 def _load_scripted_echo_scripts() -> list[str]:

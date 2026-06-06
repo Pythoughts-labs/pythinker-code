@@ -53,7 +53,7 @@ It speaks the [**Agent Client Protocol (ACP)**](https://github.com/agentclientpr
 ## 🆕 What's New in 0.36.0
 
 - **Alibaba DashScope multi-region fallback.** China-region keys now auto-detect the endpoint mismatch and reconfigure correctly instead of showing a misleading "API key is wrong" error.
-- **Workspace-scoped key support (`sk-ws-`).** `/login alibaba` now prompts for the workspace endpoint host interactively — no need to pre-export `DASHSCOPE_BASE_URL`.
+- **Alibaba Token Plan compatibility (`sk-ws-`).** `/login alibaba` now asks for the dedicated workspace endpoint, avoids unroutable Kimi entries on those endpoints, and uses DeepSeek V3.2's working non-streaming mode.
 - **Alibaba model catalog refresh.** Qwen3.7 Plus, Qwen3 Coder Plus, and Qwen3 Coder Flash added; deprecated `kimi-k2.5`, `glm-5`, and `MiniMax-M2.5` removed.
 
 Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.36.0`, or use the native installer for your platform from the [Releases page](https://github.com/Pythoughts-labs/pythinker-code/releases/latest).

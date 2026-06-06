@@ -293,16 +293,14 @@ async def login(app: Shell, args: str) -> None:
         if not api_key:
             console.print(f"[{_t.error}]No Alibaba API key entered.[/]")
             return
-        workspace_endpoint: str | None = None
+        base_url: str | None = None
         if api_key.startswith("sk-ws-"):
-            workspace_endpoint = await _prompt_text(
-                "Workspace endpoint host (e.g. ws-xxxx.ap-southeast-1.maas.aliyuncs.com)"
-            )
-            if not workspace_endpoint:
-                console.print(f"[{_t.error}]No workspace endpoint entered.[/]")
+            base_url = await _prompt_text("Token Plan OpenAI-compatible endpoint")
+            if not base_url:
+                console.print(f"[{_t.error}]No Token Plan endpoint entered.[/]")
                 return
         ok = await _render_oauth_events(
-            login_alibaba_api_key(soul.runtime.config, api_key, base_url=workspace_endpoint)
+            login_alibaba_api_key(soul.runtime.config, api_key, base_url=base_url)
         )
         provider = ALIBABA_PLATFORM_ID
     elif mode == "anthropic":

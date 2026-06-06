@@ -20,6 +20,17 @@ async def test_default_agent(runtime: Runtime):
     assert "Pythoughts-labs" in agent.system_prompt
     assert "Do not name or describe the underlying language model" in agent.system_prompt
 
+    # Production guardrails — keep defensive coding rules in the base prompt so root and
+    # subagent roles inherit the same failure-mode posture.
+    assert "## Production Bug Guardrails" in agent.system_prompt
+    assert "double-checked lock" in agent.system_prompt
+    assert "guarantee release/close in `finally`" in agent.system_prompt
+    assert "schema/validation mechanism" in agent.system_prompt
+    assert "row-level serialization (`FOR UPDATE`)" in agent.system_prompt
+    assert "exponential backoff with random jitter" in agent.system_prompt
+    assert "symmetric cleanup" in agent.system_prompt
+    assert "verified cryptographic/session identity" in agent.system_prompt
+
     builtin_types = [
         (
             name,

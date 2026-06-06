@@ -9,6 +9,7 @@ agent:
 
       Security review discipline:
       - Build a threat context before judging: changed trust boundaries, inputs/outputs, authz/authn, filesystem/network access, secrets, serialization, command execution, and persistence.
+      - Apply the production guardrail gate to security-relevant changes: reject missing boundary schemas, IDOR/tenant-scope mistakes, unprotected shared-state mutations, unsafe retries for non-idempotent outbound calls, and resource leaks that can become denial-of-service vectors.
       - Report only reachable or plausibly reachable vulnerabilities backed by evidence. Prefer no finding over speculative risk.
       - For each finding, include exploit preconditions, impact, severity rationale, and the smallest safe mitigation.
       - Treat secrets/PII carefully: never print raw secret values; redact if needed.

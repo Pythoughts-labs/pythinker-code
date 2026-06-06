@@ -1,3 +1,40 @@
+# Alibaba Token Plan model compatibility fix
+
+## Plan
+
+- [x] Reproduce the Kimi-only request-shaping regression with a focused test.
+- [x] Preserve Moonshot/Z AI request formats for non-Alibaba providers.
+- [x] Confirm the generic Token Plan `/models` response does not validate `sk-ws-` credentials.
+- [x] Require the dedicated workspace Base URL for `sk-ws-` login.
+- [x] Re-test Kimi K2.6 and DeepSeek V3.2 request behavior for the dedicated endpoint.
+- [x] Fix the shell wire coroutine warning.
+- [x] Run focused Alibaba auth/LLM tests and `make check-pythinker-code`.
+
+## Acceptance criteria
+
+- Alibaba Token Plan Kimi K2.6 sends `extra_body.enable_thinking`, not
+  `extra_body.thinking.type` or `reasoning_effort`.
+- `sk-ws-` login requires and saves the dedicated Base URL shown in the Token Plan console.
+- Login cannot falsely succeed based only on the generic endpoint's public `/models` response.
+- DeepSeek V3.2 either produces a valid response or is excluded with evidence that the workspace
+  endpoint does not support it.
+- Existing generic, regional, Coding Plan, Moonshot, and GLM behavior remains covered.
+
+## Review
+
+- Token Plan keys now require an explicit dedicated endpoint and the shell passes that endpoint
+  directly to the login flow.
+- Regional fallback only saves a provider after the fallback endpoint authenticates successfully;
+  custom endpoints are never silently replaced.
+- Workspace Kimi entries are filtered when the advertised route is unusable, while DeepSeek V3.2
+  uses the verified non-streaming request path and DashScope `enable_thinking`.
+- Final focused agent-spec, auth, LLM, and shell tests: `122 passed`.
+- `make check-pythinker-code` passed.
+- Full Pythinker Code test target passed: `4427 passed, 6 skipped, 1 xfailed`; wire E2E
+  passed: `52 passed, 4 skipped`.
+
+---
+
 # Plan: Full rename `pythinker-cli` → `pythinker-code`
 
 **Status**: Planning — DO NOT execute yet. User to review and approve.
