@@ -17,50 +17,53 @@ def test_alibaba_model_catalog_contains_current_models():
     aliases = {model.alias for model in ALIBABA_MODELS}
     assert aliases == {
         "alibaba/qwen3.7-max",
+        "alibaba/qwen3.7-plus",
         "alibaba/qwen3.6-plus",
         "alibaba/qwen3.6-flash",
+        "alibaba/qwen3-coder-plus",
+        "alibaba/qwen3-coder-flash",
         "alibaba/deepseek-v4-pro",
         "alibaba/deepseek-v4-flash",
         "alibaba/deepseek-v3.2",
         "alibaba/kimi-k2.6",
-        "alibaba/kimi-k2.5",
         "alibaba/glm-5.1",
-        "alibaba/glm-5",
-        "alibaba/minimax-m2.5",
     }
 
     api_ids = {m.alias: m.model_id for m in ALIBABA_MODELS}
     assert api_ids == {
         "alibaba/qwen3.7-max": "qwen3.7-max",
+        "alibaba/qwen3.7-plus": "qwen3.7-plus",
         "alibaba/qwen3.6-plus": "qwen3.6-plus",
         "alibaba/qwen3.6-flash": "qwen3.6-flash",
+        "alibaba/qwen3-coder-plus": "qwen3-coder-plus",
+        "alibaba/qwen3-coder-flash": "qwen3-coder-flash",
         "alibaba/deepseek-v4-pro": "deepseek-v4-pro",
         "alibaba/deepseek-v4-flash": "deepseek-v4-flash",
         "alibaba/deepseek-v3.2": "deepseek-v3.2",
         "alibaba/kimi-k2.6": "kimi-k2.6",
-        "alibaba/kimi-k2.5": "kimi-k2.5",
         "alibaba/glm-5.1": "glm-5.1",
-        "alibaba/glm-5": "glm-5",
-        "alibaba/minimax-m2.5": "MiniMax-M2.5",
     }
 
     assert all(m.provider_key == "managed:alibaba" for m in ALIBABA_MODELS)
 
     by_alias = {m.alias: m for m in ALIBABA_MODELS}
-    assert by_alias["alibaba/qwen3.7-max"].capabilities == frozenset({"thinking"})
-    assert by_alias["alibaba/qwen3.7-max"].max_context_size == 262_144
+    assert by_alias["alibaba/qwen3.7-max"].capabilities == frozenset({"thinking", "image_in"})
+    assert by_alias["alibaba/qwen3.7-max"].max_context_size == 1_000_000
+    assert by_alias["alibaba/qwen3.7-plus"].capabilities == frozenset({"thinking", "image_in"})
+    assert by_alias["alibaba/qwen3.7-plus"].max_context_size == 1_000_000
     assert by_alias["alibaba/qwen3.6-plus"].capabilities == frozenset({"thinking", "image_in"})
     assert by_alias["alibaba/qwen3.6-plus"].max_context_size == 1_000_000
     assert by_alias["alibaba/qwen3.6-flash"].capabilities == frozenset({"thinking", "image_in"})
+    assert by_alias["alibaba/qwen3-coder-plus"].capabilities == frozenset({"thinking"})
+    assert by_alias["alibaba/qwen3-coder-plus"].max_context_size == 1_000_000
+    assert by_alias["alibaba/qwen3-coder-flash"].capabilities == frozenset({"thinking"})
+    assert by_alias["alibaba/qwen3-coder-flash"].max_context_size == 1_000_000
     assert by_alias["alibaba/deepseek-v4-pro"].capabilities == frozenset({"thinking"})
     assert by_alias["alibaba/deepseek-v4-flash"].capabilities == frozenset({"thinking"})
     assert by_alias["alibaba/deepseek-v3.2"].capabilities == frozenset({"thinking"})
     assert by_alias["alibaba/deepseek-v3.2"].max_context_size == 128_000
     assert by_alias["alibaba/kimi-k2.6"].capabilities == frozenset({"thinking", "image_in"})
-    assert by_alias["alibaba/kimi-k2.5"].capabilities == frozenset({"thinking", "image_in"})
     assert by_alias["alibaba/glm-5.1"].capabilities == frozenset({"always_thinking"})
-    assert by_alias["alibaba/glm-5"].capabilities == frozenset({"always_thinking"})
-    assert by_alias["alibaba/minimax-m2.5"].capabilities == frozenset({"thinking"})
 
 
 def test_alibaba_env_key_prefers_dashscope_api_key(monkeypatch):
@@ -127,7 +130,7 @@ def test_apply_alibaba_config_writes_provider_and_default():
     assert "alibaba/qwen3.6-plus" in config.models
     assert config.models["alibaba/qwen3.6-plus"].provider == ALIBABA_PROVIDER_KEY
     assert config.models["alibaba/qwen3.6-plus"].model == "qwen3.6-plus"
-    assert config.models["alibaba/qwen3.7-max"].capabilities == frozenset({"thinking"})
+    assert config.models["alibaba/qwen3.7-max"].capabilities == frozenset({"thinking", "image_in"})
     assert config.models["alibaba/qwen3.6-plus"].capabilities == frozenset({"thinking", "image_in"})
     assert config.models["alibaba/qwen3.6-flash"].capabilities == frozenset(
         {"thinking", "image_in"}
@@ -135,7 +138,7 @@ def test_apply_alibaba_config_writes_provider_and_default():
     assert config.models["alibaba/deepseek-v4-pro"].capabilities == frozenset({"thinking"})
     assert config.models["alibaba/kimi-k2.6"].capabilities == frozenset({"thinking", "image_in"})
     assert config.models["alibaba/glm-5.1"].capabilities == frozenset({"always_thinking"})
-    assert config.models["alibaba/minimax-m2.5"].model == "MiniMax-M2.5"
+    assert "alibaba/minimax-m2.5" not in config.models
     assert config.default_model == "alibaba/qwen3.6-plus"
     assert config.default_thinking is True
     assert config.default_thinking_effort == "high"
@@ -469,7 +472,7 @@ async def test_login_alibaba_uses_discovered_context_length(monkeypatch, tmp_pat
 
     assert events[-1].type == "success"
     assert config.models["alibaba/qwen3.7-max"].max_context_size == 512_000
-    assert config.models["alibaba/qwen3.7-max"].capabilities == frozenset({"thinking"})
+    assert config.models["alibaba/qwen3.7-max"].capabilities == frozenset({"thinking", "image_in"})
 
 
 @pytest.mark.asyncio
@@ -518,7 +521,7 @@ def test_parse_discovered_alibaba_models_overrides_context_length_only_for_posit
     }
     result = _parse_discovered_models(payload)
     by_id = {m.model_id: m for m in result}
-    assert by_id["qwen3.7-max"].max_context_size == 262_144
+    assert by_id["qwen3.7-max"].max_context_size == 1_000_000
     assert by_id["qwen3.6-plus"].max_context_size == 1_000_000
     assert by_id["deepseek-v3.2"].max_context_size == 512_000
 

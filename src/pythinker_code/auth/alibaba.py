@@ -42,8 +42,15 @@ ALIBABA_MODELS: tuple[AlibabaModel, ...] = (
         model_id="qwen3.7-max",
         alias_suffix="qwen3.7-max",
         display_name="Qwen3.7 Max",
-        max_context_size=262_144,
-        capabilities=frozenset[ModelCapability]({"thinking"}),
+        max_context_size=1_000_000,
+        capabilities=frozenset[ModelCapability]({"thinking", "image_in"}),
+    ),
+    AlibabaModel(
+        model_id="qwen3.7-plus",
+        alias_suffix="qwen3.7-plus",
+        display_name="Qwen3.7 Plus",
+        max_context_size=1_000_000,
+        capabilities=frozenset[ModelCapability]({"thinking", "image_in"}),
     ),
     AlibabaModel(
         model_id="qwen3.6-plus",
@@ -58,6 +65,20 @@ ALIBABA_MODELS: tuple[AlibabaModel, ...] = (
         display_name="Qwen3.6 Flash",
         max_context_size=1_000_000,
         capabilities=frozenset[ModelCapability]({"thinking", "image_in"}),
+    ),
+    AlibabaModel(
+        model_id="qwen3-coder-plus",
+        alias_suffix="qwen3-coder-plus",
+        display_name="Qwen3 Coder Plus",
+        max_context_size=1_000_000,
+        capabilities=frozenset[ModelCapability]({"thinking"}),
+    ),
+    AlibabaModel(
+        model_id="qwen3-coder-flash",
+        alias_suffix="qwen3-coder-flash",
+        display_name="Qwen3 Coder Flash",
+        max_context_size=1_000_000,
+        capabilities=frozenset[ModelCapability]({"thinking"}),
     ),
     AlibabaModel(
         model_id="deepseek-v4-pro",
@@ -88,32 +109,11 @@ ALIBABA_MODELS: tuple[AlibabaModel, ...] = (
         capabilities=frozenset[ModelCapability]({"thinking", "image_in"}),
     ),
     AlibabaModel(
-        model_id="kimi-k2.5",
-        alias_suffix="kimi-k2.5",
-        display_name="Kimi K2.5",
-        max_context_size=262_144,
-        capabilities=frozenset[ModelCapability]({"thinking", "image_in"}),
-    ),
-    AlibabaModel(
         model_id="glm-5.1",
         alias_suffix="glm-5.1",
         display_name="GLM-5.1",
         max_context_size=262_144,
         capabilities=frozenset[ModelCapability]({"always_thinking"}),
-    ),
-    AlibabaModel(
-        model_id="glm-5",
-        alias_suffix="glm-5",
-        display_name="GLM-5",
-        max_context_size=262_144,
-        capabilities=frozenset[ModelCapability]({"always_thinking"}),
-    ),
-    AlibabaModel(
-        model_id="MiniMax-M2.5",
-        alias_suffix="minimax-m2.5",
-        display_name="MiniMax M2.5",
-        max_context_size=204_800,
-        capabilities=frozenset[ModelCapability]({"thinking"}),
     ),
 )
 
@@ -242,7 +242,7 @@ async def _discover_alibaba_models(api_key: str, base_url: str) -> tuple[Alibaba
 
 
 async def login_alibaba_api_key(
-    config: Config, api_key: str | None = None
+    config: Config, api_key: str | None = None, base_url: str | None = None
 ) -> AsyncIterator[OAuthEvent]:
     if not config.is_from_default_location:
         yield OAuthEvent(
@@ -256,7 +256,11 @@ async def login_alibaba_api_key(
         yield OAuthEvent("error", "Alibaba API key is required.")
         return
 
-    primary_url = get_alibaba_base_url_from_env()
+    primary_url = (
+        _normalize_alibaba_base_url(base_url)
+        if base_url and base_url.strip()
+        else get_alibaba_base_url_from_env()
+    )
     active_url = primary_url
     models = ALIBABA_MODELS
 
