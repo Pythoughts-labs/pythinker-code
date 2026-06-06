@@ -228,11 +228,11 @@ def _parse_discovered_models(data: object) -> tuple[AlibabaModel, ...]:
     return tuple(results)
 
 
-async def _discover_alibaba_models(api_key: str) -> tuple[AlibabaModel, ...]:
+async def _discover_alibaba_models(api_key: str, base_url: str) -> tuple[AlibabaModel, ...]:
     async with (
         new_client_session(timeout=ALIBABA_MODEL_DISCOVERY_TIMEOUT) as session,
         session.get(
-            f"{get_alibaba_base_url_from_env()}/models",
+            f"{base_url}/models",
             headers={"Authorization": f"Bearer {api_key}"},
             raise_for_status=True,
         ) as response,
@@ -256,26 +256,74 @@ async def login_alibaba_api_key(
         yield OAuthEvent("error", "Alibaba API key is required.")
         return
 
+    primary_url = get_alibaba_base_url_from_env()
+    active_url = primary_url
     models = ALIBABA_MODELS
+
     try:
-        discovered = await _discover_alibaba_models(resolved_key)
+        discovered = await _discover_alibaba_models(resolved_key, primary_url)
         if discovered:
             models = discovered
     except aiohttp.ClientResponseError as exc:
         if exc.status in {401, 403}:
-            yield OAuthEvent("error", "Invalid Alibaba API key; the key was not saved.")
-            return
-        yield OAuthEvent(
-            "info",
-            "Alibaba model listing is unavailable; using the built-in model list.",
-        )
+            # Primary endpoint rejected the key — probe China as a region fallback.
+            china_url = ALIBABA_CHINA_BASE_URL
+            if china_url != primary_url:
+                try:
+                    discovered = await _discover_alibaba_models(resolved_key, china_url)
+                    active_url = china_url
+                    if discovered:
+                        models = discovered
+                    yield OAuthEvent(
+                        "info",
+                        "Detected China-region DashScope key; configured for China (Beijing) endpoint.",
+                    )
+                except aiohttp.ClientResponseError as china_exc:
+                    if china_exc.status in {401, 403}:
+                        yield OAuthEvent(
+                            "error",
+                            "Alibaba API key was not accepted. Ensure your key is valid and "
+                            "comes from the Alibaba Cloud Model Studio console "
+                            "(https://bailian.console.aliyun.com). "
+                            "Set DASHSCOPE_BASE_URL to override the endpoint if needed.",
+                        )
+                        return
+                    # Non-auth error from China — can't verify; point at China anyway
+                    # since the US endpoint definitively rejected the key.
+                    active_url = china_url
+                    yield OAuthEvent(
+                        "info",
+                        "US endpoint rejected the key and China endpoint is unreachable — "
+                        "configured for China (Beijing). Set DASHSCOPE_BASE_URL if issues persist.",
+                    )
+                except (aiohttp.ClientError, TimeoutError, ValueError):
+                    active_url = china_url
+                    yield OAuthEvent(
+                        "info",
+                        "US endpoint rejected the key and China endpoint is unreachable — "
+                        "configured for China (Beijing). Set DASHSCOPE_BASE_URL if issues persist.",
+                    )
+            else:
+                # Primary is already the China URL and it returned 401 — key is invalid.
+                yield OAuthEvent(
+                    "error",
+                    "Alibaba API key was not accepted. Ensure your key is valid and "
+                    "comes from the Alibaba Cloud Model Studio console "
+                    "(https://bailian.console.aliyun.com).",
+                )
+                return
+        else:
+            yield OAuthEvent(
+                "info",
+                "Alibaba model listing is unavailable; using the built-in model list.",
+            )
     except (aiohttp.ClientError, TimeoutError, ValueError):
         yield OAuthEvent(
             "info",
             "Alibaba model listing is unavailable; using the built-in model list.",
         )
 
-    _apply_alibaba_config(config, SecretStr(resolved_key), models=models)
+    _apply_alibaba_config(config, SecretStr(resolved_key), models=models, base_url=active_url)
     save_config(config)
     yield OAuthEvent("success", f"Alibaba configured with model {config.default_model}.")
 

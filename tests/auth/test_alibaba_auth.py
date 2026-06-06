@@ -207,6 +207,23 @@ class _FakeAiohttpResponse:
 
 
 @pytest.mark.asyncio
+async def test_discover_alibaba_models_uses_provided_base_url(monkeypatch):
+    from pythinker_code.auth.alibaba import _discover_alibaba_models
+
+    seen_urls: list[str] = []
+
+    async def fake_request(*args: object, **kwargs: object) -> object:
+        seen_urls.append(str(args[2]))
+        return _FakeAiohttpResponse({"data": []})
+
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
+
+    await _discover_alibaba_models("sk-test", "https://custom.example.com/compatible-mode/v1")
+    assert len(seen_urls) == 1
+    assert "custom.example.com" in seen_urls[0]
+
+
+@pytest.mark.asyncio
 async def test_login_alibaba_saves_static_models_when_discovery_fails(monkeypatch, tmp_path):
     from pythinker_code.auth.alibaba import login_alibaba_api_key
 
