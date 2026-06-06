@@ -386,6 +386,72 @@ async def test_login_alibaba_primary_already_china_401_fails(monkeypatch, tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_login_alibaba_workspace_key_gives_targeted_error(monkeypatch, tmp_path):
+    """sk-ws- workspace keys get a targeted error with DASHSCOPE_BASE_URL guidance."""
+    from pythinker_code.auth.alibaba import login_alibaba_api_key
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    monkeypatch.delenv("DASHSCOPE_BASE_URL", raising=False)
+    monkeypatch.delenv("ALIBABA_BASE_URL", raising=False)
+    config = Config(is_from_default_location=True)
+
+    call_count = 0
+
+    async def fake_request(*args: object, **kwargs: object) -> object:
+        nonlocal call_count
+        call_count += 1
+        url = str(args[2])
+        raise aiohttp.ClientResponseError(
+            _request_info(url), (), status=401, message="Unauthorized"
+        )
+
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
+
+    events = [
+        event
+        async for event in login_alibaba_api_key(
+            config, "sk-ws-H.HXDYIP.c9u4.abcdefghijklmnopqrstuvwxyz"
+        )
+    ]
+
+    assert events[-1].type == "error"
+    assert "sk-ws-" in events[-1].message
+    assert "DASHSCOPE_BASE_URL" in events[-1].message
+    assert call_count == 1, "should not probe China for workspace keys"
+    assert config.providers == {}
+
+
+@pytest.mark.asyncio
+async def test_login_alibaba_workspace_key_with_correct_base_url_succeeds(monkeypatch, tmp_path):
+    """sk-ws- key succeeds when DASHSCOPE_BASE_URL is set to the workspace endpoint."""
+    from pythinker_code.auth.alibaba import login_alibaba_api_key
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    monkeypatch.setenv(
+        "DASHSCOPE_BASE_URL",
+        "ws-kopy0du82ky7144q.ap-southeast-1.maas.aliyuncs.com",
+    )
+    config = Config(is_from_default_location=True)
+
+    async def fake_request(*args: object, **kwargs: object) -> object:
+        return _FakeAiohttpResponse({"data": [{"id": "qwen3.6-plus"}]})
+
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", fake_request)
+
+    events = [
+        event
+        async for event in login_alibaba_api_key(
+            config, "sk-ws-H.HXDYIP.c9u4.abcdefghijklmnopqrstuvwxyz"
+        )
+    ]
+
+    assert events[-1].type == "success"
+    provider = next(iter(config.providers.values()))
+    assert "ws-kopy0du82ky7144q" in provider.base_url
+    assert (tmp_path / "config.toml").exists()
+
+
+@pytest.mark.asyncio
 async def test_login_alibaba_uses_discovered_context_length(monkeypatch, tmp_path):
     from pythinker_code.auth.alibaba import login_alibaba_api_key
 

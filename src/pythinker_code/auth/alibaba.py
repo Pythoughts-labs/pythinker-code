@@ -266,7 +266,17 @@ async def login_alibaba_api_key(
             models = discovered
     except aiohttp.ClientResponseError as exc:
         if exc.status in {401, 403}:
-            # Primary endpoint rejected the key — probe China as a region fallback.
+            if resolved_key.startswith("sk-ws-"):
+                # Workspace-scoped keys only work with their dedicated endpoint.
+                yield OAuthEvent(
+                    "error",
+                    "Workspace-scoped API keys (sk-ws-) require a dedicated endpoint. "
+                    "Set DASHSCOPE_BASE_URL to the API host shown at key creation time. "
+                    "Example: DASHSCOPE_BASE_URL="
+                    "ws-xxxx.ap-southeast-1.maas.aliyuncs.com",
+                )
+                return
+            # Non-workspace key: probe China endpoint as a region fallback.
             china_url = ALIBABA_CHINA_BASE_URL
             if china_url != primary_url:
                 try:
