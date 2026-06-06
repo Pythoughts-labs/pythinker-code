@@ -353,11 +353,14 @@ def create_llm(
     thinking_on = thinking_effort_enabled(effective_effort)
     is_kimi_openai_legacy = provider.type == "openai_legacy" and _is_kimi_k2_model(model.model)
     is_glm_openai_legacy = provider.type == "openai_legacy" and _is_glm_model(model.model)
+    # Qwen models on DashScope use enable_thinking, not OpenAI's reasoning_effort.
+    is_qwen_openai_legacy = provider.type == "openai_legacy" and _is_qwen_model(model.model)
     if (
         effective_effort is not None
         and supports_thinking
         and not is_kimi_openai_legacy
         and not is_glm_openai_legacy
+        and not is_qwen_openai_legacy
     ):
         # Only explicitly send thinking controls for models that advertise
         # reasoning. Some OpenAI-compatible non-reasoning models reject even a
@@ -377,6 +380,13 @@ def create_llm(
             thinking_body["clear_thinking"] = False
         chat_provider = cast(Any, chat_provider).with_generation_kwargs(
             extra_body={"thinking": thinking_body}
+        )
+
+    # Qwen models on DashScope's OpenAI-compatible endpoint use enable_thinking
+    # in extra_body. Sending reasoning_effort triggers RouteError: Service route not found.
+    if is_qwen_openai_legacy and effective_effort is not None:
+        chat_provider = cast(Any, chat_provider).with_generation_kwargs(
+            extra_body={"enable_thinking": thinking_on}
         )
 
     # Apply Pythinker AI-specific ``thinking.keep`` (preserved thinking) only when
@@ -465,6 +475,10 @@ def _is_kimi_k2_model(model_name: str) -> bool:
 
 def _is_glm_model(model_name: str) -> bool:
     return model_name.lower().replace("_", "-").startswith("glm-")
+
+
+def _is_qwen_model(model_name: str) -> bool:
+    return model_name.lower().replace("_", "-").startswith("qwen")
 
 
 def _load_scripted_echo_scripts() -> list[str]:
