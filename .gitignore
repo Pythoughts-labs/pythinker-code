@@ -13,6 +13,7 @@ wheels/
 .vscode
 .env
 .env.local
+AGENTS.local
 /tests_local
 uv.toml
 .idea/*

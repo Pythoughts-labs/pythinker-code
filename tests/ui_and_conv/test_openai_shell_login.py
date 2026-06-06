@@ -221,6 +221,28 @@ async def test_shell_login_deepseek_routes_to_deepseek(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_shell_login_alibaba_workspace_key_prompts_for_dedicated_endpoint(monkeypatch):
+    login = Mock(side_effect=_success_event)
+    monkeypatch.setattr(shell_oauth, "login_alibaba_api_key", login, raising=False)
+    monkeypatch.setattr(
+        shell_oauth,
+        "_prompt_api_key",
+        lambda label: _async_value("sk-ws-test"),
+    )
+    monkeypatch.setattr(
+        shell_oauth,
+        "_prompt_text",
+        lambda label: _async_value("ws-example.ap-southeast-1.maas.aliyuncs.com"),
+        raising=False,
+    )
+
+    with pytest.raises(Reload):
+        await cast(Any, shell_oauth.login)(_app(), "alibaba")
+
+    assert login.call_args.kwargs["base_url"] == ("ws-example.ap-southeast-1.maas.aliyuncs.com")
+
+
+@pytest.mark.asyncio
 async def test_shell_logout_deepseek_routes_to_deepseek(monkeypatch):
     logout = Mock(side_effect=_success_event)
     monkeypatch.setattr(shell_oauth, "logout_deepseek", logout, raising=False)

@@ -16,6 +16,8 @@ agent:
       - If `.pythinker/review-guidelines.md` exists, read it before scoring findings.
       - Read the diff or target files before scoring.
       - Use Grep/Glob to check sibling call sites, similar patterns, and existing tests.
+      - Apply the production guardrail gate: look specifically for cache stampedes, connection/resource leaks, missing boundary schemas, unhandled race conditions, naive retry loops, unbounded event callbacks/listeners, and IDOR/tenant-scope mistakes.
+      - Reject happy-path code as BLOCKER or MAJOR when the changed path mutates shared state, crosses a trust boundary, acquires resources, retries outbound calls, or registers long-lived callbacks without the matching defensive pattern.
       - Score each finding as BLOCKER, MAJOR, MINOR, or NIT.
       - Order findings by severity, BLOCKER first.
       - Do not request tests unless they cover a distinct behavior or risk introduced by the change.

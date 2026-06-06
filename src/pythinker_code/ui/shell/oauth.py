@@ -137,6 +137,15 @@ async def _prompt_api_key(label: str) -> str | None:
     return value.strip() or None
 
 
+async def _prompt_text(label: str) -> str | None:
+    session = PromptSession[str]()
+    try:
+        value = await session.prompt_async(f" {label}: ")
+    except (EOFError, KeyboardInterrupt):
+        return None
+    return value.strip() or None
+
+
 _SELECTOR_PROVIDER_ENTRIES: list[OAuthProviderEntry] = [
     OAuthProviderEntry(id="browser", name="OpenAI ChatGPT (browser)", auth_type="oauth"),
     OAuthProviderEntry(id="headless", name="OpenAI ChatGPT (device code)", auth_type="oauth"),
@@ -284,7 +293,15 @@ async def login(app: Shell, args: str) -> None:
         if not api_key:
             console.print(f"[{_t.error}]No Alibaba API key entered.[/]")
             return
-        ok = await _render_oauth_events(login_alibaba_api_key(soul.runtime.config, api_key))
+        base_url: str | None = None
+        if api_key.startswith("sk-ws-"):
+            base_url = await _prompt_text("Token Plan OpenAI-compatible endpoint")
+            if not base_url:
+                console.print(f"[{_t.error}]No Token Plan endpoint entered.[/]")
+                return
+        ok = await _render_oauth_events(
+            login_alibaba_api_key(soul.runtime.config, api_key, base_url=base_url)
+        )
         provider = ALIBABA_PLATFORM_ID
     elif mode == "anthropic":
         api_key = await _prompt_api_key("Anthropic")

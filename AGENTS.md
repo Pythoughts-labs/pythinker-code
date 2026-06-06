@@ -4,6 +4,13 @@ This file is the root guidance for AI agents working in this repository. It is i
 Pythinker sessions via `PYTHINKER_AGENTS_MD`; keep it durable, portable, and focused on rules
 that should apply across many tasks.
 
+## Local-only instructions
+
+If `AGENTS.local` exists at the repository root, read it after this file for machine-specific or
+private local instructions. `AGENTS.local` is intentionally gitignored; do not commit it or copy its
+contents into tracked files. Local instructions may add workflow details, but they must not weaken
+or override this repository's non-negotiable rules.
+
 ## Mission
 
 Pythinker CLI is a Python CLI agent for software engineering workflows. It supports an

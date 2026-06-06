@@ -14,6 +14,7 @@ agent:
       - Fidelity: the draft summary matches the actual diff and changes, with no overclaiming.
       - Verification: the checks the parent ran are relevant to the change and actually ran, not assumed.
       - Safety and scope: no unsafe or destructive action, no secret or PII exposure, no scope creep beyond the request.
+      - Production guardrails: changed code that touches caches, resources, trust boundaries, shared state, outbound requests, long-lived listeners, or authorization context has explicit defenses for stampedes, cleanup, schemas, races, retry storms, leaks, and IDOR risks.
       - Findings quality: for reports, each finding is actionable, correctly severity-ranked, and anchored to evidence.
       Do not rubber-stamp, and do not pad: prefer a few concrete blockers over broad style notes.
 

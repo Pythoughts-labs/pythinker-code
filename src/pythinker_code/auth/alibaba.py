@@ -4,6 +4,7 @@ import os
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, cast
+from urllib.parse import urlparse
 
 import aiohttp
 from pydantic import SecretStr
@@ -17,6 +18,8 @@ from pythinker_code.thinking import apply_login_thinking_defaults
 from pythinker_code.utils.aiohttp import new_client_session
 
 ALIBABA_BASE_URL = "https://dashscope-us.aliyuncs.com/compatible-mode/v1"
+ALIBABA_CHINA_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+ALIBABA_CODING_PLAN_BASE_URL = "https://coding-intl.dashscope.aliyuncs.com/v1"
 ALIBABA_PROVIDER_KEY = managed_provider_key(ALIBABA_PLATFORM_ID)
 ALIBABA_DEFAULT_MODEL_ALIAS = f"{ALIBABA_PLATFORM_ID}/qwen3.6-plus"
 ALIBABA_MODEL_DISCOVERY_TIMEOUT = aiohttp.ClientTimeout(total=15, sock_connect=8, sock_read=10)
@@ -41,8 +44,15 @@ ALIBABA_MODELS: tuple[AlibabaModel, ...] = (
         model_id="qwen3.7-max",
         alias_suffix="qwen3.7-max",
         display_name="Qwen3.7 Max",
-        max_context_size=262_144,
-        capabilities=frozenset[ModelCapability]({"thinking"}),
+        max_context_size=1_000_000,
+        capabilities=frozenset[ModelCapability]({"thinking", "image_in"}),
+    ),
+    AlibabaModel(
+        model_id="qwen3.7-plus",
+        alias_suffix="qwen3.7-plus",
+        display_name="Qwen3.7 Plus",
+        max_context_size=1_000_000,
+        capabilities=frozenset[ModelCapability]({"thinking", "image_in"}),
     ),
     AlibabaModel(
         model_id="qwen3.6-plus",
@@ -57,6 +67,20 @@ ALIBABA_MODELS: tuple[AlibabaModel, ...] = (
         display_name="Qwen3.6 Flash",
         max_context_size=1_000_000,
         capabilities=frozenset[ModelCapability]({"thinking", "image_in"}),
+    ),
+    AlibabaModel(
+        model_id="qwen3-coder-plus",
+        alias_suffix="qwen3-coder-plus",
+        display_name="Qwen3 Coder Plus",
+        max_context_size=1_000_000,
+        capabilities=frozenset[ModelCapability]({"thinking"}),
+    ),
+    AlibabaModel(
+        model_id="qwen3-coder-flash",
+        alias_suffix="qwen3-coder-flash",
+        display_name="Qwen3 Coder Flash",
+        max_context_size=1_000_000,
+        capabilities=frozenset[ModelCapability]({"thinking"}),
     ),
     AlibabaModel(
         model_id="deepseek-v4-pro",
@@ -87,32 +111,11 @@ ALIBABA_MODELS: tuple[AlibabaModel, ...] = (
         capabilities=frozenset[ModelCapability]({"thinking", "image_in"}),
     ),
     AlibabaModel(
-        model_id="kimi-k2.5",
-        alias_suffix="kimi-k2.5",
-        display_name="Kimi K2.5",
-        max_context_size=262_144,
-        capabilities=frozenset[ModelCapability]({"thinking", "image_in"}),
-    ),
-    AlibabaModel(
         model_id="glm-5.1",
         alias_suffix="glm-5.1",
         display_name="GLM-5.1",
         max_context_size=262_144,
         capabilities=frozenset[ModelCapability]({"always_thinking"}),
-    ),
-    AlibabaModel(
-        model_id="glm-5",
-        alias_suffix="glm-5",
-        display_name="GLM-5",
-        max_context_size=262_144,
-        capabilities=frozenset[ModelCapability]({"always_thinking"}),
-    ),
-    AlibabaModel(
-        model_id="MiniMax-M2.5",
-        alias_suffix="minimax-m2.5",
-        display_name="MiniMax M2.5",
-        max_context_size=204_800,
-        capabilities=frozenset[ModelCapability]({"thinking"}),
     ),
 )
 
@@ -125,12 +128,18 @@ def get_alibaba_api_key_from_env() -> str | None:
     return None
 
 
-def _normalize_alibaba_base_url(value: str) -> str:
+def _normalize_alibaba_base_url(value: str, is_coding_plan: bool = False) -> str:
     base_url = value.strip().rstrip("/")
     if not base_url:
-        return ALIBABA_BASE_URL
+        return ALIBABA_CODING_PLAN_BASE_URL if is_coding_plan else ALIBABA_BASE_URL
     if "://" not in base_url:
         base_url = f"https://{base_url}"
+
+    if is_coding_plan:
+        if base_url.endswith("/v1"):
+            return base_url
+        return f"{base_url}/v1"
+
     if base_url.endswith("/api/v1"):
         return f"{base_url.removesuffix('/api/v1')}/compatible-mode/v1"
     if base_url.endswith("/compatible-mode/v1"):
@@ -150,10 +159,11 @@ def _apply_alibaba_config(
     config: Config,
     api_key: SecretStr,
     models: tuple[AlibabaModel, ...] = ALIBABA_MODELS,
+    base_url: str | None = None,
 ) -> None:
     config.providers[ALIBABA_PROVIDER_KEY] = LLMProvider(
         type="openai_legacy",
-        base_url=get_alibaba_base_url_from_env(),
+        base_url=base_url if base_url is not None else get_alibaba_base_url_from_env(),
         api_key=api_key,
     )
 
@@ -226,11 +236,16 @@ def _parse_discovered_models(data: object) -> tuple[AlibabaModel, ...]:
     return tuple(results)
 
 
-async def _discover_alibaba_models(api_key: str) -> tuple[AlibabaModel, ...]:
+def _is_workspace_endpoint(base_url: str) -> bool:
+    hostname = urlparse(base_url).hostname or ""
+    return hostname.startswith("ws-") and hostname.endswith(".maas.aliyuncs.com")
+
+
+async def _discover_alibaba_models(api_key: str, base_url: str) -> tuple[AlibabaModel, ...]:
     async with (
         new_client_session(timeout=ALIBABA_MODEL_DISCOVERY_TIMEOUT) as session,
         session.get(
-            f"{get_alibaba_base_url_from_env()}/models",
+            f"{base_url}/models",
             headers={"Authorization": f"Bearer {api_key}"},
             raise_for_status=True,
         ) as response,
@@ -240,7 +255,7 @@ async def _discover_alibaba_models(api_key: str) -> tuple[AlibabaModel, ...]:
 
 
 async def login_alibaba_api_key(
-    config: Config, api_key: str | None = None
+    config: Config, api_key: str | None = None, base_url: str | None = None
 ) -> AsyncIterator[OAuthEvent]:
     if not config.is_from_default_location:
         yield OAuthEvent(
@@ -254,26 +269,162 @@ async def login_alibaba_api_key(
         yield OAuthEvent("error", "Alibaba API key is required.")
         return
 
+    is_coding_plan = resolved_key.startswith("sk-sp-")
+    is_token_plan = resolved_key.startswith("sk-ws-")
+
+    default_url = ALIBABA_CODING_PLAN_BASE_URL if is_coding_plan else ALIBABA_BASE_URL
+    china_url = (
+        "https://coding.dashscope.aliyuncs.com/v1" if is_coding_plan else ALIBABA_CHINA_BASE_URL
+    )
+
+    env_base_url = os.getenv("DASHSCOPE_BASE_URL") or os.getenv("ALIBABA_BASE_URL")
+    is_env_explicitly_set = bool(env_base_url)
+
+    if is_token_plan and not (base_url and base_url.strip()) and not is_env_explicitly_set:
+        yield OAuthEvent(
+            "error",
+            "Alibaba Token Plan workspace keys require the dedicated Base URL shown in "
+            "the Token Plan console. Enter it during /login or set DASHSCOPE_BASE_URL.",
+        )
+        return
+
+    if base_url and base_url.strip():
+        primary_url = _normalize_alibaba_base_url(base_url, is_coding_plan=is_coding_plan)
+    elif is_env_explicitly_set:
+        primary_url = _normalize_alibaba_base_url(env_base_url, is_coding_plan=is_coding_plan)
+    else:
+        primary_url = default_url
+
+    active_url = primary_url
     models = ALIBABA_MODELS
+
     try:
-        discovered = await _discover_alibaba_models(resolved_key)
+        discovered = await _discover_alibaba_models(resolved_key, primary_url)
         if discovered:
             models = discovered
     except aiohttp.ClientResponseError as exc:
         if exc.status in {401, 403}:
-            yield OAuthEvent("error", "Invalid Alibaba API key; the key was not saved.")
-            return
-        yield OAuthEvent(
-            "info",
-            "Alibaba model listing is unavailable; using the built-in model list.",
-        )
+            if is_token_plan:
+                yield OAuthEvent(
+                    "error",
+                    "Alibaba Token Plan API key was not accepted. Ensure the key is active "
+                    "and assigned to a Token Plan seat. Set DASHSCOPE_BASE_URL only when "
+                    "Alibaba provides a different endpoint for your plan.",
+                )
+                return
+
+            if is_coding_plan and primary_url == default_url:
+                try:
+                    discovered = await _discover_alibaba_models(resolved_key, china_url)
+                    active_url = china_url
+                    if discovered:
+                        models = discovered
+                    yield OAuthEvent(
+                        "info",
+                        "Detected China-region Coding Plan key; configured for China endpoint.",
+                    )
+                except aiohttp.ClientResponseError as china_exc:
+                    if china_exc.status in {401, 403}:
+                        yield OAuthEvent(
+                            "error",
+                            "Alibaba Coding Plan API key was not accepted. Ensure your key is "
+                            "valid, active, and has the required model permissions in the "
+                            "Coding Plan console.",
+                        )
+                        return
+                    yield OAuthEvent(
+                        "error",
+                        "The default international endpoint rejected the key and the China "
+                        "endpoint could not be reached. Check network access or set "
+                        "DASHSCOPE_BASE_URL to the correct endpoint and try again.",
+                    )
+                    return
+                except (aiohttp.ClientError, TimeoutError, ValueError):
+                    yield OAuthEvent(
+                        "error",
+                        "The default international endpoint rejected the key and the China "
+                        "endpoint could not be reached. Check network access or set "
+                        "DASHSCOPE_BASE_URL to the correct endpoint and try again.",
+                    )
+                    return
+            else:
+                if is_coding_plan:
+                    if primary_url == china_url:
+                        yield OAuthEvent(
+                            "error",
+                            "Alibaba Coding Plan API key was not accepted. Ensure your key is "
+                            "valid, active, and has the required model permissions in the "
+                            "Coding Plan console.",
+                        )
+                    else:
+                        yield OAuthEvent(
+                            "error",
+                            "Alibaba Coding Plan API key was not accepted. Ensure your key is "
+                            "valid, active, and has the required model permissions in the "
+                            "Coding Plan console. If using the China region, set "
+                            "DASHSCOPE_BASE_URL=https://coding.dashscope.aliyuncs.com/v1",
+                        )
+                    return
+                else:
+                    if primary_url == default_url:
+                        try:
+                            discovered = await _discover_alibaba_models(resolved_key, china_url)
+                            active_url = china_url
+                            if discovered:
+                                models = discovered
+                            yield OAuthEvent(
+                                "info",
+                                "Detected China-region DashScope key; "
+                                "configured for China (Beijing) endpoint.",
+                            )
+                        except aiohttp.ClientResponseError as china_exc:
+                            if china_exc.status in {401, 403}:
+                                yield OAuthEvent(
+                                    "error",
+                                    "Alibaba API key was not accepted. Ensure your key is valid "
+                                    "and "
+                                    "comes from the Alibaba Cloud Model Studio console "
+                                    "(https://bailian.console.aliyun.com). "
+                                    "Set DASHSCOPE_BASE_URL to override the endpoint if needed.",
+                                )
+                                return
+                            yield OAuthEvent(
+                                "error",
+                                "The default US endpoint rejected the key and the China endpoint "
+                                "could not be reached. Check network access or set "
+                                "DASHSCOPE_BASE_URL to the correct endpoint and try again.",
+                            )
+                            return
+                        except (aiohttp.ClientError, TimeoutError, ValueError):
+                            yield OAuthEvent(
+                                "error",
+                                "The default US endpoint rejected the key and the China endpoint "
+                                "could not be reached. Check network access or set "
+                                "DASHSCOPE_BASE_URL to the correct endpoint and try again.",
+                            )
+                            return
+                    else:
+                        yield OAuthEvent(
+                            "error",
+                            "Alibaba API key was not accepted. Ensure your key is valid and "
+                            "that DASHSCOPE_BASE_URL points to the correct endpoint.",
+                        )
+                        return
+        else:
+            yield OAuthEvent(
+                "info",
+                "Alibaba model listing is unavailable; using the built-in model list.",
+            )
     except (aiohttp.ClientError, TimeoutError, ValueError):
         yield OAuthEvent(
             "info",
             "Alibaba model listing is unavailable; using the built-in model list.",
         )
 
-    _apply_alibaba_config(config, SecretStr(resolved_key), models=models)
+    if _is_workspace_endpoint(active_url):
+        models = tuple(model for model in models if model.model_id != "kimi-k2.6")
+
+    _apply_alibaba_config(config, SecretStr(resolved_key), models=models, base_url=active_url)
     save_config(config)
     yield OAuthEvent("success", f"Alibaba configured with model {config.default_model}.")
 

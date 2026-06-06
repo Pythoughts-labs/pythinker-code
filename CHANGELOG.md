@@ -15,6 +15,14 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.36.0 (2026-06-05)
+
+- **Alibaba DashScope multi-region fallback.** Logging in with a China-region key (`dashscope.aliyuncs.com`) against the default US Virginia endpoint now auto-detects the mismatch and reconfigures for the correct endpoint rather than failing with a misleading "API key is wrong" error.
+- **Alibaba Token Plan compatibility (`sk-ws-`).** `/login alibaba` now requires the dedicated workspace Base URL shown in the Token Plan console instead of accepting a public `/models` response as credential validation. Dedicated workspace endpoints hide Kimi K2.6 when Alibaba advertises it without a working route, and use non-streaming Chat Completions for DeepSeek V3.2 because those endpoints return an empty SSE stream. Kimi requests on other Alibaba routes use DashScope's `enable_thinking` parameter.
+- **Alibaba model catalog refresh.** Added Qwen3.7 Plus (1M context), Qwen3 Coder Plus, and Qwen3 Coder Flash. Removed `kimi-k2.5`, `glm-5`, and `MiniMax-M2.5` (absent from the live endpoint). Corrected Qwen3.7 Max context window to 1M tokens.
+
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.36.0`, or use the native installer for your platform from the [Releases page](https://github.com/Pythoughts-labs/pythinker-code/releases/latest).
+
 ## 0.35.0 (2026-06-04)
 
 - **Alibaba DashScope provider and MiniMax M3 catalog.** `/login alibaba` now configures Alibaba Cloud Model Studio / DashScope Token Plan models, including workspace-compatible endpoints and native GLM thinking behavior. MiniMax API-key login now defaults to MiniMax M3 with its larger context and multimodal capabilities.

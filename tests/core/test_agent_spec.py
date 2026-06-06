@@ -420,6 +420,26 @@ Bullet list of questions that must be answered before execution, or `None.`.
     assert sub_subagents == snapshot({})
 
 
+def test_default_subagents_include_production_guardrail_gate():
+    subagent_specs = {
+        name: load_agent_spec(spec.path)
+        for name, spec in load_agent_spec(DEFAULT_AGENT_FILE).subagents.items()
+    }
+
+    assert (
+        "production guardrail gate"
+        in subagent_specs["review"].system_prompt_args["ROLE_ADDITIONAL"]
+    )
+    assert (
+        "cache stampedes" in subagent_specs["code-reviewer"].system_prompt_args["ROLE_ADDITIONAL"]
+    )
+    assert (
+        "IDOR/tenant-scope mistakes"
+        in subagent_specs["security-reviewer"].system_prompt_args["ROLE_ADDITIONAL"]
+    )
+    assert "Production guardrails" in subagent_specs["judge"].system_prompt_args["ROLE_ADDITIONAL"]
+
+
 def test_load_agent_spec_basic(agent_file: Path):
     """Test loading a basic agent specification."""
     spec = load_agent_spec(agent_file)

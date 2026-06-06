@@ -718,6 +718,52 @@ def test_create_llm_openai_legacy_kimi_sends_enabled_thinking_body():
     }
 
 
+def test_create_llm_alibaba_kimi_uses_dashscope_thinking_switch():
+    provider = LLMProvider(
+        type="openai_legacy",
+        base_url="https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+        api_key=SecretStr("test-key"),
+    )
+    model = LLMModel(
+        provider="managed:alibaba",
+        model="kimi-k2.6",
+        max_context_size=262_144,
+        capabilities={"thinking"},
+    )
+
+    llm = create_llm(provider, model, thinking=True)
+
+    assert llm is not None
+    assert isinstance(llm.chat_provider, OpenAILegacy)
+    assert llm.chat_provider.thinking_effort is None
+    assert llm.chat_provider._generation_kwargs.get("extra_body") == {  # pyright: ignore[reportPrivateUsage]
+        "enable_thinking": True
+    }
+
+
+def test_create_llm_alibaba_workspace_deepseek_disables_streaming():
+    provider = LLMProvider(
+        type="openai_legacy",
+        base_url=("https://ws-example.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"),
+        api_key=SecretStr("test-key"),
+    )
+    model = LLMModel(
+        provider="managed:alibaba",
+        model="deepseek-v3.2",
+        max_context_size=128_000,
+        capabilities={"thinking"},
+    )
+
+    llm = create_llm(provider, model, thinking=True)
+
+    assert llm is not None
+    assert isinstance(llm.chat_provider, OpenAILegacy)
+    assert llm.chat_provider.stream is False
+    assert llm.chat_provider._generation_kwargs.get("extra_body") == {  # pyright: ignore[reportPrivateUsage]
+        "enable_thinking": True
+    }
+
+
 def test_create_llm_openai_legacy_glm_sends_provider_thinking_body():
     provider = LLMProvider(
         type="openai_legacy",
