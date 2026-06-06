@@ -17,6 +17,7 @@ from pythinker_code.thinking import apply_login_thinking_defaults
 from pythinker_code.utils.aiohttp import new_client_session
 
 ALIBABA_BASE_URL = "https://dashscope-us.aliyuncs.com/compatible-mode/v1"
+ALIBABA_CHINA_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 ALIBABA_PROVIDER_KEY = managed_provider_key(ALIBABA_PLATFORM_ID)
 ALIBABA_DEFAULT_MODEL_ALIAS = f"{ALIBABA_PLATFORM_ID}/qwen3.6-plus"
 ALIBABA_MODEL_DISCOVERY_TIMEOUT = aiohttp.ClientTimeout(total=15, sock_connect=8, sock_read=10)
@@ -150,10 +151,11 @@ def _apply_alibaba_config(
     config: Config,
     api_key: SecretStr,
     models: tuple[AlibabaModel, ...] = ALIBABA_MODELS,
+    base_url: str | None = None,
 ) -> None:
     config.providers[ALIBABA_PROVIDER_KEY] = LLMProvider(
         type="openai_legacy",
-        base_url=get_alibaba_base_url_from_env(),
+        base_url=base_url if base_url is not None else get_alibaba_base_url_from_env(),
         api_key=api_key,
     )
 
