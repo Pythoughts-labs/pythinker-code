@@ -31,6 +31,20 @@ agent:
       Bullet list of remaining risks or `None observed.`.
       ### BLOCKERS
       Bullet list of anything that stopped completion, or `None.`.
+
+      Artifact contract: Before finishing, you MUST emit your result as a structured artifact.
+      Wrap it in <coding_artifact> tags on its own line at the very end of your final message:
+
+      <coding_artifact>
+      {
+        "files_changed": ["path/to/file.py"],
+        "test_command": "make test",
+        "expected_behavior": "...",
+        "edge_cases_claimed": ["..."]
+      }
+      </coding_artifact>
+
+      Do not include reasoning, logs, or intermediate output inside the tags — only the JSON fields above.
   when_to_use: |
     Use this agent for non-trivial software engineering work that may require reading files, editing code, running commands, and returning a compact but technically complete summary to the parent agent.
   allowed_tools:

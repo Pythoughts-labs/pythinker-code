@@ -15,6 +15,7 @@ from pythinker_code.tools.file.read import (
     Params,
     ReadFile,
 )
+from tests.tools._untrusted import unwrap_untrusted
 
 
 @pytest.fixture
@@ -34,7 +35,7 @@ async def test_read_entire_file(read_file_tool: ReadFile, sample_file: HostPath)
     """Test reading an entire file."""
     result = await read_file_tool(Params(path=str(sample_file)))
     assert not result.is_error
-    assert result.output == snapshot(
+    assert unwrap_untrusted(result.output) == snapshot(
         """\
      1	Line 1: Hello World
      2	Line 2: This is a test file
@@ -52,7 +53,7 @@ async def test_read_with_line_offset(read_file_tool: ReadFile, sample_file: Host
     """Test reading from a specific line offset."""
     result = await read_file_tool(Params(path=str(sample_file), line_offset=3))
     assert not result.is_error
-    assert result.output == snapshot(
+    assert unwrap_untrusted(result.output) == snapshot(
         """\
      3	Line 3: With multiple lines
      4	Line 4: For testing purposes
@@ -68,7 +69,7 @@ async def test_read_with_n_lines(read_file_tool: ReadFile, sample_file: HostPath
     """Test reading a specific number of lines."""
     result = await read_file_tool(Params(path=str(sample_file), n_lines=2))
     assert not result.is_error
-    assert result.output == snapshot(
+    assert unwrap_untrusted(result.output) == snapshot(
         """\
      1	Line 1: Hello World
      2	Line 2: This is a test file
@@ -83,7 +84,7 @@ async def test_read_with_line_offset_and_n_lines(read_file_tool: ReadFile, sampl
     """Test reading with both line offset and n_lines."""
     result = await read_file_tool(Params(path=str(sample_file), line_offset=2, n_lines=2))
     assert not result.is_error
-    assert result.output == snapshot(
+    assert unwrap_untrusted(result.output) == snapshot(
         """\
      2	Line 2: This is a test file
      3	Line 3: With multiple lines
@@ -118,7 +119,7 @@ async def test_read_directory_returns_compact_listing(
         f"Directory listing for `{temp_work_dir}`. Use ReadFile on a file path to read file contents."
     )
     assert result.brief == snapshot("Listed directory")
-    assert result.output == snapshot(
+    assert unwrap_untrusted(result.output) == snapshot(
         """\
 ├── child/
 │   └── nested.txt
@@ -136,7 +137,7 @@ async def test_read_with_relative_path(
     assert result.message == snapshot(
         "5 lines read from file starting from line 1. Total lines in file: 5. End of file reached."
     )
-    assert result.output == snapshot("""\
+    assert unwrap_untrusted(result.output) == snapshot("""\
      1	Line 1: Hello World
      2	Line 2: This is a test file
      3	Line 3: With multiple lines
@@ -166,7 +167,7 @@ async def test_read_empty_file(read_file_tool: ReadFile, temp_work_dir: HostPath
 
     result = await read_file_tool(Params(path=str(empty_file)))
     assert not result.is_error
-    assert result.output == snapshot("")
+    assert unwrap_untrusted(result.output) == snapshot("")
     assert result.message == snapshot(
         "No lines read from file. Total lines in file: 0. End of file reached."
     )
@@ -221,7 +222,7 @@ async def test_read_line_offset_beyond_file_length(read_file_tool: ReadFile, sam
     """Test reading with line offset beyond file length."""
     result = await read_file_tool(Params(path=str(sample_file), line_offset=10))
     assert not result.is_error
-    assert result.output == snapshot("")
+    assert unwrap_untrusted(result.output) == snapshot("")
     assert result.message == snapshot(
         "No lines read from file. Total lines in file: 5. End of file reached."
     )
@@ -235,7 +236,7 @@ async def test_read_unicode_file(read_file_tool: ReadFile, temp_work_dir: HostPa
 
     result = await read_file_tool(Params(path=str(unicode_file)))
     assert not result.is_error
-    assert result.output == snapshot(
+    assert unwrap_untrusted(result.output) == snapshot(
         """\
      1	Hello world 🌍
      2	Unicode test: café, naïve, résumé\
@@ -251,7 +252,7 @@ async def test_read_edge_cases(read_file_tool: ReadFile, sample_file: HostPath):
     # Test reading from line 1 (should be same as default)
     result = await read_file_tool(Params(path=str(sample_file), line_offset=1))
     assert not result.is_error
-    assert result.output == snapshot(
+    assert unwrap_untrusted(result.output) == snapshot(
         """\
      1	Line 1: Hello World
      2	Line 2: This is a test file
@@ -267,7 +268,7 @@ async def test_read_edge_cases(read_file_tool: ReadFile, sample_file: HostPath):
     # Test reading from line 5 (last line)
     result = await read_file_tool(Params(path=str(sample_file), line_offset=5))
     assert not result.is_error
-    assert result.output == snapshot("     5\tLine 5: End of file")
+    assert unwrap_untrusted(result.output) == snapshot("     5\tLine 5: End of file")
     assert result.message == snapshot(
         "1 lines read from file starting from line 5. Total lines in file: 5. End of file reached."
     )
@@ -275,7 +276,7 @@ async def test_read_edge_cases(read_file_tool: ReadFile, sample_file: HostPath):
     # Test reading with offset and n_lines combined
     result = await read_file_tool(Params(path=str(sample_file), line_offset=2, n_lines=1))
     assert not result.is_error
-    assert result.output == snapshot("     2\tLine 2: This is a test file\n")
+    assert unwrap_untrusted(result.output) == snapshot("     2\tLine 2: This is a test file\n")
     assert result.message == snapshot(
         "1 lines read from file starting from line 2. Total lines in file: 5."
     )
@@ -294,10 +295,10 @@ async def test_line_truncation_and_messaging(read_file_tool: ReadFile, temp_work
     assert isinstance(result.output, str)
     assert "1 lines read from" in result.message
     # Check that the line is truncated and ends with "..."
-    assert result.output.endswith("...")
+    assert unwrap_untrusted(result.output).endswith("...")
 
     # Verify exact length after truncation (accounting for line number prefix)
-    lines = result.output.split("\n")
+    lines = unwrap_untrusted(result.output).split("\n")
     content_line = [line for line in lines if line.strip()][0]
     actual_content = content_line.split("\t", 1)[1] if "\t" in content_line else content_line
     assert len(actual_content) == MAX_LINE_LENGTH
@@ -318,7 +319,7 @@ async def test_line_truncation_and_messaging(read_file_tool: ReadFile, temp_work
     )
 
     # Verify truncation actually happened for specific lines
-    lines = result.output.split("\n")
+    lines = unwrap_untrusted(result.output).split("\n")
     endings = [line[-20:] for line in lines]
     assert endings == snapshot(
         [
@@ -373,7 +374,7 @@ async def test_max_lines_boundary(read_file_tool: ReadFile, temp_work_dir: HostP
     # Should read MAX_LINES lines, not the full file
     assert f"Max {MAX_LINES} lines reached" in result.message
     # Count actual lines in output (accounting for line numbers)
-    output_lines = [line for line in result.output.split("\n") if line.strip()]
+    output_lines = [line for line in unwrap_untrusted(result.output).split("\n") if line.strip()]
     assert len(output_lines) == MAX_LINES
 
 
@@ -409,7 +410,7 @@ async def test_read_with_tilde_path_expansion(read_file_tool: ReadFile, temp_wor
         result = await read_file_tool(Params(path="~/.test_expanduser_temp"))
 
         assert not result.is_error
-        assert "Test content for tilde expansion" in result.output
+        assert "Test content for tilde expansion" in unwrap_untrusted(result.output)
         assert result.message == snapshot(
             "1 lines read from file starting from line 1. Total lines in file: 1. End of file reached."
         )
@@ -439,7 +440,7 @@ async def test_read_allows_non_sensitive_dotfile(read_file_tool: ReadFile, temp_
     result = await read_file_tool(Params(path=str(gitignore)))
 
     assert not result.is_error
-    assert "node_modules" in result.output
+    assert "node_modules" in unwrap_untrusted(result.output)
 
 
 # ── Tests for totalLines and tail (negative offset) ──────────────────────────
@@ -450,12 +451,12 @@ async def test_read_tail_basic(read_file_tool: ReadFile, sample_file: HostPath):
     result = await read_file_tool(Params(path=str(sample_file), line_offset=-3))
     assert not result.is_error
     # Should return lines 3, 4, 5 with absolute line numbers
-    assert "     3\tLine 3: With multiple lines\n" in result.output
-    assert "     4\tLine 4: For testing purposes\n" in result.output
-    assert "     5\tLine 5: End of file" in result.output
+    assert "     3\tLine 3: With multiple lines\n" in unwrap_untrusted(result.output)
+    assert "     4\tLine 4: For testing purposes\n" in unwrap_untrusted(result.output)
+    assert "     5\tLine 5: End of file" in unwrap_untrusted(result.output)
     # Should NOT contain lines 1 or 2
-    assert "Line 1:" not in result.output
-    assert "Line 2:" not in result.output
+    assert "Line 1:" not in unwrap_untrusted(result.output)
+    assert "Line 2:" not in unwrap_untrusted(result.output)
     # Message must include total lines info
     assert "Total lines in file: 5." in result.message
 
@@ -465,9 +466,9 @@ async def test_read_tail_with_n_lines(read_file_tool: ReadFile, sample_file: Hos
     result = await read_file_tool(Params(path=str(sample_file), line_offset=-5, n_lines=2))
     assert not result.is_error
     # -5 on a 5-line file means start from line 1, then n_lines=2 limits to lines 1-2
-    assert "     1\tLine 1: Hello World\n" in result.output
-    assert "     2\tLine 2: This is a test file\n" in result.output
-    assert "Line 3:" not in result.output
+    assert "     1\tLine 1: Hello World\n" in unwrap_untrusted(result.output)
+    assert "     2\tLine 2: This is a test file\n" in unwrap_untrusted(result.output)
+    assert "Line 3:" not in unwrap_untrusted(result.output)
     assert "Total lines in file: 5." in result.message
 
 
@@ -476,8 +477,8 @@ async def test_read_tail_exceeds_file(read_file_tool: ReadFile, sample_file: Hos
     result = await read_file_tool(Params(path=str(sample_file), line_offset=-100))
     assert not result.is_error
     # Should return all 5 lines
-    assert "     1\tLine 1: Hello World\n" in result.output
-    assert "     5\tLine 5: End of file" in result.output
+    assert "     1\tLine 1: Hello World\n" in unwrap_untrusted(result.output)
+    assert "     5\tLine 5: End of file" in unwrap_untrusted(result.output)
     assert "Total lines in file: 5." in result.message
 
 
@@ -488,7 +489,7 @@ async def test_read_tail_empty_file(read_file_tool: ReadFile, temp_work_dir: Hos
 
     result = await read_file_tool(Params(path=str(empty_file), line_offset=-10))
     assert not result.is_error
-    assert result.output == ""
+    assert unwrap_untrusted(result.output) == ""
     assert "Total lines in file: 0." in result.message
 
 
@@ -499,9 +500,9 @@ async def test_read_total_lines_with_positive_offset(
     result = await read_file_tool(Params(path=str(sample_file), line_offset=3, n_lines=1))
     assert not result.is_error
     # Should return only line 3
-    assert "     3\tLine 3: With multiple lines" in result.output
-    assert "Line 1:" not in result.output
-    assert "Line 4:" not in result.output
+    assert "     3\tLine 3: With multiple lines" in unwrap_untrusted(result.output)
+    assert "Line 1:" not in unwrap_untrusted(result.output)
+    assert "Line 4:" not in unwrap_untrusted(result.output)
     # Message must include total lines even for positive offset
     assert "Total lines in file: 5." in result.message
 
@@ -510,7 +511,7 @@ async def test_read_tail_last_line(read_file_tool: ReadFile, sample_file: HostPa
     """line_offset=-1 should return only the last line with correct absolute line number."""
     result = await read_file_tool(Params(path=str(sample_file), line_offset=-1))
     assert not result.is_error
-    assert result.output == "     5\tLine 5: End of file"
+    assert unwrap_untrusted(result.output) == "     5\tLine 5: End of file"
     assert "1 lines read from file starting from line 5." in result.message
     assert "Total lines in file: 5." in result.message
     assert "End of file reached." in result.message
@@ -530,7 +531,7 @@ async def test_read_tail_max_lines(read_file_tool: ReadFile, temp_work_dir: Host
     assert f"Total lines in file: {total}." in result.message
     # deque captures last 1000 lines (501-1500), n_lines defaults to MAX_LINES so all 1000 are output
     assert isinstance(result.output, str)
-    output_lines = [line for line in result.output.split("\n") if line.strip()]
+    output_lines = [line for line in unwrap_untrusted(result.output).split("\n") if line.strip()]
     assert len(output_lines) == MAX_LINES
     # First line should be line 501 (total - MAX_LINES + 1)
     assert output_lines[0].endswith(f"Line {total - MAX_LINES + 1}")
@@ -553,7 +554,7 @@ async def test_read_tail_max_bytes(read_file_tool: ReadFile, temp_work_dir: Host
 
     # Verify that the LAST line of the file is included (newest lines kept)
     assert isinstance(result.output, str)
-    output_lines = [x for x in result.output.split("\n") if x.strip()]
+    output_lines = [x for x in unwrap_untrusted(result.output).split("\n") if x.strip()]
     last_output = output_lines[-1].split("\t", 1)[1]
     assert last_output.startswith(f"{num_lines:04d}"), (
         "MAX_BYTES truncation should keep newest lines closest to EOF"
@@ -585,7 +586,7 @@ async def test_read_tail_n_lines_not_affected_by_byte_cap(
     assert isinstance(result.output, str)
 
     # The first line of the tail window (last 200 lines) is line 301
-    output_lines = [x for x in result.output.split("\n") if x.strip()]
+    output_lines = [x for x in unwrap_untrusted(result.output).split("\n") if x.strip()]
     assert len(output_lines) == 1
     line_content = output_lines[0].split("\t", 1)[1]
     assert line_content.startswith("0301"), (
@@ -612,7 +613,7 @@ async def test_read_tail_line_truncation(read_file_tool: ReadFile, temp_work_dir
     assert "Lines [4] were truncated." in result.message
     # Verify the truncated line ends with "..."
     assert isinstance(result.output, str)
-    output_lines = result.output.split("\n")
+    output_lines = unwrap_untrusted(result.output).split("\n")
     line_4 = [x for x in output_lines if x.strip().startswith("4")][0]
     actual_content = line_4.split("\t", 1)[1]
     assert actual_content.endswith("...")

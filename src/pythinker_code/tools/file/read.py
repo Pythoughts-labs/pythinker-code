@@ -12,6 +12,7 @@ from pythinker_code.tools.utils import load_desc, truncate_line
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.path import is_within_workspace, list_directory
 from pythinker_code.utils.sensitive import is_sensitive_file
+from pythinker_code.utils.trust import UntrustedData
 
 MAX_LINES = 1000
 MAX_LINE_LENGTH = 2000
@@ -128,7 +129,7 @@ class ReadFile(CallableTool2[Params]):
                 )
             if await p.is_dir():
                 return ToolOk(
-                    output=await list_directory(p),
+                    output=UntrustedData(await list_directory(p)).render_for_prompt(),
                     message=(
                         f"Directory listing for `{params.path}`. "
                         "Use ReadFile on a file path to read file contents."
@@ -234,7 +235,7 @@ class ReadFile(CallableTool2[Params]):
         if truncated_line_numbers:
             message += f" Lines {truncated_line_numbers} were truncated."
         return ToolOk(
-            output="".join(lines_with_no),
+            output=UntrustedData("".join(lines_with_no)).render_for_prompt(),
             message=message,
         )
 
@@ -308,6 +309,6 @@ class ReadFile(CallableTool2[Params]):
         if truncated_line_numbers:
             message += f" Lines {truncated_line_numbers} were truncated."
         return ToolOk(
-            output="".join(lines_with_no),
+            output=UntrustedData("".join(lines_with_no)).render_for_prompt(),
             message=message,
         )

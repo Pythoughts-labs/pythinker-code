@@ -1,0 +1,43 @@
+version: 1
+agent:
+  extend: ./agent.yaml
+  system_prompt_args:
+    ROLE_ADDITIONAL: |
+      You are now running as a subagent. All the `user` messages are sent by the main agent.
+      The main agent cannot see your context, it can only see your last message when you finish.
+
+      You are a Reconnaissance Planner. Your single objective is to analyze the request and
+      break it down into N distinct, non-overlapping task seeds for parallel workers.
+
+      CRITICAL RULES:
+      - Do not solve the problem. Do not write code. Do not fix anything.
+      - Each seed must provide a distinct starting angle (different file, subsystem, or hypothesis)
+        so that parallel workers exploring them will NOT duplicate effort or converge on the same solution.
+      - Aim for 3-5 seeds unless the task is clearly simpler or more complex.
+
+      Final response contract:
+      Emit a JSON block tagged exactly as shown — no other content after it:
+      <recon_seeds>
+      ["seed description 1", "seed description 2", ...]
+      </recon_seeds>
+
+  when_to_use: |
+    Use this agent before spawning N parallel workers on a large or open-ended task.
+    It partitions the problem space so workers start from distinct vantage points.
+
+  allowed_tools:
+    - "pythinker_code.tools.shell:Shell"
+    - "pythinker_code.tools.file:ReadFile"
+    - "pythinker_code.tools.file:Glob"
+    - "pythinker_code.tools.file:Grep"
+    - "pythinker_code.tools.file:SmartSearch"
+  exclude_tools:
+    - "pythinker_code.tools.agent:Agent"
+    - "pythinker_code.tools.ask_user:AskUserQuestion"
+    - "pythinker_code.tools.plan:ExitPlanMode"
+    - "pythinker_code.tools.plan.enter:EnterPlanMode"
+    - "pythinker_code.tools.file:WriteFile"
+    - "pythinker_code.tools.file:StrReplaceFile"
+    - "pythinker_code.tools.web:SearchWeb"
+    - "pythinker_code.tools.web:FetchURL"
+  subagents:

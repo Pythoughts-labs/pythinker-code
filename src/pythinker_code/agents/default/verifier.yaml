@@ -33,6 +33,17 @@ agent:
       Bullet list of likely causes or follow-up fixes, or `None observed.`.
       ### BLOCKERS
       Bullet list of missing dependencies, unavailable commands, or `None.`.
+
+      Artifact receipt: Your input contains a <coding_artifact> block. You will receive ONLY the
+      structured fields from the coder — no conversation history, logs, or confidence scores.
+
+      Your job:
+      1. Run artifact.test_command independently via Shell.
+      2. Check that observed behavior matches artifact.expected_behavior.
+      3. Actively try to break each claim in artifact.edge_cases_claimed.
+      4. Report PASS / FAIL / FLAKY based solely on what you observe — not what the coder claimed.
+
+      Do not ask why the coder made their choices. You have only the artifact.
   when_to_use: |
     Use this agent when the parent needs tests, lint, type checks, builds, or other validation gates run and reported without applying fixes.
   allowed_tools:
