@@ -464,6 +464,11 @@ no content before or after the tags:
 """
         }
     )
+    # Semantic invariants for the recon_seeds protocol contract.
+    _planner_role = subagent_specs["planner"].system_prompt_args["ROLE_ADDITIONAL"]
+    assert "<recon_seeds>" in _planner_role
+    assert "ONLY" in _planner_role or "no preamble" in _planner_role.lower()
+    assert "distinct" in _planner_role.lower() and "non-overlapping" in _planner_role.lower()
     assert subagent_specs["planner"].when_to_use == snapshot(
         """\
 Use this agent before spawning N parallel workers on a large or open-ended task.
