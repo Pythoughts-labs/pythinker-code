@@ -258,6 +258,31 @@ async def test_load_agent_invalid_tools(agent_file_invalid_tools: Path, runtime:
         await load_agent(agent_file_invalid_tools, runtime, mcp_configs=[])
 
 
+async def test_load_agent_exposes_agent_metadata(runtime: Runtime):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
+        (tmpdir / "system.md").write_text("Main agent prompt")
+        agent_yaml = tmpdir / "agent.yaml"
+        agent_yaml.write_text(
+            'version: 1\nagent:\n  name: "Main"\n'
+            "  system_prompt_path: ./system.md\n"
+            '  tools: ["pythinker_code.tools.think:Think"]\n'
+            "  mode: all\n"
+            "  hidden: true\n"
+            "  steps: 5\n"
+            "  temperature: 0.3\n"
+            "  top_p: 0.9\n"
+        )
+
+        agent = await load_agent(agent_yaml, runtime, mcp_configs=[])
+
+    assert agent.mode == "all"
+    assert agent.hidden is True
+    assert agent.steps == 5
+    assert agent.temperature == 0.3
+    assert agent.top_p == 0.9
+
+
 async def test_load_agent_registers_builtin_subagent_types(runtime: Runtime):
     """Agent loading should register builtin subagent types without instantiating them."""
     with tempfile.TemporaryDirectory() as tmpdir:

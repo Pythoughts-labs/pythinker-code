@@ -404,6 +404,11 @@ class Agent:
     toolset: Toolset
     runtime: Runtime
     """Each agent has its own runtime, which should be derived from its main agent."""
+    mode: str = "primary"
+    hidden: bool = False
+    steps: int | None = None
+    temperature: float | None = None
+    top_p: float | None = None
 
 
 async def load_agent(
@@ -455,6 +460,7 @@ async def load_agent(
                 when_to_use=builtin_spec.when_to_use,
                 default_model=builtin_spec.model,
                 tool_policy=tool_policy,
+                supports_background=not builtin_spec.hidden,
             )
         )
 
@@ -532,6 +538,11 @@ async def load_agent(
         system_prompt=system_prompt,
         toolset=toolset,
         runtime=runtime,
+        mode=agent_spec.mode,
+        hidden=agent_spec.hidden,
+        steps=agent_spec.steps,
+        temperature=agent_spec.temperature,
+        top_p=agent_spec.top_p,
     )
 
 

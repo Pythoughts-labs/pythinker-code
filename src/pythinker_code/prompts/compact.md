@@ -1,73 +1,41 @@
 
 ---
 
-The above is a list of messages in an agent conversation. You are now given a task to compact this conversation context according to specific priorities and rules.
+The above is a list of messages in an agent conversation. Compact it into a stable handoff summary that lets the agent continue without rereading the dropped history.
 
-**Compression Priorities (in order):**
-1. **Current Task State**: What is being worked on RIGHT NOW
-2. **Errors & Solutions**: All encountered errors and their resolutions
-3. **Code Evolution**: Final working versions only (remove intermediate attempts)
-4. **System Context**: Project structure, dependencies, environment setup
-5. **Design Decisions**: Architectural choices and their rationale
-6. **TODO Items**: Unfinished tasks and known issues
+Output exactly the Markdown structure shown below. Keep section names and order unchanged. Use terse bullets, not prose paragraphs. Preserve exact file paths, commands, error strings, identifiers, user constraints, and verification results when known. Do not mention the summary process or that context was compacted.
 
-**Compression Rules:**
-- MUST KEEP: Error messages, stack traces, working solutions, current task
-- MERGE: Similar discussions into single summary points
-- REMOVE: Redundant explanations, failed attempts (keep lessons learned), verbose comments
-- CONDENSE: Long code blocks → keep signatures + key logic only
+## Goal
+- [single-sentence summary of the user's current objective]
 
-**Special Handling:**
-- For code: Keep full version if < 20 lines, otherwise keep signature + key logic
-- For errors: Keep full error message + final solution
-- For discussions: Extract decisions and action items only
+## Constraints & Preferences
+- [user constraints, project rules, style preferences, approvals/trust boundaries, or "(none)"]
 
-**Required Output Structure:**
+## Progress
+### Done
+- [completed work and verified outcomes, or "(none)"]
 
-<current_focus>
-[What we're working on now]
-</current_focus>
+### In Progress
+- [current partial work, active branch/session state, or "(none)"]
 
-<environment>
-- [Key setup/config points]
-- ...more...
-</environment>
+### Blocked
+- [blockers, missing info, unavailable tools, or "(none)"]
 
-<completed_tasks>
-- [Task]: [Brief outcome]
-- ...more...
-</completed_tasks>
+## Key Decisions
+- [decision and why it was chosen, or "(none)"]
 
-<active_issues>
-- [Issue]: [Status/Next steps]
-- ...more...
-</active_issues>
+## Next Steps
+- [ordered next actions with acceptance/verification where known, or "(none)"]
 
-<code_state>
+## Critical Context
+- [important technical facts, errors and resolutions, risks, assumptions, or "(none)"]
 
-<file>
-[filename]
+## Relevant Files
+- [path: why it matters and latest known state, or "(none)"]
 
-**Summary:**
-[What this code file does]
-
-**Key elements:**
-- [Important functions/classes]
-- ...more...
-
-**Latest version:**
-[Critical code snippets in this file]
-</file>
-
-<file>
-[filename]
-...Similar as above...
-</file>
-
-...more files...
-</code_state>
-
-<important_context>
-- [Any crucial information not covered above]
-- ...more...
-</important_context>
+Rules:
+- Keep every section even when empty.
+- Preserve only final working code state; remove redundant attempts while keeping lessons from failures.
+- For code snippets, keep full snippets only when short; otherwise keep signatures, changed symbols, and key logic.
+- For errors, keep the exact error text and the final or next diagnostic action.
+- If prior summaries are present, merge still-true details and remove stale details.

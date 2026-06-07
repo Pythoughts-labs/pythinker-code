@@ -50,6 +50,9 @@ agent:
     planner:
       path: ./planner.yaml
       description: "Read-only recon planner that decomposes tasks into distinct parallel seeds."
+    scout:
+      path: ./scout.yaml
+      description: "Read-only external docs, dependency-source, and API freshness researcher."
     review:
       path: ./review.yaml
       description: "Read-only code review with severity-scored findings."

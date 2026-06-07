@@ -4,9 +4,11 @@ An agent defines the AI's behavior, including system prompts, available tools, a
 
 ## Built-in agents
 
-Pythinker Code provides two built-in agents. You can select one at startup with the `--agent` flag:
+Pythinker Code provides built-in primary agents. You can select one at startup with the `--agent` flag:
 
 ```sh
+pythinker --agent ask
+pythinker --agent debug
 pythinker --agent okabe
 ```
 
@@ -15,6 +17,14 @@ pythinker --agent okabe
 The default agent, suitable for general use. Enabled tools:
 
 `Agent`, `AskUserQuestion`, `SetTodoList`, `Shell`, `ReadFile`, `ReadMediaFile`, `Glob`, `Grep`, `WriteFile`, `StrReplaceFile`, `SearchWeb`, `FetchURL`, `EnterPlanMode`, `ExitPlanMode`, `TaskList`, `TaskOutput`, `TaskStop`
+
+### `ask`
+
+Read-only primary mode for answering questions, explaining code, and recommending approaches without modifying the workspace.
+
+### `debug`
+
+Primary mode for systematic failure diagnosis. It reproduces or inspects failure evidence first, narrows root-cause hypotheses, then applies a minimal fix only when implementation is clearly requested.
 
 ### `okabe`
 
@@ -94,7 +104,14 @@ agent:
 | `name` | Agent name | Yes (optional when inheriting) |
 | `system_prompt_path` | System prompt file path, relative to agent file | Yes (optional when inheriting) |
 | `system_prompt_args` | Custom arguments passed to system prompt, merged when inheriting | No |
+| `model` | Default model alias for this agent or subagent | No |
+| `mode` | Agent mode: `primary`, `subagent`, `all`, or `hidden` | No |
+| `hidden` | Hide this agent from default selection / background support metadata | No |
+| `steps` | Per-agent maximum steps per turn | No |
+| `temperature` | Agent model temperature metadata | No |
+| `top_p` | Agent model top-p metadata | No |
 | `tools` | Tool list, format is `module:ClassName` | Yes (optional when inheriting) |
+| `allowed_tools` | Tool allowlist used instead of the inherited full tool list | No |
 | `exclude_tools` | Tools to exclude | No |
 | `subagents` | Subagent definitions | No |
 
@@ -172,6 +189,8 @@ The default agent configuration includes focused built-in subagent types with di
 | `implementer` | Scoped implementation with minimal edits and quick verification | Read/search tools, `Shell`, write tools, web tools |
 | `explore` | Fast read-only codebase exploration: search, read, summarize | Read/search tools, `Shell`, web tools; no write tools |
 | `plan` | Implementation planning and architecture design | Read/search tools and web tools; no write tools |
+| `planner` | Read-only recon planner that decomposes broad work into parallel seeds | Read/search tools and `Shell`; no write tools |
+| `scout` | Read-only external docs, dependency-source, and API freshness researcher | Read/search tools, `Shell`, web tools; no write tools |
 | `review` | Read-only severity-scored code review | Read/search tools, `Shell`, web tools; no write tools |
 | `code-reviewer` | Diff-focused code review for the current branch | Read/search tools, `Shell`, web tools; no write tools |
 | `security-reviewer` | Diff-focused security review with validated findings | Read/search tools, `Shell`, web tools; no write tools |
@@ -197,7 +216,7 @@ The following are all built-in tools in Pythinker Code.
 ### `Agent`
 
 - **Path**: `pythinker_code.tools.agent:Agent`
-- **Description**: Start or resume a subagent instance for a focused task. Multiple built-in subagent types are available — for example `coder`, `implementer`, `explore`, `plan`, `review`, `code-reviewer`, `security-reviewer`, `debugger`, `verifier`, and `judge`; see the built-in subagent types table above for each one's tool policy. Each instance maintains its own context history and supports foreground or background execution.
+- **Description**: Start or resume a subagent instance for a focused task. Multiple built-in subagent types are available — for example `coder`, `implementer`, `explore`, `plan`, `planner`, `scout`, `review`, `code-reviewer`, `security-reviewer`, `debugger`, `verifier`, and `judge`; see the built-in subagent types table above for each one's tool policy. Each instance maintains its own context history and supports foreground or background execution.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|

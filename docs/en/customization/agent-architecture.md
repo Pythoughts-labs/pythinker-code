@@ -213,7 +213,7 @@ flowchart LR
   Result --> Context
 ```
 
-The toolset is both a registry and an execution boundary. It hides tools from the LLM when needed, validates tool names, parses JSON arguments, triggers hooks, converts exceptions to `ToolRuntimeError`, and returns async `ToolResult` tasks to `pythinker_core.step`. MCP tools are registered as local wrappers. Wire external tools are sent to the active Wire client as `ToolCallRequest` messages and wait for a client-provided result.
+The toolset is both a registry and an execution boundary. It hides tools from the LLM when needed, validates tool names, parses JSON arguments, triggers hooks, converts exceptions to `ToolRuntimeError`, and returns async `ToolResult` tasks to `pythinker_core.step`. The advertised tool list is filtered by the active execution profile, subagent/root role, plan-mode state, and hard permission profile before each model call; tool-specific execution guards still run even if a hidden tool is somehow called. MCP tools are registered as local wrappers. Wire external tools are sent to the active Wire client as `ToolCallRequest` messages and wait for a client-provided result.
 
 ## Subagent graph
 
@@ -311,6 +311,17 @@ Hooks are integrated at both turn and tool boundaries:
 | `SubagentStart` and `SubagentStop` | Around foreground subagent execution |
 
 Approvals flow through `ApprovalRuntime`. The runtime binds approval state to `RootWireHub`, so foreground turns, subagents, and background agents can publish approval requests back to the root UI. `PythinkerSoul.run` creates an `ApprovalSource` for each foreground turn and cancels unresolved approvals from that source when the turn exits.
+
+## Behavioral invariants
+
+| Invariant | Why it matters |
+|-----------|----------------|
+| Tool visibility is advisory, execution guards are authoritative | The model should not see tools that the current role/profile will reject, but every tool call still passes through hard guards and approvals. |
+| Permission profiles are snapshotted per step | A tool in the same assistant response cannot relax plan/read-only rules by changing session mode before another tool executes. |
+| Root orchestration stays root-only | Subagents cannot launch other subagents; child work must be visible to and coordinated by the root session. |
+| Subagents have isolated context | Parent agents receive summaries and status, not wholesale child histories, keeping delegation boundaries explicit. |
+| Compaction rewrites context through the normal context API | The system prompt, checkpoints, active skills, background task hints, hook context, and token estimate must be restored consistently. |
+| Wire is the observation boundary | UI, ACP, web, visualization, and subagent bridges should consume typed Wire events rather than reaching into soul internals. |
 
 ## Stop conditions
 

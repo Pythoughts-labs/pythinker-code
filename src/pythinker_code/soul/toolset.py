@@ -122,6 +122,17 @@ def _tool_defers_execution_started(tool: ToolType) -> bool:
     )
 
 
+def _is_external_side_effect_tool(tool: ToolType) -> bool:
+    """Return True for tool adapters whose side effects are not statically classified."""
+    tool_type = type(tool)
+    module = getattr(tool_type, "__module__", "")
+    qualname = getattr(tool_type, "__qualname__", "")
+    return bool(
+        (module == "pythinker_code.plugin.tool" and qualname.endswith("PluginTool"))
+        or (module == "pythinker_code.soul.toolset" and qualname in {"MCPTool", "WireExternalTool"})
+    )
+
+
 def _mcp_stderr_log_path(runtime: Runtime, server_name: str) -> Path:
     safe_name = _MCP_LOG_NAME_RE.sub("_", server_name).strip("._-") or "server"
     log_dir = runtime.session.dir / "mcp"
@@ -196,9 +207,55 @@ class PythinkerToolset:
 
     @property
     def tools(self) -> list[Tool]:
-        return [
-            tool.base for tool in self._tool_dict.values() if tool.name not in self._hidden_tools
-        ]
+        return [tool.base for tool in self._tool_dict.values() if self._is_tool_visible(tool)]
+
+    def _is_tool_visible(self, tool: ToolType) -> bool:
+        """Return whether *tool* should be advertised to the model for this step.
+
+        Tool-specific execution guards remain authoritative.  This model-facing filter is a
+        defense-in-depth layer that prevents agents from repeatedly selecting tools that the
+        active runtime profile, execution policy, or session mode will reject anyway.
+        """
+        if tool.name in self._hidden_tools:
+            return False
+        if self._runtime is None:
+            return True
+
+        runtime = self._runtime
+        from pythinker_code.execution_profiles import resolve_execution_policy
+        from pythinker_code.soul.permission import active_permission_profile
+
+        profile = active_permission_profile(runtime)
+        policy = resolve_execution_policy(
+            runtime.config.agent_execution_profile,
+            yolo=runtime.approval.is_yolo_flag(),
+        )
+
+        if tool.name in {"WriteFile", "StrReplaceFile"}:
+            if policy.write == "deny":
+                return False
+            return profile.allow_file_mutation or profile.allow_plan_file_mutation
+
+        if tool.name == "Shell" and policy.shell == "deny":
+            return False
+
+        if tool.name in {"SearchWeb", "FetchURL"} and policy.network == "deny":
+            return False
+
+        if tool.name in {"Agent", "RunAgents"} and (
+            runtime.role != "root" or policy.subagents == "deny"
+        ):
+            return False
+
+        if tool.name == "EnterPlanMode" and runtime.session.state.plan_mode:
+            return False
+        if tool.name == "ExitPlanMode" and not runtime.session.state.plan_mode:
+            return False
+
+        if _is_external_side_effect_tool(tool):
+            return profile.allow_file_mutation and profile.allow_shell_mutation
+
+        return True
 
     def handle(self, tool_call: ToolCall) -> HandleResult:
         token = current_tool_call.set(tool_call)

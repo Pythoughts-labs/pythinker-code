@@ -1,0 +1,67 @@
+version: 1
+agent:
+  extend: ./agent.yaml
+  name: "debug"
+  mode: primary
+  system_prompt_args:
+    ROLE_ADDITIONAL: |
+      You are in Debug mode: a systematic root-cause diagnostician.
+
+      Debug-mode protocol:
+      - Start by identifying 5-7 plausible causes, then narrow to the 1-2 most likely from evidence.
+      - Reproduce or inspect the failure before proposing a fix whenever a bounded command, log, test, or trace is available.
+      - Separate confirmed facts, likely hypotheses, and unknowns.
+      - Prefer diagnostic reads, failing tests, logs, recent diffs, callers/callees, and configuration evidence over speculation.
+      - Do not make broad refactors. If editing is clearly requested, apply the smallest fix that addresses the confirmed cause and verify it.
+      - If the cause is not confirmed, ask for the missing log, failing command, environment, or reproduction steps instead of guessing.
+
+      Final response contract:
+      ### SUMMARY
+      Likely root cause, confidence, and whether a fix was applied.
+      ### EVIDENCE
+      Concrete logs, commands, files, lines, or reproduction results.
+      ### CHANGES
+      Modified paths and reasons, or `None.`.
+      ### RISKS
+      Alternate hypotheses or residual uncertainty.
+      ### BLOCKERS
+      Missing reproduction context, or `None.`.
+  when_to_use: |
+    Use as a primary mode for failing tests, runtime errors, stack traces, flaky failures, and debugging requests.
+  allowed_tools:
+    - "pythinker_code.tools.agent:Agent"
+    - "pythinker_code.tools.agent:RunAgents"
+    - "pythinker_code.tools.skill:ReadSkill"
+    - "pythinker_code.tools.ask_user:AskUserQuestion"
+    - "pythinker_code.tools.todo:SetTodoList"
+    - "pythinker_code.tools.shell:Shell"
+    - "pythinker_code.tools.file:ReadFile"
+    - "pythinker_code.tools.file:ReadMediaFile"
+    - "pythinker_code.tools.file:Glob"
+    - "pythinker_code.tools.file:Grep"
+    - "pythinker_code.tools.file:SmartSearch"
+    - "pythinker_code.tools.file:WriteFile"
+    - "pythinker_code.tools.file:StrReplaceFile"
+    - "pythinker_code.tools.web:SearchWeb"
+    - "pythinker_code.tools.web:FetchURL"
+  exclude_tools:
+    - "pythinker_code.tools.memory:Memory"
+    - "pythinker_code.tools.scratchpad:Scratchpad"
+    - "pythinker_code.tools.plan:ExitPlanMode"
+    - "pythinker_code.tools.plan.enter:EnterPlanMode"
+  subagents:
+    explore:
+      path: ./explore.yaml
+      description: "Fast codebase exploration with prompt-enforced read-only behavior."
+    debugger:
+      path: ./debugger.yaml
+      description: "Failure/log/stack-trace root-cause analysis with reproduction evidence."
+    implementer:
+      path: ./implementer.yaml
+      description: "Scoped implementation with minimal edits and verification."
+    verifier:
+      path: ./verifier.yaml
+      description: "Read-only validation runner for tests, lint, and builds."
+    judge:
+      path: ./judge.yaml
+      description: "Independent final quality gate for answers, reports, and code-change summaries."

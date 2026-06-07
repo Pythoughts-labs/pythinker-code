@@ -324,6 +324,10 @@ class PythinkerSoul:
         self._approval = agent.runtime.approval
         self._context = context
         self._loop_control = agent.runtime.config.loop_control
+        if agent.steps is not None:
+            self._loop_control = self._loop_control.model_copy(
+                update={"max_steps_per_turn": agent.steps}
+            )
         self._current_step_no = 0
         self._deliberation_generation = 0
         self._sleep_inhibitor = SleepInhibitor(enabled=agent.runtime.config.prevent_idle_sleep)
