@@ -242,15 +242,13 @@ def _build_cost_panel(stats: AllStats):
     )
 
 
-def _maybe_print_cost_panel() -> None:
+async def _maybe_print_cost_panel() -> None:
     """Print the session cost panel if local usage data exists. Never raises."""
     try:
-        stats = _load_cost_stats()
+        stats = await asyncio.to_thread(_load_cost_stats)
         if stats is None:
             return
-        panel = _build_cost_panel(stats)
-        console.print(f"[bold]{panel.title}[/bold]")
-        console.print(panel.renderable)
+        console.print(_build_cost_panel(stats))
     except Exception:
         pass
 
@@ -352,4 +350,4 @@ async def usage(app: Shell, args: str):
     for report in non_empty_reports:
         console.print(build_panel(report))
 
-    _maybe_print_cost_panel()
+    await _maybe_print_cost_panel()

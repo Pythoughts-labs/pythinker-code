@@ -57,7 +57,8 @@ def test_build_cost_panel_title():
     assert "Session Cost" in str(panel.title)
 
 
-def test_usage_prints_cost_panel_when_data_exists(monkeypatch):
+async def test_usage_prints_cost_panel_when_data_exists(monkeypatch):
+    from rich.panel import Panel
     from pythinker_code.ui.shell import usage as usage_module
 
     stats = _make_all_stats(total_cost=2.50, messages=10)
@@ -66,13 +67,13 @@ def test_usage_prints_cost_panel_when_data_exists(monkeypatch):
     printed = []
     monkeypatch.setattr(usage_module.console, "print", lambda *a, **kw: printed.append(a))
 
-    # Directly call the cost panel rendering helper
-    usage_module._maybe_print_cost_panel()
+    await usage_module._maybe_print_cost_panel()
 
-    assert any("Session Cost" in str(item) for item in printed)
+    panels = [item[0] for item in printed if item and isinstance(item[0], Panel)]
+    assert any(p.title == "Session Cost" for p in panels)
 
 
-def test_usage_omits_cost_panel_when_no_data(monkeypatch):
+async def test_usage_omits_cost_panel_when_no_data(monkeypatch):
     from pythinker_code.ui.shell import usage as usage_module
 
     monkeypatch.setattr(usage_module, "_load_cost_stats", lambda: None)
@@ -80,12 +81,12 @@ def test_usage_omits_cost_panel_when_no_data(monkeypatch):
     printed = []
     monkeypatch.setattr(usage_module.console, "print", lambda *a, **kw: printed.append(a))
 
-    usage_module._maybe_print_cost_panel()
+    await usage_module._maybe_print_cost_panel()
 
-    assert not any("Session Cost" in str(item) for item in printed)
+    assert not printed
 
 
-def test_usage_omits_cost_panel_on_exception(monkeypatch):
+async def test_usage_omits_cost_panel_on_exception(monkeypatch):
     from pythinker_code.ui.shell import usage as usage_module
 
     def _raise():
@@ -97,6 +98,6 @@ def test_usage_omits_cost_panel_on_exception(monkeypatch):
     monkeypatch.setattr(usage_module.console, "print", lambda *a, **kw: printed.append(a))
 
     # Must not raise
-    usage_module._maybe_print_cost_panel()
+    await usage_module._maybe_print_cost_panel()
 
-    assert not any("Session Cost" in str(item) for item in printed)
+    assert not printed
