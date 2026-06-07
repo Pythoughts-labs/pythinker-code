@@ -82,11 +82,13 @@ def test_pyinstaller_datas():
             "pythinker_code",
         ),
         ("src/pythinker_code/agents/default/agent.yaml", "pythinker_code/agents/default"),
+        ("src/pythinker_code/agents/default/ask.yaml", "pythinker_code/agents/default"),
         (
             "src/pythinker_code/agents/default/code_reviewer.yaml",
             "pythinker_code/agents/default",
         ),
         ("src/pythinker_code/agents/default/coder.yaml", "pythinker_code/agents/default"),
+        ("src/pythinker_code/agents/default/debug.yaml", "pythinker_code/agents/default"),
         ("src/pythinker_code/agents/default/debugger.yaml", "pythinker_code/agents/default"),
         ("src/pythinker_code/agents/default/explore.yaml", "pythinker_code/agents/default"),
         ("src/pythinker_code/agents/default/implementer.yaml", "pythinker_code/agents/default"),
@@ -94,6 +96,7 @@ def test_pyinstaller_datas():
         ("src/pythinker_code/agents/default/plan.yaml", "pythinker_code/agents/default"),
         ("src/pythinker_code/agents/default/planner.yaml", "pythinker_code/agents/default"),
         ("src/pythinker_code/agents/default/review.yaml", "pythinker_code/agents/default"),
+        ("src/pythinker_code/agents/default/scout.yaml", "pythinker_code/agents/default"),
         (
             "src/pythinker_code/agents/default/security_reviewer.yaml",
             "pythinker_code/agents/default",
