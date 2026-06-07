@@ -139,6 +139,20 @@ async def test_default_agent(runtime: Runtime):
                 ),
             ),
             (
+                "planner",
+                "Read-only recon planner that decomposes tasks into distinct parallel seeds.",
+                "planner.yaml",
+                None,
+                "allowlist",
+                (
+                    "pythinker_code.tools.shell:Shell",
+                    "pythinker_code.tools.file:ReadFile",
+                    "pythinker_code.tools.file:Glob",
+                    "pythinker_code.tools.file:Grep",
+                    "pythinker_code.tools.file:SmartSearch",
+                ),
+            ),
+            (
                 "review",
                 "Read-only code review with severity-scored findings.",
                 "review.yaml",
@@ -285,6 +299,7 @@ instance can preserve previous findings and work.
 - `debugger`: Failure/log/stack-trace root-cause analysis with reproduction evidence. (Tools: Shell, SetTodoList, ReadFile, Grep, Model: inherit, Background: yes). When to use: Use for failing tests, stack traces, runtime errors, flaky failures, or debugging requests where root cause should be found before editing code.
 - `explore`: Fast codebase exploration with prompt-enforced read-only behavior. (Tools: Shell, SetTodoList, ReadFile, ReadMediaFile, Glob, Grep, SmartSearch, ReadSkill, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (e.g. "src/**/*.yaml"), search code for keywords (e.g. "database connection"), or answer questions about the codebase (e.g. "how does the auth module work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "thorough" for comprehensive analysis across multiple locations and naming conventions. Use this agent for any read-only exploration that will clearly require more than 3 tool calls. Prefer launching multiple explore agents concurrently when investigating independent questions.
 - `plan`: Read-only implementation planning and architecture design. (Tools: SetTodoList, ReadFile, ReadMediaFile, Glob, Grep, SmartSearch, ReadSkill, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Use this agent when the parent agent needs a step-by-step implementation plan, key file identification, and architectural trade-off analysis before code changes are made.
+- `planner`: Read-only recon planner that decomposes tasks into distinct parallel seeds. (Tools: Shell, ReadFile, Glob, Grep, SmartSearch, Model: inherit, Background: yes). When to use: Use this agent before spawning N parallel workers on a large or open-ended task. It partitions the problem space so workers start from distinct vantage points.
 - `review`: Read-only code review with severity-scored findings. (Tools: Shell, SetTodoList, ReadFile, ReadMediaFile, Glob, Grep, SmartSearch, ReadSkill, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Use this agent for read-only code review after changes are made or when the parent needs severity-scored findings before deciding what to fix.
 - `security-reviewer`: Diff-focused security review with validated findings. (Tools: Shell, SetTodoList, ReadFile, Grep, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Use to run a diff-only security review on the current branch. Can run in parallel with `code-reviewer`.
 - `implementer`: Scoped implementation with minimal edits and verification. (Tools: Shell, SetTodoList, ReadFile, ReadMediaFile, Glob, Grep, SmartSearch, WriteFile, StrReplaceFile, ReadSkill, SearchWeb, FetchURL, Model: inherit, Background: yes). When to use: Use this agent when the required code change is already specified and should be implemented with minimal edits and a quick verification pass.

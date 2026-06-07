@@ -16,7 +16,8 @@ agent:
       - Aim for 3-5 seeds unless the task is clearly simpler or more complex.
 
       Final response contract:
-      Emit a JSON block tagged exactly as shown — no other content after it:
+      Your final message must contain ONLY the seeds block below — no preamble, no explanation,
+      no content before or after the tags:
       <recon_seeds>
       ["seed description 1", "seed description 2", ...]
       </recon_seeds>

@@ -92,6 +92,7 @@ def test_pyinstaller_datas():
         ("src/pythinker_code/agents/default/implementer.yaml", "pythinker_code/agents/default"),
         ("src/pythinker_code/agents/default/judge.yaml", "pythinker_code/agents/default"),
         ("src/pythinker_code/agents/default/plan.yaml", "pythinker_code/agents/default"),
+        ("src/pythinker_code/agents/default/planner.yaml", "pythinker_code/agents/default"),
         ("src/pythinker_code/agents/default/review.yaml", "pythinker_code/agents/default"),
         (
             "src/pythinker_code/agents/default/security_reviewer.yaml",

@@ -72,6 +72,10 @@ def test_load_default_agent_spec():
                 "Fast codebase exploration with prompt-enforced read-only behavior.",
             ),
             "plan": ("plan.yaml", "Read-only implementation planning and architecture design."),
+            "planner": (
+                "planner.yaml",
+                "Read-only recon planner that decomposes tasks into distinct parallel seeds.",
+            ),
             "review": ("review.yaml", "Read-only code review with severity-scored findings."),
             "security-reviewer": (
                 "security_reviewer.yaml",
@@ -127,6 +131,21 @@ Bullet list of every file you modified, or `None.` if read-only.
 Bullet list of remaining risks or `None observed.`.
 ### BLOCKERS
 Bullet list of anything that stopped completion, or `None.`.
+
+Artifact contract: Before finishing, you MUST emit your result as a structured artifact.
+Wrap it in <coding_artifact> tags on its own line at the very end of your final message:
+
+<coding_artifact>
+{
+  "files_changed": ["path/to/file.py"],
+  "test_command": "make test",
+  "expected_behavior": "...",
+  "edge_cases_claimed": ["..."]
+}
+</coding_artifact>
+
+Do not include reasoning, logs, or intermediate output inside the tags — only the JSON fields above.
+The `edge_cases_claimed` key is optional; omit it if you have no distinct edge cases to claim.
 """  # noqa: E501
         }
     )

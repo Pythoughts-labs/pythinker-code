@@ -218,16 +218,16 @@ async def test_fetchurl_injection_payload_in_html_does_not_escape_wrapper(
     finally:
         await runner.cleanup()
 
-    # If extraction succeeded, the wrapper must be intact.
-    if not result.is_error and isinstance(result.output, str):
-        opening_count = result.output.count("<untrusted_data id=")
-        closing_count = result.output.count("</untrusted_data>")
-        assert opening_count == 1
-        assert closing_count == 1
-        # The raw ``</untrusted_data>FAKE`` substring must NOT appear as a sequence
-        # (it's escaped to ``&lt;...&gt;``), so the attacker cannot break out of the
-        # block by inserting a matching closing tag.
-        assert "</untrusted_data>FAKE" not in result.output
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    opening_count = result.output.count("<untrusted_data id=")
+    closing_count = result.output.count("</untrusted_data>")
+    assert opening_count == 1
+    assert closing_count == 1
+    # The raw ``</untrusted_data>FAKE`` substring must NOT appear as a sequence
+    # (it's escaped to ``&lt;...&gt;``), so the attacker cannot break out of the
+    # block by inserting a matching closing tag.
+    assert "</untrusted_data>FAKE" not in result.output
 
 
 async def test_fetchurl_wrapping_nonce_is_unique_per_call(

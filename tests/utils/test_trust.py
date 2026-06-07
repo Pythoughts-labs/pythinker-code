@@ -31,7 +31,7 @@ def test_render_preserves_content():
 
 def _body(rendered: str) -> str:
     """Extract the escaped body between the opening and framework closing tags."""
-    prefix, _, rest = rendered.partition(">\n")
+    _, _, rest = rendered.partition(">\n")
     return rest[: -len("\n</untrusted_data>")]
 
 
