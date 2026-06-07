@@ -438,6 +438,40 @@ Bullet list of questions that must be answered before execution, or `None.`.
     }
     assert sub_subagents == snapshot({})
 
+    assert subagent_specs["planner"].when_to_use == snapshot(
+        "Use this agent before spawning N parallel workers on a large or open-ended task.\nIt partitions the problem space so workers start from distinct vantage points.\n"
+    )
+    assert subagent_specs["planner"].allowed_tools == snapshot(
+        [
+            "pythinker_code.tools.shell:Shell",
+            "pythinker_code.tools.file:ReadFile",
+            "pythinker_code.tools.file:Glob",
+            "pythinker_code.tools.file:Grep",
+            "pythinker_code.tools.file:SmartSearch",
+        ]
+    )
+    assert subagent_specs["planner"].exclude_tools == snapshot(
+        [
+            "pythinker_code.tools.agent:Agent",
+            "pythinker_code.tools.ask_user:AskUserQuestion",
+            "pythinker_code.tools.plan:ExitPlanMode",
+            "pythinker_code.tools.plan.enter:EnterPlanMode",
+            "pythinker_code.tools.file:WriteFile",
+            "pythinker_code.tools.file:StrReplaceFile",
+            "pythinker_code.tools.web:SearchWeb",
+            "pythinker_code.tools.web:FetchURL",
+        ]
+    )
+    planner_role = subagent_specs["planner"].system_prompt_args["ROLE_ADDITIONAL"]
+    assert "<recon_seeds>" in planner_role
+    assert "ONLY" in planner_role
+    assert "no content before or after the tags" in planner_role
+    planner_sub = {
+        name: (spec.path.relative_to(DEFAULT_AGENT_FILE.parent).as_posix(), spec.description)
+        for name, spec in subagent_specs["planner"].subagents.items()
+    }
+    assert planner_sub == snapshot({})
+
 
 def test_default_subagents_include_production_guardrail_gate():
     subagent_specs = {
