@@ -69,28 +69,55 @@ _PRICE_TABLE: dict[str, tuple[float, float, float, float]] = {
 def get_cost_usd(model: str, usage: TokenUsage) -> float:
     """Return estimated USD cost for one LLM step.
 
-    Looks up the exact model ID first; falls back to prefix matching
-    for versioned aliases (e.g. ``claude-sonnet-4-5-20250929`` →
-    ``claude-sonnet-4-5``). Returns 0.0 for unknown models.
+    Resolution order:
+    1. Exact match in models.dev catalog (load_catalog)
+    2. Longest prefix match in catalog
+    3. Exact match in hardcoded _PRICE_TABLE (offline/unknown-model fallback)
+    4. Longest prefix match in _PRICE_TABLE
+    5. 0.0
     """
-    pricing = _PRICE_TABLE.get(model)
-    if pricing is None:
-        # Prefix fallback: longest matching key wins.
-        best: tuple[float, float, float, float] | None = None
-        best_len = 0
-        for key, val in _PRICE_TABLE.items():
-            if model.startswith(key) and len(key) > best_len:
-                best = val
-                best_len = len(key)
-        if best is None:
-            return 0.0
-        pricing = best
+    from pythinker_code.models_dev import ModelPrice, load_catalog
 
-    inp, out, cr, cw = pricing
-    total = (
-        usage.input_other * inp
-        + usage.output * out
-        + usage.input_cache_read * cr
-        + usage.input_cache_creation * cw
-    ) / 1_000_000
-    return total
+    def _apply(p: tuple[float, float, float, float] | ModelPrice) -> float:
+        if isinstance(p, ModelPrice):
+            inp, out, cr, cw = p.input, p.output, p.cache_read, p.cache_write
+        else:
+            inp, out, cr, cw = p
+        return (
+            usage.input_other * inp
+            + usage.output * out
+            + usage.input_cache_read * cr
+            + usage.input_cache_creation * cw
+        ) / 1_000_000
+
+    catalog = load_catalog()
+
+    # 1. Catalog exact
+    if model in catalog:
+        return _apply(catalog[model])
+
+    # 2. Catalog prefix (longest wins)
+    best_cat: ModelPrice | None = None
+    best_cat_len = 0
+    for key, val in catalog.items():
+        if model.startswith(key) and len(key) > best_cat_len:
+            best_cat = val
+            best_cat_len = len(key)
+    if best_cat is not None:
+        return _apply(best_cat)
+
+    # 3. Hardcoded exact
+    if model in _PRICE_TABLE:
+        return _apply(_PRICE_TABLE[model])
+
+    # 4. Hardcoded prefix (longest wins)
+    best: tuple[float, float, float, float] | None = None
+    best_len = 0
+    for key, val in _PRICE_TABLE.items():
+        if model.startswith(key) and len(key) > best_len:
+            best = val
+            best_len = len(key)
+    if best is not None:
+        return _apply(best)
+
+    return 0.0
