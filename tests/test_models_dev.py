@@ -161,6 +161,31 @@ async def test_refresh_catalog_noop_within_ttl(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_refresh_catalog_fetches_when_stale(tmp_path, monkeypatch):
+    import os
+    from pythinker_code import models_dev
+    cache_file = tmp_path / "models-dev.json"
+    cache_file.write_text(_fixture_json())
+    # Backdate mtime by 25 hours (beyond 24h TTL)
+    stale_mtime = cache_file.stat().st_mtime - (25 * 3600)
+    os.utime(cache_file, (stale_mtime, stale_mtime))
+    monkeypatch.setattr(models_dev, "_get_cache_path", lambda: cache_file)
+    models_dev._catalog_cache.clear()
+
+    fetch_called = []
+
+    async def fake_fetch(path):
+        fetch_called.append(True)
+        return True
+
+    with patch.object(models_dev, "_do_fetch", fake_fetch):
+        result = await models_dev.refresh_catalog(force=False)
+
+    assert result is True
+    assert len(fetch_called) == 1
+
+
+@pytest.mark.asyncio
 async def test_refresh_catalog_swallows_network_error(tmp_path, monkeypatch):
     import aiohttp
     from pythinker_code import models_dev
@@ -168,8 +193,12 @@ async def test_refresh_catalog_swallows_network_error(tmp_path, monkeypatch):
     monkeypatch.setattr(models_dev, "_get_cache_path", lambda: cache_file)
     models_dev._catalog_cache.clear()
 
+    mock_resp = AsyncMock()
+    mock_resp.__aenter__ = AsyncMock(side_effect=aiohttp.ClientError("connection refused"))
+    mock_resp.__aexit__ = AsyncMock(return_value=False)
+
     mock_session = AsyncMock()
-    mock_session.get.side_effect = aiohttp.ClientError("connection refused")
+    mock_session.get = lambda *a, **kw: mock_resp
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session.__aexit__ = AsyncMock(return_value=False)
 
