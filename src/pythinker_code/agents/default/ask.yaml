@@ -26,7 +26,6 @@ agent:
     - "pythinker_code.tools.agent:RunAgents"
     - "pythinker_code.tools.skill:ReadSkill"
     - "pythinker_code.tools.ask_user:AskUserQuestion"
-    - "pythinker_code.tools.shell:Shell"
     - "pythinker_code.tools.file:ReadFile"
     - "pythinker_code.tools.file:ReadMediaFile"
     - "pythinker_code.tools.file:Glob"
