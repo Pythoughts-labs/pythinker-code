@@ -438,9 +438,39 @@ Bullet list of questions that must be answered before execution, or `None.`.
     }
     assert sub_subagents == snapshot({})
 
-    assert subagent_specs["planner"].when_to_use == snapshot(
-        "Use this agent before spawning N parallel workers on a large or open-ended task.\nIt partitions the problem space so workers start from distinct vantage points.\n"
+    assert subagent_specs["planner"].name == snapshot("")
+    assert subagent_specs["planner"].system_prompt_path == DEFAULT_AGENT_FILE.parent / "system.md"
+    assert subagent_specs["planner"].system_prompt_args == snapshot(
+        {
+            "ROLE_ADDITIONAL": """\
+You are now running as a subagent. All the `user` messages are sent by the main agent.
+The main agent cannot see your context, it can only see your last message when you finish.
+
+You are a Reconnaissance Planner. Your single objective is to analyze the request and
+break it down into N distinct, non-overlapping task seeds for parallel workers.
+
+CRITICAL RULES:
+- Do not solve the problem. Do not write code. Do not fix anything.
+- Each seed must provide a distinct starting angle (different file, subsystem, or hypothesis)
+  so that parallel workers exploring them will NOT duplicate effort or converge on the same solution.
+- Aim for 3-5 seeds unless the task is clearly simpler or more complex.
+
+Final response contract:
+Your final message must contain ONLY the seeds block below — no preamble, no explanation,
+no content before or after the tags:
+<recon_seeds>
+["seed description 1", "seed description 2", ...]
+</recon_seeds>
+"""
+        }
     )
+    assert subagent_specs["planner"].when_to_use == snapshot(
+        """\
+Use this agent before spawning N parallel workers on a large or open-ended task.
+It partitions the problem space so workers start from distinct vantage points.
+"""
+    )
+    assert subagent_specs["planner"].model == snapshot(None)
     assert subagent_specs["planner"].allowed_tools == snapshot(
         [
             "pythinker_code.tools.shell:Shell",
@@ -462,10 +492,34 @@ Bullet list of questions that must be answered before execution, or `None.`.
             "pythinker_code.tools.web:FetchURL",
         ]
     )
-    planner_role = subagent_specs["planner"].system_prompt_args["ROLE_ADDITIONAL"]
-    assert "<recon_seeds>" in planner_role
-    assert "ONLY" in planner_role
-    assert "no content before or after the tags" in planner_role
+    assert subagent_specs["planner"].tools == snapshot(
+        [
+            "pythinker_code.tools.agent:Agent",
+            "pythinker_code.tools.agent:RunAgents",
+            "pythinker_code.tools.skill:ReadSkill",
+            "pythinker_code.tools.ask_user:AskUserQuestion",
+            "pythinker_code.tools.todo:SetTodoList",
+            "pythinker_code.tools.memory:Memory",
+            "pythinker_code.tools.scratchpad:Scratchpad",
+            "pythinker_code.tools.shell:Shell",
+            "pythinker_code.tools.background:TaskList",
+            "pythinker_code.tools.background:TaskOutput",
+            "pythinker_code.tools.background:TaskInput",
+            "pythinker_code.tools.background:TaskHandoff",
+            "pythinker_code.tools.background:TaskStop",
+            "pythinker_code.tools.file:ReadFile",
+            "pythinker_code.tools.file:ReadMediaFile",
+            "pythinker_code.tools.file:Glob",
+            "pythinker_code.tools.file:Grep",
+            "pythinker_code.tools.file:SmartSearch",
+            "pythinker_code.tools.file:WriteFile",
+            "pythinker_code.tools.file:StrReplaceFile",
+            "pythinker_code.tools.web:SearchWeb",
+            "pythinker_code.tools.web:FetchURL",
+            "pythinker_code.tools.plan:ExitPlanMode",
+            "pythinker_code.tools.plan.enter:EnterPlanMode",
+        ]
+    )
     planner_sub = {
         name: (spec.path.relative_to(DEFAULT_AGENT_FILE.parent).as_posix(), spec.description)
         for name, spec in subagent_specs["planner"].subagents.items()
