@@ -11,6 +11,7 @@ from prompt_toolkit.layout import HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 
+from pythinker_code.models_dev import refresh_catalog as _refresh_catalog
 from pythinker_code.ui.shell.console import console
 from pythinker_code.ui.shell.slash import registry
 from pythinker_code.ui.shell.stats_collector import (
@@ -319,6 +320,7 @@ class StatsApp:
 @registry.command(name="stats", aliases=["history"])
 async def stats(app: Shell, args: str) -> None:
     """Show usage statistics dashboard (tokens and cost by provider/model)."""
+    await _refresh_catalog()
     from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
 
     _t = _get_tui_tokens()

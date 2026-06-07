@@ -28,6 +28,7 @@ from pythinker_code.ui.shell.usage_render import (
     remaining_quota as _remaining_quota,
 )
 from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
+from pythinker_code.models_dev import refresh_catalog as _refresh_catalog
 from pythinker_code.usage_ratelimit_cache import get_cache
 from pythinker_code.utils.datetime import format_duration
 
@@ -206,6 +207,7 @@ async def usage(app: Shell, args: str):
     Pass `all` for every provider, or a provider key to filter.
     """
     assert isinstance(app.soul, PythinkerSoul)
+    await _refresh_catalog()
 
     _t = _get_tui_tokens()
     try:
