@@ -16,6 +16,8 @@ from pythinker_core.tooling import ToolReturnValue
 from pythinker_code.tools.web import fetch as fetch_module
 from pythinker_code.tools.web.fetch import FetchURL, Params
 
+from tests.tools._untrusted import unwrap_untrusted
+
 
 @pytest.fixture(autouse=True)
 def _bypass_ssrf_validation(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -120,15 +122,15 @@ async def test_fetch_url_basic_functionality(
         result.message == "The returned content is the main text content extracted from the page."
     )
     # Verify trafilatura extracted the meaningful text from the HTML
-    assert "optimizer" in result.output
-    assert "adamw" in result.output
-    assert "adamW" in result.output
+    assert "optimizer" in unwrap_untrusted(result.output)
+    assert "adamw" in unwrap_untrusted(result.output)
+    assert "adamW" in unwrap_untrusted(result.output)
     # Verify HTML tags were stripped (not returning raw HTML)
-    assert "<article>" not in result.output
-    assert "<code>" not in result.output
+    assert "<article>" not in unwrap_untrusted(result.output)
+    assert "<code>" not in unwrap_untrusted(result.output)
     # Verify metadata extraction (with_metadata=True)
-    assert "title:" in result.output.lower()
-    assert "description:" in result.output.lower()
+    assert "title:" in unwrap_untrusted(result.output).lower()
+    assert "description:" in unwrap_untrusted(result.output).lower()
 
 
 async def test_fetch_url_invalid_url(fetch_url_tool: FetchURL) -> None:
@@ -216,7 +218,7 @@ This is a markdown document.
 """
     result = await mocked_fetch(plain_markdown, content_type="text/markdown; charset=utf-8")
     assert not result.is_error
-    assert result.output == snapshot(plain_markdown)
+    assert unwrap_untrusted(result.output) == snapshot(plain_markdown)
     assert result.message == "The returned content is the full content of the page."
 
     # Real example: https://langfuse.com/docs.md
@@ -237,7 +239,7 @@ This is a markdown document.
         content_type="text/markdown; charset=utf-8",
     )
     assert not result.is_error
-    assert result.output == snapshot(complex_markdown)
+    assert unwrap_untrusted(result.output) == snapshot(complex_markdown)
     assert result.message == "The returned content is the full content of the page."
 
 
@@ -270,7 +272,7 @@ async def test_fetch_url_follows_validated_redirect(fetch_url_tool: FetchURL) ->
         await runner.cleanup()
 
     assert not result.is_error
-    assert "redirected body content" in result.output
+    assert "redirected body content" in unwrap_untrusted(result.output)
 
 
 async def test_fetch_url_blocks_redirect_to_disallowed_host(
@@ -383,7 +385,7 @@ async def test_fetch_url_with_service(runtime) -> None:
             current_tool_call.reset(token)
 
         assert not result.is_error
-        assert result.output == expected_content
+        assert unwrap_untrusted(result.output) == expected_content
         assert result.message == snapshot(
             "The returned content is the main content extracted from the page."
         )
@@ -460,7 +462,7 @@ async def test_fetch_url_follows_safe_redirect(
     result = await fetch_url_tool(Params(url=f"{base}/start"))
 
     assert not result.is_error
-    assert "redirected body" in result.output
+    assert "redirected body" in unwrap_untrusted(result.output)
 
 
 async def test_fetch_url_redirect_loop_is_capped(

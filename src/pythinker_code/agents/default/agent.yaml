@@ -47,6 +47,9 @@ agent:
     plan:
       path: ./plan.yaml
       description: "Read-only implementation planning and architecture design."
+    planner:
+      path: ./planner.yaml
+      description: "Read-only recon planner that decomposes tasks into distinct parallel seeds."
     review:
       path: ./review.yaml
       description: "Read-only code review with severity-scored findings."

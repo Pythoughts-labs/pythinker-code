@@ -17,6 +17,11 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Prompt-injection defense: `UntrustedData` wrapper.** All external content returned by `ReadFile` and `FetchURL` is now wrapped in `<untrusted_data id="NONCE">…</untrusted_data>` tags before being passed to the LLM, providing a clear boundary between trusted instructions and untrusted file/web content. The `UntrustedData` primitive escapes embedded closing tags to prevent breakout attacks.
+- **Agent boundary artifacts.** New `CodingArtifact` / `VerificationResult` and `VulnerabilityArtifact` / `AuditVerdict` frozen dataclasses in `pythinker_code.utils.artifacts` enforce a typed information barrier between coder and verifier subagents.
+- **Recon-first `planner` subagent.** A new read-only `planner` built-in agent type decomposes open-ended tasks into distinct parallel seed descriptions emitted as `<recon_seeds>` JSON, enabling structured fan-out before parallel workers start.
+- **Coder artifact contract.** The `coder` subagent now emits a `<coding_artifact>` JSON block at the end of every response, providing structured handoff data (`files_changed`, `test_command`, `expected_behavior`, optional `edge_cases_claimed`) that the `verifier` subagent can consume directly.
+
 ## 0.36.0 (2026-06-05)
 
 - **Alibaba DashScope multi-region fallback.** Logging in with a China-region key (`dashscope.aliyuncs.com`) against the default US Virginia endpoint now auto-detects the mismatch and reconfigures for the correct endpoint rather than failing with a misleading "API key is wrong" error.
