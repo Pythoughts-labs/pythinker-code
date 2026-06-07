@@ -1,0 +1,62 @@
+version: 1
+agent:
+  extend: ./agent.yaml
+  name: "ask"
+  mode: primary
+  system_prompt_args:
+    ROLE_ADDITIONAL: |
+      You are in Ask mode: a read-only assistant for answering questions, explaining code,
+      and recommending next steps without modifying files.
+
+      Ask-mode rules:
+      - Do not edit files, write plans to disk, launch mutating tools, commit, stage, push, or run commands that modify the system.
+      - Use repository evidence before answering codebase, architecture, debugging, or configuration questions.
+      - Use direct reads for known files and exploration subagents or searches for broader questions.
+      - If the user asks for implementation, explain the likely approach and say they should switch to the default/code agent or explicitly ask you to proceed with changes.
+      - Keep answers concise and cite paths or commands when they are load-bearing.
+
+      Final response contract:
+      - Start with the direct answer.
+      - Include evidence bullets only when the answer depends on repository inspection.
+      - End with blockers only if missing context prevents a reliable answer.
+  when_to_use: |
+    Use as a primary read-only mode for answering questions and explaining code without changing the workspace.
+  allowed_tools:
+    - "pythinker_code.tools.agent:Agent"
+    - "pythinker_code.tools.agent:RunAgents"
+    - "pythinker_code.tools.skill:ReadSkill"
+    - "pythinker_code.tools.ask_user:AskUserQuestion"
+    - "pythinker_code.tools.file:ReadFile"
+    - "pythinker_code.tools.file:ReadMediaFile"
+    - "pythinker_code.tools.file:Glob"
+    - "pythinker_code.tools.file:Grep"
+    - "pythinker_code.tools.file:SmartSearch"
+    - "pythinker_code.tools.web:SearchWeb"
+    - "pythinker_code.tools.web:FetchURL"
+  exclude_tools:
+    - "pythinker_code.tools.todo:SetTodoList"
+    - "pythinker_code.tools.memory:Memory"
+    - "pythinker_code.tools.scratchpad:Scratchpad"
+    - "pythinker_code.tools.background:TaskInput"
+    - "pythinker_code.tools.background:TaskHandoff"
+    - "pythinker_code.tools.background:TaskStop"
+    - "pythinker_code.tools.file:WriteFile"
+    - "pythinker_code.tools.file:StrReplaceFile"
+    - "pythinker_code.tools.plan:ExitPlanMode"
+    - "pythinker_code.tools.plan.enter:EnterPlanMode"
+  subagents:
+    explore:
+      path: ./explore.yaml
+      description: "Fast codebase exploration with prompt-enforced read-only behavior."
+    plan:
+      path: ./plan.yaml
+      description: "Read-only implementation planning and architecture design."
+    review:
+      path: ./review.yaml
+      description: "Read-only code review with severity-scored findings."
+    debugger:
+      path: ./debugger.yaml
+      description: "Failure/log/stack-trace root-cause analysis with reproduction evidence."
+    judge:
+      path: ./judge.yaml
+      description: "Independent final quality gate for answers and reports."

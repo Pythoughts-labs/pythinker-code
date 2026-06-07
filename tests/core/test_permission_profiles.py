@@ -257,6 +257,124 @@ async def test_unknown_subagent_type_defaults_to_read_only_profile(
     assert not await target.exists()
 
 
+async def test_toolset_hides_rejected_tools_from_read_only_subagent(
+    runtime: Runtime,
+    environment: Environment,
+    config,
+) -> None:
+    from pythinker_code.soul.toolset import PythinkerToolset
+    from pythinker_code.tools.file.read import ReadFile
+    from pythinker_code.tools.file.replace import StrReplaceFile
+    from pythinker_code.tools.web.fetch import FetchURL
+    from pythinker_code.tools.web.search import SearchWeb
+
+    runtime.role = "subagent"
+    runtime.subagent_type = "explore"
+    toolset = PythinkerToolset(runtime)
+    toolset.add(ReadFile(runtime))
+    toolset.add(WriteFile(runtime, Approval(yolo=True)))
+    toolset.add(StrReplaceFile(runtime, Approval(yolo=True)))
+    toolset.add(Shell(Approval(yolo=True), environment, runtime))
+    toolset.add(SearchWeb(config, runtime))
+    toolset.add(FetchURL(config, runtime))
+    toolset.add(AgentTool(runtime))
+
+    tool_names = {tool.name for tool in toolset.tools}
+
+    assert "ReadFile" in tool_names
+    assert "Shell" in tool_names  # read-only shell commands are still possible
+    assert "SearchWeb" in tool_names
+    assert "FetchURL" in tool_names
+    assert "WriteFile" not in tool_names
+    assert "StrReplaceFile" not in tool_names
+    assert "Agent" not in tool_names
+
+
+async def test_toolset_keeps_plan_file_tools_only_while_plan_mode_is_active(
+    runtime: Runtime,
+    environment: Environment,
+) -> None:
+    from pythinker_code.soul.toolset import PythinkerToolset
+    from pythinker_code.tools.file.replace import StrReplaceFile
+    from pythinker_code.tools.plan import ExitPlanMode
+    from pythinker_code.tools.plan.enter import EnterPlanMode
+
+    runtime.session.state.plan_mode = True
+    toolset = PythinkerToolset(runtime)
+    toolset.add(WriteFile(runtime, Approval(yolo=True)))
+    toolset.add(StrReplaceFile(runtime, Approval(yolo=True)))
+    toolset.add(Shell(Approval(yolo=True), environment, runtime))
+    toolset.add(EnterPlanMode())
+    toolset.add(ExitPlanMode())
+
+    tool_names = {tool.name for tool in toolset.tools}
+
+    assert "WriteFile" in tool_names
+    assert "StrReplaceFile" in tool_names
+    assert "Shell" in tool_names
+    assert "ExitPlanMode" in tool_names
+    assert "EnterPlanMode" not in tool_names
+
+    runtime.session.state.plan_mode = False
+    tool_names = {tool.name for tool in toolset.tools}
+
+    assert "EnterPlanMode" in tool_names
+    assert "ExitPlanMode" not in tool_names
+
+
+async def test_toolset_hides_policy_denied_shell_and_network_tools(
+    runtime: Runtime,
+    environment: Environment,
+    config,
+) -> None:
+    from pythinker_code.soul.toolset import PythinkerToolset
+    from pythinker_code.tools.web.fetch import FetchURL
+    from pythinker_code.tools.web.search import SearchWeb
+
+    runtime.config.agent_execution_profile = "plan_only"
+    toolset = PythinkerToolset(runtime)
+    toolset.add(Shell(Approval(yolo=True), environment, runtime))
+    toolset.add(SearchWeb(config, runtime))
+    toolset.add(FetchURL(config, runtime))
+    toolset.add(AgentTool(runtime))
+
+    tool_names = {tool.name for tool in toolset.tools}
+
+    assert "Shell" not in tool_names
+    assert "SearchWeb" not in tool_names
+    assert "FetchURL" not in tool_names
+    assert "Agent" in tool_names
+
+
+async def test_toolset_hides_plugin_tool_in_read_only_profile(
+    runtime: Runtime,
+    tmp_path,
+) -> None:
+    from pythinker_code.plugin import PluginToolSpec
+    from pythinker_code.plugin.tool import PluginTool
+    from pythinker_code.soul.toolset import PythinkerToolset
+
+    runtime.role = "subagent"
+    runtime.subagent_type = "explore"
+    plugin_dir = tmp_path / "plugin"
+    plugin_dir.mkdir()
+    toolset = PythinkerToolset(runtime)
+    toolset.add(
+        PluginTool(
+            PluginToolSpec(
+                name="plugin_tool",
+                description="test",
+                command=[sys.executable, "-c", "print('should not run')"],
+            ),
+            plugin_dir=plugin_dir,
+            inject={},
+            config=runtime.config,
+        )
+    )
+
+    assert {tool.name for tool in toolset.tools} == set()
+
+
 async def test_toolset_denies_plugin_tool_in_read_only_profile(
     runtime: Runtime,
     tmp_path,

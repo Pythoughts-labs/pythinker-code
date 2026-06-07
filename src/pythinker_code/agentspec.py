@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, NamedTuple, cast
+from typing import Any, Literal, NamedTuple, cast
 
 import yaml
 from pydantic import BaseModel, Field
@@ -12,12 +12,16 @@ from pythinker_code.exception import AgentSpecError
 DEFAULT_AGENT_SPEC_VERSION = "1"
 SUPPORTED_AGENT_SPEC_VERSIONS = (DEFAULT_AGENT_SPEC_VERSION,)
 
+type AgentMode = Literal["primary", "subagent", "all", "hidden"]
+
 
 def get_agents_dir() -> Path:
     return Path(__file__).parent / "agents"
 
 
 DEFAULT_AGENT_FILE = get_agents_dir() / "default" / "agent.yaml"
+ASK_AGENT_FILE = get_agents_dir() / "default" / "ask.yaml"
+DEBUG_AGENT_FILE = get_agents_dir() / "default" / "debug.yaml"
 OKABE_AGENT_FILE = get_agents_dir() / "okabe" / "agent.yaml"
 
 
@@ -40,6 +44,13 @@ class AgentSpec(BaseModel):
         default_factory=dict, description="System prompt arguments"
     )
     model: str | None = Field(default=None, description="Default model alias")
+    mode: AgentMode | None = Field(
+        default=None, description="Agent mode: primary, subagent, all, hidden"
+    )
+    hidden: bool | None = Field(default=None, description="Hide this agent from default selection")
+    steps: int | None = Field(default=None, ge=1, description="Maximum steps per turn")
+    temperature: float | None = Field(default=None, ge=0, le=2, description="Model temperature")
+    top_p: float | None = Field(default=None, ge=0, le=1, description="Model top-p")
     when_to_use: str | None = Field(default=None, description="Usage guidance")
     tools: list[str] | None | Inherit = Field(default=inherit, description="Tools")  # required
     allowed_tools: list[str] | None | Inherit = Field(default=inherit, description="Allowed tools")
@@ -66,6 +77,11 @@ class ResolvedAgentSpec:
     system_prompt_path: Path
     system_prompt_args: dict[str, str]
     model: str | None
+    mode: AgentMode
+    hidden: bool
+    steps: int | None
+    temperature: float | None
+    top_p: float | None
     when_to_use: str
     tools: list[str]
     allowed_tools: list[str] | None
@@ -100,6 +116,11 @@ def load_agent_spec(agent_file: Path) -> ResolvedAgentSpec:
         system_prompt_path=agent_spec.system_prompt_path,
         system_prompt_args=agent_spec.system_prompt_args,
         model=agent_spec.model,
+        mode=agent_spec.mode or "primary",
+        hidden=bool(agent_spec.hidden),
+        steps=agent_spec.steps,
+        temperature=agent_spec.temperature,
+        top_p=agent_spec.top_p,
         when_to_use=agent_spec.when_to_use or "",
         tools=agent_spec.tools or [],
         allowed_tools=agent_spec.allowed_tools,
@@ -149,6 +170,16 @@ def _load_agent_spec(agent_file: Path) -> AgentSpec:
             base_agent_spec.system_prompt_args[k] = v
         if agent_spec.model is not None:
             base_agent_spec.model = agent_spec.model
+        if agent_spec.mode is not None:
+            base_agent_spec.mode = agent_spec.mode
+        if agent_spec.hidden is not None:
+            base_agent_spec.hidden = agent_spec.hidden
+        if agent_spec.steps is not None:
+            base_agent_spec.steps = agent_spec.steps
+        if agent_spec.temperature is not None:
+            base_agent_spec.temperature = agent_spec.temperature
+        if agent_spec.top_p is not None:
+            base_agent_spec.top_p = agent_spec.top_p
         if agent_spec.when_to_use is not None:
             base_agent_spec.when_to_use = agent_spec.when_to_use
         if not isinstance(agent_spec.tools, Inherit):

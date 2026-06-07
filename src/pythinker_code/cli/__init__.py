@@ -478,7 +478,7 @@ def pythinker(
     ] = False,
     # Customization
     agent: Annotated[
-        Literal["default", "okabe"] | None,
+        Literal["default", "ask", "debug", "okabe"] | None,
         typer.Option(
             "--agent",
             help="Builtin agent specification to use. Default: builtin default agent.",
@@ -574,7 +574,12 @@ def pythinker(
 
     from pythinker_host.path import HostPath
 
-    from pythinker_code.agentspec import DEFAULT_AGENT_FILE, OKABE_AGENT_FILE
+    from pythinker_code.agentspec import (
+        ASK_AGENT_FILE,
+        DEBUG_AGENT_FILE,
+        DEFAULT_AGENT_FILE,
+        OKABE_AGENT_FILE,
+    )
     from pythinker_code.app import PythinkerCLI, enable_logging
     from pythinker_code.config import Config, load_config_from_string
     from pythinker_code.exception import ConfigError
@@ -656,6 +661,10 @@ def pythinker(
         match agent:
             case "default":
                 agent_file = DEFAULT_AGENT_FILE
+            case "ask":
+                agent_file = ASK_AGENT_FILE
+            case "debug":
+                agent_file = DEBUG_AGENT_FILE
             case "okabe":
                 agent_file = OKABE_AGENT_FILE
 

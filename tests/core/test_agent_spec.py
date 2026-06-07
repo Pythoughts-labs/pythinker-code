@@ -22,6 +22,11 @@ def test_load_default_agent_spec():
     assert spec.system_prompt_args == snapshot({"ROLE_ADDITIONAL": ""})
     assert spec.when_to_use == snapshot("")
     assert spec.model == snapshot(None)
+    assert spec.mode == snapshot("primary")
+    assert spec.hidden == snapshot(False)
+    assert spec.steps == snapshot(None)
+    assert spec.temperature == snapshot(None)
+    assert spec.top_p == snapshot(None)
     assert spec.allowed_tools == snapshot(None)
     assert spec.exclude_tools == snapshot([])
     assert spec.tools == snapshot(
@@ -75,6 +80,10 @@ def test_load_default_agent_spec():
             "planner": (
                 "planner.yaml",
                 "Read-only recon planner that decomposes tasks into distinct parallel seeds.",
+            ),
+            "scout": (
+                "scout.yaml",
+                "Read-only external docs, dependency-source, and API freshness researcher.",
             ),
             "review": ("review.yaml", "Read-only code review with severity-scored findings."),
             "security-reviewer": (
@@ -595,6 +604,46 @@ def test_load_agent_spec_extension(agent_file_extending: Path):
 
     assert spec.name == snapshot("Extended Agent")
     assert spec.tools == snapshot(["pythinker_code.tools.think:Think"])
+
+
+def test_load_agent_spec_metadata_inherits_and_overrides(tmp_path: Path):
+    (tmp_path / "system.md").write_text("Base system prompt")
+    base = tmp_path / "base.yaml"
+    base.write_text(
+        """
+version: 1
+agent:
+  name: "Base Agent"
+  system_prompt_path: ./system.md
+  tools: ["pythinker_code.tools.think:Think"]
+  mode: subagent
+  hidden: true
+  steps: 7
+  temperature: 0.2
+  top_p: 0.8
+""".strip()
+    )
+    child = tmp_path / "child.yaml"
+    child.write_text(
+        """
+version: 1
+agent:
+  extend: ./base.yaml
+  name: "Child Agent"
+  mode: all
+  hidden: false
+  steps: 3
+""".strip()
+    )
+
+    spec = load_agent_spec(child)
+
+    assert spec.name == "Child Agent"
+    assert spec.mode == "all"
+    assert spec.hidden is False
+    assert spec.steps == 3
+    assert spec.temperature == 0.2
+    assert spec.top_p == 0.8
 
 
 def test_load_agent_spec_default_extension():
