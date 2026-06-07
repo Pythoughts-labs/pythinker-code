@@ -17,10 +17,16 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.37.0 (2026-06-07)
+
+- **Agent runtime tool visibility hardening.** `PythinkerToolset` now filters the tools advertised to the model by active execution policy, permission profile, root/subagent role, and plan-mode state while preserving execution-time guards as defense in depth.
+- **Agent design upgrades.** Agent specs now carry mode/hidden/step/model-parameter metadata, built-in `ask` and `debug` primary agents are selectable with `--agent`, the new `scout` subagent handles external docs/API freshness research, and compaction summaries use a stable handoff-oriented structure.
 - **Prompt-injection defense: `UntrustedData` wrapper.** All external content returned by `ReadFile` and `FetchURL` is now wrapped in `<untrusted_data id="NONCE">…</untrusted_data>` tags before being passed to the LLM, providing a clear boundary between trusted instructions and untrusted file/web content. The `UntrustedData` primitive escapes embedded closing tags to prevent breakout attacks.
 - **Agent boundary artifacts.** New `CodingArtifact` / `VerificationResult` and `VulnerabilityArtifact` / `AuditVerdict` frozen dataclasses in `pythinker_code.utils.artifacts` enforce a typed information barrier between coder and verifier subagents.
 - **Recon-first `planner` subagent.** A new read-only `planner` built-in agent type decomposes open-ended tasks into distinct parallel seed descriptions emitted as `<recon_seeds>` JSON, enabling structured fan-out before parallel workers start.
 - **Coder artifact contract.** The `coder` subagent now emits a `<coding_artifact>` JSON block at the end of every response, providing structured handoff data (`files_changed`, `test_command`, `expected_behavior`, optional `edge_cases_claimed`) that the `verifier` subagent can consume directly.
+
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.37.0`, or use the native installer for your platform from the [Releases page](https://github.com/Pythoughts-labs/pythinker-code/releases/latest).
 
 ## 0.36.0 (2026-06-05)
 
