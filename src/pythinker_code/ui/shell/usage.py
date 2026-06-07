@@ -27,6 +27,7 @@ from pythinker_code.ui.shell.usage_render import (
 from pythinker_code.ui.shell.usage_render import (
     remaining_quota as _remaining_quota,
 )
+from pythinker_code.ui.shell.stats_collector import AllStats, load_all_stats as _load_all_stats_raw
 from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
 from pythinker_code.models_dev import refresh_catalog as _refresh_catalog
 from pythinker_code.usage_ratelimit_cache import get_cache
@@ -200,6 +201,60 @@ def _enrich_with_ratelimit_fallback(
     return enriched
 
 
+def _load_cost_stats() -> AllStats | None:
+    """Return AllStats from wire files, or None if no data or error."""
+    try:
+        stats = _load_all_stats_raw()
+        if stats.periods["all_time"].total_messages == 0:
+            return None
+        return stats
+    except Exception:
+        return None
+
+
+def _build_cost_panel(stats: AllStats):
+    from rich import box as _box
+    from rich.panel import Panel as _Panel
+    from rich.table import Table as _Table
+
+    from pythinker_code.ui.shell.stats import _fmt_cost
+    from pythinker_code.ui.theme import tui_rich_style
+
+    t = _Table.grid(padding=(0, 2))
+    t.add_column(style=tui_rich_style("info"))
+    t.add_column(style="bold")
+
+    periods = [
+        ("Today", stats.periods["today"].total_cost),
+        ("This Week", stats.periods["this_week"].total_cost),
+        ("All time", stats.periods["all_time"].total_cost),
+    ]
+    for label, cost in periods:
+        t.add_row(label, _fmt_cost(cost))
+
+    return _Panel(
+        t,
+        title="Session Cost",
+        border_style=tui_rich_style("border_muted"),
+        box=_box.ROUNDED,
+        padding=(0, 2),
+        expand=False,
+    )
+
+
+def _maybe_print_cost_panel() -> None:
+    """Print the session cost panel if local usage data exists. Never raises."""
+    try:
+        stats = _load_cost_stats()
+        if stats is None:
+            return
+        panel = _build_cost_panel(stats)
+        console.print(f"[bold]{panel.title}[/bold]")
+        console.print(panel.renderable)
+    except Exception:
+        pass
+
+
 @registry.command(aliases=["status", "cost", "/status"])
 async def usage(app: Shell, args: str):
     """Display usage for the current model's provider.
@@ -296,3 +351,5 @@ async def usage(app: Shell, args: str):
 
     for report in non_empty_reports:
         console.print(build_panel(report))
+
+    _maybe_print_cost_panel()
