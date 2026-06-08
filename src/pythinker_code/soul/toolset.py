@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import difflib
 import importlib
 import inspect
 import json
@@ -261,9 +262,16 @@ class PythinkerToolset:
         token = current_tool_call.set(tool_call)
         try:
             if tool_call.function.name not in self._tool_dict:
+                available = list(self._tool_dict.keys())
+                matches = difflib.get_close_matches(
+                    tool_call.function.name, available, n=1, cutoff=0.6
+                )
                 return ToolResult(
                     tool_call_id=tool_call.id,
-                    return_value=ToolNotFoundError(tool_call.function.name),
+                    return_value=ToolNotFoundError(
+                        tool_call.function.name,
+                        suggestion=matches[0] if matches else None,
+                    ),
                 )
 
             tool = self._tool_dict[tool_call.function.name]

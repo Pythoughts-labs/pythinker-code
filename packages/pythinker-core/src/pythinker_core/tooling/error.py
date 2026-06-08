@@ -4,11 +4,10 @@ from pythinker_core.tooling import ToolError
 class ToolNotFoundError(ToolError):
     """The tool was not found."""
 
-    def __init__(self, tool_name: str):
-        super().__init__(
-            message=f"Tool `{tool_name}` not found",
-            brief=f"Tool `{tool_name}` not found",
-        )
+    def __init__(self, tool_name: str, suggestion: str | None = None):
+        brief = f"Tool `{tool_name}` not found"
+        message = f"{brief}. Did you mean `{suggestion}`?" if suggestion else brief
+        super().__init__(message=message, brief=brief)
 
 
 class ToolParseError(ToolError):
