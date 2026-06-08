@@ -284,7 +284,8 @@ One PR-sized, tested change at a time; `make check` + `uv run pytest` green per 
 | 2026-06-08 | **mode-1 + skills-2** (WS-STANDALONE) — agent-creator + customize-pythinker builtin authoring skills (doc-only); schema-fact-checked (corrected: project agent matching a builtin name is skipped, not overriding) | ✅ done | `27d7fe2d` |
 | 2026-06-08 | **tooldesc-2 / ctxmgmt-1** (WS-TOOLSET) — opt-in disk spill in ToolResultBuilder on truncation (full output saved + recovery hint); wired into foreground Shell + web fetch/search. Memory-bounded, fail-soft, idempotent, sanitized stem (review-hardened). Retention sweep deferred | ✅ done | `b655f322` |
 | 2026-06-08 | **obs-eval-1** (WS-TOOLSET) — start_span attaches to OTel context → connected turn→llm→tool trace tree; gen_ai.operation.name on spans. Review-hardened: attach only when telemetry on (no Ctrl-C noise when off), demote opentelemetry.context logger, tool span closes on BaseException. +subagent-2 test-harness followup (`3f1f3001`) | ✅ done | `3343df12` |
-| 2026-06-08 | **mcpext-1** (WS-TOOLSET) — read-only ListMcpResources/ReadMcpResource tools; MCPServerInfo captures resources/prompts at connect (best-effort); resource content wrapped untrusted | ✅ done (in review) | `4a8424e0` |
+| 2026-06-08 | **mcpext-1** (WS-TOOLSET) — read-only ListMcpResources/ReadMcpResource tools; MCPServerInfo captures resources/prompts at connect (best-effort); resource content wrapped untrusted. Review followup `d0af8626` (robust binary size + failed-server test); gate fix `d578e761` | ✅ done | `4a8424e0` |
+| 2026-06-08 | **mcpext-3** (WS-TOOLSET) — ensure_docker_rm injects --rm into docker/podman stdio `run` configs; cleanup() closes MCP clients concurrently with per-server timeout (one hung close can't block teardown) | ✅ done | `b41edf9b` |
 
 **Decision update (§3 / §7b):** ctxmgmt-2 did **not** require the standalone A7
 extraction. The pruning algorithm landed in the existing `compaction.py` (which
@@ -294,9 +295,9 @@ extraction (the decomposition plan orders A7 last). A7 remains available later f
 moving the compaction *orchestration* (`_grow_context`/`compact_context`) out of the
 host, but is no longer a prerequisite for any enhancement item.
 
-**Done so far: 14 plan items committed** + test backfill. **Remaining: 8** — WS-TOOLSET
-(mcpext-2, mcpext-3), WS-RECALL (memory-1/ctxmgmt-3, memory-3), WS-UX (uxsteer-2, uxsteer-3),
-WS-STANDALONE (obs-eval-3, obs-eval-4 — both L-effort, deliver offline-testable core + note live slice).
+**Done so far: 15 plan items committed** + test backfill. **Remaining: 7** — mcpext-2,
+memory-1/ctxmgmt-3 (recall), memory-3, uxsteer-2, uxsteer-3, obs-eval-3, obs-eval-4 (last two L-effort,
+deliver offline-testable core + note live slice).
 
 - **mcpext-1** done (`4a8424e0`): ListMcpResources/ReadMcpResource + MCPServerInfo resources/prompts.
   DI gotcha (recorded): tool modules taking injected deps must NOT use `from __future__ import
