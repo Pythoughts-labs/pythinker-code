@@ -64,6 +64,10 @@ _current_tool_execution_started_ids: ContextVar[set[str] | None] = ContextVar(
     "current_tool_execution_started_ids", default=None
 )
 
+# Per-server timeout for closing MCP clients during teardown, so one hung client
+# cannot block cleanup of the rest (mcpext-3).
+_MCP_CLOSE_TIMEOUT_S = 5.0
+
 _current_session_id: ContextVar[str] = ContextVar("_current_session_id", default="")
 _MCP_LOG_NAME_RE = re.compile(r"[^A-Za-z0-9_.-]+")
 
@@ -760,8 +764,16 @@ class PythinkerToolset:
             self._mcp_loading_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._mcp_loading_task
-        for server_info in self._mcp_servers.values():
-            await server_info.client.close()
+
+        # Close every MCP client concurrently with a per-server timeout, so one
+        # hung or slow client cannot block teardown of the rest (mcpext-3).
+        async def _close(info: MCPServerInfo) -> None:
+            try:
+                await asyncio.wait_for(info.client.close(), timeout=_MCP_CLOSE_TIMEOUT_S)
+            except Exception as exc:
+                logger.debug("MCP client close failed/timed out: {error}", error=exc)
+
+        await asyncio.gather(*(_close(info) for info in self._mcp_servers.values()))
 
 
 @dataclass(slots=True)

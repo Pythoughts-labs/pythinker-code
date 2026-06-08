@@ -1,10 +1,28 @@
 import json
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Annotated, Any, Literal
 
 import typer
 
 cli = typer.Typer(help="Manage MCP server configurations.")
+
+_CONTAINER_RUNTIMES = frozenset({"docker", "podman"})
+
+
+def ensure_docker_rm(command: str, args: list[str]) -> list[str]:
+    """Inject ``--rm`` into a docker/podman ``run`` invocation (mcpext-3).
+
+    Killing the ``docker run`` client process does not remove the daemon-managed
+    container, so a stdio MCP server launched as ``docker run …`` leaves a stopped
+    container behind on teardown unless ``--rm`` is present. This adds it. No-op for
+    other commands, non-``run`` subcommands, or when ``--rm`` is already there.
+    """
+    runtime = PurePath(command).name.lower()
+    if runtime not in _CONTAINER_RUNTIMES:
+        return args
+    if not args or args[0] != "run" or "--rm" in args:
+        return args
+    return [args[0], "--rm", *args[1:]]
 
 
 def get_global_mcp_config_file() -> Path:
@@ -162,7 +180,10 @@ def mcp_add(
             typer.echo("--auth is only valid for http transport.", err=True)
             raise typer.Exit(code=1)
         command, *command_args = server_args
-        server_config: dict[str, Any] = {"command": command, "args": command_args}
+        server_config: dict[str, Any] = {
+            "command": command,
+            "args": ensure_docker_rm(command, command_args),
+        }
         if env:
             server_config["env"] = _parse_key_value_pairs(env, "env")
     else:
