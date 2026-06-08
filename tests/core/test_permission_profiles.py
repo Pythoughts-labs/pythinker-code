@@ -212,6 +212,9 @@ def test_shell_destructive_commands_classified() -> None:
         "git push --force origin main",
         "git push -f",
         "git push --force-with-lease origin main",
+        "git push --delete origin feature",  # remote branch deletion
+        "git push -d origin feature",  # short delete flag
+        "git push origin :feature",  # colon-refspec deletion
         "git reset --hard HEAD~1",
         "git clean -fd",
         "git clean -fdx",

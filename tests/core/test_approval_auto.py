@@ -175,6 +175,29 @@ def test_config_surface_classifier() -> None:
         assert not is_config_surface_path(HostPath(p)), p
 
 
+def test_config_surface_agents_md_scoped_to_injection_set() -> None:
+    """permgate-2: when work_dir is known, every AGENTS.md on its ancestor chain
+    (the set load_agents_md re-injects into the prompt) is a config surface — even
+    when work_dir is a subdirectory and the file lives at the project root."""
+    from pythinker_host.path import HostPath
+
+    from pythinker_code.utils.path import is_config_surface_path
+
+    # work_dir is a subdir; the project-root AGENTS.md is still re-injected, so it
+    # must remain a config surface (regression: a work_dir-only anchor missed it).
+    work_dir = HostPath("/repo/sub")
+    for p in (
+        "/repo/AGENTS.md",  # project-root ancestor — on the injection chain
+        "/repo/sub/AGENTS.md",  # work_dir itself
+        "/repo/sub/nested/agents.md",  # nested under work_dir (defense-in-depth)
+    ):
+        assert is_config_surface_path(HostPath(p), work_dir), p
+
+    # A sibling tree's AGENTS.md is neither an ancestor of nor nested under
+    # work_dir, so it is not part of the re-injected set.
+    assert not is_config_surface_path(HostPath("/other/AGENTS.md"), work_dir)
+
+
 async def test_config_edit_never_session_approvable_and_prompts_under_yolo() -> None:
     """permgate-2: a write to a config surface re-confirms every time — it is not
     auto-approved by yolo and never recorded as session-approved."""

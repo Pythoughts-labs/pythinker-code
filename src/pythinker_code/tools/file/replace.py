@@ -12,12 +12,12 @@ from pythinker_code.soul.agent import Runtime
 from pythinker_code.soul.approval import Approval
 from pythinker_code.soul.permission import check_file_mutation_allowed
 from pythinker_code.tools.display import DisplayBlock
-from pythinker_code.tools.file import FileActions
+from pythinker_code.tools.file import classify_edit_action
 from pythinker_code.tools.file.plan_mode import inspect_plan_edit_target
 from pythinker_code.tools.utils import load_desc
 from pythinker_code.utils.diff import build_diff_blocks
 from pythinker_code.utils.logging import logger
-from pythinker_code.utils.path import is_config_surface_path, is_within_workspace
+from pythinker_code.utils.path import is_within_workspace
 
 _BASE_DESCRIPTION = load_desc(Path(__file__).parent / "replace.md")
 
@@ -257,12 +257,7 @@ class StrReplaceFile(CallableTool2[Params]):
                 str(p), original_content, content
             )
 
-            if not is_within_workspace(p, self._work_dir, self._additional_dirs):
-                action = FileActions.EDIT_OUTSIDE
-            elif is_config_surface_path(p):
-                action = FileActions.EDIT_CONFIG
-            else:
-                action = FileActions.EDIT
+            action = classify_edit_action(p, self._work_dir, self._additional_dirs)
 
             # Plan file edits are auto-approved; all other edits need approval.
             if not is_plan_file_edit:

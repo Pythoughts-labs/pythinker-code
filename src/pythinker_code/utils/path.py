@@ -138,7 +138,7 @@ _AGENT_SPEC_DIR_MARKERS = (
 )
 
 
-def is_config_surface_path(path: HostPath) -> bool:
+def is_config_surface_path(path: HostPath, work_dir: HostPath | None = None) -> bool:
     """True if *path* is a pythinker behavioral-config file.
 
     These files change agent behavior or are re-injected into the system prompt
@@ -147,15 +147,26 @@ def is_config_surface_path(path: HostPath) -> bool:
     survives the per-session untrusted-data defense. Writes to them get a distinct,
     non-session-approvable approval action. Plan/scratch/report artifacts under
     ``.pythinker`` are deliberately excluded.
+
+    Pass *work_dir* (the active workspace root) to scope ``AGENTS.md``
+    classification to the set of files actually re-injected into the prompt.
+    :func:`load_agents_md` merges every ``AGENTS.md`` from the project root down
+    to *work_dir*, i.e. the files on *work_dir*'s ancestor chain; those are the
+    persistent-injection surface. Files nested *under* *work_dir* are also
+    treated as config surfaces for defense-in-depth. Without *work_dir* the
+    function falls back to classifying any file named ``AGENTS.md`` as a config
+    surface (conservative: at worst an extra confirmation prompt).
     """
     posix = str(path).replace("\\", "/")
     base = posix.rsplit("/", 1)[-1].lower()
     if base == "agents.md":
-        return True
-    if ("/.pythinker/" in posix or posix.startswith(".pythinker/")) and base in (
-        "config.toml",
-        "config.local.toml",
-    ):
+        if work_dir is None:
+            return True  # conservative fallback when caller lacks work_dir context
+        # Config surface iff the file is on work_dir's ancestor chain (the merged,
+        # re-injected set) or nested beneath work_dir (defense-in-depth).
+        agents_dir = path.parent
+        return is_within_directory(work_dir, agents_dir) or is_within_directory(path, work_dir)
+    if "/.pythinker/" in posix and base in ("config.toml", "config.local.toml"):
         return True
     return base.endswith((".yaml", ".yml")) and any(m in posix for m in _AGENT_SPEC_DIR_MARKERS)
 

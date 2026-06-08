@@ -254,13 +254,20 @@ class Approval:
         """True only when auto mode came from this invocation."""
         return self._state.runtime_auto
 
-    def _unattended_denial_feedback(self, action: str) -> str | None:
+    def _unattended_denial_feedback(self, action: str, tool_call: ToolCall) -> str | None:
         """Fail closed when an unattended run would otherwise wait for approval forever."""
         if not self.is_auto() or self._state.yolo:
             return None
         if str(action) == _EDIT_OUTSIDE_ACTION:
             return _OUTSIDE_WORKSPACE_UNATTENDED_FEEDBACK
-        if self._state.safe_mode and action not in self._state.auto_approve_actions:
+        # In safe mode an action must be explicitly session-approved. Match against the
+        # compound approval key (e.g. "run command::shell:git status") — the same key
+        # approve-for-session stores. The bare action string would never match it, so a
+        # session-approved Shell command would otherwise be wrongly denied here.
+        if (
+            self._state.safe_mode
+            and self._approval_key(tool_call, action) not in self._state.auto_approve_actions
+        ):
             return _SAFE_MODE_UNATTENDED_FEEDBACK
         return None
 
@@ -462,7 +469,7 @@ class Approval:
                 feedback=_DELIBERATION_FEEDBACK.format(reason=reason),
                 deliberation=True,
             )
-        if (feedback := self._unattended_denial_feedback(action)) is not None:
+        if (feedback := self._unattended_denial_feedback(action, tool_call)) is not None:
             from pythinker_code.telemetry import track
 
             track(
@@ -576,6 +583,18 @@ class Approval:
                     for pending in self._runtime.list_pending():
                         if self._pending_approval_key(pending) == approval_key:
                             self._runtime.resolve(pending.id, "approve")
+                else:
+                    # Destructive or config-surface calls cannot be session-approved (permgate-1b).
+                    # The user chose "approve for session" but the request cannot be honoured;
+                    # downgrade silently to one-time approval and log so this is visible in debug
+                    # output — otherwise the UI appears to have accepted the session approval.
+                    logger.warning(
+                        "approve_for_session downgraded to one-time for {tool_name!r} "
+                        "(action={action!r}): destructive or config-surface calls are "
+                        "never session-approvable",
+                        tool_name=tool_call.function.name,
+                        action=str(action),
+                    )
                 emit_current_tool_execution_started()
                 return ApprovalResult(approved=True)
             case "reject":

@@ -601,6 +601,11 @@ def _segment_destructive_reason(tokens: list[str]) -> str | None:
             arg in ("--force", "-f") or arg.startswith("--force-with-lease") for arg in args
         ):
             return "git push --force"
+        if subcommand == "push" and (
+            any(arg in ("--delete", "-d") for arg in args)
+            or any(arg.startswith(":") and len(arg) > 1 for arg in args)
+        ):
+            return "git push --delete (remote ref deletion)"
         if subcommand == "reset" and "--hard" in args:
             return "git reset --hard"
         if subcommand == "clean" and any(
