@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pythinker_code.ui.shell.usage_adapters.alibaba import AlibabaAdapter
 from pythinker_code.ui.shell.usage_adapters.anthropic_admin import AnthropicAdminAdapter
 from pythinker_code.ui.shell.usage_adapters.base import (
     UsageAdapter,
@@ -27,6 +28,7 @@ _opencode_go_adapter = OpenCodeGoAdapter()
 # registry has to cover every variant — otherwise `_select_providers` filters
 # the active provider out and `/usage` falls into the no-adapter branch.
 ADAPTERS: dict[str, UsageAdapter] = {
+    AlibabaAdapter.platform_id: AlibabaAdapter(),
     AnthropicAdminAdapter.platform_id: AnthropicAdminAdapter(),
     DeepSeekAdapter.platform_id: DeepSeekAdapter(),
     OpenAIAdminAdapter.platform_id: OpenAIAdminAdapter(),
