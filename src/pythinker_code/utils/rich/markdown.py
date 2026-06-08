@@ -276,7 +276,9 @@ class BlockQuote(TextElement):
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         render_options = options.update(width=options.max_width - 4)
-        style = self.style.without_color
+        # Keep the blockquote's own colour (blockquotes render green); the
+        # ``▌`` bar and quoted text share it.
+        style = self.style
         lines = console.render_lines(self.elements, render_options, style=style)
         new_line = Segment("\n")
         padding = Segment("▌ ", style)
@@ -478,7 +480,8 @@ class ListItem(TextElement):
     def render_bullet(self, console: Console, options: ConsoleOptions) -> RenderResult:
         indent_padding_len = LIST_INDENT_WIDTH * self.indent
         indent_text = " " * indent_padding_len
-        bullet = Segment("• ")
+        bullet_style = console.get_style("markdown.item.bullet", default="none")
+        bullet = Segment("• ", bullet_style)
         new_line = Segment("\n")
         bullet_width = cell_len(bullet.text)
         child_width = max(1, options.max_width - indent_padding_len - bullet_width)
@@ -513,7 +516,8 @@ class ListItem(TextElement):
         indent_padding_len = LIST_INDENT_WIDTH * self.indent
         indent_text = " " * indent_padding_len
         numeral_text = f"{number}. "
-        numeral = Segment(numeral_text)
+        number_style = console.get_style("markdown.item.number", default="none")
+        numeral = Segment(numeral_text, number_style)
         numeral_width = cell_len(numeral_text)
         child_width = max(1, options.max_width - indent_padding_len - numeral_width)
         lines = console.render_lines(
@@ -637,8 +641,6 @@ class MarkdownContext:
             style = self.console.get_style(style_name, default=fallback)
             style = fallback + style
         style = style.copy()
-        if isinstance(style_name, str) and style_name == "markdown.block_quote":
-            style = style.without_color
         if (
             isinstance(style_name, str)
             and style_name in {"markdown.code", "markdown.code_block"}

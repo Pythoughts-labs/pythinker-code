@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from pygments.style import Style as PygmentsStyle
 from pygments.token import (
     Comment,
+    Error,
     Generic,
     Keyword,
     Name,
@@ -11,6 +13,7 @@ from pygments.token import (
     Operator,
     Punctuation,
     String,
+    Whitespace,
 )
 from pygments.token import (
     Literal as PygmentsLiteral,
@@ -22,7 +25,7 @@ from pygments.token import (
     Token as PygmentsToken,
 )
 from rich.style import Style
-from rich.syntax import ANSISyntaxTheme, Syntax, SyntaxTheme
+from rich.syntax import ANSISyntaxTheme, PygmentsSyntaxTheme, Syntax, SyntaxTheme
 
 PYTHINKER_ANSI_THEME_NAME = "pythinker-ansi"
 PYTHINKER_ANSI_THEME = ANSISyntaxTheme(
@@ -78,28 +81,166 @@ PYTHINKER_ANSI_THEME = ANSISyntaxTheme(
 )
 
 
+# ---------------------------------------------------------------------------
+# Catppuccin Mocha / Latte — hand-built as Pygments styles from the official
+# palette + the canonical Catppuccin syntax mapping, with NO italic/underline
+# and minimal bold (foreground + bold only). Rendered with a transparent
+# background so they respect the terminal/panel bg.
+# ---------------------------------------------------------------------------
+
+CATPPUCCIN_ADAPTIVE_THEME_NAME = "catppuccin-adaptive"
+CATPPUCCIN_MOCHA_THEME_NAME = "catppuccin-mocha"
+CATPPUCCIN_LATTE_THEME_NAME = "catppuccin-latte"
+
+# Official palettes (catppuccin.com/palette).
+_CATPPUCCIN_MOCHA = {
+    "base": "#1e1e2e",
+    "text": "#cdd6f4",
+    "overlay0": "#6c7086",
+    "overlay2": "#9399b2",
+    "mauve": "#cba6f7",
+    "red": "#f38ba8",
+    "peach": "#fab387",
+    "yellow": "#f9e2af",
+    "green": "#a6e3a1",
+    "teal": "#94e2d5",
+    "sky": "#89dceb",
+    "blue": "#89b4fa",
+    "pink": "#f5c2e7",
+}
+_CATPPUCCIN_LATTE = {
+    "base": "#eff1f5",
+    "text": "#4c4f69",
+    "overlay0": "#9ca0b0",
+    "overlay2": "#7c7f93",
+    "mauve": "#8839ef",
+    "red": "#d20f39",
+    "peach": "#fe640b",
+    "yellow": "#df8e1d",
+    "green": "#40a02b",
+    "teal": "#179299",
+    "sky": "#04a5e5",
+    "blue": "#1e66f5",
+    "pink": "#ea76cb",
+}
+
+
+def _catppuccin_styles(p: dict[str, str]) -> dict[Any, str]:
+    """Canonical Catppuccin token → color mapping (no italic/underline)."""
+    return {
+        PygmentsToken: p["text"],
+        PygmentsText: p["text"],
+        Whitespace: p["text"],
+        Comment: p["overlay0"],
+        Comment.Preproc: p["pink"],
+        Keyword: p["mauve"],
+        Keyword.Constant: p["peach"],
+        Keyword.Declaration: p["mauve"],
+        Keyword.Namespace: p["mauve"],
+        Keyword.Pseudo: p["mauve"],
+        Keyword.Reserved: p["mauve"],
+        Keyword.Type: p["yellow"],
+        Operator: p["sky"],
+        Operator.Word: p["mauve"],
+        Punctuation: p["overlay2"],
+        Name: p["text"],
+        Name.Attribute: p["blue"],
+        Name.Builtin: p["red"],
+        Name.Builtin.Pseudo: p["red"],
+        Name.Class: p["yellow"],
+        Name.Constant: p["peach"],
+        Name.Decorator: p["blue"],
+        Name.Entity: p["pink"],
+        Name.Exception: p["yellow"],
+        Name.Function: p["blue"],
+        Name.Function.Magic: p["sky"],
+        Name.Label: p["peach"],
+        Name.Namespace: p["yellow"],
+        Name.Property: p["teal"],
+        Name.Tag: p["mauve"],
+        Name.Variable: p["text"],
+        Name.Variable.Magic: p["red"],
+        Number: p["peach"],
+        PygmentsLiteral: p["peach"],
+        String: p["green"],
+        String.Doc: p["overlay0"],
+        String.Escape: p["pink"],
+        String.Interpol: p["pink"],
+        String.Regex: p["pink"],
+        String.Symbol: p["red"],
+        Generic.Deleted: p["red"],
+        Generic.Inserted: p["green"],
+        Generic.Heading: f"bold {p['blue']}",
+        Generic.Subheading: f"bold {p['blue']}",
+        Generic.Strong: "bold",
+        Generic.Emph: p["text"],  # italic intentionally omitted
+        Generic.Error: p["red"],
+        Generic.Traceback: p["red"],
+        Error: p["red"],
+    }
+
+
+class CatppuccinMochaStyle(PygmentsStyle):
+    name = "catppuccin-mocha"
+    background_color = _CATPPUCCIN_MOCHA["base"]
+    styles = _catppuccin_styles(_CATPPUCCIN_MOCHA)
+
+
+class CatppuccinLatteStyle(PygmentsStyle):
+    name = "catppuccin-latte"
+    background_color = _CATPPUCCIN_LATTE["base"]
+    styles = _catppuccin_styles(_CATPPUCCIN_LATTE)
+
+
+CATPPUCCIN_MOCHA_THEME = PygmentsSyntaxTheme(CatppuccinMochaStyle)
+CATPPUCCIN_LATTE_THEME = PygmentsSyntaxTheme(CatppuccinLatteStyle)
+
+
 def resolve_code_theme(theme: str | SyntaxTheme) -> str | SyntaxTheme:
-    if isinstance(theme, str) and theme.lower() == PYTHINKER_ANSI_THEME_NAME:
-        return PYTHINKER_ANSI_THEME
+    if isinstance(theme, str):
+        name = theme.lower()
+        if name == PYTHINKER_ANSI_THEME_NAME:
+            return PYTHINKER_ANSI_THEME
+        if name == CATPPUCCIN_ADAPTIVE_THEME_NAME:
+            # Follow the active UI theme: Latte on light terminals, Mocha
+            # otherwise. Imported lazily to avoid a circular import at module
+            # load (ui.theme is a higher layer).
+            from pythinker_code.ui.theme import get_active_theme
+
+            if get_active_theme() == "light":
+                return CATPPUCCIN_LATTE_THEME
+            return CATPPUCCIN_MOCHA_THEME
+        if name == CATPPUCCIN_MOCHA_THEME_NAME:
+            return CATPPUCCIN_MOCHA_THEME
+        if name == CATPPUCCIN_LATTE_THEME_NAME:
+            return CATPPUCCIN_LATTE_THEME
     return theme
 
 
 def available_code_themes() -> list[str]:
-    """Accepted ``code_theme`` values: the ANSI sentinel plus every stock Pygments style.
+    """Accepted ``code_theme`` values: the Catppuccin + ANSI sentinels plus every
+    stock Pygments style.
 
     Imported lazily so the (modest) Pygments style enumeration cost is only paid
     when a config value is validated, not on every ``syntax`` import.
     """
     from pygments.styles import get_all_styles
 
-    return [PYTHINKER_ANSI_THEME_NAME, *sorted(get_all_styles())]
+    return [
+        CATPPUCCIN_ADAPTIVE_THEME_NAME,
+        CATPPUCCIN_MOCHA_THEME_NAME,
+        CATPPUCCIN_LATTE_THEME_NAME,
+        PYTHINKER_ANSI_THEME_NAME,
+        *sorted(get_all_styles()),
+    ]
 
 
 # Process-wide default code-fence theme, resolved once at shell startup from
 # ``config.tui.code_theme``. Mirrors ``ui.theme`` set_active_theme/get_active_theme
 # so renderers pick up the configured theme without threading config through
-# every call site. ``PYTHINKER_ANSI_THEME_NAME`` keeps today's transparent look.
-_active_code_theme: str = PYTHINKER_ANSI_THEME_NAME
+# every call site. ``CATPPUCCIN_ADAPTIVE_THEME_NAME`` is the default and follows
+# the active light/dark UI theme (Mocha on dark, Latte on light).
+_active_code_theme: str = CATPPUCCIN_ADAPTIVE_THEME_NAME
 
 
 def set_active_code_theme(theme: str) -> None:

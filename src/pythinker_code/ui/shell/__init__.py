@@ -1878,11 +1878,14 @@ class Shell:
         self._background_tasks.clear()
 
 
-# Palette transferred from the animated SVG (pythinker_animated.svg).
+# Fixed brand palette transferred from the animated SVG (pythinker_animated.svg).
+# These are the robot mark's identity colors and are intentionally
+# theme-independent — do NOT wire them to TuiTokens (the logo must look the same
+# in light/dark and must not shift with the accent).
 _LOGO_NAVY = "#213853"  # outline / chassis (head + body frame, mouth, neck)
 _LOGO_FACE = "#F9F2F5"  # face / chest interior (cream)
 _LOGO_CORAL = "#EE9983"  # antenna ball, ears, accent bits
-_LOGO_IRIS = "#AFE3F1"  # eye iris + chest button glow (light cyan)
+_LOGO_IRIS = "#AFE3F1"  # eye iris + chest button glow (brand cyan)
 
 _LOGO = (
     f"      [{_LOGO_CORAL}]●[/]\n"

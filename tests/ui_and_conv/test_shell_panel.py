@@ -12,7 +12,8 @@ def test_brand_panel_is_rounded_and_uses_border_token():
     assert "#3a506d" in str(p.border_style).lower()
 
 
-def test_brand_panel_active_uses_info_border():
+def test_brand_panel_active_uses_accent_border():
     set_active_theme("dark")
     p = brand_panel("hi", active=True)
-    assert "#afe3f1" in str(p.border_style).lower()
+    # Active panels use the accent-family border_accent token (periwinkle).
+    assert "#7c88de" in str(p.border_style).lower()

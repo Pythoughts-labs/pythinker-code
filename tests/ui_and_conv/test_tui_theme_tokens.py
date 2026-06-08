@@ -9,6 +9,7 @@ from rich.style import Style as RichStyle
 
 from pythinker_code.ui.theme import (
     TUI_TOKEN_NAMES,
+    ThemeName,
     TuiTokens,
     get_active_theme,
     get_markdown_colors,
@@ -17,6 +18,13 @@ from pythinker_code.ui.theme import (
     set_active_theme,
     tui_rich_style,
 )
+
+
+def _color_name(style: RichStyle) -> str:
+    """Return the resolved color name, asserting the style actually set one."""
+    color = style.color
+    assert color is not None
+    return color.name
 
 
 @pytest.fixture(autouse=True)
@@ -32,9 +40,10 @@ def _restore_active_theme():
 def test_dark_tokens_have_brand_values():
     set_active_theme("dark")
     t = get_tui_tokens()
-    assert t.accent == "#5EA7E8"  # medium blue for files/extensions
+    assert t.accent == "#B3B9F4"  # periwinkle brand accent (≈ Catppuccin Mocha lavender)
+    assert t.border_accent == "#7C88DE"  # accent-family chrome (active borders)
     assert t.border == "#3A506D"  # slate
-    assert t.info == "#AFE3F1"  # cyan
+    assert t.info == "#AFE3F1"  # cyan (unchanged; markdown code/links use ANSI cyan)
     assert t.success == "#7BC97F"
     assert t.error == "#EF5E62"
     assert t.thinking_text == "#C0C0C0"  # lighter neutral grey, not purple-tinted muted
@@ -51,8 +60,9 @@ def test_dark_tokens_have_brand_values():
 def test_light_tokens_have_brand_values():
     set_active_theme("light")
     t = get_tui_tokens()
-    assert t.accent == "#256EA8"  # text-safe medium blue
-    assert t.info == "#176B7E"  # text-safe cyan
+    assert t.accent == "#0B114E"  # deep indigo brand accent (light mode)
+    assert t.border_accent == "#3B469B"  # accent-family chrome (active borders)
+    assert t.info == "#176B7E"  # text-safe cyan (unchanged)
     assert t.text == "#213853"  # navy text
     assert t.error == "#C0392B"
     assert t.thinking_text == "#7A7A7A"  # lighter neutral grey, not blue/purple muted
@@ -75,6 +85,35 @@ def test_text_token_is_empty_string_for_terminal_default():
     # Dark theme: empty string = use terminal's default fg color.
     # Light theme uses an explicit navy text color (#213853).
     assert get_tui_tokens("dark").text == ""
+
+
+def test_selected_bg_reharmonized_and_drives_prompt_selection():
+    """selected_bg joins the accent (periwinkle/indigo) family and is the single
+    source for the completion/dialog selection rows (no parallel literals)."""
+    from pythinker_code.ui.theme import _PROMPT_STYLE_DARK, _PROMPT_STYLE_LIGHT
+
+    assert get_tui_tokens("dark").selected_bg == "#21243B"
+    assert get_tui_tokens("light").selected_bg == "#E7E9F9"
+    assert _PROMPT_STYLE_DARK["slash-completion-menu.row.current"] == (
+        f"bg:{get_tui_tokens('dark').selected_bg}"
+    )
+    assert _PROMPT_STYLE_LIGHT["slash-completion-menu.row.current"] == (
+        f"bg:{get_tui_tokens('light').selected_bg}"
+    )
+
+
+def test_user_message_bg_is_neutral_grey_not_tinted():
+    """User-sent messages use a neutral grey block (not the old blue tint).
+
+    The block must stay visible (same lightness as before) but carry no hue —
+    R, G and B within a tight tolerance — so it reads as 'grey, not blur'.
+    """
+    expected: dict[ThemeName, str] = {"dark": "#333333", "light": "#E0E0E0"}
+    for mode, hexval in expected.items():
+        token = get_tui_tokens(mode).user_message_bg
+        assert token == hexval, mode
+        r, g, b = int(token[1:3], 16), int(token[3:5], 16), int(token[5:7], 16)
+        assert abs(r - g) <= 4 and abs(g - b) <= 4, f"{mode} not neutral grey: {token}"
 
 
 def test_tokens_dataclass_is_frozen():
@@ -122,9 +161,9 @@ def test_dark_markdown_uses_professional_report_roles():
     assert colors.heading == "#F4F4F5"  # primary white, not coral/orange
     assert colors.strong == "#F4F4F5"
     assert colors.emphasis == "#A3A3A3"  # neutral grey
-    assert colors.inline_code == "#AFE3F1"  # blue/cyan accent
-    assert colors.link == "#AFE3F1"
-    assert colors.spinner_active == "#AFE3F1"
+    assert colors.inline_code == "cyan"  # terminal-native ANSI
+    assert colors.link == "cyan"
+    assert colors.spinner_active == "#AFE3F1"  # spinners still use the info token
     assert colors.spinner_done == "#7BC97F"
     assert colors.spinner_failed == "#EF5E62"
     assert markdown_rich_style("link", theme="dark").color is not None
@@ -135,8 +174,20 @@ def test_light_markdown_uses_professional_report_roles():
     assert colors.heading == "#213853"
     assert colors.strong == "#213853"
     assert colors.emphasis == "#666666"
-    assert colors.inline_code == "#176B7E"
-    assert colors.spinner_active == "#176B7E"
+    assert colors.inline_code == "cyan"  # terminal-native ANSI
+    assert colors.spinner_active == "#176B7E"  # spinners still use the info token
+
+
+def test_markdown_ansi_styles_resolve_to_terminal_colors():
+    """The four enumerated elements resolve to ANSI terminal colors in both
+    modes (so they adapt to the user's terminal palette)."""
+    for mode in ("dark", "light"):
+        assert _color_name(markdown_rich_style("inline_code", theme=mode)) == "cyan"
+        assert _color_name(markdown_rich_style("link", theme=mode)) == "cyan"
+        assert _color_name(markdown_rich_style("quote", theme=mode)) == "green"
+        assert _color_name(markdown_rich_style("ordered_marker", theme=mode)) == "bright_blue"
+        # Unordered bullets stay muted (a hex), not an ANSI accent.
+        assert _color_name(markdown_rich_style("unordered_marker", theme=mode)) != "green"
 
 
 def test_info_token_exists_and_is_cyan():
@@ -191,9 +242,13 @@ def test_markdown_colors_derived_from_tokens_dark():
     assert c.heading == t.tool_title
     assert c.strong == t.tool_title
     assert c.emphasis == t.muted
-    assert c.inline_code == t.info
-    assert c.link == t.info
-    assert c.quote == t.muted
+    # The four enumerated markdown elements use terminal-native ANSI
+    # (mode-independent), NOT theme tokens — see the design spec 2026-06-08.
+    assert c.inline_code == "cyan"
+    assert c.link == "cyan"
+    assert c.quote == "green"
+    assert c.ordered_marker == "bright_blue"
+    assert c.unordered_marker == t.muted  # unordered bullets stay muted
     assert c.table_border == t.border_muted
     assert c.code_block_border == t.border_muted
     assert c.code_block_bg == t.code_block_bg
@@ -208,9 +263,12 @@ def test_markdown_colors_derived_from_tokens_light():
     assert c.heading == t.tool_title
     assert c.strong == t.tool_title
     assert c.emphasis == t.muted
-    assert c.inline_code == t.info
-    assert c.link == t.info
-    assert c.quote == t.muted
+    # terminal-native ANSI is mode-independent (same cyan/green/bright_blue both modes)
+    assert c.inline_code == "cyan"
+    assert c.link == "cyan"
+    assert c.quote == "green"
+    assert c.ordered_marker == "bright_blue"
+    assert c.unordered_marker == t.muted
     assert c.table_border == t.border_muted
     assert c.code_block_border == t.border_muted
     assert c.code_block_bg == t.code_block_bg

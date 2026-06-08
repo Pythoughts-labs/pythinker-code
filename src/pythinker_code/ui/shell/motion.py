@@ -55,14 +55,12 @@ def verb_spinner_style() -> Style:
     return Style(color=Color.parse(base))
 
 
-# Backwards-compatible dark-theme constants used by tests and older callers.
-# These MUST stay in lockstep with the dark `activity_verb*` theme tokens so the
-# shimmer renders the same warm ember ramp everywhere.
-_SHIMMER_BASE = "#EE9983"
-_SHIMMER_MID = "#F4B5A5"
-_SHIMMER_HIGHLIGHT = "#FBD9CE"
+# Dark-theme shimmer-ramp reference constants, sourced directly from the
+# `activity_verb*` tokens so they can never drift out of lockstep with the theme.
+_SHIMMER_BASE = get_tui_tokens("dark").activity_verb
+_SHIMMER_MID = get_tui_tokens("dark").activity_verb_mid
+_SHIMMER_HIGHLIGHT = get_tui_tokens("dark").activity_verb_highlight
 _SHIMMER_INTERVAL_S = 0.15
-_SPINNER_SILVER = "#B8C0CC"
 
 
 def shimmer_spinner_style(elapsed_s: float, *, reduced_motion: bool = False) -> Style:

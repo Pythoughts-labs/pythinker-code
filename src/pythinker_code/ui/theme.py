@@ -141,6 +141,12 @@ def _task_browser_style_light() -> PTKStyle:
 # ---------------------------------------------------------------------------
 
 
+# Selection-row background (accent-family tint). Single source of truth for the
+# prompt-toolkit completion/dialog selection styles below AND the `selected_bg`
+# TuiTokens field — keep them wired so the two never drift.
+_SELECTED_BG_DARK = "#21243B"
+_SELECTED_BG_LIGHT = "#E7E9F9"
+
 _PROMPT_STYLE_DARK = {
     "bottom-toolbar": "noreverse",
     # Input area — minimal: no background bar, only the prompt glyph is
@@ -159,10 +165,10 @@ _PROMPT_STYLE_DARK = {
     "slash-completion-menu.command": "fg:#F4F4F5",
     "slash-completion-menu.command.match": "fg:#AFE3F1 bold",
     "slash-completion-menu.meta": "fg:#A3A3A3",
-    "slash-completion-menu.command.current": "bg:#243C54 fg:#F4F4F5 bold",
-    "slash-completion-menu.command.match.current": "bg:#243C54 fg:#AFE3F1 bold",
-    "slash-completion-menu.meta.current": "bg:#243C54 fg:#A3A3A3",
-    "slash-completion-menu.row.current": "bg:#243C54",
+    "slash-completion-menu.command.current": f"bg:{_SELECTED_BG_DARK} fg:#F4F4F5 bold",
+    "slash-completion-menu.command.match.current": f"bg:{_SELECTED_BG_DARK} fg:#AFE3F1 bold",
+    "slash-completion-menu.meta.current": f"bg:{_SELECTED_BG_DARK} fg:#A3A3A3",
+    "slash-completion-menu.row.current": f"bg:{_SELECTED_BG_DARK}",
     "file-completion-menu": "",
     "file-completion-menu.marker": "fg:#2B3A52",
     "file-completion-menu.marker.current": "fg:#AFE3F1 bold",
@@ -175,7 +181,7 @@ _PROMPT_STYLE_DARK = {
     "shell-dialog.title": "fg:#F4F4F5 bold",
     "shell-dialog.border": "fg:#2B3A52",
     "shell-dialog.option": "fg:#A3A3A3",
-    "shell-dialog.option.current": "bg:#243C54 fg:#F4F4F5 bold",
+    "shell-dialog.option.current": f"bg:{_SELECTED_BG_DARK} fg:#F4F4F5 bold",
     "shell-footer.key": "fg:#AFE3F1 bold",
     "shell-footer.meta": "fg:#A3A3A3",
     "shell-footer.warning": "fg:#E6B450",
@@ -196,10 +202,10 @@ _PROMPT_STYLE_LIGHT = {
     "slash-completion-menu.command": "fg:#4b5563",
     "slash-completion-menu.command.match": "fg:#176B7E bold",
     "slash-completion-menu.meta": "fg:#666666",
-    "slash-completion-menu.command.current": "bg:#E6F2F6 fg:#213853 bold",
-    "slash-completion-menu.command.match.current": "bg:#E6F2F6 fg:#176B7E bold",
-    "slash-completion-menu.meta.current": "bg:#E6F2F6 fg:#666666",
-    "slash-completion-menu.row.current": "bg:#E6F2F6",
+    "slash-completion-menu.command.current": f"bg:{_SELECTED_BG_LIGHT} fg:#213853 bold",
+    "slash-completion-menu.command.match.current": f"bg:{_SELECTED_BG_LIGHT} fg:#176B7E bold",
+    "slash-completion-menu.meta.current": f"bg:{_SELECTED_BG_LIGHT} fg:#666666",
+    "slash-completion-menu.row.current": f"bg:{_SELECTED_BG_LIGHT}",
     "file-completion-menu": "",
     "file-completion-menu.marker": "fg:#8A93A0",
     "file-completion-menu.marker.current": "fg:#176B7E bold",
@@ -212,7 +218,7 @@ _PROMPT_STYLE_LIGHT = {
     "shell-dialog.title": "fg:#213853 bold",
     "shell-dialog.border": "fg:#C8BEC0",
     "shell-dialog.option": "fg:#666666",
-    "shell-dialog.option.current": "bg:#E6F2F6 fg:#213853 bold",
+    "shell-dialog.option.current": f"bg:{_SELECTED_BG_LIGHT} fg:#213853 bold",
     "shell-footer.key": "fg:#176B7E bold",
     "shell-footer.meta": "fg:#666666",
     "shell-footer.warning": "fg:#9A6B18",
@@ -279,6 +285,8 @@ class MarkdownColors:
     inline_code: str
     link: str
     quote: str
+    ordered_marker: str
+    unordered_marker: str
     table_border: str
     code_block_border: str
     code_block_bg: str
@@ -287,18 +295,22 @@ class MarkdownColors:
     spinner_failed: str
 
 
-# Markdown/report role mapping: prose-heavy output stays professional and
-# low-chrome. Headings/strong text use primary text, emphasis/quotes use muted
-# grey, code/links use blue, and status accents stay green/red.
-# All values are derived from TuiTokens so there is a single source of truth.
+# Markdown/report role mapping. Headings/strong use primary text, emphasis and
+# unordered bullets use muted grey, status accents stay green/red — all derived
+# from TuiTokens. The four enumerated elements (inline code, links, blockquotes,
+# ordered-list markers) instead use terminal-native ANSI names so they adapt to
+# the user's terminal palette in both light and dark modes (see the design spec
+# 2026-06-08).
 def _build_markdown_colors(tokens: TuiTokens) -> MarkdownColors:
     return MarkdownColors(
         heading=tokens.tool_title,
         emphasis=tokens.muted,
         strong=tokens.tool_title,
-        inline_code=tokens.info,
-        link=tokens.info,
-        quote=tokens.muted,
+        inline_code="cyan",  # terminal-native ANSI cyan
+        link="cyan",  # cyan, rendered underlined
+        quote="green",  # terminal-native ANSI green
+        ordered_marker="bright_blue",  # ordered markers take the bright-blue accent
+        unordered_marker=tokens.muted,  # unordered bullets stay muted
         table_border=tokens.border_muted,
         code_block_border=tokens.border_muted,
         code_block_bg=tokens.code_block_bg,
@@ -453,7 +465,6 @@ class TuiTokens:
     custom_message_text: str
     custom_message_label: str
     tool_pending_bg: str
-    tool_success_bg: str
     tool_error_bg: str
     tool_title: str
     tool_output: str
@@ -471,9 +482,9 @@ TUI_TOKEN_NAMES = frozenset(field.name for field in fields(TuiTokens))
 
 
 _TUI_TOKENS_DARK = TuiTokens(
-    accent="#5EA7E8",
+    accent="#B3B9F4",
     border="#3A506D",
-    border_accent="#AFE3F1",
+    border_accent="#7C88DE",
     border_muted="#2B3A52",
     info="#AFE3F1",
     success="#7BC97F",
@@ -488,14 +499,13 @@ _TUI_TOKENS_DARK = TuiTokens(
     activity_verb_mid="#F4B5A5",
     activity_verb_highlight="#FBD9CE",
     activity_spinner="#B8C0CC",
-    selected_bg="#243C54",
-    user_message_bg="#1B2738",
+    selected_bg=_SELECTED_BG_DARK,
+    user_message_bg="#333333",
     user_message_text="",
     custom_message_bg="#16242E",
     custom_message_text="",
     custom_message_label="#AFE3F1",
     tool_pending_bg="#1B2230",
-    tool_success_bg="#16271C",
     tool_error_bg="#2E1D24",
     tool_title="#F4F4F5",
     tool_output="#A3A3A3",
@@ -508,9 +518,9 @@ _TUI_TOKENS_DARK = TuiTokens(
 
 
 _TUI_TOKENS_LIGHT = TuiTokens(
-    accent="#256EA8",
+    accent="#0B114E",
     border="#495F7C",
-    border_accent="#176B7E",
+    border_accent="#3B469B",
     border_muted="#C8BEC0",
     info="#176B7E",
     success="#2C7A39",
@@ -525,14 +535,13 @@ _TUI_TOKENS_LIGHT = TuiTokens(
     activity_verb_mid="#B0573C",
     activity_verb_highlight="#8F3A26",
     activity_spinner="#6B7280",
-    selected_bg="#E6F2F6",
-    user_message_bg="#F0E4E4",
+    selected_bg=_SELECTED_BG_LIGHT,
+    user_message_bg="#E0E0E0",
     user_message_text="",
     custom_message_bg="#E6F2F6",
     custom_message_text="",
     custom_message_label="#176B7E",
     tool_pending_bg="#EFE7E8",
-    tool_success_bg="#E4F0E6",
     tool_error_bg="#F6E3E3",
     tool_title="#213853",
     tool_output="#666666",
