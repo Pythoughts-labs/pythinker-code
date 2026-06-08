@@ -174,6 +174,23 @@ class ExitCode:
     RETRYABLE = 75  # EX_TEMPFAIL from sysexits.h
 
 
+def _find_project_mcp_config_file() -> Path | None:
+    """Find a project-scoped ``.pythinker/mcp.json`` (mcpext-2).
+
+    Walks up from the current working directory looking for ``.pythinker/mcp.json``,
+    stopping at the repository root (nearest ``.git`` ancestor) so it never picks up
+    an unrelated parent's config. Returns the nearest match, or None.
+    """
+    cwd = Path.cwd().resolve()
+    for directory in (cwd, *cwd.parents):
+        candidate = directory / ".pythinker" / "mcp.json"
+        if candidate.is_file():
+            return candidate
+        if (directory / ".git").exists():
+            break
+    return None
+
+
 def _load_mcp_configs_from_cli_inputs(
     mcp_config_file: list[Path] | None,
     mcp_config: list[str] | None,
@@ -188,12 +205,18 @@ def _load_mcp_configs_from_cli_inputs(
     file_configs = list(mcp_config_file or [])
     raw_mcp_config = list(mcp_config or [])
 
-    # Use default MCP config file if no MCP config file is provided. Keep this
-    # lookup live for reloads: the file may be created after process startup.
+    # Use default MCP config files when none is provided explicitly. Keep this
+    # lookup live for reloads: files may be created after process startup. The
+    # global file loads first; a project-scoped .pythinker/mcp.json loads after so
+    # it layers over the global (same-named servers in the project win), matching
+    # the layered-scope convention used for skills and AGENTS.md.
     if not file_configs:
         default_mcp_file = get_global_mcp_config_file()
         if default_mcp_file.exists():
             file_configs.append(default_mcp_file)
+        project_mcp_file = _find_project_mcp_config_file()
+        if project_mcp_file is not None:
+            file_configs.append(project_mcp_file)
 
     configs: list[Any] = []
     for conf in file_configs:
