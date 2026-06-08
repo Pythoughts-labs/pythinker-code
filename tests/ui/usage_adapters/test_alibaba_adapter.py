@@ -155,12 +155,13 @@ async def test_quota_api_success() -> None:
     resp = _make_response(200, json_data)
     session = _make_session(resp)
 
-    with patch(
-        "pythinker_code.ui.shell.usage_adapters.alibaba.new_client_session",
-        side_effect=lambda **kw: _fake_new_client_session(session, **kw),
-    ), patch(
-        "pythinker_code.ui.shell.usage_adapters.alibaba.get_cache"
-    ) as mock_cache:
+    with (
+        patch(
+            "pythinker_code.ui.shell.usage_adapters.alibaba.new_client_session",
+            side_effect=lambda **kw: _fake_new_client_session(session, **kw),
+        ),
+        patch("pythinker_code.ui.shell.usage_adapters.alibaba.get_cache") as mock_cache,
+    ):
         mock_cache.return_value.snapshot.return_value = None
         report = await AlibabaAdapter().fetch(_make_provider(), _StubOAuth())  # type: ignore[arg-type]
 
@@ -175,19 +176,18 @@ async def test_quota_api_success() -> None:
 async def test_quota_list_shape() -> None:
     """HTTP 200 with quota_list shape produces a correct UsageRow."""
     json_data = {
-        "quota_list": [
-            {"quota_name": "text", "total_quota": 500_000, "total_used": 50_000}
-        ]
+        "quota_list": [{"quota_name": "text", "total_quota": 500_000, "total_used": 50_000}]
     }
     resp = _make_response(200, json_data)
     session = _make_session(resp)
 
-    with patch(
-        "pythinker_code.ui.shell.usage_adapters.alibaba.new_client_session",
-        side_effect=lambda **kw: _fake_new_client_session(session, **kw),
-    ), patch(
-        "pythinker_code.ui.shell.usage_adapters.alibaba.get_cache"
-    ) as mock_cache:
+    with (
+        patch(
+            "pythinker_code.ui.shell.usage_adapters.alibaba.new_client_session",
+            side_effect=lambda **kw: _fake_new_client_session(session, **kw),
+        ),
+        patch("pythinker_code.ui.shell.usage_adapters.alibaba.get_cache") as mock_cache,
+    ):
         mock_cache.return_value.snapshot.return_value = None
         report = await AlibabaAdapter().fetch(_make_provider(), _StubOAuth())  # type: ignore[arg-type]
 
@@ -202,12 +202,13 @@ async def test_quota_api_404_falls_through() -> None:
     resp = _make_response(404)
     session = _make_session(resp)
 
-    with patch(
-        "pythinker_code.ui.shell.usage_adapters.alibaba.new_client_session",
-        side_effect=lambda **kw: _fake_new_client_session(session, **kw),
-    ), patch(
-        "pythinker_code.ui.shell.usage_adapters.alibaba.get_cache"
-    ) as mock_cache:
+    with (
+        patch(
+            "pythinker_code.ui.shell.usage_adapters.alibaba.new_client_session",
+            side_effect=lambda **kw: _fake_new_client_session(session, **kw),
+        ),
+        patch("pythinker_code.ui.shell.usage_adapters.alibaba.get_cache") as mock_cache,
+    ):
         mock_cache.return_value.snapshot.return_value = None
         report = await AlibabaAdapter().fetch(_make_provider(), _StubOAuth())  # type: ignore[arg-type]
 
@@ -221,12 +222,13 @@ async def test_quota_api_401_shows_note() -> None:
     resp = _make_response(401)
     session = _make_session(resp)
 
-    with patch(
-        "pythinker_code.ui.shell.usage_adapters.alibaba.new_client_session",
-        side_effect=lambda **kw: _fake_new_client_session(session, **kw),
-    ), patch(
-        "pythinker_code.ui.shell.usage_adapters.alibaba.get_cache"
-    ) as mock_cache:
+    with (
+        patch(
+            "pythinker_code.ui.shell.usage_adapters.alibaba.new_client_session",
+            side_effect=lambda **kw: _fake_new_client_session(session, **kw),
+        ),
+        patch("pythinker_code.ui.shell.usage_adapters.alibaba.get_cache") as mock_cache,
+    ):
         mock_cache.return_value.snapshot.return_value = None
         report = await AlibabaAdapter().fetch(_make_provider(), _StubOAuth())  # type: ignore[arg-type]
 
@@ -248,12 +250,13 @@ async def test_ratelimit_cache_used() -> None:
         captured_at=0.0,
     )
 
-    with patch(
-        "pythinker_code.ui.shell.usage_adapters.alibaba.new_client_session",
-        side_effect=lambda **kw: _fake_new_client_session(session, **kw),
-    ), patch(
-        "pythinker_code.ui.shell.usage_adapters.alibaba.get_cache"
-    ) as mock_cache:
+    with (
+        patch(
+            "pythinker_code.ui.shell.usage_adapters.alibaba.new_client_session",
+            side_effect=lambda **kw: _fake_new_client_session(session, **kw),
+        ),
+        patch("pythinker_code.ui.shell.usage_adapters.alibaba.get_cache") as mock_cache,
+    ):
         mock_cache.return_value.snapshot.return_value = snap
         report = await AlibabaAdapter().fetch(_make_provider(), _StubOAuth())  # type: ignore[arg-type]
 
@@ -276,12 +279,13 @@ async def test_network_error_falls_through() -> None:
         session.get = MagicMock(return_value=get_cm)
         yield session
 
-    with patch(
-        "pythinker_code.ui.shell.usage_adapters.alibaba.new_client_session",
-        side_effect=_error_session,
-    ), patch(
-        "pythinker_code.ui.shell.usage_adapters.alibaba.get_cache"
-    ) as mock_cache:
+    with (
+        patch(
+            "pythinker_code.ui.shell.usage_adapters.alibaba.new_client_session",
+            side_effect=_error_session,
+        ),
+        patch("pythinker_code.ui.shell.usage_adapters.alibaba.get_cache") as mock_cache,
+    ):
         mock_cache.return_value.snapshot.return_value = None
         # Must not raise
         report = await AlibabaAdapter().fetch(_make_provider(), _StubOAuth())  # type: ignore[arg-type]
@@ -315,12 +319,13 @@ async def test_local_stats_shown_when_available(monkeypatch) -> None:
     resp = _make_response(404)
     session = _make_session(resp)
 
-    with patch(
-        "pythinker_code.ui.shell.usage_adapters.alibaba.new_client_session",
-        side_effect=lambda **kw: _fake_new_client_session(session, **kw),
-    ), patch(
-        "pythinker_code.ui.shell.usage_adapters.alibaba.get_cache"
-    ) as mock_cache:
+    with (
+        patch(
+            "pythinker_code.ui.shell.usage_adapters.alibaba.new_client_session",
+            side_effect=lambda **kw: _fake_new_client_session(session, **kw),
+        ),
+        patch("pythinker_code.ui.shell.usage_adapters.alibaba.get_cache") as mock_cache,
+    ):
         mock_cache.return_value.snapshot.return_value = None
         report = await AlibabaAdapter().fetch(_make_provider(), _StubOAuth())  # type: ignore[arg-type]
 

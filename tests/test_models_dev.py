@@ -177,18 +177,12 @@ async def test_refresh_catalog_noop_within_ttl(tmp_path, monkeypatch):
     monkeypatch.setattr(models_dev, "_get_cache_path", lambda: cache_file)
     models_dev._catalog_cache.clear()
 
-    fetch_called = []
-
-    async def fake_fetch(path):
-        fetch_called.append(True)
-        return False
-
-    with patch.object(models_dev, "_do_fetch", fake_fetch):
+    with patch("pythinker_code.models_dev.new_client_session") as mock_new_session:
         result = await models_dev.refresh_catalog(force=False)
 
-    # Should have returned True (cache is fresh) without fetching
+    # Cache is fresh — no network I/O should occur
     assert result is True
-    assert len(fetch_called) == 0
+    mock_new_session.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -205,17 +199,23 @@ async def test_refresh_catalog_fetches_when_stale(tmp_path, monkeypatch):
     monkeypatch.setattr(models_dev, "_get_cache_path", lambda: cache_file)
     models_dev._catalog_cache.clear()
 
-    fetch_called = []
+    mock_session = AsyncMock()
+    mock_resp = AsyncMock()
+    mock_resp.text = AsyncMock(return_value=_fixture_json())
+    mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+    mock_resp.__aexit__ = AsyncMock(return_value=False)
+    mock_session.get = lambda *a, **kw: mock_resp
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
 
-    async def fake_fetch(path):
-        fetch_called.append(True)
-        return True
-
-    with patch.object(models_dev, "_do_fetch", fake_fetch):
+    with patch(
+        "pythinker_code.models_dev.new_client_session", return_value=mock_session
+    ) as mock_new_session:
         result = await models_dev.refresh_catalog(force=False)
 
+    # Stale cache — a real network fetch must have been attempted
     assert result is True
-    assert len(fetch_called) == 1
+    mock_new_session.assert_called_once()
 
 
 @pytest.mark.asyncio

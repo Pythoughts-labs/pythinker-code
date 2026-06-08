@@ -129,7 +129,7 @@ def load_catalog() -> dict[str, ModelPrice]:
 
 
 async def _do_fetch(cache_path: Path) -> bool:
-    """Inner fetch — separated so tests can patch it."""
+    """Fetch models.dev/api.json and write it atomically to *cache_path*."""
     tmp_path = cache_path.with_suffix(".tmp")
     try:
         async with (
