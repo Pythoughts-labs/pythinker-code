@@ -9,6 +9,7 @@ from rich.style import Style as RichStyle
 
 from pythinker_code.ui.theme import (
     TUI_TOKEN_NAMES,
+    ThemeName,
     TuiTokens,
     get_active_theme,
     get_markdown_colors,
@@ -17,6 +18,13 @@ from pythinker_code.ui.theme import (
     set_active_theme,
     tui_rich_style,
 )
+
+
+def _color_name(style: RichStyle) -> str:
+    """Return the resolved color name, asserting the style actually set one."""
+    color = style.color
+    assert color is not None
+    return color.name
 
 
 @pytest.fixture(autouse=True)
@@ -100,7 +108,7 @@ def test_user_message_bg_is_neutral_grey_not_tinted():
     The block must stay visible (same lightness as before) but carry no hue —
     R, G and B within a tight tolerance — so it reads as 'grey, not blur'.
     """
-    expected = {"dark": "#333333", "light": "#E0E0E0"}
+    expected: dict[ThemeName, str] = {"dark": "#333333", "light": "#E0E0E0"}
     for mode, hexval in expected.items():
         token = get_tui_tokens(mode).user_message_bg
         assert token == hexval, mode
@@ -174,12 +182,12 @@ def test_markdown_ansi_styles_resolve_to_terminal_colors():
     """The four enumerated elements resolve to ANSI terminal colors in both
     modes (so they adapt to the user's terminal palette)."""
     for mode in ("dark", "light"):
-        assert markdown_rich_style("inline_code", theme=mode).color.name == "cyan"
-        assert markdown_rich_style("link", theme=mode).color.name == "cyan"
-        assert markdown_rich_style("quote", theme=mode).color.name == "green"
-        assert markdown_rich_style("ordered_marker", theme=mode).color.name == "bright_blue"
+        assert _color_name(markdown_rich_style("inline_code", theme=mode)) == "cyan"
+        assert _color_name(markdown_rich_style("link", theme=mode)) == "cyan"
+        assert _color_name(markdown_rich_style("quote", theme=mode)) == "green"
+        assert _color_name(markdown_rich_style("ordered_marker", theme=mode)) == "bright_blue"
         # Unordered bullets stay muted (a hex), not an ANSI accent.
-        assert markdown_rich_style("unordered_marker", theme=mode).color.name != "green"
+        assert _color_name(markdown_rich_style("unordered_marker", theme=mode)) != "green"
 
 
 def test_info_token_exists_and_is_cyan():
