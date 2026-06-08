@@ -23,7 +23,8 @@ _UNTRUSTED_RE = re.compile(
 )
 
 
-def _unwrap(output: str) -> str:
+def _unwrap(output: object) -> str:
+    assert isinstance(output, str), f"expected str output, got {type(output).__name__}"
     m = _UNTRUSTED_RE.match(output)
     return m.group(1) if m else output
 

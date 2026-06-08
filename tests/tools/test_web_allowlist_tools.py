@@ -99,5 +99,6 @@ async def test_search_web_filters_results_by_allowlist(config: Config, runtime) 
     assert (result.extras or {}).get("allowlist_filtered") == 1
     # Search results are crawled third-party web content — wrapped as untrusted
     # data for the model (prompt-injection defense), mirroring FetchURL.
+    assert isinstance(result.output, str)
     assert result.output.startswith("<untrusted_data id=")
     assert result.output.rstrip().endswith("</untrusted_data>")

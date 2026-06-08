@@ -25,7 +25,8 @@ _UNTRUSTED_RE = re.compile(
 )
 
 
-def _unwrap(output: str) -> str:
+def _unwrap(output: object) -> str:
+    assert isinstance(output, str), f"expected str output, got {type(output).__name__}"
     m = _UNTRUSTED_RE.match(output)
     return m.group(1) if m else output
 
@@ -182,6 +183,7 @@ async def test_shell_output_is_wrapped_as_untrusted(shell_tool: Shell):
     <untrusted_data> block (prompt-injection defense). Empty output is not wrapped."""
     result = await shell_tool(Params(command="echo 'hi from shell'"))
     assert not result.is_error
+    assert isinstance(result.output, str)
     assert _UNTRUSTED_RE.match(result.output), result.output
     assert "hi from shell" in _unwrap(result.output)
 

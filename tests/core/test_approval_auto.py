@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from pythinker_code.approval_runtime import ApprovalRuntime
+from pythinker_code.approval_runtime import ApprovalResponseKind, ApprovalRuntime
 from pythinker_code.soul.approval import Approval, ApprovalState, deliberation_scope
 from pythinker_code.soul.toolset import current_tool_call
 from pythinker_code.tools.display import ShellDisplayBlock
@@ -35,7 +35,11 @@ def test_shell_command_signature_is_per_command_family() -> None:
 
 
 async def _drive_request(
-    approval: Approval, runtime: ApprovalRuntime, command: str, response: str, generation: int
+    approval: Approval,
+    runtime: ApprovalRuntime,
+    command: str,
+    response: ApprovalResponseKind,
+    generation: int,
 ) -> tuple[bool, bool]:
     """Drive Approval.request() to completion. Returns (approved, prompted)."""
     call = _shell_call(command)
@@ -186,7 +190,7 @@ async def test_config_edit_never_session_approvable_and_prompts_under_yolo() -> 
         )
 
     async def _drive(
-        approval: Approval, runtime: ApprovalRuntime, response: str
+        approval: Approval, runtime: ApprovalRuntime, response: ApprovalResponseKind
     ) -> tuple[bool, bool]:
         token = current_tool_call.set(_write_call())
         try:

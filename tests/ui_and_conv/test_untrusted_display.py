@@ -31,9 +31,7 @@ def test_strip_untrusted_envelope_unescapes_inner_closing_tag() -> None:
 
 def test_card_result_details_hides_wrapper_from_display() -> None:
     wrapped = UntrustedData("git diff output\n+ added line").render_for_prompt()
-    result = ToolReturnValue(
-        is_error=False, output=wrapped, message="ok", display=[], extras={}
-    )
+    result = ToolReturnValue(is_error=False, output=wrapped, message="ok", display=[], extras={})
     details = _ToolCallBlock._card_result_details(result)
     assert "<untrusted_data" not in details["output"]
     assert "</untrusted_data>" not in details["output"]
