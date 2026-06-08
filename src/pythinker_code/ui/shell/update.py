@@ -648,6 +648,36 @@ def _is_homebrew_upgrade_command(command: list[str]) -> bool:
     return len(command) >= 3 and command[:2] == ["brew", "upgrade"]
 
 
+def _installed_homebrew_version() -> str | None:
+    """Return the highest pythinker-code version Homebrew reports as installed.
+
+    Shelling out is required: the running interpreter's own
+    ``importlib.metadata`` still reports the pre-upgrade version until the
+    process restarts, so it cannot confirm an in-place upgrade. ``None`` means
+    "could not determine" (brew missing, formula not found, parse failure) — the
+    caller treats that as inconclusive rather than a failed upgrade.
+    """
+    try:
+        result = subprocess.run(
+            ["brew", "list", "--versions", "pythinker-code"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=get_clean_env(),
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        logger.exception("Failed to read installed Homebrew version:")
+        return None
+    if result.returncode != 0:
+        return None
+    versions = re.findall(r"\d+\.\d+\.\d+", result.stdout)
+    if not versions:
+        return None
+    return max(versions, key=semver_tuple)
+
+
 def _native_update_asset_name(version: str) -> str | None:
     linux_package_kind = _installed_linux_package_kind()
     if _is_windows():
@@ -1316,6 +1346,30 @@ async def _do_update(
         _print(f"[{_t.muted}]The upgrade will continue in a new process.[/]")
         sys.exit(0)
 
+    if _is_homebrew_upgrade_command(upgrade_command):
+        # `brew upgrade <formula>` resolves against the locally-cloned tap
+        # formula; a stale clone pins the old version and the upgrade silently
+        # no-ops ("already installed"). Refresh the tap first. Best-effort: if
+        # the refresh fails we still attempt the upgrade, and the post-upgrade
+        # version check below catches a no-op.
+        _print(f"[{_t.muted}]Refreshing Homebrew metadata: brew update[/]")
+        try:
+            # --quiet keeps the refresh from dumping the host's full outdated
+            # formula/cask list (often dozens of unrelated lines) before our
+            # upgrade output.
+            refresh_code = _run_upgrade_command(
+                ["brew", "update", "--quiet"],
+                print_output=print_output,
+                output_callback=output_callback,
+            )
+        except OSError:
+            logger.exception("brew update failed to launch:")
+        else:
+            if refresh_code != 0:
+                logger.warning(
+                    "brew update exited {code}; continuing with upgrade", code=refresh_code
+                )
+
     try:
         returncode = _run_upgrade_command(
             upgrade_command,
@@ -1329,6 +1383,20 @@ async def _do_update(
         return UpdateResult.FAILED
 
     if returncode == 0:
+        if _is_homebrew_upgrade_command(upgrade_command):
+            installed = _installed_homebrew_version()
+            if installed is not None and semver_tuple(installed) < semver_tuple(latest_version):
+                # brew exited 0 without changing anything (stale tap / no-op).
+                # Reporting success here is the bug we are fixing: don't.
+                _print(
+                    f"[{_t.error}]Homebrew exited cleanly but pythinker-code is "
+                    f"still {installed}, not {latest_version}.[/]"
+                )
+                _print(
+                    f"[{_t.warning}]The Homebrew tap metadata looks stale. "
+                    "Run 'brew update' and try '/update' again.[/]"
+                )
+                return UpdateResult.FAILED
         _print(f"[{_t.success}]Updated successfully![/]")
         _print(f"[{_t.warning}]Restart Pythinker CLI to use the new version.[/]")
         return UpdateResult.UPDATED

@@ -15,6 +15,8 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Homebrew updater no longer no-ops or false-reports success.** `pythinker update` on a Homebrew install now runs `brew update` to refresh the tap before `brew upgrade`, so a stale local tap clone can't pin the old formula and silently no-op ("0.37.0 already installed"). After upgrading it re-checks the installed version via `brew list --versions` and reports a clear failure instead of "Updated successfully!" when the version did not actually advance.
+
 ## 0.38.0 (2026-06-08)
 
 - **Quieter `/login`.** Logging in no longer prints a `RuntimeWarning` about an un-awaited `redraw_in_future` coroutine. The prompt redraw throttle now uses a coroutine-free path (`max_render_postpone_time`), eliminating the warning emitted during the login prompt handoff.
