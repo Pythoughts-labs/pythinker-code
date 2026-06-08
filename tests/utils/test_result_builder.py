@@ -155,3 +155,99 @@ def test_empty_write():
     assert written == 0
     assert builder.n_chars == 0
     assert not builder.is_full
+
+
+def test_spill_on_truncation_saves_full_output_and_hints(tmp_path):
+    """tooldesc-2/ctxmgmt-1: truncated foreground output spills to disk with a
+    recovery hint instead of being silently discarded."""
+    spill_dir = tmp_path / "tool-output"
+    builder = ToolResultBuilder(max_chars=10)
+    builder.enable_spill(spill_dir, "bash")
+
+    builder.write("Hello")
+    builder.write(" world! this is a long tail that gets truncated")
+    result = builder.ok("Done")
+
+    assert builder.is_full
+    # The in-context output is still truncated.
+    assert isinstance(result.output, str)
+    assert "[...truncated]" in result.output
+    # The message carries an actionable recovery hint pointing at the saved file.
+    assert "ReadFile(" in result.message
+    # The spilled file holds the COMPLETE untruncated output.
+    files = list(spill_dir.glob("bash-*.txt"))
+    assert len(files) == 1
+    assert files[0].read_text(encoding="utf-8") == (
+        "Hello world! this is a long tail that gets truncated"
+    )
+    assert str(files[0]) in result.message
+
+
+def test_no_spill_when_disabled(tmp_path):
+    builder = ToolResultBuilder(max_chars=10)
+    builder.write("Hello world!")  # truncates
+    result = builder.ok()
+
+    assert "Output is truncated" in result.message
+    assert not (tmp_path / "tool-output").exists()
+
+
+def test_no_spill_when_no_truncation(tmp_path):
+    spill_dir = tmp_path / "tool-output"
+    builder = ToolResultBuilder(max_chars=1000)
+    builder.enable_spill(spill_dir, "bash")
+    builder.write("short output")
+    result = builder.ok("ok")
+
+    assert "truncated" not in result.message.lower()
+    assert not spill_dir.exists()
+
+
+def test_spill_is_idempotent(tmp_path):
+    """ok() and error() must not each write a separate spill file."""
+    spill_dir = tmp_path / "tool-output"
+    builder = ToolResultBuilder(max_chars=10)
+    builder.enable_spill(spill_dir, "bash")
+    builder.write("Hello world! tail that truncates")
+
+    first = builder.ok("Done").message
+    second = builder.error("boom", brief="b").message
+
+    files = list(spill_dir.glob("bash-*.txt"))
+    assert len(files) == 1
+    # Same cached hint (same path) on both.
+    assert str(files[0]) in first
+    assert str(files[0]) in second
+
+
+def test_spill_sanitizes_tool_name_against_traversal(tmp_path):
+    spill_dir = tmp_path / "tool-output"
+    builder = ToolResultBuilder(max_chars=10)
+    builder.enable_spill(spill_dir, "../../evil")
+    builder.write("Hello world! tail that truncates")
+    builder.ok("Done")
+
+    # No file escaped spill_dir; the unsafe stem was neutralized.
+    assert not (tmp_path / "evil").exists()
+    files = list(spill_dir.iterdir())
+    assert len(files) == 1
+    assert files[0].parent == spill_dir
+    assert ".." not in files[0].name
+
+
+def test_spill_buffer_is_memory_capped(tmp_path, monkeypatch):
+    import pythinker_code.tools.utils as utils_mod
+
+    monkeypatch.setattr(utils_mod, "SPILL_MAX_CHARS", 20)
+    spill_dir = tmp_path / "tool-output"
+    builder = ToolResultBuilder(max_chars=5)
+    builder.enable_spill(spill_dir, "bash")
+    for _ in range(10):
+        builder.write("0123456789")  # 100 chars total, well over the 20 cap
+    result = builder.ok("Done")
+
+    files = list(spill_dir.glob("bash-*.txt"))
+    assert len(files) == 1
+    saved = files[0].read_text(encoding="utf-8")
+    assert len(saved) <= 30  # capped near SPILL_MAX_CHARS, not the full 100
+    assert "capped" in result.message

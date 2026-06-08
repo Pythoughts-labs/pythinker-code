@@ -60,6 +60,9 @@ class SearchWeb(CallableTool2[Params]):
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
         builder = ToolResultBuilder(max_line_length=None)
+        # Search results are third-party web text; spill the full block on overflow
+        # so the truncated tail stays recoverable instead of forcing a re-query.
+        builder.enable_spill(self._runtime.session.dir / "tool-output", "web_search")
         policy = resolve_execution_policy(
             self._runtime.config.agent_execution_profile,
             yolo=self._runtime.approval.is_yolo_flag(),

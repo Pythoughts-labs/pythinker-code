@@ -89,6 +89,13 @@ class Shell(CallableTool2[Params]):
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
         builder = ToolResultBuilder()
+        # Foreground command output is non-idempotent and unrecoverable once
+        # truncated (re-running a build/test is expensive/non-deterministic), so
+        # spill the full output to disk with a recovery hint on overflow.
+        builder.enable_spill(
+            self._runtime.session.dir / "tool-output",
+            "powershell" if self._is_powershell else "bash",
+        )
 
         if not params.command:
             return builder.error("Command cannot be empty.", brief="Empty command")

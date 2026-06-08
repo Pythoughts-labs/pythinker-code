@@ -335,3 +335,11 @@ async def test_cancelled_command_kills_process(shell_tool: Shell, monkeypatch: p
         await task
 
     assert fake_process.kill_calls == 1
+
+
+async def test_large_output_spills_with_recovery_hint(shell_tool: Shell):
+    """tooldesc-2/ctxmgmt-1: foreground output over the truncation limit is spilled
+    to disk and the result message points the model at how to recover it."""
+    result = await shell_tool(Params(command="for i in $(seq 1 20000); do echo 'aaaaaaaaaa'; done"))
+    assert 'ReadFile(path="' in result.message
+    assert "saved to" in result.message
