@@ -24,7 +24,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 
-from opentelemetry import metrics, trace
+from opentelemetry import context, metrics, trace
 from opentelemetry._logs import SeverityNumber, set_logger_provider
 from opentelemetry._logs._internal import LogRecord
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
@@ -117,6 +117,11 @@ def init(
         "opentelemetry.sdk._logs._internal.export.batch_log_record_processor",
         "opentelemetry.sdk.metrics._internal.export",
         "opentelemetry.sdk.trace.export",
+        # start_span attaches spans to the OTel context for a connected trace tree;
+        # a Ctrl-C that finalizes the context manager from a different asyncio
+        # context makes context.detach() log "Failed to detach context" here. That
+        # is harmless CLI-interrupt noise, so keep it out of the user's terminal.
+        "opentelemetry.context",
     ):
         logging.getLogger(noisy).setLevel(logging.CRITICAL)
 
@@ -192,27 +197,24 @@ def get_meter() -> Meter:
     return metrics.get_meter(_TRACER_NAME)
 
 
-def _is_context_detach_mismatch(exc: ValueError) -> bool:  # pyright: ignore[reportUnusedFunction]
-    message = str(exc)
-    return "Token" in message and "created in a different Context" in message
-
-
 @contextmanager
 def start_span(name: str, attributes: dict[str, Any] | None = None) -> Generator[Any, None, None]:
     """Convenience: ``with start_span("pythinker.turn", {...}) as span:``.
 
-    When OTel is uninitialized this returns a no-op span (the global tracer's
-    no-op behaviour) — call sites stay clean and pay nothing in the disabled
-    case. The span is the *current* span inside the with block, so child spans
-    automatically nest.
+    When OTel is initialized, the span is installed as the *current* span inside
+    the with block, so child spans created within it nest into a connected trace
+    tree (turn -> llm -> tool) instead of appearing as flat siblings.
 
-    Ctrl-C can cancel prompt/LLM tasks while an OTel current-span context
-    manager is being finalized from a different asyncio context. OpenTelemetry
-    logs that as ``Failed to detach context`` with a ValueError, which is noisy
-    for a CLI interrupt and does not affect user work. Avoid OTel's context
-    attach/detach path here: create and end the span manually instead.
+    When OTel is **uninitialized** this returns a no-op span and skips context
+    attach/detach entirely: nothing is exported, so nesting is moot, and skipping
+    attach avoids OpenTelemetry's "Failed to detach context" log if Ctrl-C
+    finalizes this context manager from a different asyncio context. In the
+    initialized case that same log (emitted by ``opentelemetry.context.detach``,
+    which swallows the error internally rather than raising) is demoted to
+    CRITICAL in :func:`init`, so it stays out of the user's way.
     """
     span = get_tracer().start_span(name, attributes=attributes or {})
+    token = context.attach(trace.set_span_in_context(span)) if _tracer is not None else None
     try:
         yield span
     except BaseException as exc:
@@ -221,6 +223,10 @@ def start_span(name: str, attributes: dict[str, Any] | None = None) -> Generator
             span.set_status(Status(StatusCode.ERROR, str(exc)))
         raise
     finally:
+        if token is not None:
+            # detach() swallows + logs any cross-context mismatch internally; the
+            # "opentelemetry.context" logger is demoted in init() so it stays quiet.
+            context.detach(token)
         span.end()
 
 

@@ -342,7 +342,13 @@ class PythinkerToolset:
                 t0 = time.monotonic()
                 _tool_span_cm = _otel.start_span(
                     "pythinker.tool",
-                    {"tool.name": tool_call.function.name, "tool.call_id": tool_call.id},
+                    {
+                        "tool.name": tool_call.function.name,
+                        "tool.call_id": tool_call.id,
+                        # GenAI semconv so GenAI-aware backends recognize the tool layer.
+                        "gen_ai.operation.name": "execute_tool",
+                        "gen_ai.tool.name": tool_call.function.name,
+                    },
                 )
                 _tool_span = _tool_span_cm.__enter__()
                 try:
@@ -397,6 +403,12 @@ class PythinkerToolset:
                         tool_call_id=tool_call.id,
                         return_value=ToolRuntimeError(str(e)),
                     )
+                except BaseException as e:
+                    # CancelledError/KeyboardInterrupt during the tool call: close the
+                    # span in this task so its OTel context token detaches now, not
+                    # later under GC in a different asyncio context.
+                    _tool_span_cm.__exit__(type(e), e, e.__traceback__)
+                    raise
 
                 tool_elapsed = time.monotonic() - t0
                 _tool_succeeded = not isinstance(ret, ToolError)
@@ -788,6 +800,8 @@ class MCPTool[T: ClientTransport](CallableTool):
                     "mcp.server": self._mcp_server_name,
                     "mcp.tool": self._mcp_tool.name,
                     "mcp.timeout_ms": int(self._timeout.total_seconds() * 1000),
+                    "gen_ai.operation.name": "execute_tool",
+                    "gen_ai.tool.name": self._mcp_tool.name,
                 },
             ) as span:
                 async with self._client as client:

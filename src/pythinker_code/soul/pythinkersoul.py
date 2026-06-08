@@ -1087,6 +1087,7 @@ class PythinkerSoul:
                     "agent.role": self._runtime.role,
                     "model": self._runtime.llm.model_name,
                     "plan_mode": self._plan_mode,
+                    "gen_ai.operation.name": "invoke_agent",
                 },
             ) as span:
                 turn_t0 = time.monotonic()
@@ -1495,6 +1496,7 @@ class PythinkerSoul:
                     "gen_ai.system": gen_ai_system,
                     "gen_ai.request.model": chat_provider.model_name,
                     "session.id": self._runtime.session.id,
+                    "gen_ai.operation.name": "chat",
                 },
             ) as span:
                 llm_t0 = time.monotonic()
