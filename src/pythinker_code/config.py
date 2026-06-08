@@ -468,6 +468,25 @@ class MemoryConfig(BaseModel):
         default=False,
         description="Enable approval-gated memory inbox consolidation helpers.",
     )
+    durable_memory: bool = Field(
+        default=False,
+        description=(
+            "Opt-in 'durable memory' profile: enable cross-session persistence by turning on "
+            "harvest_on_compaction + journal_recaps together, without changing their privacy-"
+            "preserving defaults. Consolidation (which writes durable MEMORY.md and is approval-"
+            "gated) stays separately opt-in. Set the individual flags directly for finer control."
+        ),
+    )
+
+    @property
+    def harvest_enabled(self) -> bool:
+        """Whether compaction should harvest, honoring the durable-memory profile."""
+        return self.harvest_on_compaction or self.durable_memory
+
+    @property
+    def journal_enabled(self) -> bool:
+        """Whether session recaps should be journaled, honoring the durable-memory profile."""
+        return self.journal_recaps or self.durable_memory
 
 
 class PythinkerAISearchConfig(BaseModel):

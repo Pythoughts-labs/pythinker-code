@@ -1000,7 +1000,7 @@ def pythinker(
             session_title=last_session.title,
         )
         if exit_code == ExitCode.SUCCESS and getattr(
-            getattr(config, "memory", None), "journal_recaps", False
+            getattr(config, "memory", None), "journal_enabled", False
         ):
             with contextlib.suppress(Exception):
                 from pythinker_code.memory.recap import build_session_recap

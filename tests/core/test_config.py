@@ -83,6 +83,7 @@ def test_default_config_dump():
                 "harvest_on_compaction": False,
                 "journal_recaps": False,
                 "consolidation": False,
+                "durable_memory": False,
             },
             "web": {"allowed_domains": None},
             "feedback": {

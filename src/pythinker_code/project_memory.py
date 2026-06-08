@@ -296,10 +296,11 @@ class ProjectMemoryStore:
     async def _read_journal(self, *, last_n: int = 10) -> list[str]:
         """Read up to ``last_n`` newest session recaps from ``JOURNAL.md``.
 
-        Forward hook: ``JOURNAL.md`` is written by a later phase (P2) which
-        prepends recaps (newest-first), so the first ``last_n`` entries are the
-        most recent. No writer exists yet, so this returns ``[]`` in P1; reading
-        it here keeps the P2 writer purely additive.
+        The session-exit recap writer (``cli`` + ``memory.recap``) prepends
+        recaps newest-first, so the first ``last_n`` entries are the most recent.
+        Writing is gated behind the ``journal_recaps`` flag / ``durable_memory``
+        profile; when neither is enabled no journal is written and this returns
+        ``[]``.
         """
         root = await self._ensure_dir()
         path = root / "memory" / "JOURNAL.md"

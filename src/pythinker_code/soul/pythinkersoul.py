@@ -1895,7 +1895,7 @@ class PythinkerSoul:
             skills_by_name=getattr(self._runtime, "skills", {}),
         )
 
-        if getattr(self._runtime.config.memory, "harvest_on_compaction", False):
+        if getattr(self._runtime.config.memory, "harvest_enabled", False):
             await self._harvest_before_compaction(history_before_compaction, custom_instruction)
 
         wire_send(CompactionBegin())
