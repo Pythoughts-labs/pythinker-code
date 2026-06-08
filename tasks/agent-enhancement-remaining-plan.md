@@ -273,7 +273,10 @@ One PR-sized, tested change at a time; `make check` + `uv run pytest` green per 
 | 2026-06-08 | **obs-eval-5** (WS-SOUL #1) — stuck-loop failure-threshold escalation | ✅ done | `d8bc2832` |
 | 2026-06-08 | **sysprompt-2** (WS-SOUL #2) — graceful max-steps handoff summary (tools-disabled, reuses btw mechanism; shell + print wired; wire/acp protocols untouched) | ✅ done | `df1a1728` |
 | 2026-06-08 | (your change) "Did you mean?" tool-name suggestion on unknown tool calls | ✅ done | `c5d7c1c3` |
-| 2026-06-08 | **ctxmgmt-2** (WS-SOUL #3) — graduated stale-tool-output pruning tier before full compaction | ✅ done | (this batch) |
+| 2026-06-08 | **ctxmgmt-2** (WS-SOUL #3) — graduated stale-tool-output pruning tier before full compaction | ✅ done | `e6204fe2` |
+| 2026-06-08 | **sysprompt-1** (A3 collision) — model-keyed protocol-defense injection provider (Qwen-family fragment; landed on the existing injection bus, no A3 extraction; system.md general rules kept intact) | ✅ done | `af8afbf4` |
+| 2026-06-08 | **uxsteer-1** (WS-UX) — `Progress` checkpoint tool (activates the zero-producer ProgressNote channel; producer + shell render — print/ACP render deferred) | ✅ done | `ebd14080` |
+| 2026-06-08 | (your change) harden approval gates + config-surface classification | ✅ done | `0c2ad89c` |
 
 **Decision update (§3 / §7b):** ctxmgmt-2 did **not** require the standalone A7
 extraction. The pruning algorithm landed in the existing `compaction.py` (which
@@ -283,9 +286,11 @@ extraction (the decomposition plan orders A7 last). A7 remains available later f
 moving the compaction *orchestration* (`_grow_context`/`compact_context`) out of the
 host, but is no longer a prerequisite for any enhancement item.
 
-**Next:** `sysprompt-1` (A3 collision — model-defense injection; same call: land in
-existing injection bus without forcing the A3 extraction) or a parallel
-WS-STANDALONE item. Remaining: 18 items.
+**Done so far: 6 plan items** (all committed). **Remaining: 16** — WS-TOOLSET (tooldesc-2/ctxmgmt-1,
+obs-eval-1, mcpext-1/2/3), WS-RECALL (memory-2, memory-1/ctxmgmt-3, memory-3), WS-UX (uxsteer-2,
+uxsteer-3), WS-STANDALONE (subagent-2, skills-1, skills-2, mode-1, obs-eval-3, obs-eval-4).
+The two **L-effort** items are obs-eval-3 and obs-eval-4. Clean disjoint next picks: subagent-2,
+obs-eval-1, or memory-2.
 
 ---
 
