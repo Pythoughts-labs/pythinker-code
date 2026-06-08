@@ -21,6 +21,7 @@ from pythinker_core.chat_provider import (
     APITimeoutError,
     RetryableChatProvider,
     ThinkingEffort,
+    TokenUsage,
 )
 from pythinker_core.message import Message, ToolCall
 from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wait_exponential_jitter
@@ -90,6 +91,7 @@ from pythinker_code.soul.permission import (
 )
 from pythinker_code.soul.slash import registry as soul_slash_registry
 from pythinker_code.soul.toolset import PythinkerToolset
+from pythinker_code.subagents.usage import accumulate_usage
 from pythinker_code.thinking import (
     available_thinking_levels,
     bool_to_thinking_effort,
@@ -363,6 +365,12 @@ class PythinkerSoul:
             )
         self._current_step_no = 0
         self._consecutive_failures = 0
+        # Cumulative LLM token usage for this soul instance (one run), so a subagent
+        # can report its spend back to the orchestrating parent (subagent-2). A
+        # resumed session runs on a fresh soul, so this counts the current run.
+        self._cumulative_usage = TokenUsage(
+            input_other=0, output=0, input_cache_read=0, input_cache_creation=0
+        )
         self._deliberation_generation = 0
         self._sleep_inhibitor = SleepInhibitor(enabled=agent.runtime.config.prevent_idle_sleep)
         self._compaction = SimpleCompaction()  # TODO: maybe configurable and composable
@@ -417,6 +425,15 @@ class PythinkerSoul:
     @property
     def model_name(self) -> str:
         return self._runtime.llm.chat_provider.model_name if self._runtime.llm else ""
+
+    @property
+    def cumulative_usage(self) -> TokenUsage:
+        """Total LLM token usage consumed by this soul instance (this run).
+
+        Counts every step's LLM call plus compaction calls. A resumed session
+        runs on a fresh soul, so this reflects the current run, not prior runs.
+        """
+        return self._cumulative_usage
 
     @property
     def model_capabilities(self) -> set[ModelCapability] | None:
@@ -1519,6 +1536,8 @@ class PythinkerSoul:
                 if step_result.id:
                     span.set_attribute("gen_ai.response.id", step_result.id)
                 u = step_result.usage
+                if u is not None:
+                    self._cumulative_usage = accumulate_usage(self._cumulative_usage, u)
                 input_tokens = (
                     int(u.input) if (u and getattr(u, "input", None) is not None) else None
                 )
@@ -1903,6 +1922,12 @@ class PythinkerSoul:
             compaction_result = await _compact_with_retry()
             if not compaction_result.messages:
                 raise RuntimeError("Compaction produced no messages; preserving existing history")
+            # Compaction makes its own LLM call outside the step loop; fold its usage
+            # into the cumulative total so a child's reported spend includes it.
+            if compaction_result.usage is not None:
+                self._cumulative_usage = accumulate_usage(
+                    self._cumulative_usage, compaction_result.usage
+                )
             await self._context.clear()
             await self._context.write_system_prompt(self._agent.system_prompt)
             await self._checkpoint()

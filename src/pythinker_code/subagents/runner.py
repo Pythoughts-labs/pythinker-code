@@ -22,6 +22,7 @@ from pythinker_code.subagents.core import SubagentRunSpec, prepare_soul
 from pythinker_code.subagents.models import AgentInstanceRecord, AgentLaunchSpec
 from pythinker_code.subagents.output import SubagentOutputWriter
 from pythinker_code.subagents.store import SubagentStore
+from pythinker_code.subagents.usage import format_usage_lines, usage_extras
 from pythinker_code.utils.logging import logger
 from pythinker_code.wire import Wire
 from pythinker_code.wire.file import WireFile
@@ -74,6 +75,22 @@ class SoulRunFailure:
 
     message: str
     brief: str
+
+
+def _fail_with_usage(soul: PythinkerSoul, message: str, brief: str) -> ToolError:
+    """Build a ToolError that still carries the child's accumulated token spend.
+
+    A failed child burned tokens before failing; reporting them (in the message and
+    in ``extras`` for batch aggregation) keeps a partial-failure fan-out's total
+    spend visible to the orchestrator instead of silently under-counting it.
+    """
+    usage = soul.cumulative_usage
+    err = ToolError(
+        message="\n".join([message, *format_usage_lines("child", usage, soul.model_name)]),
+        brief=brief,
+    )
+    err.extras = usage_extras(usage, soul.model_name)
+    return err
 
 
 async def run_soul_checked(
@@ -318,7 +335,7 @@ class ForegroundSubagentRunner:
             if failure is not None:
                 self._store.update_instance(agent_id, status="failed")
                 output_writer.stage(f"failed: {failure.brief}")
-                return ToolError(message=failure.message, brief=failure.brief)
+                return _fail_with_usage(soul, failure.message, failure.brief)
             output_writer.stage("run_soul_finished")
 
             # --- SubagentStop hook ---
@@ -363,28 +380,28 @@ class ForegroundSubagentRunner:
         if final_response is None:
             self._store.update_instance(agent_id, status="failed")
             output_writer.stage("failed: empty output")
-            return ToolError(
-                message="Agent completed but produced no output.",
-                brief="Empty agent output",
+            return _fail_with_usage(
+                soul, "Agent completed but produced no output.", "Empty agent output"
             )
         self._store.update_instance(agent_id, status="idle")
         output_writer.summary(final_response)
+        usage = soul.cumulative_usage
+        model = soul.model_name
         lines = [
             f"agent_id: {agent_id}",
             "resumed: true" if resumed else "resumed: false",
         ]
         if resumed and req.requested_type and req.requested_type != actual_type:
             lines.append(f"requested_subagent_type: {req.requested_type}")
-        lines.extend(
-            [
-                f"actual_subagent_type: {actual_type}",
-                "status: completed",
-                "",
-                "[summary]",
-                final_response,
-            ]
-        )
-        return ToolOk(output="\n".join(lines))
+        lines.append(f"actual_subagent_type: {actual_type}")
+        lines.append("status: completed")
+        # Surface this child's total LLM spend so the orchestrating parent can
+        # budget effort across a fan-out instead of discovering it on the bill.
+        lines.extend(format_usage_lines("child", usage, model))
+        lines.extend(["", "[summary]", final_response])
+        result = ToolOk(output="\n".join(lines))
+        result.extras = usage_extras(usage, model)
+        return result
 
     async def _prepare_instance(self, req: ForegroundRunRequest) -> PreparedInstance:
         if req.resume:

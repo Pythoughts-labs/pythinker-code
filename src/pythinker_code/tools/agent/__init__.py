@@ -13,6 +13,7 @@ from pythinker_code.soul.agent import Runtime
 from pythinker_code.soul.toolset import get_current_tool_call_or_none
 from pythinker_code.subagents.models import AgentLaunchSpec, AgentTypeDefinition
 from pythinker_code.subagents.runner import ForegroundRunRequest, ForegroundSubagentRunner
+from pythinker_code.subagents.usage import summarize_batch
 from pythinker_code.tools.utils import ToolResultStatus, load_desc, tool_status_line
 from pythinker_code.utils.logging import logger
 
@@ -671,6 +672,9 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
             f"deferred_agent_count: {len(deferred_agents)}",
             f"scratchpad: {scratchpad_result.reason}",
         ]
+        # Aggregate child spend so an N-child fan-out reports total tokens/cost in
+        # one place (foreground completions only; background children report later).
+        lines.extend(summarize_batch([result for _, result in results]))
         if capacity is not None:
             lines.extend(
                 [
