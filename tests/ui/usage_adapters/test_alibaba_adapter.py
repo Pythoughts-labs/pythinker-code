@@ -10,12 +10,26 @@ import pytest
 from pydantic import SecretStr
 
 from pythinker_code.config import LLMProvider
+from pythinker_code.ui.shell.stats_collector import AllStats, PeriodStats, ProviderStats
 from pythinker_code.ui.shell.usage_adapters.alibaba import (
     AlibabaAdapter,
     _parse_quota_response,
     _quota_url,
 )
 from pythinker_code.usage_ratelimit_cache import RateLimitSnapshot
+
+
+@pytest.fixture(autouse=True)
+def _patch_local_stats(monkeypatch):
+    """Return empty AllStats so tests don't read real ~/.pythinker session files."""
+    empty = AllStats(
+        periods={"today": PeriodStats(), "all_time": PeriodStats()},
+        insights={},
+    )
+    monkeypatch.setattr(
+        "pythinker_code.ui.shell.usage_adapters.alibaba._load_all_stats",
+        lambda: empty,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +213,7 @@ async def test_quota_api_404_falls_through() -> None:
 
     assert report.summary is None
     assert report.limits == []
-    assert any("console.aliyun.com" in n or "quota" in n.lower() for n in report.notes)
+    assert report.notes  # some guidance note is present
 
 
 async def test_quota_api_401_shows_note() -> None:
@@ -244,7 +258,7 @@ async def test_ratelimit_cache_used() -> None:
         report = await AlibabaAdapter().fetch(_make_provider(), _StubOAuth())  # type: ignore[arg-type]
 
     assert report.summary is not None
-    assert report.summary.label == "Tokens"
+    assert report.summary.label == "Tokens remaining"
     assert report.summary.used == 8_000
     assert report.summary.limit == 10_000
     assert report.summary.unit == "tokens"
@@ -273,4 +287,54 @@ async def test_network_error_falls_through() -> None:
         report = await AlibabaAdapter().fetch(_make_provider(), _StubOAuth())  # type: ignore[arg-type]
 
     assert report is not None
-    assert any("console.aliyun.com" in n or "quota" in n.lower() for n in report.notes)
+    assert report.notes  # some guidance note is present
+
+
+async def test_local_stats_shown_when_available(monkeypatch) -> None:
+    """Local ProviderStats are shown as rows even when quota API returns 404."""
+    prov = ProviderStats()
+    prov.messages = 3
+    prov.cost = 0.0162
+    prov.input_other = 4_200
+    prov.output = 1_800
+    prov.input_cache_read = 0
+    prov.input_cache_creation = 0
+
+    stats = AllStats(
+        periods={
+            "today": _period_with_provider(prov),
+            "all_time": _period_with_provider(prov),
+        },
+        insights={},
+    )
+    monkeypatch.setattr(
+        "pythinker_code.ui.shell.usage_adapters.alibaba._load_all_stats",
+        lambda: stats,
+    )
+
+    resp = _make_response(404)
+    session = _make_session(resp)
+
+    with patch(
+        "pythinker_code.ui.shell.usage_adapters.alibaba.new_client_session",
+        side_effect=lambda **kw: _fake_new_client_session(session, **kw),
+    ), patch(
+        "pythinker_code.ui.shell.usage_adapters.alibaba.get_cache"
+    ) as mock_cache:
+        mock_cache.return_value.snapshot.return_value = None
+        report = await AlibabaAdapter().fetch(_make_provider(), _StubOAuth())  # type: ignore[arg-type]
+
+    assert report.summary is not None
+    assert report.summary.label == "Today"
+    assert report.summary.used == 6_000  # 4200 + 1800
+    assert "4,200" in (report.summary.reset_hint or "")
+    assert "1,800" in (report.summary.reset_hint or "")
+    assert report.notes == []
+
+
+def _period_with_provider(prov: ProviderStats) -> PeriodStats:
+    period = PeriodStats()
+    period.total_messages = prov.messages
+    period.total_cost = prov.cost
+    period.providers["managed:alibaba"] = prov
+    return period

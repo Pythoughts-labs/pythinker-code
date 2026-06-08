@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from urllib.parse import urlparse
 from typing import TYPE_CHECKING
 
@@ -10,6 +11,7 @@ import aiohttp
 from pythinker_code.auth import ALIBABA_PLATFORM_ID
 from pythinker_code.auth.alibaba import ALIBABA_BASE_URL
 from pythinker_code.ui.shell.usage_adapters.base import UsageReport, UsageRow
+from pythinker_code.ui.shell.stats_collector import load_all_stats as _load_all_stats
 from pythinker_code.usage_ratelimit_cache import get_cache
 from pythinker_code.utils.aiohttp import new_client_session
 
@@ -86,58 +88,77 @@ class AlibabaAdapter:
     async def fetch(self, provider: "LLMProvider", oauth_mgr: "OAuthManager") -> UsageReport:
         api_key = provider.api_key.get_secret_value()
         base_url = provider.base_url or ALIBABA_BASE_URL
-        quota_url = _quota_url(base_url)
         provider_key = f"managed:{ALIBABA_PLATFORM_ID}"
 
+        # --- Local token stats (primary source, always available) ---
+        local_rows: list[UsageRow] = []
+        try:
+            all_stats = await asyncio.to_thread(_load_all_stats)
+            for period_name, label in (("today", "Today"), ("all_time", "All time")):
+                period = all_stats.periods.get(period_name)
+                if period is None:
+                    continue
+                prov = period.providers.get(provider_key)
+                if prov is None or prov.messages == 0:
+                    continue
+                local_rows.append(
+                    UsageRow(
+                        label=label,
+                        used=prov.tokens,
+                        limit=0,
+                        unit="tokens",
+                        reset_hint=(
+                            f"↑{prov.input_other:,} in  "
+                            f"↓{prov.output:,} out  "
+                            f"${prov.cost:.4f}"
+                        ),
+                    )
+                )
+        except Exception:
+            pass
+
+        # --- DashScope quota API (best-effort, silent on failure) ---
         quota_rows: list[UsageRow] = []
         notes: list[str] = []
-
         try:
             async with new_client_session(timeout=_TIMEOUT) as session:
                 async with session.get(
-                    quota_url,
+                    _quota_url(base_url),
                     headers={"Authorization": f"Bearer {api_key}"},
                 ) as resp:
                     if resp.status == 200:
                         data = await resp.json(content_type=None)
                         quota_rows = _parse_quota_response(data)
-                        if not quota_rows:
-                            notes.append(
-                                "DashScope quota API returned an unrecognised response shape."
-                            )
                     elif resp.status in (401, 403):
                         notes.append(
                             "DashScope quota API: authorization failed — quota data unavailable."
                         )
-                    elif resp.status == 404:
-                        pass  # Quota endpoint not available for this key type; silent
-                    else:
-                        notes.append(f"DashScope quota API returned HTTP {resp.status}.")
         except (aiohttp.ClientError, TimeoutError):
-            pass  # Network error — fall through to rate-limit data
+            pass
 
-        # Read rate-limit headers captured from the most recent completion response
+        # --- Rate-limit headers from last response (if DashScope ever sends them) ---
         rl_rows: list[UsageRow] = []
         snap = get_cache().snapshot(provider_key)
         if snap is not None:
-            req_lim = snap.requests_limit
-            req_rem = snap.requests_remaining
-            tok_lim = snap.tokens_limit
-            tok_rem = snap.tokens_remaining
-            if req_lim is not None and req_rem is not None:
+            if snap.requests_limit is not None and snap.requests_remaining is not None:
                 rl_rows.append(
-                    UsageRow(label="Requests", used=req_rem, limit=req_lim, unit="requests")
+                    UsageRow(
+                        label="Requests", used=snap.requests_remaining,
+                        limit=snap.requests_limit, unit="requests",
+                    )
                 )
-            if tok_lim is not None and tok_rem is not None:
+            if snap.tokens_limit is not None and snap.tokens_remaining is not None:
                 rl_rows.append(
-                    UsageRow(label="Tokens", used=tok_rem, limit=tok_lim, unit="tokens")
+                    UsageRow(
+                        label="Tokens remaining",
+                        used=snap.tokens_remaining, limit=snap.tokens_limit, unit="tokens",
+                    )
                 )
 
-        all_rows = quota_rows + rl_rows
+        all_rows = local_rows + quota_rows + rl_rows
         if not all_rows and not notes:
             notes.append(
-                "DashScope does not expose real-time quota in API responses. "
-                "View your usage at console.aliyun.com → Model Studio → Quota."
+                "No usage recorded yet. Start a conversation to see token counts here."
             )
 
         summary = all_rows[0] if all_rows else None
