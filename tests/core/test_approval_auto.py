@@ -103,6 +103,56 @@ async def test_session_approval_per_command_and_destructive_backstop() -> None:
     assert not approved and prompted  # still prompts; not whitelisted
 
 
+async def test_one_time_approve_drains_identical_concurrent_siblings() -> None:
+    """permgate-3: approving one of several byte-identical concurrent requests clears
+    its identical siblings, but never a different command (or a destructive one)."""
+    import contextvars
+
+    runtime = ApprovalRuntime()
+    approval = Approval(state=ApprovalState())
+    approval.set_runtime(runtime)
+
+    def _spawn(command: str, call_id: str) -> asyncio.Task[object]:
+        call = ToolCall(
+            id=call_id,
+            function=ToolCall.FunctionBody(
+                name="Shell", arguments=json.dumps({"command": command})
+            ),
+        )
+        ctx = contextvars.copy_context()
+        ctx.run(current_tool_call.set, call)
+        return asyncio.create_task(
+            approval.request(
+                "Shell",
+                "run command",
+                f"Run `{command}`",
+                display=[ShellDisplayBlock(language="bash", command=command)],
+            ),
+            context=ctx,
+        )
+
+    t_status_a = _spawn("git status", "c1")
+    t_status_b = _spawn("git status", "c2")
+    t_diff = _spawn("git diff", "c3")
+
+    for _ in range(1000):
+        if len(runtime.list_pending()) == 3:
+            break
+        await asyncio.sleep(0)
+    assert len(runtime.list_pending()) == 3
+
+    # Approve ONE `git status` (one-time). Its identical sibling must drain; `git diff` must not.
+    status_pending = [p for p in runtime.list_pending() if "git status" in p.description]
+    runtime.resolve(status_pending[0].id, "approve")
+    res_a, res_b = await t_status_a, await t_status_b
+    assert bool(res_a) and bool(res_b)
+
+    remaining = runtime.list_pending()
+    assert len(remaining) == 1 and "git diff" in remaining[0].description
+    runtime.resolve(remaining[0].id, "reject")
+    assert not bool(await t_diff)
+
+
 def test_tool_destructive_reason_gates_background_shell() -> None:
     from pythinker_code.soul.permission import tool_destructive_reason
 

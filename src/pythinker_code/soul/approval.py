@@ -516,6 +516,21 @@ class Approval:
                     tool_name=tool_call.function.name,
                     approval_mode="manual",
                 )
+                # permgate-3: when several concurrent subagents issue a byte-identical
+                # action, one approval should clear them all instead of re-prompting once
+                # per sibling (which pressures the user toward blanket approval). Drain only
+                # pending requests with the SAME fine-grained identity (per-command key AND
+                # description), and never for a destructive call — each irreversible action
+                # is approved individually. This does NOT touch auto_approve_actions, so it
+                # is one-time coverage of concurrent duplicates, not a standing session rule.
+                if not self._is_destructive_call(tool_call):
+                    for pending in self._runtime.list_pending():
+                        if (
+                            pending.id != request_id
+                            and pending.description == description
+                            and self._pending_approval_key(pending) == approval_key
+                        ):
+                            self._runtime.resolve(pending.id, "approve")
                 emit_current_tool_execution_started()
                 return ApprovalResult(approved=True)
             case "approve_for_session":
