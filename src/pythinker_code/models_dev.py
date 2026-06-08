@@ -44,12 +44,20 @@ def _get_cache_path() -> Path:
     return base / "model-pricing" / "models-dev.json"
 
 
+def _coerce_cost(value: object) -> float:
+    """Coerce a cost field to float; returns 0.0 for None, raises on non-numeric."""
+    if value is None:
+        return 0.0
+    return float(value)
+
+
 def _flatten_catalog(raw: dict[str, Any]) -> dict[str, ModelPrice]:
     """Flatten provider→models hierarchy into {model_id: ModelPrice}.
 
     Canonical providers win over regional/compat variants.
     Model ids containing '@' (version-tagged) are excluded.
     context_over_200k tiered pricing is ignored.
+    Models with any non-numeric cost field are skipped.
     """
     canonical: dict[str, ModelPrice] = {}
     fallback: dict[str, ModelPrice] = {}
@@ -69,12 +77,15 @@ def _flatten_catalog(raw: dict[str, Any]) -> dict[str, ModelPrice]:
             cost = model_data.get("cost")
             if not isinstance(cost, dict):
                 continue
-            price = ModelPrice(
-                input=float(cost.get("input") or 0.0),
-                output=float(cost.get("output") or 0.0),
-                cache_read=float(cost.get("cache_read") or 0.0),
-                cache_write=float(cost.get("cache_write") or 0.0),
-            )
+            try:
+                price = ModelPrice(
+                    input=_coerce_cost(cost.get("input")),
+                    output=_coerce_cost(cost.get("output")),
+                    cache_read=_coerce_cost(cost.get("cache_read")),
+                    cache_write=_coerce_cost(cost.get("cache_write")),
+                )
+            except (TypeError, ValueError):
+                continue
             if model_id not in target:
                 target[model_id] = price
 

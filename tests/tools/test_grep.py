@@ -24,18 +24,19 @@ from pythinker_code.tools.utils import DEFAULT_MAX_CHARS
 @pytest_asyncio.fixture(scope="module")
 async def grep_tool() -> Grep:
     """Create a Grep tool instance when a local ripgrep binary is available."""
-    if _find_existing_rg(_rg_binary_name()) is None:
+    if await _find_existing_rg(_rg_binary_name()) is None:
         pytest.skip("ripgrep binary is not available in this environment")
     return Grep()
 
 
-def test_find_existing_rg_honors_env_path(monkeypatch, tmp_path):
+@pytest.mark.asyncio
+async def test_find_existing_rg_honors_env_path(monkeypatch, tmp_path):
     rg_path = tmp_path / _rg_binary_name()
     rg_path.write_text("fake rg")
     rg_path.chmod(0o755)
     monkeypatch.setenv("PYTHINKER_RG_PATH", str(rg_path))
 
-    assert _find_existing_rg(_rg_binary_name()) == rg_path
+    assert await _find_existing_rg(_rg_binary_name()) == rg_path
 
 
 @pytest.fixture

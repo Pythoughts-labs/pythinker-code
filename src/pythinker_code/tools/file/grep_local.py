@@ -10,7 +10,6 @@ import platform
 import re
 import shutil
 import stat
-import subprocess
 import tarfile
 import tempfile
 import time
@@ -175,20 +174,26 @@ def _rg_binary_name() -> str:
     return "rg.exe" if platform.system() == "Windows" else "rg"
 
 
-def _is_runnable(path: Path) -> bool:
+async def _is_runnable(path: Path) -> bool:
     """Return True if the binary at *path* can actually be executed on this platform."""
     try:
-        result = subprocess.run(
-            [str(path), "--version"],
-            capture_output=True,
-            timeout=5,
+        proc = await asyncio.create_subprocess_exec(
+            str(path), "--version",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
         )
-        return result.returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5)
+        except TimeoutError:
+            proc.kill()
+            await proc.wait()
+            return False
+        return proc.returncode == 0
+    except OSError:
         return False
 
 
-def _find_existing_rg(bin_name: str) -> Path | None:
+async def _find_existing_rg(bin_name: str) -> Path | None:
     # Explicit override — trust it unconditionally.
     if env_path := os.getenv("PYTHINKER_RG_PATH"):
         configured = Path(env_path).expanduser()
@@ -197,12 +202,12 @@ def _find_existing_rg(bin_name: str) -> Path | None:
 
     # Bundled binaries — verify they can actually run on this platform/arch.
     share_bin = get_share_dir() / "bin" / bin_name
-    if share_bin.is_file() and _is_runnable(share_bin):
+    if share_bin.is_file() and await _is_runnable(share_bin):
         return share_bin
 
     assert pythinker_code.__file__ is not None
     local_dep = Path(pythinker_code.__file__).parent / "deps" / "bin" / bin_name
-    if local_dep.is_file() and _is_runnable(local_dep):
+    if local_dep.is_file() and await _is_runnable(local_dep):
         return local_dep
 
     system_rg = shutil.which("rg")
@@ -324,16 +329,19 @@ async def _download_and_install_rg(bin_name: str) -> Path:
 async def _ensure_rg_path() -> str:
     global _resolved_rg_path
     if _resolved_rg_path is not None:
-        return _resolved_rg_path
+        p = Path(_resolved_rg_path)
+        if p.exists() and os.access(str(p), os.X_OK):
+            return _resolved_rg_path
+        _resolved_rg_path = None
 
     bin_name = _rg_binary_name()
-    existing = _find_existing_rg(bin_name)
+    existing = await _find_existing_rg(bin_name)
     if existing:
         _resolved_rg_path = str(existing)
         return _resolved_rg_path
 
     async with _RG_DOWNLOAD_LOCK:
-        existing = _find_existing_rg(bin_name)
+        existing = await _find_existing_rg(bin_name)
         if existing:
             _resolved_rg_path = str(existing)
             return _resolved_rg_path

@@ -64,6 +64,22 @@ def test_flatten_context_over_200k_ignored():
     assert result["claude-sonnet-4-6"].input == 3.0
 
 
+def test_flatten_malformed_costs_skipped():
+    from pythinker_code.models_dev import _flatten_catalog
+    catalog = {
+        "openai": {
+            "models": {
+                "bad-model": {"cost": {"input": "n/a", "output": 1.0}},
+                "good-model": {"cost": {"input": 1.0, "output": 2.0}},
+            }
+        }
+    }
+    result = _flatten_catalog(catalog)
+    assert "bad-model" not in result
+    assert "good-model" in result
+    assert result["good-model"].input == 1.0
+
+
 # ---------------------------------------------------------------------------
 # load_catalog
 # ---------------------------------------------------------------------------
@@ -163,6 +179,7 @@ async def test_refresh_catalog_noop_within_ttl(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_refresh_catalog_fetches_when_stale(tmp_path, monkeypatch):
     import os
+
     from pythinker_code import models_dev
     cache_file = tmp_path / "models-dev.json"
     cache_file.write_text(_fixture_json())
@@ -188,6 +205,7 @@ async def test_refresh_catalog_fetches_when_stale(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_refresh_catalog_swallows_network_error(tmp_path, monkeypatch):
     import aiohttp
+
     from pythinker_code import models_dev
     cache_file = tmp_path / "models-dev.json"
     monkeypatch.setattr(models_dev, "_get_cache_path", lambda: cache_file)

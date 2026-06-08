@@ -9,9 +9,12 @@ from rich.markup import escape
 
 from pythinker_code.auth.platforms import parse_managed_provider_key
 from pythinker_code.config import LLMProvider
+from pythinker_code.models_dev import refresh_catalog as _refresh_catalog
 from pythinker_code.soul.pythinkersoul import PythinkerSoul
 from pythinker_code.ui.shell.console import console
 from pythinker_code.ui.shell.slash import registry
+from pythinker_code.ui.shell.stats_collector import AllStats
+from pythinker_code.ui.shell.stats_collector import load_all_stats as _load_all_stats_raw
 from pythinker_code.ui.shell.usage_adapters import ADAPTERS
 from pythinker_code.ui.shell.usage_adapters.base import UsageAdapter, UsageReport, UsageRow
 from pythinker_code.ui.shell.usage_adapters.pythinker import to_int as _to_int
@@ -27,11 +30,10 @@ from pythinker_code.ui.shell.usage_render import (
 from pythinker_code.ui.shell.usage_render import (
     remaining_quota as _remaining_quota,
 )
-from pythinker_code.ui.shell.stats_collector import AllStats, load_all_stats as _load_all_stats_raw
 from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
-from pythinker_code.models_dev import refresh_catalog as _refresh_catalog
 from pythinker_code.usage_ratelimit_cache import get_cache
 from pythinker_code.utils.datetime import format_duration
+from pythinker_code.utils.logging import logger
 
 if TYPE_CHECKING:
     from pythinker_code.auth.oauth import OAuthManager
@@ -249,8 +251,8 @@ async def _maybe_print_cost_panel() -> None:
         if stats is None:
             return
         console.print(_build_cost_panel(stats))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("cost panel failed to render: {error}", error=e, exc_info=True)
 
 
 @registry.command(aliases=["status", "cost", "/status"])

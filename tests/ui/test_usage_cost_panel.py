@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
 from rich.console import Console
 
-from pythinker_code.ui.shell.stats_collector import AllStats, PeriodStats, ProviderStats
+from pythinker_code.ui.shell.stats_collector import AllStats, PeriodStats
 
 
 def _make_all_stats(total_cost: float, messages: int) -> AllStats:
@@ -59,6 +56,7 @@ def test_build_cost_panel_title():
 
 async def test_usage_prints_cost_panel_when_data_exists(monkeypatch):
     from rich.panel import Panel
+
     from pythinker_code.ui.shell import usage as usage_module
 
     stats = _make_all_stats(total_cost=2.50, messages=10)

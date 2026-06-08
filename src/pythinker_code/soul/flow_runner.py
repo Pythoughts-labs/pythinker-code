@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 FLOW_COMMAND_PREFIX = "flow:"
 DEFAULT_MAX_FLOW_MOVES = 1000
+MAX_INVALID_CHOICE_RETRIES = 3
 
 
 class FlowRunner:
@@ -132,6 +133,7 @@ class FlowRunner:
         base_prompt = self._build_flow_prompt(node, edges)
         prompt = base_prompt
         steps_used = 0
+        retries = 0
         while True:
             result = await self._flow_turn(soul, prompt)
             steps_used += result.step_count
@@ -150,6 +152,14 @@ class FlowRunner:
             next_id = self._match_flow_edge(edges, choice)
             if next_id is not None:
                 return next_id, steps_used
+
+            retries += 1
+            if retries >= MAX_INVALID_CHOICE_RETRIES:
+                logger.warning(
+                    "Agent flow: max invalid-choice retries ({n}) reached; stopping.",
+                    n=MAX_INVALID_CHOICE_RETRIES,
+                )
+                return None, steps_used
 
             options = ", ".join(edge.label or "" for edge in edges)
             logger.warning(
@@ -198,6 +208,8 @@ class FlowRunner:
         prompt: str | list[ContentPart],
     ) -> TurnOutcome:
         wire_send(TurnBegin(user_input=prompt))
-        res = await soul._turn(Message(role="user", content=prompt))  # type: ignore[reportPrivateUsage]
-        wire_send(TurnEnd())
+        try:
+            res = await soul._turn(Message(role="user", content=prompt))  # type: ignore[reportPrivateUsage]
+        finally:
+            wire_send(TurnEnd())
         return res

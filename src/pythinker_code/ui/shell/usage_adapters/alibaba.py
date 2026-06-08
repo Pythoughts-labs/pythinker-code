@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from urllib.parse import urlparse
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 import aiohttp
 
 from pythinker_code.auth import ALIBABA_PLATFORM_ID
 from pythinker_code.auth.alibaba import ALIBABA_BASE_URL
-from pythinker_code.ui.shell.usage_adapters.base import UsageReport, UsageRow
 from pythinker_code.ui.shell.stats_collector import load_all_stats as _load_all_stats
+from pythinker_code.ui.shell.usage_adapters.base import UsageReport, UsageRow
 from pythinker_code.usage_ratelimit_cache import get_cache
 from pythinker_code.utils.aiohttp import new_client_session
 
@@ -54,8 +54,8 @@ def _parse_quota_response(data: object) -> list[UsageRow]:
         return []
 
     # Flat shape: {token_quota: N, token_used: N}
-    total = payload.get("token_quota") or payload.get("total_quota")
-    used = payload.get("token_used") or payload.get("total_used")
+    total = payload["token_quota"] if "token_quota" in payload else payload.get("total_quota")
+    used = payload["token_used"] if "token_used" in payload else payload.get("total_used")
     if isinstance(total, (int, float)) and isinstance(used, (int, float)):
         rows.append(
             UsageRow(label="Token quota", used=int(used), limit=int(total), unit="tokens")
@@ -85,7 +85,7 @@ class AlibabaAdapter:
     provider_label = "Alibaba DashScope"
     requires_admin_key = False
 
-    async def fetch(self, provider: "LLMProvider", oauth_mgr: "OAuthManager") -> UsageReport:
+    async def fetch(self, provider: LLMProvider, oauth_mgr: OAuthManager) -> UsageReport:
         api_key = provider.api_key.get_secret_value()
         base_url = provider.base_url or ALIBABA_BASE_URL
         provider_key = f"managed:{ALIBABA_PLATFORM_ID}"
@@ -121,18 +121,17 @@ class AlibabaAdapter:
         quota_rows: list[UsageRow] = []
         notes: list[str] = []
         try:
-            async with new_client_session(timeout=_TIMEOUT) as session:
-                async with session.get(
-                    _quota_url(base_url),
-                    headers={"Authorization": f"Bearer {api_key}"},
-                ) as resp:
-                    if resp.status == 200:
-                        data = await resp.json(content_type=None)
-                        quota_rows = _parse_quota_response(data)
-                    elif resp.status in (401, 403):
-                        notes.append(
-                            "DashScope quota API: authorization failed — quota data unavailable."
-                        )
+            async with new_client_session(timeout=_TIMEOUT) as session, session.get(
+                _quota_url(base_url),
+                headers={"Authorization": f"Bearer {api_key}"},
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json(content_type=None)
+                    quota_rows = _parse_quota_response(data)
+                elif resp.status in (401, 403):
+                    notes.append(
+                        "DashScope quota API: authorization failed — quota data unavailable."
+                    )
         except (aiohttp.ClientError, TimeoutError):
             pass
 

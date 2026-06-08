@@ -63,6 +63,7 @@ start Phase B until Phase A lands and stabilizes.
 ---
 
 ## Out of scope (logged, not fixed here)
+
 - `models_dev.py:65` — `ty` flags `"@" in model_id` (`model_id` typed `object`).
   Confirmed `ty` false positive (JSON dict key, always `str`; pyright is fine).
   Left as-is; documents why `ty` stays advisory.
