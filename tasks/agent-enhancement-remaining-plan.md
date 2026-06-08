@@ -264,6 +264,19 @@ One PR-sized, tested change at a time; `make check` + `uv run pytest` green per 
 
 ---
 
+## 7c. Progress log
+
+| Date | Item | Status | Commits |
+|---|---|---|---|
+| 2026-06-08 | (gate) pre-existing pyright/format errors in Phase-1 security tests | ✅ fixed | `67a42404` |
+| 2026-06-08 | **injdef-2-grep** (WS-FINISH) — wrap Grep content as untrusted | ✅ done | `127b3bbb` |
+| 2026-06-08 | **obs-eval-5** (WS-SOUL #1) — stuck-loop failure-threshold escalation | ✅ done | `d8bc2832` |
+
+**Next:** WS-SOUL #2 = `sysprompt-2` (graceful max-steps handoff turn), then the
+extract-first collisions. Remaining: 20 items.
+
+---
+
 ## 8. Reference
 
 - Detailed per-item ACTION/BASE_REC/FILES: `tasks/_gap_actionable.md` (37 items) and
