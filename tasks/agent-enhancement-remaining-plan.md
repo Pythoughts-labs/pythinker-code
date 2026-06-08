@@ -280,6 +280,8 @@ One PR-sized, tested change at a time; `make check` + `uv run pytest` green per 
 | 2026-06-08 | **test backfill** — planning-1 verification-clause snapshot + obs-eval-2 cache-token counters (InMemoryMetricReader) | ✅ done | `92b862df` |
 | 2026-06-08 | **memory-2** (WS-RECALL) — opt-in `durable_memory` profile via effective-value props (no default flip); stale JOURNAL comment fixed. Deferred: dead `lexical_recall` flag (drop-vs-wire) | ✅ done | `6daa6b7c` |
 | 2026-06-08 | **skills-1** (WS-STANDALONE) — ReadSkill bundled-resource manifest, centralized in `read_skill_text_with_local_specialization` so slash-runner + compaction-restore are consistent (closes review's asymmetry finding); skill-creator script refs fixed | ✅ done | `1fa5e24c` |
+| 2026-06-08 | **subagent-2** (WS-STANDALONE) — child→parent cumulative token/cost roll-up: soul accumulates step + compaction usage; foreground runner emits child_tokens/cost (success+failure) via envelope + extras; RunAgents batch total. Background TaskRuntime plumbing + StatusSnapshot deferred | ✅ done | `eafba2c7` |
+| 2026-06-08 | **mode-1 + skills-2** (WS-STANDALONE) — agent-creator + customize-pythinker builtin authoring skills (doc-only); schema-fact-checked (corrected: project agent matching a builtin name is skipped, not overriding) | ✅ done | `27d7fe2d` |
 
 **Decision update (§3 / §7b):** ctxmgmt-2 did **not** require the standalone A7
 extraction. The pruning algorithm landed in the existing `compaction.py` (which
@@ -289,9 +291,9 @@ extraction (the decomposition plan orders A7 last). A7 remains available later f
 moving the compaction *orchestration* (`_grow_context`/`compact_context`) out of the
 host, but is no longer a prerequisite for any enhancement item.
 
-**Done so far: 8 plan items** (all committed) + test backfill. **Remaining: 14** — WS-TOOLSET
+**Done so far: 11 plan items** (all committed) + test backfill. **Remaining: 11** — WS-TOOLSET
 (tooldesc-2/ctxmgmt-1, obs-eval-1, mcpext-1/2/3), WS-RECALL (memory-1/ctxmgmt-3, memory-3),
-WS-UX (uxsteer-2, uxsteer-3), WS-STANDALONE (subagent-2, skills-2, mode-1, obs-eval-3, obs-eval-4).
+WS-UX (uxsteer-2, uxsteer-3), WS-STANDALONE (obs-eval-3, obs-eval-4).
 The two **L-effort** items are obs-eval-3 and obs-eval-4.
 
 **Execution method this pass (autonomous, "complete all remaining"):** serial implementation in the
