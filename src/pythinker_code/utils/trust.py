@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass
 
@@ -56,3 +57,23 @@ class UntrustedData:
         cleaned = strip_invisible_chars(self.raw_content)
         safe_content = cleaned.replace("</untrusted_data>", "&lt;/untrusted_data&gt;")
         return f'<untrusted_data id="{nonce}">\n{safe_content}\n</untrusted_data>'
+
+
+_UNTRUSTED_OPEN_RE = re.compile(r'^<untrusted_data id="[0-9a-f]+">\n')
+_UNTRUSTED_CLOSE = "\n</untrusted_data>"
+
+
+def strip_untrusted_envelope(text: str) -> str:
+    """Inverse of :meth:`UntrustedData.render_for_prompt`, for display surfaces.
+
+    The wrapper is model-facing only: it must never reach the TUI or ACP/IDE
+    clients. Apply this at the single render boundary so renderers receive clean
+    content while the model still gets the wrapped form. Removes the
+    ``<untrusted_data id="...">`` envelope and restores the escaped inner closing
+    tag. A no-op when the envelope is absent (most tool output is not wrapped).
+    """
+    open_match = _UNTRUSTED_OPEN_RE.match(text)
+    if open_match is None or not text.endswith(_UNTRUSTED_CLOSE):
+        return text
+    inner = text[open_match.end() : -len(_UNTRUSTED_CLOSE)]
+    return inner.replace("&lt;/untrusted_data&gt;", "</untrusted_data>")

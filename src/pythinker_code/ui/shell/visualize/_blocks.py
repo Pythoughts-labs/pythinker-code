@@ -56,6 +56,7 @@ from pythinker_code.ui.theme import tui_rich_style
 from pythinker_code.ui.tui_config import is_card_style
 from pythinker_code.utils.datetime import format_elapsed
 from pythinker_code.utils.rich.columns import BulletColumns
+from pythinker_code.utils.trust import strip_untrusted_envelope
 from pythinker_code.wire.types import (
     HookResolved,
     HookTriggered,
@@ -1010,6 +1011,9 @@ class _ToolCallBlock:
         safe in-process fields that renderers can choose to consume.
         """
         output = result.output if isinstance(result.output, str) else ""
+        # The <untrusted_data> wrapper is model-facing only — strip it here, at the
+        # single render boundary, so no TUI renderer ever sees the tags.
+        output = strip_untrusted_envelope(output)
         return {
             "output": output,
             "message": result.message,
@@ -1029,18 +1033,23 @@ class _ToolCallBlock:
         skipped here; specialized renderers should pull richer detail
         from ``ctx.args``.
         """
+        # Strip the model-facing <untrusted_data> wrapper for display (same single
+        # boundary as _card_result_details).
+        clean_output = (
+            strip_untrusted_envelope(result.output) if isinstance(result.output, str) else ""
+        )
         if result.is_error:
             parts: list[str] = []
             if result.message:
                 parts.append(result.message)
-            if isinstance(result.output, str) and result.output:
-                parts.append(result.output)
+            if clean_output:
+                parts.append(clean_output)
             if not parts:
                 brief = getattr(result, "brief", "") or "Tool failed"
                 parts.append(brief)
             return "\n\n".join(parts)
-        if isinstance(result.output, str) and result.output:
-            return result.output
+        if clean_output:
+            return clean_output
         if result.message:
             return result.message
         return getattr(result, "brief", "") or ""
