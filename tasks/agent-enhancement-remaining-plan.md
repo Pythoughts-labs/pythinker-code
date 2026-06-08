@@ -277,6 +277,9 @@ One PR-sized, tested change at a time; `make check` + `uv run pytest` green per 
 | 2026-06-08 | **sysprompt-1** (A3 collision) — model-keyed protocol-defense injection provider (Qwen-family fragment; landed on the existing injection bus, no A3 extraction; system.md general rules kept intact) | ✅ done | `af8afbf4` |
 | 2026-06-08 | **uxsteer-1** (WS-UX) — `Progress` checkpoint tool (activates the zero-producer ProgressNote channel; producer + shell render — print/ACP render deferred) | ✅ done | `ebd14080` |
 | 2026-06-08 | (your change) harden approval gates + config-surface classification | ✅ done | `0c2ad89c` |
+| 2026-06-08 | **test backfill** — planning-1 verification-clause snapshot + obs-eval-2 cache-token counters (InMemoryMetricReader) | ✅ done | `92b862df` |
+| 2026-06-08 | **memory-2** (WS-RECALL) — opt-in `durable_memory` profile via effective-value props (no default flip); stale JOURNAL comment fixed. Deferred: dead `lexical_recall` flag (drop-vs-wire) | ✅ done | `6daa6b7c` |
+| 2026-06-08 | **skills-1** (WS-STANDALONE) — ReadSkill bundled-resource manifest, centralized in `read_skill_text_with_local_specialization` so slash-runner + compaction-restore are consistent (closes review's asymmetry finding); skill-creator script refs fixed | ✅ done | `1fa5e24c` |
 
 **Decision update (§3 / §7b):** ctxmgmt-2 did **not** require the standalone A7
 extraction. The pruning algorithm landed in the existing `compaction.py` (which
@@ -286,11 +289,17 @@ extraction (the decomposition plan orders A7 last). A7 remains available later f
 moving the compaction *orchestration* (`_grow_context`/`compact_context`) out of the
 host, but is no longer a prerequisite for any enhancement item.
 
-**Done so far: 6 plan items** (all committed). **Remaining: 16** — WS-TOOLSET (tooldesc-2/ctxmgmt-1,
-obs-eval-1, mcpext-1/2/3), WS-RECALL (memory-2, memory-1/ctxmgmt-3, memory-3), WS-UX (uxsteer-2,
-uxsteer-3), WS-STANDALONE (subagent-2, skills-1, skills-2, mode-1, obs-eval-3, obs-eval-4).
-The two **L-effort** items are obs-eval-3 and obs-eval-4. Clean disjoint next picks: subagent-2,
-obs-eval-1, or memory-2.
+**Done so far: 8 plan items** (all committed) + test backfill. **Remaining: 14** — WS-TOOLSET
+(tooldesc-2/ctxmgmt-1, obs-eval-1, mcpext-1/2/3), WS-RECALL (memory-1/ctxmgmt-3, memory-3),
+WS-UX (uxsteer-2, uxsteer-3), WS-STANDALONE (subagent-2, skills-2, mode-1, obs-eval-3, obs-eval-4).
+The two **L-effort** items are obs-eval-3 and obs-eval-4.
+
+**Execution method this pass (autonomous, "complete all remaining"):** serial implementation in the
+main loop, per-item TDD (RED→GREEN→REFACTOR) + full gate + commit; adversarial multi-lens review
+workflow on each substantive diff before commit. JIT orientation per cluster (not batched).
+
+**Tracked follow-ups:** (a) dead `lexical_recall` config flag — drop-vs-wire product call;
+(b) uxsteer-1 print/ACP ProgressNote render — close while in those files for uxsteer-2/3.
 
 ---
 
