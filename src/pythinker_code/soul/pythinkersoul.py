@@ -194,7 +194,7 @@ def classify_api_error(e: Exception) -> tuple[str, int | None]:
     return "other", None
 
 
-type StepStopReason = Literal["no_tool_calls", "tool_rejected"]
+type StepStopReason = Literal["no_tool_calls", "tool_rejected", "stuck"]
 
 
 _MISSING_REQUIRED_FIELD_RE = re.compile(
@@ -243,6 +243,38 @@ def _malformed_empty_tool_call_summary(
     if not missing_by_tool:
         return None
     return "; ".join(missing_by_tool)
+
+
+def _is_all_error_batch(tool_results: Sequence[ToolResult]) -> bool:
+    """True when a non-empty tool batch had *every* call fail."""
+    return bool(tool_results) and all(r.return_value.is_error for r in tool_results)
+
+
+def _stuck_summary_message(
+    failures: int, tool_calls: Sequence[ToolCall], tool_results: Sequence[ToolResult]
+) -> Message:
+    """Build a concise handoff message when the loop yields on a degenerate stuck loop.
+
+    Surfaces a count of consecutive all-error steps and a brief of what the last
+    step tried, so the human can take over without reconstructing state.
+    """
+    calls_by_id = {call.id: call for call in tool_calls}
+    tried: list[str] = []
+    for result in tool_results:
+        call = calls_by_id.get(result.tool_call_id)
+        name = call.function.name if call else "tool"
+        rv = result.return_value
+        brief = (rv.brief or rv.message or "error").strip().splitlines()[0]
+        if len(brief) > 200:
+            brief = brief[:200] + "…"
+        tried.append(f"- {name}: {brief}")
+    text = (
+        f"I appear to be stuck — the last {failures} steps each had every tool call "
+        "fail, so I'm stopping and handing control back to you rather than continuing.\n\n"
+        "What I last tried:\n" + "\n".join(tried) + "\n\n"
+        "You can adjust the request, fix the underlying issue, or tell me how to proceed."
+    )
+    return Message(role="assistant", content=[TextPart(text=text)])
 
 
 _UNFINISHED_INTENT_LEAD_RE = re.compile(
@@ -327,6 +359,7 @@ class PythinkerSoul:
                 update={"max_steps_per_turn": agent.steps}
             )
         self._current_step_no = 0
+        self._consecutive_failures = 0
         self._deliberation_generation = 0
         self._sleep_inhibitor = SleepInhibitor(enabled=agent.runtime.config.prevent_idle_sleep)
         self._compaction = SimpleCompaction()  # TODO: maybe configurable and composable
@@ -1239,6 +1272,8 @@ class PythinkerSoul:
         # One-shot per turn: nudge at most once when a step ends on a bare
         # statement of intent (see `_looks_like_unfinished_intent`).
         self._intent_nudge_used = False
+        # Reset the degenerate-loop failure tracker at the start of each turn.
+        self._consecutive_failures = 0
         while True:
             step_no += 1
             if step_no > self._loop_control.max_steps_per_turn:
@@ -1327,7 +1362,7 @@ class PythinkerSoul:
 
                 final_message = (
                     step_outcome.assistant_message
-                    if step_outcome.stop_reason == "no_tool_calls"
+                    if step_outcome.stop_reason in ("no_tool_calls", "stuck")
                     else None
                 )
                 return TurnOutcome(
@@ -1643,6 +1678,27 @@ class PythinkerSoul:
             )
 
         if result.tool_calls:
+            # Degenerate-loop backstop: count consecutive steps where every tool
+            # call failed; past the configured threshold, hand control back to the
+            # user with a summary instead of burning steps until max_steps_per_turn.
+            threshold = self._loop_control.max_consecutive_failures
+            if _is_all_error_batch(results):
+                self._consecutive_failures += 1
+                if threshold and self._consecutive_failures >= threshold:
+                    from pythinker_code.telemetry import track
+
+                    summary = _stuck_summary_message(
+                        self._consecutive_failures, result.tool_calls, results
+                    )
+                    await self._context.append_message(summary)
+                    track(
+                        "agent_stuck",
+                        consecutive_failures=self._consecutive_failures,
+                        model=self._runtime.llm.model_name,
+                    )
+                    return StepOutcome(stop_reason="stuck", assistant_message=summary)
+            else:
+                self._consecutive_failures = 0
             return None
 
         # A tool-call-free message normally ends the turn. If it is only a

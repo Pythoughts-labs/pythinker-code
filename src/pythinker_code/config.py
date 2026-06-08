@@ -370,6 +370,11 @@ class LoopControl(BaseModel):
         validation_alias=AliasChoices("max_steps_per_turn", "max_steps_per_run"),
     )
     """Maximum number of steps in one turn"""
+    max_consecutive_failures: int = Field(default=8, ge=0)
+    """Yield to the user after this many consecutive steps in which *every* tool
+    call failed (a degenerate stuck loop), instead of continuing to
+    ``max_steps_per_turn``. The turn ends with a ``stuck`` outcome and a handoff
+    summary of what was tried. ``0`` disables the backstop. Default: 8."""
     max_retries_per_step: int = Field(default=3, ge=1)
     """Maximum number of retries in one step"""
     max_ralph_iterations: int = Field(default=0, ge=-1)
