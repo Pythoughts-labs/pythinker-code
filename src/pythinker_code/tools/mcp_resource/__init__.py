@@ -106,9 +106,10 @@ class ReadMcpResource(CallableTool2[ReadParams]):
                 builder.write(text)
                 wrote = True
             else:
-                blob: Any = getattr(content, "blob", "")
+                blob: Any = getattr(content, "blob", None)
                 mime = getattr(content, "mimeType", None) or "application/octet-stream"
-                builder.write(f"[binary content omitted: {mime}, {len(blob)} bytes]\n")
+                size = f"{len(blob)} bytes" if isinstance(blob, (bytes, str)) else "size unknown"
+                builder.write(f"[binary content omitted: {mime}, {size}]\n")
                 wrote = True
         if not wrote:
             builder.write("(resource returned no content)")

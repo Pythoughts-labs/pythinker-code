@@ -30,11 +30,19 @@ class _TextContent:
 
 
 class _FakeClient:
-    def __init__(self, contents: list[Any] | None = None, raise_on_read: bool = False) -> None:
+    def __init__(
+        self,
+        contents: list[Any] | None = None,
+        raise_on_read: bool = False,
+        raise_on_enter: bool = False,
+    ) -> None:
         self._contents = contents or []
         self._raise = raise_on_read
+        self._raise_on_enter = raise_on_enter
 
     async def __aenter__(self) -> _FakeClient:
+        if self._raise_on_enter:
+            raise RuntimeError("server not connected")
         return self
 
     async def __aexit__(self, *exc: object) -> bool:
@@ -108,6 +116,15 @@ async def test_read_resource_unknown_server_errors() -> None:
 
 async def test_read_resource_surfaces_read_failure() -> None:
     ts = _toolset_with_server("db", client=_FakeClient(raise_on_read=True))
+    result = await ReadMcpResource(ts)(ReadMcpResource.params(server="db", uri="x"))
+    assert result.is_error
+    assert result.brief == "Resource read failed"
+
+
+async def test_read_resource_from_unconnectable_server_errors() -> None:
+    # A server that fails to (re)connect at read time surfaces a clean error
+    # rather than crashing — covers the failed/unauthorized-server edge case.
+    ts = _toolset_with_server("db", client=_FakeClient(raise_on_enter=True))
     result = await ReadMcpResource(ts)(ReadMcpResource.params(server="db", uri="x"))
     assert result.is_error
     assert result.brief == "Resource read failed"
