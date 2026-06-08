@@ -9,7 +9,7 @@ Set the todo list **only after the user has explicitly agreed on the plan**. The
 - **Query mode**: Omit `todos` (or pass null) to retrieve the current todo list without changes.
 - **Clear mode**: Pass an empty array `[]` to clear all todos when work is fully done.
 
-Once the todo list is set, it is the single source of truth for in-progress work. During execution, update item statuses as you complete work (`pending` → `in_progress` → `done`). Only restructure or replace the list when evidence genuinely changes the scope — not for convenience replanning. When in doubt, surface the new evidence to the user before changing the plan.
+Once the todo list is set, it is the single source of truth for in-progress work. During execution, update item statuses as you complete work (`pending` → `in_progress` → `done`). When scope evidence makes a planned item irrelevant, mark it `cancelled` (do not silently delete it) so the on-screen plan history stays honest for the watching user — this is the in-list way to express the scope change you should first surface to the user. Only restructure or replace the list when evidence genuinely changes the scope — not for convenience replanning. When in doubt, surface the new evidence to the user before changing the plan.
 
 Once you finish a subtask/milestone, update its status before moving to the next item.
 

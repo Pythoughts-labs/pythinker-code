@@ -204,6 +204,22 @@ def permission_profile_for_runtime(runtime: Runtime) -> PermissionProfile:
     """Return the hard permission profile currently enforced for a runtime."""
     if runtime.role == "subagent" and runtime.subagent_type:
         profile_name = _SUBAGENT_PROFILES.get(runtime.subagent_type, "read_only")
+        # A subagent must never exceed the parent's read-only posture. Plan mode
+        # lives on the session, which copy_for_subagent shares by reference, so a
+        # coder/implementer subagent spawned under a plan-mode root would otherwise
+        # resolve its own mutating "implement" profile and run mutating shell
+        # commands or side-effecting external/MCP tools. Downgrade any MUTATING
+        # subagent profile to "plan" (matching the root's plan-mode posture) so
+        # those vectors are blocked at the single profile layer every gate reads
+        # (Shell via check_shell_command_allowed, external/MCP via
+        # check_external_tool_allowed). Already-read-only profiles
+        # (explore/review/verify) are left untouched so they are not loosened.
+        # WriteFile/StrReplaceFile are independently blocked via the inherited
+        # plan-mode + inspect_plan_edit_target.
+        if runtime.session.state.plan_mode:
+            resolved_profile = _PERMISSION_PROFILES[profile_name]
+            if resolved_profile.allow_file_mutation or resolved_profile.allow_shell_mutation:
+                profile_name = "plan"
     elif runtime.session.state.plan_mode:
         profile_name = "plan"
     else:

@@ -109,6 +109,41 @@ class TestSetTodoListOutputNotEmpty:
         assert not result.is_error
         assert result.output  # non-empty even when no todos
 
+    async def test_cancelled_status_is_accepted_and_persisted(
+        self, set_todo_list_tool: SetTodoList, runtime: Runtime
+    ):
+        """A `cancelled` todo is a valid status: it must round-trip through the
+        tool and stay visible in the list (not silently dropped), so the plan
+        history the user watches stays honest when scope changes."""
+        write_params = Params(
+            todos=[
+                Todo(title="Migrate auth", status="done"),
+                Todo(title="Update legacy shim", status="cancelled"),
+                Todo(title="Write tests", status="in_progress"),
+            ]
+        )
+        result = await set_todo_list_tool(write_params)
+        assert not result.is_error
+
+        # The cancelled item is counted in the scratch recap (not omitted).
+        scratch_file = session_scratch_path(runtime.session.work_dir, session_id=runtime.session.id)
+        scratch_text = scratch_file.read_text(encoding="utf-8")
+        assert "cancelled: 1" in scratch_text
+
+        # And it survives a read-back rather than being dropped.
+        read_result = await set_todo_list_tool(Params(todos=None))
+        assert "Update legacy shim" in read_result.output
+        assert "cancelled" in read_result.output
+
+    def test_cancelled_status_renders_distinctly(self):
+        """The shell renderer must have a distinct icon/style for cancelled todos."""
+        from pythinker_code.ui.shell.tool_renderers.todo import _ICONS, _status_title
+
+        assert "cancelled" in _ICONS
+        assert _ICONS["cancelled"] != _ICONS["done"]
+        styled = _status_title("cancelled", "obsolete task")
+        assert "obsolete task" in styled.plain
+
     async def test_write_empty_list_clears_todos(self, set_todo_list_tool: SetTodoList):
         """Passing an empty list [] should clear all todos."""
         # Write some todos first

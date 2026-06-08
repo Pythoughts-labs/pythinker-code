@@ -1466,10 +1466,37 @@ class PythinkerSoul:
                 output_tokens = (
                     int(u.output) if (u and getattr(u, "output", None) is not None) else None
                 )
+                # Prompt-cache token accounting. pythinker freezes the system prompt
+                # to maximize cache hits, so surfacing these makes cache efficiency
+                # (and any regression that silently breaks cache-keying) observable
+                # from telemetry rather than only as an aggregate cost spike.
+                cache_read_tokens = (
+                    int(u.input_cache_read)
+                    if (u and getattr(u, "input_cache_read", None) is not None)
+                    else None
+                )
+                cache_creation_tokens = (
+                    int(u.input_cache_creation)
+                    if (u and getattr(u, "input_cache_creation", None) is not None)
+                    else None
+                )
                 if input_tokens is not None:
                     span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
                 if output_tokens is not None:
                     span.set_attribute("gen_ai.usage.output_tokens", output_tokens)
+                if cache_read_tokens is not None:
+                    span.set_attribute("gen_ai.usage.cache_read_input_tokens", cache_read_tokens)
+                if cache_creation_tokens is not None:
+                    span.set_attribute(
+                        "gen_ai.usage.cache_creation_input_tokens", cache_creation_tokens
+                    )
+                # Per-call finish-reason proxy: pythinker_core's StepResult does not
+                # expose the provider finish_reason, so derive it from whether the
+                # step produced tool calls (tool_use) or stopped with text (stop).
+                span.set_attribute(
+                    "gen_ai.response.finish_reasons",
+                    ["tool_use"] if step_result.tool_calls else ["stop"],
+                )
                 span.set_attribute("llm.tool_calls", len(step_result.tool_calls))
                 _m.record_llm_call(
                     duration_seconds=llm_elapsed,
@@ -1477,6 +1504,8 @@ class PythinkerSoul:
                     model=chat_provider.model_name,
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
+                    cache_read_tokens=cache_read_tokens,
+                    cache_creation_tokens=cache_creation_tokens,
                     success=True,
                 )
                 return step_result

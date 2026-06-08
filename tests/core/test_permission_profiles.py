@@ -39,6 +39,92 @@ async def test_explore_profile_denies_mutating_shell_before_approval(
     assert not await target.exists()
 
 
+def test_plan_mode_subagent_profile_resolution(runtime: Runtime) -> None:
+    """Resolver-level guarantee for the plan-mode delegation fix.
+
+    Both the Shell gate (check_shell_command_allowed) and the external/MCP gate
+    (check_external_tool_allowed) consult the profile returned here, so asserting
+    the resolved profile is non-mutating proves the fix covers BOTH vectors at the
+    single source — without each needing its own integration test. Read-only
+    subagent roles must keep their own profile (not be loosened to plan-file-write).
+    """
+    from pythinker_code.soul.permission import permission_profile_for_runtime
+
+    runtime.role = "subagent"
+    runtime.session.state.plan_mode = True
+
+    # Mutating subagent types are downgraded to the read-only "plan" profile.
+    for mutating in ("coder", "implementer"):
+        runtime.subagent_type = mutating
+        profile = permission_profile_for_runtime(runtime)
+        assert profile.name == "plan", mutating
+        assert not profile.allow_file_mutation and not profile.allow_shell_mutation, mutating
+
+    # Already-read-only roles are not loosened — they keep their own profile.
+    runtime.subagent_type = "explore"
+    assert permission_profile_for_runtime(runtime).name == "read_only"
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
+)
+@pytest.mark.parametrize("subagent_type", ["coder", "implementer"])
+async def test_plan_mode_root_forces_read_only_on_mutating_subagent(
+    runtime: Runtime,
+    environment: Environment,
+    temp_work_dir: HostPath,
+    subagent_type: str,
+) -> None:
+    """A coder/implementer subagent spawned under a plan-mode root must not run
+    mutating shell commands.
+
+    The parent's plan-mode lives on the session, which ``copy_for_subagent``
+    shares by reference; the subagent's hard profile must honor it instead of
+    resolving its own (mutating) ``implement`` profile. Regression for the
+    plan-mode delegation bypass: previously a ``coder`` subagent under a
+    plan-mode root could ``touch``/``rm`` via Shell despite the read-only intent.
+    """
+    runtime.role = "subagent"
+    runtime.subagent_type = subagent_type
+    runtime.session.state.plan_mode = True
+    target = temp_work_dir / f"{subagent_type}-plan-mode-should-not-exist.txt"
+
+    with tool_call_context("Shell"):
+        shell = Shell(Approval(yolo=True), environment, runtime)
+        result = await shell(ShellParams(command=f"touch {target}"))
+
+    assert result.is_error
+    assert "permission profile blocks" in result.message
+    assert not await target.exists()
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
+)
+@pytest.mark.parametrize("subagent_type", ["coder", "implementer"])
+async def test_mutating_subagent_allowed_without_plan_mode(
+    runtime: Runtime,
+    environment: Environment,
+    temp_work_dir: HostPath,
+    subagent_type: str,
+) -> None:
+    """Positive control: outside plan mode a coder/implementer subagent keeps its
+    ``implement`` profile and may run mutating shell commands. This proves the
+    plan-mode guard above is scoped to plan mode and does not over-restrict normal
+    delegated implementation work."""
+    runtime.role = "subagent"
+    runtime.subagent_type = subagent_type
+    runtime.session.state.plan_mode = False
+    target = temp_work_dir / f"{subagent_type}-allowed.txt"
+
+    with tool_call_context("Shell"):
+        shell = Shell(Approval(yolo=True), environment, runtime)
+        result = await shell(ShellParams(command=f"touch {target}"))
+
+    assert not result.is_error
+    assert await target.exists()
+
+
 @pytest.mark.skipif(
     platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
 )

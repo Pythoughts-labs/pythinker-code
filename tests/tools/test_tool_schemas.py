@@ -138,7 +138,12 @@ def test_set_todo_list_params_schema(set_todo_list_tool: SetTodoList):
                                     },
                                     "status": {
                                         "description": "The status of the todo",
-                                        "enum": ["pending", "in_progress", "done"],
+                                        "enum": [
+                                            "pending",
+                                            "in_progress",
+                                            "done",
+                                            "cancelled",
+                                        ],
                                         "type": "string",
                                     },
                                 },

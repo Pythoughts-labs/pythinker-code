@@ -33,7 +33,7 @@ class TodoItemState(BaseModel):
     """A single todo item stored in session or subagent state."""
 
     title: str
-    status: Literal["pending", "in_progress", "done"]
+    status: Literal["pending", "in_progress", "done", "cancelled"]
 
 
 class SessionState(BaseModel):

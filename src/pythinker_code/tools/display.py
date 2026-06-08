@@ -18,7 +18,7 @@ class DiffDisplayBlock(DisplayBlock):
 
 class TodoDisplayItem(BaseModel):
     title: str
-    status: Literal["pending", "in_progress", "done"]
+    status: Literal["pending", "in_progress", "done", "cancelled"]
 
 
 class TodoDisplayBlock(DisplayBlock):
