@@ -552,8 +552,12 @@ def _apply_python_pagination(lines: list[str], params: Params) -> tuple[list[str
     return lines, message
 
 
-def _python_grep(params: Params, unavailable_reason: str) -> ToolReturnValue:
+def _python_grep(params: Params, unavailable_reason: str, *, wrap: bool = True) -> ToolReturnValue:
     builder = ToolResultBuilder()
+    if wrap and params.output_mode == "content":
+        # Matched content lines are external file bytes; wrap them as untrusted
+        # data so the model never treats embedded text as instructions.
+        builder.mark_untrusted()
     flags = re.IGNORECASE if params.ignore_case else 0
     if params.multiline:
         flags |= re.DOTALL | re.MULTILINE
@@ -707,7 +711,9 @@ class SmartSearch(CallableTool2[SmartSearchParams]):
                     "head_limit": per_pass_limit,
                 }
             )
-            result = await grep(grep_params)
+            # _wrap=False: take raw grep output so we can dedup/aggregate lines,
+            # then wrap the combined result once below (avoids nested wrappers).
+            result = await grep(grep_params, _wrap=False)
             if result.is_error:
                 sections.append(f"## {label}\nERROR: {result.message}")
                 continue
@@ -728,6 +734,7 @@ class SmartSearch(CallableTool2[SmartSearchParams]):
                 break
 
         builder = ToolResultBuilder()
+        builder.mark_untrusted()  # aggregated matched content is external file bytes
         if not sections:
             return builder.ok(message="No matches found across smart search passes.")
         builder.write("\n\n".join(sections))
@@ -746,9 +753,16 @@ class Grep(CallableTool2[Params]):
     params: type[Params] = Params
 
     @override
-    async def __call__(self, params: Params, *, _retry: bool = False) -> ToolReturnValue:
+    async def __call__(
+        self, params: Params, *, _retry: bool = False, _wrap: bool = True
+    ) -> ToolReturnValue:
         try:
             builder = ToolResultBuilder()
+            if _wrap and params.output_mode == "content":
+                # Matched content lines are external file bytes; wrap them as
+                # untrusted data (prompt-injection defense). SmartSearch calls
+                # this with _wrap=False because it re-wraps the aggregate itself.
+                builder.mark_untrusted()
             message = ""
 
             # Build rg command
@@ -756,7 +770,7 @@ class Grep(CallableTool2[Params]):
                 rg_path = await _ensure_rg_path()
             except Exception as exc:
                 logger.warning("ripgrep unavailable, using Python fallback: {error}", error=exc)
-                return _python_grep(params, str(exc))
+                return _python_grep(params, str(exc), wrap=_wrap)
             logger.debug("Using ripgrep binary: {rg_bin}", rg_bin=rg_path)
             args = _build_rg_args(rg_path, params, single_threaded=_retry)
 
@@ -824,7 +838,7 @@ class Grep(CallableTool2[Params]):
                 # EAGAIN: retry once with single-threaded mode
                 if not _retry and _is_eagain(stderr_str):
                     logger.warning("rg EAGAIN error, retrying with -j 1")
-                    return await self.__call__(params, _retry=True)
+                    return await self.__call__(params, _retry=True, _wrap=_wrap)
                 return ToolError(
                     message=f"Failed to grep. Error: {stderr_str}",
                     brief="Failed to grep",
