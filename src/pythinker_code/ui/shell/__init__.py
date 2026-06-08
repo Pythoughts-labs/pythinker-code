@@ -1392,6 +1392,18 @@ class Shell:
                 f"[{_t.warning}]{e}[/]\n"
                 "[dim]Send another message to continue where it left off.[/dim]"
             )
+            # Graceful handoff: a tools-disabled summary of progress / next steps so
+            # the human resuming doesn't have to reconstruct state (best-effort).
+            if isinstance(self.soul, PythinkerSoul):
+                from pythinker_code.soul.btw import generate_max_steps_handoff
+
+                try:
+                    handoff = await generate_max_steps_handoff(self.soul)
+                except Exception:
+                    logger.warning("Max-steps handoff failed", exc_info=True)
+                    handoff = None
+                if handoff:
+                    console.print(f"\n[{_t.muted}]── handoff ──[/]\n{escape(handoff)}")
         except RunCancelled:
             logger.info("Cancelled by user")
             from pythinker_code.telemetry import track

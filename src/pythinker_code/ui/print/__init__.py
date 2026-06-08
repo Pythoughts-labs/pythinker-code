@@ -422,6 +422,18 @@ class Print:
         except MaxStepsReached as e:
             logger.warning("Max steps reached: {n_steps}", n_steps=e.n_steps)
             print(str(e))
+            # Graceful handoff: a tools-disabled summary of progress / next steps
+            # for the human who resumes (best-effort; falls back to the line above).
+            if isinstance(self.soul, PythinkerSoul):
+                from pythinker_code.soul.btw import generate_max_steps_handoff
+
+                try:
+                    handoff = await generate_max_steps_handoff(self.soul)
+                except Exception:
+                    logger.warning("Max-steps handoff failed", exc_info=True)
+                    handoff = None
+                if handoff:
+                    print(f"\n── handoff ──\n{handoff}")
             return ExitCode.FAILURE
         except RunCancelled:
             logger.error("Interrupted by user")
