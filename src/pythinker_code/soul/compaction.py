@@ -72,6 +72,49 @@ def should_auto_compact(
     )
 
 
+def should_prune(token_count: int, max_context_size: int, *, ratio: float) -> bool:
+    """Whether the cheap stale-tool-output prune tier should run.
+
+    Fires at a *lower* threshold than full compaction so large completed tool
+    outputs can be elided before paying for an LLM summary. Set ``ratio`` at or
+    above ``compaction_trigger_ratio`` to disable the tier (compaction fires
+    first).
+    """
+    return token_count >= max_context_size * ratio
+
+
+PRUNE_PLACEHOLDER = "[tool output elided to save context: {n} chars]"
+
+
+def prune_stale_tool_outputs(
+    messages: Sequence[Message], *, protect_last: int, min_chars: int
+) -> tuple[list[Message], int]:
+    """Replace large completed tool-result bodies in deep history with a short
+    placeholder — a fidelity-preserving step before LLM summarization.
+
+    Only ``tool``-role messages older than the last ``protect_last`` messages and
+    whose text body exceeds ``min_chars`` are pruned. Message order, roles, and
+    ``tool_call_id`` pairing are preserved (nothing is dropped), so the
+    conversational structure stays valid. Returns the rewritten message list and
+    the number of characters freed.
+    """
+    cutoff = max(0, len(messages) - protect_last)
+    pruned: list[Message] = []
+    freed = 0
+    for index, msg in enumerate(messages):
+        if index >= cutoff or msg.role != "tool":
+            pruned.append(msg)
+            continue
+        body = msg.extract_text("")
+        if len(body) <= min_chars:
+            pruned.append(msg)
+            continue
+        freed += len(body)
+        placeholder = TextPart(text=PRUNE_PLACEHOLDER.format(n=len(body)))
+        pruned.append(msg.model_copy(update={"content": [placeholder]}))
+    return pruned, freed
+
+
 @runtime_checkable
 class Compaction(Protocol):
     async def compact(

@@ -55,7 +55,9 @@ from pythinker_code.soul.compaction import (
     CompactionResult,
     SimpleCompaction,
     estimate_text_tokens,
+    prune_stale_tool_outputs,
     should_auto_compact,
+    should_prune,
 )
 from pythinker_code.soul.compaction_restore import (
     build_compaction_restore_context,
@@ -1284,7 +1286,25 @@ class PythinkerSoul:
             back_to_the_future: BackToTheFuture | None = None
             step_outcome: StepOutcome | None = None
             try:
-                # compact the context if needed
+                # Cheap tier first: prune stale tool outputs when usage crosses the
+                # (lower) prune threshold, to defer or avoid the lossy full summary.
+                if should_prune(
+                    self._context.token_count_with_pending,
+                    self._runtime.llm.max_context_size,
+                    ratio=self._loop_control.prune_trigger_ratio,
+                ):
+                    try:
+                        await self.prune_context()
+                    except Exception as prune_err:
+                        from pythinker_code.telemetry.errors import report_handled_error
+
+                        report_handled_error(prune_err, site="soul.context.prune")
+                        logger.warning(
+                            "Context prune failed at step {step_no}: {error}",
+                            step_no=step_no,
+                            error=prune_err,
+                        )
+                # compact the context if needed (still over the higher threshold)
                 if should_auto_compact(
                     self._context.token_count_with_pending,
                     self._runtime.llm.max_context_size,
@@ -1770,6 +1790,47 @@ class PythinkerSoul:
         )
         await self._context.append_message(tool_messages)
         # token count of tool results are not available yet
+
+    async def prune_context(self) -> bool:
+        """Cheap, fidelity-preserving compaction tier: replace large stale
+        tool-result bodies in deep history with placeholders, then rewrite the
+        context. Returns True if anything was pruned.
+
+        Unlike full compaction this makes no LLM call and preserves the
+        conversational structure (roles, order, tool_call_id pairing), so it can
+        run frequently to defer or avoid the lossy summary. No-op (returns False)
+        when there is nothing worth pruning. Runs silently — no compaction wire
+        events — since it may fire often and is not a user-visible summary.
+        """
+        pruned, freed = prune_stale_tool_outputs(
+            self._context.history,
+            protect_last=self._loop_control.prune_protect_last,
+            min_chars=self._loop_control.prune_min_chars,
+        )
+        if freed <= 0:
+            return False
+
+        before_tokens = self._context.token_count
+        # Reuse the same rewrite primitive compact_context uses (clear + rebuild),
+        # which is the supported way to mutate the append-only JSONL context.
+        await self._context.clear()
+        await self._context.write_system_prompt(self._agent.system_prompt)
+        await self._checkpoint()
+        await self._context.append_message(pruned)
+        await self._context.update_token_count(estimate_text_tokens(pruned))
+        # History was rebuilt — let injection providers reset one-shot state.
+        await self._notify_injection_providers_compacted()
+
+        from pythinker_code.telemetry import track
+
+        track(
+            "context_pruned",
+            before_tokens=before_tokens,
+            after_tokens=self._context.token_count,
+            freed_chars=freed,
+        )
+        logger.info("Pruned {freed} chars of stale tool output from context", freed=freed)
+        return True
 
     async def compact_context(self, custom_instruction: str = "") -> None:
         """

@@ -52,6 +52,9 @@ def test_default_config_dump():
                 "max_ralph_iterations": 0,
                 "reserved_context_size": 50000,
                 "compaction_trigger_ratio": 0.85,
+                "prune_trigger_ratio": 0.7,
+                "prune_protect_last": 20,
+                "prune_min_chars": 2000,
             },
             "background": {
                 "max_running_tasks": 4,

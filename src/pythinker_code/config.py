@@ -387,6 +387,18 @@ class LoopControl(BaseModel):
     """Context usage ratio threshold for auto-compaction. Default is 0.85 (85%).
     Auto-compaction triggers when context_tokens >= max_context_size * compaction_trigger_ratio
     or when context_tokens + reserved_context_size >= max_context_size."""
+    prune_trigger_ratio: float = Field(default=0.7, ge=0.0, le=0.99)
+    """Context usage ratio at which the cheap stale-tool-output prune tier runs,
+    *before* full LLM summarization. Large completed tool-result bodies in deep
+    history are replaced with a short placeholder, deferring or avoiding the
+    lossy summary. Set at or above ``compaction_trigger_ratio`` to disable the
+    tier. Default is 0.7 (70%)."""
+    prune_protect_last: int = Field(default=20, ge=0)
+    """Number of most-recent messages the prune tier never touches (recent tool
+    output stays at full fidelity). Default: 20."""
+    prune_min_chars: int = Field(default=2000, ge=0)
+    """Only tool outputs whose text exceeds this many characters are pruned, so
+    small results are left intact. Default: 2000."""
 
 
 class BackgroundConfig(BaseModel):

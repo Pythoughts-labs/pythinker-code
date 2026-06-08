@@ -271,10 +271,21 @@ One PR-sized, tested change at a time; `make check` + `uv run pytest` green per 
 | 2026-06-08 | (gate) pre-existing pyright/format errors in Phase-1 security tests | ✅ fixed | `67a42404` |
 | 2026-06-08 | **injdef-2-grep** (WS-FINISH) — wrap Grep content as untrusted | ✅ done | `127b3bbb` |
 | 2026-06-08 | **obs-eval-5** (WS-SOUL #1) — stuck-loop failure-threshold escalation | ✅ done | `d8bc2832` |
-| 2026-06-08 | **sysprompt-2** (WS-SOUL #2) — graceful max-steps handoff summary (tools-disabled, reuses btw mechanism; shell + print wired; wire/acp protocols untouched) | ✅ done | (this batch) |
+| 2026-06-08 | **sysprompt-2** (WS-SOUL #2) — graceful max-steps handoff summary (tools-disabled, reuses btw mechanism; shell + print wired; wire/acp protocols untouched) | ✅ done | `df1a1728` |
+| 2026-06-08 | (your change) "Did you mean?" tool-name suggestion on unknown tool calls | ✅ done | `c5d7c1c3` |
+| 2026-06-08 | **ctxmgmt-2** (WS-SOUL #3) — graduated stale-tool-output pruning tier before full compaction | ✅ done | (this batch) |
 
-**Next:** WS-SOUL extract-first collisions (A7→`ctxmgmt-2`, A3→`sysprompt-1`) and
-the parallel workstreams. Remaining: 19 items.
+**Decision update (§3 / §7b):** ctxmgmt-2 did **not** require the standalone A7
+extraction. The pruning algorithm landed in the existing `compaction.py` (which
+already hosts `SimpleCompaction`/`should_auto_compact`), satisfying extract-first's
+*intent* (focused home, no host-algorithm bloat) without an out-of-order god-object
+extraction (the decomposition plan orders A7 last). A7 remains available later for
+moving the compaction *orchestration* (`_grow_context`/`compact_context`) out of the
+host, but is no longer a prerequisite for any enhancement item.
+
+**Next:** `sysprompt-1` (A3 collision — model-defense injection; same call: land in
+existing injection bus without forcing the A3 extraction) or a parallel
+WS-STANDALONE item. Remaining: 18 items.
 
 ---
 
