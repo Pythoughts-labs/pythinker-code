@@ -7,6 +7,8 @@ from jinja2.sandbox import SandboxedEnvironment as Environment
 from pythinker_core.tooling import BriefDisplayBlock, DisplayBlock, ToolError, ToolReturnValue
 from pythinker_core.utils.typing import JsonType
 
+from pythinker_code.utils.trust import UntrustedData
+
 
 class _KeepPlaceholderUndefined(Undefined):
     def __str__(self) -> str:
@@ -95,8 +97,21 @@ class ToolResultBuilder:
         self._n_chars = 0
         self._n_lines = 0
         self._truncation_happened = False
+        self._wrap_untrusted = False
         self._display: list[DisplayBlock] = []
         self._extras: dict[str, JsonType] | None = None
+
+    def mark_untrusted(self) -> None:
+        """Mark the accumulated output buffer as external, untrusted content.
+
+        When set, ok()/error() wrap the (already line-/char-truncated) output in a
+        single <untrusted_data> block so the model treats command, web, and search
+        bytes as data, never instructions. Wrapping the joined buffer once — rather
+        than per write() — keeps a single coherent block whose closing tag cannot be
+        cut by truncation. Harness-authored result messages (the ``message`` arg)
+        stay outside the wrapper and are unaffected.
+        """
+        self._wrap_untrusted = True
 
     @property
     def is_full(self) -> bool:
@@ -171,6 +186,8 @@ class ToolResultBuilder:
     ) -> ToolReturnValue:
         """Create a ToolReturnValue with is_error=False and the current output."""
         output = "".join(self._buffer)
+        if self._wrap_untrusted and output:
+            output = UntrustedData(output).render_for_prompt()
 
         final_message = message
         if final_message and not final_message.endswith("."):
@@ -198,6 +215,8 @@ class ToolResultBuilder:
     ) -> ToolReturnValue:
         """Create a ToolReturnValue with is_error=True and the current output."""
         output = "".join(self._buffer)
+        if self._wrap_untrusted and output:
+            output = UntrustedData(output).render_for_prompt()
 
         final_message = message
         if self._truncation_happened:

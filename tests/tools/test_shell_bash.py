@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import platform
+import re
 
 import pytest
 from inline_snapshot import snapshot
@@ -16,12 +17,24 @@ pytestmark = pytest.mark.skipif(
     platform.system() == "Windows", reason="Bash tests run only on non-Windows."
 )
 
+# Shell stdout/stderr is wrapped as <untrusted_data> for the model (injection
+# defense). The wrapper carries a random nonce, so strip it before asserting on
+# content to keep these snapshots deterministic. Empty output is never wrapped.
+_UNTRUSTED_RE = re.compile(
+    r'^<untrusted_data id="[0-9a-f]{8}">\n(.*)\n</untrusted_data>$', re.DOTALL
+)
+
+
+def _unwrap(output: str) -> str:
+    m = _UNTRUSTED_RE.match(output)
+    return m.group(1) if m else output
+
 
 async def test_simple_command(shell_tool: Shell):
     """Test executing a simple command."""
     result = await shell_tool(Params(command="echo 'Hello World'"))
     assert not result.is_error
-    assert result.output == snapshot("Hello World\n")
+    assert _unwrap(result.output) == snapshot("Hello World\n")
     assert result.message == snapshot("Command executed successfully.")
     assert result.extras == {"status": "success"}
 
@@ -44,7 +57,7 @@ async def test_command_chaining(shell_tool: Shell):
     """Test command chaining with &&."""
     result = await shell_tool(Params(command="echo 'First' && echo 'Second'"))
     assert not result.is_error
-    assert result.output == snapshot("""\
+    assert _unwrap(result.output) == snapshot("""\
 First
 Second
 """)
@@ -55,7 +68,7 @@ async def test_command_sequential(shell_tool: Shell):
     """Test sequential command execution with ;."""
     result = await shell_tool(Params(command="echo 'One'; echo 'Two'"))
     assert not result.is_error
-    assert result.output == snapshot("""\
+    assert _unwrap(result.output) == snapshot("""\
 One
 Two
 """)
@@ -66,7 +79,7 @@ async def test_command_conditional(shell_tool: Shell):
     """Test conditional command execution with ||."""
     result = await shell_tool(Params(command="false || echo 'Success'"))
     assert not result.is_error
-    assert result.output == snapshot("Success\n")
+    assert _unwrap(result.output) == snapshot("Success\n")
     assert result.message == snapshot("Command executed successfully.")
 
 
@@ -75,7 +88,7 @@ async def test_command_pipe(shell_tool: Shell):
     result = await shell_tool(Params(command="echo 'Hello World' | wc -w"))
     assert not result.is_error
     assert isinstance(result.output, str)
-    assert result.output.strip() == snapshot("2")
+    assert _unwrap(result.output).strip() == snapshot("2")
 
 
 async def test_multiple_pipes(shell_tool: Shell):
@@ -83,14 +96,14 @@ async def test_multiple_pipes(shell_tool: Shell):
     result = await shell_tool(Params(command="echo -e '1\\n2\\n3' | grep '2' | wc -l"))
     assert not result.is_error
     assert isinstance(result.output, str)
-    assert result.output.strip() == snapshot("1")
+    assert _unwrap(result.output).strip() == snapshot("1")
 
 
 async def test_command_with_timeout(shell_tool: Shell):
     """Test command execution with timeout."""
     result = await shell_tool(Params(command="sleep 0.1", timeout=1))
     assert not result.is_error
-    assert result.output == snapshot("")
+    assert _unwrap(result.output) == snapshot("")
     assert result.message == snapshot("Command executed successfully.")
 
 
@@ -107,7 +120,7 @@ async def test_environment_variables(shell_tool: Shell):
     """Test setting and using environment variables."""
     result = await shell_tool(Params(command="export TEST_VAR='test_value' && echo $TEST_VAR"))
     assert not result.is_error
-    assert result.output == snapshot("test_value\n")
+    assert _unwrap(result.output) == snapshot("test_value\n")
     assert result.message == snapshot("Command executed successfully.")
 
 
@@ -118,13 +131,13 @@ async def test_file_operations(shell_tool: Shell, temp_work_dir: HostPath):
         Params(command=f"echo 'Test content' > {temp_work_dir}/test_file.txt")
     )
     assert not result.is_error
-    assert result.output == snapshot("")
+    assert _unwrap(result.output) == snapshot("")
     assert result.message == snapshot("Command executed successfully.")
 
     # Read the file
     result = await shell_tool(Params(command=f"cat {temp_work_dir}/test_file.txt"))
     assert not result.is_error
-    assert result.output == snapshot("Test content\n")
+    assert _unwrap(result.output) == snapshot("Test content\n")
     assert result.message == snapshot("Command executed successfully.")
 
 
@@ -132,7 +145,7 @@ async def test_text_processing(shell_tool: Shell):
     """Test text processing commands."""
     result = await shell_tool(Params(command="echo 'apple banana cherry' | sed 's/banana/orange/'"))
     assert not result.is_error
-    assert result.output == snapshot("apple orange cherry\n")
+    assert _unwrap(result.output) == snapshot("apple orange cherry\n")
     assert result.message == snapshot("Command executed successfully.")
 
 
@@ -140,7 +153,7 @@ async def test_command_substitution(shell_tool: Shell):
     """Test command substitution with a portable command."""
     result = await shell_tool(Params(command='echo "Result: $(echo hello)"'))
     assert not result.is_error
-    assert result.output == snapshot("Result: hello\n")
+    assert _unwrap(result.output) == snapshot("Result: hello\n")
     assert result.message == snapshot("Command executed successfully.")
 
 
@@ -148,7 +161,7 @@ async def test_arithmetic_substitution(shell_tool: Shell):
     """Test arithmetic substitution - more portable than date command."""
     result = await shell_tool(Params(command='echo "Answer: $((2 + 2))"'))
     assert not result.is_error
-    assert result.output == snapshot("Answer: 4\n")
+    assert _unwrap(result.output) == snapshot("Answer: 4\n")
     assert result.message == snapshot("Command executed successfully.")
 
 
@@ -158,9 +171,23 @@ async def test_very_long_output(shell_tool: Shell):
 
     assert not result.is_error
     assert isinstance(result.output, str)
-    assert "1" in result.output
-    assert "50" in result.output
-    assert "51" not in result.output  # Should not contain 51
+    inner = _unwrap(result.output)  # unwrap so the nonce can't accidentally match "51"
+    assert "1" in inner
+    assert "50" in inner
+    assert "51" not in inner  # Should not contain 51
+
+
+async def test_shell_output_is_wrapped_as_untrusted(shell_tool: Shell):
+    """Shell stdout is external/untrusted content and must reach the model inside an
+    <untrusted_data> block (prompt-injection defense). Empty output is not wrapped."""
+    result = await shell_tool(Params(command="echo 'hi from shell'"))
+    assert not result.is_error
+    assert _UNTRUSTED_RE.match(result.output), result.output
+    assert "hi from shell" in _unwrap(result.output)
+
+    # A command with no output produces an unwrapped empty string.
+    empty = await shell_tool(Params(command="true"))
+    assert empty.output == ""
 
 
 async def test_output_truncation_on_success(shell_tool: Shell):
@@ -173,7 +200,7 @@ async def test_output_truncation_on_success(shell_tool: Shell):
     assert isinstance(result.output, str)
     # Check if output was truncated (it should be)
     if len(result.output) > DEFAULT_MAX_CHARS:
-        assert result.output.endswith("[...truncated]\n")
+        assert _unwrap(result.output).endswith("[...truncated]\n")
         assert "Output is truncated" in result.message
     assert "Command executed successfully" in result.message
 
@@ -189,7 +216,7 @@ async def test_output_truncation_on_failure(shell_tool: Shell):
     assert isinstance(result.output, str)
     # Check if output was truncated
     if len(result.output) > DEFAULT_MAX_CHARS:
-        assert result.output.endswith("[...truncated]\n")
+        assert _unwrap(result.output).endswith("[...truncated]\n")
         assert "Output is truncated" in result.message
     assert "Command failed with exit code:" in result.message
 

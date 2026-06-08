@@ -150,6 +150,12 @@ class Shell(CallableTool2[Params]):
             builder.write(line_str)
             emit_output_part("stderr", line_str)
 
+        # Command stdout/stderr is the largest untrusted-input vector in a coding
+        # agent (build/test/git output, output from untrusted dependencies). Wrap
+        # the aggregated model-facing result in <untrusted_data>; the live UI stream
+        # via emit_output_part above stays untagged.
+        builder.mark_untrusted()
+
         try:
             exitcode = await self._run_shell_command(
                 params.command, stdout_cb, stderr_cb, params.timeout

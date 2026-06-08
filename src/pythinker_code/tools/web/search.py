@@ -168,6 +168,10 @@ class SearchWeb(CallableTool2[Params]):
                     brief="Filtered by allowlist",
                 )
 
+        # Search results are crawled third-party web text — the same untrusted
+        # content FetchURL already wraps. Mark the result block untrusted so titles,
+        # snippets, and page content are treated as data, never instructions.
+        builder.mark_untrusted()
         for i, result in enumerate(results):
             if i > 0:
                 builder.write("---\n\n")
