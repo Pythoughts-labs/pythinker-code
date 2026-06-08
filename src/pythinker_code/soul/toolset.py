@@ -645,6 +645,25 @@ class PythinkerToolset:
                         server_info.tools.append(
                             MCPTool(server_name, tool, client, runtime=runtime)
                         )
+                    # Resources/prompts are optional MCP capabilities; a server
+                    # that exposes none (or does not support the request) must
+                    # still connect, so capture them best-effort (mcpext-1).
+                    try:
+                        server_info.resources = list(await client.list_resources())
+                    except Exception as exc:
+                        logger.debug(
+                            "MCP server {name} has no listable resources: {error}",
+                            name=server_name,
+                            error=exc,
+                        )
+                    try:
+                        server_info.prompts = list(await client.list_prompts())
+                    except Exception as exc:
+                        logger.debug(
+                            "MCP server {name} has no listable prompts: {error}",
+                            name=server_name,
+                            error=exc,
+                        )
 
                 for tool in server_info.tools:
                     self.add(tool)
@@ -708,7 +727,7 @@ class PythinkerToolset:
                 client = fastmcp.Client(MCPConfig(mcpServers={server_name: server_config}))
                 _configure_mcp_client_stderr_log(client, runtime, server_name)
                 self._mcp_servers[server_name] = MCPServerInfo(
-                    status="pending", client=client, tools=[]
+                    status="pending", client=client, tools=[], resources=[], prompts=[]
                 )
 
         if not any(server_info.status == "pending" for server_info in self._mcp_servers.values()):
@@ -750,6 +769,10 @@ class MCPServerInfo:
     status: Literal["pending", "connecting", "connected", "failed", "unauthorized"]
     client: fastmcp.Client[Any]
     tools: list[MCPTool[Any]]
+    # Resources and prompts published by the server, captured at connect time
+    # (mcpext-1). Empty for servers that expose none or do not support them.
+    resources: list[mcp.Resource]
+    prompts: list[mcp.types.Prompt]
 
 
 class MCPTool[T: ClientTransport](CallableTool):

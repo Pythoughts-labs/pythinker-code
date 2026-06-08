@@ -305,6 +305,8 @@ async def test_default_agent_background_bash_guardrails(runtime: Runtime):
             "StrReplaceFile",
             "SearchWeb",
             "FetchURL",
+            "ListMcpResources",
+            "ReadMcpResource",
             "EnterPlanMode",
         ]
     )
