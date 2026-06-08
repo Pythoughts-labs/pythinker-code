@@ -178,7 +178,8 @@ async def _is_runnable(path: Path) -> bool:
     """Return True if the binary at *path* can actually be executed on this platform."""
     try:
         proc = await asyncio.create_subprocess_exec(
-            str(path), "--version",
+            str(path),
+            "--version",
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )

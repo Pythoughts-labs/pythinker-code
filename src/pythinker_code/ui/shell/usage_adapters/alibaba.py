@@ -14,6 +14,7 @@ from pythinker_code.ui.shell.stats_collector import load_all_stats as _load_all_
 from pythinker_code.ui.shell.usage_adapters.base import UsageReport, UsageRow
 from pythinker_code.usage_ratelimit_cache import get_cache
 from pythinker_code.utils.aiohttp import new_client_session
+from pythinker_code.utils.logging import logger
 
 if TYPE_CHECKING:
     from pythinker_code.auth.oauth import OAuthManager
@@ -57,9 +58,7 @@ def _parse_quota_response(data: object) -> list[UsageRow]:
     total = payload["token_quota"] if "token_quota" in payload else payload.get("total_quota")
     used = payload["token_used"] if "token_used" in payload else payload.get("total_used")
     if isinstance(total, (int, float)) and isinstance(used, (int, float)):
-        rows.append(
-            UsageRow(label="Token quota", used=int(used), limit=int(total), unit="tokens")
-        )
+        rows.append(UsageRow(label="Token quota", used=int(used), limit=int(total), unit="tokens"))
 
     # List shape: {quota_list: [{quota_name, total_quota, total_used}]}
     quota_list = payload.get("quota_list")
@@ -72,9 +71,7 @@ def _parse_quota_response(data: object) -> list[UsageRow]:
             u = item.get("total_used")
             if isinstance(t, (int, float)) and isinstance(u, (int, float)):
                 rows.append(
-                    UsageRow(
-                        label=str(name).title(), used=int(u), limit=int(t), unit="tokens"
-                    )
+                    UsageRow(label=str(name).title(), used=int(u), limit=int(t), unit="tokens")
                 )
 
     return rows
@@ -108,23 +105,24 @@ class AlibabaAdapter:
                         limit=0,
                         unit="tokens",
                         reset_hint=(
-                            f"↑{prov.input_other:,} in  "
-                            f"↓{prov.output:,} out  "
-                            f"${prov.cost:.4f}"
+                            f"↑{prov.input_other:,} in  ↓{prov.output:,} out  ${prov.cost:.4f}"
                         ),
                     )
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("local usage stats unavailable: {error}", error=e, exc_info=True)
 
         # --- DashScope quota API (best-effort, silent on failure) ---
         quota_rows: list[UsageRow] = []
         notes: list[str] = []
         try:
-            async with new_client_session(timeout=_TIMEOUT) as session, session.get(
-                _quota_url(base_url),
-                headers={"Authorization": f"Bearer {api_key}"},
-            ) as resp:
+            async with (
+                new_client_session(timeout=_TIMEOUT) as session,
+                session.get(
+                    _quota_url(base_url),
+                    headers={"Authorization": f"Bearer {api_key}"},
+                ) as resp,
+            ):
                 if resp.status == 200:
                     data = await resp.json(content_type=None)
                     quota_rows = _parse_quota_response(data)
@@ -142,23 +140,25 @@ class AlibabaAdapter:
             if snap.requests_limit is not None and snap.requests_remaining is not None:
                 rl_rows.append(
                     UsageRow(
-                        label="Requests", used=snap.requests_remaining,
-                        limit=snap.requests_limit, unit="requests",
+                        label="Requests",
+                        used=snap.requests_remaining,
+                        limit=snap.requests_limit,
+                        unit="requests",
                     )
                 )
             if snap.tokens_limit is not None and snap.tokens_remaining is not None:
                 rl_rows.append(
                     UsageRow(
                         label="Tokens remaining",
-                        used=snap.tokens_remaining, limit=snap.tokens_limit, unit="tokens",
+                        used=snap.tokens_remaining,
+                        limit=snap.tokens_limit,
+                        unit="tokens",
                     )
                 )
 
         all_rows = local_rows + quota_rows + rl_rows
         if not all_rows and not notes:
-            notes.append(
-                "No usage recorded yet. Start a conversation to see token counts here."
-            )
+            notes.append("No usage recorded yet. Start a conversation to see token counts here.")
 
         summary = all_rows[0] if all_rows else None
         return UsageReport(

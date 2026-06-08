@@ -19,8 +19,17 @@ _TTL_SECONDS = 86_400  # 24 hours
 # Canonical providers win over regional/cloud variants when the same
 # bare model id appears under multiple providers.
 _CANONICAL_PROVIDERS = {
-    "anthropic", "openai", "google", "deepseek", "z-ai",
-    "moonshot", "minimax", "meta", "mistral", "cohere", "x-ai",
+    "anthropic",
+    "openai",
+    "google",
+    "deepseek",
+    "z-ai",
+    "moonshot",
+    "minimax",
+    "meta",
+    "mistral",
+    "cohere",
+    "x-ai",
 }
 
 # Module-level lock: only one network fetch runs at a time.
@@ -32,9 +41,9 @@ _catalog_cache: dict[str, Any] = {}
 
 @dataclass(frozen=True)
 class ModelPrice:
-    input: float        # USD / 1M tokens
+    input: float  # USD / 1M tokens
     output: float
-    cache_read: float   # 0.0 if absent
+    cache_read: float  # 0.0 if absent
     cache_write: float  # 0.0 if absent
 
 
@@ -44,11 +53,11 @@ def _get_cache_path() -> Path:
     return base / "model-pricing" / "models-dev.json"
 
 
-def _coerce_cost(value: object) -> float:
+def _coerce_cost(raw: object) -> float:
     """Coerce a cost field to float; returns 0.0 for None, raises on non-numeric."""
-    if value is None:
+    if raw is None:
         return 0.0
-    return float(value)
+    return float(raw)
 
 
 def _flatten_catalog(raw: dict[str, Any]) -> dict[str, ModelPrice]:
