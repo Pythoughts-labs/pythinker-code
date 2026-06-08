@@ -15,7 +15,14 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.38.0 (2026-06-08)
+
 - **Quieter `/login`.** Logging in no longer prints a `RuntimeWarning` about an un-awaited `redraw_in_future` coroutine. The prompt redraw throttle now uses a coroutine-free path (`max_render_postpone_time`), eliminating the warning emitted during the login prompt handoff.
+- **Alibaba usage reporting.** `/usage` now ships a dedicated Alibaba adapter, so logging in with an Alibaba key produces a populated cost/quota panel instead of falling through to the no-adapter branch.
+- **Live model pricing from models.dev.** Cost estimates in `/usage` and the session stats panel now pull per-model input/output pricing from the models.dev catalog (fetched once and cached for 24 hours), improving cost accuracy across providers.
+- **More robust ripgrep resolution.** File search now verifies that a bundled `rg` binary can actually execute on the host platform and architecture before using it, falling back to a system or freshly downloaded ripgrep when the bundled one cannot run — fixing search failures on mismatched-architecture installs.
+
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.38.0`, or use the native installer for your platform from the [Releases page](https://github.com/Pythoughts-labs/pythinker-code/releases/latest).
 
 ## 0.37.0 (2026-06-07)
 
