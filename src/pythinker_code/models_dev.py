@@ -6,7 +6,7 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import aiohttp
 
@@ -57,7 +57,9 @@ def _coerce_cost(raw: object) -> float:
     """Coerce a cost field to float; returns 0.0 for None, raises on non-numeric."""
     if raw is None:
         return 0.0
-    return float(raw)
+    if isinstance(raw, (int, float, str)):
+        return float(raw)
+    raise TypeError(f"non-numeric cost value: {raw!r}")
 
 
 def _flatten_catalog(raw: dict[str, Any]) -> dict[str, ModelPrice]:
@@ -74,24 +76,25 @@ def _flatten_catalog(raw: dict[str, Any]) -> dict[str, ModelPrice]:
     for provider_id, provider_data in raw.items():
         if not isinstance(provider_data, dict):
             continue
-        models = provider_data.get("models")
+        models = cast(dict[str, Any], provider_data).get("models")
         if not isinstance(models, dict):
             continue
         target = canonical if provider_id in _CANONICAL_PROVIDERS else fallback
-        for model_id, model_data in sorted(models.items()):
+        for model_id, model_data in sorted(cast(dict[str, Any], models).items()):
             if "@" in model_id:
                 continue
             if not isinstance(model_data, dict):
                 continue
-            cost = model_data.get("cost")
+            cost = cast(dict[str, Any], model_data).get("cost")
             if not isinstance(cost, dict):
                 continue
+            cost_map = cast(dict[str, Any], cost)
             try:
                 price = ModelPrice(
-                    input=_coerce_cost(cost.get("input")),
-                    output=_coerce_cost(cost.get("output")),
-                    cache_read=_coerce_cost(cost.get("cache_read")),
-                    cache_write=_coerce_cost(cost.get("cache_write")),
+                    input=_coerce_cost(cost_map.get("input")),
+                    output=_coerce_cost(cost_map.get("output")),
+                    cache_read=_coerce_cost(cost_map.get("cache_read")),
+                    cache_write=_coerce_cost(cost_map.get("cache_write")),
                 )
             except (TypeError, ValueError):
                 continue
@@ -128,7 +131,7 @@ def load_catalog() -> dict[str, ModelPrice]:
     if not isinstance(raw, dict):
         return {}
 
-    result = _flatten_catalog(raw)
+    result = _flatten_catalog(cast(dict[str, Any], raw))
     _catalog_cache["entry"] = (mtime_ns, result)
     return result
 

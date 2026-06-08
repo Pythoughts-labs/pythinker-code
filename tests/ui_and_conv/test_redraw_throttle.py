@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 from prompt_toolkit.application import Application
 
@@ -42,7 +43,7 @@ async def _invalidate_constructs_coroutine(configure: Callable[[Application], No
 
     constructed: list[object] = []
 
-    def spy(coro: object) -> None:
+    def spy(coro: Coroutine[Any, Any, Any]) -> None:
         constructed.append(coro)
         coro.close()  # consume it so the test itself never leaks a coroutine
 

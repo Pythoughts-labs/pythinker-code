@@ -219,7 +219,7 @@ def _build_cost_panel(stats: AllStats):
     from rich.panel import Panel as _Panel
     from rich.table import Table as _Table
 
-    from pythinker_code.ui.shell.stats import _fmt_cost
+    from pythinker_code.ui.shell.stats import fmt_cost
     from pythinker_code.ui.theme import tui_rich_style
 
     t = _Table.grid(padding=(0, 2))
@@ -232,7 +232,7 @@ def _build_cost_panel(stats: AllStats):
         ("All time", stats.periods["all_time"].total_cost),
     ]
     for label, cost in periods:
-        t.add_row(label, _fmt_cost(cost))
+        t.add_row(label, fmt_cost(cost))
 
     return _Panel(
         t,

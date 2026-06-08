@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlparse
 
 import aiohttp
@@ -49,26 +49,35 @@ def _parse_quota_response(data: object) -> list[UsageRow]:
     """
     if not isinstance(data, dict):
         return []
+    data_map = cast(dict[str, Any], data)
     rows: list[UsageRow] = []
-    payload = data.get("data", data)
+    payload = data_map.get("data", data_map)
     if not isinstance(payload, dict):
         return []
+    payload_map = cast(dict[str, Any], payload)
 
     # Flat shape: {token_quota: N, token_used: N}
-    total = payload["token_quota"] if "token_quota" in payload else payload.get("total_quota")
-    used = payload["token_used"] if "token_used" in payload else payload.get("total_used")
+    total = (
+        payload_map["token_quota"]
+        if "token_quota" in payload_map
+        else payload_map.get("total_quota")
+    )
+    used = (
+        payload_map["token_used"] if "token_used" in payload_map else payload_map.get("total_used")
+    )
     if isinstance(total, (int, float)) and isinstance(used, (int, float)):
         rows.append(UsageRow(label="Token quota", used=int(used), limit=int(total), unit="tokens"))
 
     # List shape: {quota_list: [{quota_name, total_quota, total_used}]}
-    quota_list = payload.get("quota_list")
+    quota_list = payload_map.get("quota_list")
     if isinstance(quota_list, list):
-        for item in quota_list:
+        for item in cast(list[Any], quota_list):
             if not isinstance(item, dict):
                 continue
-            name = item.get("quota_name") or item.get("quota_type") or "Quota"
-            t = item.get("total_quota")
-            u = item.get("total_used")
+            item_map = cast(dict[str, Any], item)
+            name = item_map.get("quota_name") or item_map.get("quota_type") or "Quota"
+            t = item_map.get("total_quota")
+            u = item_map.get("total_used")
             if isinstance(t, (int, float)) and isinstance(u, (int, float)):
                 rows.append(
                     UsageRow(label=str(name).title(), used=int(u), limit=int(t), unit="tokens")
@@ -112,7 +121,7 @@ class AlibabaAdapter:
         except Exception as e:
             logger.debug("local usage stats unavailable: {error}", error=e, exc_info=True)
 
-        # --- DashScope quota API (best-effort, silent on failure) ---
+        # --- DashScope quota API (best-effort; logs + notes on failure) ---
         quota_rows: list[UsageRow] = []
         notes: list[str] = []
         try:
