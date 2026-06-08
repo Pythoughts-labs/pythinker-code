@@ -386,6 +386,45 @@ def _segment_mutation_reason(tokens: list[str]) -> str | None:
     return None
 
 
+def shell_command_signature(command: str) -> str:
+    """Coarse, stable identity for a shell command, for per-command session approval.
+
+    Built from the base command (plus git / package-manager subcommand) of every
+    ``;``/``&&``/``||``/``|``-separated segment, sorted and de-duplicated. This keeps
+    "approve for session" scoped to like commands: approving ``git status`` does not
+    also whitelist ``git push`` or ``rm``. It pairs with the destructive backstop,
+    which independently re-prompts irreversible commands regardless of signature.
+    """
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        return "shell:unparsable"
+    bases: set[str] = set()
+    segment: list[str] = []
+    for token in [*tokens, ";"]:
+        if token in _SHELL_SEGMENT_SEPARATORS:
+            if sig := _segment_signature(segment):
+                bases.add(sig)
+            segment = []
+        else:
+            segment.append(token)
+    return "shell:" + "|".join(sorted(bases)) if bases else "shell:empty"
+
+
+def _segment_signature(tokens: list[str]) -> str:
+    if not tokens:
+        return ""
+    command, args = _unwrap_command(tokens)
+    if command is None:
+        return ""
+    base = command.rsplit("/", 1)[-1]
+    if base == "git" and (sub := _git_subcommand(args)):
+        return f"git {sub}"
+    if base in _PACKAGE_MANAGER_COMMANDS and (sub := _first_non_option(args)):
+        return f"{base} {sub}"
+    return base
+
+
 def _unwrap_command(tokens: list[str]) -> tuple[str | None, list[str]]:
     remaining = list(tokens)
     while remaining:

@@ -12,6 +12,7 @@ from pythinker_core.utils.typing import JsonType
 
 from pythinker_code.approval_runtime import (
     ApprovalCancelledError,
+    ApprovalRequestRecord,
     ApprovalRuntime,
     ApprovalSource,
     get_current_approval_source_or_none,
@@ -278,6 +279,47 @@ class Approval:
             return None
         return args if isinstance(args, dict) else None
 
+    def _approval_key(self, tool_call: ToolCall, action: str) -> str:
+        """Session-approval key, narrowed below the coarse ``action`` where possible.
+
+        For Shell, fold a normalized command signature into the key so "approve for
+        session" is scoped per command family — approving ``git status`` does not also
+        whitelist ``git push`` or ``rm``. Other tools keep the bare ``action`` key.
+        """
+        if tool_call.function.name == "Shell":
+            args = self._tool_arguments(tool_call)
+            command = (args or {}).get("command")
+            if isinstance(command, str) and command:
+                from pythinker_code.soul.permission import shell_command_signature
+
+                return f"{action}::{shell_command_signature(command)}"
+        return action
+
+    def _pending_approval_key(self, pending: ApprovalRequestRecord) -> str:
+        """Reconstruct the session-approval key for a pending request from its display.
+
+        Mirrors ``_approval_key`` so the approve-for-session drain only clears pending
+        siblings with the SAME key, never a different (e.g. destructive) command that
+        merely shares the coarse action string.
+        """
+        if pending.sender == "Shell":
+            for block in pending.display:
+                command = getattr(block, "command", None)
+                if isinstance(command, str) and command:
+                    from pythinker_code.soul.permission import shell_command_signature
+
+                    return f"{pending.action}::{shell_command_signature(command)}"
+        return pending.action
+
+    def _is_destructive_call(self, tool_call: ToolCall) -> bool:
+        """Whether this call is irreversible/destructive per the central classifier."""
+        arguments = self._tool_arguments(tool_call)
+        if arguments is None:
+            return False
+        from pythinker_code.soul.permission import tool_destructive_reason
+
+        return tool_destructive_reason(tool_call.function.name, arguments) is not None
+
     @staticmethod
     def _deliberation_fingerprint(
         context_id: str, tool_name: str, arguments: dict[str, JsonType]
@@ -420,7 +462,14 @@ class Approval:
             emit_current_tool_execution_started()
             return ApprovalResult(approved=True)
 
-        if action in self._state.auto_approve_actions:
+        # Session approval is keyed per command/path (permgate-1a), and never covers
+        # a destructive/irreversible call: a coarse "approve for session" on a benign
+        # command must not silently carry a later `rm -rf`/`git push --force`
+        # (permgate-1b). Destructive calls fall through to a fresh prompt.
+        approval_key = self._approval_key(tool_call, action)
+        if approval_key in self._state.auto_approve_actions and not self._is_destructive_call(
+            tool_call
+        ):
             from pythinker_code.telemetry import track
 
             track(
@@ -475,11 +524,17 @@ class Approval:
                     tool_name=tool_call.function.name,
                     approval_mode="manual",
                 )
-                self._state.auto_approve_actions.add(action)
-                self._state.notify_change()
-                for pending in self._runtime.list_pending():
-                    if pending.action == action:
-                        self._runtime.resolve(pending.id, "approve")
+                # A destructive call is never recorded as session-approved — it must
+                # re-prompt every time — so "approve for session" on one degrades to a
+                # one-time approve (permgate-1b). Otherwise record the per-command key
+                # and drain only pending siblings with that SAME key, so approving
+                # `git status` for the session cannot silently clear a queued `rm -rf`.
+                if not self._is_destructive_call(tool_call):
+                    self._state.auto_approve_actions.add(approval_key)
+                    self._state.notify_change()
+                    for pending in self._runtime.list_pending():
+                        if self._pending_approval_key(pending) == approval_key:
+                            self._runtime.resolve(pending.id, "approve")
                 emit_current_tool_execution_started()
                 return ApprovalResult(approved=True)
             case "reject":

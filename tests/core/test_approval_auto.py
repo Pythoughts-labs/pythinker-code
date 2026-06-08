@@ -5,7 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 
+from pythinker_code.approval_runtime import ApprovalRuntime
 from pythinker_code.soul.approval import Approval, ApprovalState, deliberation_scope
+from pythinker_code.soul.toolset import current_tool_call
+from pythinker_code.tools.display import ShellDisplayBlock
 from pythinker_code.tools.file import FileActions
 from pythinker_code.wire.types import ToolCall
 
@@ -15,6 +18,89 @@ def _shell_call(cmd: str) -> ToolCall:
         id="call-1",
         function=ToolCall.FunctionBody(name="Shell", arguments=json.dumps({"command": cmd})),
     )
+
+
+def test_shell_command_signature_is_per_command_family() -> None:
+    """The session-approval signature distinguishes command families so one approval
+    cannot cover an unrelated command. Subcommands matter; flags/args do not."""
+    from pythinker_code.soul.permission import shell_command_signature as sig
+
+    assert sig("git status") == sig("git status --short")  # flags don't change identity
+    assert sig("git status") != sig("git push")  # different subcommand
+    assert sig("git push") == sig("git push --force origin main")  # --force same family
+    assert sig("rm -rf x") != sig("git status")
+    # A chain's signature covers every segment, so it can't ride a single-command approval.
+    assert sig("git status && rm -rf x") != sig("git status")
+    assert "rm" in sig("git status && rm -rf x")
+
+
+async def _drive_request(
+    approval: Approval, runtime: ApprovalRuntime, command: str, response: str, generation: int
+) -> tuple[bool, bool]:
+    """Drive Approval.request() to completion. Returns (approved, prompted)."""
+    call = _shell_call(command)
+    token = current_tool_call.set(call)
+    try:
+        with deliberation_scope("root", generation):
+            waiter = asyncio.create_task(
+                approval.request(
+                    "Shell",
+                    "run command",
+                    f"Run `{command}`",
+                    display=[ShellDisplayBlock(language="bash", command=command)],
+                )
+            )
+            prompted = False
+            for _ in range(1000):
+                if waiter.done():
+                    break
+                if pending := runtime.list_pending():
+                    prompted = True
+                    runtime.resolve(pending[0].id, response)
+                    break
+                await asyncio.sleep(0)
+            result = await waiter
+            return bool(result), prompted
+    finally:
+        current_tool_call.reset(token)
+
+
+async def test_session_approval_per_command_and_destructive_backstop() -> None:
+    """permgate-1: 'approve for session' is keyed per command family (1a) and never
+    covers an irreversible call (1b)."""
+    runtime = ApprovalRuntime()
+    approval = Approval(state=ApprovalState())
+    approval.set_runtime(runtime)
+
+    # Approve a benign `git push` for the session.
+    approved, prompted = await _drive_request(
+        approval, runtime, "git push", "approve_for_session", 1
+    )
+    assert approved and prompted
+
+    # A second plain `git push` is auto-approved without prompting.
+    approved, prompted = await _drive_request(approval, runtime, "git push", "reject", 2)
+    assert approved and not prompted
+
+    # A DIFFERENT command is not covered by the per-command key -> prompts (1a).
+    approved, prompted = await _drive_request(approval, runtime, "git status", "reject", 3)
+    assert not approved and prompted
+
+    # `git push --force` shares the `git push` signature but is destructive, so the
+    # session approval must NOT cover it -> it re-prompts (1b).
+    approved, prompted = await _drive_request(
+        approval, runtime, "git push --force origin main", "reject", 4
+    )
+    assert not approved and prompted
+
+    # A destructive command is never recorded as session-approved even via
+    # "approve for session" — it degrades to a one-time approve (1b).
+    approved, prompted = await _drive_request(
+        approval, runtime, "rm -rf build", "approve_for_session", 5
+    )
+    assert approved and prompted
+    approved, prompted = await _drive_request(approval, runtime, "rm -rf build", "reject", 6)
+    assert not approved and prompted  # still prompts; not whitelisted
 
 
 def test_tool_destructive_reason_gates_background_shell() -> None:
