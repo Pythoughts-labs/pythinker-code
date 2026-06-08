@@ -11,6 +11,7 @@ class FileActions(StrEnum):
     READ = "read file"
     EDIT = "edit file"
     EDIT_OUTSIDE = "edit file outside of working directory"
+    EDIT_CONFIG = "edit pythinker config file"
 
 
 from .glob import Glob  # noqa: E402

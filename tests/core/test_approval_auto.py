@@ -153,6 +153,77 @@ async def test_one_time_approve_drains_identical_concurrent_siblings() -> None:
     assert not bool(await t_diff)
 
 
+def test_config_surface_classifier() -> None:
+    """permgate-2: behavioral-config files are recognized; plan/scratch and source are not."""
+    from pythinker_host.path import HostPath
+
+    from pythinker_code.utils.path import is_config_surface_path
+
+    for p in (
+        "/repo/AGENTS.md",
+        "/repo/sub/agents.md",
+        "/repo/.pythinker/config.toml",
+        "/repo/.pythinker/agents/x.yaml",
+        "/repo/.claude/agents/r.yaml",
+    ):
+        assert is_config_surface_path(HostPath(p)), p
+    for p in ("/repo/.pythinker/plans/x.md", "/repo/src/main.py", "/repo/README.md"):
+        assert not is_config_surface_path(HostPath(p)), p
+
+
+async def test_config_edit_never_session_approvable_and_prompts_under_yolo() -> None:
+    """permgate-2: a write to a config surface re-confirms every time — it is not
+    auto-approved by yolo and never recorded as session-approved."""
+    from pythinker_code.tools.file import FileActions
+
+    def _write_call() -> ToolCall:
+        return ToolCall(
+            id="w1",
+            function=ToolCall.FunctionBody(
+                name="WriteFile",
+                arguments=json.dumps({"path": "AGENTS.md", "content": "x", "mode": "overwrite"}),
+            ),
+        )
+
+    async def _drive(
+        approval: Approval, runtime: ApprovalRuntime, response: str
+    ) -> tuple[bool, bool]:
+        token = current_tool_call.set(_write_call())
+        try:
+            waiter = asyncio.create_task(
+                approval.request("WriteFile", FileActions.EDIT_CONFIG, "Write file `AGENTS.md`")
+            )
+            prompted = False
+            for _ in range(1000):
+                if waiter.done():
+                    break
+                if pending := runtime.list_pending():
+                    prompted = True
+                    runtime.resolve(pending[0].id, response)
+                    break
+                await asyncio.sleep(0)
+            return bool(await waiter), prompted
+        finally:
+            current_tool_call.reset(token)
+
+    # Under yolo, a config edit still prompts (not auto-approved).
+    runtime = ApprovalRuntime()
+    yolo = Approval(state=ApprovalState(yolo=True))
+    yolo.set_runtime(runtime)
+    approved, prompted = await _drive(yolo, runtime, "approve")
+    assert approved and prompted
+
+    # 'Approve for session' on a config edit does not record it -> the next one prompts again.
+    runtime2 = ApprovalRuntime()
+    approval = Approval(state=ApprovalState())
+    approval.set_runtime(runtime2)
+    approved, prompted = await _drive(approval, runtime2, "approve_for_session")
+    assert approved and prompted
+    assert approval._state.auto_approve_actions == set()
+    approved, prompted = await _drive(approval, runtime2, "reject")
+    assert not approved and prompted
+
+
 def test_tool_destructive_reason_gates_background_shell() -> None:
     from pythinker_code.soul.permission import tool_destructive_reason
 

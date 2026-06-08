@@ -27,6 +27,15 @@ INVISIBLE_CHARS = frozenset(
 _INVISIBLE_TRANSLATION = dict.fromkeys((ord(c) for c in INVISIBLE_CHARS), None)
 
 
+def strip_invisible_chars(text: str) -> str:
+    """Remove zero-width / bidi-override characters (the invisible injection vector).
+
+    Used both by the untrusted-data wrapper and by trusted-but-injected surfaces
+    such as the merged AGENTS.md, which lands in the system prompt verbatim.
+    """
+    return text.translate(_INVISIBLE_TRANSLATION)
+
+
 @dataclass(frozen=True)
 class UntrustedData:
     """Marks a string as originating from an external, untrusted source.
@@ -44,6 +53,6 @@ class UntrustedData:
         # legitimate external content (security advisories, this repo's own test
         # fixtures) may contain visible "injection-like" prose, which the wrapper
         # marks as data — only the invisible smuggling vector is removed outright.
-        cleaned = self.raw_content.translate(_INVISIBLE_TRANSLATION)
+        cleaned = strip_invisible_chars(self.raw_content)
         safe_content = cleaned.replace("</untrusted_data>", "&lt;/untrusted_data&gt;")
         return f'<untrusted_data id="{nonce}">\n{safe_content}\n</untrusted_data>'

@@ -321,6 +321,27 @@ class Approval:
         return tool_destructive_reason(tool_call.function.name, arguments) is not None
 
     @staticmethod
+    def _is_config_edit(action: str) -> bool:
+        """Whether this approval is a write to pythinker's own behavioral config.
+
+        Config-surface edits (AGENTS.md, agent specs, .pythinker config) are
+        re-injected into the system prompt or change agent behavior, so a successful
+        injection rewriting one is a persistent backdoor. They must re-confirm every
+        time — even under yolo/auto — and are never recorded as session-approved.
+        """
+        from pythinker_code.tools.file import FileActions
+
+        return action == FileActions.EDIT_CONFIG.value
+
+    def _is_session_approvable(self, tool_call: ToolCall, action: str) -> bool:
+        """Whether this approval may be recorded as a standing session rule.
+
+        Destructive/irreversible calls (permgate-1b) and behavioral-config edits
+        (permgate-2) are excluded: each must be confirmed afresh.
+        """
+        return not self._is_destructive_call(tool_call) and not self._is_config_edit(action)
+
+    @staticmethod
     def _deliberation_fingerprint(
         context_id: str, tool_name: str, arguments: dict[str, JsonType]
     ) -> str:
@@ -451,7 +472,11 @@ class Approval:
             )
             return ApprovalResult(approved=False, feedback=feedback, user_rejection=False)
 
-        if self.is_auto_approve():
+        # Config-surface edits re-confirm even under yolo/auto (permgate-2): they are
+        # not covered by the auto-approve bypass. In unattended auto with no user, the
+        # _unattended_denial_feedback above has already denied; under interactive yolo
+        # they fall through to a fresh prompt.
+        if self.is_auto_approve() and not self._is_config_edit(action):
             from pythinker_code.telemetry import track
 
             track(
@@ -467,8 +492,8 @@ class Approval:
         # command must not silently carry a later `rm -rf`/`git push --force`
         # (permgate-1b). Destructive calls fall through to a fresh prompt.
         approval_key = self._approval_key(tool_call, action)
-        if approval_key in self._state.auto_approve_actions and not self._is_destructive_call(
-            tool_call
+        if approval_key in self._state.auto_approve_actions and self._is_session_approvable(
+            tool_call, action
         ):
             from pythinker_code.telemetry import track
 
@@ -543,8 +568,9 @@ class Approval:
                 # re-prompt every time — so "approve for session" on one degrades to a
                 # one-time approve (permgate-1b). Otherwise record the per-command key
                 # and drain only pending siblings with that SAME key, so approving
-                # `git status` for the session cannot silently clear a queued `rm -rf`.
-                if not self._is_destructive_call(tool_call):
+                # `git status` for the session cannot silently clear a queued `rm -rf`,
+                # and a config-surface edit is never recorded as session-approved.
+                if self._is_session_approvable(tool_call, action):
                     self._state.auto_approve_actions.add(approval_key)
                     self._state.notify_change()
                     for pending in self._runtime.list_pending():
