@@ -267,6 +267,38 @@ async def test_ratelimit_cache_used() -> None:
     assert report.summary.unit == "tokens"
 
 
+async def test_ratelimit_requests_row_labeled_remaining() -> None:
+    """The Requests rate-limit row labels its value as remaining, not consumed."""
+    resp = _make_response(404)
+    session = _make_session(resp)
+
+    snap = RateLimitSnapshot(
+        requests_limit=1_000,
+        requests_remaining=750,
+        requests_reset_seconds=None,
+        tokens_limit=None,
+        tokens_remaining=None,
+        tokens_reset_seconds=None,
+        captured_at=0.0,
+    )
+
+    with (
+        patch(
+            "pythinker_code.ui.shell.usage_adapters.alibaba.new_client_session",
+            side_effect=lambda **kw: _fake_new_client_session(session, **kw),
+        ),
+        patch("pythinker_code.ui.shell.usage_adapters.alibaba.get_cache") as mock_cache,
+    ):
+        mock_cache.return_value.snapshot.return_value = snap
+        report = await AlibabaAdapter().fetch(_make_provider(), _StubOAuth())  # type: ignore[arg-type]
+
+    assert report.summary is not None
+    assert report.summary.label == "Requests remaining"
+    assert report.summary.used == 750
+    assert report.summary.limit == 1_000
+    assert report.summary.unit == "requests"
+
+
 async def test_network_error_falls_through() -> None:
     """aiohttp.ClientError during HTTP call is swallowed; returns a UsageReport."""
 
@@ -291,7 +323,9 @@ async def test_network_error_falls_through() -> None:
         report = await AlibabaAdapter().fetch(_make_provider(), _StubOAuth())  # type: ignore[arg-type]
 
     assert report is not None
-    assert report.notes  # some guidance note is present
+    # A transient fetch failure surfaces an actionable note rather than the
+    # misleading "No usage recorded yet" fall-through.
+    assert any("unavailable" in n.lower() for n in report.notes)
 
 
 async def test_local_stats_shown_when_available(monkeypatch) -> None:

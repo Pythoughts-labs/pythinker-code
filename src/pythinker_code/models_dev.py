@@ -123,6 +123,11 @@ def load_catalog() -> dict[str, ModelPrice]:
     except Exception:
         return {}
 
+    # Valid-but-non-object JSON (e.g. a top-level list) must not escape the
+    # {} fallback contract — _flatten_catalog assumes a provider mapping.
+    if not isinstance(raw, dict):
+        return {}
+
     result = _flatten_catalog(raw)
     _catalog_cache["entry"] = (mtime_ns, result)
     return result

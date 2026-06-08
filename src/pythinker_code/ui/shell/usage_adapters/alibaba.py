@@ -130,8 +130,9 @@ class AlibabaAdapter:
                     notes.append(
                         "DashScope quota API: authorization failed — quota data unavailable."
                     )
-        except (aiohttp.ClientError, TimeoutError):
-            pass
+        except (aiohttp.ClientError, TimeoutError) as e:
+            logger.debug("DashScope quota API request failed: {error}", error=e, exc_info=True)
+            notes.append("DashScope quota API unavailable right now — retry in a moment.")
 
         # --- Rate-limit headers from last response (if DashScope ever sends them) ---
         rl_rows: list[UsageRow] = []
@@ -140,7 +141,7 @@ class AlibabaAdapter:
             if snap.requests_limit is not None and snap.requests_remaining is not None:
                 rl_rows.append(
                     UsageRow(
-                        label="Requests",
+                        label="Requests remaining",
                         used=snap.requests_remaining,
                         limit=snap.requests_limit,
                         unit="requests",

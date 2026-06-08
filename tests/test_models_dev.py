@@ -124,6 +124,19 @@ def test_load_catalog_returns_empty_on_corrupt_json(tmp_path, monkeypatch):
     assert result == {}
 
 
+def test_load_catalog_returns_empty_on_non_dict_json(tmp_path, monkeypatch):
+    from pythinker_code import models_dev
+
+    # Valid JSON, but the root is a list — _flatten_catalog would blow up on
+    # .items(); load_catalog must honour its {} fallback contract instead.
+    cache_file = tmp_path / "models-dev.json"
+    cache_file.write_text("[]")
+    monkeypatch.setattr(models_dev, "_get_cache_path", lambda: cache_file)
+    models_dev._catalog_cache.clear()
+    result = models_dev.load_catalog()
+    assert result == {}
+
+
 def test_load_catalog_memoized_by_mtime(tmp_path, monkeypatch):
     from pythinker_code import models_dev
 
