@@ -313,7 +313,25 @@ main loop, per-item TDD (RED→GREEN→REFACTOR) + full gate + commit; adversari
 workflow on each substantive diff before commit. JIT orientation per cluster (not batched).
 
 **Tracked follow-ups:** (a) dead `lexical_recall` config flag — drop-vs-wire product call;
-(b) uxsteer-1 print/ACP ProgressNote render — close while in those files for uxsteer-2/3.
+(b) uxsteer-1 print/ACP ProgressNote render — close while in those files for uxsteer-2/3;
+(c) mcpext-2 (a) live tools/list_changed + (b) granular /mcp reconnect|disconnect.
+
+### Recall-subsystem orientation (for memory-1 + memory-3, done; not yet implemented)
+`memory/recall.py`: `RecallInjectionProvider` is one-shot (`self._injected`), re-arms on
+`on_context_compacted()` + `rearm(key)`; `get_injections(history, soul)` builds a block from
+`gather_candidates()` (MEMORY/USER/JOURNAL/scratch) ranked by `LexicalRetriever(candidates).retrieve(
+RecallQuery(text, labels), budget)`. `soul` param is currently unused (`_ = soul`).
+- **memory-1 (recall TOOL)** — new `tools/recall/`: model-invokable cross-session search+read. Search:
+  list prior sessions via `Session.list_all()` (session.py:278), scope by `project_memory.project_key`,
+  rank by title/custom_title keyword + recency (stdlib, like BASE_REC). Read: render a chosen session's
+  context.jsonl turns/tool-briefs, **sanitize via `memory/sanitize.sanitize_candidate_block`** (untrusted
+  transcript). Register in agent.yaml + soul/agent.py; root-only/read-only. Tool DI: take
+  `runtime: Runtime` (or session store) — NO `from __future__ import annotations` (see mcpext-1 note).
+- **memory-3 (re-arm on working-set shift)** — in RecallInjectionProvider: (1) extract a working set
+  (touched file dirs) from recent tool-call args in `history`; (2) fold it into `RecallQuery.text/labels`
+  [SAFE, high-value]; (3) re-arm (`_injected=False`) only on a material Jaccard drop vs the set at last
+  injection AND a step throttle, with content-dedup so an identical block isn't re-emitted [cache-thrash
+  risk — keep conservative]. `RankedBlock` fields + `RecallQuery(text, labels)` in `memory/retriever.py`.
 
 ---
 
