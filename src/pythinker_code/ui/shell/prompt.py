@@ -1834,9 +1834,18 @@ _TIP_SEPARATOR = " | "
 # Cap prompt redraws at ~30 fps. Smooth streaming calls ``invalidate()`` on a
 # fast cadence; without this, prompt_toolkit redraws on *every* invalidate,
 # which (per its own docs) "could cause a lot of terminal output, which some
-# terminals are not able to process" — the classic streaming flicker/lag. With
-# it, rapid invalidations coalesce into at most one redraw per interval.
-_MIN_REDRAW_INTERVAL_S = 1 / 30
+# terminals are not able to process" — the classic streaming flicker/lag.
+#
+# We use ``max_render_postpone_time`` rather than ``min_redraw_interval``: the
+# latter throttles via an ``async def redraw_in_future`` coroutine that
+# ``invalidate()`` schedules onto the loop, and during a prompt-app/loop handoff
+# (e.g. ``/login`` swapping prompt sessions) that coroutine can be dropped
+# un-awaited, emitting a noisy ``RuntimeWarning``. ``max_render_postpone_time``
+# coalesces rapid invalidations through a coroutine-free path (it batches
+# redraws up to this deadline, rendering immediately when the loop is idle), so
+# it achieves the same throttling without the leak. See
+# tests/ui_and_conv/test_redraw_throttle.py.
+_MAX_RENDER_POSTPONE_S = 1 / 30
 
 
 class CustomPromptSession:
@@ -2272,7 +2281,9 @@ class CustomPromptSession:
         # slower terminals (best practice for "invalidate is called a lot").
         # prompt_toolkit's renderer is already differential (only emits changed
         # cells), so this caps frame rate without forcing full repaints.
-        self._session.app.min_redraw_interval = _MIN_REDRAW_INTERVAL_S
+        # NB: max_render_postpone_time (not min_redraw_interval) — see the
+        # constant's definition for why the coroutine-free path matters here.
+        self._session.app.max_render_postpone_time = _MAX_RENDER_POSTPONE_S
         self._session.default_buffer.read_only = Condition(
             lambda: (
                 (delegate := self._active_prompt_delegate()) is not None

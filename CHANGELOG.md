@@ -15,6 +15,8 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Quieter `/login`.** Logging in no longer prints a `RuntimeWarning` about an un-awaited `redraw_in_future` coroutine. The prompt redraw throttle now uses a coroutine-free path (`max_render_postpone_time`), eliminating the warning emitted during the login prompt handoff.
+
 ## 0.37.0 (2026-06-07)
 
 - **Agent runtime tool visibility hardening.** `PythinkerToolset` now filters the tools advertised to the model by active execution policy, permission profile, root/subagent role, and plan-mode state while preserving execution-time guards as defense in depth.

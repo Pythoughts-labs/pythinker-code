@@ -97,6 +97,7 @@ class TestGetEditorCommand:
 
     def test_empty_configured_is_ignored(self, monkeypatch: pytest.MonkeyPatch):
         """Empty configured string should be treated as not configured."""
+        monkeypatch.delenv("VISUAL", raising=False)
         monkeypatch.setenv("EDITOR", "nano")
         assert get_editor_command("") == ["nano"]
 

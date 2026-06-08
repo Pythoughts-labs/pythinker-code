@@ -50,3 +50,67 @@ def test_zero_usage_returns_zero():
     usage = _usage()
     cost = get_cost_usd("claude-opus-4-1", usage)
     assert cost == 0.0
+
+
+# ---------------------------------------------------------------------------
+# catalog-path tests
+# ---------------------------------------------------------------------------
+
+
+def test_get_cost_usd_uses_catalog_when_available(monkeypatch):
+    from pythinker_code import models_dev
+    from pythinker_code.models_dev import ModelPrice
+
+    fake_catalog = {
+        "claude-sonnet-4-6": ModelPrice(input=1.0, output=2.0, cache_read=0.1, cache_write=0.2)
+    }
+    monkeypatch.setattr(models_dev, "load_catalog", lambda: fake_catalog)
+    usage = _usage(input_other=1_000_000, output=1_000_000)
+    cost = get_cost_usd("claude-sonnet-4-6", usage)
+    assert abs(cost - 3.0) < 0.001  # 1.0 + 2.0 per 1M
+
+
+def test_get_cost_usd_catalog_prefix_match(monkeypatch):
+    from pythinker_code import models_dev
+    from pythinker_code.models_dev import ModelPrice
+
+    fake_catalog = {
+        "claude-sonnet-4-6": ModelPrice(input=9.0, output=9.0, cache_read=0.0, cache_write=0.0)
+    }
+    monkeypatch.setattr(models_dev, "load_catalog", lambda: fake_catalog)
+    usage = _usage(input_other=1_000_000)
+    # versioned id not in catalog, but prefix matches
+    cost = get_cost_usd("claude-sonnet-4-6-20251001", usage)
+    assert abs(cost - 9.0) < 0.001
+
+
+def test_get_cost_usd_falls_back_to_hardcoded_when_catalog_empty(monkeypatch):
+    from pythinker_code import models_dev
+
+    monkeypatch.setattr(models_dev, "load_catalog", lambda: {})
+    usage = _usage(input_other=1_000_000, output=1_000_000)
+    # claude-sonnet-4-5 is in _PRICE_TABLE: input=3, output=15
+    cost = get_cost_usd("claude-sonnet-4-5", usage)
+    assert abs(cost - 18.0) < 0.001
+
+
+def test_get_cost_usd_catalog_beats_hardcoded(monkeypatch):
+    from pythinker_code import models_dev
+    from pythinker_code.models_dev import ModelPrice
+
+    # Override a model that IS in _PRICE_TABLE with a different catalog price
+    fake_catalog = {
+        "claude-sonnet-4-5": ModelPrice(input=99.0, output=99.0, cache_read=0.0, cache_write=0.0)
+    }
+    monkeypatch.setattr(models_dev, "load_catalog", lambda: fake_catalog)
+    usage = _usage(input_other=1_000_000)
+    cost = get_cost_usd("claude-sonnet-4-5", usage)
+    assert abs(cost - 99.0) < 0.001  # catalog wins
+
+
+def test_get_cost_usd_unknown_model_returns_zero(monkeypatch):
+    from pythinker_code import models_dev
+
+    monkeypatch.setattr(models_dev, "load_catalog", lambda: {})
+    usage = _usage(input_other=1_000_000)
+    assert get_cost_usd("completely-unknown-xyz-model", usage) == 0.0

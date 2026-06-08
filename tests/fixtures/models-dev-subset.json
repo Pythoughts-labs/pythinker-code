@@ -1,0 +1,65 @@
+{
+  "anthropic": {
+    "id": "anthropic",
+    "name": "Anthropic",
+    "models": {
+      "claude-sonnet-4-6": {
+        "id": "claude-sonnet-4-6",
+        "name": "Claude Sonnet 4.6",
+        "cost": {
+          "input": 3.0,
+          "output": 15.0,
+          "cache_read": 0.3,
+          "cache_write": 3.75,
+          "context_over_200k": {
+            "input": 6.0,
+            "output": 22.5
+          }
+        },
+        "limit": { "context": 1000000, "output": 64000 }
+      }
+    }
+  },
+  "google-vertex-anthropic": {
+    "id": "google-vertex-anthropic",
+    "name": "Vertex (Anthropic)",
+    "models": {
+      "claude-sonnet-4-6": {
+        "id": "claude-sonnet-4-6",
+        "name": "Claude Sonnet 4.6",
+        "cost": { "input": 3.1, "output": 15.1 },
+        "limit": { "context": 1000000 }
+      },
+      "claude-sonnet-4-6@default": {
+        "id": "claude-sonnet-4-6@default",
+        "name": "Claude Sonnet 4.6 default",
+        "cost": { "input": 3.1, "output": 15.1 },
+        "limit": { "context": 1000000 }
+      }
+    }
+  },
+  "openai": {
+    "id": "openai",
+    "name": "OpenAI",
+    "models": {
+      "gpt-4o-mini": {
+        "id": "gpt-4o-mini",
+        "name": "GPT-4o mini",
+        "cost": { "input": 0.15, "output": 0.6, "cache_read": 0.08 },
+        "limit": { "context": 128000 }
+      }
+    }
+  },
+  "unknown-provider": {
+    "id": "unknown-provider",
+    "name": "Some Unknown Provider",
+    "models": {
+      "some-model": {
+        "id": "some-model",
+        "name": "Some Model",
+        "cost": { "input": 1.0, "output": 2.0 },
+        "limit": { "context": 8000 }
+      }
+    }
+  }
+}

@@ -11,6 +11,7 @@ from prompt_toolkit.layout import HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 
+from pythinker_code.models_dev import refresh_catalog as _refresh_catalog
 from pythinker_code.ui.shell.console import console
 from pythinker_code.ui.shell.slash import registry
 from pythinker_code.ui.shell.stats_collector import (
@@ -38,7 +39,7 @@ _TAB_LABELS = {
 }
 
 
-def _fmt_cost(v: float) -> str:
+def fmt_cost(v: float) -> str:
     if v == 0:
         return "-"
     if v < 0.01:
@@ -184,7 +185,7 @@ class StatsApp:
                 row = f"{arrow} {_pad_right(pname, name_w - 2)}"
                 row += _pad_left(_fmt_num(len(pstats.sessions)), col_w["sessions"])
                 row += _pad_left(_fmt_num(pstats.messages), col_w["msgs"])
-                row += _pad_left(_fmt_cost(pstats.cost), col_w["cost"])
+                row += _pad_left(fmt_cost(pstats.cost), col_w["cost"])
                 row += _pad_left(_fmt_tokens(pstats.tokens), col_w["tokens"])
                 in_tokens = pstats.input_other + pstats.input_cache_creation
                 row += _pad_left(_fmt_tokens(in_tokens), col_w["in"])
@@ -198,7 +199,7 @@ class StatsApp:
                         mrow = "    " + _pad_right(mname, name_w - 4)
                         mrow += _pad_left(_fmt_num(len(mstats.sessions)), col_w["sessions"])
                         mrow += _pad_left(_fmt_num(mstats.messages), col_w["msgs"])
-                        mrow += _pad_left(_fmt_cost(mstats.cost), col_w["cost"])
+                        mrow += _pad_left(fmt_cost(mstats.cost), col_w["cost"])
                         mrow += _pad_left(_fmt_tokens(mstats.tokens), col_w["tokens"])
                         m_in = mstats.input_other + mstats.input_cache_creation
                         mrow += _pad_left(_fmt_tokens(m_in), col_w["in"])
@@ -210,7 +211,7 @@ class StatsApp:
         tot = _pad_right("Total", name_w)
         tot += _pad_left(_fmt_num(cur.total_sessions), col_w["sessions"])
         tot += _pad_left(_fmt_num(cur.total_messages), col_w["msgs"])
-        tot += _pad_left(_fmt_cost(cur.total_cost), col_w["cost"])
+        tot += _pad_left(fmt_cost(cur.total_cost), col_w["cost"])
         parts.append(("bold", tot + "\n"))
         parts.append(("", "\n"))
 
@@ -319,6 +320,7 @@ class StatsApp:
 @registry.command(name="stats", aliases=["history"])
 async def stats(app: Shell, args: str) -> None:
     """Show usage statistics dashboard (tokens and cost by provider/model)."""
+    await _refresh_catalog()
     from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
 
     _t = _get_tui_tokens()
