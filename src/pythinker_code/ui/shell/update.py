@@ -665,7 +665,7 @@ def _installed_homebrew_version() -> str | None:
             encoding="utf-8",
             errors="replace",
             env=get_clean_env(),
-            timeout=60,
+            timeout=5,
         )
     except (OSError, subprocess.SubprocessError):
         logger.exception("Failed to read installed Homebrew version:")
