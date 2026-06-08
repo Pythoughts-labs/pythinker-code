@@ -602,13 +602,14 @@ class TUIConfig(BaseModel):
         description="Show a compact recap line after completed interactive shell turns.",
     )
     code_theme: str = Field(
-        default="pythinker-ansi",
+        default="catppuccin-adaptive",
         description=(
             "Syntax-highlighting theme for assistant code blocks. Default "
-            "'pythinker-ansi' keeps the terminal-adaptive, transparent look. "
-            "Set to any Pygments style name (e.g. 'monokai', 'material', "
-            "'dracula', 'one-dark') to render code fences with that style on a "
-            "solid dark background block."
+            "'catppuccin-adaptive' uses Catppuccin Mocha (dark UI) / Latte "
+            "(light UI) on the calm transparent block. Use "
+            "'catppuccin-mocha'/'catppuccin-latte' to pin one, 'pythinker-ansi' "
+            "for the terminal-native ANSI look, or any Pygments style name (e.g. "
+            "'monokai', 'dracula') to render on that style's solid background."
         ),
     )
     smooth_streaming: bool = Field(

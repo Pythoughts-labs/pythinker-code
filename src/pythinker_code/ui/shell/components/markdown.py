@@ -227,11 +227,18 @@ class _BorderedCodeBlock(CodeBlock):
         # its padding share one uniform dark block (Aider-style); otherwise keep
         # the calm ``code_block_bg`` tint.
         if isinstance(self.theme, str):
+            # Stock opt-in style (e.g. monokai): paint the panel and code with the
+            # style's own background so they form one uniform solid block.
             panel_style = Syntax.get_theme(self.theme).get_background_style()
+            syntax_bg: str | None = None
         else:
+            # Default path (Catppuccin adaptive / ANSI sentinel): keep the calm
+            # code_block_bg tint on the panel and render the syntax transparently
+            # so only its foreground colors land (the "skip background" approach).
             panel_style = (
                 RichStyle(bgcolor=colors.code_block_bg) if colors.code_block_bg else RichStyle()
             )
+            syntax_bg = "default"
 
         syntax = Syntax(
             code_text,
@@ -239,7 +246,7 @@ class _BorderedCodeBlock(CodeBlock):
             theme=self.theme,
             word_wrap=True,
             padding=0,
-            background_color=None,
+            background_color=syntax_bg,
         )
         highlighted = syntax.highlight(code_text)
         highlighted.rstrip()
@@ -283,10 +290,10 @@ def _markdown_style_overrides(theme: ThemeName | None = None) -> dict[str, RichS
         "markdown.hr": RichStyle(color=colors.code_block_border),
         "markdown.code_block": RichStyle(color=colors.inline_code),
         "markdown.code_block.border": RichStyle(color=colors.code_block_border, bold=True),
-        # Bullets/numbers are structural, not "important words" — keep them muted
-        # so the accent is reserved for headings and bold text.
-        "markdown.item.bullet": RichStyle(color=colors.quote, bold=True),
-        "markdown.item.number": RichStyle(color=colors.quote, bold=True),
+        # Ordered markers take the bright-blue accent; unordered bullets stay
+        # muted (structural, not "important words").
+        "markdown.item.bullet": RichStyle(color=colors.unordered_marker, bold=True),
+        "markdown.item.number": RichStyle(color=colors.ordered_marker, bold=True),
     }
 
 

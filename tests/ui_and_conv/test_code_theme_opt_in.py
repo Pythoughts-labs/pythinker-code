@@ -15,7 +15,11 @@ from rich.console import Console
 
 from pythinker_code.config import TUIConfig
 from pythinker_code.ui.shell.components.markdown import PythinkerMarkdown
+from pythinker_code.ui.theme import get_active_theme, set_active_theme
 from pythinker_code.utils.rich.syntax import (
+    CATPPUCCIN_ADAPTIVE_THEME_NAME,
+    CATPPUCCIN_LATTE_THEME,
+    CATPPUCCIN_MOCHA_THEME,
     PYTHINKER_ANSI_THEME,
     PYTHINKER_ANSI_THEME_NAME,
     PythinkerSyntax,
@@ -85,11 +89,44 @@ def test_resolve_code_theme_maps_only_the_sentinel() -> None:
     assert resolve_code_theme("monokai") == "monokai"
 
 
-def test_tui_config_accepts_sentinel_and_stock_styles() -> None:
-    assert TUIConfig().code_theme == PYTHINKER_ANSI_THEME_NAME
+def test_tui_config_defaults_to_catppuccin_adaptive() -> None:
+    # New default: Catppuccin Mocha/Latte adaptive.
+    assert TUIConfig().code_theme == CATPPUCCIN_ADAPTIVE_THEME_NAME
     assert TUIConfig(code_theme="monokai").code_theme == "monokai"
+    # The ANSI sentinel and stock styles remain valid opt-ins.
+    assert TUIConfig(code_theme=PYTHINKER_ANSI_THEME_NAME).code_theme == PYTHINKER_ANSI_THEME_NAME
     # Case-insensitive convenience: a known style name is normalized to lower.
     assert TUIConfig(code_theme="Monokai").code_theme == "monokai"
+
+
+def test_catppuccin_adaptive_default_follows_active_ui_theme() -> None:
+    """The adaptive default resolves to Mocha in dark mode and Latte in light."""
+    saved = get_active_theme()
+    try:
+        set_active_theme("dark")
+        assert resolve_code_theme(CATPPUCCIN_ADAPTIVE_THEME_NAME) is CATPPUCCIN_MOCHA_THEME
+        set_active_theme("light")
+        assert resolve_code_theme(CATPPUCCIN_ADAPTIVE_THEME_NAME) is CATPPUCCIN_LATTE_THEME
+    finally:
+        set_active_theme(saved)
+
+
+def test_catppuccin_renders_foreground_but_no_solid_background() -> None:
+    """Catppuccin applies its palette foreground while the panel keeps the calm
+    code_block_bg (transparent syntax bg) — the 'skip background' approach."""
+    saved_theme = get_active_theme()
+    try:
+        set_active_theme("dark")
+        set_active_code_theme(CATPPUCCIN_ADAPTIVE_THEME_NAME)
+        output = _render_ansi(_FENCE)
+        # Mocha mauve (#cba6f7) foreground on the `import` keyword.
+        assert "38;2;203;166;247" in output
+        # Mocha base (#1e1e2e) must NOT be painted as a syntax background.
+        assert "48;2;30;30;46" not in output
+        # italic (SGR 3) is intentionally omitted; the Catppuccin styles set none.
+        assert "\x1b[3m" not in output
+    finally:
+        set_active_theme(saved_theme)
 
 
 def test_tui_config_rejects_unknown_code_theme() -> None:

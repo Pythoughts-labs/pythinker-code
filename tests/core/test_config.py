@@ -98,7 +98,7 @@ def test_default_config_dump():
                 "style": "card",
                 "prompt_history_enabled": True,
                 "turn_recaps": True,
-                "code_theme": "pythinker-ansi",
+                "code_theme": "catppuccin-adaptive",
                 "smooth_streaming": True,
             },
         }
