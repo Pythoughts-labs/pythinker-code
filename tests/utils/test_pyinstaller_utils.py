@@ -107,8 +107,16 @@ def test_pyinstaller_datas():
         ("src/pythinker_code/prompts/compact.md", "pythinker_code/prompts"),
         ("src/pythinker_code/prompts/init.md", "pythinker_code/prompts"),
         (
+            "src/pythinker_code/skills/agent-creator/SKILL.md",
+            "pythinker_code/skills/agent-creator",
+        ),
+        (
             "src/pythinker_code/skills/check-impl-against-spec/SKILL.md",
             "pythinker_code/skills/check-impl-against-spec",
+        ),
+        (
+            "src/pythinker_code/skills/customize-pythinker/SKILL.md",
+            "pythinker_code/skills/customize-pythinker",
         ),
         (
             "src/pythinker_code/skills/create-pr/SKILL.md",
