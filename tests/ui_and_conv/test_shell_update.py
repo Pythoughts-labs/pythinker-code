@@ -1262,3 +1262,116 @@ def test_update_prompt_text_renders_managed_channel_hint(monkeypatch):
     rendered = text.plain
     assert "docker" in rendered
     assert update.MANAGED_CHANNEL_MARKER not in rendered
+
+
+# ---------------------------------------------------------------------------
+# Homebrew upgrade: refresh tap before upgrade + verify version advanced
+#
+# Regression: `brew upgrade <formula>` reads the locally-cloned tap formula.
+# With a stale clone, the upgrade no-ops ("0.37.0 already installed") yet the
+# updater (which only checked the exit code) printed "Updated successfully!".
+# ---------------------------------------------------------------------------
+
+
+def _brew_upgrade_do_update_env(monkeypatch, tmp_path):
+    """Wire do_update onto the Homebrew upgrade path with no real network/brew."""
+
+    async def fake_get_latest(session):
+        return "999.0.0"
+
+    async def fake_unavailable(session, latest_version: str, upgrade_command: list[str]):
+        return None
+
+    monkeypatch.setattr(update, "LATEST_VERSION_FILE", tmp_path / "latest.txt")
+    monkeypatch.setattr(update, "_get_latest_version", fake_get_latest)
+    monkeypatch.setattr(update, "_update_candidate_unavailable_reason", fake_unavailable)
+    monkeypatch.setattr(
+        update, "_detect_upgrade_command", lambda: ["brew", "upgrade", "pythinker-code"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_do_update_brew_refreshes_tap_before_upgrade(monkeypatch, tmp_path):
+    """`brew update` must run before `brew upgrade` so a stale tap clone can't
+    pin the old formula version and silently no-op the upgrade."""
+    ran: list[list[str]] = []
+
+    def fake_run_upgrade_command(command, *, print_output: bool, output_callback):
+        ran.append(command)
+        return 0
+
+    _brew_upgrade_do_update_env(monkeypatch, tmp_path)
+    monkeypatch.setattr(update, "_run_upgrade_command", fake_run_upgrade_command)
+    # Version genuinely advanced after the upgrade.
+    monkeypatch.setattr(update, "_installed_homebrew_version", lambda: "999.0.0")
+
+    result = await update.do_update(print_output=False)
+
+    assert result is update.UpdateResult.UPDATED
+    assert ran == [["brew", "update", "--quiet"], ["brew", "upgrade", "pythinker-code"]]
+
+
+@pytest.mark.asyncio
+async def test_do_update_brew_reports_failure_when_version_unchanged(monkeypatch, tmp_path):
+    """A no-op `brew upgrade` exits 0; the updater must NOT claim success when
+    the installed version did not advance to the target."""
+    messages: list[str] = []
+
+    def fake_run_upgrade_command(command, *, print_output: bool, output_callback):
+        return 0
+
+    _brew_upgrade_do_update_env(monkeypatch, tmp_path)
+    monkeypatch.setattr(update, "_run_upgrade_command", fake_run_upgrade_command)
+    # brew exited 0 but the keg is still the old version (stale tap).
+    monkeypatch.setattr(update, "_installed_homebrew_version", lambda: "0.37.0")
+
+    result = await update.do_update(print_output=False, output_callback=messages.append)
+
+    assert result is update.UpdateResult.FAILED
+    assert not any("Updated successfully" in m for m in messages)
+    assert any("still 0.37.0" in m for m in messages)
+    assert any("brew update" in m for m in messages)
+
+
+@pytest.mark.asyncio
+async def test_do_update_brew_continues_when_refresh_fails(monkeypatch, tmp_path):
+    """A failing `brew update` (e.g. transient network) must not block the
+    upgrade attempt — the upgrade still runs and can still succeed."""
+    ran: list[list[str]] = []
+
+    def fake_run_upgrade_command(command, *, print_output: bool, output_callback):
+        ran.append(command)
+        return 1 if command == ["brew", "update", "--quiet"] else 0
+
+    _brew_upgrade_do_update_env(monkeypatch, tmp_path)
+    monkeypatch.setattr(update, "_run_upgrade_command", fake_run_upgrade_command)
+    monkeypatch.setattr(update, "_installed_homebrew_version", lambda: "999.0.0")
+
+    result = await update.do_update(print_output=False)
+
+    assert result is update.UpdateResult.UPDATED
+    assert ran == [["brew", "update", "--quiet"], ["brew", "upgrade", "pythinker-code"]]
+
+
+def test_installed_homebrew_version_returns_max_installed(monkeypatch):
+    """Parses `brew list --versions`, returning the highest installed version."""
+
+    class FakeCompleted:
+        returncode = 0
+        stdout = "pythinker-code 0.37.0 0.38.0\n"
+
+    monkeypatch.setattr(update.subprocess, "run", lambda *a, **k: FakeCompleted())
+
+    assert update._installed_homebrew_version() == "0.38.0"
+
+
+def test_installed_homebrew_version_returns_none_on_failure(monkeypatch):
+    """A non-zero `brew list` (formula not found) yields None, not a crash."""
+
+    class FakeCompleted:
+        returncode = 1
+        stdout = ""
+
+    monkeypatch.setattr(update.subprocess, "run", lambda *a, **k: FakeCompleted())
+
+    assert update._installed_homebrew_version() is None
