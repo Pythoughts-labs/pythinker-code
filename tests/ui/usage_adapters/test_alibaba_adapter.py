@@ -68,8 +68,16 @@ async def _fake_new_client_session(session: MagicMock, **_kwargs):
 
 
 def test_quota_url_strips_path() -> None:
+    # US completion host is remapped to the international quota host
     assert _quota_url("https://dashscope-us.aliyuncs.com/compatible-mode/v1") == (
-        "https://dashscope-us.aliyuncs.com/api/v1/quotas"
+        "https://dashscope-intl.aliyuncs.com/api/v1/quotas"
+    )
+
+
+def test_quota_url_china_unchanged() -> None:
+    # China host has no remap — quota API lives on the same host
+    assert _quota_url("https://dashscope.aliyuncs.com/compatible-mode/v1") == (
+        "https://dashscope.aliyuncs.com/api/v1/quotas"
     )
 
 
@@ -191,7 +199,7 @@ async def test_quota_api_404_falls_through() -> None:
 
     assert report.summary is None
     assert report.limits == []
-    assert any("send a message" in n.lower() for n in report.notes)
+    assert any("console.aliyun.com" in n or "quota" in n.lower() for n in report.notes)
 
 
 async def test_quota_api_401_shows_note() -> None:
@@ -265,4 +273,4 @@ async def test_network_error_falls_through() -> None:
         report = await AlibabaAdapter().fetch(_make_provider(), _StubOAuth())  # type: ignore[arg-type]
 
     assert report is not None
-    assert any("send a message" in n.lower() for n in report.notes)
+    assert any("console.aliyun.com" in n or "quota" in n.lower() for n in report.notes)

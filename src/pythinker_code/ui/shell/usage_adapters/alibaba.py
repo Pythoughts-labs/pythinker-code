@@ -20,11 +20,22 @@ if TYPE_CHECKING:
 _QUOTA_PATH = "/api/v1/quotas"
 _TIMEOUT = aiohttp.ClientTimeout(total=8, sock_connect=5)
 
+# DashScope quota API lives on a separate host from the compatible-mode endpoint.
+# The "dashscope-us" host is the completion endpoint; quota is on "dashscope-intl".
+_DASHSCOPE_HOST_REMAP: dict[str, str] = {
+    "dashscope-us.aliyuncs.com": "dashscope-intl.aliyuncs.com",
+}
+
 
 def _quota_url(base_url: str) -> str:
-    """Derive the quota API URL from the configured base URL by stripping the path."""
+    """Derive the quota API URL from the configured base URL.
+
+    The OpenAI-compatible completion host and the quota API host differ for the
+    international (US) region — remap known mismatches before constructing the URL.
+    """
     parsed = urlparse(base_url)
-    return f"{parsed.scheme}://{parsed.netloc}{_QUOTA_PATH}"
+    host = _DASHSCOPE_HOST_REMAP.get(parsed.netloc, parsed.netloc)
+    return f"{parsed.scheme}://{host}{_QUOTA_PATH}"
 
 
 def _parse_quota_response(data: object) -> list[UsageRow]:
@@ -125,8 +136,8 @@ class AlibabaAdapter:
         all_rows = quota_rows + rl_rows
         if not all_rows and not notes:
             notes.append(
-                "No usage data yet — send a message to capture rate-limit data, "
-                "or check your DashScope console for quota details."
+                "DashScope does not expose real-time quota in API responses. "
+                "View your usage at console.aliyun.com → Model Studio → Quota."
             )
 
         summary = all_rows[0] if all_rows else None
