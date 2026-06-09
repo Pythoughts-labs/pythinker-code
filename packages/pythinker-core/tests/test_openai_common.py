@@ -239,9 +239,7 @@ class TestConvertErrorStatusErrorBody:
                 "resets_in_seconds": 100,
             }
         }
-        resp = httpx.Response(
-            429, request=_DUMMY_REQUEST, headers={"x-request-id": "req-123"}
-        )
+        resp = httpx.Response(429, request=_DUMMY_REQUEST, headers={"x-request-id": "req-123"})
         err = openai.APIStatusError("Error code: 429", response=resp, body=body)
 
         result = convert_error(err)

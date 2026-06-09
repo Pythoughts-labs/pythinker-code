@@ -17,6 +17,9 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Refreshed TUI theme and Catppuccin syntax highlighting.** The interface adopts a brand periwinkle/indigo accent (`#B3B9F4` dark / `#0B114E` light) with a reharmonized selection tint, and code blocks now highlight with Catppuccin Mocha (dark) / Latte (light), adaptive to the active theme — implemented as foreground-only Pygments styles with no new dependency. Markdown inline code and links render terminal-native cyan, blockquotes green, and ordered-list markers bright blue (so they adapt per terminal), and user messages sit on a neutral grey block instead of the prior blue tint.
+- **Homebrew updater no longer no-ops or false-reports success.** `pythinker update` on a Homebrew install now runs `brew update` to refresh the tap before `brew upgrade`, so a stale local tap clone can't pin the old formula and silently no-op ("0.37.0 already installed"). After upgrading it re-checks the installed version via `brew list --versions` and reports a clear failure instead of "Updated successfully!" when the version did not actually advance.
+
 ## 0.38.0 (2026-06-08)
 
 - **Quieter `/login`.** Logging in no longer prints a `RuntimeWarning` about an un-awaited `redraw_in_future` coroutine. The prompt redraw throttle now uses a coroutine-free path (`max_render_postpone_time`), eliminating the warning emitted during the login prompt handoff.

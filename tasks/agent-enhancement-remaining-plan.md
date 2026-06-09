@@ -114,7 +114,7 @@ Decomposition plan — see §3.
 
 ### WS-RECALL — `memory/recall.py` + `tools/recall/` owner (serial; one feature)
 1. **memory-2** · S · flip durable-memory defaults — **posture/privacy decision** (also `config.py`)
-2. **memory-1 / ctxmgmt-3** · M · model-invokable cross-session `Recall` tool (merged; also `agent.yaml`, `permission.py`, `soul/agent.py`)
+2. **memory-1 / ctxmgmt-3** · M · model-invocable cross-session `Recall` tool (merged; also `agent.yaml`, `permission.py`, `soul/agent.py`)
 3. **memory-3** · M · re-arm recall on working-set/topic shift (also `memory/retriever.py`)
 
 ### WS-UX — uxsteer cluster owner (serial)
@@ -336,7 +336,7 @@ workflow on each substantive diff before commit. JIT orientation per cluster (no
 `on_context_compacted()` + `rearm(key)`; `get_injections(history, soul)` builds a block from
 `gather_candidates()` (MEMORY/USER/JOURNAL/scratch) ranked by `LexicalRetriever(candidates).retrieve(
 RecallQuery(text, labels), budget)`. `soul` param is currently unused (`_ = soul`).
-- **memory-1 (recall TOOL)** — new `tools/recall/`: model-invokable cross-session search+read. Search:
+- **memory-1 (recall TOOL)** — new `tools/recall/`: model-invocable cross-session search+read. Search:
   list prior sessions via `Session.list_all()` (session.py:278), scope by `project_memory.project_key`,
   rank by title/custom_title keyword + recency (stdlib, like BASE_REC). Read: render a chosen session's
   context.jsonl turns/tool-briefs, **sanitize via `memory/sanitize.sanitize_candidate_block`** (untrusted

@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import contextlib
+import json
 import re
 import shlex
 import textwrap
@@ -11,7 +12,10 @@ from collections import deque
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
+
+if TYPE_CHECKING:
+    from pythinker_code.ui.shell.usage_adapters.base import UsageRow
 
 from pythinker_core.chat_provider import (
     APIConnectionError,
@@ -361,6 +365,10 @@ def _extract_429_detail(exc: BaseException) -> dict[str, str]:
                 break
     if body is None:
         body = _parse_429_body_from_str(str(exc))
+    if body is None:
+        # Last-resort diagnostic: record the real exception so an unparseable
+        # rate-limit payload can be turned into a precise fix instead of a guess.
+        _capture_unparsed_429(exc)
 
     summary = ""
     raw_message = ""
@@ -410,31 +418,62 @@ def _extract_429_detail(exc: BaseException) -> dict[str, str]:
 def _parse_429_body_from_str(text: str) -> dict[str, object] | None:
     """Recover the provider JSON from a stringified APIStatusError.
 
-    The OpenAI/codex wrapper stringifies as ``Error code: 429 - {<python dict>}``;
-    when the parsed ``.body`` is unavailable we recover it from that repr so the
-    plan / reset-window / server-detail trail still renders. ``ast.literal_eval``
-    only evaluates Python literals (no code execution)."""
-    marker = " - "
-    if marker not in text:
+    Providers stringify a 429 in several ways:
+      - ``Error code: 429 - {<python dict repr>}``  (OpenAI SDK, uses None/True)
+      - ``Error code: 429 - {<json>}``              (uses null/true/false)
+      - a bare ``{...}`` body
+    We recover the first ``{...}`` object and parse it with ``ast.literal_eval``
+    (Python repr) then ``json.loads`` (JSON). Both only parse data, no code runs.
+    """
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end <= start:
         return None
-    candidate = text.split(marker, 1)[1].strip()
-    if not candidate.startswith("{"):
-        return None
+    candidate = text[start : end + 1]
+    for parser in (ast.literal_eval, json.loads):
+        try:
+            parsed = parser(candidate)
+        except (ValueError, SyntaxError, MemoryError, RecursionError, TypeError):
+            continue
+        if isinstance(parsed, dict):
+            return cast(dict[str, object], parsed)
+    return None
+
+
+def _capture_unparsed_429(exc: BaseException) -> None:
+    """Append the raw 429 exception shape to a debug file so an unrecognised
+    rate-limit payload can be diagnosed precisely. Best-effort; never raises."""
     try:
-        parsed = ast.literal_eval(candidate)
-    except (ValueError, SyntaxError, MemoryError, RecursionError, TypeError):
-        return None
-    return cast(dict[str, object], parsed) if isinstance(parsed, dict) else None
+        from pythinker_code.share import get_share_dir
+
+        path = get_share_dir() / "rate-limit-debug.log"
+        body = getattr(exc, "body", None)
+        line = (
+            f"type={type(exc).__name__} "
+            f"str={str(exc)[:1000]!r} "
+            f"body_type={type(body).__name__} body={repr(body)[:1000]}\n"
+        )
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(line)
+    except Exception:
+        pass
 
 
-def _render_429_message(detail: dict[str, str]) -> str:
+def _render_429_message(detail: dict[str, str], usage_lines: list[str] | None = None) -> str:
     """Build the console line for a 429 rate/usage-limit error, escaping provider text.
 
     The summary/hint can carry raw provider text, so escape it before it reaches Rich —
     otherwise a message containing ``[...]`` is silently swallowed as invalid markup
-    (consistent with how the sibling error branches escape provider strings)."""
+    (consistent with how the sibling error branches escape provider strings).
+
+    ``usage_lines`` are concrete reset windows fetched live from the provider's usage
+    endpoint (the streaming 429 itself carries none), shown first as the most actionable
+    information.
+    """
     _t = _get_tui_tokens()
     lines = [f"[{_t.error}]Rate / usage limit hit: {escape(detail['summary'])}[/]"]
+    for usage_line in usage_lines or []:
+        lines.append(escape(usage_line))
     reset_window = detail.get("reset_window", "")
     if reset_window:
         lines.append(f"{escape(reset_window)}.")
@@ -443,6 +482,41 @@ def _render_429_message(detail: dict[str, str]) -> str:
         lines.append(f"[dim]Server: {escape(server_detail)}[/dim]")
     lines.append(f"[dim]{escape(detail['hint'])}[/dim]")
     return "\n".join(lines)
+
+
+def _format_usage_window_row(row: UsageRow) -> str:
+    """Render one usage window (e.g. the 5-hour or weekly Codex limit) as a single
+    line: ``5h window: 0% left · resets in 2h 14m``."""
+    left = f"{row.used}% left" if row.unit == "%" else f"{row.used}/{row.limit}"
+    reset = f" · {row.reset_hint}" if row.reset_hint else ""
+    return f"{row.label}: {left}{reset}"
+
+
+async def _codex_usage_windows(soul: Soul) -> list[str]:
+    """Best-effort: fetch the live Codex 5-hour / weekly reset windows for the active
+    ChatGPT-OAuth provider so a 429 can show concrete reset times — the streaming 429
+    carries none. Returns ``[]`` for non-Codex providers or on any error/timeout."""
+    if not isinstance(soul, PythinkerSoul):
+        return []
+    runtime = soul.runtime
+    llm = runtime.llm
+    if llm is None or llm.model_config is None:
+        return []
+    provider = runtime.config.providers.get(llm.model_config.provider)
+    if provider is None or provider.type != "openai_codex" or provider.oauth is None:
+        return []
+    try:
+        from pythinker_code.ui.shell.usage_adapters.openai_chatgpt import OpenAIChatGPTAdapter
+
+        report = await asyncio.wait_for(
+            OpenAIChatGPTAdapter().fetch(provider, runtime.oauth),
+            timeout=6.0,
+        )
+    except Exception:
+        logger.debug("Codex usage lookup for 429 message failed", exc_info=True)
+        return []
+    rows = ([report.summary] if report.summary else []) + report.limits
+    return [_format_usage_window_row(row) for row in rows]
 
 
 def _is_insufficient_credits_error(exc: BaseException) -> bool:
@@ -1412,7 +1486,8 @@ class Shell:
                     f"[dim]Server: {e}[/dim]"
                 )
             elif isinstance(e, APIStatusError) and e.status_code == 429:
-                console.print(_render_429_message(_extract_429_detail(e)))
+                usage_lines = await _codex_usage_windows(self.soul)
+                console.print(_render_429_message(_extract_429_detail(e), usage_lines=usage_lines))
             elif isinstance(e, APIConnectionError):
                 console.print(
                     f"[{_t.error}]Network connection failed: {e}[/]\n"

@@ -38,7 +38,7 @@ def test_working_set_extracts_touched_dirs() -> None:
     assert all("command" not in d for d in ws)
 
 
-def test_working_set_ignores_unparseable_args() -> None:
+def test_working_set_ignores_unparsable_args() -> None:
     bad = Message(
         role="assistant",
         content=[],

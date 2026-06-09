@@ -46,7 +46,7 @@ Adversarial verification *debunked* many plausible-sounding gaps; capturing them
 1. **Engage-what-exists (cheapest, highest ROI):** `ProgressNote` has no producer (`uxsteer-1`), injection tags undeclared (`injdef-1`), cache tokens untraced (`obs-eval-2`); plus a posture decision on the deliberately-conservative memory defaults (`memory-2`).
 2. **Security / review-first integrity:** inert injection defense (`injdef-1/2/3`), coarse session approval (`permgate-1`), self-config rewrite surface (`permgate-2`/`injdef-4`), plan-mode not inherited by subagents (`subagent-1`), duplicate sibling approvals (`permgate-3`). Frame against the **lethal trifecta** (untrusted input + private data + exfiltration) and the **Agents Rule of Two**.
 3. **Context & cost resilience:** tool-output truncation is lossy-by-deletion (`ctxmgmt-1`/`tooldesc-2`), no graduated pruning (`ctxmgmt-2`), no subagent cost roll-up (`subagent-2`), hard max-steps stop (`sysprompt-2`), no stuck-loop escalation (`obs-eval-5`).
-4. **Memory & recall agency:** no model-invokable cross-session recall (`memory-1`/`ctxmgmt-3`), recall fires once and never re-arms on topic shift (`memory-3`).
+4. **Memory & recall agency:** no model-invocable cross-session recall (`memory-1`/`ctxmgmt-3`), recall fires once and never re-arms on topic shift (`memory-3`).
 5. **Eval & observability:** flat trace tree (`obs-eval-1`), missing cache/finish telemetry (`obs-eval-2`), no record-replay (`obs-eval-3`), pass/fail-only eval with no trajectory/efficiency scoring (`obs-eval-4`).
 6. **Extensibility:** MCP is tools-only (`mcpext-1`), no live reconnect/tools-changed (`mcpext-2`), docker hygiene (`mcpext-3`), skill bundled-resources invisible (`skills-1`), no self-config skills (`skills-2`, `mode-1`).
 7. **Prompt/tool-description polish & steering:** stub tool descriptions (`tooldesc-1`), effort-scaling rubric (`mode-3`/`subagent-3`), plan verification section (`planning-1`), cancelled todo state (`planning-2`), model-defense injection (`sysprompt-1`), non-blocking suggestions (`uxsteer-2`), ACP question consistency (`uxsteer-3`).
@@ -95,7 +95,7 @@ Phases are ordered by impact×effort and by dependency. Within a phase, items ar
 
 | Item | Gap(s) | Impact | Effort | Risk |
 |---|---|---|---|---|
-| Model-invokable cross-session `Recall` tool | memory-1 / ctxmgmt-3 | High | M | med |
+| Model-invocable cross-session `Recall` tool | memory-1 / ctxmgmt-3 | High | M | med |
 | Re-arm recall on working-set / topic shift | memory-3 | Med | M | low |
 
 ### Phase 4 — Eval & observability infrastructure (2–3 weeks)
@@ -270,7 +270,7 @@ Phases are ordered by impact×effort and by dependency. Within a phase, items ar
 
 ### Phase 3 — Memory & recall agency
 
-#### 3.1 — Model-invokable cross-session `Recall` tool (`memory-1` / `ctxmgmt-3`) · M · med
+#### 3.1 — Model-invocable cross-session `Recall` tool (`memory-1` / `ctxmgmt-3`) · M · med
 - **Current.** Recall is push-only and fires once; the agent cannot actively ask "what did I decide in the session where I set up CI?" and read that transcript. Distilled JOURNAL recaps lose load-bearing detail (exact commands, paths, rationale). The data *is* durably persisted (`context.jsonl` under the sessions dir) and technically reachable via the unsandboxed Shell — so this replaces a brittle `cat`/`grep` escape hatch with a designed, sanitized, approval-aware affordance.
 - **Target.** The agent has agency to search and read prior sessions on demand.
 - **Change.** Add a root-agent, read-only `Recall` tool (`tools/recall/`) with two modes: (1) **search** prior sessions by topic/file/date over `wire.jsonl`/`context.jsonl` using the existing `LexicalRetriever` BM25+recency (`memory/retriever.py`), scoped to the current `project_memory.project_key`, returning id/title/ts/snippet; (2) **read** a chosen session's transcript span via `Session.list_all` (`session.py:278`) + `wire_file.iter_records`. Cap returned bytes/turns; **sanitize via `memory/sanitize.py`** (a prior transcript is untrusted input → also subject to §1's wrapping). Gate cross-workspace reads behind Approval. Register read-only in `agents/default/agent.yaml`.

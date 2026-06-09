@@ -649,9 +649,7 @@ async def test_auto_safe_mode_denies_destructive_sharing_session_key_without_wai
     approval = Approval(state=state)
     with tool_call_context("Shell", arguments={"command": "git push --force origin main"}):
         result = await asyncio.wait_for(
-            approval.request(
-                "Shell", "run command", "Run command `git push --force origin main`"
-            ),
+            approval.request("Shell", "run command", "Run command `git push --force origin main`"),
             timeout=0.1,
         )
 

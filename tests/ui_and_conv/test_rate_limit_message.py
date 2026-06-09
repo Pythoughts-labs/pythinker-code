@@ -2,7 +2,31 @@ from __future__ import annotations
 
 from pythinker_core.chat_provider import APIStatusError
 
-from pythinker_code.ui.shell import _extract_429_detail, _render_429_message
+from pythinker_code.ui.shell import (
+    _extract_429_detail,
+    _format_usage_window_row,
+    _render_429_message,
+)
+from pythinker_code.ui.shell.usage_adapters.base import UsageRow
+
+
+def test_format_usage_window_row_percent_with_reset():
+    row = UsageRow(label="5h window", used=0, limit=100, unit="%", reset_hint="resets in 2h 14m")
+    assert _format_usage_window_row(row) == "5h window: 0% left · resets in 2h 14m"
+
+
+def test_render_429_message_shows_live_usage_windows_first():
+    """Live reset windows fetched from the usage endpoint are the most actionable
+    info, so they render right under the summary."""
+    detail = {"summary": "Usage limit reached.", "reset_window": "", "server_detail": "", "hint": "h"}
+    rendered = _render_429_message(
+        detail,
+        usage_lines=["5h window: 0% left · resets in 2h 14m", "Weekly window: 38% left"],
+    )
+    lines = rendered.splitlines()
+    assert "Rate / usage limit hit:" in lines[0]
+    assert "5h window: 0% left · resets in 2h 14m" in lines[1]
+    assert "Weekly window: 38% left" in lines[2]
 
 
 def test_429_console_message_escapes_provider_markup():
@@ -57,6 +81,23 @@ def test_usage_limit_429_recovers_detail_from_stringified_exception():
     assert "Resets in 2h 2m" in detail["reset_window"]
     assert "usage_limit_reached" in detail["server_detail"]
     assert "{" not in detail["summary"]
+
+
+def test_usage_limit_429_recovers_detail_from_json_in_exception_string():
+    """Some providers stringify the 429 body as JSON (null/true/false, not Python
+    None/True). The recovery path must parse that too, not just Python reprs."""
+    raw = (
+        'Error code: 429 - {"error": {"type": "usage_limit_reached", '
+        '"message": "The usage limit has been reached", "plan_type": "plus", '
+        '"eligible_promo": null, "resets_in_seconds": 7320}}'
+    )
+    exc = APIStatusError(429, raw, body=None)
+
+    detail = _extract_429_detail(exc)
+
+    assert detail["summary"] == "Usage limit reached on your Plus plan."
+    assert "Resets in 2h 2m" in detail["reset_window"]
+    assert "usage_limit_reached" in detail["server_detail"]
 
 
 def test_render_429_message_includes_full_trail():
