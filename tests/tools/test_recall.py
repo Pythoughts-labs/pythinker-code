@@ -169,3 +169,25 @@ async def test_recall_read_without_session_id_errors(runtime) -> None:
     result = await Recall(runtime)(Recall.params(mode="read"))
     assert result.is_error
     assert result.brief == "Missing session_id"
+
+
+async def test_recall_read_rejects_traversal_session_id(runtime) -> None:
+    # A crafted session_id must not be able to traverse out of the workspace.
+    result = await Recall(runtime)(Recall.params(mode="read", session_id="../other-workspace"))
+    assert result.is_error
+    assert result.brief == "Invalid session_id"
+
+
+async def test_recall_read_rejects_current_session(runtime) -> None:
+    result = await Recall(runtime)(Recall.params(mode="read", session_id=runtime.session.id))
+    assert result.is_error
+    assert result.brief == "Current session"
+
+
+def test_render_transcript_tolerates_invalid_utf8(tmp_path: Path) -> None:
+    log = tmp_path / "context.jsonl"
+    good = Message(role="user", content=[TextPart(text="hello")]).model_dump_json()
+    # A valid line, then a line with invalid UTF-8 bytes — must not crash.
+    log.write_bytes(good.encode("utf-8") + b"\n\xff\xfe not valid utf8\n")
+    rendered = _render_transcript(log, budget=10_000)
+    assert "[user] hello" in rendered

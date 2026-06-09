@@ -12,6 +12,7 @@ wrapped as untrusted data, since a prior transcript is untrusted historical inpu
 """
 
 import asyncio
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -27,6 +28,9 @@ from pythinker_code.tools.utils import ToolResultBuilder, load_desc
 NAME = "Recall"
 _MAX_SEARCH_RESULTS = 10
 _READ_BUDGET_CHARS = 16_000
+# Session ids are uuid-like. Validate before Session.find so a crafted session_id
+# (e.g. "../other-workspace") cannot traverse out of the workspace's sessions dir.
+_SAFE_SESSION_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 class Params(BaseModel):
@@ -69,37 +73,39 @@ def _render_transcript(context_file: Path, budget: int) -> str:
     a block that trips the secret/injection scanner becomes ``[redacted]`` rather
     than leaking or silently vanishing. Stops once the char budget is reached.
     """
-    try:
-        raw = context_file.read_text(encoding="utf-8")
-    except OSError:
-        return ""
     out: list[str] = []
     used = 0
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            msg = Message.model_validate_json(line)
-        except Exception:
-            continue
-        role = msg.role
-        if role.startswith("_"):
-            continue
-        text = msg.extract_text(" ").strip()
-        tool_names = [call.function.name for call in (msg.tool_calls or [])]
-        segment = text
-        if tool_names:
-            segment = f"{segment} [tool calls: {', '.join(tool_names)}]".strip()
-        if not segment:
-            continue
-        clean = sanitize_candidate_block(segment)
-        entry = f"[{role}] {clean if clean is not None else '[redacted]'}"
-        if used + len(entry) + 1 > budget:
-            out.append("… (transcript truncated to fit the recall budget)")
-            break
-        out.append(entry)
-        used += len(entry) + 1
+    try:
+        # Stream line-by-line (not read_text) so a huge transcript cannot blow up
+        # memory; errors="replace" tolerates a corrupt/binary line without crashing.
+        with context_file.open(encoding="utf-8", errors="replace") as handle:
+            for raw_line in handle:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = Message.model_validate_json(line)
+                except Exception:
+                    continue
+                role = msg.role
+                if role.startswith("_"):
+                    continue
+                text = msg.extract_text(" ").strip()
+                tool_names = [call.function.name for call in (msg.tool_calls or [])]
+                segment = text
+                if tool_names:
+                    segment = f"{segment} [tool calls: {', '.join(tool_names)}]".strip()
+                if not segment:
+                    continue
+                clean = sanitize_candidate_block(segment)
+                entry = f"[{role}] {clean if clean is not None else '[redacted]'}"
+                if used + len(entry) + 1 > budget:
+                    out.append("… (transcript truncated to fit the recall budget)")
+                    break
+                out.append(entry)
+                used += len(entry) + 1
+    except OSError:
+        return ""
     return "\n".join(out)
 
 
@@ -114,12 +120,20 @@ class Recall(CallableTool2[Params]):
     async def __call__(self, params: Params) -> ToolReturnValue:
         if params.mode == "search":
             return await self._search((params.query or "").strip())
-        if not params.session_id:
+        session_id = (params.session_id or "").strip()
+        if not session_id:
             return ToolError(
                 message='mode="read" requires session_id (from a Recall search).',
                 brief="Missing session_id",
             )
-        return await self._read(params.session_id.strip())
+        if not _SAFE_SESSION_ID.match(session_id):
+            # Reject anything that isn't a plain session id so a crafted value
+            # cannot traverse outside the workspace's sessions directory.
+            return ToolError(
+                message=f"Invalid session_id: {session_id!r}.",
+                brief="Invalid session_id",
+            )
+        return await self._read(session_id)
 
     async def _search(self, query: str) -> ToolReturnValue:
         work_dir = self._runtime.session.work_dir
