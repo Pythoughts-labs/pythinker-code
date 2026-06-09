@@ -55,6 +55,10 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
             if not isinstance(curr_args, dict) or not curr_args.get("skill_name"):
                 return None
             key_argument = str(curr_args["skill_name"])
+        case "Recall":
+            if not isinstance(curr_args, dict):
+                return None
+            key_argument = str(curr_args.get("session_id") or curr_args.get("query") or "search")
         case "TaskList":
             if not isinstance(curr_args, dict):
                 return None
