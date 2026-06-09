@@ -217,6 +217,8 @@ class FetchURL(CallableTool2[Params]):
                     content_type = response.headers.get(aiohttp.hdrs.CONTENT_TYPE, "").lower()
                     if content_type.startswith(("text/plain", "text/markdown")):
                         builder.write(UntrustedData(resp_text).render_for_prompt())
+                        # Spill the full page off the event loop before building the result.
+                        await builder.spill_to_disk()
                         return builder.ok("The returned content is the full content of the page.")
         except TimeoutError:
             logger.warning("FetchURL timed out: url={url}", url=params.url)

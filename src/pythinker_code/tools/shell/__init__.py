@@ -168,6 +168,10 @@ class Shell(CallableTool2[Params]):
                 params.command, stdout_cb, stderr_cb, params.timeout
             )
 
+            # Output is fully captured now; spill it to disk off the event loop before
+            # building the result so a multi-MB write does not block the loop in ok()/error().
+            await builder.spill_to_disk()
+
             if exitcode == 0:
                 return builder.ok("Command executed successfully.", status=ToolResultStatus.success)
 

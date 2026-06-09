@@ -544,3 +544,71 @@ Reviewed the allowlist against context7 (aiohttp v3.13.2, pydantic v2) + 2026 ag
 - Known/accepted limitation (pre-existing, not addressed): DNS-rebinding TOCTOU — `_validate_fetch_url`
   resolves+checks IPs but aiohttp re-resolves at connect time. Out of scope; would need a pinning connector.
 - Snapshots updated: `test_default_config_dump`, `test_fetch_url_description`, `test_search_web_description`.
+
+---
+
+## Review: code-review `/diff` findings — robust fixes (this session)
+
+`/code-review` (xhigh) on `feat/agent-phase0-enhancements` surfaced 12 findings;
+research-backed (OWASP LLM Top 10, Python asyncio docs, ACP spec) TDD fixes applied.
+Each fix: failing test first → minimal change → green. Full gate: 4682 unit + 65 e2e
+pass; ruff + project-wide pyright clean.
+
+### Security (HIGH)
+- **#1 `soul/approval.py` approve-for-session drain → destructive sibling.** Stored an
+  authoritative `session_approvable` flag on `ApprovalRequestRecord` at create time (from
+  the real tool_call, not reconstructed from display blocks); both drains skip
+  non-session-approvable pending siblings. `rm <file>` approval can no longer clear a
+  queued `rm -rf`. (models.py + runtime.py + approval.py)
+- **#2 `utils/path.py` `.md` agent specs escaped EDIT_CONFIG.** Added `.md` to the
+  agent-spec-dir config-surface check; markdown subagent specs now re-confirm like YAMLs.
+
+### Correctness (MODERATE)
+- **#5 `soul/approval.py` unattended fail-closed hole.** `_unattended_denial_feedback` now
+  re-derives the two downstream auto-resolve conditions and denies anything that would
+  otherwise block forever — closes the safe-mode destructive-shared-key hang AND the
+  config-edit-in-non-safe-auto hang (same class, fixed beyond the original finding).
+- **#4 `acp/convert.py` `<untrusted_data>` leaked to ACP/IDE.** Strip the envelope at the
+  ACP output boundary (ACP defines no untrusted-output marking — we sanitize ourselves).
+- **#3 `background/agent_runner.py` child usage roll-up.** Added `output.usage(...)` so a
+  background child's `child_tokens:`/`child_cost_usd:` ride in its transcript.
+  **Limitation:** this surfaces spend in the *TaskOutput transcript* only;
+  `summarize_batch` aggregates launch-time stub results, so the structured parent roll-up
+  (`total_child_tokens`) still excludes background children. Deeper fix = pull child
+  `extras` from the completed background result; deferred.
+
+### Low / efficiency / cleanup
+- **#6 `soul/toolset.py`** narrow MCP capability-discovery errors: METHOD_NOT_FOUND =
+  expected/empty/debug; anything else = WARNING (transient ≠ "no capability"); deduped.
+- **#7 `tools/utils.py`** `async spill_to_disk()` offloads the on-truncation write via
+  `asyncio.to_thread` (idempotent; sync fallback preserved) + atomic temp+os.replace
+  (cancellation can't leave a partial recovery file). Wired into Shell/FetchURL/SearchWeb.
+- **#8/#9 `memory/recall.py`** arm `_injected`/baselines only after a successful snapshot
+  (transient failure retries instead of latching a stale baseline); defer the working-set
+  scan behind the cheap turn-throttle gate.
+- **#10 `soul/pythinkersoul.py`** prune anchors the token count to `before_tokens` minus
+  the estimated freed delta (same estimator both sides → bias cancels) instead of a full
+  re-estimate that could over-count and re-fire the rewrite every step.
+- **#11 `soul/pythinkersoul.py`** extracted `_opt_int` for the 4 repeated usage ternaries.
+
+### Declined (with rationale)
+- **#12 `model_defense.py` `excludes` field.** KEPT — it is tested
+  (`test_fragment_matches_with_patterns_and_excludes`) and a deliberate, documented
+  extension point in a registry built to grow; removing tested behavior isn't a clean
+  simplification (surgical-changes > YAGNI here, negligible cost).
+
+### Follow-up: investigated + fixed the concurrent OpenAI-feature changes (user-directed)
+A concurrent (paused) WIP appeared in the tree during the review session — ChatGPT 429
+usage-limit messaging + `/login` account-switch detection (auth/openai.py, chat_provider,
+ui/shell). Investigated properly: feature logic is correct and its tests pass. Two real
+issues fixed (TDD):
+- **Markup-escape bug** `ui/shell/__init__.py`: 429 summary/hint were interpolated into a
+  Rich-markup string unescaped, so a provider message containing `[...]` was silently
+  dropped. Extracted `_render_429_message(detail)` that `escape()`s both fields (matches
+  the sibling error branches); handler now calls it. New test in test_rate_limit_message.py.
+- **Flaky test** `tests/auth/test_openai_auth.py`: the two `_wait_for_browser_code` callback
+  tests used tight 2s/0.05s timing deadlines that flake under CPU load (clean TimeoutError;
+  load-correlated; the suspected port-leak order passes 10/10). Prod OAuth ports are fixed
+  and can't change, so the fix is test-only: a generous `_BROWSER_CALLBACK_TEST_TIMEOUT`
+  for the connect/await deadlines and a bounded poll-until-done instead of a fixed sleep.
+  Originally-flaky combo now 6/6 stable under random ordering; tests/auth+ui_and_conv 1822 pass.

@@ -34,6 +34,14 @@ class ApprovalRequestRecord:
     resolved_at: float | None = None
     response: ApprovalResponseKind | None = None
     feedback: str = ""
+    # Whether this request may be cleared by a *sibling's* approval drain.
+    # Bound from the real tool call at request time (not reconstructed from the
+    # display blocks): an irreversible/config-surface call is never
+    # session-approvable, so a concurrent benign sibling that merely shares the
+    # coarse signature can never resolve it (permgate-1b/3, OWASP: bind approval
+    # to the exact action, fail closed). Defaults to ``False`` so any request
+    # created without an explicit decision is excluded from drains.
+    session_approvable: bool = False
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

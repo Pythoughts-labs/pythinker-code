@@ -45,6 +45,12 @@ _OUTSIDE_WORKSPACE_UNATTENDED_FEEDBACK = (
     "trust boundary. Rerun interactively, or use explicit yolo/--yes only after verifying "
     "the exact path and change are safe."
 )
+_CONFIG_EDIT_UNATTENDED_FEEDBACK = (
+    "Edits to pythinker's own behavioral config (AGENTS.md, agent specs, .pythinker "
+    "config) re-confirm every time and are never auto-approved — a rewritten config is a "
+    "persistent backdoor. This run is auto/non-interactive with no user present, so the "
+    "edit was denied instead of waiting indefinitely. Rerun interactively to approve it."
+)
 
 
 @dataclass(frozen=True)
@@ -255,21 +261,36 @@ class Approval:
         return self._state.runtime_auto
 
     def _unattended_denial_feedback(self, action: str, tool_call: ToolCall) -> str | None:
-        """Fail closed when an unattended run would otherwise wait for approval forever."""
+        """Fail closed when an unattended run would otherwise wait for approval forever.
+
+        A request only blocks on a human if it reaches the manual prompt — i.e. it is
+        resolved by NEITHER the auto-approve bypass (``is_auto_approve()`` and not a
+        config-surface edit) NOR a per-command session rule (its key is recorded AND the
+        call is itself session-approvable). In an unattended run (auto, no user, not
+        yolo) any such would-block request is denied with feedback rather than hanging.
+
+        This deliberately re-derives the two downstream auto-resolve conditions so the
+        guard can never drift out of sync with them. It closes two hangs the old
+        membership-only check missed: (1) a destructive call whose coarse key matches a
+        session-approved benign sibling slips past the key check yet is refused by the
+        session gate (it is not session-approvable); (2) a config-surface edit is never
+        covered by the auto-approve bypass and is never session-approved.
+        """
         if not self.is_auto() or self._state.yolo:
             return None
+        # Outside-workspace mutations cross the trust boundary and are denied even though
+        # the auto-approve bypass would otherwise pass them.
         if str(action) == _EDIT_OUTSIDE_ACTION:
             return _OUTSIDE_WORKSPACE_UNATTENDED_FEEDBACK
-        # In safe mode an action must be explicitly session-approved. Match against the
-        # compound approval key (e.g. "run command::shell:git status") — the same key
-        # approve-for-session stores. The bare action string would never match it, so a
-        # session-approved Shell command would otherwise be wrongly denied here.
-        if (
-            self._state.safe_mode
-            and self._approval_key(tool_call, action) not in self._state.auto_approve_actions
-        ):
-            return _SAFE_MODE_UNATTENDED_FEEDBACK
-        return None
+        will_auto_resolve = (self.is_auto_approve() and not self._is_config_edit(action)) or (
+            self._approval_key(tool_call, action) in self._state.auto_approve_actions
+            and self._is_session_approvable(tool_call, action)
+        )
+        if will_auto_resolve:
+            return None
+        if self._is_config_edit(action):
+            return _CONFIG_EDIT_UNATTENDED_FEEDBACK
+        return _SAFE_MODE_UNATTENDED_FEEDBACK
 
     def is_orchestration_approved(self, fingerprint: str) -> bool:
         return fingerprint in self._state.approved_orchestration_fingerprints
@@ -530,6 +551,11 @@ class Approval:
             description=description,
             display=display_blocks,
             source=source,
+            # Bind the session-approvability decision from the REAL tool call now,
+            # so a sibling's approve / approve-for-session drain can never resolve a
+            # destructive or config-surface request that merely shares this one's
+            # coarse signature (permgate-1b/3).
+            session_approvable=self._is_session_approvable(tool_call, action),
         )
         try:
             response, feedback = await self._runtime.wait_for_response(request_id)
@@ -556,13 +582,16 @@ class Approval:
                 # action, one approval should clear them all instead of re-prompting once
                 # per sibling (which pressures the user toward blanket approval). Drain only
                 # pending requests with the SAME fine-grained identity (per-command key AND
-                # description), and never for a destructive call — each irreversible action
-                # is approved individually. This does NOT touch auto_approve_actions, so it
-                # is one-time coverage of concurrent duplicates, not a standing session rule.
+                # description), and never one that bound itself non-session-approvable
+                # (destructive / config-surface) at request time — each such action is
+                # approved individually regardless of a coarse signature collision. This
+                # does NOT touch auto_approve_actions, so it is one-time coverage of
+                # concurrent duplicates, not a standing session rule.
                 if not self._is_destructive_call(tool_call):
                     for pending in self._runtime.list_pending():
                         if (
                             pending.id != request_id
+                            and pending.session_approvable
                             and pending.description == description
                             and self._pending_approval_key(pending) == approval_key
                         ):
@@ -578,14 +607,18 @@ class Approval:
                 # A destructive call is never recorded as session-approved — it must
                 # re-prompt every time — so "approve for session" on one degrades to a
                 # one-time approve (permgate-1b). Otherwise record the per-command key
-                # and drain only pending siblings with that SAME key, so approving
-                # `git status` for the session cannot silently clear a queued `rm -rf`,
-                # and a config-surface edit is never recorded as session-approved.
+                # and drain only pending siblings that ALSO bound themselves
+                # session-approvable at request time, so approving `git status` for the
+                # session cannot silently clear a queued `rm -rf` that merely shares the
+                # coarse signature, and a config-surface edit is never auto-approved.
                 if self._is_session_approvable(tool_call, action):
                     self._state.auto_approve_actions.add(approval_key)
                     self._state.notify_change()
                     for pending in self._runtime.list_pending():
-                        if self._pending_approval_key(pending) == approval_key:
+                        if (
+                            pending.session_approvable
+                            and self._pending_approval_key(pending) == approval_key
+                        ):
                             self._runtime.resolve(pending.id, "approve")
                 else:
                     # Destructive or config-surface calls cannot be session-approved (permgate-1b).

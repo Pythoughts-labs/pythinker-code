@@ -185,6 +185,8 @@ class SearchWeb(CallableTool2[Params]):
             if result.content:
                 builder.write(f"{result.content}\n\n")
 
+        # Spill the full result block off the event loop before building the result.
+        await builder.spill_to_disk()
         return builder.ok()
 
 

@@ -142,11 +142,11 @@ def is_config_surface_path(path: HostPath, work_dir: HostPath | None = None) -> 
     """True if *path* is a pythinker behavioral-config file.
 
     These files change agent behavior or are re-injected into the system prompt
-    (``AGENTS.md``, agent-spec YAMLs, ``.pythinker`` config), so a successful
-    injection that rewrites one becomes a persistent, cross-session backdoor that
-    survives the per-session untrusted-data defense. Writes to them get a distinct,
-    non-session-approvable approval action. Plan/scratch/report artifacts under
-    ``.pythinker`` are deliberately excluded.
+    (``AGENTS.md``, agent-spec YAMLs, Claude/Agents-style ``*.md`` subagent specs,
+    ``.pythinker`` config), so a successful injection that rewrites one becomes a
+    persistent, cross-session backdoor that survives the per-session untrusted-data
+    defense. Writes to them get a distinct, non-session-approvable approval action.
+    Plan/scratch/report artifacts under ``.pythinker`` are deliberately excluded.
 
     Pass *work_dir* (the active workspace root) to scope ``AGENTS.md``
     classification to the set of files actually re-injected into the prompt.
@@ -173,7 +173,12 @@ def is_config_surface_path(path: HostPath, work_dir: HostPath | None = None) -> 
         return is_within_directory(work_dir, agents_dir) or is_within_directory(path, work_dir)
     if "/.pythinker/" in posix and base in ("config.toml", "config.local.toml"):
         return True
-    return base.endswith((".yaml", ".yml")) and any(m in posix for m in _AGENT_SPEC_DIR_MARKERS)
+    # Agent-spec dirs hold both YAML wrappers and Claude/Agents-style ``*.md``
+    # frontmatter specs (see ``discover_markdown_agents``); both define a subagent's
+    # tool policy and system prompt, so both are config surfaces.
+    return base.endswith((".yaml", ".yml", ".md")) and any(
+        m in posix for m in _AGENT_SPEC_DIR_MARKERS
+    )
 
 
 def shorten_home(path: HostPath) -> HostPath:

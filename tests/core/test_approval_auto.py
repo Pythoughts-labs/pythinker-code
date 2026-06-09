@@ -226,6 +226,59 @@ async def test_one_time_approve_drains_identical_concurrent_siblings() -> None:
     assert not bool(await t_diff)
 
 
+async def test_session_approval_drain_never_clears_destructive_sibling() -> None:
+    """permgate-1b/3: approving a benign ``rm <file>`` FOR THE SESSION must not drain a
+    concurrently-pending destructive ``rm -rf`` sibling that merely shares the coarse
+    ``shell:rm`` signature. The destructive call binds its own (non-session-approvable)
+    identity at request time, so a sibling's approval can never resolve it — it must
+    still require its own decision (OWASP: bind approval to the exact action, fail closed)."""
+    import contextvars
+
+    runtime = ApprovalRuntime()
+    approval = Approval(state=ApprovalState())
+    approval.set_runtime(runtime)
+
+    def _spawn(command: str, call_id: str) -> asyncio.Task[object]:
+        call = ToolCall(
+            id=call_id,
+            function=ToolCall.FunctionBody(
+                name="Shell", arguments=json.dumps({"command": command})
+            ),
+        )
+        ctx = contextvars.copy_context()
+        ctx.run(current_tool_call.set, call)
+        return asyncio.create_task(
+            approval.request(
+                "Shell",
+                "run command",
+                f"Run `{command}`",
+                display=[ShellDisplayBlock(language="bash", command=command)],
+            ),
+            context=ctx,
+        )
+
+    # Two concurrent pending Shell requests that collapse to the same `shell:rm`
+    # signature: one benign (no -rf), one irreversible.
+    t_benign = _spawn("rm build/tmp.txt", "c1")
+    t_destructive = _spawn("rm -rf /important", "c2")
+    for _ in range(1000):
+        if len(runtime.list_pending()) == 2:
+            break
+        await asyncio.sleep(0)
+    assert len(runtime.list_pending()) == 2
+
+    # Approve the benign command FOR THE SESSION. Its drain must NOT touch the
+    # destructive sibling even though both key to `run command::shell:rm`.
+    benign_pending = [p for p in runtime.list_pending() if "build/tmp.txt" in p.description]
+    runtime.resolve(benign_pending[0].id, "approve_for_session")
+    assert bool(await t_benign)
+
+    remaining = runtime.list_pending()
+    assert len(remaining) == 1 and "/important" in remaining[0].description
+    runtime.resolve(remaining[0].id, "reject")
+    assert not bool(await t_destructive)
+
+
 def test_config_surface_classifier() -> None:
     """permgate-2: behavioral-config files are recognized; plan/scratch and source are not."""
     from pythinker_host.path import HostPath
@@ -241,6 +294,28 @@ def test_config_surface_classifier() -> None:
     ):
         assert is_config_surface_path(HostPath(p)), p
     for p in ("/repo/.pythinker/plans/x.md", "/repo/src/main.py", "/repo/README.md"):
+        assert not is_config_surface_path(HostPath(p)), p
+
+
+def test_config_surface_includes_markdown_agent_specs() -> None:
+    """permgate-2: subagents are discovered from ``*.md`` frontmatter files under the
+    agent-spec dirs (`.claude/agents/`, `.pythinker/agents/`, ...), so editing such a
+    file changes agent behaviour / re-injected system prompts exactly like the YAML
+    specs. A markdown agent spec must be a config surface (not an ordinary edit that
+    yolo/approve-for-session would whitelist into a persistent backdoor)."""
+    from pythinker_host.path import HostPath
+
+    from pythinker_code.utils.path import is_config_surface_path
+
+    for p in (
+        "/repo/.claude/agents/coder.md",
+        "/repo/.pythinker/agents/reviewer.md",
+        "/repo/.agents/agents/x.md",
+        "/repo/.codex/agents/y.md",
+    ):
+        assert is_config_surface_path(HostPath(p)), p
+    # A markdown file OUTSIDE the agent-spec dirs is still an ordinary edit.
+    for p in ("/repo/docs/notes.md", "/repo/src/agents.md.bak"):
         assert not is_config_surface_path(HostPath(p)), p
 
 
@@ -559,6 +634,48 @@ async def test_auto_safe_mode_denies_approval_without_waiting() -> None:
     error = result.rejection_error()
     assert "safe mode prevents auto-approval" in error.message
     assert "rejected by the user" not in error.message
+
+
+async def test_auto_safe_mode_denies_destructive_sharing_session_key_without_waiting() -> None:
+    """Unattended safe-mode must fail closed for a destructive call whose coarse key
+    matches a session-approved benign sibling. The session gate refuses it (destructive
+    is never session-approvable), so without an explicit denial the request would block
+    forever waiting for an absent user."""
+    from tests.conftest import tool_call_context
+
+    state = ApprovalState(auto=True, safe_mode=True)
+    # Simulate a prior "approve for session" of a benign `git push`.
+    state.auto_approve_actions.add("run command::shell:git push")
+    approval = Approval(state=state)
+    with tool_call_context("Shell", arguments={"command": "git push --force origin main"}):
+        result = await asyncio.wait_for(
+            approval.request(
+                "Shell", "run command", "Run command `git push --force origin main`"
+            ),
+            timeout=0.1,
+        )
+
+    assert not result
+    assert approval.runtime.list_pending() == []
+    assert "safe mode prevents auto-approval" in result.rejection_error().message
+
+
+async def test_auto_denies_config_edit_without_waiting() -> None:
+    """Config-surface edits re-confirm every time (permgate-2) and are never covered by
+    the auto-approve bypass, so in an unattended auto run they must fail closed instead
+    of blocking forever for an absent user."""
+    from tests.conftest import tool_call_context
+
+    approval = Approval(state=ApprovalState(auto=True, safe_mode=False))
+    with tool_call_context("WriteFile", arguments={"path": "AGENTS.md", "content": "x"}):
+        result = await asyncio.wait_for(
+            approval.request("WriteFile", FileActions.EDIT_CONFIG, "Write file `AGENTS.md`"),
+            timeout=0.1,
+        )
+
+    assert not result
+    assert approval.runtime.list_pending() == []
+    assert "rejected by the user" not in result.rejection_error().message
 
 
 async def test_trusted_auto_denies_outside_workspace_write_without_yolo() -> None:

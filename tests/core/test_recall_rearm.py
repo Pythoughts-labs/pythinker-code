@@ -129,3 +129,49 @@ async def test_recall_rearm_is_throttled_until_enough_turns(
     # Shifted working set but only 1 assistant turn since -> throttled (needs >= 3).
     history = _history_touching("src/payments/charge.py", assistant_turns=1)
     assert await prov.get_injections(history, cast(Any, None)) == []
+
+
+async def test_recall_does_not_arm_on_transient_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A transient snapshot failure must not arm the provider: it should retry next step
+    rather than latch `_injected=True` with a stale (empty) working-set baseline."""
+    prov = _make_provider(monkeypatch)
+
+    calls = {"n": 0}
+
+    async def flaky_candidates(_store: Any, _wd: Any) -> list[Any]:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("transient transport error")
+        return []
+
+    monkeypatch.setattr(recall_mod, "gather_candidates", flaky_candidates)
+
+    # First call fails inside the snapshot -> no injection, provider NOT armed.
+    assert await prov.get_injections([], cast(Any, None)) == []
+    assert prov._injected is False  # pyright: ignore[reportPrivateUsage]
+
+    # A subsequent call succeeds and injects (proving it actually retried).
+    assert await prov.get_injections([], cast(Any, None))
+    assert prov._injected is True  # pyright: ignore[reportPrivateUsage]
+
+
+async def test_recall_skips_working_set_scan_when_throttled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Once armed, a throttled step (too few turns since the last injection) must skip
+    the expensive working-set scan entirely — the cheap turn check gates it."""
+    prov = _make_provider(monkeypatch)
+    assert await prov.get_injections([], cast(Any, None))  # first fire arms the provider
+
+    real_ws = recall_mod._working_set
+    scans = {"n": 0}
+
+    def counting_ws(history: Any) -> Any:
+        scans["n"] += 1
+        return real_ws(history)
+
+    monkeypatch.setattr(recall_mod, "_working_set", counting_ws)
+
+    # turns_since == 0 (< the re-arm minimum), so the working set must not be scanned.
+    assert await prov.get_injections([], cast(Any, None)) == []
+    assert scans["n"] == 0

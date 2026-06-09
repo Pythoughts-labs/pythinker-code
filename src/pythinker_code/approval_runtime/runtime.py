@@ -68,6 +68,7 @@ class ApprovalRuntime:
         display: list[DisplayBlock],
         source: ApprovalSource,
         request_id: str | None = None,
+        session_approvable: bool = False,
     ) -> ApprovalRequestRecord:
         request = ApprovalRequestRecord(
             id=request_id or str(uuid.uuid4()),
@@ -77,6 +78,7 @@ class ApprovalRuntime:
             description=description,
             display=display,
             source=source,
+            session_approvable=session_approvable,
         )
         self._requests[request.id] = request
         self._publish_event(ApprovalRuntimeEvent(kind="request_created", request=request))

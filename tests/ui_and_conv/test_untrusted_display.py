@@ -46,3 +46,19 @@ def test_card_result_text_hides_wrapper_from_display() -> None:
     text = _ToolCallBlock._card_result_text(result)
     assert "<untrusted_data" not in text
     assert "stderr trace" in text
+
+
+def test_acp_tool_result_hides_wrapper_from_client() -> None:
+    """ACP has no untrusted-output marking of its own, so the model-facing
+    <untrusted_data> envelope must be stripped before tool output reaches an
+    ACP/IDE client (the same single-boundary contract the TUI honours)."""
+    from pythinker_code.acp.convert import tool_result_to_acp_content
+
+    wrapped = UntrustedData("shell stdout\n+ added line").render_for_prompt()
+    result = ToolReturnValue(is_error=False, output=wrapped, message="ok", display=[], extras={})
+    contents = tool_result_to_acp_content(result)
+    texts = [c.content.text for c in contents if hasattr(c.content, "text")]
+    blob = "\n".join(texts)
+    assert "<untrusted_data" not in blob
+    assert "&lt;" not in blob
+    assert "shell stdout" in blob

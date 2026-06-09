@@ -196,6 +196,27 @@ async def test_prune_context_does_not_rearm_injection_providers(runtime, tmp_pat
 
 
 @pytest.mark.asyncio
+@pytest.mark.asyncio
+async def test_prune_context_never_increases_token_count(runtime, tmp_path) -> None:
+    """Pruning only removes content, so the post-prune token count must never exceed the
+    pre-prune authoritative count. A full heuristic re-estimate could over-count the
+    remaining content, keep the context over the prune trigger, and re-fire the whole
+    rewrite every step — anchor to the authoritative count minus the freed delta instead."""
+    runtime.config.loop_control.prune_protect_last = 2
+    runtime.config.loop_control.prune_min_chars = 2000
+    context, soul = _make_soul(runtime, tmp_path)
+    await context.write_system_prompt("sys")
+    await context.append_message(_seed_prunable(context))
+    # Authoritative pre-prune count (from the LLM) below the heuristic estimate of the
+    # remaining content — the case where a naive full re-estimate would grow the count.
+    before = 1
+    await context.update_token_count(before)
+
+    assert await soul.prune_context() is True
+    assert context.token_count <= before
+
+
+@pytest.mark.asyncio
 async def test_prune_context_noop_when_nothing_stale(runtime, tmp_path) -> None:
     runtime.config.loop_control.prune_protect_last = 20
     runtime.config.loop_control.prune_min_chars = 2000

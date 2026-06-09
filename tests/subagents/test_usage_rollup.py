@@ -91,6 +91,20 @@ class _FakeSoul:
     model_name = _UNKNOWN_MODEL
 
 
+def test_output_writer_usage_emits_child_spend_lines(tmp_path) -> None:
+    """The background runner surfaces a child's spend through the output writer (its
+    results are fetched later via TaskOutput, so usage rides in the written transcript,
+    matching the foreground runner's `child_tokens:` envelope)."""
+    from pythinker_code.subagents.output import SubagentOutputWriter
+
+    p = tmp_path / "out.log"
+    p.write_text("", encoding="utf-8")
+    writer = SubagentOutputWriter(p)
+    writer.usage(format_usage_lines("child", _usage(100, 40), _UNKNOWN_MODEL))
+    content = p.read_text(encoding="utf-8")
+    assert "child_tokens: 100 in / 40 out" in content
+
+
 def test_fail_with_usage_reports_spend_on_error() -> None:
     err = _fail_with_usage(_FakeSoul(), "boom", "Boom")  # type: ignore[arg-type]
     assert err.is_error

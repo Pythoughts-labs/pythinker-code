@@ -183,6 +183,32 @@ def test_spill_on_truncation_saves_full_output_and_hints(tmp_path):
     assert str(files[0]) in result.message
 
 
+async def test_spill_to_disk_offloads_and_is_idempotent(tmp_path):
+    """ctxmgmt-1: spill_to_disk performs the (potentially multi-MB) write off the event
+    loop and is idempotent — pre-spilling then calling ok() writes the file exactly once,
+    with no partial/temp residue from the atomic write, and the cached hint is reused."""
+    spill_dir = tmp_path / "tool-output"
+    builder = ToolResultBuilder(max_chars=10)
+    builder.enable_spill(spill_dir, "bash")
+    builder.write("Hello")
+    builder.write(" world! this is a long tail that gets truncated")
+
+    await builder.spill_to_disk()
+
+    files = list(spill_dir.glob("bash-*.txt"))
+    assert len(files) == 1
+    assert files[0].read_text(encoding="utf-8") == (
+        "Hello world! this is a long tail that gets truncated"
+    )
+    # Atomic temp+replace leaves no partial residue.
+    assert list(spill_dir.glob("*.tmp")) == []
+
+    # ok() reuses the already-written hint and does not write a second file.
+    result = builder.ok("Done")
+    assert len(list(spill_dir.glob("bash-*.txt"))) == 1
+    assert str(files[0]) in result.message
+
+
 def test_no_spill_when_disabled(tmp_path):
     builder = ToolResultBuilder(max_chars=10)
     builder.write("Hello world!")  # truncates

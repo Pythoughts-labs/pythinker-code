@@ -4,6 +4,7 @@ import acp
 
 from pythinker_code.acp.types import ACPContentBlock
 from pythinker_code.utils.logging import logger
+from pythinker_code.utils.trust import strip_untrusted_envelope
 from pythinker_code.wire.types import (
     ContentPart,
     DiffDisplayBlock,
@@ -81,9 +82,7 @@ def tool_result_to_acp_content(
         | acp.schema.TerminalToolCallContent
     ):
         if isinstance(part, TextPart):
-            return acp.schema.ContentToolCallContent(
-                type="content", content=acp.schema.TextContentBlock(type="text", text=part.text)
-            )
+            return _to_text_block(part.text)
         logger.warning("Unsupported content part in tool result: {part}", part=part)
         return acp.schema.ContentToolCallContent(
             type="content",
@@ -91,8 +90,12 @@ def tool_result_to_acp_content(
         )
 
     def _to_text_block(text: str) -> acp.schema.ContentToolCallContent:
+        # The model-facing <untrusted_data> wrapper must never reach an ACP/IDE client
+        # (ACP defines no untrusted-output marking, so we strip it at this single
+        # boundary, mirroring the TUI). A no-op on unwrapped/harness-authored text.
         return acp.schema.ContentToolCallContent(
-            type="content", content=acp.schema.TextContentBlock(type="text", text=text)
+            type="content",
+            content=acp.schema.TextContentBlock(type="text", text=strip_untrusted_envelope(text)),
         )
 
     contents: list[

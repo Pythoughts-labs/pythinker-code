@@ -8,6 +8,49 @@ from pythinker_code.soul.toolset import MCPServerInfo, PythinkerToolset
 from pythinker_code.tools.mcp_resource import ListMcpResources, ReadMcpResource
 
 
+async def test_discover_optional_capability_distinguishes_absent_from_transient() -> None:
+    """mcpext-1: a server that genuinely lacks resources/prompts (METHOD_NOT_FOUND) is
+    expected and recorded empty quietly; any OTHER failure (transient/transport) must be
+    visible (WARNING) rather than silently identical to "no capability", while still
+    letting the server connect (empty list, not a propagated exception)."""
+    from mcp.shared.exceptions import McpError
+    from mcp.types import METHOD_NOT_FOUND, ErrorData
+
+    from pythinker_code.soul.toolset import _discover_optional_capability
+    from pythinker_code.utils.logging import logger
+
+    records: list[tuple[str, str]] = []
+    # Library logging is disabled by default; enable it so the sink sees the records.
+    logger.enable("pythinker_code")
+    sink_id = logger.add(
+        lambda m: records.append((m.record["level"].name, m.record["message"])), level="DEBUG"
+    )
+    try:
+
+        async def _absent() -> list[object]:
+            raise McpError(ErrorData(code=METHOD_NOT_FOUND, message="Method not found"))
+
+        assert await _discover_optional_capability("db", "resources", _absent) == []
+
+        async def _transient() -> list[object]:
+            raise ConnectionError("connection reset by peer")
+
+        assert await _discover_optional_capability("db", "prompts", _transient) == []
+
+        async def _ok() -> list[str]:
+            return ["r1", "r2"]
+
+        assert await _discover_optional_capability("db", "resources", _ok) == ["r1", "r2"]
+    finally:
+        logger.remove(sink_id)
+        logger.disable("pythinker_code")  # restore the library default
+
+    warnings = [msg for lvl, msg in records if lvl == "WARNING"]
+    # The transient failure surfaced as a WARNING; the genuine absence did not.
+    assert len(warnings) == 1
+    assert "prompts" in warnings[0]
+
+
 class _Resource:
     def __init__(self, uri: str, name: str = "", description: str = "", mime: str = "") -> None:
         self.uri = uri

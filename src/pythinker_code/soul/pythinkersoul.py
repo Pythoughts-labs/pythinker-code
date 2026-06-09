@@ -1543,26 +1543,21 @@ class PythinkerSoul:
                 u = step_result.usage
                 if u is not None:
                     self._cumulative_usage = accumulate_usage(self._cumulative_usage, u)
-                input_tokens = (
-                    int(u.input) if (u and getattr(u, "input", None) is not None) else None
-                )
-                output_tokens = (
-                    int(u.output) if (u and getattr(u, "output", None) is not None) else None
-                )
+
+                def _opt_int(attr: str) -> int | None:
+                    """Read an optional usage counter as int — None when usage or the
+                    field is absent (usage may be None on partial / cached responses)."""
+                    value = getattr(u, attr, None) if u is not None else None
+                    return int(value) if value is not None else None
+
+                input_tokens = _opt_int("input")
+                output_tokens = _opt_int("output")
                 # Prompt-cache token accounting. pythinker freezes the system prompt
                 # to maximize cache hits, so surfacing these makes cache efficiency
                 # (and any regression that silently breaks cache-keying) observable
                 # from telemetry rather than only as an aggregate cost spike.
-                cache_read_tokens = (
-                    int(u.input_cache_read)
-                    if (u and getattr(u, "input_cache_read", None) is not None)
-                    else None
-                )
-                cache_creation_tokens = (
-                    int(u.input_cache_creation)
-                    if (u and getattr(u, "input_cache_creation", None) is not None)
-                    else None
-                )
+                cache_read_tokens = _opt_int("input_cache_read")
+                cache_creation_tokens = _opt_int("input_cache_creation")
                 if input_tokens is not None:
                     span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
                 if output_tokens is not None:
@@ -1844,12 +1839,20 @@ class PythinkerSoul:
         # same clear+rebuild primitive compact_context uses (the supported way to mutate
         # the append-only JSONL context), but roll back to the snapshot if it throws.
         snapshot = list(self._context.history)
+        # Reduce the AUTHORITATIVE pre-prune count by the estimated tokens freed, rather
+        # than replacing it with a full heuristic re-estimate of the remaining history. A
+        # full re-estimate can over-count the survivors (chars/4 overshoots code/markup),
+        # leaving the context above the prune trigger and re-firing the whole rewrite every
+        # step. The delta uses the same estimator on both sides so its bias cancels, and
+        # pruning can only lower the count (pruned ⊆ snapshot ⇒ delta ≥ 0).
+        freed_tokens = estimate_text_tokens(snapshot) - estimate_text_tokens(pruned)
+        pruned_tokens = max(0, before_tokens - max(0, freed_tokens))
         await self._context.clear()
         try:
             await self._context.write_system_prompt(self._agent.system_prompt)
             await self._checkpoint()
             await self._context.append_message(pruned)
-            await self._context.update_token_count(estimate_text_tokens(pruned))
+            await self._context.update_token_count(pruned_tokens)
         except Exception:
             await self._context.clear()
             await self._context.write_system_prompt(self._agent.system_prompt)

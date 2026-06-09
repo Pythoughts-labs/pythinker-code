@@ -274,19 +274,23 @@ class RecallInjectionProvider(DynamicInjectionProvider):
         self, history: Sequence[Message], soul: PythinkerSoul
     ) -> list[DynamicInjection]:
         _ = soul
-        current_ws = _working_set(history)
         if self._injected:
             # memory-3: re-fire only when the working set has shifted materially to a
             # new area AND enough turns have passed since the last injection — so a
-            # mid-session pivot resurfaces now-relevant memory without thrashing.
+            # mid-session pivot resurfaces now-relevant memory without thrashing. Check
+            # the cheap turn throttle BEFORE the working-set scan (which json-parses the
+            # recent tool calls) so most post-injection steps skip that work entirely.
+            turns_since = _assistant_turns(history) - self._last_injection_turns
+            if turns_since < _REARM_MIN_ASSISTANT_TURNS:
+                return []
+            current_ws = _working_set(history)
             if not current_ws:
                 return []
-            shifted = _jaccard(current_ws, self._last_working_set) < _REARM_JACCARD
-            turns_since = _assistant_turns(history) - self._last_injection_turns
-            if not shifted or turns_since < _REARM_MIN_ASSISTANT_TURNS:
-                return []
+            if _jaccard(current_ws, self._last_working_set) >= _REARM_JACCARD:
+                return []  # working set has not shifted materially
             self._injected = False  # re-arm for a fresh, working-set-aware recall
-        self._injected = True
+        else:
+            current_ws = _working_set(history)
         try:
             work_dir = cast(HostPath, self._session.work_dir)
             candidates = await gather_candidates(self._store, work_dir)
@@ -319,7 +323,10 @@ class RecallInjectionProvider(DynamicInjectionProvider):
         except Exception:
             logger.debug("recall: snapshot failed")
             return []
-        # Record state so re-arm decisions and content-dedup work on later steps.
+        # Mark injected and record the re-arm / dedup baselines ONLY after a successful
+        # snapshot, so a transient failure retries next step instead of arming the
+        # provider with a stale (empty) working-set baseline.
+        self._injected = True
         self._last_working_set = current_ws
         self._last_injection_turns = _assistant_turns(history)
         if not block.strip() or block == self._last_block:

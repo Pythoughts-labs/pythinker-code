@@ -8,6 +8,7 @@ import inspect
 import json
 import re
 import time
+from collections.abc import Awaitable, Callable, Iterable
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
@@ -143,6 +144,51 @@ def _mcp_stderr_log_path(runtime: Runtime, server_name: str) -> Path:
     log_dir = runtime.session.dir / "mcp"
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir / f"{safe_name}.stderr.log"
+
+
+async def _discover_optional_capability[T](
+    server_name: str,
+    capability: str,
+    list_fn: Callable[[], Awaitable[Iterable[T]]],
+) -> list[T]:
+    """List an optional MCP capability (resources/prompts), separating a server that
+    genuinely lacks it from a transient/transport failure (mcpext-1).
+
+    Per MCP, a server that does not implement the capability replies with a
+    ``METHOD_NOT_FOUND`` (-32601) error — expected, recorded as empty, logged at debug.
+    Any other failure (e.g. a transient transport error) is NOT treated as silently
+    identical to "no capability": it is logged at WARNING so an operator can tell a
+    momentary blip from a permanent absence. Either way an empty list is returned so the
+    server (and its already-listed tools) still connect rather than failing the whole
+    handshake on an optional capability.
+    """
+    from mcp.shared.exceptions import McpError
+    from mcp.types import METHOD_NOT_FOUND
+
+    try:
+        return list(await list_fn())
+    except McpError as exc:
+        if exc.error.code == METHOD_NOT_FOUND:
+            logger.debug(
+                "MCP server {name} does not support {cap}", name=server_name, cap=capability
+            )
+            return []
+        logger.warning(
+            "MCP server {name} errored listing {cap} (code {code}); treating as empty: {error}",
+            name=server_name,
+            cap=capability,
+            code=exc.error.code,
+            error=exc,
+        )
+        return []
+    except Exception as exc:
+        logger.warning(
+            "MCP server {name} failed listing {cap} (transient?); treating as empty: {error}",
+            name=server_name,
+            cap=capability,
+            error=exc,
+        )
+        return []
 
 
 def _configure_mcp_client_stderr_log(client: Any, runtime: Runtime, server_name: str) -> None:
@@ -651,23 +697,15 @@ class PythinkerToolset:
                         )
                     # Resources/prompts are optional MCP capabilities; a server
                     # that exposes none (or does not support the request) must
-                    # still connect, so capture them best-effort (mcpext-1).
-                    try:
-                        server_info.resources = list(await client.list_resources())
-                    except Exception as exc:
-                        logger.debug(
-                            "MCP server {name} has no listable resources: {error}",
-                            name=server_name,
-                            error=exc,
-                        )
-                    try:
-                        server_info.prompts = list(await client.list_prompts())
-                    except Exception as exc:
-                        logger.debug(
-                            "MCP server {name} has no listable prompts: {error}",
-                            name=server_name,
-                            error=exc,
-                        )
+                    # still connect, so capture them best-effort (mcpext-1). A
+                    # METHOD_NOT_FOUND means the capability is genuinely absent; any
+                    # other error is surfaced (WARNING) rather than masked as "none".
+                    server_info.resources = await _discover_optional_capability(
+                        server_name, "resources", client.list_resources
+                    )
+                    server_info.prompts = await _discover_optional_capability(
+                        server_name, "prompts", client.list_prompts
+                    )
 
                 for tool in server_info.tools:
                     self.add(tool)

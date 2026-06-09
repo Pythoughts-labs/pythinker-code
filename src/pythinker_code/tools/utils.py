@@ -1,3 +1,5 @@
+import asyncio
+import os
 import re
 import uuid
 from enum import StrEnum
@@ -241,7 +243,13 @@ class ToolResultBuilder:
             # Full uuid (not a short prefix) so concurrent spills cannot collide
             # and silently overwrite each other; tool stem is pre-sanitized.
             path = self._spill_dir / f"{self._spill_tool}-{uuid.uuid4().hex}.txt"
-            path.write_text(full, encoding="utf-8", errors="replace")
+            # Atomic write: a recovery ReadFile must never observe a partial file, and a
+            # cancelled/abandoned worker thread (cancellation does not stop a thread) must
+            # not leave one behind. Write to a sibling temp, then os.replace() — the final
+            # path appears only once it is complete.
+            tmp = path.parent / f"{path.name}.tmp"
+            tmp.write_text(full, encoding="utf-8", errors="replace")
+            os.replace(tmp, path)
         except Exception as exc:  # fail-soft: never let spill break the tool result
             from pythinker_code.utils.logging import logger
 
@@ -259,6 +267,22 @@ class ToolResultBuilder:
             "without spending your own context."
         )
         return self._spill_hint
+
+    async def spill_to_disk(self) -> None:
+        """Perform the on-truncation spill off the event loop, before building the result.
+
+        ``ok()``/``error()`` are synchronous and run on the event-loop thread, so the
+        multi-MB ``_spill_and_hint`` write would block the loop. Async tools (Shell, web
+        fetch/search) ``await`` this after writing their output so the disk write happens
+        in a worker thread (``asyncio.to_thread``). It is idempotent and caches the hint,
+        so the subsequent ``ok()``/``error()`` reuses it without writing again; if a tool
+        forgets to call it, ``ok()`` still spills synchronously (correct, just blocking).
+        """
+        if self._spill_hint is not None or not self._truncation_happened:
+            return
+        if self._full_buffer is None or self._spill_dir is None:
+            return
+        await asyncio.to_thread(self._spill_and_hint)
 
     def _truncation_message(self) -> str:
         """The recovery hint when spilling, else the plain truncation notice."""
