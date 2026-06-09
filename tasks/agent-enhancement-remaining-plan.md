@@ -287,6 +287,8 @@ One PR-sized, tested change at a time; `make check` + `uv run pytest` green per 
 | 2026-06-08 | **mcpext-1** (WS-TOOLSET) — read-only ListMcpResources/ReadMcpResource tools; MCPServerInfo captures resources/prompts at connect (best-effort); resource content wrapped untrusted. Review followup `d0af8626` (robust binary size + failed-server test); gate fix `d578e761` | ✅ done | `4a8424e0` |
 | 2026-06-08 | **mcpext-3** (WS-TOOLSET) — ensure_docker_rm injects --rm into docker/podman stdio `run` configs; cleanup() closes MCP clients concurrently with per-server timeout (one hung close can't block teardown) | ✅ done | `b41edf9b` |
 | 2026-06-08 | **mcpext-2** (partial) — project-scoped `.pythinker/mcp.json` discovery (cwd→.git walk) layered over global config. Deferred: (a) live tools/list_changed, (b) granular /mcp reconnect/disconnect (live-toolset mutation; /reload covers coarsely) | ✅ done (c); a/b deferred | `5983725e` |
+| 2026-06-08 | **memory-1 / ctxmgmt-3** (WS-RECALL) — cross-session Recall tool (search prior sessions by title keyword+recency; read a sanitized, untrusted-wrapped, workspace-scoped transcript). Security review hardened: session_id traversal guard, streaming/encoding-safe read, current-session reject (`bde1c626`) | ✅ done | `588de079` |
+| 2026-06-08 | **memory-3** (WS-RECALL) — re-arm recall on working-set/topic shift: infer touched dirs from history, fold into query, re-fire on Jaccard<0.5 + ≥3-turn throttle + content-dedup; reset on compaction/rearm | ✅ done | `7020426e` |
 
 **Decision update (§3 / §7b):** ctxmgmt-2 did **not** require the standalone A7
 extraction. The pruning algorithm landed in the existing `compaction.py` (which
@@ -296,10 +298,10 @@ extraction (the decomposition plan orders A7 last). A7 remains available later f
 moving the compaction *orchestration* (`_grow_context`/`compact_context`) out of the
 host, but is no longer a prerequisite for any enhancement item.
 
-**Done so far: 16 plan items committed** (mcpext-2 = project-config-discovery piece; live tools-changed
-+ granular /mcp subcommands deferred, see `5983725e`) + test backfill. **Remaining: 6** —
-memory-1/ctxmgmt-3 (recall), memory-3, uxsteer-2, uxsteer-3, obs-eval-3, obs-eval-4 (last two L-effort,
-deliver offline-testable core + note live slice). mcpext-2 (a)+(b) tracked as follow-ups.
+**Done so far: 18 plan items committed** (mcpext-2 = project-config piece; a/b deferred) + test backfill.
+**Remaining: 4** — uxsteer-2 (non-blocking Suggestion), uxsteer-3 (ACP question consistency +
+steer-cancels-question), obs-eval-3, obs-eval-4 (last two L-effort: deliver offline-testable core +
+note the live slice). mcpext-2 (a)+(b) tracked as follow-ups.
 
 - **mcpext-1** done (`4a8424e0`): ListMcpResources/ReadMcpResource + MCPServerInfo resources/prompts.
   DI gotcha (recorded): tool modules taking injected deps must NOT use `from __future__ import
