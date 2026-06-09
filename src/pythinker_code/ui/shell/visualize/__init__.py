@@ -58,6 +58,9 @@ from pythinker_code.ui.shell.visualize._blocks import (
     _StatusBlock as _StatusBlock,
 )
 from pythinker_code.ui.shell.visualize._blocks import (
+    _SuggestionBlock as _SuggestionBlock,
+)
+from pythinker_code.ui.shell.visualize._blocks import (
     _tail_lines as _tail_lines,
 )
 from pythinker_code.ui.shell.visualize._blocks import (

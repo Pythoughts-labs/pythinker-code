@@ -61,6 +61,7 @@ from pythinker_code.ui.shell.visualize._blocks import (
     _ProgressNoteBlock,
     _QuestionAnsweredBlock,
     _StatusBlock,
+    _SuggestionBlock,
     _ToolCallBlock,
 )
 from pythinker_code.ui.shell.visualize._question_panel import (
@@ -97,6 +98,7 @@ from pythinker_code.wire.types import (
     StepInterrupted,
     StepRetry,
     SubagentEvent,
+    Suggestion,
     TextPart,
     ThinkPart,
     ToolCall,
@@ -912,6 +914,8 @@ class _LiveView:
                 self.display_question_answered(msg)
             case ProgressNote():
                 self.display_progress_note(msg)
+            case Suggestion():
+                self.display_suggestion(msg)
             case HookTriggered():
                 self.append_hook_triggered(msg)
             case HookResolved():
@@ -1297,6 +1301,13 @@ class _LiveView:
         self.flush_content()
         self.flush_finished_tool_calls()
         block = _ProgressNoteBlock(event)
+        _print_action_block(block.compose())
+        self.refresh_soon()
+
+    def display_suggestion(self, event: Suggestion) -> None:
+        self.flush_content()
+        self.flush_finished_tool_calls()
+        block = _SuggestionBlock(event)
         _print_action_block(block.compose())
         self.refresh_soon()
 

@@ -65,6 +65,7 @@ from pythinker_code.wire.types import (
     ProgressNote,
     QuestionAnswered,
     StatusUpdate,
+    Suggestion,
     ToolCall,
     ToolCallPart,
     ToolResult,
@@ -1231,6 +1232,24 @@ class _ProgressNoteBlock:
             Group(title, Markdown(self.event.body.strip())),
             bullet_style=tui_rich_style("success"),
         )
+
+
+class _SuggestionBlock:
+    """A non-blocking next-action suggestion for transcript UIs."""
+
+    def __init__(self, event: Suggestion) -> None:
+        self.event = event
+
+    def compose(self) -> RenderableType:
+        label = Text(
+            f"Suggested: {self.event.label.strip()}",
+            style=tui_rich_style("accent") + Style(bold=True),
+        )
+        prefill = self.event.prefill.strip()
+        if not prefill:
+            return BulletColumns(label, bullet_style=tui_rich_style("accent"))
+        hint = Text(f"→ {prefill}", style=tui_rich_style("muted"))
+        return BulletColumns(Group(label, hint), bullet_style=tui_rich_style("accent"))
 
 
 class _StatusBlock:

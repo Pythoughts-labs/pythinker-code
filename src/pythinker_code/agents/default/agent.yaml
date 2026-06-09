@@ -13,6 +13,7 @@ agent:
     - "pythinker_code.tools.ask_user:AskUserQuestion"
     - "pythinker_code.tools.todo:SetTodoList"
     - "pythinker_code.tools.progress:Progress"
+    - "pythinker_code.tools.suggest:Suggest"
     - "pythinker_code.tools.memory:Memory"
     - "pythinker_code.tools.recall:Recall"
     - "pythinker_code.tools.scratchpad:Scratchpad"

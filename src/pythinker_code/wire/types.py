@@ -472,6 +472,22 @@ class ProgressNote(BaseModel):
     """Optional markdown body shown below the title."""
 
 
+class Suggestion(BaseModel):
+    """A non-blocking, optional next-action suggestion for the user.
+
+    Unlike the blocking AskUserQuestion, this never pauses the turn: the model
+    posts an optional steer (e.g. "review my changes with /review") that the user
+    may act on or ignore.
+    """
+
+    label: str
+    """The suggested action, e.g. ``Review my changes``."""
+    prefill: str = ""
+    """Optional text/slash-command to prefill the input if the user accepts."""
+    category: str = ""
+    """Optional grouping, e.g. ``review``."""
+
+
 class QuestionNotSupported(Exception):
     """Raised when the connected client does not support interactive questions."""
 
@@ -604,6 +620,7 @@ type Event = (
     | ApprovalResponse
     | QuestionAnswered
     | ProgressNote
+    | Suggestion
     | SubagentEvent
     | PlanDisplay
     | BtwBegin
@@ -769,6 +786,7 @@ __all__ = [
     "QuestionResponse",
     "QuestionAnswered",
     "ProgressNote",
+    "Suggestion",
     "QuestionRequest",
     "QuestionNotSupported",
     # helpers

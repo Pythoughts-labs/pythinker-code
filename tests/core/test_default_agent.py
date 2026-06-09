@@ -288,6 +288,7 @@ async def test_default_agent_background_bash_guardrails(runtime: Runtime):
             "AskUserQuestion",
             "SetTodoList",
             "Progress",
+            "Suggest",
             "Memory",
             "Recall",
             "Scratchpad",
