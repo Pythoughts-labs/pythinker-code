@@ -81,6 +81,29 @@ def test_system_prompt_explains_adding_mcp_servers(builtin_args: BuiltinSystemPr
     assert "not Claude Code or Claude Desktop" in prompt
 
 
+def test_system_prompt_explains_removing_and_rejects_yaml_mcp_config(
+    builtin_args: BuiltinSystemPromptArgs,
+):
+    """The agent must also know how to *remove* a server, and must be steered off
+    the real-world failure of writing `mcpServers` into `config.yaml` (YAML),
+    which Pythinker never parses for MCP — the entry is silently dropped and the
+    server never shows in `/mcp`.
+    """
+    from pythinker_code.agentspec import DEFAULT_AGENT_FILE
+
+    prompt = _load_system_prompt(
+        DEFAULT_AGENT_FILE.parent / "system.md",
+        {"ROLE_ADDITIONAL": ""},
+        builtin_args,
+    )
+
+    # Removal is documented, not just add.
+    assert "pythinker mcp remove" in prompt
+    # Hard steer away from the config.yaml / YAML misplacement seen in the wild.
+    assert "config.yaml" in prompt
+    assert "silently dropped" in prompt
+
+
 def test_system_prompt_treats_injected_date_as_authoritative(
     builtin_args: BuiltinSystemPromptArgs,
 ):
