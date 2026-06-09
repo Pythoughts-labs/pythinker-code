@@ -1120,7 +1120,7 @@ class _NotificationBlock:
             if len(body_lines) > 2:
                 preview += "\n..."
             lines.append(Text(preview, style=tui_rich_style("muted")))
-        return BulletColumns(Group(*lines), bullet_style=style)
+        return BulletColumns(Group(*lines), bullet=Text(TRANSCRIPT_ASSISTANT_MARKER, style=style))
 
 
 class _HookBlock:
@@ -1210,7 +1210,10 @@ class _QuestionAnsweredBlock:
                 "User dismissed the question",
                 style=tui_rich_style("muted") + Style(bold=True),
             )
-            return BulletColumns(title, bullet_style=tui_rich_style("muted"))
+            return BulletColumns(
+                title,
+                bullet=Text(TRANSCRIPT_ASSISTANT_MARKER, style=tui_rich_style("muted")),
+            )
 
         title.append(
             "User answered Pythinker's questions:",
@@ -1223,7 +1226,10 @@ class _QuestionAnsweredBlock:
             row.append(" → ", style=tui_rich_style("dim"))
             row.append(answer, style=tui_rich_style("accent") + Style(bold=True))
             rows.append(row)
-        return BulletColumns(Group(*rows), bullet_style=tui_rich_style("success"))
+        return BulletColumns(
+            Group(*rows),
+            bullet=Text(TRANSCRIPT_ASSISTANT_MARKER, style=tui_rich_style("success")),
+        )
 
 
 class _ProgressNoteBlock:
@@ -1238,10 +1244,13 @@ class _ProgressNoteBlock:
             style=tui_rich_style("tool_title") + Style(bold=True),
         )
         if not self.event.body.strip():
-            return BulletColumns(title, bullet_style=tui_rich_style("success"))
+            return BulletColumns(
+                title,
+                bullet=Text(TRANSCRIPT_ASSISTANT_MARKER, style=tui_rich_style("success")),
+            )
         return BulletColumns(
             Group(title, Markdown(self.event.body.strip())),
-            bullet_style=tui_rich_style("success"),
+            bullet=Text(TRANSCRIPT_ASSISTANT_MARKER, style=tui_rich_style("success")),
         )
 
 
@@ -1258,9 +1267,15 @@ class _SuggestionBlock:
         )
         prefill = self.event.prefill.strip()
         if not prefill:
-            return BulletColumns(label, bullet_style=tui_rich_style("accent"))
+            return BulletColumns(
+                label,
+                bullet=Text(TRANSCRIPT_ASSISTANT_MARKER, style=tui_rich_style("accent")),
+            )
         hint = Text(f"→ {prefill}", style=tui_rich_style("muted"))
-        return BulletColumns(Group(label, hint), bullet_style=tui_rich_style("accent"))
+        return BulletColumns(
+            Group(label, hint),
+            bullet=Text(TRANSCRIPT_ASSISTANT_MARKER, style=tui_rich_style("accent")),
+        )
 
 
 class _StatusBlock:
