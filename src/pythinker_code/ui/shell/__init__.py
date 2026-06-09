@@ -765,6 +765,7 @@ class Shell:
         if isinstance(self.soul, PythinkerSoul):
             from pythinker_code.extensions import run_pending_extensions
             from pythinker_code.ui.shell.visualize._blocks import set_smooth_streaming
+            from pythinker_code.ui.terminal_background import resolve_theme_name
             from pythinker_code.ui.theme import set_active_theme
             from pythinker_code.ui.tui_config import (
                 is_card_style,
@@ -772,7 +773,7 @@ class Shell:
             )
             from pythinker_code.utils.rich.syntax import set_active_code_theme
 
-            set_active_theme(self.soul.runtime.config.theme)
+            set_active_theme(resolve_theme_name(self.soul.runtime.config.theme))
             set_active_tui_style(self.soul.runtime.config.tui.style)
             set_active_code_theme(self.soul.runtime.config.tui.code_theme)
             set_smooth_streaming(self.soul.runtime.config.tui.smooth_streaming)

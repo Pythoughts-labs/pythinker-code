@@ -13,7 +13,7 @@ from typing import Any, Literal, cast
 from prompt_toolkit.styles import Style as PTKStyle
 from rich.style import Style as RichStyle
 
-from pythinker_code.ui.terminal_capabilities import colors_disabled
+from pythinker_code.ui.terminal_capabilities import color_depth, colors_disabled
 
 type ThemeName = Literal["dark", "light"]
 
@@ -78,6 +78,16 @@ _DIFF_PLAIN = DiffColors(
     del_bg=RichStyle(),
     add_hl=RichStyle(),
     del_hl=RichStyle(),
+)
+
+# Basic 16-color terminals: the hex background tints above quantize into
+# unreadable mud, so fall back to plain green/red foregrounds (Codex's
+# ANSI16 diff tier). The fields still act as overlay styles for diff rows.
+_DIFF_ANSI16 = DiffColors(
+    add_bg=RichStyle(color="green"),
+    del_bg=RichStyle(color="red"),
+    add_hl=RichStyle(color="green", bold=True),
+    del_hl=RichStyle(color="red", bold=True),
 )
 
 
@@ -397,6 +407,8 @@ def get_active_theme() -> ThemeName:
 def get_diff_colors() -> DiffColors:
     if colors_disabled():
         return _DIFF_PLAIN
+    if color_depth() == "16":
+        return _DIFF_ANSI16
     return _DIFF_LIGHT if _active_theme == "light" else _DIFF_DARK
 
 

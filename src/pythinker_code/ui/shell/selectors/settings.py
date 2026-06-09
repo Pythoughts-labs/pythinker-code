@@ -86,7 +86,7 @@ def _build_settings_config(config: Config) -> SettingsListConfig:
             label="Theme",
             description="Terminal color theme. Reloads the shell after applying.",
             current_value=config.theme,
-            values=("dark", "light"),
+            values=("dark", "light", "auto"),
         ),
         SettingItem(
             id="tui.style",

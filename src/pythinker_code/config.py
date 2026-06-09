@@ -752,9 +752,13 @@ class Config(BaseModel):
         default="",
         description="Default external editor command (e.g. 'vim', 'code --wait')",
     )
-    theme: Literal["dark", "light"] = Field(
+    theme: Literal["dark", "light", "auto"] = Field(
         default="dark",
-        description="Terminal color theme. Use 'light' for light terminal backgrounds.",
+        description=(
+            "Terminal color theme. Use 'light' for light terminal backgrounds, "
+            "or 'auto' to detect the terminal background at startup (falls back "
+            "to dark when detection is unavailable)."
+        ),
     )
     show_thinking_stream: bool = Field(
         default=True,

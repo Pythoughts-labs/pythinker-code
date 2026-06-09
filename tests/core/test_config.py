@@ -125,6 +125,11 @@ def test_config_source_scopes_not_in_dump():
     assert "source_scopes" not in dumped
 
 
+def test_theme_accepts_auto():
+    config = load_config_from_string('theme = "auto"\n')
+    assert config.theme == "auto"
+
+
 def test_load_config_text_toml():
     config = load_config_from_string('default_model = ""\n')
     assert config == get_default_config()

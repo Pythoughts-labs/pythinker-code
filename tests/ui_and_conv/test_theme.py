@@ -139,7 +139,7 @@ async def test_theme_no_args_opens_selector_and_cancels(
     await _run_theme(cast(Shell, app), "")
 
     assert called["current_theme"] == "dark"
-    assert called["available_themes"] == ["dark", "light"]
+    assert called["available_themes"] == ["dark", "light", "auto"]
     print_mock.assert_not_called()
 
 
@@ -193,6 +193,9 @@ async def test_theme_switch_light_to_dark(runtime: Runtime, tmp_path: Path, monk
     set_active_theme("light")
     config_path = (tmp_path / "config.toml").resolve()
     runtime.config.source_file = config_path
+    # The command compares against the persisted setting (so `/theme dark`
+    # can pin a theme even when `auto` happened to resolve to dark).
+    runtime.config.theme = "light"
     app = _make_shell_app(runtime, tmp_path)
 
     config_for_save = get_default_config()

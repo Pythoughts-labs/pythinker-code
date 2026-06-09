@@ -979,7 +979,6 @@ async def task(app: Shell, args: str):
 @shell_mode_registry.command(aliases=["color"])
 async def theme(app: Shell, args: str) -> None:
     """Switch terminal color theme — interactive picker when no args given"""
-    from pythinker_code.ui.theme import get_active_theme
     from pythinker_code.ui.theme import get_tui_tokens as _get_tok_theme
 
     soul = ensure_pythinker_soul(app)
@@ -987,7 +986,9 @@ async def theme(app: Shell, args: str) -> None:
         return
 
     _t_theme = _get_tok_theme()
-    current = get_active_theme()
+    # Compare against the *configured* value, not the resolved active theme:
+    # "auto" resolves to dark/light at startup but stays "auto" in config.
+    current = soul.runtime.config.theme
     arg = args.strip().lower()
 
     if not arg:
@@ -995,15 +996,16 @@ async def theme(app: Shell, args: str) -> None:
 
         chosen = await run_theme_selector(
             current_theme=current,
-            available_themes=["dark", "light"],
+            available_themes=["dark", "light", "auto"],
         )
         if chosen is None or chosen == current:
             return
         arg = chosen
 
-    if arg not in ("dark", "light"):
+    if arg not in ("dark", "light", "auto"):
         console.print(
-            f"[{_t_theme.error}]Unknown theme: {_rich_escape(arg)}. Use 'dark' or 'light'.[/]"
+            f"[{_t_theme.error}]Unknown theme: {_rich_escape(arg)}. "
+            f"Use 'dark', 'light', or 'auto'.[/]"
         )
         return
 
