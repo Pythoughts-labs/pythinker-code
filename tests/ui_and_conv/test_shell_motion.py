@@ -71,9 +71,12 @@ def test_spinner_frame_changes_with_time():
 def test_active_glyphs_use_text_safe_solid_circle():
     from pythinker_code.ui.shell.glyphs import SHAPE_FRAMES, TRANSCRIPT_ASSISTANT_MARKER
 
-    active_glyphs = {TRANSCRIPT_ASSISTANT_MARKER, SHAPE_FRAMES[0], REDUCED_MOTION_GLYPH}
-    assert active_glyphs == {"●"}
-    assert "⏺" not in active_glyphs
+    # The transcript row marker is the reference-CLI record button on
+    # macOS/Linux (Windows keeps the text circle); the pulse/reduced-motion
+    # glyphs stay on the text-safe solid circle.
+    assert TRANSCRIPT_ASSISTANT_MARKER == "⏺"
+    assert SHAPE_FRAMES[0] == "●"
+    assert REDUCED_MOTION_GLYPH == "●"
 
 
 def test_reduced_motion_uses_static_glyph():
@@ -108,7 +111,7 @@ def test_activity_status_line_contains_label_elapsed_tokens_and_interrupt_hint()
     )
     output = _plain(line)
     assert "Thinking…" in output
-    assert "· 12s · ↓ 2.4k tokens · 42 t/s · esc" in output
+    assert "(12s, ↓ 2.4k tokens, 42 t/s, esc)" in output
     assert "esc to interrupt" not in output
 
 
@@ -127,12 +130,17 @@ def test_activity_status_line_uses_clean_metadata_separator():
 
     output = _plain(line).strip()
 
-    assert "Pythinking… · 30s · ↓ 1.3k tokens" in output
+    # Parenthesized, comma-separated metadata — same design as the pinned-todo
+    # activity header, no middle-dot separators.
+    assert "Pythinking… (30s, ↓ 1.3k tokens)" in output
 
 
-def test_activity_status_line_uses_platinum_spinner_and_champagne_verb():
+def test_activity_status_line_uses_platinum_spinner_and_champagne_verb(monkeypatch):
     from pythinker_code.ui.theme import set_active_theme, tui_rich_style
 
+    # Pin the discrete three-step sheen (256-color tier) for determinism.
+    monkeypatch.delenv("COLORTERM", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
     set_active_theme("dark")
     start = activity_status_line(ActivitySnapshot(label="Cultivating", elapsed_s=0.0))
     sheen = activity_status_line(ActivitySnapshot(label="Cultivating", elapsed_s=0.88))
@@ -143,6 +151,34 @@ def test_activity_status_line_uses_platinum_spinner_and_champagne_verb():
     assert _span_colors_for(sheen, "Cultivating") >= _SHIMMER_HEXES
     assert _span_colors_for(later_sheen, "Cultivating") >= _SHIMMER_HEXES
     assert "Cultivating…" in _plain(start)
+
+
+def test_truecolor_shimmer_blends_a_smooth_sheen(monkeypatch):
+    from pythinker_code.ui.shell.motion import shimmer_text
+    from pythinker_code.ui.theme import set_active_theme
+
+    monkeypatch.setenv("COLORTERM", "truecolor")
+    set_active_theme("dark")
+    # Mid-sweep frame: the cosine falloff should produce blended intermediate
+    # tones beyond the discrete base/mid/highlight ramp.
+    colors = _span_colors_for(shimmer_text("Cultivating", 0.88), "Cultivating")
+    assert len(colors) > 3
+    blended = colors - _SHIMMER_HEXES
+    assert blended, "expected cosine-blended tones outside the discrete ramp"
+
+
+def test_shimmer_settles_between_sweeps(monkeypatch):
+    from pythinker_code.ui.shell.motion import _SHIMMER_BASE, shimmer_text
+    from pythinker_code.ui.theme import set_active_theme
+
+    monkeypatch.setenv("COLORTERM", "truecolor")
+    set_active_theme("dark")
+    label = "Cultivating"
+    # Frame inside the settle beat right after the first sweep clears.
+    wave_len = len(label) + 6
+    settle_elapsed = (wave_len + 1) * 0.15
+    colors = _span_colors_for(shimmer_text(label, settle_elapsed), label)
+    assert colors == {_SHIMMER_BASE.lower()}
 
 
 def test_shape_activity_status_line_pulses_solid_dot():

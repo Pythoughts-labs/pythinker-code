@@ -259,7 +259,7 @@ def test_bash_execution_uses_codex_style_compact_layout():
         width=80,
     )
 
-    assert "● Ran $ printf hello" in out
+    assert "⏺ Ran $ printf hello" in out
     assert "⎿ hello" in out
     assert "  world" in out
     assert "─" not in out
@@ -287,8 +287,8 @@ def test_bash_execution_ignores_shebang_when_extracting_comment_label():
         width=80,
     )
 
-    assert "● Ran $ usr/bin/env bash" not in shebang_only
-    assert "● Ran $ Build docs" in with_label
+    assert "⏺ Ran $ usr/bin/env bash" not in shebang_only
+    assert "⏺ Ran $ Build docs" in with_label
     assert "echo ok" not in with_label
 
 
@@ -366,5 +366,5 @@ def test_bash_execution_running_marker_pulses(monkeypatch):
     )
 
     assert first != second
-    assert "● Running $ sleep 1" in first
+    assert "⏺ Running $ sleep 1" in first
     assert "Running $ sleep 1" in second

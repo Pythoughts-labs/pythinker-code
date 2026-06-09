@@ -36,6 +36,7 @@ from pythinker_code.ui.shell.mcp_status import mcp_startup_header
 from pythinker_code.ui.shell.motion import (
     ActivitySnapshot,
     activity_status_line,
+    reduced_motion_enabled,
 )
 from pythinker_code.ui.shell.spacing import BLANK_ROW
 from pythinker_code.ui.shell.tips import FEATURE_TIPS
@@ -335,7 +336,7 @@ class _ContentBlock:
                 # purple emphasis colors.
                 return BulletColumns(
                     Text(remaining, style=thinking_style + Style(italic=True)),
-                    bullet_style=thinking_style,
+                    bullet=Text(TRANSCRIPT_ASSISTANT_MARKER, style=thinking_style),
                 )
             elapsed_str = format_elapsed(time.monotonic() - self._start_time)
             return Text(
@@ -377,12 +378,19 @@ class _ContentBlock:
         )
 
     def _wrap_preview_bullet(self, renderable: RenderableType) -> BulletColumns:
-        """Wrap transient live preview without mutating scrollback bullet state."""
+        """Wrap transient live preview without mutating scrollback bullet state.
+
+        While the block is still streaming the marker blinks (muted); the
+        committed scrollback row gets the solid green marker via
+        :meth:`_wrap_bullet`, so "done" reads as a steady green ⏺.
+        """
         if self._has_printed_bullet:
             return BulletColumns(renderable, bullet=Text(" "))
+        visible = reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0
+        glyph = TRANSCRIPT_ASSISTANT_MARKER if visible else " "
         return BulletColumns(
             renderable,
-            bullet=Text(TRANSCRIPT_ASSISTANT_MARKER, style=tui_rich_style("success")),
+            bullet=Text(glyph, style=tui_rich_style("muted") + Style(bold=True)),
         )
 
     @property
@@ -477,7 +485,10 @@ class _ContentBlock:
         return Group(
             spinner,
             BLANK_ROW,
-            BulletColumns(Text(preview, style=preview_style), bullet_style=preview_style),
+            BulletColumns(
+                Text(preview, style=preview_style),
+                bullet=Text(TRANSCRIPT_ASSISTANT_MARKER, style=preview_style),
+            ),
         )
 
     def _compose_thinking_spinner(self) -> Text:

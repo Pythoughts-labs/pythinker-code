@@ -308,6 +308,9 @@ def test_background_status_splits_verb_and_count_styles(monkeypatch) -> None:
     from pythinker_code.ui.theme import get_active_theme, get_tui_tokens, set_active_theme
 
     monkeypatch.setattr(prompt_module.time, "monotonic", lambda: 0.88)
+    # Pin the discrete three-step sheen (256-color tier) for determinism.
+    monkeypatch.delenv("COLORTERM", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
     saved_theme = get_active_theme()
     try:
         set_active_theme("dark")

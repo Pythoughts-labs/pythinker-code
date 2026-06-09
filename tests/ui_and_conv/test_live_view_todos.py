@@ -103,7 +103,7 @@ def test_todo_update_pins_current_task_under_activity_line(monkeypatch) -> None:
     now = 1460.0
     rendered = _render(view._working_indicator())
 
-    assert "● Implement pinned todos… (7m 40s · ↓ 10k tokens)" in rendered
+    assert "● Implement pinned todos… (7m 40s, ↓ 10k tokens)" in rendered
     assert rendered.count("Implement pinned todos") == 2
     assert "⎿    ■ Implement pinned todos" in rendered
     assert "✓ Explore UI" in rendered
@@ -125,7 +125,7 @@ def test_active_todo_activity_line_does_not_alternate_with_spinner_verb(monkeypa
     now = 1465.0
     rendered = _render(view._working_indicator())
 
-    assert "● Implement pinned todos… (7m 45s · ↓ 10k tokens)" in rendered
+    assert "● Implement pinned todos… (7m 45s, ↓ 10k tokens)" in rendered
     assert _live_view_module.spinner_message(now) not in rendered
     assert "⎿    ■ Implement pinned todos" in rendered
     assert "✓ Explore UI" in rendered
@@ -145,7 +145,7 @@ def test_spinner_verb_shows_until_next_todo_becomes_active(monkeypatch) -> None:
     now = 1465.0
     rendered = _render(view._working_indicator())
 
-    assert f"● {_live_view_module.spinner_message(now)} (7m 45s · ↓ 10k tokens)" in rendered
+    assert f"● {_live_view_module.spinner_message(now)} (7m 45s, ↓ 10k tokens)" in rendered
     assert "⎿    □ Next task" in rendered
     assert "✓ Finished task" in rendered
 
@@ -172,7 +172,10 @@ def test_finished_todos_move_to_bottom_of_menu(monkeypatch) -> None:
     assert rendered.index("✓ Finished first") < rendered.index("✓ Finished second")
 
 
-def test_todo_activity_line_uses_standard_spinner_shimmer_for_generic_verbs() -> None:
+def test_todo_activity_line_uses_standard_spinner_shimmer_for_generic_verbs(monkeypatch) -> None:
+    # Pin the discrete three-step sheen (256-color tier) for determinism.
+    monkeypatch.delenv("COLORTERM", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
     set_active_theme("dark")
     view = _LiveView(StatusUpdate(context_tokens=10_000))
 
@@ -190,12 +193,16 @@ def test_active_todo_activity_line_uses_stable_label_not_shimmer() -> None:
     line = view._todo_activity_line(
         "Implement pinned todos", elapsed_s=0.88, width=100, shimmer_label=False
     )
+    later = view._todo_activity_line(
+        "Implement pinned todos", elapsed_s=1.18, width=100, shimmer_label=False
+    )
 
-    active_color = _color_hex(tui_rich_style("accent").color)
+    # Stable single coral tone (matches the in-progress ■ boxes), no animation.
+    active_color = _color_hex(tui_rich_style("activity_verb").color)
     marker_style = Style.parse(line.style) if isinstance(line.style, str) else line.style
     assert marker_style.color == tui_rich_style("activity_spinner").color
     assert _span_colors_for(line, "Implement pinned todos") == {active_color}
-    assert _span_colors_for(line, "Implement pinned todos").isdisjoint(_SHIMMER_HEXES)
+    assert _span_colors_for(later, "Implement pinned todos") == {active_color}
 
 
 def test_active_pinned_todo_row_uses_neutral_title_not_shimmer() -> None:
@@ -207,21 +214,31 @@ def test_active_pinned_todo_row_uses_neutral_title_not_shimmer() -> None:
         is_first=True,
         width=100,
         elapsed_s=0.88,
+        is_active=True,
     )
 
-    active_color = _color_hex(tui_rich_style("activity_label").color)
-    shimmer_colors = _SHIMMER_HEXES
-    assert _span_colors_for(row, "■") == {_color_hex(tui_rich_style("activity_verb").color)}
+    # Title shares the coral activity color with the ■ box — one stable tone.
+    active_color = _color_hex(tui_rich_style("activity_verb").color)
+    assert _span_colors_for(row, "■") == {active_color}
     assert _span_colors_for(row, "Implement pinned todos") == {active_color}
-    assert _span_colors_for(row, "Implement pinned todos").isdisjoint(shimmer_colors)
-    title_start = row.plain.index("Implement pinned todos")
-    title_end = title_start + len("Implement pinned todos")
-    assert any(
-        span.start <= title_start
-        and span.end >= title_end
-        and (Style.parse(span.style) if isinstance(span.style, str) else span.style).bold
-        for span in row.spans
+
+
+def test_secondary_in_progress_todo_rows_use_light_grey() -> None:
+    set_active_theme("dark")
+    view = _LiveView(StatusUpdate())
+
+    row = view._pinned_todo_row(
+        TodoDisplayItem(title="Deep code review on diff", status="in_progress"),
+        is_first=False,
+        width=100,
+        elapsed_s=0.88,
+        is_active=False,
     )
+
+    # Concurrent (non-active) running todos read light grey, not coral.
+    grey = _color_hex(tui_rich_style("thinking_text").color)
+    assert _span_colors_for(row, "■") == {grey}
+    assert _span_colors_for(row, "Deep code review on diff") == {grey}
 
 
 def test_pinned_todo_rows_align_icons_and_titles() -> None:

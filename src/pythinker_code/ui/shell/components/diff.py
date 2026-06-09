@@ -19,7 +19,6 @@ import difflib
 import re
 from dataclasses import dataclass
 
-from rich.style import Style as RichStyle
 from rich.text import Text
 
 from pythinker_code.ui.shell.render_constants import (
@@ -175,13 +174,17 @@ def _parse_diff_line(line: str) -> tuple[str, str, str] | None:
 
 
 def _intra_line_diff(old_content: str, new_content: str) -> tuple[Text, Text]:
-    """Word-level inverse highlighting on changed tokens (the same behavior).
+    """Word-level highlighting on changed tokens.
 
-    Returns ``(removed_text, added_text)`` already styled (with the inverse
-    bit set on tokens that differ), but *not* yet wrapped in red/green —
-    callers add the row-level style.
+    Returns ``(removed_text, added_text)`` with changed tokens carrying the
+    theme's brighter add/del highlight backgrounds (GitHub-style word
+    emphasis), but *not* yet wrapped in red/green — callers add the
+    row-level style. Reverse video is deliberately avoided: it reads as
+    glaring blocks on dark terminals.
     """
-    inverse = RichStyle(reverse=True)
+    colors = get_diff_colors()
+    removed_hl = colors.del_hl
+    added_hl = colors.add_hl
 
     def _tokenize(s: str) -> list[str]:
         return re.findall(r"\s+|\S+", s)
@@ -211,11 +214,11 @@ def _intra_line_diff(old_content: str, new_content: str) -> tuple[Text, Text]:
                 if leading:
                     removed.append(leading)
                 if stripped:
-                    removed.append(stripped, style=inverse)
+                    removed.append(stripped, style=removed_hl)
                 if stripped:
                     first_removed = False
             else:
-                removed.append(piece, style=inverse)
+                removed.append(piece, style=removed_hl)
         if tag in ("insert", "replace"):
             piece = "".join(new_tokens[j1:j2])
             if first_added:
@@ -224,11 +227,11 @@ def _intra_line_diff(old_content: str, new_content: str) -> tuple[Text, Text]:
                 if leading:
                     added.append(leading)
                 if stripped:
-                    added.append(stripped, style=inverse)
+                    added.append(stripped, style=added_hl)
                 if stripped:
                     first_added = False
             else:
-                added.append(piece, style=inverse)
+                added.append(piece, style=added_hl)
     return removed, added
 
 

@@ -187,7 +187,7 @@ class ToolExecutionComponent:
             except Exception:  # noqa: BLE001 — renderer crash falls back to header
                 call = self._call_fallback()
             if call is not None:
-                children.append(call)
+                children.append(self._blink_running_marker(call))
         else:
             children.append(self._call_fallback())
 
@@ -223,6 +223,27 @@ class ToolExecutionComponent:
         return Padding(body, TINTED_CARD_PADDING, style=bg_style)
 
     # -- Internals -----------------------------------------------------------
+
+    def _blink_running_marker(self, call: RenderableType) -> RenderableType:
+        """Blink the leading row marker while the tool is still running.
+
+        Applies centrally so every registered renderer gets the running blink
+        without threading status through each ``render_call``; completed rows
+        keep the renderer's own (green/red) marker untouched.
+        """
+        if self._status not in (ToolExecutionStatus.PENDING, ToolExecutionStatus.RUNNING):
+            return call
+        if not isinstance(call, Text):
+            return call
+        plain = call.plain
+        if not plain.startswith(f"{TRANSCRIPT_ASSISTANT_MARKER} "):
+            return call
+        if reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0:
+            return call
+        blinked = call.copy()
+        # Off-beat of the blink: hide the marker, keep the column stable.
+        blinked.plain = f" {plain[1:]}"
+        return blinked
 
     def _build_context(self, *, width: int = 0) -> ToolRenderContext:
         return ToolRenderContext(
@@ -298,9 +319,11 @@ class ToolExecutionComponent:
             head = text[: _MAX_RESULT_CHARS // 2]
             tail = text[-(_MAX_RESULT_CHARS // 2) :]
             notice = "\n… middle omitted …\n"
-        body = Text(head[:_MAX_RESULT_CHARS], style=style)
+        # Each side gets half the character budget so the combined render can
+        # never exceed _MAX_RESULT_CHARS even for line-heavy output.
+        body = Text(head[: _MAX_RESULT_CHARS // 2], style=style)
         body.append(notice, style=tui_rich_style("muted") + Style(italic=True))
-        body.append(tail[-_MAX_RESULT_CHARS:], style=style)
+        body.append(tail[-(_MAX_RESULT_CHARS // 2) :], style=style)
         body.append(
             "\n… output truncated for display; full result preserved in session.",
             style=tui_rich_style("muted") + Style(italic=True),

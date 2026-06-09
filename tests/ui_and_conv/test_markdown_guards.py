@@ -69,6 +69,12 @@ def test_markup_without_fences_fast_path() -> None:
     assert _unwrap_fenced_markdown_tables(markup) is markup
 
 
+def test_tilde_md_fence_with_table_unwraps() -> None:
+    out = _unwrap_fenced_markdown_tables(f"~~~markdown\n{_TABLE_BODY}~~~\n")
+    assert "~~~" not in out
+    assert "| Name | Value |" in out
+
+
 def test_md_fence_inside_other_fence_is_untouched() -> None:
     # A ```md line inside a ~~~ fence is content, not a fence opener.
     markup = f"~~~\n```md\n{_TABLE_BODY}```\n~~~\n"

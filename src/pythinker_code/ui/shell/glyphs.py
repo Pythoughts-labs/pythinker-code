@@ -7,6 +7,7 @@ were previously duplicated between :mod:`pythinker_code.ui.shell.motion` and
 
 from __future__ import annotations
 
+import sys
 from typing import Final
 
 from pythinker_code.ui.terminal_capabilities import ascii_glyphs_enabled
@@ -41,9 +42,12 @@ STAR_SPINNER_FRAMES: Final = ACTIVE_MARKER_FRAMES
 STAR_SPINNER_FRAME_INTERVAL_S: Final = ACTIVE_MARKER_FRAME_INTERVAL_S
 
 #: Transcript row marker for assistant/tool-call lines. U+23FA (record button)
-#: renders as a blue emoji tile on some Windows terminals; keep this as a
-#: monochrome text circle.
-TRANSCRIPT_ASSISTANT_MARKER: Final = "*" if _ASCII_GLYPHS else "●"
+#: matches the reference CLI look on macOS/Linux terminals; some Windows
+#: terminals render it as a blue emoji tile, so Windows keeps the monochrome
+#: text circle and ASCII mode keeps the star.
+TRANSCRIPT_ASSISTANT_MARKER: Final = (
+    "*" if _ASCII_GLYPHS else ("●" if sys.platform == "win32" else "⏺")
+)
 #: Transcript prompt marker for submitted user input.
 TRANSCRIPT_PROMPT_MARKER: Final = ">" if _ASCII_GLYPHS else "❯"
 #: Transcript marker for completed thinking/status timing rows.

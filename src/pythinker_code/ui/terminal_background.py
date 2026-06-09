@@ -10,10 +10,12 @@ so callers keep their configured fallback.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import select
 import sys
+import threading
 import time
 from typing import TYPE_CHECKING, Literal
 
@@ -30,9 +32,15 @@ _OSC11_RESPONSE_RE = re.compile(
 )
 
 _PROBE_TIMEOUT_S = 0.1
+# Hard cap on bytes read while waiting for the OSC reply, so a hostile or
+# chatty terminal can't grow the buffer unboundedly inside the probe window.
+_MAX_PROBE_REPLY_BYTES = 4096
 
 _cached_bg: RGB | None = None
 _probe_attempted = False
+# Startup is single-threaded today, but the cache is module-global state —
+# serialize probing so a future concurrent caller can't race the tty.
+_probe_lock = threading.Lock()
 
 
 def _scale_component(component: str) -> int:
@@ -81,8 +89,9 @@ def _probe_uncached(timeout: float) -> RGB | None:
         sys.stdout.flush()
         deadline = time.monotonic() + timeout
         buf = ""
-        while time.monotonic() < deadline:
+        while time.monotonic() < deadline and len(buf) < _MAX_PROBE_REPLY_BYTES:
             remaining = deadline - time.monotonic()
+            # select raises ValueError (not OSError) for fds >= FD_SETSIZE.
             readable, _, _ = select.select([fd], [], [], max(0.0, remaining))
             if not readable:
                 break
@@ -93,10 +102,13 @@ def _probe_uncached(timeout: float) -> RGB | None:
             if "\x07" in buf or "\x1b\\" in buf:
                 break
         return parse_osc11_response(buf)
-    except OSError:
+    except (OSError, ValueError):
         return None
     finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
+        # Never let restore failure escape — a raised tcsetattr here would
+        # both crash startup and leave the terminal in cbreak mode anyway.
+        with contextlib.suppress(termios.error, OSError):
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
 
 
 def probe_terminal_background(timeout: float = _PROBE_TIMEOUT_S) -> RGB | None:
@@ -106,11 +118,12 @@ def probe_terminal_background(timeout: float = _PROBE_TIMEOUT_S) -> RGB | None:
     queried twice in one session.
     """
     global _cached_bg, _probe_attempted
-    if _probe_attempted:
+    with _probe_lock:
+        if _probe_attempted:
+            return _cached_bg
+        _probe_attempted = True
+        _cached_bg = _probe_uncached(timeout)
         return _cached_bg
-    _probe_attempted = True
-    _cached_bg = _probe_uncached(timeout)
-    return _cached_bg
 
 
 def detect_background_theme() -> Literal["dark", "light"] | None:

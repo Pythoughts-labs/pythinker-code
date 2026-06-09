@@ -34,13 +34,17 @@ from rich.text import Text
 from rich.theme import Theme
 
 from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
+from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ASSISTANT_MARKER
 from pythinker_code.ui.shell.render_constants import MAX_HIGHLIGHT_BYTES, MAX_HIGHLIGHT_LINES
 from pythinker_code.ui.shell.spacing import CODE_BLOCK_PADDING, blank_row
 from pythinker_code.ui.theme import ThemeName, get_markdown_colors
 from pythinker_code.utils.rich.markdown import CodeBlock, Markdown
 
 _MARKDOWN_ICON_REPLACEMENTS: dict[str, str] = {
-    "⏺": "•",
+    # Model text mimicking the CLI transcript keeps the row-marker look; on
+    # platforms where U+23FA degrades (Windows emoji tile, ASCII mode) it
+    # normalizes to that platform's marker glyph.
+    "⏺": TRANSCRIPT_ASSISTANT_MARKER,
     "✅": "✓",
     "☑️": "✓",
     "☑": "✓",

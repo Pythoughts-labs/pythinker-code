@@ -1279,7 +1279,8 @@ async def settings(app: Shell, args: str):
     if mode in {"show", "list", "view"}:
         print_settings_table()
         return
-    if mode.split() and mode.split()[0] == "recaps":
+    mode_parts = mode.split()
+    if mode_parts and mode_parts[0] == "recaps":
         value = mode.removeprefix("recaps").strip()
         if value not in {"on", "off"}:
             console.print(f"[{_t_set.warning}]Usage: /settings recaps on|off[/]")

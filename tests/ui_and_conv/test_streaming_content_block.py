@@ -262,7 +262,7 @@ def test_thinking_status_line_uses_compact_activity_metadata():
     console.print(block.compose())
     output = console.export_text()
     assert "Thinking…" in output
-    assert "·" in output
+    assert "(" in output and ")" in output
     assert "esc to interrupt" not in output
 
 
@@ -286,15 +286,20 @@ def test_assert_blank_line_after_activity_reports_missing_following_line() -> No
         _assert_blank_line_after_activity("Composing\n", "Composing")
 
 
-def test_composing_preview_has_standard_gap_after_activity_line():
+def test_composing_preview_has_standard_gap_after_activity_line(monkeypatch):
+    from pythinker_code.ui.shell.visualize import _blocks as blocks_module
+
     block = _ContentBlock(is_think=False)
     block.append("live preview without newline")
+    # Pin the blink to its visible phase: the streaming marker blinks while
+    # the block is live and turns solid green only on commit.
+    monkeypatch.setattr(blocks_module.time, "monotonic", lambda: 0.0)
     console = Console(record=True, width=120, color_system=None)
     console.print(block.compose())
     output = console.export_text()
 
     _assert_blank_line_after_activity(output, "Composing")
-    assert "\n\n● live preview without newline" in output
+    assert "\n\n⏺ live preview without newline" in output
 
 
 def test_thinking_stream_preview_has_standard_gap_after_activity_line():
@@ -314,7 +319,7 @@ def test_thinking_stream_preview_uses_transcript_bullet_after_activity_line():
     output = console.export_text()
 
     assert "Thinking" in output
-    assert "\n\n• **Preparing report generation**" in output
+    assert "\n\n⏺ **Preparing report generation**" in output
 
 
 def _style_for(renderable: Text, text: str) -> Style:

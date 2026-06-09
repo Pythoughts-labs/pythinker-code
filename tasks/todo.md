@@ -678,3 +678,43 @@ issues fixed (TDD):
   and can't change, so the fix is test-only: a generous `_BROWSER_CALLBACK_TEST_TIMEOUT`
   for the connect/await deadlines and a bounded poll-until-done instead of a fixed sleep.
   Originally-flaky combo now 6/6 stable under random ordering; tests/auth+ui_and_conv 1822 pass.
+
+## Review — session 2026-06-09 (Phase 1 + design polish + hardening)
+
+Done beyond Phase 1 (user-directed design wave):
+- ⏺ transcript marker (Windows keeps ●, ASCII keeps *), blinking while
+  tools/preview run, solid green when finished; thinking rows use ⏺ too.
+- Muted clay-coral activity ramp; shimmer simplified to bidirectional sweep
+  with settle beats; truecolor gets cosine-blended sheen (color_utils.blend).
+- Activity/todo metadata unified: "Verb… (12s, ↓ 2.4k tokens, 45 t/s)" — no
+  middle dots; t/s counter added to working indicator + todo header.
+- Thinking-effort colors: cold→hot gradient (slate→blue→teal→amber→orange→
+  dark red xhigh).
+- Active todo title+box coral; concurrent in-progress rows light grey.
+- Diff word-level highlights: reverse-video → theme add/del highlight bgs.
+- Turn recap padded to card inset.
+- Hardening (validated from in-app review): select ValueError caught,
+  tcsetattr restore suppressed, probe reply byte cap, probe cache lock,
+  head/tail char budget halved per side, mode.split() once, ~~~md fence test.
+- Homebrew updater: user machine upgraded 0.38.0→0.39.0 (stale tap); the
+  code fix already shipped in v0.39.0 (PR #87).
+
+Verified: make check-pythinker-code green; full pytest tests: 4757 passed.
+
+## Out of scope / next (designs ready, not implemented)
+
+- /statusline command (Codex bottom_pane/status_line_setup.rs): config key
+  tui.status_line list[str], item registry (model, current-dir, git-branch,
+  context-remaining, used-tokens), wire into prompt.py
+  _render_card_bottom_toolbar; recon notes in session memory.
+- Background working status: replace "N background agents" suffix with
+  (elapsed, tokens, t/s) — needs an elapsed/tokens provider on
+  CustomPromptSession (footer already shows the bg count).
+- Slash-command audit verdict: nothing safely removable — /exit is
+  Shell-intercepted (completion needs the registry entry); /color,/status,
+  /cost,/config are deliberate Blackbox-style aliases guarded by
+  test_blackbox_style_slash_aliases_are_registered. Optional renames
+  (/sessions→/resume primary, /memory→/memories) left to user choice.
+- Phase 2/3 backlog: per-hunk diff syntax highlighting, Codex table column
+  sizing + key/value narrow fallback, per-file multi-file diff summaries,
+  URL-aware wrap, custom themes, compact JSON, transcript export.

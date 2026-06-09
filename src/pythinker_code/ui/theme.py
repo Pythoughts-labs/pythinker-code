@@ -507,9 +507,9 @@ _TUI_TOKENS_DARK = TuiTokens(
     text="",
     thinking_text="#C0C0C0",
     activity_label="#F4F4F5",
-    activity_verb="#EE9983",
-    activity_verb_mid="#F4B5A5",
-    activity_verb_highlight="#FBD9CE",
+    activity_verb="#C68D7E",
+    activity_verb_mid="#D8AC9E",
+    activity_verb_highlight="#E9CDC2",
     activity_spinner="#B8C0CC",
     selected_bg=_SELECTED_BG_DARK,
     user_message_bg="#333333",
@@ -543,9 +543,9 @@ _TUI_TOKENS_LIGHT = TuiTokens(
     text="#213853",
     thinking_text="#7A7A7A",
     activity_label="#213853",
-    activity_verb="#C56B4F",
-    activity_verb_mid="#B0573C",
-    activity_verb_highlight="#8F3A26",
+    activity_verb="#B26A52",
+    activity_verb_mid="#9E563E",
+    activity_verb_highlight="#82412D",
     activity_spinner="#6B7280",
     selected_bg=_SELECTED_BG_LIGHT,
     user_message_bg="#E0E0E0",
@@ -606,15 +606,17 @@ def tui_rich_style(token: str, *, theme: ThemeName | None = None) -> RichStyle:
 # ThinkingLevel value; ``min`` is accepted as the compact palette step alias.
 # ---------------------------------------------------------------------------
 
+# A single cold→hot gradient so the levels read as one dial: slate when off,
+# cool blue/teal at low effort, warming amber/orange, ending on dark red.
 _THINKING_FRAME_SCALE: dict[str, str] = {
     "off": "#64748b",  # muted grey / slate-500
-    "min": "#cbd5e1",  # lighter grey / slate-300
-    "minimal": "#cbd5e1",  # canonical value for minimum
-    "low": "#3b82f6",  # rich digital blue / blue-500
-    "medium": "#22d3ee",  # electric light cyan / cyan-400
-    "high": "#c4b5fd",  # whitish purple / violet-300
-    "xhigh": "#a855f7",  # vibrant purple / purple-500
-    "max": "#6d28d9",  # deep violet / violet-700
+    "min": "#60a5fa",  # cool blue / blue-400
+    "minimal": "#60a5fa",  # canonical value for minimum
+    "low": "#2dd4bf",  # teal / teal-400
+    "medium": "#fbbf24",  # warm amber / amber-400
+    "high": "#f97316",  # hot orange / orange-500
+    "xhigh": "#b91c1c",  # dark red / red-700
+    "max": "#7f1d1d",  # deepest red / red-900
 }
 
 _THINKING_FRAME_DARK: dict[str, str] = _THINKING_FRAME_SCALE
