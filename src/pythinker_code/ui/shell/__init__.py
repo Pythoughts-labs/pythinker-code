@@ -510,7 +510,7 @@ async def _codex_usage_windows(soul: Soul) -> list[str]:
 
         report = await asyncio.wait_for(
             OpenAIChatGPTAdapter().fetch(provider, runtime.oauth),
-            timeout=6.0,
+            timeout=3.0,
         )
     except Exception:
         logger.debug("Codex usage lookup for 429 message failed", exc_info=True)

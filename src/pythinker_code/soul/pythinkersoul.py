@@ -199,6 +199,25 @@ def classify_api_error(e: Exception) -> tuple[str, int | None]:
     return "other", None
 
 
+def _is_hard_usage_limit(exception: BaseException) -> bool:
+    """Whether a 429 is a subscription usage cap (resets in hours) rather than a
+    transient RPM/TPM burst (clears in seconds).
+
+    Hard caps — e.g. ChatGPT Codex ``usage_limit_reached`` — should NOT be retried:
+    the backoff just delays the inevitable failure. Detected from the parsed body
+    when present, else from the stringified message (the streaming 429 often
+    carries only the bare text)."""
+    body = getattr(exception, "body", None)
+    if isinstance(body, dict):
+        err = cast(dict[str, object], body).get("error")
+        if isinstance(err, dict):
+            err_type = cast(dict[str, object], err).get("type")
+            if str(err_type or "") == "usage_limit_reached":
+                return True
+    text = str(exception).lower()
+    return "usage_limit_reached" in text or "usage limit" in text
+
+
 type StepStopReason = Literal["no_tool_calls", "tool_rejected", "stuck"]
 
 
@@ -2087,7 +2106,14 @@ class PythinkerSoul:
             return not bool(getattr(exception, "_pythinker_recovery_exhausted", False))
         if isinstance(exception, APIEmptyResponseError):
             return True
-        return isinstance(exception, APIStatusError) and exception.status_code in (
+        if not isinstance(exception, APIStatusError):
+            return False
+        if exception.status_code == 429 and _is_hard_usage_limit(exception):
+            # A subscription usage cap (e.g. ChatGPT Codex `usage_limit_reached`)
+            # resets in hours, not seconds — retrying with backoff only adds
+            # latency before the inevitable failure. Surface it immediately.
+            return False
+        return exception.status_code in (
             429,  # Too Many Requests
             500,  # Internal Server Error
             502,  # Bad Gateway

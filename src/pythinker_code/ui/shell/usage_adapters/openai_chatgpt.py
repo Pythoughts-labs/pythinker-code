@@ -207,25 +207,44 @@ def _label_for_codex_window(seconds: int) -> str:
 
 
 def _codex_reset_hint(win_map: Mapping[str, Any]) -> str | None:
-    # Current shape: `resets_at` is a unix-seconds timestamp.
-    # Older shape: `reset_at` is an ISO-8601 string.
-    resets_at_unix = win_map.get("resets_at")
-    if isinstance(resets_at_unix, int | float):
+    # The reset time arrives under `resets_at` or `reset_at`, and as a
+    # unix-seconds timestamp (number or numeric string) or an ISO-8601 string.
+    # Always humanize it ("resets in 2h 14m") rather than printing a raw value.
+    for key in ("resets_at", "reset_at"):
+        raw = win_map.get(key)
+        if raw is None:
+            continue
+        dt = _coerce_reset_datetime(raw)
+        if dt is not None:
+            return _format_reset_delta(dt, win_map)
+        if isinstance(raw, str) and raw.strip():
+            return f"resets at {raw.strip()}"
+    return None
+
+
+def _coerce_reset_datetime(raw: object) -> datetime | None:
+    """Parse a reset timestamp that may be unix seconds (number or numeric
+    string) or an ISO-8601 string."""
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int | float):
         try:
-            dt = datetime.fromtimestamp(float(resets_at_unix), tz=UTC)
+            return datetime.fromtimestamp(float(raw), tz=UTC)
         except (OverflowError, OSError, ValueError):
             return None
-        return _format_reset_delta(dt, win_map)
-
-    reset_at = win_map.get("reset_at")
-    if reset_at is None:
-        return None
-    reset_at_str = str(reset_at)
-    try:
-        dt = datetime.fromisoformat(reset_at_str.replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return f"resets at {reset_at_str}"
-    return _format_reset_delta(dt, win_map)
+    if isinstance(raw, str):
+        candidate = raw.strip()
+        if not candidate:
+            return None
+        try:  # numeric string -> unix seconds
+            return datetime.fromtimestamp(float(candidate), tz=UTC)
+        except (OverflowError, OSError, ValueError):
+            pass
+        try:  # ISO-8601
+            return datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 def _format_reset_delta(dt: datetime, win_map: Mapping[str, Any]) -> str:
