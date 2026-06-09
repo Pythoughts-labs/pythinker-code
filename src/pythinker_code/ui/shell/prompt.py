@@ -2922,27 +2922,78 @@ class CustomPromptSession:
         counts = self._background_task_counts()
         total = counts.bash + counts.agent
         if total <= 0:
+            # Background work drained — reset the elapsed/rate trackers.
+            self._bg_status_started_at = None
+            samples = getattr(self, "_bg_token_samples", None)
+            if samples is not None:
+                samples.clear()
             return FormattedText([])
         now = time.monotonic()
+        if getattr(self, "_bg_status_started_at", None) is None:
+            self._bg_status_started_at = now
         frame = TRANSCRIPT_ACTIVE_MARKER if int(now / 0.8) % 2 == 0 else " "
         tokens = _get_tui_tokens()
         muted_style = f"fg:{tokens.muted}" if tokens.muted else ""
         frame_style = f"fg:{tokens.activity_spinner}" if tokens.activity_spinner else muted_style
         frame_text = f"{frame} "
         verb_text = spinner_message(now)
-        if _display_width(frame_text + verb_text) > columns:
-            verb_text = _truncate_right(verb_text, columns - _display_width(frame_text))
+        metadata = self._background_status_metadata(now)
+        suffix = f" {metadata}" if metadata else ""
+        if _display_width(frame_text + verb_text + suffix) > columns:
+            # Narrow terminals: drop the metadata first, then trim the verb.
+            suffix = ""
+            if _display_width(frame_text + verb_text) > columns:
+                verb_text = _truncate_right(verb_text, columns - _display_width(frame_text))
         fragments = FormattedText(
             [
                 (frame_style, frame_text),
                 *shimmer_prompt_fragments(verb_text, now),
             ]
         )
+        if suffix:
+            fragments.append((muted_style, suffix))
         todo_rows = self._render_background_todo_rows(columns)
         if todo_rows:
             ensure_prompt_newline(fragments)
             fragments.extend(todo_rows)
         return fragments
+
+    def _background_status_metadata(self, now: float) -> str:
+        """Compact ``(elapsed, ↓ Nk tokens, N t/s)`` suffix for the line above.
+
+        Same visual language as the live view's working/todo headers. Elapsed
+        counts from when background work first appeared; the rate is a short
+        sliding window over the status snapshot's context tokens (mirroring
+        ``_ContentBlock._record_token_rate_sample``).
+        """
+        from pythinker_code.soul import format_token_count
+        from pythinker_code.utils.datetime import format_elapsed
+
+        parts: list[str] = []
+        started = getattr(self, "_bg_status_started_at", None)
+        if started is not None:
+            parts.append(format_elapsed(max(0.0, now - started)))
+        provider = getattr(self, "_status_provider", None)
+        status = provider() if provider is not None else None
+        context_tokens = getattr(status, "context_tokens", None) or 0
+        if context_tokens:
+            parts.append(f"↓ {format_token_count(context_tokens)} tokens")
+            samples: deque[tuple[float, int]] | None = getattr(self, "_bg_token_samples", None)
+            if samples is None:
+                samples = deque()
+                self._bg_token_samples = samples
+            samples.append((now, context_tokens))
+            # 1.5s window, ≥3 samples — the live view's tracker parameters.
+            while len(samples) > 1 and now - samples[0][0] > 1.5:
+                samples.popleft()
+            if len(samples) >= 3:
+                window = samples[-1][0] - samples[0][0]
+                delta = samples[-1][1] - samples[0][1]
+                if window > 0 and delta > 0:
+                    rate = int(delta / window)
+                    if rate > 0:
+                        parts.append(f"{rate} t/s")
+        return f"({', '.join(parts)})" if parts else ""
 
     def _background_task_counts(self) -> BgTaskCounts:
         provider = getattr(self, "_background_task_count_provider", None)
