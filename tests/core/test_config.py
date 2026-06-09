@@ -102,12 +102,16 @@ def test_default_config_dump():
             "tui": {
                 "style": "card",
                 "prompt_history_enabled": True,
-                "turn_recaps": True,
+                "turn_recaps": False,
                 "code_theme": "catppuccin-adaptive",
                 "smooth_streaming": True,
             },
         }
     )
+
+
+def test_turn_recaps_default_off():
+    assert get_default_config().tui.turn_recaps is False
 
 
 def test_config_source_scopes_default_empty():

@@ -634,8 +634,11 @@ class TUIConfig(BaseModel):
         ),
     )
     turn_recaps: bool = Field(
-        default=True,
-        description="Show a compact recap line after completed interactive shell turns.",
+        default=False,
+        description=(
+            "Show a compact recap line after completed interactive shell turns. "
+            "Off by default; enable with `/config recaps on`."
+        ),
     )
     code_theme: str = Field(
         default="catppuccin-adaptive",

@@ -1213,7 +1213,7 @@ def tui(app: Shell, args: str):
 @registry.command(aliases=["config"])
 @shell_mode_registry.command(aliases=["config"])
 async def settings(app: Shell, args: str):
-    """Open the interactive settings panel; use `/settings show` for read-only view"""
+    """Open the interactive settings panel; `show` for read-only, `recaps on|off` to toggle"""
     from rich.console import Group, RenderableType
     from rich.table import Table
     from rich.text import Text
@@ -1277,8 +1277,36 @@ async def settings(app: Shell, args: str):
     if mode in {"show", "list", "view"}:
         print_settings_table()
         return
+    if mode.split() and mode.split()[0] == "recaps":
+        value = mode.removeprefix("recaps").strip()
+        if value not in {"on", "off"}:
+            console.print(f"[{_t_set.warning}]Usage: /settings recaps on|off[/]")
+            return
+        enabled = value == "on"
+        if config.tui.turn_recaps == enabled:
+            console.print(f"[{_t_set.warning}]Turn recaps already {value}.[/]")
+            return
+        config_file = config.source_file
+        if config_file is None:
+            console.print(
+                f"[{_t_set.warning}]Toggling recaps requires a config file; "
+                f"restart without --config text to persist settings.[/]"
+            )
+            return
+        try:
+            config_for_save = load_config(config_file)
+            config_for_save.tui.turn_recaps = enabled
+            save_config(config_for_save, config_file)
+        except (ConfigError, OSError) as exc:
+            console.print(f"[{_t_set.error}]Failed to save config: {_rich_escape(exc)}[/]")
+            return
+        from pythinker_code.telemetry import track
+
+        track("settings_update", changed="tui.turn_recaps", count=1)
+        console.print(f"[{_t_set.success}]Turn recaps {value}. Reloading...[/]")
+        raise Reload(session_id=soul.runtime.session.id)
     if mode:
-        console.print(f"[{_t_set.warning}]Usage: /settings [show|list][/]")
+        console.print(f"[{_t_set.warning}]Usage: /settings [show|recaps on|off][/]")
         return
 
     config_file = config.source_file
