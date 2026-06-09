@@ -163,7 +163,12 @@ def test_shell_approval_approve(tmp_path) -> None:
                         "tool_call_id": "tc-1",
                         "return_value": {
                             "is_error": False,
-                            "output": "ok\n",
+                            "output": """\
+<untrusted_data id="<NONCE>">
+ok
+
+</untrusted_data>\
+""",
                             "message": "Command executed successfully.",
                             "display": [],
                             "extras": {"status": "success"},
@@ -445,7 +450,12 @@ def test_approve_for_session(tmp_path) -> None:
                         "tool_call_id": "tc-1",
                         "return_value": {
                             "is_error": False,
-                            "output": "first\n",
+                            "output": """\
+<untrusted_data id="<NONCE>">
+first
+
+</untrusted_data>\
+""",
                             "message": "Command executed successfully.",
                             "display": [],
                             "extras": {"status": "success"},
@@ -527,7 +537,12 @@ def test_approve_for_session(tmp_path) -> None:
                         "tool_call_id": "tc-2",
                         "return_value": {
                             "is_error": False,
-                            "output": "second\n",
+                            "output": """\
+<untrusted_data id="<NONCE>">
+second
+
+</untrusted_data>\
+""",
                             "message": "Command executed successfully.",
                             "display": [],
                             "extras": {"status": "success"},
@@ -647,7 +662,12 @@ def test_yolo_skips_approval(tmp_path) -> None:
                         "tool_call_id": "tc-1",
                         "return_value": {
                             "is_error": False,
-                            "output": "ok\n",
+                            "output": """\
+<untrusted_data id="<NONCE>">
+ok
+
+</untrusted_data>\
+""",
                             "message": "Command executed successfully.",
                             "display": [],
                             "extras": {"status": "success"},
