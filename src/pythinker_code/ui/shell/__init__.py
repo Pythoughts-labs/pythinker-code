@@ -366,7 +366,7 @@ def _extract_429_detail(exc: BaseException) -> dict[str, str]:
     if body is None:
         body = _parse_429_body_from_str(str(exc))
     if body is None:
-        # Last-resort diagnostic: record the real exception so an unparseable
+        # Last-resort diagnostic: record the real exception so an unparsable
         # rate-limit payload can be turned into a precise fix instead of a guess.
         _capture_unparsed_429(exc)
 

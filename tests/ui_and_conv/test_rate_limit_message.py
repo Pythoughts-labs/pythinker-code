@@ -18,7 +18,12 @@ def test_format_usage_window_row_percent_with_reset():
 def test_render_429_message_shows_live_usage_windows_first():
     """Live reset windows fetched from the usage endpoint are the most actionable
     info, so they render right under the summary."""
-    detail = {"summary": "Usage limit reached.", "reset_window": "", "server_detail": "", "hint": "h"}
+    detail = {
+        "summary": "Usage limit reached.",
+        "reset_window": "",
+        "server_detail": "",
+        "hint": "h",
+    }
     rendered = _render_429_message(
         detail,
         usage_lines=["5h window: 0% left · resets in 2h 14m", "Weekly window: 38% left"],
