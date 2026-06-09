@@ -13,9 +13,11 @@ from pythinker_code.wire.types import (
     ContentPart,
     Notification,
     PlanDisplay,
+    ProgressNote,
     StepBegin,
     StepInterrupted,
     StepRetry,
+    Suggestion,
     ToolCall,
     ToolCallPart,
     ToolResult,
@@ -84,6 +86,12 @@ class JsonPrinter(Printer):
                 self._flush_assistant_message()
                 self._flush_notifications()
                 print(plan.model_dump_json(exclude_none=True), flush=True)
+            case ProgressNote() | Suggestion() as transparency_event:
+                # uxsteer-1/2: surface progress checkpoints and suggestions in the
+                # structured --print stream so transparency is frontend-consistent.
+                self._flush_assistant_message()
+                self._flush_notifications()
+                print(transparency_event.model_dump_json(exclude_none=True), flush=True)
             case _:
                 # ignore other messages
                 pass

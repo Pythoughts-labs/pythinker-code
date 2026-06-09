@@ -776,6 +776,14 @@ class WireServer:
                 ),
             )
 
+        # uxsteer-3: a newer steer expresses fresher intent than a pending blocking
+        # question, so dismiss any in-flight QuestionRequest — the blocked tool yields
+        # and the steer takes precedence, instead of the steer deferring behind a
+        # manual answer.
+        for request in list(self._pending_requests.values()):
+            if isinstance(request, QuestionRequest) and not request.resolved:
+                request.resolve({})
+
         self._soul.steer(msg.params.user_input)
         return JSONRPCSuccessResponse(
             id=msg.id,
