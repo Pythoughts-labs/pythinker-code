@@ -205,6 +205,14 @@ def test_pyinstaller_datas():
             "src/pythinker_code/tools/file/write.md",
             "pythinker_code/tools/file",
         ),
+        (
+            "src/pythinker_code/tools/mcp_resource/list_description.md",
+            "pythinker_code/tools/mcp_resource",
+        ),
+        (
+            "src/pythinker_code/tools/mcp_resource/read_description.md",
+            "pythinker_code/tools/mcp_resource",
+        ),
         ("src/pythinker_code/tools/memory/memory.md", "pythinker_code/tools/memory"),
         (
             "src/pythinker_code/tools/scratchpad/scratchpad_tool.md",
@@ -287,6 +295,7 @@ def test_pyinstaller_hiddenimports():
             "pythinker_code.tools.file.replace",
             "pythinker_code.tools.file.utils",
             "pythinker_code.tools.file.write",
+            "pythinker_code.tools.mcp_resource",
             "pythinker_code.tools.memory",
             "pythinker_code.tools.plan",
             "pythinker_code.tools.plan.enter",
