@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import time
 from pathlib import Path
@@ -30,6 +31,48 @@ if TYPE_CHECKING:
 _OPEN_STATUSES = ("pending", "in_progress")
 _NOTE_HEADING_RE = re.compile(r"^### (\w+) —", re.MULTILINE)
 _RECALL_TYPE = "project_memory"  # keep the existing injection type id
+
+# memory-3: re-arm recall when the agent's working set shifts to a new area.
+_FILE_PATH_TOOLS = frozenset(
+    {"ReadFile", "ReadMediaFile", "WriteFile", "StrReplaceFile", "Grep", "Glob", "SmartSearch"}
+)
+_WORKING_SET_RECENT_MSGS = 40
+_REARM_JACCARD = 0.5  # working set must diverge below this similarity to re-arm
+_REARM_MIN_ASSISTANT_TURNS = 3  # ...and at least this many assistant turns since last injection
+
+
+def _working_set(history: Sequence[Message]) -> frozenset[str]:
+    """Directories the agent has recently touched, inferred from file-tool calls.
+
+    Used to detect a topic/working-set shift (memory-3): when the agent pivots to a
+    new module mid-session, recall re-fires with a query that reflects what it is
+    doing now, not just the opening user message.
+    """
+    dirs: set[str] = set()
+    for msg in list(history)[-_WORKING_SET_RECENT_MSGS:]:
+        for call in msg.tool_calls or []:
+            if call.function.name not in _FILE_PATH_TOOLS:
+                continue
+            try:
+                loaded = json.loads(call.function.arguments or "{}")
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(loaded, dict):
+                continue
+            raw_path = cast("dict[str, object]", loaded).get("path")
+            if isinstance(raw_path, str) and raw_path.strip():
+                parent = str(Path(raw_path).parent)
+                dirs.add(parent if parent not in ("", ".") else raw_path)
+    return frozenset(dirs)
+
+
+def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
+    union = a | b
+    return len(a & b) / len(union) if union else 1.0
+
+
+def _assistant_turns(history: Sequence[Message]) -> int:
+    return sum(1 for msg in history if msg.role == "assistant")
 
 
 def find_recent_open_root_todos(
@@ -222,13 +265,27 @@ class RecallInjectionProvider(DynamicInjectionProvider):
         self._store = store
         self._session = session
         self._injected = False
+        # memory-3 re-arm state.
+        self._last_working_set: frozenset[str] = frozenset()
+        self._last_injection_turns = 0
+        self._last_block = ""
 
     async def get_injections(
         self, history: Sequence[Message], soul: PythinkerSoul
     ) -> list[DynamicInjection]:
         _ = soul
+        current_ws = _working_set(history)
         if self._injected:
-            return []
+            # memory-3: re-fire only when the working set has shifted materially to a
+            # new area AND enough turns have passed since the last injection — so a
+            # mid-session pivot resurfaces now-relevant memory without thrashing.
+            if not current_ws:
+                return []
+            shifted = _jaccard(current_ws, self._last_working_set) < _REARM_JACCARD
+            turns_since = _assistant_turns(history) - self._last_injection_turns
+            if not shifted or turns_since < _REARM_MIN_ASSISTANT_TURNS:
+                return []
+            self._injected = False  # re-arm for a fresh, working-set-aware recall
         self._injected = True
         try:
             work_dir = cast(HostPath, self._session.work_dir)
@@ -243,8 +300,14 @@ class RecallInjectionProvider(DynamicInjectionProvider):
                 )
             except Exception:
                 logger.debug("recall: open-todo discovery failed")
+            # Fold the working set into the query so relevance tracks what the agent
+            # is doing now, not just the opening user message (memory-3).
+            base_text = _last_user_text(history)
+            query_text = (
+                f"{base_text} {' '.join(sorted(current_ws))}".strip() if current_ws else base_text
+            )
             query = RecallQuery(
-                text=_last_user_text(history),
+                text=query_text,
                 labels=tuple(title for _label, items in open_todos for title in items),
             )
             block = await build_recall_block(
@@ -256,15 +319,28 @@ class RecallInjectionProvider(DynamicInjectionProvider):
         except Exception:
             logger.debug("recall: snapshot failed")
             return []
-        if not block.strip():
+        # Record state so re-arm decisions and content-dedup work on later steps.
+        self._last_working_set = current_ws
+        self._last_injection_turns = _assistant_turns(history)
+        if not block.strip() or block == self._last_block:
             return []
+        self._last_block = block
         return [DynamicInjection(type=_RECALL_TYPE, content=block)]
 
-    async def on_context_compacted(self) -> None:
+    def _reset_rearm_state(self) -> None:
+        # After compaction/explicit rearm the prior recall is no longer in context,
+        # so the content-dedup and working-set baselines must reset — the same block
+        # should be re-injected into the fresh context.
         self._injected = False
+        self._last_block = ""
+        self._last_working_set = frozenset()
+        self._last_injection_turns = 0
+
+    async def on_context_compacted(self) -> None:
+        self._reset_rearm_state()
 
     def rearm(self, key: str) -> bool:
         if key != _RECALL_TYPE:
             return False
-        self._injected = False
+        self._reset_rearm_state()
         return True
