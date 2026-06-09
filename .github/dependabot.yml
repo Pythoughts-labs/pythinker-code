@@ -28,3 +28,27 @@ updates:
       # ~95 errors in `make check`). Hold until the type regression is resolved.
       - dependency-name: "click"
         versions: [">=8.4"]
+
+  # npm/bun workspaces. Dev/build tooling and the Cloudflare workers carry the
+  # bulk of the open security alerts (vitest, vite, rollup, esbuild, hono, ...).
+  # `automated-security-fixes` remediates the alerts directly; these grouped
+  # version updates keep the lockfiles current so they don't drift back.
+  - package-ecosystem: "npm"
+    directories:
+      - "/web"
+      - "/vis"
+      - "/docs"
+      - "/packages/install-counter-worker"
+      - "/examples/feedback-worker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    # Cap concurrent bot PRs so the queue stays reviewable.
+    open-pull-requests-limit: 5
+    # Consolidate routine bumps into a single PR per directory; isolate majors
+    # so breaking changes get their own review.
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
