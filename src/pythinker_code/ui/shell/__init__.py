@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import asyncio
 import contextlib
 import re
@@ -300,6 +301,46 @@ def _is_lm_studio_jinja_template_error(exc: BaseException) -> bool:
     return _LM_STUDIO_JINJA_ERROR_RE.search(str(exc)) is not None
 
 
+def _humanize_seconds(seconds: float) -> str:
+    """Render a coarse, human-friendly duration like ``2d 3h`` / ``2h 5m`` / ``4m``."""
+    total = max(0, int(seconds))
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes = rem // 60
+    if days:
+        return f"{days}d {hours}h"
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m"
+    return "under a minute"
+
+
+def _format_reset_window(error_obj: dict[str, object]) -> str | None:
+    """Build ``Resets in 2h 5m (Jun 11 14:13)`` from a 429 payload's timing
+    fields (``resets_in_seconds`` / ``resets_at``), or None when absent."""
+    from datetime import datetime
+
+    resets_in = error_obj.get("resets_in_seconds")
+    resets_at = error_obj.get("resets_at")
+    seconds: float | None = None
+    if isinstance(resets_in, int | float) and not isinstance(resets_in, bool) and resets_in > 0:
+        seconds = float(resets_in)
+    when_text = ""
+    if isinstance(resets_at, int | float) and not isinstance(resets_at, bool) and resets_at > 0:
+        try:
+            when_text = (
+                datetime.fromtimestamp(float(resets_at)).astimezone().strftime("%b %d %H:%M")
+            )
+            if seconds is None:
+                seconds = max(0.0, float(resets_at) - time.time())
+        except (OverflowError, OSError, ValueError):
+            pass
+    if seconds is None:
+        return None
+    return f"Resets in {_humanize_seconds(seconds)}" + (f" ({when_text})" if when_text else "")
+
+
 def _extract_429_detail(exc: BaseException) -> dict[str, str]:
     """Pull a human-readable summary + hint out of a 429 APIStatusError body.
 
@@ -318,19 +359,33 @@ def _extract_429_detail(exc: BaseException) -> dict[str, str]:
             if isinstance(value, dict):
                 body = cast(dict[str, object], value)
                 break
+    if body is None:
+        body = _parse_429_body_from_str(str(exc))
 
     summary = ""
+    raw_message = ""
     err_type = ""
+    plan_type = ""
+    reset_window: str | None = None
     if body is not None:
         err = body.get("error")
         if isinstance(err, dict):
             typed_err = cast(dict[str, object], err)
             err_type = str(typed_err.get("type") or "")
-            summary = str(typed_err.get("message") or "")
+            raw_message = str(typed_err.get("message") or "")
+            plan_type = str(typed_err.get("plan_type") or "")
+            reset_window = _format_reset_window(typed_err)
 
+    summary = raw_message
     if not summary:
         text = str(exc)
         summary = text if len(text) <= 280 else text[:277] + "..."
+
+    # Rewrite the well-known usage-limit payload as plain English instead of
+    # echoing the server's terser "The usage limit has been reached".
+    if err_type == "usage_limit_reached" or "usage limit" in summary.lower():
+        plan_label = f" on your {plan_type.capitalize()} plan" if plan_type else ""
+        summary = f"Usage limit reached{plan_label}."
 
     hint = "Wait until the limit window resets, or upgrade / top up your plan."
     if "GoUsageLimitError" in err_type:
@@ -340,7 +395,54 @@ def _extract_429_detail(exc: BaseException) -> dict[str, str]:
     elif "openai" in str(type(exc).__module__).lower():
         hint = "OpenAI rate or usage limit. Check usage dashboard or wait for the reset window."
 
-    return {"summary": summary, "hint": hint}
+    # The raw server detail (type + original message) is kept on its own line so
+    # the friendly summary stays clean but the underlying error is still visible.
+    server_detail = " — ".join(part for part in (err_type, raw_message) if part)
+
+    return {
+        "summary": summary,
+        "reset_window": reset_window or "",
+        "server_detail": server_detail,
+        "hint": hint,
+    }
+
+
+def _parse_429_body_from_str(text: str) -> dict[str, object] | None:
+    """Recover the provider JSON from a stringified APIStatusError.
+
+    The OpenAI/codex wrapper stringifies as ``Error code: 429 - {<python dict>}``;
+    when the parsed ``.body`` is unavailable we recover it from that repr so the
+    plan / reset-window / server-detail trail still renders. ``ast.literal_eval``
+    only evaluates Python literals (no code execution)."""
+    marker = " - "
+    if marker not in text:
+        return None
+    candidate = text.split(marker, 1)[1].strip()
+    if not candidate.startswith("{"):
+        return None
+    try:
+        parsed = ast.literal_eval(candidate)
+    except (ValueError, SyntaxError, MemoryError, RecursionError, TypeError):
+        return None
+    return cast(dict[str, object], parsed) if isinstance(parsed, dict) else None
+
+
+def _render_429_message(detail: dict[str, str]) -> str:
+    """Build the console line for a 429 rate/usage-limit error, escaping provider text.
+
+    The summary/hint can carry raw provider text, so escape it before it reaches Rich —
+    otherwise a message containing ``[...]`` is silently swallowed as invalid markup
+    (consistent with how the sibling error branches escape provider strings)."""
+    _t = _get_tui_tokens()
+    lines = [f"[{_t.error}]Rate / usage limit hit: {escape(detail['summary'])}[/]"]
+    reset_window = detail.get("reset_window", "")
+    if reset_window:
+        lines.append(f"{escape(reset_window)}.")
+    server_detail = detail.get("server_detail", "")
+    if server_detail:
+        lines.append(f"[dim]Server: {escape(server_detail)}[/dim]")
+    lines.append(f"[dim]{escape(detail['hint'])}[/dim]")
+    return "\n".join(lines)
 
 
 def _is_insufficient_credits_error(exc: BaseException) -> bool:
@@ -1310,11 +1412,7 @@ class Shell:
                     f"[dim]Server: {e}[/dim]"
                 )
             elif isinstance(e, APIStatusError) and e.status_code == 429:
-                detail = _extract_429_detail(e)
-                console.print(
-                    f"[{_t.error}]Rate / usage limit hit: {detail['summary']}[/]\n"
-                    f"[dim]{detail['hint']}[/dim]"
-                )
+                console.print(_render_429_message(_extract_429_detail(e)))
             elif isinstance(e, APIConnectionError):
                 console.print(
                     f"[{_t.error}]Network connection failed: {e}[/]\n"
@@ -1379,7 +1477,7 @@ class Shell:
                 )
             else:
                 console.print(f"[{_t.error}]LLM provider error: {escape(str(e))}[/]")
-            if not isinstance(e, APIStatusError) or e.status_code not in (401, 402, 403):
+            if not isinstance(e, APIStatusError) or e.status_code not in (401, 402, 403, 429):
                 console.print(
                     "[dim]If this persists, run [bold]pythinker export[/bold] and send the "
                     "exported data to support for assistance. "

@@ -159,11 +159,23 @@ class APIStatusError(ChatProviderError):
 
     status_code: int
     request_id: str | None
+    body: object | None
 
-    def __init__(self, status_code: int, message: str, *, request_id: str | None = None):
+    def __init__(
+        self,
+        status_code: int,
+        message: str,
+        *,
+        request_id: str | None = None,
+        body: object | None = None,
+    ):
         super().__init__(message)
         self.status_code = status_code
         self.request_id = request_id
+        # Parsed response body (provider JSON), when available. Lets the UI
+        # surface structured detail (e.g. a 429 usage-limit payload) instead of
+        # stringifying the whole exception.
+        self.body = body
 
 
 class APIEmptyResponseError(ChatProviderError):
