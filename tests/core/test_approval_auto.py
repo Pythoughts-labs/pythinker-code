@@ -48,6 +48,15 @@ def test_shell_signature_does_not_collide_on_hidden_subshell() -> None:
     # Distinct payloads stay distinct (self-scoped, not a shared sentinel that could
     # itself be session-approved to cover every subshell).
     assert sig("ls $(rm a)") != sig("ls $(rm b)")
+    # Every command separator that hides a second command must break the collision:
+    # `&` (background), `|&` (pipe-both), and an unquoted newline all flatten to a bare
+    # `git status` under shlex.
+    assert sig("git status & rm -rf /") != sig("git status")
+    assert sig("git status |& rm -rf /") != sig("git status")
+    assert sig("git status\nrm -rf /") != sig("git status")
+    # Redirections reuse `&`/`<`/`>` but are NOT a second command -> identity unchanged.
+    assert sig("grep foo bar 2>&1") == sig("grep foo bar")
+    assert sig("echo done &") == sig("echo done")
 
 
 async def _drive_request(

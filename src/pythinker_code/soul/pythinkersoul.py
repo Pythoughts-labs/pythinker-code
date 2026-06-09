@@ -269,7 +269,10 @@ def _stuck_summary_message(
         call = calls_by_id.get(result.tool_call_id)
         name = call.function.name if call else "tool"
         rv = result.return_value
-        brief = (rv.brief or rv.message or "error").strip().splitlines()[0]
+        # A whitespace-only brief is truthy but strips to "", whose .splitlines() is []
+        # — guard the [0] so the stuck backstop never crashes on the very errors it handles.
+        brief_lines = (rv.brief or rv.message or "error").strip().splitlines()
+        brief = brief_lines[0] if brief_lines else "error"
         if len(brief) > 200:
             brief = brief[:200] + "…"
         tried.append(f"- {name}: {brief}")
@@ -1836,15 +1839,29 @@ class PythinkerSoul:
             return False
 
         before_tokens = self._context.token_count
-        # Reuse the same rewrite primitive compact_context uses (clear + rebuild),
-        # which is the supported way to mutate the append-only JSONL context.
+        # Snapshot history first: clear() rotates the backing file, so a mid-rebuild
+        # failure would otherwise leave the context as just the system prompt. Reuse the
+        # same clear+rebuild primitive compact_context uses (the supported way to mutate
+        # the append-only JSONL context), but roll back to the snapshot if it throws.
+        snapshot = list(self._context.history)
         await self._context.clear()
-        await self._context.write_system_prompt(self._agent.system_prompt)
-        await self._checkpoint()
-        await self._context.append_message(pruned)
-        await self._context.update_token_count(estimate_text_tokens(pruned))
-        # History was rebuilt — let injection providers reset one-shot state.
-        await self._notify_injection_providers_compacted()
+        try:
+            await self._context.write_system_prompt(self._agent.system_prompt)
+            await self._checkpoint()
+            await self._context.append_message(pruned)
+            await self._context.update_token_count(estimate_text_tokens(pruned))
+        except Exception:
+            await self._context.clear()
+            await self._context.write_system_prompt(self._agent.system_prompt)
+            await self._checkpoint()
+            if snapshot:
+                await self._context.append_message(snapshot)
+            await self._context.update_token_count(before_tokens)
+            raise
+        # Unlike full compaction, pruning preserves every non-tool message verbatim
+        # (only tool-result *bodies* are elided), so prior dynamic injections survive in
+        # history. Do NOT re-arm injection providers here, or one-shot fragments (e.g. the
+        # model-defense reminder) get re-emitted as duplicates on the next step.
 
         from pythinker_code.telemetry import track
 

@@ -125,6 +125,76 @@ async def test_prune_context_rewrites_history_preserving_structure(runtime, tmp_
     assert history[-1].extract_text("") == "done"
 
 
+def _seed_prunable(context) -> list[Message]:
+    return [
+        Message(role="user", content="go"),
+        Message(role="assistant", content=[TextPart(text="working")]),
+        Message(role="tool", content="x" * 6000, tool_call_id="c1"),
+        Message(role="user", content="more"),
+        Message(role="assistant", content=[TextPart(text="done")]),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_prune_context_restores_history_when_rebuild_fails(runtime, tmp_path) -> None:
+    """If the rebuild after clear() fails, prune must restore prior history rather than
+    leave the context gutted to just the system prompt (data-loss guard)."""
+    runtime.config.loop_control.prune_protect_last = 2
+    runtime.config.loop_control.prune_min_chars = 2000
+    context, soul = _make_soul(runtime, tmp_path)
+    await context.write_system_prompt("sys")
+    await context.append_message(_seed_prunable(context))
+    before = list(context.history)
+
+    # Fail the rebuild's append of the pruned body (it carries the "elided" placeholder);
+    # the restore re-appends the original snapshot, which must still succeed.
+    real_append = context.append_message
+
+    async def flaky_append(message):
+        msgs = [message] if isinstance(message, Message) else list(message)
+        if any("elided" in m.extract_text("") for m in msgs):
+            raise RuntimeError("disk full")
+        return await real_append(message)
+
+    context.append_message = flaky_append  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError, match="disk full"):
+        await soul.prune_context()
+
+    # History is restored intact — not left as just the system prompt.
+    assert list(context.history) == before
+
+
+@pytest.mark.asyncio
+async def test_prune_context_does_not_rearm_injection_providers(runtime, tmp_path) -> None:
+    """Prune preserves prior injected reminders (they are user messages, not tool bodies),
+    so it must NOT reset providers' one-shot state — re-arming re-emits duplicate fragments."""
+    from pythinker_code.soul.dynamic_injection import DynamicInjectionProvider
+
+    runtime.config.loop_control.prune_protect_last = 2
+    runtime.config.loop_control.prune_min_chars = 2000
+    context, soul = _make_soul(runtime, tmp_path)
+
+    class _SpyProvider(DynamicInjectionProvider):
+        def __init__(self) -> None:
+            self.compacted = 0
+
+        async def get_injections(self, history, soul):  # noqa: ANN001
+            return []
+
+        async def on_context_compacted(self) -> None:
+            self.compacted += 1
+
+    spy = _SpyProvider()
+    soul.add_injection_provider(spy)
+
+    await context.write_system_prompt("sys")
+    await context.append_message(_seed_prunable(context))
+
+    assert await soul.prune_context() is True
+    assert spy.compacted == 0  # prune is not compaction; one-shot state must survive
+
+
 @pytest.mark.asyncio
 async def test_prune_context_noop_when_nothing_stale(runtime, tmp_path) -> None:
     runtime.config.loop_control.prune_protect_last = 20

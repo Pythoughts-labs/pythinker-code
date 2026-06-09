@@ -156,6 +156,11 @@ def is_config_surface_path(path: HostPath, work_dir: HostPath | None = None) -> 
     treated as config surfaces for defense-in-depth. Without *work_dir* the
     function falls back to classifying any file named ``AGENTS.md`` as a config
     surface (conservative: at worst an extra confirmation prompt).
+
+    Uses pure-path semantics — it does NOT resolve symlinks. Callers must pass an
+    already-canonicalized *path* (e.g. via :meth:`HostPath.canonical`) so a symlink
+    cannot point a benign-looking name at a config surface (or vice-versa); the
+    write tools do this before classifying (see ``WriteFile``/``StrReplaceFile``).
     """
     posix = str(path).replace("\\", "/")
     base = posix.rsplit("/", 1)[-1].lower()

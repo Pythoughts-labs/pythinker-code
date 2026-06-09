@@ -73,6 +73,10 @@ class ModelDefenseInjectionProvider(DynamicInjectionProvider):
 
     def __init__(self, fragments: Sequence[ModelDefenseFragment] = MODEL_DEFENSE_FRAGMENTS) -> None:
         self._fragments = tuple(fragments)
+        # Single-shot guard. Safe without a lock: the soul drives injection providers
+        # sequentially and there is no ``await`` between the check and the set in
+        # ``get_injections``, so the read-modify-write cannot interleave. Add a lock
+        # only if a provider is ever driven from multiple OS threads.
         self._injected = False
 
     async def get_injections(

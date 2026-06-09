@@ -316,6 +316,10 @@ class Approval:
                     from pythinker_code.soul.permission import shell_command_signature
 
                     return f"{pending.action}::{shell_command_signature(command)}"
+            # No command block to key on: fail closed to a scoped sentinel that can never
+            # equal a real ``action::signature`` key, so a session-approval drain cannot
+            # over-match an unrelated Shell request that merely shares the coarse action.
+            return f"{pending.action}::shell:unknown"
         return pending.action
 
     def _is_destructive_call(self, tool_call: ToolCall) -> bool:

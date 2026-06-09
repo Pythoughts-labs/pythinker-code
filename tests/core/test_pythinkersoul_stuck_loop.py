@@ -195,6 +195,27 @@ async def test_a_successful_step_resets_the_failure_counter(
     assert record_turn.call_args.kwargs["stop_reason"] == "no_tool_calls"
 
 
+def test_stuck_summary_handles_whitespace_only_brief() -> None:
+    """A tool error with a whitespace-only brief must not crash the handoff summary.
+
+    ``(brief or message or "error").strip().splitlines()[0]`` raised IndexError when
+    brief was non-empty whitespace: it is truthy, ``.strip()`` yields ``""``, and
+    ``"".splitlines()`` is ``[]`` — exactly the all-error path this backstop exists for.
+    """
+    from pythinker_core.tooling import ToolError, ToolResult
+
+    from pythinker_code.soul.pythinkersoul import _stuck_summary_message
+
+    call = ToolCall(id="c0", function=ToolCall.FunctionBody(name="Boom", arguments="{}"))
+    result = ToolResult(tool_call_id="c0", return_value=ToolError(message="", brief="   "))
+
+    msg = _stuck_summary_message(3, [call], [result])
+
+    text = msg.extract_text(" ")
+    assert "stuck" in text.lower()
+    assert "Boom" in text  # tool name still surfaced despite the empty brief
+
+
 @pytest.mark.asyncio
 async def test_max_consecutive_failures_zero_disables_backstop(
     runtime: Runtime, tmp_path: Path

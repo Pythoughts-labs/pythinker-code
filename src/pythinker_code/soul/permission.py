@@ -84,7 +84,16 @@ _STEP_PERMISSION_PROFILE: ContextVar[PermissionProfile | None] = ContextVar(
     "pythinker_step_permission_profile", default=None
 )
 
-_SHELL_SEGMENT_SEPARATORS = {";", "&&", "||", "|"}
+# Control operators that separate one command from the next. ``shlex.split`` isolates
+# these as standalone tokens only when whitespace-delimited; the segment scan splits on
+# them. ``&``/``|&`` are real separators too — a *glued* ``2>&1``/``&>`` keeps ``&`` inside
+# one token (e.g. ``2>&1``), so it is never a standalone separator and stays unaffected.
+_SHELL_SEGMENT_SEPARATORS = {";", "&&", "||", "|", "&", "|&"}
+# Subset used by the hidden-command detector's glued-operator count. Excludes ``&``/``|&``
+# because the punctuation-aware lexer also splits the ``&`` of redirections (``2>&1``),
+# which would false-positive; glued ``&`` is caught structurally instead (its signature
+# never collides with a benign base command).
+_GLUED_OPERATORS = {";", "&&", "||", "|"}
 _WRITING_REDIRECTION_RE = re.compile(r"(?:^|\s)(?:[0-9]*>>?|&>)\s*(\S+)")
 _MUTATING_COMMANDS = {
     "chmod",
@@ -324,6 +333,56 @@ def check_tool_call_allowed(
     return None
 
 
+# Command/process substitution runs commands the bare-token parser never sees:
+# ``$(...)``, backticks, ``<(...)``, ``>(...)``.
+_COMMAND_SUBSTITUTION_RE = re.compile(r"\$\(|`|<\(|>\(")
+
+
+def _shell_hidden_command_reason(command: str) -> str | None:
+    """Reason *command* can run sub-commands invisible to the token classifier, else ``None``.
+
+    ``shlex.split`` — used by every shell gate below (mutation, signature, destructive) — has
+    two blind spots that let an arbitrary command slip past base-command classification:
+
+    * **Command/process substitution** (``$(...)``, backticks, ``<(...)``, ``>(...)``)
+      executes commands that never appear as tokens, so ``ls $(rm -rf /)`` looks like a
+      benign ``ls``.
+    * **Operators glued to a word** (``ls;rm``) tokenize as one word (``ls;rm``), hiding
+      the trailing command from the ``;``/``&&``/``|`` segment scan.
+
+    Also catches an unquoted newline, which separates commands but which ``shlex`` eats
+    as whitespace (``git status\nrm -rf /`` flattens to one segment).
+
+    Returns a short reason for any of these, else ``None``. A second ``shlex`` pass with
+    ``punctuation_chars`` isolates *unquoted* operators while leaving *quoted* ones
+    (``grep 'a|b'``) glued, so quoted literals do not false-positive.
+    """
+    if _COMMAND_SUBSTITUTION_RE.search(command):
+        return "command substitution"
+    try:
+        plain_tokens = shlex.split(command, posix=True)
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        punct_tokens = list(lexer)
+    except ValueError:
+        return "unparsable shell command"
+    # An unquoted newline is a command separator shlex drops as whitespace. If the
+    # (interior) command has one that no token kept, it was unquoted -> hidden command.
+    # A quoted newline survives inside a token (``printf 'a\nb'``) and is left alone.
+    interior = command.strip()
+    if ("\n" in interior or "\r" in interior) and not any(
+        "\n" in tok or "\r" in tok for tok in plain_tokens
+    ):
+        return "ungrouped command separator"
+    # More separators once unquoted operators are isolated means one was glued to a
+    # word — a command the plain-split segment scan would have missed.
+    plain_ops = sum(1 for tok in plain_tokens if tok in _GLUED_OPERATORS)
+    punct_ops = sum(1 for tok in punct_tokens if tok in _GLUED_OPERATORS)
+    if punct_ops > plain_ops:
+        return "ungrouped command operator"
+    return None
+
+
 def shell_mutation_reason(command: str) -> str | None:
     """Best-effort guard for obviously mutating or network-accessing shell commands.
 
@@ -331,7 +390,11 @@ def shell_mutation_reason(command: str) -> str | None:
     shell sandbox; it prevents accidental tool-level bypasses of read-only/plan/review/verify
     profiles — including circumventing the no-web-tools intent via `curl`/`wget`/`ssh`. Script
     interpreters (python/node/sh) are already treated as mutating, so those paths are blocked too.
+    A command hiding sub-commands the token parser can't see (substitution / glued operators)
+    is treated as mutating too, so ``ls $(rm -rf /)`` can't slip past a read-only profile as ``ls``.
     """
+    if reason := _shell_hidden_command_reason(command):
+        return reason
     for match in _WRITING_REDIRECTION_RE.finditer(command):
         target = match.group(1)
         if target.startswith("&") or target in {"/dev/null", "NUL"}:
@@ -394,11 +457,18 @@ def shell_command_signature(command: str) -> str:
     "approve for session" scoped to like commands: approving ``git status`` does not
     also whitelist ``git push`` or ``rm``. It pairs with the destructive backstop,
     which independently re-prompts irreversible commands regardless of signature.
+
+    A command hiding sub-commands the token parser can't see (substitution / glued
+    operators) is self-scoped to its exact text so it can never share a benign
+    command's key — defense-in-depth atop the destructive backstop, which also makes
+    such commands non-session-approvable.
     """
     try:
         tokens = shlex.split(command, posix=True)
     except ValueError:
         return "shell:unparsable"
+    if _shell_hidden_command_reason(command) is not None:
+        return "shell:opaque:" + " ".join(tokens)
     bases: set[str] = set()
     segment: list[str] = []
     for token in [*tokens, ";"]:
@@ -535,7 +605,14 @@ def shell_destructive_reason(command: str) -> str | None:
     wrapper unwrap, git-subcommand extraction), so ``sudo``/``env`` wrappers,
     quoting, and ``;``/``&&``/``||``/``|`` chains are all covered. Unparsable input
     is treated conservatively as destructive.
+
+    Commands hiding sub-commands the token parser can't see — substitution
+    (``$(...)``/backticks) or operators glued to a word (``status;rm``) — route to
+    deliberation too: the same blind spot that smuggles them past the segment scan
+    would otherwise let a session-approved benign command carry a destructive payload.
     """
+    if reason := _shell_hidden_command_reason(command):
+        return reason
     try:
         tokens = shlex.split(command, posix=True)
     except ValueError:

