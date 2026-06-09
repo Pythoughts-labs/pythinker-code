@@ -52,6 +52,10 @@ def _strip_trailing_spaces(segments: list[Segment]) -> list[Segment]:
     return trimmed
 
 
+# Public alias for renderers that need the same trailing-space trim.
+strip_trailing_spaces = _strip_trailing_spaces
+
+
 class BulletColumns:
     def __init__(
         self,

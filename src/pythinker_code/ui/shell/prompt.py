@@ -2797,10 +2797,13 @@ class CustomPromptSession:
                 rendered.append(("", "\n"))
                 return rendered
 
-        # An in-flight turn pins its own working indicator (the verb spinner);
-        # drop the verb here so the background-task line shows only the count.
+        # An in-flight turn pins its own working indicator (the verb spinner)
+        # and the bottom toolbar already reports background work — rendering a
+        # count line here too would duplicate it under the executing step.
         pinned_active = bool(self._render_pinned_status_tail(columns))
-        fragments = self._render_background_working_status(columns, show_verb=not pinned_active)
+        fragments = (
+            FormattedText([]) if pinned_active else self._render_background_working_status(columns)
+        )
         status = self._render_status_block(columns)
         if status:
             ensure_prompt_newline(fragments)
@@ -2915,14 +2918,12 @@ class CustomPromptSession:
             fragments.append((muted_style, f"{continuation_prefix}… +{len(hidden)} {label}"))
         return fragments
 
-    def _render_background_working_status(
-        self, columns: int, *, show_verb: bool = True
-    ) -> FormattedText:
+    def _render_background_working_status(self, columns: int) -> FormattedText:
         """Render a prompt spinner while background work is active.
 
-        ``show_verb`` is set ``False`` when an in-flight turn already pins a
-        working indicator with the activity verb — then this line shows only the
-        background-task count, so the verb (``Reticulating…``) isn't duplicated.
+        Shows only the verb spinner (and pinned todo rows): the bottom toolbar
+        already reports the background-task count, so repeating "N background
+        agents" above the input would duplicate it.
         """
         counts = self._background_task_counts()
         total = counts.bash + counts.agent
@@ -2930,49 +2931,24 @@ class CustomPromptSession:
             return FormattedText([])
         now = time.monotonic()
         frame = TRANSCRIPT_ACTIVE_MARKER if int(now / 0.8) % 2 == 0 else " "
-        noun = "process" if total == 1 else "processes"
-        detail = f"{total} background {noun}"
-        if counts.agent and counts.bash:
-            detail = f"{counts.agent} agent, {counts.bash} bash"
-        elif counts.agent:
-            detail = f"{counts.agent} background agent{'s' if counts.agent != 1 else ''}"
-        elif counts.bash:
-            detail = f"{counts.bash} background bash task{'s' if counts.bash != 1 else ''}"
         tokens = _get_tui_tokens()
         muted_style = f"fg:{tokens.muted}" if tokens.muted else ""
         frame_style = f"fg:{tokens.activity_spinner}" if tokens.activity_spinner else muted_style
         frame_text = f"{frame} "
-        if show_verb:
-            verb_text = spinner_message(now)
-            detail_text = f" {detail}"
-            if _display_width(frame_text + verb_text + detail_text) > columns:
-                detail_budget = columns - _display_width(frame_text + verb_text)
-                if detail_budget > 0:
-                    detail_text = _truncate_right(detail_text, detail_budget)
-                else:
-                    detail_text = ""
-                    verb_text = _truncate_right(verb_text, columns - _display_width(frame_text))
-            fragments = FormattedText(
-                [
-                    (frame_style, frame_text),
-                    *shimmer_prompt_fragments(verb_text, now),
-                    (muted_style, detail_text),
-                ]
-            )
-            todo_rows = self._render_background_todo_rows(columns)
-            if todo_rows:
-                ensure_prompt_newline(fragments)
-                fragments.extend(todo_rows)
-            return fragments
-
-        detail_text = detail
-        if _display_width(frame_text + detail_text) > columns:
-            detail_text = _truncate_right(detail_text, columns - _display_width(frame_text))
-        # ``show_verb=False`` means an in-flight turn's pinned status tail is already
-        # rendering the todo list under its verb spinner. Repeating the rows here
-        # would print the same todo list twice while the agent works, so this branch
-        # shows only the background-task count line.
-        return FormattedText([(muted_style, frame_text + detail_text)])
+        verb_text = spinner_message(now)
+        if _display_width(frame_text + verb_text) > columns:
+            verb_text = _truncate_right(verb_text, columns - _display_width(frame_text))
+        fragments = FormattedText(
+            [
+                (frame_style, frame_text),
+                *shimmer_prompt_fragments(verb_text, now),
+            ]
+        )
+        todo_rows = self._render_background_todo_rows(columns)
+        if todo_rows:
+            ensure_prompt_newline(fragments)
+            fragments.extend(todo_rows)
+        return fragments
 
     def _background_task_counts(self) -> BgTaskCounts:
         provider = getattr(self, "_background_task_count_provider", None)

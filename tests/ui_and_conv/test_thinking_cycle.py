@@ -60,9 +60,15 @@ def test_thinking_frame_color_unknown_level_falls_back_to_border() -> None:
 
 
 def test_thinking_frame_style_is_ptk_fg_directive() -> None:
+    from pythinker_code.ui.color_utils import blend, parse_hex_color, to_hex_color
     from pythinker_code.ui.theme import thinking_frame_style
 
-    assert thinking_frame_style("high", theme="dark") == "fg:#f97316"
+    # Input bars are chrome: the level color is dimmed 30% toward the theme's
+    # background pole so the frame hints at effort without shouting.
+    rgb = parse_hex_color("#f97316")
+    assert rgb is not None
+    expected = to_hex_color(blend(rgb, (0, 0, 0), 0.7))
+    assert thinking_frame_style("high", theme="dark") == f"fg:{expected}"
 
 
 def test_core_thinking_cycle_uses_available_model_levels() -> None:

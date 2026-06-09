@@ -214,13 +214,13 @@ def test_active_pinned_todo_row_uses_neutral_title_not_shimmer() -> None:
         is_first=True,
         width=100,
         elapsed_s=0.88,
-        is_active=True,
     )
 
-    # Title shares the coral activity color with the ■ box — one stable tone.
-    active_color = _color_hex(tui_rich_style("activity_verb").color)
-    assert _span_colors_for(row, "■") == {active_color}
-    assert _span_colors_for(row, "Implement pinned todos") == {active_color}
+    # Reference design: coral box; the title is bold in the terminal's
+    # default text color (white on dark) — no color override.
+    coral = _color_hex(tui_rich_style("activity_verb").color)
+    assert _span_colors_for(row, "■") == {coral}
+    assert _span_colors_for(row, "Implement pinned todos") == set()
 
 
 def test_secondary_in_progress_todo_rows_use_light_grey() -> None:
@@ -232,13 +232,13 @@ def test_secondary_in_progress_todo_rows_use_light_grey() -> None:
         is_first=False,
         width=100,
         elapsed_s=0.88,
-        is_active=False,
     )
 
-    # Concurrent (non-active) running todos read light grey, not coral.
-    grey = _color_hex(tui_rich_style("thinking_text").color)
-    assert _span_colors_for(row, "■") == {grey}
-    assert _span_colors_for(row, "Deep code review on diff") == {grey}
+    # Every in-progress row shares the same design: coral box, bold
+    # default-color (white) title.
+    coral = _color_hex(tui_rich_style("activity_verb").color)
+    assert _span_colors_for(row, "■") == {coral}
+    assert _span_colors_for(row, "Deep code review on diff") == set()
 
 
 def test_pinned_todo_rows_align_icons_and_titles() -> None:
@@ -286,7 +286,8 @@ def test_completed_todo_row_is_muted_and_struck() -> None:
     )
     title_style = _style_for(row, "Finished task")
 
-    assert _span_colors_for(row, "✓") == {_color_hex(tui_rich_style("muted").color)}
+    # Reference design: green check, muted struck title.
+    assert _span_colors_for(row, "✓") == {_color_hex(tui_rich_style("success").color)}
     assert title_style.strike is True
     assert title_style.color == tui_rich_style("muted").color
 

@@ -434,7 +434,9 @@ def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> Rendera
             label = f"{label}: {description}"
         line = _subagent_loader(ctx)
         line.append(label, style=tui_rich_style("accent") + RichStyle(bold=True))
-        return Group(line, fg("dim", f"status: {background_status}"))
+        # Hang-indent the detail row under the label (past the 2-cell marker)
+        # so the block nests cleanly inside the result gutter.
+        return Group(line, fg("dim", f"  status: {background_status}"))
 
     body, remaining = format_lines_block(
         result.text,

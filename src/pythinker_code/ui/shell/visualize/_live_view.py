@@ -755,7 +755,6 @@ class _LiveView:
                     is_first=index == 0,
                     width=width,
                     elapsed_s=elapsed_s,
-                    is_active=todo is active_todo,
                 )
             )
 
@@ -781,11 +780,10 @@ class _LiveView:
         is_first: bool,
         width: int,
         elapsed_s: float | None = None,
-        is_active: bool = False,
     ) -> Text:
         if todo.status == "done":
             icon = "✓"
-            icon_token = "muted"
+            icon_token = "success"
             title_style = tui_rich_style("muted") + Style(strike=True)
         elif todo.status == "cancelled":
             icon = "✕"
@@ -793,12 +791,10 @@ class _LiveView:
             title_style = tui_rich_style("muted") + Style(strike=True)
         elif todo.status == "in_progress":
             icon = "■"
-            # Coral is reserved for the single task the agent is working on
-            # right now; additional concurrent in-progress rows read as a
-            # light-grey highlight so the active one stays unmistakable.
-            icon_token = "activity_verb" if is_active else "thinking_text"
-            title_token = "activity_verb" if is_active else "thinking_text"
-            title_style = tui_rich_style(title_token) + Style(bold=True)
+            # Reference design: the box carries the coral activity accent
+            # while the title reads bold in the primary text color.
+            icon_token = "activity_verb"
+            title_style = tui_rich_style("text") + Style(bold=True)
         else:
             icon = "□"
             icon_token = "muted"

@@ -548,8 +548,8 @@ def test_background_working_status_uses_pulsing_circle(monkeypatch: Any) -> None
 
     assert first != second
     assert first.startswith("● ")
-    assert "background agent" in first
-    assert "background agent" in second
+    assert "background agent" not in first  # footer owns the count
+    assert "background agent" not in second  # footer owns the count
 
 
 def test_card_toolbar_shows_codex_style_background_task_summary(monkeypatch: Any) -> None:

@@ -46,7 +46,7 @@ def test_dark_tokens_have_brand_values():
     assert t.info == "#AFE3F1"  # cyan (unchanged; markdown code/links use ANSI cyan)
     assert t.success == "#7BC97F"
     assert t.error == "#EF5E62"
-    assert t.thinking_text == "#C0C0C0"  # lighter neutral grey, not purple-tinted muted
+    assert t.thinking_text == "#D4D4D4"  # light neutral grey, not purple-tinted muted
     assert t.thinking_text != t.muted
     assert t.activity_verb == "#C68D7E"  # muted clay-coral resting
     assert t.activity_verb_mid == "#D8AC9E"  # soft coral
@@ -160,7 +160,7 @@ def test_dark_markdown_uses_professional_report_roles():
     colors = get_markdown_colors("dark")
     assert colors.heading == "#F4F4F5"  # primary white, not coral/orange
     assert colors.strong == "#F4F4F5"
-    assert colors.emphasis == "#A3A3A3"  # neutral grey
+    assert colors.emphasis == "#6F6F6F"  # neutral UI grey
     assert colors.inline_code == "cyan"  # terminal-native ANSI
     assert colors.link == "cyan"
     assert colors.spinner_active == "#AFE3F1"  # spinners still use the info token

@@ -13,6 +13,7 @@ from typing import Any, Literal, cast
 from prompt_toolkit.styles import Style as PTKStyle
 from rich.style import Style as RichStyle
 
+from pythinker_code.ui.color_utils import blend, parse_hex_color, to_hex_color
 from pythinker_code.ui.terminal_capabilities import color_depth, colors_disabled
 
 type ThemeName = Literal["dark", "light"]
@@ -60,10 +61,10 @@ class DiffColors:
 
 
 _DIFF_DARK = DiffColors(
-    add_bg=RichStyle(bgcolor="#12261e"),
-    del_bg=RichStyle(bgcolor="#2d1214"),
-    add_hl=RichStyle(bgcolor="#1a4a2e"),
-    del_hl=RichStyle(bgcolor="#5c1a1d"),
+    add_bg=RichStyle(bgcolor="#052e05"),
+    del_bg=RichStyle(bgcolor="#3a0808"),
+    add_hl=RichStyle(bgcolor="#0e5a0e"),
+    del_hl=RichStyle(bgcolor="#6b1414"),
 )
 
 _DIFF_LIGHT = DiffColors(
@@ -260,10 +261,10 @@ _TOOLBAR_DARK = ToolbarColors(
     auto_label="bold fg:#7BC97F",
     plan_label="bold fg:#AFE3F1",
     plan_prompt="fg:#AFE3F1",
-    cwd="fg:#5F6B7E",
-    bg_tasks="fg:#A3A3A3",
-    tip="fg:#A3A3A3",
-    tip_key="fg:#A3A3A3 bold",
+    cwd="fg:#6F6F6F",
+    bg_tasks="fg:#6F6F6F",
+    tip="fg:#6F6F6F",
+    tip_key="fg:#6F6F6F bold",
 )
 
 _TOOLBAR_LIGHT = ToolbarColors(
@@ -502,10 +503,10 @@ _TUI_TOKENS_DARK = TuiTokens(
     success="#7BC97F",
     error="#EF5E62",
     warning="#E6B450",
-    muted="#A3A3A3",
-    dim="#5F6B7E",
+    muted="#6F6F6F",
+    dim="#5F5F5F",
     text="",
-    thinking_text="#C0C0C0",
+    thinking_text="#D4D4D4",
     activity_label="#F4F4F5",
     activity_verb="#C68D7E",
     activity_verb_mid="#D8AC9E",
@@ -520,10 +521,10 @@ _TUI_TOKENS_DARK = TuiTokens(
     tool_pending_bg="#1B2230",
     tool_error_bg="#2E1D24",
     tool_title="#F4F4F5",
-    tool_output="#A3A3A3",
-    tool_diff_added="#7BC97F",
-    tool_diff_removed="#EF5E62",
-    tool_diff_context="#A3A3A3",
+    tool_output="#D4D4D4",
+    tool_diff_added="#81C784",
+    tool_diff_removed="#E57373",
+    tool_diff_context="#B8B8B8",
     bash_mode="#7BC97F",
     code_block_bg="#1f2030",
 )
@@ -631,7 +632,18 @@ def thinking_frame_color(level: str, *, theme: ThemeName | None = None) -> str:
 
 
 def thinking_frame_style(level: str, *, theme: ThemeName | None = None) -> str:
-    """prompt_toolkit frame style for *level* (``"fg:#A78BFA"``), or ``""`` when colors are off."""
+    """prompt_toolkit input-bar style for *level*, or ``""`` when colors are off.
+
+    The bars are chrome, not content: the level color is dimmed (blended
+    toward the theme's background pole) so the input frame hints at the
+    effort level without competing with the text being typed.
+    """
     if colors_disabled():
         return ""
-    return f"fg:{thinking_frame_color(level, theme=theme)}"
+    color = thinking_frame_color(level, theme=theme)
+    rgb = parse_hex_color(color)
+    if rgb is not None:
+        name = theme if theme is not None else _active_theme
+        pole = (255, 255, 255) if name == "light" else (0, 0, 0)
+        color = to_hex_color(blend(rgb, pole, 0.7))
+    return f"fg:{color}"

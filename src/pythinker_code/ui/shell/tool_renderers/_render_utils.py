@@ -83,19 +83,25 @@ def tool_call_header(
 ) -> Text:
     """Return the compact tool-use row.
 
-    Shape: ``● Tool summary`` for completed rows, ``✘ Tool summary`` for
-    failed rows. The surrounding ``ToolExecutionComponent`` owns result
-    gutters; individual renderers should keep this row compact.
+    Shape: ``⏺ Tool(summary)`` for completed rows, ``✘ Tool(summary)`` for
+    failed rows (reference-CLI parenthesized form). The surrounding
+    ``ToolExecutionComponent`` owns result gutters; individual renderers
+    should keep this row compact.
     """
     header = Text()
     header.append(f"{_status_marker(style_token)} ", style=tui_rich_style(style_token))
     header.append_text(tool_title(name))
     if summary is not None:
-        header.append(" ")
+        header.append("(", style=tui_rich_style("muted"))
         if isinstance(summary, Text):
             header.append_text(summary)
         else:
             header.append(summary, style=tui_rich_style(summary_style_token))
+        header.append(")", style=tui_rich_style("muted"))
+    # Single-line contract (reference CLI): long summaries ellipsize at the
+    # terminal edge instead of wrapping the header onto a second row.
+    header.no_wrap = True
+    header.overflow = "ellipsis"
     return header
 
 

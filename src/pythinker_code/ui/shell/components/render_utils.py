@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 
 from rich.cells import cell_len
-from rich.console import Console, Group, RenderableType
+from rich.console import Console, ConsoleOptions, Group, RenderableType, RenderResult
 from rich.table import Table
 from rich.text import Text
 
@@ -166,6 +166,24 @@ def truncate_to_width(
     return result
 
 
+class _TrimmedTrailingSpace:
+    """Strip unstyled full-width cell padding from rendered rows.
+
+    The response gutter's ``ratio=1`` column pads every row with spaces to
+    the terminal edge; trimming keeps copied transcripts clean and matches
+    the reference CLI's ragged-right result blocks.
+    """
+
+    def __init__(self, renderable: RenderableType) -> None:
+        self._renderable = renderable
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        from pythinker_code.utils.rich.columns import strip_trailing_spaces
+
+        segments = list(console.render(self._renderable, options))
+        yield from strip_trailing_spaces(segments)
+
+
 def render_message_response(renderable: RenderableType) -> RenderableType:
     """Render a Blackbox-style indented response gutter for tool details.
 
@@ -177,7 +195,7 @@ def render_message_response(renderable: RenderableType) -> RenderableType:
     table.add_column(width=5, no_wrap=True)
     table.add_column(ratio=1)
     table.add_row(Text(f"  {TRANSCRIPT_TOOL_GUTTER}  ", style=tui_rich_style("muted")), renderable)
-    return Group(table)
+    return Group(_TrimmedTrailingSpace(table))
 
 
 def dim(text: str | Text) -> Text:
