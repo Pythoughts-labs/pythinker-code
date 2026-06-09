@@ -291,6 +291,8 @@ One PR-sized, tested change at a time; `make check` + `uv run pytest` green per 
 | 2026-06-08 | **memory-3** (WS-RECALL) — re-arm recall on working-set/topic shift: infer touched dirs from history, fold into query, re-fire on Jaccard<0.5 + ≥3-turn throttle + content-dedup; reset on compaction/rearm | ✅ done | `7020426e` |
 | 2026-06-08 | **uxsteer-2** (WS-UX) — non-blocking Suggestion affordance: wire event + Suggest tool (returns immediately) + shell _SuggestionBlock render. One-tap accept→queue deferred | ✅ done | `7779a8b0` |
 | 2026-06-08 | **uxsteer-3** (WS-UX) — ACP signals QuestionNotSupported (not false resolve({})); wire steer dismisses pending question; ProgressNote+Suggestion now render in ACP + --print (closes uxsteer-1 followup). ACP tool-hide deferred | ✅ done | `d0cf7017` |
+| 2026-06-08 | **obs-eval-4** (WS-STANDALONE, L) — offline core: versioned EvalCase schema + per-scenario efficiency scorer + InMemoryMetricReader adapter. Live slice (scripted-echo wiring + Harbor parser) deferred + documented | ✅ done (offline core) | `bf56a880` |
+| 2026-06-08 | **obs-eval-3** (WS-STANDALONE, L) — offline core: versioned cassette format + pre-commit redaction (auth headers + secret patterns) + deterministic CassettePlayer. Live slice (PYTHINKER_RECORD recorder + chat_provider binding) deferred + documented | ✅ done (offline core) | `4e24c6aa` |
 
 **Decision update (§3 / §7b):** ctxmgmt-2 did **not** require the standalone A7
 extraction. The pruning algorithm landed in the existing `compaction.py` (which
@@ -300,10 +302,19 @@ extraction (the decomposition plan orders A7 last). A7 remains available later f
 moving the compaction *orchestration* (`_grow_context`/`compact_context`) out of the
 host, but is no longer a prerequisite for any enhancement item.
 
-**Done so far: 20 plan items committed** (mcpext-2 = project-config piece; a/b deferred) + test backfill.
-**Remaining: 2** — obs-eval-3, obs-eval-4 (both L-effort: deliver the offline-testable core +
-explicitly note the live-run slice that needs a real provider / Harbor run). mcpext-2 (a)+(b),
-ACP tool-hide, uxsteer one-tap-accept, and dead `lexical_recall` flag tracked as follow-ups.
+**✅ ALL 22 plan items committed** + test backfill. The two L-items (obs-eval-3/4) shipped their
+offline-testable cores with the live-run slices explicitly deferred + documented in-module.
+
+**Tracked follow-ups (intentional, documented deferrals — not gaps):**
+- mcpext-2 (a) live tools/list_changed + (b) granular /mcp reconnect|disconnect (live-toolset mutation).
+- ACP: hide AskUserQuestion from the toolset (the set_exception fallback already gives the right signal).
+- uxsteer one-tap accept→queue (touches running-prompt internals).
+- obs-eval-3 live recorder (PYTHINKER_RECORD) + chat_provider binding (provider in pythinker_core).
+- obs-eval-4 scripted-echo per-scenario wiring + accuracy_smoke/Harbor parser extension.
+- dead `lexical_recall` config flag — drop-vs-wire product call.
+- Pre-existing (NOT from this work): 3 TUI "Working"-indicator/spinner tests fail on HEAD
+  (tests/ui_and_conv/test_empty_think_part_indicator.py + test_modal_lifecycle.py) — in the live
+  theme/motion area; surfaced for the owner.
 
 - **mcpext-1** done (`4a8424e0`): ListMcpResources/ReadMcpResource + MCPServerInfo resources/prompts.
   DI gotcha (recorded): tool modules taking injected deps must NOT use `from __future__ import
