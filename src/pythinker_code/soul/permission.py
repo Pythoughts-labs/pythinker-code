@@ -424,7 +424,7 @@ def _segment_mutation_reason(tokens: list[str]) -> str | None:
     command, args = _unwrap_command(tokens)
     if command is None:
         return None
-    base = command.rsplit("/", 1)[-1]
+    base = _canonical_interpreter_name(command.rsplit("/", 1)[-1])
 
     if base in _MUTATING_COMMANDS:
         return f"{base} command"
@@ -584,6 +584,28 @@ _OPAQUE_INTERPRETERS = {
 _INLINE_CODE_FLAGS = {"-c", "-e"}
 
 
+def _canonical_interpreter_name(base: str) -> str:
+    """Map a version-suffixed interpreter binary to its bare name so version-pinned
+    invocations hit the same guards as the canonical form: ``python3.14`` -> ``python``,
+    ``node20`` -> ``node``. Non-interpreters are returned unchanged.
+
+    Without this, ``sys.executable`` (commonly ``python3.14``) and any explicitly
+    versioned interpreter slip the read-only/destructive shell guards, which only list
+    the bare ``python``/``python3`` forms — e.g. ``python3.14 -c '<mutating code>'``
+    would run unchecked under a read-only subagent profile.
+
+    Stripping is gated on membership in ``_OPAQUE_INTERPRETERS`` (not the broader
+    ``_MUTATING_COMMANDS``) so a non-interpreter like ``rm2`` is NOT normalized to a
+    guard hit. The mutation guard then checks ``_MUTATING_COMMANDS``, so its interpreter
+    subset must stay in sync with ``_OPAQUE_INTERPRETERS`` (identical today) for
+    version-suffixed interpreters to be classified as mutating.
+    """
+    if base in _OPAQUE_INTERPRETERS:
+        return base
+    stripped = base.rstrip("0123456789.")
+    return stripped if stripped in _OPAQUE_INTERPRETERS else base
+
+
 def _short_flag_letters(arg: str) -> set[str]:
     """Letters of a clustered short-flag arg: ``-rf`` -> ``{'r', 'f'}``.
 
@@ -659,7 +681,7 @@ def _segment_destructive_reason(tokens: list[str]) -> str | None:
     command, args = _unwrap_command(tokens)
     if command is None:
         return None
-    base = command.rsplit("/", 1)[-1]
+    base = _canonical_interpreter_name(command.rsplit("/", 1)[-1])
 
     if base == "rm":
         recursive = any(

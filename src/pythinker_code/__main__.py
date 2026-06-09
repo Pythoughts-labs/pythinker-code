@@ -86,6 +86,11 @@ def _maybe_enable_asyncio_tracing() -> None:
     import warnings
 
     tracemalloc.start(25)
+    # Make "coroutine ... was never awaited" warnings carry their *creation*
+    # stack ("Coroutine created at ...") rather than just the GC site.  This
+    # routes through warnings.showwarning below, so the leaked coroutine's
+    # origin lands in the log file.  tracemalloc alone does not surface it.
+    sys.set_coroutine_origin_tracking_depth(30)
     warnings.simplefilter("always", RuntimeWarning)
 
     log_path = Path.home() / ".pythinker" / "asyncio-warnings.log"

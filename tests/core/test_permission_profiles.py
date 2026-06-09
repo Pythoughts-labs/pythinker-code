@@ -288,6 +288,42 @@ def test_shell_destructive_commands_classified() -> None:
         assert shell_destructive_reason(cmd) is None, cmd
 
 
+def test_shell_version_suffixed_interpreters_classified() -> None:
+    """Version-pinned interpreter binaries must hit the same guards as the bare names.
+
+    ``sys.executable`` is commonly version-suffixed (``python3.14``), and an agent can
+    invoke ``python3.12``/``node20``/an absolute interpreter path explicitly. Without
+    normalization, ``python3.14 -c '<mutating code>'`` slips a read-only subagent
+    profile and skips destructive deliberation, because the guard sets only list the
+    bare ``python``/``python3`` forms.
+    """
+    from pythinker_code.soul.permission import (
+        shell_destructive_reason,
+        shell_mutation_reason,
+    )
+
+    for cmd in (
+        "python3.14 -c 'import shutil'",
+        "python3.12 -c 'x=1'",
+        "/usr/bin/python3.14 -c 'x=1'",
+        "node20 -e 'x'",
+        "ruby3 -e 'x'",
+        "lua5.4 -e 'x'",
+        f"{sys.executable} -c 'x=1'",
+    ):
+        assert shell_mutation_reason(cmd) is not None, cmd
+        assert shell_destructive_reason(cmd) is not None, cmd
+
+    # Non-interpreter commands must NOT be over-normalized into a false guard match.
+    # `rm2` is the key case: it strips to `rm` (which IS in _MUTATING_COMMANDS) but
+    # `rm` is NOT an interpreter, so normalization must leave `rm2` untouched — this
+    # pins the "only strip when the result is a known interpreter" property against a
+    # future maintainer broadening normalization to check _MUTATING_COMMANDS directly.
+    for cmd in ("ls -la", "cat notes3.txt", "grep -r foo .", "rm2 foo"):
+        assert shell_mutation_reason(cmd) is None, cmd
+        assert shell_destructive_reason(cmd) is None, cmd
+
+
 @pytest.mark.skipif(
     platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
 )

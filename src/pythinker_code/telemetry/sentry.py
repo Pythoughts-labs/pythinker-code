@@ -24,7 +24,6 @@ import re
 from typing import Any, cast
 
 import sentry_sdk
-from sentry_sdk.integrations.asyncio import AsyncioIntegration
 from sentry_sdk.integrations.dedupe import DedupeIntegration
 from sentry_sdk.integrations.excepthook import ExcepthookIntegration
 from sentry_sdk.types import Event, Hint
@@ -164,10 +163,20 @@ def init(
         # Only the integrations that catch unhandled errors. Skip stdlib
         # integrations (logging, atexit) so we don't double-emit alongside
         # OTel logs.
+        #
+        # Deliberately NOT including AsyncioIntegration: with traces/profiles
+        # at 0.0 it adds no spans, but its create_task monkeypatch wraps every
+        # coroutine in `_task_with_sentry_span_creation` (`result = await coro`).
+        # When such a wrapper task is cancelled before its first step — e.g. a
+        # freshly-created `WireUISide.receive()` task during turn teardown, or a
+        # prompt_toolkit background task during prompt shutdown — the wrapper
+        # raises before reaching `await coro`, orphaning the inner coroutine and
+        # emitting spurious "coroutine ... was never awaited" RuntimeWarnings.
+        # Without the wrapper, the still-running loop steps the cancelled task
+        # cleanly. Re-adding this re-introduces that noise.
         default_integrations=False,
         integrations=[
             ExcepthookIntegration(always_run=False),
-            AsyncioIntegration(),
             DedupeIntegration(),
         ],
         before_send=_before_send,
