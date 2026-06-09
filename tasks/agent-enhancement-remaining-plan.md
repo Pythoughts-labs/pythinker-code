@@ -289,6 +289,8 @@ One PR-sized, tested change at a time; `make check` + `uv run pytest` green per 
 | 2026-06-08 | **mcpext-2** (partial) — project-scoped `.pythinker/mcp.json` discovery (cwd→.git walk) layered over global config. Deferred: (a) live tools/list_changed, (b) granular /mcp reconnect/disconnect (live-toolset mutation; /reload covers coarsely) | ✅ done (c); a/b deferred | `5983725e` |
 | 2026-06-08 | **memory-1 / ctxmgmt-3** (WS-RECALL) — cross-session Recall tool (search prior sessions by title keyword+recency; read a sanitized, untrusted-wrapped, workspace-scoped transcript). Security review hardened: session_id traversal guard, streaming/encoding-safe read, current-session reject (`bde1c626`) | ✅ done | `588de079` |
 | 2026-06-08 | **memory-3** (WS-RECALL) — re-arm recall on working-set/topic shift: infer touched dirs from history, fold into query, re-fire on Jaccard<0.5 + ≥3-turn throttle + content-dedup; reset on compaction/rearm | ✅ done | `7020426e` |
+| 2026-06-08 | **uxsteer-2** (WS-UX) — non-blocking Suggestion affordance: wire event + Suggest tool (returns immediately) + shell _SuggestionBlock render. One-tap accept→queue deferred | ✅ done | `7779a8b0` |
+| 2026-06-08 | **uxsteer-3** (WS-UX) — ACP signals QuestionNotSupported (not false resolve({})); wire steer dismisses pending question; ProgressNote+Suggestion now render in ACP + --print (closes uxsteer-1 followup). ACP tool-hide deferred | ✅ done | `d0cf7017` |
 
 **Decision update (§3 / §7b):** ctxmgmt-2 did **not** require the standalone A7
 extraction. The pruning algorithm landed in the existing `compaction.py` (which
@@ -298,10 +300,10 @@ extraction (the decomposition plan orders A7 last). A7 remains available later f
 moving the compaction *orchestration* (`_grow_context`/`compact_context`) out of the
 host, but is no longer a prerequisite for any enhancement item.
 
-**Done so far: 18 plan items committed** (mcpext-2 = project-config piece; a/b deferred) + test backfill.
-**Remaining: 4** — uxsteer-2 (non-blocking Suggestion), uxsteer-3 (ACP question consistency +
-steer-cancels-question), obs-eval-3, obs-eval-4 (last two L-effort: deliver offline-testable core +
-note the live slice). mcpext-2 (a)+(b) tracked as follow-ups.
+**Done so far: 20 plan items committed** (mcpext-2 = project-config piece; a/b deferred) + test backfill.
+**Remaining: 2** — obs-eval-3, obs-eval-4 (both L-effort: deliver the offline-testable core +
+explicitly note the live-run slice that needs a real provider / Harbor run). mcpext-2 (a)+(b),
+ACP tool-hide, uxsteer one-tap-accept, and dead `lexical_recall` flag tracked as follow-ups.
 
 - **mcpext-1** done (`4a8424e0`): ListMcpResources/ReadMcpResource + MCPServerInfo resources/prompts.
   DI gotcha (recorded): tool modules taking injected deps must NOT use `from __future__ import
