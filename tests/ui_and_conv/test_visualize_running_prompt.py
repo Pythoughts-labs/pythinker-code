@@ -1552,3 +1552,36 @@ async def test_approval_request_feedback_available_before_wait():
 
     # feedback is available synchronously, no need to await
     assert request.feedback == "try rm -i instead"
+
+
+def test_background_status_shows_elapsed_tokens_and_rate(monkeypatch) -> None:
+    """The line above the input carries (elapsed, ↓ tokens, t/s) — the same
+    metadata design as the live view's working indicator."""
+    from types import SimpleNamespace
+
+    import pythinker_code.ui.shell.prompt as prompt_module
+
+    session = object.__new__(CustomPromptSession)
+    session._background_task_count_provider = lambda: BgTaskCounts(agent=2)
+    session._latest_todos = ()
+    state = {"now": 100.0, "tokens": 40_000}
+    session._status_provider = lambda: SimpleNamespace(context_tokens=state["tokens"])
+    monkeypatch.setattr(prompt_module.time, "monotonic", lambda: state["now"])
+
+    def render() -> str:
+        rendered = CustomPromptSession._render_background_working_status(session, 120)
+        return "".join(item[1] for item in rendered)
+
+    first = render()
+    assert "(<1s, ↓ 40k tokens)" in first  # no rate until the window fills
+
+    state["now"], state["tokens"] = 100.4, 40_400
+    render()
+    state["now"], state["tokens"] = 100.8, 40_800
+    third = render()
+    assert "(<1s, ↓ 40.8k tokens, 1000 t/s)" in third
+
+    # Draining background work resets the trackers.
+    session._background_task_count_provider = lambda: BgTaskCounts()
+    assert render() == ""
+    assert session._bg_status_started_at is None

@@ -804,7 +804,11 @@ class _LiveView:
         prefix = f"  {TRANSCRIPT_TOOL_GUTTER}    " if is_first else "       "
         title_budget = max(1, width - cell_width(prefix) - 2)
         title = truncate_to_width(todo.title.strip(), title_budget)
-        row = Text(prefix, style=tui_rich_style("muted"))
+        # No base style on the row: a muted base would bleed through spans
+        # that set no color of their own (the bold running-task title must
+        # fall back to the terminal default white, not muted grey).
+        row = Text()
+        row.append(prefix, style=tui_rich_style("muted"))
         row.append(icon, style=tui_rich_style(icon_token))
         row.append(" ")
         row.append(title, style=title_style)

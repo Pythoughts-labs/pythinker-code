@@ -106,3 +106,25 @@ def test_expanded_tool_output_is_never_truncated() -> None:
     out = render_plain(_generic_component(text, expanded=True).render(), width=120)
     assert "omitted" not in out
     assert "line 137" in out
+
+
+def test_word_level_diff_highlight_gated_on_similarity() -> None:
+    """Mostly-similar single-line edits get word-level highlight tints; heavy
+    rewrites render as plain rows so the row palette stays consistent."""
+    from pythinker_code.ui.shell.components.diff import render_diff
+    from pythinker_code.ui.theme import get_diff_colors, set_active_theme
+
+    set_active_theme("dark")
+    hl_bg = get_diff_colors().add_hl.bgcolor
+
+    similar = render_diff("-1 alpha beta gamma\n+1 alpha beta delta")
+    similar_bgs = {
+        (span.style.bgcolor if not isinstance(span.style, str) else None) for span in similar.spans
+    }
+    assert hl_bg in similar_bgs
+
+    rewrite = render_diff("-1 alpha beta gamma\n+1 zzz qqq xxx yyy www vvv")
+    rewrite_bgs = {
+        (span.style.bgcolor if not isinstance(span.style, str) else None) for span in rewrite.spans
+    }
+    assert hl_bg not in rewrite_bgs

@@ -292,7 +292,19 @@ def render_diff(diff_text: str) -> Text:
                 added_block.append((p[1], p[2]))
                 i += 1
 
+            use_word_level = False
             if len(removed_block) == 1 and len(added_block) == 1:
+                # Word-level emphasis only helps when the lines are mostly
+                # similar; on heavy rewrites it would flood the row with the
+                # brighter highlight tint and read as a different palette
+                # from plain added/removed rows.
+                use_word_level = (
+                    difflib.SequenceMatcher(
+                        None, removed_block[0][1], added_block[0][1], autojunk=False
+                    ).ratio()
+                    >= 0.5
+                )
+            if use_word_level:
                 rln, rcontent = removed_block[0]
                 aln, acontent = added_block[0]
                 rem_inner, add_inner = _intra_line_diff(

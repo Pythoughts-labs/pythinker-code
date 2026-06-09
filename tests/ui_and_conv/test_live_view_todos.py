@@ -358,3 +358,18 @@ def test_turn_recap_tracks_and_clears_modified_files() -> None:
     # A fresh top-level turn resets the per-turn delta state.
     view.dispatch_wire_message(TurnBegin(user_input="next ask"))
     assert view._recap_files_modified == set()
+
+
+def test_pinned_todo_row_has_no_muted_base_style_bleed() -> None:
+    """The row must not carry a base style: a muted base would bleed through
+    the bold running-task title (which sets no color) and render it grey."""
+    set_active_theme("dark")
+    view = _LiveView(StatusUpdate())
+
+    row = view._pinned_todo_row(
+        TodoDisplayItem(title="Active task", status="in_progress"),
+        is_first=True,
+        width=100,
+        elapsed_s=0.0,
+    )
+    assert not row.style
