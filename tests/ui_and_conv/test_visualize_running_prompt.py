@@ -367,8 +367,8 @@ def test_prompt_status_keeps_todos_visible_during_background_tasks() -> None:
     text = "".join(item[1] for item in rendered)
 
     assert "3 background agents" not in text
-    assert "⎿  ◼ Security vulnerability scan" in text
-    assert "◻ Code quality review" in text
+    assert "⎿  ■ Security vulnerability scan" in text
+    assert "□ Code quality review" in text
 
 
 def test_prompt_background_todo_rows_align_icons_and_titles() -> None:
@@ -387,10 +387,10 @@ def test_prompt_background_todo_rows_align_icons_and_titles() -> None:
     rendered = CustomPromptSession._render_background_todo_rows(session, 120)
     lines = "".join(item[1] for item in rendered).splitlines()
 
-    assert lines[0].startswith("  ⎿  ◼ ")
-    assert lines[1].startswith("     ◻ ")
-    assert lines[2].startswith("     ◻ ")
-    assert lines[1].index("◻") == lines[0].index("◼")
+    assert lines[0].startswith("  ⎿  ■ ")
+    assert lines[1].startswith("     □ ")
+    assert lines[2].startswith("     □ ")
+    assert lines[1].index("□") == lines[0].index("■")
     assert lines[2].index("Synthesize") == lines[0].index("Launch")
 
 
@@ -1055,6 +1055,20 @@ def test_running_prompt_handles_approval_panel_keys_and_clears_buffer() -> None:
 
     assert buffer.text == ""
     assert dispatched == [shell_visualize.KeyEvent.DOWN]
+
+
+def test_running_prompt_escape_sets_cancel_event() -> None:
+    view = object.__new__(_PromptLiveView)
+    view._current_approval_request_panel = None
+    view._turn_ended = False
+    view._cancel_event = asyncio.Event()
+
+    assert view.should_handle_running_prompt_key("escape") is True
+
+    event = type("_Event", (), {"app": None, "current_buffer": Buffer()})()
+    view.handle_running_prompt_key("escape", event)
+
+    assert view._cancel_event.is_set()
 
 
 def test_question_delegate_clears_buffer_when_exiting_other_input_mode() -> None:

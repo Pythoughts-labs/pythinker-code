@@ -2864,19 +2864,13 @@ class CustomPromptSession:
         if not todos:
             return FormattedText([])
 
+        # Mirror _LiveView._pinned_todo_row exactly — both renderers must show
+        # one design: coral ■ + bold default-color (white) title for running
+        # rows, muted □ pending, green ✓ with struck muted titles when done.
         tokens = _get_tui_tokens()
         muted_style = f"fg:{tokens.muted}" if tokens.muted else ""
-        warning_style = f"fg:{tokens.warning}" if tokens.warning else muted_style
         success_style = f"fg:{tokens.success}" if tokens.success else muted_style
-        activity_style = f"fg:{tokens.activity_verb}" if tokens.activity_verb else warning_style
-        active_title_style = (
-            f"fg:{tokens.activity_label} bold" if tokens.activity_label else activity_style
-        )
-        text_style = (
-            f"fg:{tokens.text or tokens.activity_label}"
-            if tokens.text or tokens.activity_label
-            else ""
-        )
+        activity_style = f"fg:{tokens.activity_verb}" if tokens.activity_verb else muted_style
         fragments: FormattedText = FormattedText()
         visible = todos[:5]
         hidden = todos[5:]
@@ -2887,17 +2881,17 @@ class CustomPromptSession:
                 fragments.append(("", "\n"))
             prefix = first_prefix if index == 0 else continuation_prefix
             if todo.status == "done":
-                icon = "✔"
+                icon = "✓"
                 icon_style = success_style
-                title_style = muted_style
+                title_style = f"{muted_style} strike".strip()
             elif todo.status == "in_progress":
-                icon = "◼"
+                icon = "■"
                 icon_style = activity_style
-                title_style = active_title_style
+                title_style = "bold"
             else:
-                icon = "◻"
+                icon = "□"
                 icon_style = muted_style
-                title_style = text_style
+                title_style = muted_style
             title_budget = max(1, columns - _display_width(prefix) - _display_width(icon) - 1)
             fragments.append((muted_style, prefix))
             fragments.append((icon_style, icon))
