@@ -277,20 +277,34 @@ class ToolExecutionComponent:
         if result is None or not result.text:
             return None
         text = result.text
-        truncated = False
-        if not self._state.expanded:
-            lines = text.splitlines()
-            if len(lines) > _MAX_RESULT_LINES or len(text) > _MAX_RESULT_CHARS:
-                lines = lines[:_MAX_RESULT_LINES]
-                text = "\n".join(lines)[:_MAX_RESULT_CHARS]
-                truncated = True
         style = tui_rich_style("error") if result.is_error else tui_rich_style("muted")
-        body = Text(text, style=style)
-        if truncated:
-            body.append(
-                "\n… output truncated for display; full result preserved in session.",
-                style=tui_rich_style("muted") + Style(italic=True),
-            )
+        lines = text.splitlines()
+        within_limits = len(lines) <= _MAX_RESULT_LINES and len(text) <= _MAX_RESULT_CHARS
+        if self._state.expanded or within_limits:
+            return Text(text, style=style)
+
+        # Head-tail truncation: keep the start (identifies the command/result)
+        # and the end (usually the actionable part), omitting the middle.
+        if len(lines) > _MAX_RESULT_LINES:
+            head_count = _MAX_RESULT_LINES // 2
+            tail_count = _MAX_RESULT_LINES - head_count
+            omitted = len(lines) - head_count - tail_count
+            head = "\n".join(lines[:head_count])
+            tail = "\n".join(lines[-tail_count:])
+            notice = f"\n… {omitted} line{'s' if omitted != 1 else ''} omitted …\n"
+        else:
+            # Few lines but a huge body (e.g. one giant line): split the
+            # character budget between the start and the end.
+            head = text[: _MAX_RESULT_CHARS // 2]
+            tail = text[-(_MAX_RESULT_CHARS // 2) :]
+            notice = "\n… middle omitted …\n"
+        body = Text(head[:_MAX_RESULT_CHARS], style=style)
+        body.append(notice, style=tui_rich_style("muted") + Style(italic=True))
+        body.append(tail[-_MAX_RESULT_CHARS:], style=style)
+        body.append(
+            "\n… output truncated for display; full result preserved in session.",
+            style=tui_rich_style("muted") + Style(italic=True),
+        )
         return body
 
     def _has_expandable_payload(self) -> bool:

@@ -12,7 +12,7 @@ from rich.text import Text
 
 from pythinker_code.tools.display import DiffDisplayBlock
 from pythinker_code.ui.shell.components import compute_edit_diff_string, render_diff
-from pythinker_code.ui.shell.render_constants import expand_hint
+from pythinker_code.ui.shell.render_constants import DIFF_EXPANDED_MAX_LINES, expand_hint
 from pythinker_code.ui.shell.tool_renderers import ToolResultPayload
 from pythinker_code.ui.shell.tool_renderers._render_utils import fg
 
@@ -162,4 +162,16 @@ def diff_frame(
         shown = "\n".join(lines[:collapsed_max_lines])
         remaining = len(lines) - collapsed_max_lines
         return Group(render_diff(shown), fg("muted", expand_hint(remaining)))
+    if len(lines) > DIFF_EXPANDED_MAX_LINES:
+        # Guard against pathological diffs: even expanded, cap the rendered
+        # body at head + tail with an explicit omitted-line count so one huge
+        # edit cannot freeze or flood the terminal.
+        head_count = DIFF_EXPANDED_MAX_LINES * 3 // 4
+        tail_count = DIFF_EXPANDED_MAX_LINES - head_count
+        omitted = len(lines) - head_count - tail_count
+        return Group(
+            render_diff("\n".join(lines[:head_count])),
+            fg("muted", f"… {omitted} middle lines omitted (diff too large to render fully)"),
+            render_diff("\n".join(lines[-tail_count:])),
+        )
     return render_diff(diff_text)
