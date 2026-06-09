@@ -53,6 +53,7 @@ export default withMermaid(defineConfig({
                 { text: 'Agent Skills', link: '/en/customization/skills' },
                 { text: 'Agents and Subagents', link: '/en/customization/agents' },
                 { text: 'Agent Architecture', link: '/en/customization/agent-architecture' },
+                { text: 'Repository Map', link: '/en/customization/architecture' },
                 { text: 'Print Mode', link: '/en/customization/print-mode' },
                 { text: 'Wire Mode', link: '/en/customization/wire-mode' },
               ],
