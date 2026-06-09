@@ -150,3 +150,25 @@ def test_generic_429_with_body_uses_server_message_not_usage_limit_text():
     detail = _extract_429_detail(exc)
 
     assert detail["summary"] == "Rate limit exceeded"
+
+
+def test_capture_unparsed_429_logs_write_failure_instead_of_swallowing(monkeypatch):
+    """The last-resort diagnostic for an unparsable 429 must never raise, but a
+    failure to write it must be logged (not silently swallowed) so the diagnostic
+    path itself stays debuggable when the share dir is missing/unwritable."""
+    from pythinker_code.ui.shell import _capture_unparsed_429
+
+    def _explode() -> object:
+        raise OSError("share dir unavailable")
+
+    monkeypatch.setattr("pythinker_code.share.get_share_dir", _explode)
+    logged: list[tuple] = []
+    monkeypatch.setattr(
+        "pythinker_code.ui.shell.logger.debug", lambda *a, **k: logged.append((a, k))
+    )
+
+    # Must not raise even though the diagnostic write path blew up.
+    _capture_unparsed_429(RuntimeError("unrecognised 429"))
+
+    assert logged, "a failed diagnostic write must be logged, not silently swallowed"
+    assert logged[0][1].get("exc_info") is True

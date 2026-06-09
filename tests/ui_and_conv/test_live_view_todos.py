@@ -274,6 +274,36 @@ def test_completed_todo_row_is_muted_and_struck() -> None:
     assert title_style.color == tui_rich_style("muted").color
 
 
+def test_cancelled_todo_row_is_muted_and_struck() -> None:
+    view = _LiveView(StatusUpdate())
+
+    row = view._pinned_todo_row(
+        TodoDisplayItem(title="Abandoned task", status="cancelled"), is_first=True, width=80
+    )
+    title_style = _style_for(row, "Abandoned task")
+
+    assert _span_colors_for(row, "✕") == {_color_hex(tui_rich_style("muted").color)}
+    assert title_style.strike is True
+    assert title_style.color == tui_rich_style("muted").color
+
+
+def test_cancelled_todo_remains_visible_in_pinned_list(monkeypatch) -> None:
+    """A cancelled todo must stay represented in the pinned list (with the ✕ marker)
+    rather than silently disappearing — successful todo tool cards are suppressed in
+    the transcript, so the pinned list is the only place a cancelled item shows."""
+    monkeypatch.setenv("PYTHINKER_REDUCED_MOTION", "1")
+    view = _LiveView(StatusUpdate(context_tokens=10_000))
+    view.dispatch_wire_message(TurnBegin(user_input="work"))
+    view._latest_todos = (
+        TodoDisplayItem(title="Active task", status="in_progress"),
+        TodoDisplayItem(title="Abandoned task", status="cancelled"),
+    )
+
+    rendered = _render(view._working_indicator())
+
+    assert "✕ Abandoned task" in rendered
+
+
 def test_toggle_pinned_todos_hides_todo_rows() -> None:
     view = _LiveView(StatusUpdate())
     view.dispatch_wire_message(TurnBegin(user_input="work"))

@@ -18,7 +18,7 @@ def test_injects_rm_after_run(cmd: str) -> None:
     assert args == ["run", "--rm", "-i", "ghcr.io/example/mcp"]
 
 
-def test_keeps_existing_rm(cmd: str = "docker") -> None:
+def test_keeps_existing_rm() -> None:
     original = ["run", "--rm", "-i", "img"]
     assert ensure_docker_rm("docker", original) == original
 

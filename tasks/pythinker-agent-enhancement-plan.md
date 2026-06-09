@@ -271,6 +271,7 @@ Phases are ordered by impact×effort and by dependency. Within a phase, items ar
 ### Phase 3 — Memory & recall agency
 
 #### 3.1 — Model-invocable cross-session `Recall` tool (`memory-1` / `ctxmgmt-3`) · M · med
+
 - **Current.** Recall is push-only and fires once; the agent cannot actively ask "what did I decide in the session where I set up CI?" and read that transcript. Distilled JOURNAL recaps lose load-bearing detail (exact commands, paths, rationale). The data *is* durably persisted (`context.jsonl` under the sessions dir) and technically reachable via the unsandboxed Shell — so this replaces a brittle `cat`/`grep` escape hatch with a designed, sanitized, approval-aware affordance.
 - **Target.** The agent has agency to search and read prior sessions on demand.
 - **Change.** Add a root-agent, read-only `Recall` tool (`tools/recall/`) with two modes: (1) **search** prior sessions by topic/file/date over `wire.jsonl`/`context.jsonl` using the existing `LexicalRetriever` BM25+recency (`memory/retriever.py`), scoped to the current `project_memory.project_key`, returning id/title/ts/snippet; (2) **read** a chosen session's transcript span via `Session.list_all` (`session.py:278`) + `wire_file.iter_records`. Cap returned bytes/turns; **sanitize via `memory/sanitize.py`** (a prior transcript is untrusted input → also subject to §1's wrapping). Gate cross-workspace reads behind Approval. Register read-only in `agents/default/agent.yaml`.

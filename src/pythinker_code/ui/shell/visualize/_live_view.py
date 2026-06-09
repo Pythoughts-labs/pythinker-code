@@ -683,10 +683,10 @@ class _LiveView:
         latest_todos = tuple(
             todo
             for todo in getattr(self, "_latest_todos", ())
-            if todo.status in ("done", "in_progress", "pending") and todo.title.strip()
+            if todo.status in ("done", "in_progress", "pending", "cancelled") and todo.title.strip()
         )
         active_todo = next((todo for todo in latest_todos if todo.status == "in_progress"), None)
-        status_order = {"in_progress": 0, "pending": 1, "done": 2}
+        status_order = {"in_progress": 0, "pending": 1, "cancelled": 2, "done": 3}
         ordered_todos = tuple(
             sorted(
                 enumerate(latest_todos),
@@ -741,6 +741,10 @@ class _LiveView:
     ) -> Text:
         if todo.status == "done":
             icon = "✓"
+            icon_token = "muted"
+            title_style = tui_rich_style("muted") + Style(strike=True)
+        elif todo.status == "cancelled":
+            icon = "✕"
             icon_token = "muted"
             title_style = tui_rich_style("muted") + Style(strike=True)
         elif todo.status == "in_progress":

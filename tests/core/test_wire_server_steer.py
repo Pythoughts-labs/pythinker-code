@@ -177,6 +177,9 @@ async def test_handle_steer_dismisses_pending_question(
 
     assert isinstance(response, JSONRPCSuccessResponse)
     assert question.resolved  # the steer dismissed the pending question
+    # ...and the dismissed request is fully retired from the pending map, so a late
+    # client response cannot reach _handle_response and double-resolve it.
+    assert "q1" not in server._pending_requests
 
 
 @pytest.mark.asyncio

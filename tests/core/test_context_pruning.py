@@ -125,7 +125,7 @@ async def test_prune_context_rewrites_history_preserving_structure(runtime, tmp_
     assert history[-1].extract_text("") == "done"
 
 
-def _seed_prunable(context) -> list[Message]:
+def _seed_prunable() -> list[Message]:
     return [
         Message(role="user", content="go"),
         Message(role="assistant", content=[TextPart(text="working")]),
@@ -143,7 +143,7 @@ async def test_prune_context_restores_history_when_rebuild_fails(runtime, tmp_pa
     runtime.config.loop_control.prune_min_chars = 2000
     context, soul = _make_soul(runtime, tmp_path)
     await context.write_system_prompt("sys")
-    await context.append_message(_seed_prunable(context))
+    await context.append_message(_seed_prunable())
     before = list(context.history)
 
     # Fail the rebuild's append of the pruned body (it carries the "elided" placeholder);
@@ -189,13 +189,12 @@ async def test_prune_context_does_not_rearm_injection_providers(runtime, tmp_pat
     soul.add_injection_provider(spy)
 
     await context.write_system_prompt("sys")
-    await context.append_message(_seed_prunable(context))
+    await context.append_message(_seed_prunable())
 
     assert await soul.prune_context() is True
     assert spy.compacted == 0  # prune is not compaction; one-shot state must survive
 
 
-@pytest.mark.asyncio
 @pytest.mark.asyncio
 async def test_prune_context_never_increases_token_count(runtime, tmp_path) -> None:
     """Pruning only removes content, so the post-prune token count must never exceed the
@@ -206,7 +205,7 @@ async def test_prune_context_never_increases_token_count(runtime, tmp_path) -> N
     runtime.config.loop_control.prune_min_chars = 2000
     context, soul = _make_soul(runtime, tmp_path)
     await context.write_system_prompt("sys")
-    await context.append_message(_seed_prunable(context))
+    await context.append_message(_seed_prunable())
     # Authoritative pre-prune count (from the LLM) below the heuristic estimate of the
     # remaining content — the case where a naive full re-estimate would grow the count.
     before = 1

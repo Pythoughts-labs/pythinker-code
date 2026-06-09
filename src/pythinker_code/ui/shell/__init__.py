@@ -456,7 +456,7 @@ def _capture_unparsed_429(exc: BaseException) -> None:
         with path.open("a", encoding="utf-8") as fh:
             fh.write(line)
     except Exception:
-        pass
+        logger.debug("Failed to capture unparsed 429 payload to debug log", exc_info=True)
 
 
 def _render_429_message(detail: dict[str, str], usage_lines: list[str] | None = None) -> str:

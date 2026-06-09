@@ -28,7 +28,7 @@ class ListMcpResources(CallableTool2[ListParams]):
     name: str = "ListMcpResources"
     params: type[ListParams] = ListParams
 
-    def __init__(self, toolset: PythinkerToolset):
+    def __init__(self, toolset: PythinkerToolset) -> None:
         super().__init__(description=load_desc(Path(__file__).parent / "list_description.md"))
         self._toolset = toolset
 
@@ -76,7 +76,7 @@ class ReadMcpResource(CallableTool2[ReadParams]):
     name: str = "ReadMcpResource"
     params: type[ReadParams] = ReadParams
 
-    def __init__(self, toolset: PythinkerToolset):
+    def __init__(self, toolset: PythinkerToolset) -> None:
         super().__init__(description=load_desc(Path(__file__).parent / "read_description.md"))
         self._toolset = toolset
 

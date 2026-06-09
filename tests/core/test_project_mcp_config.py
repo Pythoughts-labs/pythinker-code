@@ -19,7 +19,8 @@ def test_finds_project_mcp_config_at_repo_root(
     monkeypatch.chdir(tmp_path)
 
     found = _find_project_mcp_config_file()
-    assert found is not None and found.samefile(cfg)
+    assert found is not None
+    assert found.samefile(cfg)
 
 
 def test_finds_project_mcp_config_from_subdir(
@@ -34,7 +35,8 @@ def test_finds_project_mcp_config_from_subdir(
     monkeypatch.chdir(sub)
 
     found = _find_project_mcp_config_file()
-    assert found is not None and found.samefile(cfg)
+    assert found is not None
+    assert found.samefile(cfg)
 
 
 def test_no_project_mcp_config_returns_none(
