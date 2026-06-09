@@ -54,6 +54,55 @@ subagents, skills, web/visualization UIs, and multi-provider LLM authentication.
   Context7 MCP documentation lookups and targeted web search to verify the latest updates, APIs,
   CI/GitHub Actions behavior, dependency guidance, and best practices relevant to the task.
 
+## Global invariants and tripwires
+
+Always-on, tracked safety and truthfulness invariants — promoted here from the local
+`AGENTS.local` contract so they apply on a fresh clone and in CI, not only where a local file
+exists. They complement the rules above; the full contract, defensive patterns (P1–P7), and PR
+template live in `AGENTS.local` when present.
+
+### Failure truthfulness contract
+
+Observable output must reflect whether an operation succeeded, failed, partially succeeded, or
+degraded.
+
+- Never return success / `true` / `ok` / empty after a required internal step failed; never
+  report healthy when a required dependency is down; never continue startup past a critical
+  initialization failure.
+- Use explicit error contracts that distinguish no-data, invalid input, unauthenticated,
+  unauthorized, forbidden, conflict, timeout, dependency-unavailable, partial failure, and
+  internal error. Prefer typed results, domain exceptions, or status enums over ambiguous
+  `None`/empty/`False` returns. Convert errors at boundaries, not deep in domain logic.
+- Fallbacks are explicit decisions: degraded, stale, estimated, cached, or partial output must
+  carry source/status and be logged — and must never feed authorization or security decisions.
+  Security, approval, signature, and idempotency uncertainty fail closed.
+
+### AI-risk audit tripwires (C01–C15)
+
+Reject or flag for human review any change that exhibits:
+
+- **C01** success returned after a critical internal failure.
+- **C02** silent drop of audit, telemetry, transaction, or security evidence.
+- **C03** broad `except`/catch that swallows errors without logging, recovery, rethrow, or typed conversion.
+- **C04** scattered fallback values that hide dependency failures or weaken guarantees.
+- **C05** hidden flags, debug routes, local shortcuts, or backdoors past auth/validation/limits/audit.
+- **C06** returns that blur no-data, failure, denial, and partial success.
+- **C07** duplicate business-logic paths that can diverge from the primary rule.
+- **C08** background tasks/threads/queues without lifecycle, cancellation, error handling, timeout, and observability.
+- **C09** safety disabled on an environment flag unless narrow, documented, tested, and impossible in production.
+- **C10** startup that continues after critical init failure, or readiness that ignores required-dependency health.
+- **C11** non-determinism in execution-critical paths (unseeded randomness, floating temperature, wall-clock-dependent decisions).
+- **C12** missing source-to-output lineage for outbound payloads, persisted records, and audit events.
+- **C13** degraded/estimated/stale/fallback output presented as authoritative.
+- **C14** tests covering only happy paths — ignoring failure, security, edge, concurrency, and malformed-input cases.
+- **C15** retries around writes without proven idempotency (keys, constraints, dedupe records, atomic operations).
+
+In this codebase the most load-bearing instances are: approvals fail closed and are never
+bypassed (`soul/approval.py`); untrusted content is wrapped/neutralized before the prompt
+(`utils/trust.py`); hooks fail open by design *except* that a `PreToolUse` block result is
+never discarded; background workers must define lifecycle and recovery; and tool/LLM output is
+validated, never trusted.
+
 ## Simplicity and scope discipline
 
 - Before implementing, identify the Minimum Viable Change: the smallest code delta that solves the
@@ -473,52 +522,3 @@ Hard-won traps — re-check these before and during a release:
   skipped". Inspect via the `reviewThreads` GraphQL field, verify the finding, reply in-thread, then
   `resolveReviewThread`. `main` is also squash-only (linear history, `enforce_admins` on), so merge with
   `gh pr merge --squash`.
-
-## Global invariants and tripwires
-
-Always-on, tracked safety and truthfulness invariants — promoted here from the local
-`AGENTS.local` contract so they apply on a fresh clone and in CI, not only where a local file
-exists. They complement the rules above; the full contract, defensive patterns (P1–P7), and PR
-template live in `AGENTS.local` when present.
-
-### Failure truthfulness contract
-
-Observable output must reflect whether an operation succeeded, failed, partially succeeded, or
-degraded.
-
-- Never return success / `true` / `ok` / empty after a required internal step failed; never
-  report healthy when a required dependency is down; never continue startup past a critical
-  initialization failure.
-- Use explicit error contracts that distinguish no-data, invalid input, unauthenticated,
-  unauthorized, forbidden, conflict, timeout, dependency-unavailable, partial failure, and
-  internal error. Prefer typed results, domain exceptions, or status enums over ambiguous
-  `None`/empty/`False` returns. Convert errors at boundaries, not deep in domain logic.
-- Fallbacks are explicit decisions: degraded, stale, estimated, cached, or partial output must
-  carry source/status and be logged — and must never feed authorization or security decisions.
-  Security, approval, signature, and idempotency uncertainty fail closed.
-
-### AI-risk audit tripwires (C01–C15)
-
-Reject or flag for human review any change that exhibits:
-
-- **C01** success returned after a critical internal failure.
-- **C02** silent drop of audit, telemetry, transaction, or security evidence.
-- **C03** broad `except`/catch that swallows errors without logging, recovery, rethrow, or typed conversion.
-- **C04** scattered fallback values that hide dependency failures or weaken guarantees.
-- **C05** hidden flags, debug routes, local shortcuts, or backdoors past auth/validation/limits/audit.
-- **C06** returns that blur no-data, failure, denial, and partial success.
-- **C07** duplicate business-logic paths that can diverge from the primary rule.
-- **C08** background tasks/threads/queues without lifecycle, cancellation, error handling, timeout, and observability.
-- **C09** safety disabled on an environment flag unless narrow, documented, tested, and impossible in production.
-- **C10** startup that continues after critical init failure, or readiness that ignores required-dependency health.
-- **C11** non-determinism in execution-critical paths (unseeded randomness, floating temperature, wall-clock-dependent decisions).
-- **C12** missing source-to-output lineage for outbound payloads, persisted records, and audit events.
-- **C13** degraded/estimated/stale/fallback output presented as authoritative.
-- **C14** tests covering only happy paths — ignoring failure, security, edge, concurrency, and malformed-input cases.
-- **C15** retries around writes without proven idempotency (keys, constraints, dedupe records, atomic operations).
-
-In this codebase the most load-bearing instances are: approvals fail closed and are never
-bypassed (`soul/approval.py`); untrusted content is wrapped/neutralized before the prompt
-(`utils/trust.py`); hooks fail open by design *except* that a `PreToolUse` block result is
-never discarded; background workers must define lifecycle and recovery; and tool/LLM output is
-validated, never trusted.
