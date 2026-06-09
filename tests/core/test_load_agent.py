@@ -55,6 +55,32 @@ def test_system_prompt_contains_platform_info(builtin_args: BuiltinSystemPromptA
     assert builtin_args.PYTHINKER_SHELL in prompt
 
 
+def test_system_prompt_explains_adding_mcp_servers(builtin_args: BuiltinSystemPromptArgs):
+    """The agent must know it can set up a *new* MCP server itself, in Pythinker.
+
+    Without this, the model falls back on the MCP hosts in its training data
+    (Claude Code / Claude Desktop), cites `~/.claude.json`, and wrongly refuses
+    — claiming it "has no tool to edit" the config. The prompt must ground it in
+    Pythinker's real MCP config files and the `pythinker mcp add` CLI, while
+    keeping the honest "restart to load" caveat.
+    """
+    from pythinker_code.agentspec import DEFAULT_AGENT_FILE
+
+    prompt = _load_system_prompt(
+        DEFAULT_AGENT_FILE.parent / "system.md",
+        {"ROLE_ADDITIONAL": ""},
+        builtin_args,
+    )
+
+    # Grounded in Pythinker's real config + CLI, not a host from training data.
+    assert ".pythinker/mcp.json" in prompt
+    assert "pythinker mcp add" in prompt
+    # The honest caveat survives: a new server loads on restart, not mid-session.
+    assert "restart" in prompt.lower()
+    # Explicitly steers off the Claude-host hallucination seen in the wild.
+    assert "not Claude Code or Claude Desktop" in prompt
+
+
 def test_system_prompt_treats_injected_date_as_authoritative(
     builtin_args: BuiltinSystemPromptArgs,
 ):
