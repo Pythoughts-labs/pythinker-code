@@ -1,3 +1,69 @@
+# Codex TUI adoption — Phase 1 (foundation)
+
+Source of truth: `blackbox/codex-main/codex-rs/tui`. Backlog: user-provided 48-item
+adoption list. Recon mapped every item to the real codebase first; many items
+already exist. This plan implements the genuine HIGH-priority gaps only.
+
+## Gap analysis (backlog item → reality)
+
+Already implemented (no work needed; documented for the record):
+- 4.2 Table holdback — `markdown_commit_boundary()` keeps the last top-level
+  block (incl. tables) mutable during streaming (components/markdown.py:610).
+- 4.3 Two-region streaming — Rich `Live(transient=True)` + scrollback commit
+  (`_ContentBlock._flush_committed`, visualize/_blocks.py:393).
+- 4.1 Adaptive chunking — backlog-proportional paced reveal already adapts step
+  size to backlog (`reveal_tick`, _blocks.py:270); continuous policy, no mode
+  oscillation to dampen. Skipping the Rust two-gear port (no user-visible win).
+- 7.4 Language aliases — Pygments already resolves py/js/ts/rs/sh/zsh/yml/golang.
+- 9.1 OSC 8 hyperlinks — `render_to_ansi` wraps OSC 8 for prompt_toolkit
+  (console.py:94-123) with tests.
+- 6.3 Exploring cells — ctrl+o expand/collapse on tool cards.
+- 5.2/5.4 Shimmer + reduced motion — motion.py honors PYTHINKER_REDUCED_MOTION.
+- 8.3 Grapheme/cell-aware truncation — render_utils.py uses rich cell_len.
+- 3.x markdown styling, 2.x diff context collapsing, 6.1 cards — present.
+
+## Phase 1 work items
+
+- [x] P1.0 Recaps off by default + `/config recaps on|off`
+      → verified: tests/ui_and_conv/test_settings_recaps_slash.py (5 tests).
+- [x] P1.1 Color-blend utilities (`ui/color_utils.py`): parse_hex/blend/luma/is_light.
+      → verified: tests/ui_and_conv/test_color_utils.py.
+- [x] P1.2 Three-tier color depth detection (truecolor/256/16/none; FORCE_COLOR
+      levels; WT_SESSION promotion); `get_diff_colors()` uses fg-only diff
+      styles on 16-color terminals.
+      → verified: env-matrix tests in test_terminal_capabilities.py.
+- [x] P1.3 Terminal background probing (`ui/terminal_background.py`): OSC 11,
+      100ms timeout, BT.601 luma; `theme = "auto"` resolved at shell startup
+      (fallback dark); /theme + settings selector accept "auto"; opt-out
+      PYTHINKER_NO_BG_PROBE.
+      → verified: tests/ui_and_conv/test_terminal_background.py (11 tests).
+- [x] P1.4 Syntax-highlight size guard (512 KiB / 10k lines → plain text +
+      "highlighting skipped (N lines)" title notice).
+      → verified: test_markdown_guards.py.
+- [x] P1.5 Fence unwrapping for tables (```md/```markdown + header+delimiter
+      pair → unwrap; everything else untouched).
+      → verified: 12-case matrix in test_markdown_guards.py.
+- [x] P1.6 Large diff guard: expanded diff capped at 400 lines, head+tail with
+      explicit omitted-count notice.
+      → verified: test_output_guards.py.
+- [x] P1.7 Head-tail truncation for generic tool output (was head-only).
+      → verified: test_output_guards.py.
+- [x] Focused tests: 143 passed; make check-pythinker-code all green.
+- [ ] Full `pytest tests` suite green.
+- [ ] Homebrew updater bug: `brew upgrade` runs against a stale tap and the
+      "already installed" warning is reported as "Updated successfully!".
+      Fix: refresh tap/brew before upgrade + verify installed version changed.
+
+## Out of scope (logged)
+
+- Phase 2/3 backlog items (per-hunk diff syntax highlighting, advanced table
+  column sizing/key-value fallback, custom theme files, animation variants,
+  compact JSON, URL-aware wrap, transcript export, HistoryCell protocol).
+- utils/string.py `shorten()` is not cell-aware (pre-existing; noted, untouched).
+- `/settings show` usage string update beyond the new recaps args.
+
+---
+
 # Alibaba Token Plan model compatibility fix
 
 ## Plan
