@@ -29,6 +29,25 @@ def test_parse_codex_usage_two_windows() -> None:
     assert report.limits[0].unit == "%"
 
 
+def test_parse_codex_usage_humanizes_unix_reset_at() -> None:
+    """The live wham/usage payload sends `reset_at` as a unix timestamp number;
+    it must be humanized ("resets in …"), not dumped as a raw integer."""
+    payload = {
+        "rate_limit": {
+            "primary_window": {
+                "percent_left": 99,
+                "limit_window_seconds": 18000,
+                "reset_at": 4102444800,  # far-future unix seconds
+            },
+        }
+    }
+    report = parse_codex_usage_payload(payload)
+    assert report.summary is not None
+    hint = report.summary.reset_hint or ""
+    assert "resets in" in hint
+    assert "4102444800" not in hint  # raw timestamp must not leak
+
+
 def test_parse_codex_usage_handles_alternative_keys() -> None:
     payload = {
         "rate_limits": {

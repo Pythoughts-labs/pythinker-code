@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ast
 import asyncio
 import contextlib
+import json
 import re
 import shlex
 import textwrap
@@ -10,7 +12,10 @@ from collections import deque
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
+
+if TYPE_CHECKING:
+    from pythinker_code.ui.shell.usage_adapters.base import UsageRow
 
 from pythinker_core.chat_provider import (
     APIConnectionError,
@@ -300,6 +305,46 @@ def _is_lm_studio_jinja_template_error(exc: BaseException) -> bool:
     return _LM_STUDIO_JINJA_ERROR_RE.search(str(exc)) is not None
 
 
+def _humanize_seconds(seconds: float) -> str:
+    """Render a coarse, human-friendly duration like ``2d 3h`` / ``2h 5m`` / ``4m``."""
+    total = max(0, int(seconds))
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes = rem // 60
+    if days:
+        return f"{days}d {hours}h"
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m"
+    return "under a minute"
+
+
+def _format_reset_window(error_obj: dict[str, object]) -> str | None:
+    """Build ``Resets in 2h 5m (Jun 11 14:13)`` from a 429 payload's timing
+    fields (``resets_in_seconds`` / ``resets_at``), or None when absent."""
+    from datetime import datetime
+
+    resets_in = error_obj.get("resets_in_seconds")
+    resets_at = error_obj.get("resets_at")
+    seconds: float | None = None
+    if isinstance(resets_in, int | float) and not isinstance(resets_in, bool) and resets_in > 0:
+        seconds = float(resets_in)
+    when_text = ""
+    if isinstance(resets_at, int | float) and not isinstance(resets_at, bool) and resets_at > 0:
+        try:
+            when_text = (
+                datetime.fromtimestamp(float(resets_at)).astimezone().strftime("%b %d %H:%M")
+            )
+            if seconds is None:
+                seconds = max(0.0, float(resets_at) - time.time())
+        except (OverflowError, OSError, ValueError):
+            pass
+    if seconds is None:
+        return None
+    return f"Resets in {_humanize_seconds(seconds)}" + (f" ({when_text})" if when_text else "")
+
+
 def _extract_429_detail(exc: BaseException) -> dict[str, str]:
     """Pull a human-readable summary + hint out of a 429 APIStatusError body.
 
@@ -318,19 +363,37 @@ def _extract_429_detail(exc: BaseException) -> dict[str, str]:
             if isinstance(value, dict):
                 body = cast(dict[str, object], value)
                 break
+    if body is None:
+        body = _parse_429_body_from_str(str(exc))
+    if body is None:
+        # Last-resort diagnostic: record the real exception so an unparsable
+        # rate-limit payload can be turned into a precise fix instead of a guess.
+        _capture_unparsed_429(exc)
 
     summary = ""
+    raw_message = ""
     err_type = ""
+    plan_type = ""
+    reset_window: str | None = None
     if body is not None:
         err = body.get("error")
         if isinstance(err, dict):
             typed_err = cast(dict[str, object], err)
             err_type = str(typed_err.get("type") or "")
-            summary = str(typed_err.get("message") or "")
+            raw_message = str(typed_err.get("message") or "")
+            plan_type = str(typed_err.get("plan_type") or "")
+            reset_window = _format_reset_window(typed_err)
 
+    summary = raw_message
     if not summary:
         text = str(exc)
         summary = text if len(text) <= 280 else text[:277] + "..."
+
+    # Rewrite the well-known usage-limit payload as plain English instead of
+    # echoing the server's terser "The usage limit has been reached".
+    if err_type == "usage_limit_reached" or "usage limit" in summary.lower():
+        plan_label = f" on your {plan_type.capitalize()} plan" if plan_type else ""
+        summary = f"Usage limit reached{plan_label}."
 
     hint = "Wait until the limit window resets, or upgrade / top up your plan."
     if "GoUsageLimitError" in err_type:
@@ -340,7 +403,120 @@ def _extract_429_detail(exc: BaseException) -> dict[str, str]:
     elif "openai" in str(type(exc).__module__).lower():
         hint = "OpenAI rate or usage limit. Check usage dashboard or wait for the reset window."
 
-    return {"summary": summary, "hint": hint}
+    # The raw server detail (type + original message) is kept on its own line so
+    # the friendly summary stays clean but the underlying error is still visible.
+    server_detail = " — ".join(part for part in (err_type, raw_message) if part)
+
+    return {
+        "summary": summary,
+        "reset_window": reset_window or "",
+        "server_detail": server_detail,
+        "hint": hint,
+    }
+
+
+def _parse_429_body_from_str(text: str) -> dict[str, object] | None:
+    """Recover the provider JSON from a stringified APIStatusError.
+
+    Providers stringify a 429 in several ways:
+      - ``Error code: 429 - {<python dict repr>}``  (OpenAI SDK, uses None/True)
+      - ``Error code: 429 - {<json>}``              (uses null/true/false)
+      - a bare ``{...}`` body
+    We recover the first ``{...}`` object and parse it with ``ast.literal_eval``
+    (Python repr) then ``json.loads`` (JSON). Both only parse data, no code runs.
+    """
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end <= start:
+        return None
+    candidate = text[start : end + 1]
+    for parser in (ast.literal_eval, json.loads):
+        try:
+            parsed = parser(candidate)
+        except (ValueError, SyntaxError, MemoryError, RecursionError, TypeError):
+            continue
+        if isinstance(parsed, dict):
+            return cast(dict[str, object], parsed)
+    return None
+
+
+def _capture_unparsed_429(exc: BaseException) -> None:
+    """Append the raw 429 exception shape to a debug file so an unrecognised
+    rate-limit payload can be diagnosed precisely. Best-effort; never raises."""
+    try:
+        from pythinker_code.share import get_share_dir
+
+        path = get_share_dir() / "rate-limit-debug.log"
+        body = getattr(exc, "body", None)
+        line = (
+            f"type={type(exc).__name__} "
+            f"str={str(exc)[:1000]!r} "
+            f"body_type={type(body).__name__} body={repr(body)[:1000]}\n"
+        )
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(line)
+    except Exception:
+        logger.debug("Failed to capture unparsed 429 payload to debug log", exc_info=True)
+
+
+def _render_429_message(detail: dict[str, str], usage_lines: list[str] | None = None) -> str:
+    """Build the console line for a 429 rate/usage-limit error, escaping provider text.
+
+    The summary/hint can carry raw provider text, so escape it before it reaches Rich —
+    otherwise a message containing ``[...]`` is silently swallowed as invalid markup
+    (consistent with how the sibling error branches escape provider strings).
+
+    ``usage_lines`` are concrete reset windows fetched live from the provider's usage
+    endpoint (the streaming 429 itself carries none), shown first as the most actionable
+    information.
+    """
+    _t = _get_tui_tokens()
+    lines = [f"[{_t.error}]Rate / usage limit hit: {escape(detail['summary'])}[/]"]
+    for usage_line in usage_lines or []:
+        lines.append(escape(usage_line))
+    reset_window = detail.get("reset_window", "")
+    if reset_window:
+        lines.append(f"{escape(reset_window)}.")
+    server_detail = detail.get("server_detail", "")
+    if server_detail:
+        lines.append(f"[dim]Server: {escape(server_detail)}[/dim]")
+    lines.append(f"[dim]{escape(detail['hint'])}[/dim]")
+    return "\n".join(lines)
+
+
+def _format_usage_window_row(row: UsageRow) -> str:
+    """Render one usage window (e.g. the 5-hour or weekly Codex limit) as a single
+    line: ``5h window: 0% left · resets in 2h 14m``."""
+    left = f"{row.used}% left" if row.unit == "%" else f"{row.used}/{row.limit}"
+    reset = f" · {row.reset_hint}" if row.reset_hint else ""
+    return f"{row.label}: {left}{reset}"
+
+
+async def _codex_usage_windows(soul: Soul) -> list[str]:
+    """Best-effort: fetch the live Codex 5-hour / weekly reset windows for the active
+    ChatGPT-OAuth provider so a 429 can show concrete reset times — the streaming 429
+    carries none. Returns ``[]`` for non-Codex providers or on any error/timeout."""
+    if not isinstance(soul, PythinkerSoul):
+        return []
+    runtime = soul.runtime
+    llm = runtime.llm
+    if llm is None or llm.model_config is None:
+        return []
+    provider = runtime.config.providers.get(llm.model_config.provider)
+    if provider is None or provider.type != "openai_codex" or provider.oauth is None:
+        return []
+    try:
+        from pythinker_code.ui.shell.usage_adapters.openai_chatgpt import OpenAIChatGPTAdapter
+
+        report = await asyncio.wait_for(
+            OpenAIChatGPTAdapter().fetch(provider, runtime.oauth),
+            timeout=3.0,
+        )
+    except Exception:
+        logger.debug("Codex usage lookup for 429 message failed", exc_info=True)
+        return []
+    rows = ([report.summary] if report.summary else []) + report.limits
+    return [_format_usage_window_row(row) for row in rows]
 
 
 def _is_insufficient_credits_error(exc: BaseException) -> bool:
@@ -1310,11 +1486,8 @@ class Shell:
                     f"[dim]Server: {e}[/dim]"
                 )
             elif isinstance(e, APIStatusError) and e.status_code == 429:
-                detail = _extract_429_detail(e)
-                console.print(
-                    f"[{_t.error}]Rate / usage limit hit: {detail['summary']}[/]\n"
-                    f"[dim]{detail['hint']}[/dim]"
-                )
+                usage_lines = await _codex_usage_windows(self.soul)
+                console.print(_render_429_message(_extract_429_detail(e), usage_lines=usage_lines))
             elif isinstance(e, APIConnectionError):
                 console.print(
                     f"[{_t.error}]Network connection failed: {e}[/]\n"
@@ -1379,7 +1552,7 @@ class Shell:
                 )
             else:
                 console.print(f"[{_t.error}]LLM provider error: {escape(str(e))}[/]")
-            if not isinstance(e, APIStatusError) or e.status_code not in (401, 402, 403):
+            if not isinstance(e, APIStatusError) or e.status_code not in (401, 402, 403, 429):
                 console.print(
                     "[dim]If this persists, run [bold]pythinker export[/bold] and send the "
                     "exported data to support for assistance. "
@@ -1392,6 +1565,18 @@ class Shell:
                 f"[{_t.warning}]{e}[/]\n"
                 "[dim]Send another message to continue where it left off.[/dim]"
             )
+            # Graceful handoff: a tools-disabled summary of progress / next steps so
+            # the human resuming doesn't have to reconstruct state (best-effort).
+            if isinstance(self.soul, PythinkerSoul):
+                from pythinker_code.soul.btw import generate_max_steps_handoff
+
+                try:
+                    handoff = await generate_max_steps_handoff(self.soul)
+                except Exception:
+                    logger.warning("Max-steps handoff failed", exc_info=True)
+                    handoff = None
+                if handoff:
+                    console.print(f"\n[{_t.muted}]── handoff ──[/]\n{escape(handoff)}")
         except RunCancelled:
             logger.info("Cancelled by user")
             from pythinker_code.telemetry import track

@@ -888,6 +888,9 @@ class TestCompactionTracking:
         # contents do not affect telemetry assertions below.
         fake_result.messages = [MagicMock()]
         fake_result.estimated_token_count = estimated_after
+        # No usage on this mock result, so the cumulative-usage accumulation
+        # (subagent-2) is skipped — this harness bypasses __init__.
+        fake_result.usage = None
         soul._run_with_connection_recovery = AsyncMock(return_value=fake_result)
 
         soul._injection_providers = []

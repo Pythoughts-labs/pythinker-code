@@ -11,7 +11,7 @@ from pythinker_code.soul.agent import Runtime
 from pythinker_code.soul.approval import Approval
 from pythinker_code.soul.permission import check_file_mutation_allowed
 from pythinker_code.tools.display import DisplayBlock
-from pythinker_code.tools.file import FileActions
+from pythinker_code.tools.file import classify_edit_action
 from pythinker_code.tools.file.plan_mode import inspect_plan_edit_target
 from pythinker_code.tools.utils import load_desc
 from pythinker_code.utils.diff import build_diff_blocks
@@ -143,11 +143,7 @@ class WriteFile(CallableTool2[Params]):
 
             # Plan file writes are auto-approved; other writes need approval
             if not is_plan_file_write:
-                action = (
-                    FileActions.EDIT
-                    if is_within_workspace(p, self._work_dir, self._additional_dirs)
-                    else FileActions.EDIT_OUTSIDE
-                )
+                action = classify_edit_action(p, self._work_dir, self._additional_dirs)
 
                 # Request approval
                 result = await self._approval.request(

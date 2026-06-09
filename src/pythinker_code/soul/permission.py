@@ -84,7 +84,16 @@ _STEP_PERMISSION_PROFILE: ContextVar[PermissionProfile | None] = ContextVar(
     "pythinker_step_permission_profile", default=None
 )
 
-_SHELL_SEGMENT_SEPARATORS = {";", "&&", "||", "|"}
+# Control operators that separate one command from the next. ``shlex.split`` isolates
+# these as standalone tokens only when whitespace-delimited; the segment scan splits on
+# them. ``&``/``|&`` are real separators too — a *glued* ``2>&1``/``&>`` keeps ``&`` inside
+# one token (e.g. ``2>&1``), so it is never a standalone separator and stays unaffected.
+_SHELL_SEGMENT_SEPARATORS = {";", "&&", "||", "|", "&", "|&"}
+# Subset used by the hidden-command detector's glued-operator count. Excludes ``&``/``|&``
+# because the punctuation-aware lexer also splits the ``&`` of redirections (``2>&1``),
+# which would false-positive; glued ``&`` is caught structurally instead (its signature
+# never collides with a benign base command).
+_GLUED_OPERATORS = {";", "&&", "||", "|"}
 _WRITING_REDIRECTION_RE = re.compile(r"(?:^|\s)(?:[0-9]*>>?|&>)\s*(\S+)")
 _MUTATING_COMMANDS = {
     "chmod",
@@ -204,6 +213,22 @@ def permission_profile_for_runtime(runtime: Runtime) -> PermissionProfile:
     """Return the hard permission profile currently enforced for a runtime."""
     if runtime.role == "subagent" and runtime.subagent_type:
         profile_name = _SUBAGENT_PROFILES.get(runtime.subagent_type, "read_only")
+        # A subagent must never exceed the parent's read-only posture. Plan mode
+        # lives on the session, which copy_for_subagent shares by reference, so a
+        # coder/implementer subagent spawned under a plan-mode root would otherwise
+        # resolve its own mutating "implement" profile and run mutating shell
+        # commands or side-effecting external/MCP tools. Downgrade any MUTATING
+        # subagent profile to "plan" (matching the root's plan-mode posture) so
+        # those vectors are blocked at the single profile layer every gate reads
+        # (Shell via check_shell_command_allowed, external/MCP via
+        # check_external_tool_allowed). Already-read-only profiles
+        # (explore/review/verify) are left untouched so they are not loosened.
+        # WriteFile/StrReplaceFile are independently blocked via the inherited
+        # plan-mode + inspect_plan_edit_target.
+        if runtime.session.state.plan_mode:
+            resolved_profile = _PERMISSION_PROFILES[profile_name]
+            if resolved_profile.allow_file_mutation or resolved_profile.allow_shell_mutation:
+                profile_name = "plan"
     elif runtime.session.state.plan_mode:
         profile_name = "plan"
     else:
@@ -308,6 +333,56 @@ def check_tool_call_allowed(
     return None
 
 
+# Command/process substitution runs commands the bare-token parser never sees:
+# ``$(...)``, backticks, ``<(...)``, ``>(...)``.
+_COMMAND_SUBSTITUTION_RE = re.compile(r"\$\(|`|<\(|>\(")
+
+
+def _shell_hidden_command_reason(command: str) -> str | None:
+    """Reason *command* can run sub-commands invisible to the token classifier, else ``None``.
+
+    ``shlex.split`` — used by every shell gate below (mutation, signature, destructive) — has
+    two blind spots that let an arbitrary command slip past base-command classification:
+
+    * **Command/process substitution** (``$(...)``, backticks, ``<(...)``, ``>(...)``)
+      executes commands that never appear as tokens, so ``ls $(rm -rf /)`` looks like a
+      benign ``ls``.
+    * **Operators glued to a word** (``ls;rm``) tokenize as one word (``ls;rm``), hiding
+      the trailing command from the ``;``/``&&``/``|`` segment scan.
+
+    Also catches an unquoted newline, which separates commands but which ``shlex`` eats
+    as whitespace (``git status\nrm -rf /`` flattens to one segment).
+
+    Returns a short reason for any of these, else ``None``. A second ``shlex`` pass with
+    ``punctuation_chars`` isolates *unquoted* operators while leaving *quoted* ones
+    (``grep 'a|b'``) glued, so quoted literals do not false-positive.
+    """
+    if _COMMAND_SUBSTITUTION_RE.search(command):
+        return "command substitution"
+    try:
+        plain_tokens = shlex.split(command, posix=True)
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        punct_tokens = list(lexer)
+    except ValueError:
+        return "unparsable shell command"
+    # An unquoted newline is a command separator shlex drops as whitespace. If the
+    # (interior) command has one that no token kept, it was unquoted -> hidden command.
+    # A quoted newline survives inside a token (``printf 'a\nb'``) and is left alone.
+    interior = command.strip()
+    if ("\n" in interior or "\r" in interior) and not any(
+        "\n" in tok or "\r" in tok for tok in plain_tokens
+    ):
+        return "ungrouped command separator"
+    # More separators once unquoted operators are isolated means one was glued to a
+    # word — a command the plain-split segment scan would have missed.
+    plain_ops = sum(1 for tok in plain_tokens if tok in _GLUED_OPERATORS)
+    punct_ops = sum(1 for tok in punct_tokens if tok in _GLUED_OPERATORS)
+    if punct_ops > plain_ops:
+        return "ungrouped command operator"
+    return None
+
+
 def shell_mutation_reason(command: str) -> str | None:
     """Best-effort guard for obviously mutating or network-accessing shell commands.
 
@@ -315,7 +390,11 @@ def shell_mutation_reason(command: str) -> str | None:
     shell sandbox; it prevents accidental tool-level bypasses of read-only/plan/review/verify
     profiles — including circumventing the no-web-tools intent via `curl`/`wget`/`ssh`. Script
     interpreters (python/node/sh) are already treated as mutating, so those paths are blocked too.
+    A command hiding sub-commands the token parser can't see (substitution / glued operators)
+    is treated as mutating too, so ``ls $(rm -rf /)`` can't slip past a read-only profile as ``ls``.
     """
+    if reason := _shell_hidden_command_reason(command):
+        return reason
     for match in _WRITING_REDIRECTION_RE.finditer(command):
         target = match.group(1)
         if target.startswith("&") or target in {"/dev/null", "NUL"}:
@@ -345,7 +424,7 @@ def _segment_mutation_reason(tokens: list[str]) -> str | None:
     command, args = _unwrap_command(tokens)
     if command is None:
         return None
-    base = command.rsplit("/", 1)[-1]
+    base = _canonical_interpreter_name(command.rsplit("/", 1)[-1])
 
     if base in _MUTATING_COMMANDS:
         return f"{base} command"
@@ -368,6 +447,52 @@ def _segment_mutation_reason(tokens: list[str]) -> str | None:
         if subcommand in _PACKAGE_MANAGER_MUTATIONS:
             return f"{base} {subcommand}"
     return None
+
+
+def shell_command_signature(command: str) -> str:
+    """Coarse, stable identity for a shell command, for per-command session approval.
+
+    Built from the base command (plus git / package-manager subcommand) of every
+    ``;``/``&&``/``||``/``|``-separated segment, sorted and de-duplicated. This keeps
+    "approve for session" scoped to like commands: approving ``git status`` does not
+    also whitelist ``git push`` or ``rm``. It pairs with the destructive backstop,
+    which independently re-prompts irreversible commands regardless of signature.
+
+    A command hiding sub-commands the token parser can't see (substitution / glued
+    operators) is self-scoped to its exact text so it can never share a benign
+    command's key — defense-in-depth atop the destructive backstop, which also makes
+    such commands non-session-approvable.
+    """
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        return "shell:unparsable"
+    if _shell_hidden_command_reason(command) is not None:
+        return "shell:opaque:" + " ".join(tokens)
+    bases: set[str] = set()
+    segment: list[str] = []
+    for token in [*tokens, ";"]:
+        if token in _SHELL_SEGMENT_SEPARATORS:
+            if sig := _segment_signature(segment):
+                bases.add(sig)
+            segment = []
+        else:
+            segment.append(token)
+    return "shell:" + "|".join(sorted(bases)) if bases else "shell:empty"
+
+
+def _segment_signature(tokens: list[str]) -> str:
+    if not tokens:
+        return ""
+    command, args = _unwrap_command(tokens)
+    if command is None:
+        return ""
+    base = command.rsplit("/", 1)[-1]
+    if base == "git" and (sub := _git_subcommand(args)):
+        return f"git {sub}"
+    if base in _PACKAGE_MANAGER_COMMANDS and (sub := _first_non_option(args)):
+        return f"{base} {sub}"
+    return base
 
 
 def _unwrap_command(tokens: list[str]) -> tuple[str | None, list[str]]:
@@ -459,6 +584,28 @@ _OPAQUE_INTERPRETERS = {
 _INLINE_CODE_FLAGS = {"-c", "-e"}
 
 
+def _canonical_interpreter_name(base: str) -> str:
+    """Map a version-suffixed interpreter binary to its bare name so version-pinned
+    invocations hit the same guards as the canonical form: ``python3.14`` -> ``python``,
+    ``node20`` -> ``node``. Non-interpreters are returned unchanged.
+
+    Without this, ``sys.executable`` (commonly ``python3.14``) and any explicitly
+    versioned interpreter slip the read-only/destructive shell guards, which only list
+    the bare ``python``/``python3`` forms — e.g. ``python3.14 -c '<mutating code>'``
+    would run unchecked under a read-only subagent profile.
+
+    Stripping is gated on membership in ``_OPAQUE_INTERPRETERS`` (not the broader
+    ``_MUTATING_COMMANDS``) so a non-interpreter like ``rm2`` is NOT normalized to a
+    guard hit. The mutation guard then checks ``_MUTATING_COMMANDS``, so its interpreter
+    subset must stay in sync with ``_OPAQUE_INTERPRETERS`` (identical today) for
+    version-suffixed interpreters to be classified as mutating.
+    """
+    if base in _OPAQUE_INTERPRETERS:
+        return base
+    stripped = base.rstrip("0123456789.")
+    return stripped if stripped in _OPAQUE_INTERPRETERS else base
+
+
 def _short_flag_letters(arg: str) -> set[str]:
     """Letters of a clustered short-flag arg: ``-rf`` -> ``{'r', 'f'}``.
 
@@ -480,7 +627,14 @@ def shell_destructive_reason(command: str) -> str | None:
     wrapper unwrap, git-subcommand extraction), so ``sudo``/``env`` wrappers,
     quoting, and ``;``/``&&``/``||``/``|`` chains are all covered. Unparsable input
     is treated conservatively as destructive.
+
+    Commands hiding sub-commands the token parser can't see — substitution
+    (``$(...)``/backticks) or operators glued to a word (``status;rm``) — route to
+    deliberation too: the same blind spot that smuggles them past the segment scan
+    would otherwise let a session-approved benign command carry a destructive payload.
     """
+    if reason := _shell_hidden_command_reason(command):
+        return reason
     try:
         tokens = shlex.split(command, posix=True)
     except ValueError:
@@ -527,7 +681,7 @@ def _segment_destructive_reason(tokens: list[str]) -> str | None:
     command, args = _unwrap_command(tokens)
     if command is None:
         return None
-    base = command.rsplit("/", 1)[-1]
+    base = _canonical_interpreter_name(command.rsplit("/", 1)[-1])
 
     if base == "rm":
         recursive = any(
@@ -546,6 +700,11 @@ def _segment_destructive_reason(tokens: list[str]) -> str | None:
             arg in ("--force", "-f") or arg.startswith("--force-with-lease") for arg in args
         ):
             return "git push --force"
+        if subcommand == "push" and (
+            any(arg in ("--delete", "-d") for arg in args)
+            or any(arg.startswith(":") and len(arg) > 1 for arg in args)
+        ):
+            return "git push --delete (remote ref deletion)"
         if subcommand == "reset" and "--hard" in args:
             return "git reset --hard"
         if subcommand == "clean" and any(

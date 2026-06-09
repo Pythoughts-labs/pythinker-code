@@ -4,6 +4,7 @@ import contextlib
 import json
 import os
 import queue
+import re
 import shlex
 import subprocess
 import threading
@@ -392,12 +393,25 @@ def normalize_value(value: Any, *, replacements: Mapping[str, str] | None = None
         value = _normalize_line_endings(value)
         value = _normalize_path_separators(value, active_replacements)
         value = _normalize_echo_error_message(value)
+        value = _normalize_untrusted_nonce(value)
         try:
             uuid.UUID(value)
         except (ValueError, AttributeError, TypeError):
             return value
         return "<uuid>"
     return value
+
+
+_UNTRUSTED_NONCE_RE = re.compile(r'<untrusted_data id="[0-9a-f]+">')
+
+
+def _normalize_untrusted_nonce(value: str) -> str:
+    """Stabilize the per-call random nonce in <untrusted_data id="..."> wrappers.
+
+    Tool output from external surfaces (shell/web) is wrapped with a random nonce
+    (utils/trust.py), so snapshots of that output would otherwise change every run.
+    """
+    return _UNTRUSTED_NONCE_RE.sub('<untrusted_data id="<NONCE>">', value)
 
 
 def _normalize_shell_display(value: dict[str, Any]) -> dict[str, Any]:

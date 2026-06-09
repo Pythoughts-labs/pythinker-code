@@ -130,6 +130,57 @@ async def list_directory(work_dir: HostPath) -> str:
     return "\n".join(lines) if lines else "(empty directory)"
 
 
+_AGENT_SPEC_DIR_MARKERS = (
+    "/.pythinker/agents/",
+    "/.claude/agents/",
+    "/.agents/",
+    "/.codex/agents/",
+)
+
+
+def is_config_surface_path(path: HostPath, work_dir: HostPath | None = None) -> bool:
+    """True if *path* is a pythinker behavioral-config file.
+
+    These files change agent behavior or are re-injected into the system prompt
+    (``AGENTS.md``, agent-spec YAMLs, Claude/Agents-style ``*.md`` subagent specs,
+    ``.pythinker`` config), so a successful injection that rewrites one becomes a
+    persistent, cross-session backdoor that survives the per-session untrusted-data
+    defense. Writes to them get a distinct, non-session-approvable approval action.
+    Plan/scratch/report artifacts under ``.pythinker`` are deliberately excluded.
+
+    Pass *work_dir* (the active workspace root) to scope ``AGENTS.md``
+    classification to the set of files actually re-injected into the prompt.
+    :func:`load_agents_md` merges every ``AGENTS.md`` from the project root down
+    to *work_dir*, i.e. the files on *work_dir*'s ancestor chain; those are the
+    persistent-injection surface. Files nested *under* *work_dir* are also
+    treated as config surfaces for defense-in-depth. Without *work_dir* the
+    function falls back to classifying any file named ``AGENTS.md`` as a config
+    surface (conservative: at worst an extra confirmation prompt).
+
+    Uses pure-path semantics — it does NOT resolve symlinks. Callers must pass an
+    already-canonicalized *path* (e.g. via :meth:`HostPath.canonical`) so a symlink
+    cannot point a benign-looking name at a config surface (or vice-versa); the
+    write tools do this before classifying (see ``WriteFile``/``StrReplaceFile``).
+    """
+    posix = str(path).replace("\\", "/")
+    base = posix.rsplit("/", 1)[-1].lower()
+    if base == "agents.md":
+        if work_dir is None:
+            return True  # conservative fallback when caller lacks work_dir context
+        # Config surface iff the file is on work_dir's ancestor chain (the merged,
+        # re-injected set) or nested beneath work_dir (defense-in-depth).
+        agents_dir = path.parent
+        return is_within_directory(work_dir, agents_dir) or is_within_directory(path, work_dir)
+    if "/.pythinker/" in posix and base in ("config.toml", "config.local.toml"):
+        return True
+    # Agent-spec dirs hold both YAML wrappers and Claude/Agents-style ``*.md``
+    # frontmatter specs (see ``discover_markdown_agents``); both define a subagent's
+    # tool policy and system prompt, so both are config surfaces.
+    return base.endswith((".yaml", ".yml", ".md")) and any(
+        m in posix for m in _AGENT_SPEC_DIR_MARKERS
+    )
+
+
 def shorten_home(path: HostPath) -> HostPath:
     """
     Convert absolute path to use `~` for home directory.

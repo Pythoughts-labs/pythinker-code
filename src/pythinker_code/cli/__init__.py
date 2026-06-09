@@ -4,7 +4,7 @@ import json
 import os
 from importlib import import_module
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 
 import typer
 
@@ -174,6 +174,68 @@ class ExitCode:
     RETRYABLE = 75  # EX_TEMPFAIL from sysexits.h
 
 
+def _find_project_mcp_config_file() -> Path | None:
+    """Find a project-scoped ``.pythinker/mcp.json`` (mcpext-2).
+
+    Walks up from the current working directory looking for ``.pythinker/mcp.json``,
+    stopping at the repository root (nearest ``.git`` ancestor) so it never picks up
+    an unrelated parent's config. Returns the nearest match, or None.
+    """
+    cwd = Path.cwd().resolve()
+    for directory in (cwd, *cwd.parents):
+        candidate = directory / ".pythinker" / "mcp.json"
+        if candidate.is_file():
+            return candidate
+        if (directory / ".git").exists():
+            break
+    return None
+
+
+def _yaml_files_with_misplaced_mcp_servers() -> list[Path]:
+    """Return ``config.yaml``/``.yml`` files that wrongly carry an ``mcpServers`` block.
+
+    Pythinker reads MCP servers only from ``mcp.json`` (see
+    ``_load_mcp_configs_from_cli_inputs``); a ``config.yaml`` is not part of that
+    path. An ``mcpServers`` block written into a ``config.yaml`` is therefore never
+    parsed for MCP — the server silently fails to load and never appears in
+    ``/mcp``. We surface that as a warning instead of dropping it silently.
+
+    Checks the global ``~/.pythinker`` directory and the nearest project
+    ``.pythinker`` directory (walking up to the repository root), mirroring the
+    two locations from which ``mcp.json`` itself is read.
+    """
+    import yaml
+
+    from .mcp import get_global_mcp_config_file
+
+    dirs: list[Path] = [get_global_mcp_config_file().parent]
+    cwd = Path.cwd().resolve()
+    for directory in (cwd, *cwd.parents):
+        project_dir = directory / ".pythinker"
+        if project_dir.is_dir():
+            dirs.append(project_dir)
+        if (directory / ".git").exists():
+            break
+
+    offending: list[Path] = []
+    seen: set[Path] = set()
+    for directory in dirs:
+        for name in ("config.yaml", "config.yml"):
+            path = directory / name
+            if path in seen:
+                continue
+            seen.add(path)
+            if not path.is_file():
+                continue
+            try:
+                data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            except (OSError, yaml.YAMLError):
+                continue
+            if isinstance(data, dict) and cast("dict[str, Any]", data).get("mcpServers"):
+                offending.append(path)
+    return offending
+
+
 def _load_mcp_configs_from_cli_inputs(
     mcp_config_file: list[Path] | None,
     mcp_config: list[str] | None,
@@ -188,12 +250,18 @@ def _load_mcp_configs_from_cli_inputs(
     file_configs = list(mcp_config_file or [])
     raw_mcp_config = list(mcp_config or [])
 
-    # Use default MCP config file if no MCP config file is provided. Keep this
-    # lookup live for reloads: the file may be created after process startup.
+    # Use default MCP config files when none is provided explicitly. Keep this
+    # lookup live for reloads: files may be created after process startup. The
+    # global file loads first; a project-scoped .pythinker/mcp.json loads after so
+    # it layers over the global (same-named servers in the project win), matching
+    # the layered-scope convention used for skills and AGENTS.md.
     if not file_configs:
         default_mcp_file = get_global_mcp_config_file()
         if default_mcp_file.exists():
             file_configs.append(default_mcp_file)
+        project_mcp_file = _find_project_mcp_config_file()
+        if project_mcp_file is not None:
+            file_configs.append(project_mcp_file)
 
     configs: list[Any] = []
     for conf in file_configs:
@@ -215,6 +283,17 @@ def _load_mcp_configs_from_cli_inputs(
             configs.append(json.loads(conf))
         except json.JSONDecodeError as e:
             raise typer.BadParameter(f"Invalid JSON: {e}", param_hint="--mcp-config") from e
+
+    for path in _yaml_files_with_misplaced_mcp_servers():
+        from pythinker_code.utils.logging import logger
+
+        logger.warning(
+            "Ignoring `mcpServers` in {path}: Pythinker reads MCP servers only from "
+            "mcp.json, so this block has no effect and the server will not appear in "
+            "/mcp. Move it into ~/.pythinker/mcp.json (or .pythinker/mcp.json), e.g. "
+            "with `pythinker mcp add`.",
+            path=path,
+        )
 
     return configs
 
@@ -1000,7 +1079,7 @@ def pythinker(
             session_title=last_session.title,
         )
         if exit_code == ExitCode.SUCCESS and getattr(
-            getattr(config, "memory", None), "journal_recaps", False
+            getattr(config, "memory", None), "journal_enabled", False
         ):
             with contextlib.suppress(Exception):
                 from pythinker_code.memory.recap import build_session_recap

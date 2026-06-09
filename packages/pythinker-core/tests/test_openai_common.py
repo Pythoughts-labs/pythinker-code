@@ -222,6 +222,34 @@ class TestConvertErrorBaseAPIError:
         assert type(result) is ChatProviderError
 
 
+class TestConvertErrorStatusErrorBody:
+    """A 4xx/5xx ``APIStatusError`` must carry the parsed response body through
+    so the UI can render provider-specific detail (e.g. a 429 usage-limit
+    payload with ``plan_type`` / ``resets_at``) instead of stringifying the
+    whole exception."""
+
+    def test_status_error_preserves_body_and_request_id(self) -> None:
+        from pythinker_core.chat_provider import APIStatusError
+
+        body = {
+            "error": {
+                "type": "usage_limit_reached",
+                "message": "The usage limit has been reached",
+                "plan_type": "plus",
+                "resets_in_seconds": 100,
+            }
+        }
+        resp = httpx.Response(429, request=_DUMMY_REQUEST, headers={"x-request-id": "req-123"})
+        err = openai.APIStatusError("Error code: 429", response=resp, body=body)
+
+        result = convert_error(err)
+
+        assert isinstance(result, APIStatusError)
+        assert result.status_code == 429
+        assert result.request_id == "req-123"
+        assert result.body == body
+
+
 # ---------------------------------------------------------------------------
 # Streaming error propagation (integration)
 # ---------------------------------------------------------------------------

@@ -99,6 +99,9 @@ def _make_compactable_soul() -> Any:
     # messages; the exact contents do not matter for the injection-hook test.
     fake_result.messages = [MagicMock()]
     fake_result.estimated_token_count = 2_000
+    # No usage, so the cumulative-usage accumulation (subagent-2) is skipped —
+    # this harness bypasses __init__.
+    fake_result.usage = None
     soul._run_with_connection_recovery = AsyncMock(return_value=fake_result)
 
     soul._injection_providers = []

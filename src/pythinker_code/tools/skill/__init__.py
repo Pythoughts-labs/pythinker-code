@@ -4,7 +4,10 @@ from typing import override
 from pydantic import BaseModel, Field
 from pythinker_core.tooling import CallableTool2, ToolError, ToolReturnValue
 
-from pythinker_code.skill import normalize_skill_name, read_skill_text_with_local_specialization
+from pythinker_code.skill import (
+    normalize_skill_name,
+    read_skill_text_with_local_specialization,
+)
 from pythinker_code.soul.agent import Runtime
 from pythinker_code.tools.utils import load_desc
 

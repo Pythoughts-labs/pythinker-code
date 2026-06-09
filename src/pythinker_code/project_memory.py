@@ -28,6 +28,7 @@ from pythinker_code.scratchpad import (
 from pythinker_code.share import get_share_dir
 from pythinker_code.soul.dynamic_injection import DynamicInjection, DynamicInjectionProvider
 from pythinker_code.utils.logging import logger
+from pythinker_code.utils.trust import INVISIBLE_CHARS
 
 if TYPE_CHECKING:
     from pythinker_code.soul.pythinkersoul import PythinkerSoul
@@ -295,10 +296,11 @@ class ProjectMemoryStore:
     async def _read_journal(self, *, last_n: int = 10) -> list[str]:
         """Read up to ``last_n`` newest session recaps from ``JOURNAL.md``.
 
-        Forward hook: ``JOURNAL.md`` is written by a later phase (P2) which
-        prepends recaps (newest-first), so the first ``last_n`` entries are the
-        most recent. No writer exists yet, so this returns ``[]`` in P1; reading
-        it here keeps the P2 writer purely additive.
+        The session-exit recap writer (``cli`` + ``memory.recap``) prepends
+        recaps newest-first, so the first ``last_n`` entries are the most recent.
+        Writing is gated behind the ``journal_recaps`` flag / ``durable_memory``
+        profile; when neither is enabled no journal is written and this returns
+        ``[]``.
         """
         root = await self._ensure_dir()
         path = root / "memory" / "JOURNAL.md"
@@ -360,21 +362,9 @@ _SECRET_PATTERNS: list[tuple[str, str]] = [
     (r"AKIA[0-9A-Z]{16}", "aws_access_key"),
 ]
 
-_INVISIBLE_CHARS = frozenset(
-    chr(c)
-    for c in (
-        0x200B,
-        0x200C,
-        0x200D,
-        0x2060,
-        0xFEFF,
-        0x202A,
-        0x202B,
-        0x202C,
-        0x202D,
-        0x202E,
-    )
-)
+# The memory channel BLOCKS on invisible unicode (we control what we persist); the
+# shared set also drives strip-on-ingress for tool output (see utils.trust).
+_INVISIBLE_CHARS = INVISIBLE_CHARS
 
 
 def scan_memory_content(content: str) -> str | None:

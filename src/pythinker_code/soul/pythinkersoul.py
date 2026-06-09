@@ -21,6 +21,7 @@ from pythinker_core.chat_provider import (
     APITimeoutError,
     RetryableChatProvider,
     ThinkingEffort,
+    TokenUsage,
 )
 from pythinker_core.message import Message, ToolCall
 from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wait_exponential_jitter
@@ -55,7 +56,9 @@ from pythinker_code.soul.compaction import (
     CompactionResult,
     SimpleCompaction,
     estimate_text_tokens,
+    prune_stale_tool_outputs,
     should_auto_compact,
+    should_prune,
 )
 from pythinker_code.soul.compaction_restore import (
     build_compaction_restore_context,
@@ -72,6 +75,7 @@ from pythinker_code.soul.dynamic_injection import (
     normalize_history,
 )
 from pythinker_code.soul.dynamic_injections.auto_mode import AutoModeInjectionProvider
+from pythinker_code.soul.dynamic_injections.model_defense import ModelDefenseInjectionProvider
 from pythinker_code.soul.dynamic_injections.plan_mode import PlanModeInjectionProvider
 from pythinker_code.soul.flow_runner import FLOW_COMMAND_PREFIX, FlowRunner
 from pythinker_code.soul.message import (
@@ -87,6 +91,7 @@ from pythinker_code.soul.permission import (
 )
 from pythinker_code.soul.slash import registry as soul_slash_registry
 from pythinker_code.soul.toolset import PythinkerToolset
+from pythinker_code.subagents.usage import accumulate_usage
 from pythinker_code.thinking import (
     available_thinking_levels,
     bool_to_thinking_effort,
@@ -194,7 +199,26 @@ def classify_api_error(e: Exception) -> tuple[str, int | None]:
     return "other", None
 
 
-type StepStopReason = Literal["no_tool_calls", "tool_rejected"]
+def _is_hard_usage_limit(exception: BaseException) -> bool:
+    """Whether a 429 is a subscription usage cap (resets in hours) rather than a
+    transient RPM/TPM burst (clears in seconds).
+
+    Hard caps — e.g. ChatGPT Codex ``usage_limit_reached`` — should NOT be retried:
+    the backoff just delays the inevitable failure. Detected from the parsed body
+    when present, else from the stringified message (the streaming 429 often
+    carries only the bare text)."""
+    body = getattr(exception, "body", None)
+    if isinstance(body, dict):
+        err = cast(dict[str, object], body).get("error")
+        if isinstance(err, dict):
+            err_type = cast(dict[str, object], err).get("type")
+            if str(err_type or "") == "usage_limit_reached":
+                return True
+    text = str(exception).lower()
+    return "usage_limit_reached" in text or "usage limit" in text
+
+
+type StepStopReason = Literal["no_tool_calls", "tool_rejected", "stuck"]
 
 
 _MISSING_REQUIRED_FIELD_RE = re.compile(
@@ -243,6 +267,41 @@ def _malformed_empty_tool_call_summary(
     if not missing_by_tool:
         return None
     return "; ".join(missing_by_tool)
+
+
+def _is_all_error_batch(tool_results: Sequence[ToolResult]) -> bool:
+    """True when a non-empty tool batch had *every* call fail."""
+    return bool(tool_results) and all(r.return_value.is_error for r in tool_results)
+
+
+def _stuck_summary_message(
+    failures: int, tool_calls: Sequence[ToolCall], tool_results: Sequence[ToolResult]
+) -> Message:
+    """Build a concise handoff message when the loop yields on a degenerate stuck loop.
+
+    Surfaces a count of consecutive all-error steps and a brief of what the last
+    step tried, so the human can take over without reconstructing state.
+    """
+    calls_by_id = {call.id: call for call in tool_calls}
+    tried: list[str] = []
+    for result in tool_results:
+        call = calls_by_id.get(result.tool_call_id)
+        name = call.function.name if call else "tool"
+        rv = result.return_value
+        # A whitespace-only brief is truthy but strips to "", whose .splitlines() is []
+        # — guard the [0] so the stuck backstop never crashes on the very errors it handles.
+        brief_lines = (rv.brief or rv.message or "error").strip().splitlines()
+        brief = brief_lines[0] if brief_lines else "error"
+        if len(brief) > 200:
+            brief = brief[:200] + "…"
+        tried.append(f"- {name}: {brief}")
+    text = (
+        f"I appear to be stuck — the last {failures} steps each had every tool call "
+        "fail, so I'm stopping and handing control back to you rather than continuing.\n\n"
+        "What I last tried:\n" + "\n".join(tried) + "\n\n"
+        "You can adjust the request, fix the underlying issue, or tell me how to proceed."
+    )
+    return Message(role="assistant", content=[TextPart(text=text)])
 
 
 _UNFINISHED_INTENT_LEAD_RE = re.compile(
@@ -327,6 +386,13 @@ class PythinkerSoul:
                 update={"max_steps_per_turn": agent.steps}
             )
         self._current_step_no = 0
+        self._consecutive_failures = 0
+        # Cumulative LLM token usage for this soul instance (one run), so a subagent
+        # can report its spend back to the orchestrating parent (subagent-2). A
+        # resumed session runs on a fresh soul, so this counts the current run.
+        self._cumulative_usage = TokenUsage(
+            input_other=0, output=0, input_cache_read=0, input_cache_creation=0
+        )
         self._deliberation_generation = 0
         self._sleep_inhibitor = SleepInhibitor(enabled=agent.runtime.config.prevent_idle_sleep)
         self._compaction = SimpleCompaction()  # TODO: maybe configurable and composable
@@ -352,6 +418,9 @@ class PythinkerSoul:
             self._ensure_plan_session_id()
         self._injection_providers: list[DynamicInjectionProvider] = [
             PlanModeInjectionProvider(),
+            # Self-filtering: emits a fragment only when the active model matches a
+            # known-quirk family, so it is safe to register unconditionally.
+            ModelDefenseInjectionProvider(),
             *(
                 []
                 if self._runtime.config.skip_auto_prompt_injection
@@ -378,6 +447,15 @@ class PythinkerSoul:
     @property
     def model_name(self) -> str:
         return self._runtime.llm.chat_provider.model_name if self._runtime.llm else ""
+
+    @property
+    def cumulative_usage(self) -> TokenUsage:
+        """Total LLM token usage consumed by this soul instance (this run).
+
+        Counts every step's LLM call plus compaction calls. A resumed session
+        runs on a fresh soul, so this reflects the current run, not prior runs.
+        """
+        return self._cumulative_usage
 
     @property
     def model_capabilities(self) -> set[ModelCapability] | None:
@@ -1031,6 +1109,7 @@ class PythinkerSoul:
                     "agent.role": self._runtime.role,
                     "model": self._runtime.llm.model_name,
                     "plan_mode": self._plan_mode,
+                    "gen_ai.operation.name": "invoke_agent",
                 },
             ) as span:
                 turn_t0 = time.monotonic()
@@ -1239,6 +1318,8 @@ class PythinkerSoul:
         # One-shot per turn: nudge at most once when a step ends on a bare
         # statement of intent (see `_looks_like_unfinished_intent`).
         self._intent_nudge_used = False
+        # Reset the degenerate-loop failure tracker at the start of each turn.
+        self._consecutive_failures = 0
         while True:
             step_no += 1
             if step_no > self._loop_control.max_steps_per_turn:
@@ -1249,7 +1330,25 @@ class PythinkerSoul:
             back_to_the_future: BackToTheFuture | None = None
             step_outcome: StepOutcome | None = None
             try:
-                # compact the context if needed
+                # Cheap tier first: prune stale tool outputs when usage crosses the
+                # (lower) prune threshold, to defer or avoid the lossy full summary.
+                if should_prune(
+                    self._context.token_count_with_pending,
+                    self._runtime.llm.max_context_size,
+                    ratio=self._loop_control.prune_trigger_ratio,
+                ):
+                    try:
+                        await self.prune_context()
+                    except Exception as prune_err:
+                        from pythinker_code.telemetry.errors import report_handled_error
+
+                        report_handled_error(prune_err, site="soul.context.prune")
+                        logger.warning(
+                            "Context prune failed at step {step_no}: {error}",
+                            step_no=step_no,
+                            error=prune_err,
+                        )
+                # compact the context if needed (still over the higher threshold)
                 if should_auto_compact(
                     self._context.token_count_with_pending,
                     self._runtime.llm.max_context_size,
@@ -1327,7 +1426,7 @@ class PythinkerSoul:
 
                 final_message = (
                     step_outcome.assistant_message
-                    if step_outcome.stop_reason == "no_tool_calls"
+                    if step_outcome.stop_reason in ("no_tool_calls", "stuck")
                     else None
                 )
                 return TurnOutcome(
@@ -1419,6 +1518,7 @@ class PythinkerSoul:
                     "gen_ai.system": gen_ai_system,
                     "gen_ai.request.model": chat_provider.model_name,
                     "session.id": self._runtime.session.id,
+                    "gen_ai.operation.name": "chat",
                 },
             ) as span:
                 llm_t0 = time.monotonic()
@@ -1460,16 +1560,40 @@ class PythinkerSoul:
                 if step_result.id:
                     span.set_attribute("gen_ai.response.id", step_result.id)
                 u = step_result.usage
-                input_tokens = (
-                    int(u.input) if (u and getattr(u, "input", None) is not None) else None
-                )
-                output_tokens = (
-                    int(u.output) if (u and getattr(u, "output", None) is not None) else None
-                )
+                if u is not None:
+                    self._cumulative_usage = accumulate_usage(self._cumulative_usage, u)
+
+                def _opt_int(attr: str) -> int | None:
+                    """Read an optional usage counter as int — None when usage or the
+                    field is absent (usage may be None on partial / cached responses)."""
+                    value = getattr(u, attr, None) if u is not None else None
+                    return int(value) if value is not None else None
+
+                input_tokens = _opt_int("input")
+                output_tokens = _opt_int("output")
+                # Prompt-cache token accounting. pythinker freezes the system prompt
+                # to maximize cache hits, so surfacing these makes cache efficiency
+                # (and any regression that silently breaks cache-keying) observable
+                # from telemetry rather than only as an aggregate cost spike.
+                cache_read_tokens = _opt_int("input_cache_read")
+                cache_creation_tokens = _opt_int("input_cache_creation")
                 if input_tokens is not None:
                     span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
                 if output_tokens is not None:
                     span.set_attribute("gen_ai.usage.output_tokens", output_tokens)
+                if cache_read_tokens is not None:
+                    span.set_attribute("gen_ai.usage.cache_read_input_tokens", cache_read_tokens)
+                if cache_creation_tokens is not None:
+                    span.set_attribute(
+                        "gen_ai.usage.cache_creation_input_tokens", cache_creation_tokens
+                    )
+                # Per-call finish-reason proxy: pythinker_core's StepResult does not
+                # expose the provider finish_reason, so derive it from whether the
+                # step produced tool calls (tool_use) or stopped with text (stop).
+                span.set_attribute(
+                    "gen_ai.response.finish_reasons",
+                    ["tool_use"] if step_result.tool_calls else ["stop"],
+                )
                 span.set_attribute("llm.tool_calls", len(step_result.tool_calls))
                 _m.record_llm_call(
                     duration_seconds=llm_elapsed,
@@ -1477,6 +1601,8 @@ class PythinkerSoul:
                     model=chat_provider.model_name,
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
+                    cache_read_tokens=cache_read_tokens,
+                    cache_creation_tokens=cache_creation_tokens,
                     success=True,
                 )
                 return step_result
@@ -1614,6 +1740,27 @@ class PythinkerSoul:
             )
 
         if result.tool_calls:
+            # Degenerate-loop backstop: count consecutive steps where every tool
+            # call failed; past the configured threshold, hand control back to the
+            # user with a summary instead of burning steps until max_steps_per_turn.
+            threshold = self._loop_control.max_consecutive_failures
+            if _is_all_error_batch(results):
+                self._consecutive_failures += 1
+                if threshold and self._consecutive_failures >= threshold:
+                    from pythinker_code.telemetry import track
+
+                    summary = _stuck_summary_message(
+                        self._consecutive_failures, result.tool_calls, results
+                    )
+                    await self._context.append_message(summary)
+                    track(
+                        "agent_stuck",
+                        consecutive_failures=self._consecutive_failures,
+                        model=self._runtime.llm.model_name,
+                    )
+                    return StepOutcome(stop_reason="stuck", assistant_message=summary)
+            else:
+                self._consecutive_failures = 0
             return None
 
         # A tool-call-free message normally ends the turn. If it is only a
@@ -1686,6 +1833,69 @@ class PythinkerSoul:
         await self._context.append_message(tool_messages)
         # token count of tool results are not available yet
 
+    async def prune_context(self) -> bool:
+        """Cheap, fidelity-preserving compaction tier: replace large stale
+        tool-result bodies in deep history with placeholders, then rewrite the
+        context. Returns True if anything was pruned.
+
+        Unlike full compaction this makes no LLM call and preserves the
+        conversational structure (roles, order, tool_call_id pairing), so it can
+        run frequently to defer or avoid the lossy summary. No-op (returns False)
+        when there is nothing worth pruning. Runs silently — no compaction wire
+        events — since it may fire often and is not a user-visible summary.
+        """
+        pruned, freed = prune_stale_tool_outputs(
+            self._context.history,
+            protect_last=self._loop_control.prune_protect_last,
+            min_chars=self._loop_control.prune_min_chars,
+        )
+        if freed <= 0:
+            return False
+
+        before_tokens = self._context.token_count
+        # Snapshot history first: clear() rotates the backing file, so a mid-rebuild
+        # failure would otherwise leave the context as just the system prompt. Reuse the
+        # same clear+rebuild primitive compact_context uses (the supported way to mutate
+        # the append-only JSONL context), but roll back to the snapshot if it throws.
+        snapshot = list(self._context.history)
+        # Reduce the AUTHORITATIVE pre-prune count by the estimated tokens freed, rather
+        # than replacing it with a full heuristic re-estimate of the remaining history. A
+        # full re-estimate can over-count the survivors (chars/4 overshoots code/markup),
+        # leaving the context above the prune trigger and re-firing the whole rewrite every
+        # step. The delta uses the same estimator on both sides so its bias cancels, and
+        # pruning can only lower the count (pruned ⊆ snapshot ⇒ delta ≥ 0).
+        freed_tokens = estimate_text_tokens(snapshot) - estimate_text_tokens(pruned)
+        pruned_tokens = max(0, before_tokens - max(0, freed_tokens))
+        await self._context.clear()
+        try:
+            await self._context.write_system_prompt(self._agent.system_prompt)
+            await self._checkpoint()
+            await self._context.append_message(pruned)
+            await self._context.update_token_count(pruned_tokens)
+        except Exception:
+            await self._context.clear()
+            await self._context.write_system_prompt(self._agent.system_prompt)
+            await self._checkpoint()
+            if snapshot:
+                await self._context.append_message(snapshot)
+            await self._context.update_token_count(before_tokens)
+            raise
+        # Unlike full compaction, pruning preserves every non-tool message verbatim
+        # (only tool-result *bodies* are elided), so prior dynamic injections survive in
+        # history. Do NOT re-arm injection providers here, or one-shot fragments (e.g. the
+        # model-defense reminder) get re-emitted as duplicates on the next step.
+
+        from pythinker_code.telemetry import track
+
+        track(
+            "context_pruned",
+            before_tokens=before_tokens,
+            after_tokens=self._context.token_count,
+            freed_chars=freed,
+        )
+        logger.info("Pruned {freed} chars of stale tool output from context", freed=freed)
+        return True
+
     async def compact_context(self, custom_instruction: str = "") -> None:
         """
         Compact the context.
@@ -1745,7 +1955,7 @@ class PythinkerSoul:
             skills_by_name=getattr(self._runtime, "skills", {}),
         )
 
-        if getattr(self._runtime.config.memory, "harvest_on_compaction", False):
+        if getattr(self._runtime.config.memory, "harvest_enabled", False):
             await self._harvest_before_compaction(history_before_compaction, custom_instruction)
 
         wire_send(CompactionBegin())
@@ -1753,6 +1963,12 @@ class PythinkerSoul:
             compaction_result = await _compact_with_retry()
             if not compaction_result.messages:
                 raise RuntimeError("Compaction produced no messages; preserving existing history")
+            # Compaction makes its own LLM call outside the step loop; fold its usage
+            # into the cumulative total so a child's reported spend includes it.
+            if compaction_result.usage is not None:
+                self._cumulative_usage = accumulate_usage(
+                    self._cumulative_usage, compaction_result.usage
+                )
             await self._context.clear()
             await self._context.write_system_prompt(self._agent.system_prompt)
             await self._checkpoint()
@@ -1890,7 +2106,14 @@ class PythinkerSoul:
             return not bool(getattr(exception, "_pythinker_recovery_exhausted", False))
         if isinstance(exception, APIEmptyResponseError):
             return True
-        return isinstance(exception, APIStatusError) and exception.status_code in (
+        if not isinstance(exception, APIStatusError):
+            return False
+        if exception.status_code == 429 and _is_hard_usage_limit(exception):
+            # A subscription usage cap (e.g. ChatGPT Codex `usage_limit_reached`)
+            # resets in hours, not seconds — retrying with backoff only adds
+            # latency before the inevitable failure. Surface it immediately.
+            return False
+        return exception.status_code in (
             429,  # Too Many Requests
             500,  # Internal Server Error
             502,  # Bad Gateway

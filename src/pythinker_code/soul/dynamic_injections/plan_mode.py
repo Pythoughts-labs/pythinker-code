@@ -142,8 +142,10 @@ def _full_reminder(
             "2. Design — converge on the best approach; "
             "consider trade-offs but aim for a single recommendation",
             "3. Review — re-read key files to verify understanding",
-            "4. Write Plan — modify the plan file with WriteFile or StrReplaceFile. "
-            "Use WriteFile if the plan file does not exist yet",
+            "4. Write Plan — modify the plan file with WriteFile or StrReplaceFile "
+            "(use WriteFile if the plan file does not exist yet). The plan MUST include "
+            "a Verification section: for each change, the smallest command, test, or "
+            "check that would prove it worked end-to-end",
             "5. Exit — call ExitPlanMode for user approval",
         ]
     )
@@ -191,6 +193,10 @@ def _sparse_reminder(plan_file_path: str | None = None) -> str:
         "Use WriteFile or StrReplaceFile to modify the plan file. "
         "If it does not exist yet, create it with WriteFile first."
     )
+    parts.append(
+        "The plan must include a Verification section "
+        "(the smallest checks that prove each change worked)."
+    )
     parts.extend(
         [
             "Use AskUserQuestion to clarify user preferences "
@@ -225,6 +231,8 @@ def _reentry_reminder(plan_file_path: str | None = None) -> str:
         "If same task: update the existing plan.",
         "4. You may use WriteFile or StrReplaceFile to modify the plan file. "
         "If the file does not exist yet, create it with WriteFile first.",
+        "   The plan must include a Verification section: for each change, the "
+        "smallest command, test, or check that proves it worked.",
     ]
     lines.extend(
         [

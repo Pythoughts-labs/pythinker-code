@@ -100,6 +100,17 @@ When calling explore, specify the desired thoroughness in the prompt:
 - Reading a known file path
 - Searching a small number of known files
 - Tasks that can be completed in one or two direct tool calls
+
+**Effort Scaling — How Many Agents To Spawn**
+
+Match the number of parallel agents to the task's independent subparts, not to ambition:
+
+- Trivial / known path (read a file, one lookup) → no subagent; use direct tools.
+- A single open-ended question → 1 `explore` agent.
+- A bounded comparison, or 2-3 genuinely independent regions → 2-4 agents.
+- Only genuinely broad, cross-cutting work → more, up to the `RunAgents` cap of 8.
+
+Prefer the fewest children that cover the independent objectives — the cap of 8 is a ceiling, not a target. Over-provisioning burns the multi-agent token premium (a fan-out can cost several times a single thread) and produces results you then have to reconcile. Do not launch a subagent for what one or two direct reads or greps would answer.
 """
     )
 
@@ -132,7 +143,18 @@ When sending a D-Mail, DO NOT explain to the user. The user do not care about th
 def test_think_description(think_tool: Think):
     """Test the description of Think tool."""
     assert think_tool.base.description == snapshot(
-        "Use the tool to think about something. It will not obtain new information or change the database, but just append the thought to the log. Use it when complex reasoning or some cache memory is needed.\n"
+        """\
+Record an explicit reasoning step — a plan, a hypothesis, a trade-off analysis, or a checkpoint before an irreversible or multi-tool action. It obtains no new information, reads or changes nothing, and runs nothing; it only appends your thought to the log.
+
+**When to use:**
+- Before a destructive, hard-to-reverse, or multi-step tool sequence, to lay out the plan and the checks first.
+- When several pieces of evidence must be reconciled before deciding (e.g. conflicting logs, an ambiguous root cause).
+- To checkpoint intermediate conclusions on a long task so they survive later steps.
+
+**When NOT to use:**
+- For routine, obvious next actions — just take them. A think step that only restates the task wastes a turn.
+- As a substitute for acting: if the next move is clear, call the real tool instead of narrating intent.
+"""
     )
 
 
@@ -151,7 +173,7 @@ Set the todo list **only after the user has explicitly agreed on the plan**. The
 - **Query mode**: Omit `todos` (or pass null) to retrieve the current todo list without changes.
 - **Clear mode**: Pass an empty array `[]` to clear all todos when work is fully done.
 
-Once the todo list is set, it is the single source of truth for in-progress work. During execution, update item statuses as you complete work (`pending` → `in_progress` → `done`). Only restructure or replace the list when evidence genuinely changes the scope — not for convenience replanning. When in doubt, surface the new evidence to the user before changing the plan.
+Once the todo list is set, it is the single source of truth for in-progress work. During execution, update item statuses as you complete work (`pending` → `in_progress` → `done`). When scope evidence makes a planned item irrelevant, mark it `cancelled` (do not silently delete it) so the on-screen plan history stays honest for the watching user — this is the in-list way to express the scope change you should first surface to the user. Only restructure or replace the list when evidence genuinely changes the scope — not for convenience replanning. When in doubt, surface the new evidence to the user before changing the plan.
 
 Once you finish a subtask/milestone, update its status before moving to the next item.
 
@@ -337,12 +359,23 @@ def test_grep_description(grep_tool: Grep):
     """Test the description of Grep tool."""
     assert grep_tool.base.description == snapshot(
         """\
-A powerful search tool based-on ripgrep.
+A powerful search tool based on ripgrep.
+
+**When to use:**
+- Find where a specific symbol, string, or pattern appears across the codebase.
 
 **Tips:**
-- ALWAYS use Grep tool instead of running `grep` or `rg` command with Shell tool.
-- Use the ripgrep pattern syntax, not grep syntax. E.g. you need to escape braces like `\\\\{` to search for `{`.
+- ALWAYS use the Grep tool instead of running `grep` or `rg` via the Shell tool.
+- Use ripgrep pattern syntax, not grep syntax. E.g. escape braces like `\\\\{` to search for `{`.
 - Hidden files (dotfiles like `.gitlab-ci.yml`, `.eslintrc.json`) are always searched. To also search files excluded by `.gitignore` (e.g. `node_modules`, build outputs), set `include_ignored` to `true`. Sensitive files (such as `.env`) are still skipped for safety, even when `include_ignored` is `true`.
+
+**Scope the search so results fit your context:**
+- Narrow with `path`, a `glob`, or a file `type` rather than scanning the whole repo for a common token.
+- For "does this exist / where" questions, start with `output_mode="files_with_matches"` to get just the file list, then read the promising files.
+- Use `head_limit` to cap matches. A broad pattern — a bare common word, or searching under `node_modules`/`.venv`/`dist` — can return enormous output that floods your context; narrow it first.
+
+**When to escalate:**
+- For open-ended investigation that will clearly need more than ~3 searches across many files, delegate to a read-only `explore` subagent (via `Agent`/`RunAgents`) instead of running many Grep calls yourself, to keep your own context clean.
 """
     )
 
@@ -351,11 +384,18 @@ def test_write_file_description(write_file_tool: WriteFile):
     """Test the description of WriteFile tool."""
     assert write_file_tool.base.description == snapshot(
         """\
-Write content to a file.
+Write content to a file, creating it or overwriting/appending to an existing one.
+
+**When to use:**
+- Create a genuinely new file, or fully replace a file whose entire contents you are rewriting.
+
+**When NOT to use:**
+- To change part of an existing file, prefer StrReplaceFile — it is safer (exact-match) and avoids accidentally dropping content you did not mean to touch. Never blindly recreate a large existing file from memory with WriteFile.
+- Do not proactively create documentation (`README`, `*.md`) unless the user asked for it.
 
 **Tips:**
 - When `mode` is not specified, it defaults to `overwrite`. Always write with caution.
-- When the content to write is too long (e.g. > 100 lines), use this tool multiple times instead of a single call. Use `overwrite` mode at the first time, then use `append` mode after the first write.
+- When the content to write is too long (e.g. > 100 lines), use this tool multiple times instead of a single call: `overwrite` mode for the first write, then `append` mode for the rest.
 """
     )
 
@@ -364,14 +404,16 @@ def test_str_replace_file_description(str_replace_file_tool: StrReplaceFile):
     """Test the description of StrReplaceFile tool."""
     assert str_replace_file_tool.base.description == snapshot(
         """\
-Replace specific strings within a specified file.
+Replace specific strings within a file. Prefer this over WriteFile for editing existing files.
+
+**When to use:**
+- Make a targeted edit to part of an existing text file.
 
 **Tips:**
 - Only use this tool on text files.
-- Multi-line strings are supported.
-- Can specify a single edit or a list of edits in one call.
-- Unless `replace_all` is true, the old string must match exactly once; add surrounding context if it is ambiguous.
-- You should prefer this tool over WriteFile tool and Shell `sed` command.
+- Multi-line strings are supported; you can specify a single edit or a list of edits in one call.
+- Unless `replace_all` is true, the old string must match **exactly once**. If it appears multiple times the edit fails — add surrounding lines until the match is unique. If it appears zero times the edit fails — re-read the file (its content may differ from what you expect) rather than guessing.
+- Prefer this tool over the WriteFile tool and over Shell `sed`/`awk`.
 """
     )
 
@@ -379,12 +421,40 @@ Replace specific strings within a specified file.
 def test_search_web_description(search_web_tool: SearchWeb):
     """Test the description of PythinkerAISearch tool."""
     assert search_web_tool.base.description == snapshot(
-        "WebSearch tool allows you to search on the internet to get latest information, including news, documents, release notes, blog posts, papers, etc. Results may be limited to a configured set of allowed domains.\n"
+        """\
+Search the internet for current information — news, documentation, release notes, blog posts, papers. Returns ranked results with snippets. Results may be limited to a configured set of allowed domains.
+
+**When to use:**
+- You need information newer than your training data, or facts you cannot derive from the repository.
+- You are looking for the *latest* version, release, or API of something — anchor the query to the current date rather than a year you assume from training.
+
+**Tips:**
+- Prefer specific, keyword-rich queries over questions; include the current year when recency matters (e.g. `fastmcp resources API 2026`, not `how does fastmcp work`).
+- WebSearch finds pages; to read one in full, follow up with FetchURL on the most promising result.
+- If results are empty or off-topic, broaden or rephrase once — do not loop on near-identical queries.
+
+**When NOT to use:**
+- For anything answerable from the working directory — read the code and docs first.
+- Note: queries may be restricted to allowed domains, so a blocked search returns fewer or no results rather than an error.
+"""
     )
 
 
 def test_fetch_url_description(fetch_url_tool: FetchURL):
     """Test the description of FetchURL tool."""
     assert fetch_url_tool.base.description == snapshot(
-        "Fetch a web page from a URL and extract main text content from it. Requests may be restricted to a configured set of allowed domains; fetching a disallowed host (including via a redirect) returns an error.\n"
+        """\
+Fetch a web page from a URL and extract its main text content.
+
+**When to use:**
+- Read the full content of a specific, known URL (a doc page, a changelog, an issue, or a result returned by WebSearch).
+
+**Tips:**
+- Use WebSearch first when you do not already have the exact URL, then FetchURL the best result.
+- Prefer the most specific/canonical URL (a doc page over a site root) so the extracted text stays on topic.
+
+**When NOT to use / failure modes:**
+- Requests may be restricted to a configured set of allowed domains; fetching a disallowed host — including via an HTTP redirect — returns an error rather than content. If you hit this, surface the blocked host to the user instead of retrying the same URL.
+- Do not guess or construct URLs. Only fetch URLs the user gave you, that appear in local files, or that WebSearch returned.
+"""
     )

@@ -88,6 +88,8 @@ class EnterPlanMode(CallableTool2[Params]):
                     f"design approach → "
                     f"modify the plan file with WriteFile or StrReplaceFile "
                     f"(create it with WriteFile first if it does not exist) → "
+                    f"include a Verification section (the smallest checks "
+                    f"that prove each change worked) → "
                     f"call ExitPlanMode.\n"
                 ),
                 message="Plan mode on (auto)",
@@ -173,6 +175,8 @@ class EnterPlanMode(CallableTool2[Params]):
                     f"design approach → "
                     f"modify the plan file with WriteFile or StrReplaceFile "
                     f"(create it with WriteFile first if it does not exist) → "
+                    f"include a Verification section (the smallest checks "
+                    f"that prove each change worked) → "
                     f"call ExitPlanMode.\n"
                     f"Use AskUserQuestion only to clarify missing requirements or choose "
                     f"between approaches.\n"

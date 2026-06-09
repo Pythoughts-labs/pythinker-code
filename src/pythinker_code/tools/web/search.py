@@ -60,6 +60,9 @@ class SearchWeb(CallableTool2[Params]):
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
         builder = ToolResultBuilder(max_line_length=None)
+        # Search results are third-party web text; spill the full block on overflow
+        # so the truncated tail stays recoverable instead of forcing a re-query.
+        builder.enable_spill(self._runtime.session.dir / "tool-output", "web_search")
         policy = resolve_execution_policy(
             self._runtime.config.agent_execution_profile,
             yolo=self._runtime.approval.is_yolo_flag(),
@@ -168,6 +171,10 @@ class SearchWeb(CallableTool2[Params]):
                     brief="Filtered by allowlist",
                 )
 
+        # Search results are crawled third-party web text — the same untrusted
+        # content FetchURL already wraps. Mark the result block untrusted so titles,
+        # snippets, and page content are treated as data, never instructions.
+        builder.mark_untrusted()
         for i, result in enumerate(results):
             if i > 0:
                 builder.write("---\n\n")
@@ -178,6 +185,8 @@ class SearchWeb(CallableTool2[Params]):
             if result.content:
                 builder.write(f"{result.content}\n\n")
 
+        # Spill the full result block off the event loop before building the result.
+        await builder.spill_to_disk()
         return builder.ok()
 
 

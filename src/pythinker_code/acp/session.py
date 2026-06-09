@@ -29,6 +29,8 @@ from pythinker_code.wire.types import (
     MCPLoadingEnd,
     Notification,
     PlanDisplay,
+    ProgressNote,
+    QuestionNotSupported,
     QuestionRequest,
     StatusUpdate,
     SteerInput,
@@ -36,6 +38,7 @@ from pythinker_code.wire.types import (
     StepInterrupted,
     StepRetry,
     SubagentEvent,
+    Suggestion,
     TextPart,
     ThinkPart,
     TodoDisplayBlock,
@@ -184,6 +187,10 @@ class ACPSession:
                         pass
                     case Notification():
                         await self._send_notification(msg)
+                    case ProgressNote():
+                        await self._send_progress_note(msg)
+                    case Suggestion():
+                        await self._send_suggestion(msg)
                     case ThinkPart(think=think):
                         await self._send_thinking(think)
                     case TextPart(text=text):
@@ -208,10 +215,14 @@ class ACPSession:
                     case ToolCallRequest():
                         logger.warning("Unexpected ToolCallRequest in ACP session: {msg}", msg=msg)
                     case QuestionRequest():
+                        # ACP cannot present interactive questions. Signal that
+                        # accurately (so the model asks in text and does not retry)
+                        # instead of a misleading empty "user dismissed" answer.
                         logger.warning(
-                            "QuestionRequest is unsupported in ACP session; resolving empty answer."
+                            "QuestionRequest is unsupported in ACP session; "
+                            "signaling QuestionNotSupported."
                         )
-                        msg.resolve({})
+                        msg.set_exception(QuestionNotSupported())
                     case _:
                         pass
         except LLMNotSet as e:
@@ -288,6 +299,22 @@ class ACPSession:
         text = f"[Notification] {notification.title}"
         if body:
             text = f"{text}\n{body}"
+        await self._send_text(text)
+
+    async def _send_progress_note(self, note: ProgressNote):
+        """Surface a progress checkpoint to the client as a text chunk (uxsteer-1)."""
+        body = note.body.strip()
+        text = f"[Progress] {note.title.strip()}"
+        if body:
+            text = f"{text}\n{body}"
+        await self._send_text(text)
+
+    async def _send_suggestion(self, suggestion: Suggestion):
+        """Surface a non-blocking suggestion to the client as a text chunk (uxsteer-2)."""
+        text = f"[Suggestion] {suggestion.label.strip()}"
+        prefill = suggestion.prefill.strip()
+        if prefill:
+            text = f"{text}\n→ {prefill}"
         await self._send_text(text)
 
     async def _send_tool_call(self, tool_call: ToolCall):

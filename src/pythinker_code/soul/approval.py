@@ -12,6 +12,7 @@ from pythinker_core.utils.typing import JsonType
 
 from pythinker_code.approval_runtime import (
     ApprovalCancelledError,
+    ApprovalRequestRecord,
     ApprovalRuntime,
     ApprovalSource,
     get_current_approval_source_or_none,
@@ -43,6 +44,12 @@ _OUTSIDE_WORKSPACE_UNATTENDED_FEEDBACK = (
     "auto-approve them, even in a trusted workspace, because they cross the workspace "
     "trust boundary. Rerun interactively, or use explicit yolo/--yes only after verifying "
     "the exact path and change are safe."
+)
+_CONFIG_EDIT_UNATTENDED_FEEDBACK = (
+    "Edits to pythinker's own behavioral config (AGENTS.md, agent specs, .pythinker "
+    "config) re-confirm every time and are never auto-approved — a rewritten config is a "
+    "persistent backdoor. This run is auto/non-interactive with no user present, so the "
+    "edit was denied instead of waiting indefinitely. Rerun interactively to approve it."
 )
 
 
@@ -253,15 +260,37 @@ class Approval:
         """True only when auto mode came from this invocation."""
         return self._state.runtime_auto
 
-    def _unattended_denial_feedback(self, action: str) -> str | None:
-        """Fail closed when an unattended run would otherwise wait for approval forever."""
+    def _unattended_denial_feedback(self, action: str, tool_call: ToolCall) -> str | None:
+        """Fail closed when an unattended run would otherwise wait for approval forever.
+
+        A request only blocks on a human if it reaches the manual prompt — i.e. it is
+        resolved by NEITHER the auto-approve bypass (``is_auto_approve()`` and not a
+        config-surface edit) NOR a per-command session rule (its key is recorded AND the
+        call is itself session-approvable). In an unattended run (auto, no user, not
+        yolo) any such would-block request is denied with feedback rather than hanging.
+
+        This deliberately re-derives the two downstream auto-resolve conditions so the
+        guard can never drift out of sync with them. It closes two hangs the old
+        membership-only check missed: (1) a destructive call whose coarse key matches a
+        session-approved benign sibling slips past the key check yet is refused by the
+        session gate (it is not session-approvable); (2) a config-surface edit is never
+        covered by the auto-approve bypass and is never session-approved.
+        """
         if not self.is_auto() or self._state.yolo:
             return None
+        # Outside-workspace mutations cross the trust boundary and are denied even though
+        # the auto-approve bypass would otherwise pass them.
         if str(action) == _EDIT_OUTSIDE_ACTION:
             return _OUTSIDE_WORKSPACE_UNATTENDED_FEEDBACK
-        if self._state.safe_mode and action not in self._state.auto_approve_actions:
-            return _SAFE_MODE_UNATTENDED_FEEDBACK
-        return None
+        will_auto_resolve = (self.is_auto_approve() and not self._is_config_edit(action)) or (
+            self._approval_key(tool_call, action) in self._state.auto_approve_actions
+            and self._is_session_approvable(tool_call, action)
+        )
+        if will_auto_resolve:
+            return None
+        if self._is_config_edit(action):
+            return _CONFIG_EDIT_UNATTENDED_FEEDBACK
+        return _SAFE_MODE_UNATTENDED_FEEDBACK
 
     def is_orchestration_approved(self, fingerprint: str) -> bool:
         return fingerprint in self._state.approved_orchestration_fingerprints
@@ -277,6 +306,72 @@ class Approval:
         except (ValueError, TypeError):
             return None
         return args if isinstance(args, dict) else None
+
+    def _approval_key(self, tool_call: ToolCall, action: str) -> str:
+        """Session-approval key, narrowed below the coarse ``action`` where possible.
+
+        For Shell, fold a normalized command signature into the key so "approve for
+        session" is scoped per command family — approving ``git status`` does not also
+        whitelist ``git push`` or ``rm``. Other tools keep the bare ``action`` key.
+        """
+        if tool_call.function.name == "Shell":
+            args = self._tool_arguments(tool_call)
+            command = (args or {}).get("command")
+            if isinstance(command, str) and command:
+                from pythinker_code.soul.permission import shell_command_signature
+
+                return f"{action}::{shell_command_signature(command)}"
+        return action
+
+    def _pending_approval_key(self, pending: ApprovalRequestRecord) -> str:
+        """Reconstruct the session-approval key for a pending request from its display.
+
+        Mirrors ``_approval_key`` so the approve-for-session drain only clears pending
+        siblings with the SAME key, never a different (e.g. destructive) command that
+        merely shares the coarse action string.
+        """
+        if pending.sender == "Shell":
+            for block in pending.display:
+                command = getattr(block, "command", None)
+                if isinstance(command, str) and command:
+                    from pythinker_code.soul.permission import shell_command_signature
+
+                    return f"{pending.action}::{shell_command_signature(command)}"
+            # No command block to key on: fail closed to a scoped sentinel that can never
+            # equal a real ``action::signature`` key, so a session-approval drain cannot
+            # over-match an unrelated Shell request that merely shares the coarse action.
+            return f"{pending.action}::shell:unknown"
+        return pending.action
+
+    def _is_destructive_call(self, tool_call: ToolCall) -> bool:
+        """Whether this call is irreversible/destructive per the central classifier."""
+        arguments = self._tool_arguments(tool_call)
+        if arguments is None:
+            return False
+        from pythinker_code.soul.permission import tool_destructive_reason
+
+        return tool_destructive_reason(tool_call.function.name, arguments) is not None
+
+    @staticmethod
+    def _is_config_edit(action: str) -> bool:
+        """Whether this approval is a write to pythinker's own behavioral config.
+
+        Config-surface edits (AGENTS.md, agent specs, .pythinker config) are
+        re-injected into the system prompt or change agent behavior, so a successful
+        injection rewriting one is a persistent backdoor. They must re-confirm every
+        time — even under yolo/auto — and are never recorded as session-approved.
+        """
+        from pythinker_code.tools.file import FileActions
+
+        return action == FileActions.EDIT_CONFIG.value
+
+    def _is_session_approvable(self, tool_call: ToolCall, action: str) -> bool:
+        """Whether this approval may be recorded as a standing session rule.
+
+        Destructive/irreversible calls (permgate-1b) and behavioral-config edits
+        (permgate-2) are excluded: each must be confirmed afresh.
+        """
+        return not self._is_destructive_call(tool_call) and not self._is_config_edit(action)
 
     @staticmethod
     def _deliberation_fingerprint(
@@ -399,7 +494,7 @@ class Approval:
                 feedback=_DELIBERATION_FEEDBACK.format(reason=reason),
                 deliberation=True,
             )
-        if (feedback := self._unattended_denial_feedback(action)) is not None:
+        if (feedback := self._unattended_denial_feedback(action, tool_call)) is not None:
             from pythinker_code.telemetry import track
 
             track(
@@ -409,7 +504,11 @@ class Approval:
             )
             return ApprovalResult(approved=False, feedback=feedback, user_rejection=False)
 
-        if self.is_auto_approve():
+        # Config-surface edits re-confirm even under yolo/auto (permgate-2): they are
+        # not covered by the auto-approve bypass. In unattended auto with no user, the
+        # _unattended_denial_feedback above has already denied; under interactive yolo
+        # they fall through to a fresh prompt.
+        if self.is_auto_approve() and not self._is_config_edit(action):
             from pythinker_code.telemetry import track
 
             track(
@@ -420,7 +519,14 @@ class Approval:
             emit_current_tool_execution_started()
             return ApprovalResult(approved=True)
 
-        if action in self._state.auto_approve_actions:
+        # Session approval is keyed per command/path (permgate-1a), and never covers
+        # a destructive/irreversible call: a coarse "approve for session" on a benign
+        # command must not silently carry a later `rm -rf`/`git push --force`
+        # (permgate-1b). Destructive calls fall through to a fresh prompt.
+        approval_key = self._approval_key(tool_call, action)
+        if approval_key in self._state.auto_approve_actions and self._is_session_approvable(
+            tool_call, action
+        ):
             from pythinker_code.telemetry import track
 
             track(
@@ -445,6 +551,11 @@ class Approval:
             description=description,
             display=display_blocks,
             source=source,
+            # Bind the session-approvability decision from the REAL tool call now,
+            # so a sibling's approve / approve-for-session drain can never resolve a
+            # destructive or config-surface request that merely shares this one's
+            # coarse signature (permgate-1b/3).
+            session_approvable=self._is_session_approvable(tool_call, action),
         )
         try:
             response, feedback = await self._runtime.wait_for_response(request_id)
@@ -467,6 +578,24 @@ class Approval:
                     tool_name=tool_call.function.name,
                     approval_mode="manual",
                 )
+                # permgate-3: when several concurrent subagents issue a byte-identical
+                # action, one approval should clear them all instead of re-prompting once
+                # per sibling (which pressures the user toward blanket approval). Drain only
+                # pending requests with the SAME fine-grained identity (per-command key AND
+                # description), and never one that bound itself non-session-approvable
+                # (destructive / config-surface) at request time — each such action is
+                # approved individually regardless of a coarse signature collision. This
+                # does NOT touch auto_approve_actions, so it is one-time coverage of
+                # concurrent duplicates, not a standing session rule.
+                if not self._is_destructive_call(tool_call):
+                    for pending in self._runtime.list_pending():
+                        if (
+                            pending.id != request_id
+                            and pending.session_approvable
+                            and pending.description == description
+                            and self._pending_approval_key(pending) == approval_key
+                        ):
+                            self._runtime.resolve(pending.id, "approve")
                 emit_current_tool_execution_started()
                 return ApprovalResult(approved=True)
             case "approve_for_session":
@@ -475,11 +604,34 @@ class Approval:
                     tool_name=tool_call.function.name,
                     approval_mode="manual",
                 )
-                self._state.auto_approve_actions.add(action)
-                self._state.notify_change()
-                for pending in self._runtime.list_pending():
-                    if pending.action == action:
-                        self._runtime.resolve(pending.id, "approve")
+                # A destructive call is never recorded as session-approved — it must
+                # re-prompt every time — so "approve for session" on one degrades to a
+                # one-time approve (permgate-1b). Otherwise record the per-command key
+                # and drain only pending siblings that ALSO bound themselves
+                # session-approvable at request time, so approving `git status` for the
+                # session cannot silently clear a queued `rm -rf` that merely shares the
+                # coarse signature, and a config-surface edit is never auto-approved.
+                if self._is_session_approvable(tool_call, action):
+                    self._state.auto_approve_actions.add(approval_key)
+                    self._state.notify_change()
+                    for pending in self._runtime.list_pending():
+                        if (
+                            pending.session_approvable
+                            and self._pending_approval_key(pending) == approval_key
+                        ):
+                            self._runtime.resolve(pending.id, "approve")
+                else:
+                    # Destructive or config-surface calls cannot be session-approved (permgate-1b).
+                    # The user chose "approve for session" but the request cannot be honoured;
+                    # downgrade silently to one-time approval and log so this is visible in debug
+                    # output — otherwise the UI appears to have accepted the session approval.
+                    logger.warning(
+                        "approve_for_session downgraded to one-time for {tool_name!r} "
+                        "(action={action!r}): destructive or config-surface calls are "
+                        "never session-approvable",
+                        tool_name=tool_call.function.name,
+                        action=str(action),
+                    )
                 emit_current_tool_execution_started()
                 return ApprovalResult(approved=True)
             case "reject":

@@ -17,7 +17,7 @@ from pythinker_code.auth.browser_login_page import (
     browser_login_favicon_data_uri,
     browser_login_logo_data_uri,
 )
-from pythinker_code.auth.oauth import OAuthError, load_tokens
+from pythinker_code.auth.oauth import OAuthError, OAuthToken, load_tokens, save_tokens
 from pythinker_code.auth.openai import (
     OPENAI_API_BASE_URL,
     OPENAI_AUTH_ISSUER,
@@ -182,6 +182,19 @@ def test_build_authorize_url_uses_codex_parameters():
     assert params["id_token_add_organizations"] == ["true"]
 
 
+def test_build_authorize_url_forces_account_reauth():
+    """`/login` must force the OpenAI login screen instead of silently reusing the
+    browser's existing ChatGPT session, so users can switch accounts."""
+    url = _build_authorize_url(
+        redirect_uri="http://localhost:1455/auth/callback",
+        pkce=PkceCodes(code_verifier="verifier", code_challenge="challenge"),
+        state="state-123",
+    )
+
+    params = parse_qs(urlsplit(url).query)
+    assert params["prompt"] == ["login"]
+
+
 @pytest.mark.asyncio
 async def test_exchange_id_token_for_api_key_uses_codex_requested_token(monkeypatch):
     captured = {}
@@ -234,6 +247,13 @@ def test_token_from_openai_response_extracts_chatgpt_account_id_from_access_toke
     assert token.account_id == "acc_access"
 
 
+# Generous deadline for the localhost callback round-trip. The happy path completes in
+# milliseconds; a tight 2s deadline only flakes under CPU contention (a busy CI or a
+# large shuffled run), where event-loop scheduling delays push the round-trip past 2s.
+# A large bound still catches a genuine hang without racing load.
+_BROWSER_CALLBACK_TEST_TIMEOUT = 15.0
+
+
 @pytest.mark.asyncio
 async def test_wait_for_browser_code_accepts_localhost_callback(monkeypatch):
     monkeypatch.setattr(
@@ -247,7 +267,7 @@ async def test_wait_for_browser_code_accepts_localhost_callback(monkeypatch):
     actual_port = None
     try:
         for port in (OPENAI_BROWSER_PORT, OPENAI_BROWSER_FALLBACK_PORT):
-            deadline = asyncio.get_running_loop().time() + 2
+            deadline = asyncio.get_running_loop().time() + _BROWSER_CALLBACK_TEST_TIMEOUT
             while asyncio.get_running_loop().time() < deadline:
                 try:
                     _, writer = await asyncio.open_connection("127.0.0.1", port)
@@ -265,7 +285,7 @@ async def test_wait_for_browser_code_accepts_localhost_callback(monkeypatch):
         )
         await writer.drain()
 
-        result = await asyncio.wait_for(task, timeout=2)
+        result = await asyncio.wait_for(task, timeout=_BROWSER_CALLBACK_TEST_TIMEOUT)
     finally:
         if writer is not None:
             writer.close()
@@ -293,7 +313,7 @@ async def test_wait_for_browser_code_cleans_up_idle_callback_tasks(monkeypatch):
     writer = None
     try:
         for port in (OPENAI_BROWSER_PORT, OPENAI_BROWSER_FALLBACK_PORT):
-            deadline = asyncio.get_running_loop().time() + 2
+            deadline = asyncio.get_running_loop().time() + _BROWSER_CALLBACK_TEST_TIMEOUT
             while asyncio.get_running_loop().time() < deadline:
                 try:
                     _, writer = await asyncio.open_connection("127.0.0.1", port)
@@ -306,7 +326,11 @@ async def test_wait_for_browser_code_cleans_up_idle_callback_tasks(monkeypatch):
         assert writer is not None
         await asyncio.sleep(0)
         task.cancel()
-        await asyncio.sleep(0.05)
+        # Poll until the cancellation has unwound (server closed, callback tasks
+        # cancelled) instead of a fixed sleep that races CPU load.
+        deadline = asyncio.get_running_loop().time() + _BROWSER_CALLBACK_TEST_TIMEOUT
+        while not task.done() and asyncio.get_running_loop().time() < deadline:
+            await asyncio.sleep(0.01)
         assert task.done()
 
         pending_callbacks = [
@@ -777,3 +801,94 @@ async def test_login_openai_browser_finishes_with_callback_code(monkeypatch, tmp
     assert events[0].type == "verification_url"
     assert events[-1].type == "success"
     assert config.default_model == managed_model_key(OPENAI_CHATGPT_PLATFORM_ID, "gpt-5.1-codex")
+    # The success message names the account so a switch is verifiable.
+    assert "acc_brow" in events[-1].message
+
+
+def _patch_browser_login_returning_account(monkeypatch, account_id: str) -> None:
+    async def fake_wait_for_browser_code(open_browser):
+        return "auth-code", "verifier", "http://localhost:1455/auth/callback"
+
+    async def fake_exchange_code_for_tokens(code, verifier, redirect_uri):
+        return {
+            "access_token": "access-token",
+            "id_token": _jwt_with_chatgpt_account(account_id),
+            "refresh_token": "refresh-token",
+            "expires_in": 3600,
+            "token_type": "Bearer",
+            "scope": "openid profile email offline_access",
+        }
+
+    async def fake_exchange_id_token_for_api_key(id_token):
+        return ""
+
+    async def fake_discover_chatgpt_models(api_key, *, account_id=None):
+        return [_model("gpt-5.1-codex", reasoning=True)]
+
+    monkeypatch.setattr(
+        "pythinker_code.auth.openai._wait_for_browser_code", fake_wait_for_browser_code
+    )
+    monkeypatch.setattr(
+        "pythinker_code.auth.openai._exchange_code_for_tokens", fake_exchange_code_for_tokens
+    )
+    monkeypatch.setattr(
+        "pythinker_code.auth.openai._exchange_id_token_for_api_key",
+        fake_exchange_id_token_for_api_key,
+    )
+    monkeypatch.setattr(
+        "pythinker_code.auth.openai.discover_chatgpt_models", fake_discover_chatgpt_models
+    )
+
+
+@pytest.mark.asyncio
+async def test_login_warns_when_same_chatgpt_account_is_reused(monkeypatch, tmp_path):
+    """If a re-login lands on the same account (e.g. OpenAI ignored prompt=login or
+    the user re-picked it), warn the user instead of silently 'succeeding'."""
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    config = Config(is_from_default_location=True)
+    save_tokens(
+        OAuthRef(storage="file", key=OPENAI_CHATGPT_OAUTH_KEY),
+        OAuthToken(
+            access_token="old-access",
+            refresh_token="old-refresh",
+            expires_at=0.0,
+            scope="openid",
+            token_type="Bearer",
+            account_id="acc_same",
+        ),
+    )
+    _patch_browser_login_returning_account(monkeypatch, "acc_same")
+
+    events = [event async for event in login_openai_browser(config, open_browser=False)]
+
+    assert events[-1].type == "success"
+    warnings = [e for e in events if e.type == "info" and "same ChatGPT account" in e.message]
+    assert warnings, "expected a same-account warning"
+    assert "incognito" in warnings[0].message
+
+
+@pytest.mark.asyncio
+async def test_login_does_not_warn_when_account_changes(monkeypatch, tmp_path):
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    config = Config(is_from_default_location=True)
+    save_tokens(
+        OAuthRef(storage="file", key=OPENAI_CHATGPT_OAUTH_KEY),
+        OAuthToken(
+            access_token="old-access",
+            refresh_token="old-refresh",
+            expires_at=0.0,
+            scope="openid",
+            token_type="Bearer",
+            account_id="acc_old",
+        ),
+    )
+    _patch_browser_login_returning_account(monkeypatch, "acc_new")
+
+    events = [event async for event in login_openai_browser(config, open_browser=False)]
+
+    assert events[-1].type == "success"
+    assert not [e for e in events if e.type == "info" and "same ChatGPT account" in e.message]
+    # New account's token overwrote the old one on disk.
+    token = load_tokens(OAuthRef(storage="file", key=OPENAI_CHATGPT_OAUTH_KEY))
+    assert token is not None
+    assert token.account_id == "acc_new"

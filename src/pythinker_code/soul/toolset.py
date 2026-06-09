@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import difflib
 import importlib
 import inspect
 import json
 import re
 import time
+from collections.abc import Awaitable, Callable, Iterable
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
@@ -62,6 +64,10 @@ current_tool_call = ContextVar[ToolCall | None]("current_tool_call", default=Non
 _current_tool_execution_started_ids: ContextVar[set[str] | None] = ContextVar(
     "current_tool_execution_started_ids", default=None
 )
+
+# Per-server timeout for closing MCP clients during teardown, so one hung client
+# cannot block cleanup of the rest (mcpext-3).
+_MCP_CLOSE_TIMEOUT_S = 5.0
 
 _current_session_id: ContextVar[str] = ContextVar("_current_session_id", default="")
 _MCP_LOG_NAME_RE = re.compile(r"[^A-Za-z0-9_.-]+")
@@ -138,6 +144,51 @@ def _mcp_stderr_log_path(runtime: Runtime, server_name: str) -> Path:
     log_dir = runtime.session.dir / "mcp"
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir / f"{safe_name}.stderr.log"
+
+
+async def _discover_optional_capability[T](
+    server_name: str,
+    capability: str,
+    list_fn: Callable[[], Awaitable[Iterable[T]]],
+) -> list[T]:
+    """List an optional MCP capability (resources/prompts), separating a server that
+    genuinely lacks it from a transient/transport failure (mcpext-1).
+
+    Per MCP, a server that does not implement the capability replies with a
+    ``METHOD_NOT_FOUND`` (-32601) error — expected, recorded as empty, logged at debug.
+    Any other failure (e.g. a transient transport error) is NOT treated as silently
+    identical to "no capability": it is logged at WARNING so an operator can tell a
+    momentary blip from a permanent absence. Either way an empty list is returned so the
+    server (and its already-listed tools) still connect rather than failing the whole
+    handshake on an optional capability.
+    """
+    from mcp.shared.exceptions import McpError
+    from mcp.types import METHOD_NOT_FOUND
+
+    try:
+        return list(await list_fn())
+    except McpError as exc:
+        if exc.error.code == METHOD_NOT_FOUND:
+            logger.debug(
+                "MCP server {name} does not support {cap}", name=server_name, cap=capability
+            )
+            return []
+        logger.warning(
+            "MCP server {name} errored listing {cap} (code {code}); treating as empty: {error}",
+            name=server_name,
+            cap=capability,
+            code=exc.error.code,
+            error=exc,
+        )
+        return []
+    except Exception as exc:
+        logger.warning(
+            "MCP server {name} failed listing {cap} (transient?); treating as empty: {error}",
+            name=server_name,
+            cap=capability,
+            error=exc,
+        )
+        return []
 
 
 def _configure_mcp_client_stderr_log(client: Any, runtime: Runtime, server_name: str) -> None:
@@ -261,9 +312,16 @@ class PythinkerToolset:
         token = current_tool_call.set(tool_call)
         try:
             if tool_call.function.name not in self._tool_dict:
+                available = list(self._tool_dict.keys())
+                matches = difflib.get_close_matches(
+                    tool_call.function.name, available, n=1, cutoff=0.6
+                )
                 return ToolResult(
                     tool_call_id=tool_call.id,
-                    return_value=ToolNotFoundError(tool_call.function.name),
+                    return_value=ToolNotFoundError(
+                        tool_call.function.name,
+                        suggestion=matches[0] if matches else None,
+                    ),
                 )
 
             tool = self._tool_dict[tool_call.function.name]
@@ -334,7 +392,13 @@ class PythinkerToolset:
                 t0 = time.monotonic()
                 _tool_span_cm = _otel.start_span(
                     "pythinker.tool",
-                    {"tool.name": tool_call.function.name, "tool.call_id": tool_call.id},
+                    {
+                        "tool.name": tool_call.function.name,
+                        "tool.call_id": tool_call.id,
+                        # GenAI semconv so GenAI-aware backends recognize the tool layer.
+                        "gen_ai.operation.name": "execute_tool",
+                        "gen_ai.tool.name": tool_call.function.name,
+                    },
                 )
                 _tool_span = _tool_span_cm.__enter__()
                 try:
@@ -389,6 +453,12 @@ class PythinkerToolset:
                         tool_call_id=tool_call.id,
                         return_value=ToolRuntimeError(str(e)),
                     )
+                except BaseException as e:
+                    # CancelledError/KeyboardInterrupt during the tool call: close the
+                    # span in this task so its OTel context token detaches now, not
+                    # later under GC in a different asyncio context.
+                    _tool_span_cm.__exit__(type(e), e, e.__traceback__)
+                    raise
 
                 tool_elapsed = time.monotonic() - t0
                 _tool_succeeded = not isinstance(ret, ToolError)
@@ -625,6 +695,17 @@ class PythinkerToolset:
                         server_info.tools.append(
                             MCPTool(server_name, tool, client, runtime=runtime)
                         )
+                    # Resources/prompts are optional MCP capabilities; a server
+                    # that exposes none (or does not support the request) must
+                    # still connect, so capture them best-effort (mcpext-1). A
+                    # METHOD_NOT_FOUND means the capability is genuinely absent; any
+                    # other error is surfaced (WARNING) rather than masked as "none".
+                    server_info.resources = await _discover_optional_capability(
+                        server_name, "resources", client.list_resources
+                    )
+                    server_info.prompts = await _discover_optional_capability(
+                        server_name, "prompts", client.list_prompts
+                    )
 
                 for tool in server_info.tools:
                     self.add(tool)
@@ -688,7 +769,7 @@ class PythinkerToolset:
                 client = fastmcp.Client(MCPConfig(mcpServers={server_name: server_config}))
                 _configure_mcp_client_stderr_log(client, runtime, server_name)
                 self._mcp_servers[server_name] = MCPServerInfo(
-                    status="pending", client=client, tools=[]
+                    status="pending", client=client, tools=[], resources=[], prompts=[]
                 )
 
         if not any(server_info.status == "pending" for server_info in self._mcp_servers.values()):
@@ -721,8 +802,16 @@ class PythinkerToolset:
             self._mcp_loading_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._mcp_loading_task
-        for server_info in self._mcp_servers.values():
-            await server_info.client.close()
+
+        # Close every MCP client concurrently with a per-server timeout, so one
+        # hung or slow client cannot block teardown of the rest (mcpext-3).
+        async def _close(info: MCPServerInfo) -> None:
+            try:
+                await asyncio.wait_for(info.client.close(), timeout=_MCP_CLOSE_TIMEOUT_S)
+            except Exception as exc:
+                logger.debug("MCP client close failed/timed out: {error}", error=exc)
+
+        await asyncio.gather(*(_close(info) for info in self._mcp_servers.values()))
 
 
 @dataclass(slots=True)
@@ -730,6 +819,10 @@ class MCPServerInfo:
     status: Literal["pending", "connecting", "connected", "failed", "unauthorized"]
     client: fastmcp.Client[Any]
     tools: list[MCPTool[Any]]
+    # Resources and prompts published by the server, captured at connect time
+    # (mcpext-1). Empty for servers that expose none or do not support them.
+    resources: list[mcp.Resource]
+    prompts: list[mcp.types.Prompt]
 
 
 class MCPTool[T: ClientTransport](CallableTool):
@@ -780,6 +873,8 @@ class MCPTool[T: ClientTransport](CallableTool):
                     "mcp.server": self._mcp_server_name,
                     "mcp.tool": self._mcp_tool.name,
                     "mcp.timeout_ms": int(self._timeout.total_seconds() * 1000),
+                    "gen_ai.operation.name": "execute_tool",
+                    "gen_ai.tool.name": self._mcp_tool.name,
                 },
             ) as span:
                 async with self._client as client:

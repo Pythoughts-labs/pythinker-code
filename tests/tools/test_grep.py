@@ -19,6 +19,7 @@ from pythinker_code.tools.file.grep_local import (
     _strip_path_prefix,
 )
 from pythinker_code.tools.utils import DEFAULT_MAX_CHARS
+from tests.tools._untrusted import assert_wrapped
 
 
 @pytest_asyncio.fixture(scope="module")
@@ -526,7 +527,7 @@ async def test_grep_offset_pagination(grep_tool: Grep):
             )
         )
         assert isinstance(r1.output, str)
-        lines1 = [x for x in r1.output.split("\n") if x.strip()]
+        lines1 = [x for x in assert_wrapped(r1.output).split("\n") if x.strip()]
         assert len(lines1) == 3
         assert "Use offset=3 to see more" in r1.message
 
@@ -541,7 +542,7 @@ async def test_grep_offset_pagination(grep_tool: Grep):
             )
         )
         assert isinstance(r2.output, str)
-        lines2 = [x for x in r2.output.split("\n") if x.strip()]
+        lines2 = [x for x in assert_wrapped(r2.output).split("\n") if x.strip()]
         assert len(lines2) == 3
         # No overlap between pages (content mode has stable line order)
         assert set(lines1).isdisjoint(set(lines2))
@@ -557,7 +558,7 @@ async def test_grep_offset_content_mode(grep_tool: Grep):
             Params(pattern="match", path=temp_dir, output_mode="content", head_limit=0)
         )
         assert isinstance(r_all.output, str)
-        all_lines = [x for x in r_all.output.split("\n") if x.strip()]
+        all_lines = [x for x in assert_wrapped(r_all.output).split("\n") if x.strip()]
         assert len(all_lines) == 10
 
         # Get with offset=5
@@ -571,7 +572,7 @@ async def test_grep_offset_content_mode(grep_tool: Grep):
             )
         )
         assert isinstance(r_offset.output, str)
-        offset_lines = [x for x in r_offset.output.split("\n") if x.strip()]
+        offset_lines = [x for x in assert_wrapped(r_offset.output).split("\n") if x.strip()]
         assert len(offset_lines) == 3
         # Should be lines 5,6,7 from original
         assert offset_lines[0] == all_lines[5]
@@ -681,7 +682,7 @@ async def test_grep_content_default_line_numbers(grep_tool: Grep):
         result = await grep_tool(Params(pattern="hello", path=temp_dir, output_mode="content"))
         assert not result.is_error
         assert isinstance(result.output, str)
-        for line in result.output.split("\n"):
+        for line in assert_wrapped(result.output).split("\n"):
             if line.strip() and not line.startswith("--"):
                 parts = line.split(":")
                 assert len(parts) >= 3, f"Expected path:line:content, got: {line}"
@@ -700,7 +701,7 @@ async def test_grep_content_disable_line_numbers(grep_tool: Grep):
         )
         assert not result.is_error
         assert isinstance(result.output, str)
-        for line in result.output.split("\n"):
+        for line in assert_wrapped(result.output).split("\n"):
             if line.strip() and not line.startswith("--"):
                 parts = line.split(":")
                 # path:content (2 parts), NOT path:linenum:content (3 parts)
@@ -1071,3 +1072,68 @@ async def test_python_fallback_bounds_wall_clock(monkeypatch, tmp_path):
     )
 
     assert f"Search exceeded {grep_module.RG_TIMEOUT}s" in result.message
+
+
+# ── content output is wrapped as <untrusted_data> (prompt-injection defense) ──
+# Matched content lines are external file bytes; like Shell stdout and ReadFile
+# content they must reach the model wrapped so the model treats them as data.
+
+
+async def test_grep_content_output_wrapped_python_fallback(monkeypatch, temp_test_files):
+    """Content-mode matched lines must be wrapped (Python-fallback path)."""
+
+    async def fail_rg_path() -> str:
+        raise RuntimeError("Failed to download ripgrep binary")
+
+    monkeypatch.setattr("pythinker_code.tools.file.grep_local._ensure_rg_path", fail_rg_path)
+    temp_dir, _ = temp_test_files
+
+    result = await Grep()(Params(pattern="hello", path=temp_dir, output_mode="content"))
+
+    assert not result.is_error
+    inner = assert_wrapped(result.output)
+    assert "hello" in inner.lower()
+
+
+async def test_grep_content_output_wrapped_ripgrep(grep_tool: Grep, temp_test_files):
+    """The ripgrep path (not only the fallback) must also wrap content output."""
+    temp_dir, _ = temp_test_files
+
+    result = await grep_tool(Params(pattern="hello", path=temp_dir, output_mode="content"))
+
+    assert not result.is_error
+    inner = assert_wrapped(result.output)
+    assert "hello" in inner.lower()
+
+
+async def test_grep_no_match_content_is_not_wrapped(monkeypatch, temp_test_files):
+    """A no-match result is a harness message, not external data — never wrapped."""
+
+    async def fail_rg_path() -> str:
+        raise RuntimeError("Failed to download ripgrep binary")
+
+    monkeypatch.setattr("pythinker_code.tools.file.grep_local._ensure_rg_path", fail_rg_path)
+    temp_dir, _ = temp_test_files
+
+    result = await Grep()(
+        Params(pattern="zzz_no_such_pattern_zzz", path=temp_dir, output_mode="content")
+    )
+
+    assert not result.is_error
+    assert "<untrusted_data" not in (result.output or "")
+
+
+async def test_grep_files_with_matches_is_not_wrapped(monkeypatch, temp_test_files):
+    """files_with_matches surfaces relative, sensitive-filtered paths (metadata),
+    not file bytes — deliberately scoped out of the content-wrapping defense."""
+
+    async def fail_rg_path() -> str:
+        raise RuntimeError("Failed to download ripgrep binary")
+
+    monkeypatch.setattr("pythinker_code.tools.file.grep_local._ensure_rg_path", fail_rg_path)
+    temp_dir, _ = temp_test_files
+
+    result = await Grep()(Params(pattern="hello", path=temp_dir, output_mode="files_with_matches"))
+
+    assert not result.is_error
+    assert "<untrusted_data" not in (result.output or "")

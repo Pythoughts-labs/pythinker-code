@@ -63,6 +63,16 @@ llm_output_tokens: Counter = _meter.create_counter(
     description="Output/completion tokens generated (diagnostic).",
     unit="1",
 )
+llm_cache_read_tokens: Counter = _meter.create_counter(
+    "pythinker.llm.cache_read_tokens",
+    description="Prompt-cache READ input tokens (cache hits — diagnostic for cache efficiency).",
+    unit="1",
+)
+llm_cache_creation_tokens: Counter = _meter.create_counter(
+    "pythinker.llm.cache_creation_tokens",
+    description="Prompt-cache CREATION input tokens (cache writes — diagnostic).",
+    unit="1",
+)
 
 # --- Tool-level ---
 tool_calls_total: Counter = _meter.create_counter(
@@ -94,6 +104,7 @@ def bind(meter: Meter) -> None:
     global _meter
     global turn_total, turn_duration_seconds, turn_step_count
     global llm_calls_total, llm_duration_seconds, llm_input_tokens, llm_output_tokens
+    global llm_cache_read_tokens, llm_cache_creation_tokens
     global tool_calls_total, tool_duration_seconds, errors_total
 
     _meter = meter
@@ -130,6 +141,16 @@ def bind(meter: Meter) -> None:
     llm_output_tokens = meter.create_counter(
         "pythinker.llm.output_tokens",
         description="Output/completion tokens generated (diagnostic).",
+        unit="1",
+    )
+    llm_cache_read_tokens = meter.create_counter(
+        "pythinker.llm.cache_read_tokens",
+        description="Prompt-cache READ input tokens (cache hits, diagnostic).",
+        unit="1",
+    )
+    llm_cache_creation_tokens = meter.create_counter(
+        "pythinker.llm.cache_creation_tokens",
+        description="Prompt-cache CREATION input tokens (cache writes — diagnostic).",
         unit="1",
     )
     tool_calls_total = meter.create_counter(
@@ -169,6 +190,8 @@ def record_llm_call(
     model: str,
     input_tokens: int | None = None,
     output_tokens: int | None = None,
+    cache_read_tokens: int | None = None,
+    cache_creation_tokens: int | None = None,
     success: bool = True,
 ) -> None:
     """Record one LLM API call."""
@@ -183,6 +206,10 @@ def record_llm_call(
         llm_input_tokens.add(input_tokens, attrs)
     if output_tokens is not None and output_tokens > 0:
         llm_output_tokens.add(output_tokens, attrs)
+    if cache_read_tokens is not None and cache_read_tokens > 0:
+        llm_cache_read_tokens.add(cache_read_tokens, attrs)
+    if cache_creation_tokens is not None and cache_creation_tokens > 0:
+        llm_cache_creation_tokens.add(cache_creation_tokens, attrs)
 
 
 def record_tool_call(

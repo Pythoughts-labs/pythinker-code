@@ -220,9 +220,9 @@ Skill creation involves these steps:
 
 1. Understand the skill with concrete examples
 2. Plan reusable skill contents (scripts, references, assets)
-3. Initialize the skill (run init_skill.py)
+3. Initialize the skill (create the directory and a `SKILL.md`)
 4. Edit the skill (implement resources and write SKILL.md)
-5. Package the skill (run package_skill.py)
+5. Package the skill (zip the skill folder into a `.skill` archive)
 6. Iterate based on real usage
 
 Follow these steps in order, skipping only if there is a clear reason why they are not applicable.

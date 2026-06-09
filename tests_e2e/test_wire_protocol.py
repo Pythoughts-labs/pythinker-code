@@ -91,6 +91,11 @@ def test_initialize_handshake(tmp_path) -> None:
                             "aliases": [],
                         },
                         {
+                            "name": "skill:agent-creator",
+                            "description": 'Author a new project-specific Pythinker subagent (a specialist like "migration-reviewer" or "api-contract-checker") with a correct spec, a persona-rich system prompt, and a structured output contract. Use when the user wants to create, scaffold, or design a custom agent / subagent, or asks how Pythinker agent YAML / markdown agent files, tool scoping, or the extend-inheritance schema work.',
+                            "aliases": [],
+                        },
+                        {
                             "name": "skill:check-impl-against-spec",
                             "description": "Compare an implementation against a product or technical spec and report gaps with evidence.",
                             "aliases": [],
@@ -98,6 +103,11 @@ def test_initialize_handshake(tmp_path) -> None:
                         {
                             "name": "skill:create-pr",
                             "description": "Prepare a pull request by summarizing changes, verification, risks, and reviewer guidance without adding AI footers.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:customize-pythinker",
+                            "description": "Edit Pythinker's own configuration — agent YAML specs and extend-inheritance, the permission profiles that gate tools, plugin.json, and hook lifecycle events. Use ONLY when the user wants to configure, customize, or extend Pythinker itself (its agents, permissions, plugins, or hooks). For authoring a new agent use agent-creator; for authoring a skill use skill-creator; for general usage Q&A use pythinker-code-help.",
                             "aliases": [],
                         },
                         {
@@ -266,6 +276,11 @@ def test_initialize_external_tool_conflict(tmp_path) -> None:
                             "aliases": [],
                         },
                         {
+                            "name": "skill:agent-creator",
+                            "description": 'Author a new project-specific Pythinker subagent (a specialist like "migration-reviewer" or "api-contract-checker") with a correct spec, a persona-rich system prompt, and a structured output contract. Use when the user wants to create, scaffold, or design a custom agent / subagent, or asks how Pythinker agent YAML / markdown agent files, tool scoping, or the extend-inheritance schema work.',
+                            "aliases": [],
+                        },
+                        {
                             "name": "skill:check-impl-against-spec",
                             "description": "Compare an implementation against a product or technical spec and report gaps with evidence.",
                             "aliases": [],
@@ -273,6 +288,11 @@ def test_initialize_external_tool_conflict(tmp_path) -> None:
                         {
                             "name": "skill:create-pr",
                             "description": "Prepare a pull request by summarizing changes, verification, risks, and reviewer guidance without adding AI footers.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:customize-pythinker",
+                            "description": "Edit Pythinker's own configuration — agent YAML specs and extend-inheritance, the permission profiles that gate tools, plugin.json, and hook lifecycle events. Use ONLY when the user wants to configure, customize, or extend Pythinker itself (its agents, permissions, plugins, or hooks). For authoring a new agent use agent-creator; for authoring a skill use skill-creator; for general usage Q&A use pythinker-code-help.",
                             "aliases": [],
                         },
                         {

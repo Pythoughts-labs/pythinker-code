@@ -147,6 +147,42 @@ async def test_handle_steer_queues_input_when_streaming(
 
 
 @pytest.mark.asyncio
+async def test_handle_steer_dismisses_pending_question(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """uxsteer-3(b): a newer steer supersedes a pending blocking question, so the
+    blocked tool yields instead of deferring behind a manual answer."""
+    from pythinker_code.wire.types import QuestionItem, QuestionOption, QuestionRequest
+
+    soul = _make_soul(runtime, tmp_path)
+    server = WireServer(soul)
+    monkeypatch.setattr(soul, "steer", lambda user_input: None)
+    server._cancel_event = asyncio.Event()  # _is_streaming
+
+    question = QuestionRequest(
+        id="q1",
+        tool_call_id="c1",
+        questions=[QuestionItem(question="Pick", options=[QuestionOption(label="A")])],
+    )
+    server._pending_requests["q1"] = question
+
+    response = await server._handle_steer(
+        JSONRPCSteerMessage(
+            id="1",
+            params=JSONRPCSteerMessage.Params(user_input=[TextPart(text="new intent")]),
+        )
+    )
+
+    assert isinstance(response, JSONRPCSuccessResponse)
+    assert question.resolved  # the steer dismissed the pending question
+    # ...and the dismissed request is fully retired from the pending map, so a late
+    # client response cannot reach _handle_response and double-resolve it.
+    assert "q1" not in server._pending_requests
+
+
+@pytest.mark.asyncio
 async def test_shutdown_rejects_foreground_approval_in_runtime(
     runtime: Runtime,
     tmp_path: Path,

@@ -39,6 +39,14 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
             key_argument = str(curr_args["thought"])
         case "SetTodoList":
             return None
+        case "Progress":
+            if not isinstance(curr_args, dict) or not curr_args.get("title"):
+                return None
+            key_argument = str(curr_args["title"])
+        case "Suggest":
+            if not isinstance(curr_args, dict) or not curr_args.get("label"):
+                return None
+            key_argument = str(curr_args["label"])
         case "Bash" | "Shell":
             if not isinstance(curr_args, dict) or not curr_args.get("command"):
                 return None
@@ -51,6 +59,10 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
             if not isinstance(curr_args, dict) or not curr_args.get("skill_name"):
                 return None
             key_argument = str(curr_args["skill_name"])
+        case "Recall":
+            if not isinstance(curr_args, dict):
+                return None
+            key_argument = str(curr_args.get("session_id") or curr_args.get("query") or "search")
         case "TaskList":
             if not isinstance(curr_args, dict):
                 return None
@@ -91,6 +103,14 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
             if not isinstance(curr_args, dict) or not curr_args.get("url"):
                 return None
             key_argument = str(curr_args["url"])
+        case "ListMcpResources":
+            if not isinstance(curr_args, dict) or not curr_args.get("server"):
+                return None
+            key_argument = str(curr_args["server"])
+        case "ReadMcpResource":
+            if not isinstance(curr_args, dict) or not curr_args.get("uri"):
+                return None
+            key_argument = str(curr_args["uri"])
         case _:
             if isinstance(json_content, streamingjson.Lexer):
                 # lexer.json_content is list[str] based on streamingjson source code

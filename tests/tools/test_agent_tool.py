@@ -1664,7 +1664,9 @@ async def test_agent_tool_returns_error_when_final_response_is_none(
     )
 
     assert result.is_error
-    assert result.message == "Agent completed but produced no output."
+    assert result.message.startswith("Agent completed but produced no output.")
+    # subagent-2: a failed child still reports its accumulated (here zero) spend.
+    assert "child_tokens:" in result.message
 
 
 # ---------------------------------------------------------------------------

@@ -2,8 +2,39 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass
+
+# Zero-width and bidi-override characters used to smuggle hidden instructions past a
+# human reviewer (the highest-confidence injection signal). Stripped from all untrusted
+# content before it reaches the model. Shared with the memory scanner, which BLOCKS on
+# them when deciding what to persist; tool-output ingress only STRIPS them.
+INVISIBLE_CHARS = frozenset(
+    chr(c)
+    for c in (
+        0x200B,
+        0x200C,
+        0x200D,
+        0x2060,
+        0xFEFF,
+        0x202A,
+        0x202B,
+        0x202C,
+        0x202D,
+        0x202E,
+    )
+)
+_INVISIBLE_TRANSLATION = dict.fromkeys((ord(c) for c in INVISIBLE_CHARS), None)
+
+
+def strip_invisible_chars(text: str) -> str:
+    """Remove zero-width / bidi-override characters (the invisible injection vector).
+
+    Used both by the untrusted-data wrapper and by trusted-but-injected surfaces
+    such as the merged AGENTS.md, which lands in the system prompt verbatim.
+    """
+    return text.translate(_INVISIBLE_TRANSLATION)
 
 
 @dataclass(frozen=True)
@@ -19,5 +50,30 @@ class UntrustedData:
 
     def render_for_prompt(self) -> str:
         nonce = uuid.uuid4().hex[:8]
-        safe_content = self.raw_content.replace("</untrusted_data>", "&lt;/untrusted_data&gt;")
+        # Neutralize invisible/bidi unicode before wrapping. Strip, do not block:
+        # legitimate external content (security advisories, this repo's own test
+        # fixtures) may contain visible "injection-like" prose, which the wrapper
+        # marks as data — only the invisible smuggling vector is removed outright.
+        cleaned = strip_invisible_chars(self.raw_content)
+        safe_content = cleaned.replace("</untrusted_data>", "&lt;/untrusted_data&gt;")
         return f'<untrusted_data id="{nonce}">\n{safe_content}\n</untrusted_data>'
+
+
+_UNTRUSTED_OPEN_RE = re.compile(r'^<untrusted_data id="[0-9a-f]+">\n')
+_UNTRUSTED_CLOSE = "\n</untrusted_data>"
+
+
+def strip_untrusted_envelope(text: str) -> str:
+    """Inverse of :meth:`UntrustedData.render_for_prompt`, for display surfaces.
+
+    The wrapper is model-facing only: it must never reach the TUI or ACP/IDE
+    clients. Apply this at the single render boundary so renderers receive clean
+    content while the model still gets the wrapped form. Removes the
+    ``<untrusted_data id="...">`` envelope and restores the escaped inner closing
+    tag. A no-op when the envelope is absent (most tool output is not wrapped).
+    """
+    open_match = _UNTRUSTED_OPEN_RE.match(text)
+    if open_match is None or not text.endswith(_UNTRUSTED_CLOSE):
+        return text
+    inner = text[open_match.end() : -len(_UNTRUSTED_CLOSE)]
+    return inner.replace("&lt;/untrusted_data&gt;", "</untrusted_data>")

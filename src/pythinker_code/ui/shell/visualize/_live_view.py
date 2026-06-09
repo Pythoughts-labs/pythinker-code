@@ -61,6 +61,7 @@ from pythinker_code.ui.shell.visualize._blocks import (
     _ProgressNoteBlock,
     _QuestionAnsweredBlock,
     _StatusBlock,
+    _SuggestionBlock,
     _ToolCallBlock,
 )
 from pythinker_code.ui.shell.visualize._question_panel import (
@@ -97,6 +98,7 @@ from pythinker_code.wire.types import (
     StepInterrupted,
     StepRetry,
     SubagentEvent,
+    Suggestion,
     TextPart,
     ThinkPart,
     ToolCall,
@@ -681,10 +683,10 @@ class _LiveView:
         latest_todos = tuple(
             todo
             for todo in getattr(self, "_latest_todos", ())
-            if todo.status in ("done", "in_progress", "pending") and todo.title.strip()
+            if todo.status in ("done", "in_progress", "pending", "cancelled") and todo.title.strip()
         )
         active_todo = next((todo for todo in latest_todos if todo.status == "in_progress"), None)
-        status_order = {"in_progress": 0, "pending": 1, "done": 2}
+        status_order = {"in_progress": 0, "pending": 1, "cancelled": 2, "done": 3}
         ordered_todos = tuple(
             sorted(
                 enumerate(latest_todos),
@@ -739,6 +741,10 @@ class _LiveView:
     ) -> Text:
         if todo.status == "done":
             icon = "✓"
+            icon_token = "muted"
+            title_style = tui_rich_style("muted") + Style(strike=True)
+        elif todo.status == "cancelled":
+            icon = "✕"
             icon_token = "muted"
             title_style = tui_rich_style("muted") + Style(strike=True)
         elif todo.status == "in_progress":
@@ -912,6 +918,8 @@ class _LiveView:
                 self.display_question_answered(msg)
             case ProgressNote():
                 self.display_progress_note(msg)
+            case Suggestion():
+                self.display_suggestion(msg)
             case HookTriggered():
                 self.append_hook_triggered(msg)
             case HookResolved():
@@ -1297,6 +1305,13 @@ class _LiveView:
         self.flush_content()
         self.flush_finished_tool_calls()
         block = _ProgressNoteBlock(event)
+        _print_action_block(block.compose())
+        self.refresh_soon()
+
+    def display_suggestion(self, event: Suggestion) -> None:
+        self.flush_content()
+        self.flush_finished_tool_calls()
+        block = _SuggestionBlock(event)
         _print_action_block(block.compose())
         self.refresh_soon()
 

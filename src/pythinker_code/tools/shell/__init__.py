@@ -89,6 +89,13 @@ class Shell(CallableTool2[Params]):
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
         builder = ToolResultBuilder()
+        # Foreground command output is non-idempotent and unrecoverable once
+        # truncated (re-running a build/test is expensive/non-deterministic), so
+        # spill the full output to disk with a recovery hint on overflow.
+        builder.enable_spill(
+            self._runtime.session.dir / "tool-output",
+            "powershell" if self._is_powershell else "bash",
+        )
 
         if not params.command:
             return builder.error("Command cannot be empty.", brief="Empty command")
@@ -150,10 +157,20 @@ class Shell(CallableTool2[Params]):
             builder.write(line_str)
             emit_output_part("stderr", line_str)
 
+        # Command stdout/stderr is the largest untrusted-input vector in a coding
+        # agent (build/test/git output, output from untrusted dependencies). Wrap
+        # the aggregated model-facing result in <untrusted_data>; the live UI stream
+        # via emit_output_part above stays untagged.
+        builder.mark_untrusted()
+
         try:
             exitcode = await self._run_shell_command(
                 params.command, stdout_cb, stderr_cb, params.timeout
             )
+
+            # Output is fully captured now; spill it to disk off the event loop before
+            # building the result so a multi-MB write does not block the loop in ok()/error().
+            await builder.spill_to_disk()
 
             if exitcode == 0:
                 return builder.ok("Command executed successfully.", status=ToolResultStatus.success)

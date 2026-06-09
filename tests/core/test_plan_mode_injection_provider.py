@@ -10,6 +10,8 @@ from pythinker_core.message import Message, TextPart
 from pythinker_code.soul.dynamic_injections.plan_mode import (
     PlanModeInjectionProvider,
     _full_reminder,
+    _reentry_reminder,
+    _sparse_reminder,
 )
 
 
@@ -131,3 +133,21 @@ class TestPlanModeInjectionProvider:
 
         await provider.get_injections([], soul)
         assert provider._inject_count == 0
+
+
+class TestPlanModeVerificationClause:
+    """planning-1 backfill: lock the mandatory Verification-section requirement
+    into every plan-mode reminder variant so it cannot silently drift out of the
+    authoring instructions the human reviews."""
+
+    def test_full_reminder_requires_verification_section(self) -> None:
+        text = _full_reminder("/tmp/plan.md", False)
+        assert "Verification section" in text
+        # It must be part of the plan-authoring workflow step, not an aside.
+        assert "The plan MUST include a Verification section" in text
+
+    def test_sparse_reminder_requires_verification_section(self) -> None:
+        assert "Verification section" in _sparse_reminder("/tmp/plan.md")
+
+    def test_reentry_reminder_requires_verification_section(self) -> None:
+        assert "Verification section" in _reentry_reminder("/tmp/plan.md")

@@ -45,6 +45,7 @@ from pythinker_code.subagents.store import SubagentStore
 from pythinker_code.utils.environment import Environment
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.path import find_project_root, is_within_directory, list_directory
+from pythinker_code.utils.trust import strip_invisible_chars
 from pythinker_code.wire.root_hub import RootWireHub
 
 if TYPE_CHECKING:
@@ -116,7 +117,11 @@ async def load_agents_md(work_dir: HostPath) -> str | None:
         for path in (d / "AGENTS.md", d / "agents.md"):
             if not await path.is_file():
                 continue
-            content = (await path.read_text(encoding="utf-8", errors="replace")).strip()
+            # AGENTS.md is merged verbatim into the system prompt, so neutralize the
+            # invisible-unicode smuggling vector on ingestion (injdef-4). Visible prose
+            # is kept — AGENTS.md is user-authored project config, not blocked.
+            raw = await path.read_text(encoding="utf-8", errors="replace")
+            content = strip_invisible_chars(raw).strip()
             if content:
                 discovered.append((path, content))
                 logger.info("Loaded agents.md: {path}", path=path)

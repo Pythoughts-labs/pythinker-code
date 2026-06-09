@@ -426,25 +426,125 @@ def get_local_specialization(skill: Skill, skills_by_name: dict[str, Skill]) -> 
 async def read_skill_text_with_local_specialization(
     skill: Skill, skills_by_name: dict[str, Skill]
 ) -> str | None:
-    """Read a skill, appending its ``<name>-local`` specialization when present."""
+    """Read a skill body for injection into the model context.
+
+    Appends, in order: the ``<name>-local`` specialization when present, then a
+    bundled-resource manifest (:func:`render_skill_resource_manifest`). Centralizing
+    both here keeps every injection path consistent — the ReadSkill tool, the
+    slash-command skill runner, and post-compaction skill restoration all share
+    this function, so the resource manifest surfaces identically across them.
+    """
     skill_text = await read_skill_text(skill)
     if skill_text is None:
         return None
 
     local_skill = get_local_specialization(skill, skills_by_name)
-    if local_skill is None:
-        return skill_text
+    if local_skill is not None:
+        local_text = await read_skill_text(local_skill)
+        if local_text is None:
+            logger.warning(
+                "Failed to read local specialization {name} for skill {skill}",
+                name=local_skill.name,
+                skill=skill.name,
+            )
+        else:
+            skill_text = (
+                f"{skill_text}\n\n---\n\n# Local specialization: {local_skill.name}\n\n{local_text}"
+            )
 
-    local_text = await read_skill_text(local_skill)
-    if local_text is None:
-        logger.warning(
-            "Failed to read local specialization {name} for skill {skill}",
-            name=local_skill.name,
-            skill=skill.name,
+    manifest = await render_skill_resource_manifest(skill)
+    if manifest:
+        skill_text = f"{skill_text}\n\n---\n\n{manifest}"
+    return skill_text
+
+
+def _host_supports_dir_listing() -> bool:
+    """Whether the active Host backend can cheaply enumerate a skill's resource dir.
+
+    Mirrors :func:`_supports_builtin_skills`: local and ACP backends list a
+    directory cheaply, whereas remote/SSH-style backends would pay a round trip
+    per entry, so the manifest degrades to nothing there.
+    """
+    return get_current_host().name in (local_host.name, "acp")
+
+
+SKILL_RESOURCE_MANIFEST_CAP = 10
+"""Max resource entries shown in a ReadSkill manifest before it is summarized."""
+
+_SKILL_RESOURCE_SCAN_CEILING = 500
+"""Defensive bound on how many directory entries the manifest walk inspects
+before giving up, so a pathological skill tree cannot stall the walk."""
+
+
+async def render_skill_resource_manifest(skill: Skill) -> str:
+    """Render a base-directory anchor and sampled file manifest for *skill*.
+
+    Returned text is appended after the SKILL.md body so a model that loads a
+    skill referencing ``scripts/rotate_pdf.py`` or ``references/aws.md`` gets a
+    runtime signal those files exist and where relative paths resolve, instead of
+    improvising a directory listing or silently skipping the resource.
+
+    Returns ``""`` (and the caller omits the section) when there is nothing to
+    show: a non-subdirectory (flat) skill, a host that cannot cheaply enumerate
+    directories, a skill whose directory holds only ``SKILL.md``, or any
+    enumeration error. Best-effort by design — never raises.
+    """
+    # Only subdirectory-form skills own a private resource directory. Flat ".md"
+    # skills set ``dir`` to the shared skills root, so enumerating it would leak
+    # every other flat skill's files.
+    if skill.skill_md_file.name != "SKILL.md":
+        return ""
+    if not _host_supports_dir_listing():
+        return ""
+
+    files: list[str] = []
+    inspected = 0
+    hit_ceiling = False
+    try:
+        async for entry in skill.dir.glob("**/*"):
+            inspected += 1
+            if inspected > _SKILL_RESOURCE_SCAN_CEILING:
+                hit_ceiling = True
+                break
+            try:
+                if not await entry.is_file():
+                    continue
+            except OSError:
+                continue
+            rel = str(entry.relative_to(skill.dir))
+            if rel == "SKILL.md":
+                continue
+            files.append(rel)
+    except OSError as exc:
+        logger.info(
+            "Skipping skill resource manifest for {name}: {error}",
+            name=skill.name,
+            error=exc,
         )
-        return skill_text
+        return ""
 
-    return f"{skill_text}\n\n---\n\n# Local specialization: {local_skill.name}\n\n{local_text}"
+    if not files:
+        return ""
+
+    files.sort()
+    shown = files[:SKILL_RESOURCE_MANIFEST_CAP]
+    lines = [
+        f"Base directory: {skill.dir}",
+        "Relative paths referenced in this skill (e.g. scripts/, references/, "
+        "assets/) resolve against that base directory; read them with ReadFile.",
+        "",
+        "Bundled resources:",
+    ]
+    lines.extend(f"- {rel}" for rel in shown)
+    if hit_ceiling:
+        # The walk stopped early, so we cannot give an exact remaining count.
+        lines.append(
+            f"- … (scan stopped at {_SKILL_RESOURCE_SCAN_CEILING} entries; more files "
+            "may exist — list the base directory to see them all)"
+        )
+    elif len(files) > len(shown):
+        lines.append(f"- … and {len(files) - len(shown)} more file(s) under the base directory")
+    return "\n".join(lines)
 
 
 class Skill(BaseModel):

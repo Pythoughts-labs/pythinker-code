@@ -47,10 +47,14 @@ def test_default_config_dump():
             "providers": {},
             "loop_control": {
                 "max_steps_per_turn": 1000,
+                "max_consecutive_failures": 8,
                 "max_retries_per_step": 3,
                 "max_ralph_iterations": 0,
                 "reserved_context_size": 50000,
                 "compaction_trigger_ratio": 0.85,
+                "prune_trigger_ratio": 0.7,
+                "prune_protect_last": 20,
+                "prune_min_chars": 2000,
             },
             "background": {
                 "max_running_tasks": 4,
@@ -79,6 +83,7 @@ def test_default_config_dump():
                 "harvest_on_compaction": False,
                 "journal_recaps": False,
                 "consolidation": False,
+                "durable_memory": False,
             },
             "web": {"allowed_domains": None},
             "feedback": {

@@ -14,7 +14,9 @@ from pythinker_code.utils.logging import logger
 
 class Todo(BaseModel):
     title: str = Field(description="The title of the todo", min_length=1)
-    status: Literal["pending", "in_progress", "done"] = Field(description="The status of the todo")
+    status: Literal["pending", "in_progress", "done", "cancelled"] = Field(
+        description="The status of the todo"
+    )
 
 
 class Params(BaseModel):
@@ -62,9 +64,13 @@ class SetTodoList(CallableTool2[Params]):
         done = sum(1 for todo in todos if todo.status == "done")
         in_progress = sum(1 for todo in todos if todo.status == "in_progress")
         pending = sum(1 for todo in todos if todo.status == "pending")
-        details = [
-            f"items: {len(todos)}; done: {done}; in_progress: {in_progress}; pending: {pending}",
-        ]
+        cancelled = sum(1 for todo in todos if todo.status == "cancelled")
+        summary = (
+            f"items: {len(todos)}; done: {done}; in_progress: {in_progress}; pending: {pending}"
+        )
+        if cancelled:
+            summary += f"; cancelled: {cancelled}"
+        details = [summary]
         active = next((todo.title for todo in todos if todo.status == "in_progress"), None)
         if active is None:
             active = next((todo.title for todo in todos if todo.status == "pending"), None)

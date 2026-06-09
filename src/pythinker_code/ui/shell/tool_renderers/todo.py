@@ -5,6 +5,7 @@ Renders the todo list with aligned status icons:
 * ``○`` pending
 * ``◐`` in_progress (highlighted)
 * ``●`` done (success)
+* ``⊘`` cancelled (dimmed, struck through)
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ _ICONS = {
     "pending": "○",
     "in_progress": "◐",
     "done": "●",
+    "cancelled": "⊘",
 }
 
 _TREE_BRANCH = "├─"
@@ -49,6 +51,8 @@ def _icon_token(status: str) -> str:
         return "success"
     if status == "in_progress":
         return "activity_verb"
+    if status == "cancelled":
+        return "dim"
     return "muted"
 
 
@@ -70,6 +74,10 @@ def _status_title(status: str, title: str) -> Text:
     if status == "in_progress":
         out = fg("activity_label", title)
         out.stylize("bold")
+        return out
+    if status == "cancelled":
+        out = fg("dim", title)
+        out.stylize("strike")
         return out
     return fg("tool_output", title)
 
@@ -98,7 +106,7 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
     items: list[dict[str, Any]] = [
         cast("dict[str, Any]", t) for t in todos_list if isinstance(t, dict)
     ]
-    counts = {"pending": 0, "in_progress": 0, "done": 0}
+    counts = {"pending": 0, "in_progress": 0, "done": 0, "cancelled": 0}
     for item in items:
         status = as_str(item.get("status")) or "pending"
         if status in counts:
@@ -116,6 +124,8 @@ def _render_call(ctx: ToolRenderContext) -> RenderableType:
         badge += f" · {counts['in_progress']} active"
     if counts["pending"]:
         badge += f" · {counts['pending']} pending"
+    if counts["cancelled"]:
+        badge += f" · {counts['cancelled']} cancelled"
     header = tool_call_header("todos", fg("muted", badge), style_token=style_token)
 
     visible = items if ctx.expanded else items[:_DEFAULT_COLLAPSED_LINES]

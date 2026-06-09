@@ -370,6 +370,11 @@ class LoopControl(BaseModel):
         validation_alias=AliasChoices("max_steps_per_turn", "max_steps_per_run"),
     )
     """Maximum number of steps in one turn"""
+    max_consecutive_failures: int = Field(default=8, ge=0)
+    """Yield to the user after this many consecutive steps in which *every* tool
+    call failed (a degenerate stuck loop), instead of continuing to
+    ``max_steps_per_turn``. The turn ends with a ``stuck`` outcome and a handoff
+    summary of what was tried. ``0`` disables the backstop. Default: 8."""
     max_retries_per_step: int = Field(default=3, ge=1)
     """Maximum number of retries in one step"""
     max_ralph_iterations: int = Field(default=0, ge=-1)
@@ -382,6 +387,18 @@ class LoopControl(BaseModel):
     """Context usage ratio threshold for auto-compaction. Default is 0.85 (85%).
     Auto-compaction triggers when context_tokens >= max_context_size * compaction_trigger_ratio
     or when context_tokens + reserved_context_size >= max_context_size."""
+    prune_trigger_ratio: float = Field(default=0.7, ge=0.0, le=0.99)
+    """Context usage ratio at which the cheap stale-tool-output prune tier runs,
+    *before* full LLM summarization. Large completed tool-result bodies in deep
+    history are replaced with a short placeholder, deferring or avoiding the
+    lossy summary. Set at or above ``compaction_trigger_ratio`` to disable the
+    tier. Default is 0.7 (70%)."""
+    prune_protect_last: int = Field(default=20, ge=0)
+    """Number of most-recent messages the prune tier never touches (recent tool
+    output stays at full fidelity). Default: 20."""
+    prune_min_chars: int = Field(default=2000, ge=0)
+    """Only tool outputs whose text exceeds this many characters are pruned, so
+    small results are left intact. Default: 2000."""
 
 
 class BackgroundConfig(BaseModel):
@@ -451,6 +468,25 @@ class MemoryConfig(BaseModel):
         default=False,
         description="Enable approval-gated memory inbox consolidation helpers.",
     )
+    durable_memory: bool = Field(
+        default=False,
+        description=(
+            "Opt-in 'durable memory' profile: enable cross-session persistence by turning on "
+            "harvest_on_compaction + journal_recaps together, without changing their privacy-"
+            "preserving defaults. Consolidation (which writes durable MEMORY.md and is approval-"
+            "gated) stays separately opt-in. Set the individual flags directly for finer control."
+        ),
+    )
+
+    @property
+    def harvest_enabled(self) -> bool:
+        """Whether compaction should harvest, honoring the durable-memory profile."""
+        return self.harvest_on_compaction or self.durable_memory
+
+    @property
+    def journal_enabled(self) -> bool:
+        """Whether session recaps should be journaled, honoring the durable-memory profile."""
+        return self.journal_recaps or self.durable_memory
 
 
 class PythinkerAISearchConfig(BaseModel):

@@ -45,6 +45,20 @@ IMPORTANT:
 - If you don't know the answer, say so directly."""
 
 
+MAX_STEPS_HANDOFF_REMINDER = """\
+You have hit the step limit for this turn and are being paused before the work is
+finished. Write a short handoff for the human who will resume:
+- what you accomplished so far
+- what still remains
+- the single most useful next step
+
+IMPORTANT:
+- Do NOT call any tools. All tool calls are disabled and will be rejected.
+  Tool definitions are visible only for technical reasons (prompt cache).
+- Respond ONLY with text, grounded in the work already done this turn.
+- Be concise (a few sentences or short bullets) and do not start new work."""
+
+
 # ---------------------------------------------------------------------------
 # DenyAllToolset: advertises tools (cache match) but rejects every call
 # ---------------------------------------------------------------------------
@@ -77,17 +91,22 @@ class _DenyAllToolset:
 
 
 def _build_btw_context(
-    soul: PythinkerSoul, question: str
+    soul: PythinkerSoul,
+    question: str,
+    *,
+    system_reminder_text: str = SIDE_QUESTION_SYSTEM_REMINDER,
 ) -> tuple[str, list[Message], _DenyAllToolset]:
     """Build (system_prompt, history, toolset) aligned with the main agent.
 
     Uses the same system_prompt, normalize_history(), and tool definitions
     as ``PythinkerSoul._step`` so the LLM provider can reuse the prompt cache.
+    ``system_reminder_text`` selects the framing (side question vs. max-steps
+    handoff); both run tools-denied over the current history.
     """
     system_prompt = soul._agent.system_prompt  # pyright: ignore[reportPrivateUsage]
     effective_history = normalize_history(soul.context.history)
 
-    wrapped = f"{system_reminder(SIDE_QUESTION_SYSTEM_REMINDER).text}\n\n{question}"
+    wrapped = f"{system_reminder(system_reminder_text).text}\n\n{question}"
     side_message = Message(role="user", content=wrapped)
 
     toolset = _DenyAllToolset(soul._agent.toolset.tools)  # pyright: ignore[reportPrivateUsage]
@@ -104,6 +123,8 @@ async def execute_side_question(
     soul: PythinkerSoul,
     question: str,
     on_text_chunk: Callable[[str], None] | None = None,
+    *,
+    system_reminder_text: str = SIDE_QUESTION_SYSTEM_REMINDER,
 ) -> tuple[str | None, str | None]:
     """Execute a side question and return (response, error).
 
@@ -124,7 +145,9 @@ async def execute_side_question(
 
     try:
         chat_provider = soul._runtime.llm.chat_provider  # pyright: ignore[reportPrivateUsage]
-        system_prompt, history, toolset = _build_btw_context(soul, question)
+        system_prompt, history, toolset = _build_btw_context(
+            soul, question, system_reminder_text=system_reminder_text
+        )
 
         text_chunks: list[str] = []
 
@@ -181,6 +204,25 @@ async def execute_side_question(
         report_handled_error(e, site="soul.btw.execute")
         logger.warning("Side question failed: {error}", error=e)
         return None, str(e)
+
+
+async def generate_max_steps_handoff(soul: PythinkerSoul) -> str | None:
+    """Produce a brief, tools-disabled progress/handoff summary after the step
+    ceiling is hit, so the human who resumes need not reconstruct state.
+
+    Reuses the side-question (tools-denied, bounded) mechanism, so the summary
+    turn cannot itself re-hit the step ceiling or mutate the workspace, and it is
+    not written to the main context. Returns the summary text, or ``None`` if it
+    could not be produced (the caller should fall back to the static line).
+    """
+    response, error = await execute_side_question(
+        soul,
+        "Provide your handoff summary now.",
+        system_reminder_text=MAX_STEPS_HANDOFF_REMINDER,
+    )
+    if error:
+        logger.warning("Max-steps handoff summary unavailable: {error}", error=error)
+    return response
 
 
 def _tool_result_to_message(tool_result: ToolResult) -> Message:

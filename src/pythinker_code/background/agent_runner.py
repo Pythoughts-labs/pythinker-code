@@ -20,6 +20,7 @@ from pythinker_code.subagents.runner import (
     _SUMMARY_MIN_LENGTH_DEFAULT,
     run_with_summary_continuation,
 )
+from pythinker_code.subagents.usage import format_usage_lines
 from pythinker_code.utils.logging import logger
 from pythinker_code.wire import Wire
 
@@ -219,6 +220,11 @@ class BackgroundAgentRunner:
             )
             output.stage("failed: empty output")
             return
+        # Surface this child's total LLM spend so the orchestrating parent can budget a
+        # fan-out instead of discovering it on the bill — parity with the foreground
+        # runner. Background results are read later via TaskOutput, so the spend rides in
+        # the written transcript rather than the immediate (launch-stub) tool return.
+        output.usage(format_usage_lines("child", soul.cumulative_usage, soul.model_name))
         output.summary(final_response)
         self._manager.finalize_agent_task(self._task_id, self._agent_id, outcome="completed")
 

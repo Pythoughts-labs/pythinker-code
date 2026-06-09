@@ -488,7 +488,12 @@ def test_replay_streams_wire_history(tmp_path) -> None:
                         "tool_call_id": "tc-1",
                         "return_value": {
                             "is_error": False,
-                            "output": "ok\n",
+                            "output": """\
+<untrusted_data id="<NONCE>">
+ok
+
+</untrusted_data>\
+""",
                             "message": "Command executed successfully.",
                             "display": [],
                             "extras": {"status": "success"},

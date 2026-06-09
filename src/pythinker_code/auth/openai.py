@@ -23,6 +23,7 @@ from pythinker_code.auth.oauth import (
     OAuthToken,
     OAuthUnauthorized,
     delete_tokens,
+    load_tokens,
     save_tokens,
 )
 from pythinker_code.auth.platforms import (
@@ -220,6 +221,11 @@ def _build_authorize_url(
             "codex_cli_simplified_flow": "true",
             "id_token_add_organizations": "true",
             "originator": "codex_cli_rs",
+            # Force a fresh login screen instead of silently reusing the browser's
+            # existing ChatGPT session. Without this, `/login` cannot switch
+            # accounts: OpenAI re-authorizes whoever is already signed in and
+            # hands back a fresh token for the *same* account.
+            "prompt": "login",
             "redirect_uri": redirect_uri,
             "response_type": "code",
             "scope": scope,
@@ -792,6 +798,10 @@ async def _finish_chatgpt_login(
     config: Config, token_payload: dict[str, Any]
 ) -> AsyncIterator[OAuthEvent]:
     token = _token_from_openai_response(token_payload)
+    # Capture the previously logged-in account before overwriting it so we can
+    # tell the user whether `/login` actually switched accounts.
+    previous = load_tokens(OAuthRef(storage="file", key=OPENAI_CHATGPT_OAUTH_KEY))
+    previous_account_id = previous.account_id if previous else None
     oauth_ref = save_tokens(OAuthRef(storage="file", key=OPENAI_CHATGPT_OAUTH_KEY), token)
 
     try:
@@ -819,7 +829,20 @@ async def _finish_chatgpt_login(
         thinking=thinking,
     )
     save_config(config)
-    yield OAuthEvent("success", f"OpenAI ChatGPT configured with model {selected_model.id}.")
+
+    new_account_id = token.account_id
+    if previous_account_id and new_account_id and previous_account_id == new_account_id:
+        yield OAuthEvent(
+            "info",
+            "Signed in as the same ChatGPT account as before. To switch accounts, sign out "
+            "of ChatGPT in your browser or use a private/incognito window (or the device-code "
+            "option), then run /login again.",
+        )
+    account_suffix = f" for account {new_account_id[:8]}" if new_account_id else ""
+    yield OAuthEvent(
+        "success",
+        f"OpenAI ChatGPT configured{account_suffix} with model {selected_model.id}.",
+    )
 
 
 async def login_openai_browser(

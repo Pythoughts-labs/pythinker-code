@@ -146,13 +146,24 @@ class FetchURL(CallableTool2[Params]):
                 return ret
             logger.warning("Failed to fetch URL via service: {error}", error=ret.message)
             # fallback to local fetch if service fetch fails
-        return await self.fetch_with_http_get(params, self._allowed_domains)
+        return await self.fetch_with_http_get(
+            params,
+            self._allowed_domains,
+            spill_dir=self._runtime.session.dir / "tool-output",
+        )
 
     @staticmethod
     async def fetch_with_http_get(
-        params: Params, allowed_domains: list[str] | None = None
+        params: Params,
+        allowed_domains: list[str] | None = None,
+        *,
+        spill_dir: Path | None = None,
     ) -> ToolReturnValue:
         builder = ToolResultBuilder(max_line_length=None)
+        # A fetched page is dynamic/rate-limited, so a truncated tail is hard to
+        # recover by re-fetching; spill the full page to disk with a recovery hint.
+        if spill_dir is not None:
+            builder.enable_spill(spill_dir, "web_fetch")
         # Validate the initial URL up front so a disallowed host is rejected
         # before any network session is opened; the redirect helper below
         # re-validates every subsequent hop.
@@ -206,6 +217,8 @@ class FetchURL(CallableTool2[Params]):
                     content_type = response.headers.get(aiohttp.hdrs.CONTENT_TYPE, "").lower()
                     if content_type.startswith(("text/plain", "text/markdown")):
                         builder.write(UntrustedData(resp_text).render_for_prompt())
+                        # Spill the full page off the event loop before building the result.
+                        await builder.spill_to_disk()
                         return builder.ok("The returned content is the full content of the page.")
         except TimeoutError:
             logger.warning("FetchURL timed out: url={url}", url=params.url)
@@ -258,6 +271,7 @@ class FetchURL(CallableTool2[Params]):
         assert tool_call is not None, "Tool call is expected to be set"
 
         builder = ToolResultBuilder(max_line_length=None)
+        builder.enable_spill(self._runtime.session.dir / "tool-output", "web_fetch")
         api_key = self._runtime.oauth.resolve_api_key(
             self._service_config.api_key, self._service_config.oauth
         )

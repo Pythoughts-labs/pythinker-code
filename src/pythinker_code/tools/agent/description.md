@@ -72,3 +72,14 @@ When calling explore, specify the desired thoroughness in the prompt:
 - Reading a known file path
 - Searching a small number of known files
 - Tasks that can be completed in one or two direct tool calls
+
+**Effort Scaling — How Many Agents To Spawn**
+
+Match the number of parallel agents to the task's independent subparts, not to ambition:
+
+- Trivial / known path (read a file, one lookup) → no subagent; use direct tools.
+- A single open-ended question → 1 `explore` agent.
+- A bounded comparison, or 2-3 genuinely independent regions → 2-4 agents.
+- Only genuinely broad, cross-cutting work → more, up to the `RunAgents` cap of 8.
+
+Prefer the fewest children that cover the independent objectives — the cap of 8 is a ceiling, not a target. Over-provisioning burns the multi-agent token premium (a fan-out can cost several times a single thread) and produces results you then have to reconcile. Do not launch a subagent for what one or two direct reads or greps would answer.

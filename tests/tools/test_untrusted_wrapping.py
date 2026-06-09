@@ -290,3 +290,26 @@ async def test_untrusted_data_render_matches_tool_envelope(
     assert WRAPPER_RE.match(expected)
     # The inner body must match.
     assert unwrap_untrusted(result.output) == unwrap_untrusted(expected)
+
+
+def test_render_for_prompt_strips_invisible_unicode() -> None:
+    """injdef-3: zero-width / bidi-override characters (the highest-confidence
+    injection-smuggling signal) are stripped from untrusted content at the single
+    wrap choke point, so every wrapped channel is neutralized. Visible text is kept
+    (strip, not block), and the wrapper is still emitted."""
+    from pythinker_code.utils.trust import INVISIBLE_CHARS
+
+    payload = "safe​visible‮text"  # zero-width space + RTL override
+    rendered = UntrustedData(payload).render_for_prompt()
+    inner = unwrap_untrusted(rendered)
+    assert inner == "safevisibletext"
+    assert not any(ch in inner for ch in INVISIBLE_CHARS)
+    assert WRAPPER_RE.match(rendered)
+
+
+def test_memory_scanner_shares_invisible_char_set() -> None:
+    """The memory blocker and the tool-output stripper draw from one source of truth."""
+    from pythinker_code.project_memory import _INVISIBLE_CHARS
+    from pythinker_code.utils.trust import INVISIBLE_CHARS
+
+    assert _INVISIBLE_CHARS is INVISIBLE_CHARS

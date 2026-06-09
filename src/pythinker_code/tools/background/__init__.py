@@ -11,6 +11,7 @@ from pythinker_code.soul.agent import Runtime
 from pythinker_code.soul.approval import Approval
 from pythinker_code.tools.display import BackgroundTaskDisplayBlock
 from pythinker_code.tools.utils import ToolResultStatus, load_desc, tool_error, tool_status_line
+from pythinker_code.utils.trust import UntrustedData
 
 TASK_OUTPUT_PREVIEW_BYTES = 32 << 10
 TASK_OUTPUT_READ_HINT_LINES = 300
@@ -331,22 +332,27 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
         self._runtime.background_tasks.store.write_consumer(params.task_id, consumer)
 
         tool_status = _tool_status_for_view(view)
+        raw_output = _format_task_output(
+            view,
+            tool_status=tool_status,
+            retrieval_status=retrieval_status,
+            output=output,
+            output_path=output_path,
+            full_output_available=full_output_available,
+            output_size_bytes=output_size,
+            output_preview_bytes=output_preview_bytes,
+            output_truncated=output_truncated,
+            offset=offset,
+            next_offset=next_offset,
+            eof=eof,
+        )
+        # Background task stdout/stderr is the same untrusted-input vector as
+        # foreground Shell output. Wrap it so prompt-injection payloads in
+        # command output cannot influence agent behaviour.
+        wrapped_output = UntrustedData(raw_output).render_for_prompt() if raw_output else raw_output
         return ToolReturnValue(
             is_error=False,
-            output=_format_task_output(
-                view,
-                tool_status=tool_status,
-                retrieval_status=retrieval_status,
-                output=output,
-                output_path=output_path,
-                full_output_available=full_output_available,
-                output_size_bytes=output_size,
-                output_preview_bytes=output_preview_bytes,
-                output_truncated=output_truncated,
-                offset=offset,
-                next_offset=next_offset,
-                eof=eof,
-            ),
+            output=wrapped_output,
             message=(
                 "Task snapshot retrieved."
                 if tool_status == ToolResultStatus.long_running_snapshot

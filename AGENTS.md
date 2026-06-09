@@ -54,6 +54,55 @@ subagents, skills, web/visualization UIs, and multi-provider LLM authentication.
   Context7 MCP documentation lookups and targeted web search to verify the latest updates, APIs,
   CI/GitHub Actions behavior, dependency guidance, and best practices relevant to the task.
 
+## Global invariants and tripwires
+
+Always-on, tracked safety and truthfulness invariants — promoted here from the local
+`AGENTS.local` contract so they apply on a fresh clone and in CI, not only where a local file
+exists. They complement the rules above; the full contract, defensive patterns (P1–P7), and PR
+template live in `AGENTS.local` when present.
+
+### Failure truthfulness contract
+
+Observable output must reflect whether an operation succeeded, failed, partially succeeded, or
+degraded.
+
+- Never return success / `true` / `ok` / empty after a required internal step failed; never
+  report healthy when a required dependency is down; never continue startup past a critical
+  initialization failure.
+- Use explicit error contracts that distinguish no-data, invalid input, unauthenticated,
+  unauthorized, forbidden, conflict, timeout, dependency-unavailable, partial failure, and
+  internal error. Prefer typed results, domain exceptions, or status enums over ambiguous
+  `None`/empty/`False` returns. Convert errors at boundaries, not deep in domain logic.
+- Fallbacks are explicit decisions: degraded, stale, estimated, cached, or partial output must
+  carry source/status and be logged — and must never feed authorization or security decisions.
+  Security, approval, signature, and idempotency uncertainty fail closed.
+
+### AI-risk audit tripwires (C01–C15)
+
+Reject or flag for human review any change that exhibits:
+
+- **C01** success returned after a critical internal failure.
+- **C02** silent drop of audit, telemetry, transaction, or security evidence.
+- **C03** broad `except`/catch that swallows errors without logging, recovery, rethrow, or typed conversion.
+- **C04** scattered fallback values that hide dependency failures or weaken guarantees.
+- **C05** hidden flags, debug routes, local shortcuts, or backdoors past auth/validation/limits/audit.
+- **C06** returns that blur no-data, failure, denial, and partial success.
+- **C07** duplicate business-logic paths that can diverge from the primary rule.
+- **C08** background tasks/threads/queues without lifecycle, cancellation, error handling, timeout, and observability.
+- **C09** safety disabled on an environment flag unless narrow, documented, tested, and impossible in production.
+- **C10** startup that continues after critical init failure, or readiness that ignores required-dependency health.
+- **C11** non-determinism in execution-critical paths (unseeded randomness, floating temperature, wall-clock-dependent decisions).
+- **C12** missing source-to-output lineage for outbound payloads, persisted records, and audit events.
+- **C13** degraded/estimated/stale/fallback output presented as authoritative.
+- **C14** tests covering only happy paths — ignoring failure, security, edge, concurrency, and malformed-input cases.
+- **C15** retries around writes without proven idempotency (keys, constraints, dedupe records, atomic operations).
+
+In this codebase the most load-bearing instances are: approvals fail closed and are never
+bypassed (`soul/approval.py`); untrusted content is wrapped/neutralized before the prompt
+(`utils/trust.py`); hooks fail open by design *except* that a `PreToolUse` block result is
+never discarded; background workers must define lifecycle and recovery; and tool/LLM output is
+validated, never trusted.
+
 ## Simplicity and scope discipline
 
 - Before implementing, identify the Minimum Viable Change: the smallest code delta that solves the
@@ -159,14 +208,24 @@ instead of claiming success.
 
 ## Repo map
 
+For the full per-subsystem routing index (entry points, key interfaces, trust boundaries),
+see `docs/en/customization/architecture.md`. This list is a quick orientation only.
+
 - `src/pythinker_code/agents/`: built-in YAML agent specs and prompt files.
 - `src/pythinker_code/auth/`: OAuth/API-key provider integrations.
 - `src/pythinker_code/background/`: background task worker/runtime support.
-- `src/pythinker_code/cli/`: Typer command tree, including MCP, plugin, web, vis, info, export,
-  and terminal commands.
+- `src/pythinker_code/cli/`: Typer command tree (lazy-loaded subcommands `mcp`, `plugin`,
+  `skill`, `web`, `vis`, `info`, `export`, `review`, `secscan`, `security-scan`, `debug`,
+  `update`, plus eager `login`, `logout`, `term`, `acp`).
 - `src/pythinker_code/hooks/`: hook definitions and execution engine.
 - `src/pythinker_code/plugin/`: plugin discovery and installation support.
-- `src/pythinker_code/prompts/`: shared prompt templates.
+- `src/pythinker_code/prompts/`: shared prompt templates (`INIT`, `COMPACT`).
+- `src/pythinker_code/telemetry/`, `src/pythinker_code/notifications/`: opt-out telemetry
+  (OTel + Sentry) and the claim/ack/recover notification delivery queue.
+- `src/pythinker_code/memory/`, `src/pythinker_code/approval_runtime/`,
+  `src/pythinker_code/wire/`, `src/pythinker_code/utils/`: recall/consolidation, the pending-
+  approval source of truth, the Wire event protocol, and shared security-relevant helpers.
+- `src/pythinker_code/deps/`: build-time `Makefile` target that vendors the ripgrep binary.
 - `src/pythinker_code/skill/`, `src/pythinker_code/skills/`: skill discovery, loading, bundled
   skills, and flow-skill support.
 - `src/pythinker_code/soul/`: core runtime loop, context, compaction, approvals, slash commands.
@@ -233,7 +292,9 @@ from the active model, not from a hard-coded list.
 
 - **Supported providers** (`src/pythinker_code/auth/`): `openai` (API + ChatGPT OAuth),
   `anthropic_direct` (API + Anthropic OAuth), `opencode_go` (OAuth), `minimax` (OAuth),
-  `deepseek` (API key), `openrouter` (API key).
+  `deepseek` (API key), `openrouter` (API key), plus `z_ai`, `alibaba`, `moonshot`,
+  `lm_studio`, `ollama` (local), and `github_feedback`. Derive the provider from the active
+  model; never hard-code the list.
 - **Shared token store / refresh**: `OAuthManager` in `src/pythinker_code/auth/oauth.py`.
 - **Platform registry**: `src/pythinker_code/auth/platforms.py` defines `Platform` records and key
   conventions:
@@ -287,12 +348,18 @@ everything sequentially.
 - **Parallelize independent work**: batch unrelated reads/searches/checks in one turn. If an
   investigation needs more than a few tool calls, launch multiple `explore` subagents concurrently
   and synthesize their findings before editing.
-- **Use role-specific subagents**:
+- **Use role-specific subagents** (12 built-ins registered in
+  `src/pythinker_code/agents/default/agent.yaml`):
   - `explore`: read-only mapping, call-site discovery, architecture reconnaissance.
-  - `plan`: evidence-backed implementation strategy and trade-offs.
+  - `scout`: read-only, breadth-first fan-out reconnaissance over many files at once.
+  - `plan` / `planner`: evidence-backed implementation strategy; `planner` decomposes a task
+    into distinct parallel seeds.
   - `coder`: general software-engineering work when the brief still needs judgment.
   - `implementer`: tightly scoped edits from a concrete brief; no drive-by refactors.
-  - `review`: severity-scored read-only critique with suggested fixes.
+  - `debugger`: failure/log/stack-trace root-cause analysis with reproduction evidence.
+  - `review` / `code-reviewer`: severity-scored read-only critique with suggested fixes
+    (`code-reviewer` is diff-focused).
+  - `security-reviewer`: read-only security critique.
   - `verifier`: run tests/lint/build gates and report PASS / FAIL / FLAKY without fixing.
   - `judge`: independent final quality gate for non-trivial code changes, reports, and findings.
 - **Steer with complete prompts**: new subagents do not inherit the full parent transcript by

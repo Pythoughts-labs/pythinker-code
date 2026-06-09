@@ -84,3 +84,36 @@ def test_before_send_drops_normal_queue_shutdown_events() -> None:
     }
 
     assert _before_send(cast(Event, event), cast(Hint, {})) is None
+
+
+def test_init_does_not_register_asyncio_integration(monkeypatch) -> None:
+    """AsyncioIntegration's create_task monkeypatch wraps every coroutine in
+    ``_task_with_sentry_span_creation`` (``result = await coro``). When such a
+    wrapper task is cancelled before its first step — e.g. a freshly re-armed
+    ``WireUISide.receive()`` during turn teardown — the wrapper raises before
+    reaching ``await coro``, orphaning the inner coroutine and emitting spurious
+    "coroutine ... was never awaited" RuntimeWarnings. It must stay out of the
+    integration list (with ``default_integrations=False`` so it can't sneak back
+    in via the defaults either)."""
+    from sentry_sdk.integrations.asyncio import AsyncioIntegration
+
+    import pythinker_code.telemetry.sentry as sentry_mod
+
+    captured: dict[str, object] = {}
+
+    def _fake_init(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(sentry_mod, "_initialized", False)
+    monkeypatch.setattr(sentry_mod, "is_disabled", lambda: False)
+    monkeypatch.setattr(sentry_mod, "sentry_dsn", lambda: "https://pub@example.test/1")
+    monkeypatch.setattr(sentry_mod.sentry_sdk, "init", _fake_init)
+
+    assert sentry_mod.init(version="1.2.3") is True
+
+    assert captured.get("default_integrations") is False
+    integrations = cast(list[object], captured.get("integrations") or [])
+    assert not any(isinstance(i, AsyncioIntegration) for i in integrations), (
+        "AsyncioIntegration must not be registered: its create_task wrapper orphans "
+        "coroutines cancelled before their first step (never-awaited warnings)."
+    )
