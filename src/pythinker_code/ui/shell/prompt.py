@@ -2483,16 +2483,11 @@ class CustomPromptSession:
             *label,
         ]
 
-    def _thinking_footer_label(self) -> str:
-        if self._uses_native_thinking():
-            return "native reasoning"
-        level = self._current_thinking_effort()
-        return "thinking off" if level == "off" else level
-
     def _mode_model_thinking_label(self) -> str:
+        # Thinking effort lives on the input's top-border label, not the footer.
         if not self._model_name:
             return str(self._mode)
-        return f"{self._mode} {self._model_name} • {self._thinking_footer_label()}"
+        return f"{self._mode} {self._model_name}"
 
     def _render_prompt_continuation(
         self,
@@ -3379,22 +3374,18 @@ class CustomPromptSession:
             fragments.extend([(tc.plan_label, "plan"), ("", "  ")])
             remaining -= 6
 
-        # Mode indicator (agent / shell) + model name + thinking indicator.
-        # Degrade gracefully on narrow terminals:
-        #   full: "agent (model-name ○)"  → mid: "agent ○"  → bare: "agent"
+        # Mode indicator (agent / shell) + model name. Thinking effort is shown
+        # on the input's top-border label, not in the footer. Degrade gracefully
+        # on narrow terminals: full "agent (model-name)" → bare "agent".
         tokens = _get_tui_tokens()
         mode_style = f"fg:{tokens.text or tokens.activity_label}"
         secondary_style = f"fg:{tokens.muted}"
         mode = str(self._mode)
         if self._mode == PromptMode.AGENT and self._model_name:
-            thinking_label = self._thinking_footer_label()
-            mode_full = f"{mode} ({self._model_name} • {thinking_label})"
-            mode_mid = f"{mode} {thinking_label}"
+            mode_full = f"{mode} ({self._model_name})"
             if _display_width(mode_full) <= remaining - 2:
                 mode = mode_full
-            elif _display_width(mode_mid) <= remaining - 2:
-                mode = mode_mid
-            # else: keep bare mode name — model_name and thinking label are both dropped
+            # else: keep bare mode name — model_name is dropped
         fragments.extend([(mode_style, mode), ("", "  ")])
         remaining -= _display_width(mode) + 2
 

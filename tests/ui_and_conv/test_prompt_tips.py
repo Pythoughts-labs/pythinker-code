@@ -599,9 +599,10 @@ def test_card_toolbar_agent_label_is_light_and_context_is_muted(monkeypatch: Any
     fragments = list(prompt_session._render_bottom_toolbar())
 
     assert (f"fg:{tokens.muted}", "context: 0.0%") in fragments
+    # Footer shows mode + model only; thinking effort lives on the top border.
     assert (
         f"fg:{tokens.text or tokens.activity_label}",
-        "agent fast-model • thinking off",
+        "agent fast-model",
     ) in fragments
 
 
@@ -728,27 +729,28 @@ def test_bottom_toolbar_drops_agent_badge_before_bash_when_narrow(monkeypatch: A
 
 
 def test_mode_shows_full_with_model_name_on_wide_terminal(monkeypatch: Any) -> None:
-    """On a wide terminal the full mode string includes model and thinking effort."""
+    """On a wide terminal the full mode string includes the model, but no effort."""
     session = _make_toolbar_session(model_name="fast-model")
     session._thinking = False
     lines = _render_toolbar_lines(session, 80, monkeypatch)
     assert "fast-model" in lines[1], f"model name missing on wide terminal: {lines[1]!r}"
-    assert "thinking off" in lines[1], f"thinking effort missing on wide terminal: {lines[1]!r}"
+    # Thinking effort is no longer shown in the footer (moved to the top border).
+    assert "thinking" not in lines[1], f"footer should not show thinking effort: {lines[1]!r}"
 
 
-def test_native_reasoning_model_does_not_show_thinking_off(monkeypatch: Any) -> None:
-    session = _make_toolbar_session(
+def test_footer_omits_thinking_effort_for_all_models(monkeypatch: Any) -> None:
+    # Neither controllable nor native-thinking models surface effort in the
+    # footer anymore — the effort signal is the top-border label only.
+    native = _make_toolbar_session(
         model_name="MiniMax M2.7",
         model_capabilities={"always_thinking"},
     )
-    session._thinking = False
-    session._thinking_effort = "off"
-
-    lines = _render_toolbar_lines(session, 100, monkeypatch)
-
+    native._thinking = False
+    native._thinking_effort = "off"
+    lines = _render_toolbar_lines(native, 100, monkeypatch)
     assert "MiniMax M2.7" in lines[1]
-    assert "native reasoning" in lines[1]
-    assert "thinking off" not in lines[1]
+    assert "native reasoning" not in lines[1]
+    assert "thinking" not in lines[1]
 
 
 def test_toolbar_mode_is_light_and_secondary_text_is_muted(monkeypatch: Any) -> None:
@@ -761,17 +763,17 @@ def test_toolbar_mode_is_light_and_secondary_text_is_muted(monkeypatch: Any) -> 
 
     assert (
         f"fg:{tokens.text or tokens.activity_label}",
-        "agent (fast-model • thinking off)",
+        "agent (fast-model)",
     ) in fragments
     assert (f"fg:{tokens.muted} bold", "?") in fragments
     assert (f"fg:{tokens.muted}", ": shortcuts") in fragments
 
 
 def test_mode_drops_model_name_on_narrow_terminal(monkeypatch: Any) -> None:
-    """On a terminal too narrow for the full mode string, model name is dropped but
-    the thinking effort is still shown."""
-    # "agent (a-very-long-model-name-that-is-40-chars • high)" is ~55 cols;
-    # a 30-col terminal forces mid-level degradation.
+    """On a terminal too narrow for "agent (model)", the model name is dropped to
+    the bare mode and the footer never overflows."""
+    # "agent (a-very-long-model-name-that-is-40-chars)" is ~47 cols; a 30-col
+    # terminal can't fit it, so it degrades to the bare mode name.
     long_model = "a-very-long-model-name-that-is-40-chars"
     session = _make_toolbar_session(model_name=long_model)
     session._thinking = True
@@ -779,7 +781,7 @@ def test_mode_drops_model_name_on_narrow_terminal(monkeypatch: Any) -> None:
     assert long_model not in lines[1], (
         f"model name should be dropped on 30-col terminal: {lines[1]!r}"
     )
-    assert "high" in lines[1], f"thinking effort should still appear at mid level: {lines[1]!r}"
+    assert "agent" in lines[1], f"bare mode name should remain: {lines[1]!r}"
     assert _display_width(lines[1]) <= 30
 
 
