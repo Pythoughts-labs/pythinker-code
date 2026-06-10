@@ -17,6 +17,13 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.40.1 (2026-06-10)
+
+- **Windows/Linux native installers: web UI no longer 404s on `/`.** The installer CI froze the app without building the gitignored web/vis frontend bundles, so `pythinker web` opened a browser onto `GET /?token=… → 404 Not Found`. Both installer workflows now build the bundles before PyInstaller (matching the PyPI release flow — pip/wheel installs were never affected), every PyInstaller spec refuses to freeze when the bundles are missing, and a build that still lacks them serves an explanatory page on `/` (with the REST API still reachable under `/api`) instead of a bare 404.
+- **Startup banner renders on legacy Windows consoles.** The `pythinker web` / `pythinker vis` PYTHINKER banner raw-printed Unicode block art, which garbled on legacy code pages (e.g. PowerShell with cp1252) and raised `UnicodeEncodeError` when output was redirected. The banner now honors the existing ASCII-glyph detection (`PYTHINKER_ASCII_UI` / `PYTHINKER_TUI_GLYPHS=ascii` opt-ins included) with width-preserving ASCII fallbacks, and degrades per line instead of crashing when a stream rejects Unicode.
+
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.40.1`, or use the native installer for your platform from the [Releases page](https://github.com/Pythoughts-labs/pythinker-code/releases/latest).
+
 ## 0.40.0 (2026-06-10)
 
 - **Web: same-origin WebSockets accepted, version banner synced to the backend, and token bootstrap race fixed.** The local-mode web server now auto-populates the allowed-origin list (an empty allowlist rejects every `Origin`-bearing request, which previously broke all WebSocket handshakes with a 403). The UI version banner prefers the version the running backend reports (via the config API) over the stale build-time constant, and a transient version-fetch failure no longer permanently disables the backend banner for the session. The initial auth-token bootstrap race that could fail the first request is resolved. `ESC` now reliably terminates only the background tasks spawned by the interrupted turn, and recall context is re-framed so prior-session snippets can't be misread as new instructions.
