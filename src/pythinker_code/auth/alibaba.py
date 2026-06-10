@@ -21,7 +21,9 @@ from pythinker_code.utils.aiohttp import new_client_session
 ALIBABA_BASE_URL = "https://dashscope-us.aliyuncs.com/compatible-mode/v1"
 ALIBABA_CHINA_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 # Shared international (Team Edition) Token Plan endpoint — the default for plan keys.
-ALIBABA_TOKEN_PLAN_BASE_URL = "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+ALIBABA_TOKEN_PLAN_BASE_URL = (
+    "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+)
 ALIBABA_PROVIDER_KEY = managed_provider_key(ALIBABA_PLATFORM_ID)
 ALIBABA_DEFAULT_MODEL_ALIAS = f"{ALIBABA_PLATFORM_ID}/qwen3.7-plus"
 ALIBABA_DEFAULT_CONTEXT = 131_072

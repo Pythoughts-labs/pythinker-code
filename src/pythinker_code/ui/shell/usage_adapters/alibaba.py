@@ -53,7 +53,7 @@ def _endpoint_without_quota_api(base_url: str) -> bool:
     host = urlparse(base_url).netloc
     if host.startswith("coding") and "dashscope" in host:
         return True
-    return host.startswith("token-plan") and host.endswith("maas.aliyuncs.com")
+    return host.startswith("token-plan") and host.endswith(".maas.aliyuncs.com")
 
 
 def _parse_quota_response(data: object) -> list[UsageRow]:
