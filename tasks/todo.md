@@ -752,3 +752,33 @@ split. Highlights:
   truncation + fence-walker dedup, todo-glyph mapping hoist, bullet factory.
 - web config API: optional private-range carve-out for plain-HTTP LAN
   providers (currently CLI-only flow, deliberate).
+
+## 2026-06-10 — ESC interrupt + recall hallucination fixes (fix/web-origins-banner-version)
+
+Root causes (investigated from real session 243fa26d + code trace):
+- "ping" hallucination: RecallInjectionProvider injected "Open todos from
+  recent sessions" + scratch notes containing imperatives ("Wait for both to
+  complete, then synthesize") with no "this is history, not an instruction"
+  framing → model treated it as the current task.
+- ESC: shell RunCancelled handler only prints "Interrupted by user".
+  Background tasks spawned during the turn keep running
+  (kill_all_active exists but is never called on interrupt).
+
+Plan:
+- [x] memory/recall.py: harden recall-block framing (header + open-todos
+      section) → verified: test_build_recall_block_frames_content_as_past_context.
+- [x] background/manager.py: begin_turn / kill_turn_tasks turn registry
+      → verified: 2 new tests in tests/background/test_manager.py.
+- [x] ui/shell/__init__.py: begin_turn before each run_soul; on RunCancelled
+      kill turn tasks + print count → verified: tests/ui_and_conv/test_shell_interrupt_cleanup.py.
+- [x] web/src/bootstrap.tsx: consume ?token= BEFORE React mounts (was a React
+      effect racing useSessions' mount fetches → first-load 401 with stale
+      localStorage token). App.tsx effect removed. dist rebuilt.
+- [x] Verification: 162 pytest green (background, recall, shell suites),
+      ruff + pyright clean on touched files, web tsc -b + biome clean.
+
+Review: ESC now kills background tasks spawned by the interrupted turn only
+(earlier turns' tasks deliberately survive). Recall block is explicitly framed
+as past context so stale todos can't be mistaken for the current request.
+Out of scope (observed, not touched): vis frontend keeps token in URL (no
+race); foreground subagent cancellation already correct via CancelledError.
