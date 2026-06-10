@@ -1,8 +1,31 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 
 from pythinker_code.cli._lazy_group import LazySubcommandGroup
+
+# The web/vis frontends are gitignored build artifacts synced into the package
+# by scripts/build_web.py and scripts/build_vis.py. collect_data_files()
+# silently collects nothing for missing globs, which froze builds whose web UI
+# answered "/" with a 404 (Windows/Linux native installers).
+_REQUIRED_UI_ASSETS = ("web/static/index.html", "vis/static/index.html")
+
+
+def require_ui_assets(package_root: Path | None = None) -> None:
+    """Abort the freeze when the web/vis UI bundles haven't been built."""
+    if package_root is None:
+        package_root = Path(__file__).resolve().parents[1]
+    missing = [rel for rel in _REQUIRED_UI_ASSETS if not (package_root / rel).is_file()]
+    if missing:
+        raise SystemExit(
+            "PyInstaller build aborted: UI bundles missing from pythinker_code "
+            f"({', '.join(missing)}). They are gitignored build artifacts; run "
+            "`make build-web build-vis` before freezing, or the packaged web UI "
+            "will 404 on '/'."
+        )
+
 
 lazy_cli_hiddenimports = [
     module_name

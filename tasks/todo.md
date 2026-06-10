@@ -1,3 +1,61 @@
+# Task: Windows web 404 + PowerShell banner rendering (2026-06-10)
+
+## Diagnosis (verified)
+
+1. **`GET /?token=…` → 404 on Windows.** `src/pythinker_code/web/static/` and
+   `vis/static/` are gitignored build artifacts (`.gitignore:59`); only two
+   `web/static/brand/` files are tracked. `windows-installer.yml` and
+   `linux-installer.yml` freeze with PyInstaller **without building the web/vis
+   frontends** (unlike `release-pythinker-cli.yml`, which sets up Node and runs
+   the builds — the published 0.40.0 PyPI wheel contains all 448 web/static
+   files, so pip installs are fine). `collect_data_files()` silently collects
+   only the brand files → frozen app's `STATIC_DIR.exists()` is True but
+   `index.html` is missing → `StaticFiles(html=True)` 404s on `/`.
+2. **Banner garbled in PowerShell.** `print_banner()` (utils/server.py) raw-
+   prints Unicode block/box art. Verified it cannot encode to cp1252 →
+   UnicodeEncodeError on redirected Windows stdout, garbling in legacy
+   consoles. Existing `ascii_glyphs_enabled()` fallback infra is bypassed.
+   (Alignment itself is correct — all banner lines are exactly equal width;
+   the "long line" in the report was a paste artifact.)
+
+## Plan
+
+- [x] utils/server.py: ASCII fallback translation (1:1 width-preserving) wired
+      to `ascii_glyphs_enabled()` + crash-proof printing on UnicodeEncodeError.
+      → verified: 6 new tests in tests/utils/test_server.py + live cp1252 run
+- [x] web/app.py + vis/app.py: gate mount on `index.html`, serve explanatory
+      503 page instead of bare 404 when assets missing.
+      → verified: tests/web/test_web_ui_assets.py (web + vis)
+- [x] utils/pyinstaller.py helper + root pythinker.spec + both installer specs:
+      fail the freeze loudly when web/vis bundles are missing.
+      → verified: 2 tests in tests/utils/test_pyinstaller_utils.py + default-path run
+- [x] windows-installer.yml + linux-installer.yml: set up Node and build
+      web/vis bundles before PyInstaller (mirrors release-pythinker-cli.yml).
+      → verified: YAML parses; spec syntax parses; spec guard enforces assets
+- [x] CHANGELOG.md Unreleased entry.
+- [x] Run ruff + pyright + targeted pytest.
+- [x] Bonus bug found during run: `print_banner` crashed with TypeError on an
+      all-`<hr>` banner (`max(60, *[])`); fixed + regression test.
+
+## Review
+
+- Verification: `ruff check src tests` clean, `ruff format --check` clean,
+  `pyright` 0 errors on all touched src files (strict mode), typos clean,
+  428 passed / 1 skipped across tests/utils + tests/web + tests/vis.
+- Live repro of the user scenario: `PYTHONIOENCODING=cp1252` run now prints a
+  perfectly aligned ASCII banner instead of raising UnicodeEncodeError.
+- clean-code-guard pass: no violations; one documented exception — the
+  required-UI-assets check is inlined in both installer specs in addition to
+  the shared `require_ui_assets()` helper, because those specs are
+  deliberately self-contained (their own comments forbid importing the shared
+  datas module).
+- Out of scope (observed, not changed): `except (ImportError, Exception)` at
+  utils/server.py get_network_addresses is redundant (Exception covers
+  ImportError) — pre-existing, harmless; `➜`/`⚠` may render double-width in
+  some Windows fonts (cosmetic; ASCII opt-ins now cover it).
+
+---
+
 # Codex TUI adoption — Phase 1 (foundation)
 
 Source of truth: `blackbox/codex-main/codex-rs/tui`. Backlog: user-provided 48-item

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import importlib
 import socket
+import sys
 import textwrap
+
+from pythinker_code.ui.terminal_capabilities import ascii_glyphs_enabled
 
 # Shared "PYTHINKER" wordmark used by the web and vis startup banners.
 PYTHINKER_BANNER_ART = [
@@ -15,6 +18,37 @@ PYTHINKER_BANNER_ART = [
     "<center>██║        ██║      ██║   ██║  ██║██║██║ ╚████║██║  ██╗███████╗██║  ██║",
     "<center>╚═╝        ╚═╝      ╚═╝   ╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝",
 ]
+
+# Single-cell ASCII stand-ins for every non-ASCII character the banners emit.
+# All replacements are 1:1 so box alignment is preserved. Used when the
+# terminal can't render Unicode (legacy Windows code pages such as cp1252,
+# TERM=dumb, or an explicit PYTHINKER_ASCII_UI/PYTHINKER_TUI_GLYPHS opt-in);
+# raw print() of the block art would otherwise garble or raise
+# UnicodeEncodeError on those streams.
+_BANNER_ASCII_FALLBACKS = str.maketrans(
+    {
+        "█": "#",
+        "╔": " ",
+        "╗": " ",
+        "╚": " ",
+        "╝": " ",
+        "║": " ",
+        "═": " ",
+        "➜": ">",
+        "•": "*",
+        "⚠": "!",
+    }
+)
+
+
+def _print_banner_line(text: str) -> None:
+    """Print one banner line, degrading to ASCII if the stream rejects it."""
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+        fallback = text.translate(_BANNER_ASCII_FALLBACKS)
+        print(fallback.encode(encoding, errors="replace").decode(encoding, errors="replace"))
 
 
 def get_address_family(host: str) -> socket.AddressFamily:
@@ -96,8 +130,39 @@ def get_network_addresses() -> list[str]:
     return addresses
 
 
+def missing_ui_page(asset_path: str, build_command: str) -> str:
+    """HTML served on ``/`` when the bundled frontend assets are absent.
+
+    Packaged builds that skipped the frontend build would otherwise answer
+    ``/`` with a bare 404, which reads like a routing bug instead of a
+    packaging one.
+    """
+    return f"""<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Pythinker UI unavailable</title>
+  </head>
+  <body style="font-family: system-ui, sans-serif; max-width: 40rem;
+               margin: 4rem auto; line-height: 1.5;">
+    <h1>UI assets are missing</h1>
+    <p>This Pythinker build was packaged without its frontend bundle
+    (<code>{asset_path}</code> was not found).</p>
+    <p>If you installed a packaged build (Windows installer, winget, scoop,
+    .deb/.rpm), update to the latest release or report this as a packaging
+    bug. When running from source, build the frontend first:</p>
+    <pre><code>{build_command}</code></pre>
+    <p>The REST API is unaffected and remains available under <code>/api</code>.</p>
+  </body>
+</html>
+"""
+
+
 def print_banner(lines: list[str]) -> None:
     """Print a boxed banner with tag conventions (<center>, <nowrap>, <hr>)."""
+    if ascii_glyphs_enabled():
+        lines = [line.translate(_BANNER_ASCII_FALLBACKS) for line in lines]
+
     processed: list[str] = []
     for line in lines:
         if line == "<hr>":
@@ -113,19 +178,21 @@ def print_banner(lines: list[str]) -> None:
         return s.removeprefix("<center>").removeprefix("<nowrap>")
 
     content_lines = [strip_tags(line) for line in processed if line != "<hr>"]
-    width = max(60, *(len(line) for line in content_lines))
+    # The leading 60 lives inside the list: `max(60, *[])` is a TypeError when
+    # every line is an <hr>.
+    width = max([60, *(len(line) for line in content_lines)])
     top = "+" + "=" * (width + 2) + "+"
 
-    print(top)
+    _print_banner_line(top)
     for line in processed:
         if line == "<hr>":
-            print("|" + "-" * (width + 2) + "|")
+            _print_banner_line("|" + "-" * (width + 2) + "|")
         elif line.startswith("<center>"):
             content = line.removeprefix("<center>")
-            print(f"| {content.center(width)} |")
+            _print_banner_line(f"| {content.center(width)} |")
         elif line.startswith("<nowrap>"):
             content = line.removeprefix("<nowrap>")
-            print(f"| {content.ljust(width)} |")
+            _print_banner_line(f"| {content.ljust(width)} |")
         else:
-            print(f"| {line.ljust(width)} |")
-    print(top)
+            _print_banner_line(f"| {line.ljust(width)} |")
+    _print_banner_line(top)

@@ -55,6 +55,27 @@ jobs:
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
+      - name: Set up Node.js (web build)
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # pinned from v6.4.0
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      # The web/vis frontends are gitignored build artifacts; without these
+      # steps PyInstaller froze a binary whose web UI 404'd on "/". The
+      # bundles are arch-independent, so they are built once on the host —
+      # the QEMU container build picks them up from the mounted checkout.
+      # The spec file now also refuses to freeze when the bundles are missing.
+      - name: Build web UI bundle
+        env:
+          PYTHINKER_WEB_STRICT_VERSION: "1"
+          PYTHINKER_WEB_EXPECT_VERSION: ${{ steps.ver.outputs.version }}
+        run: python3 scripts/build_web.py
+
+      - name: Build vis UI bundle
+        run: python3 scripts/build_vis.py
+
       - name: Set up QEMU (aarch64 only)
         if: matrix.qemu
         uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # pinned from v4.1.0
