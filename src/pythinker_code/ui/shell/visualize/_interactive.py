@@ -528,6 +528,17 @@ class _PromptLiveView(_LiveView):
                 self._flush_prompt_refresh()
             return
 
+        # ESC during a running turn cancels the run — same contract as the
+        # raw-key path in _live_view.handle_key_event. should_handle already
+        # verified _cancel_event is not None.
+        if key == "escape":
+            if self._cancel_event is not None:
+                from pythinker_code.telemetry import track
+
+                track("cancel")
+                self._cancel_event.set()
+            return
+
         if key == "c-t":
             self.toggle_pinned_todos()
             self._flush_prompt_refresh()

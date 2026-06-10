@@ -13,6 +13,7 @@ from pythinker_core.tooling.empty import EmptyToolset
 
 from pythinker_code import scratchpad
 from pythinker_code.approval_runtime import get_current_approval_source_or_none
+from pythinker_code.background import TaskRuntime, TaskSpec
 from pythinker_code.soul import MaxStepsReached, RunCancelled
 from pythinker_code.soul.agent import Agent as SoulAgent
 from pythinker_code.soul.approval import ApprovalResult
@@ -880,6 +881,155 @@ async def test_agent_tool_background_rejects_resume_when_instance_is_already_run
     assert result.brief == "Agent already running"
     assert "cannot be resumed concurrently" in result.message
     assert called is False
+
+
+async def test_agent_tool_background_resume_rejection_names_task_and_retrieval_path(
+    agent_tool, runtime, monkeypatch
+):
+    launched = False
+
+    def fake_create_agent_task(**kwargs):
+        nonlocal launched
+        launched = True
+        raise AssertionError("must not launch while the instance is busy")
+
+    monkeypatch.setattr(runtime.background_tasks, "create_agent_task", fake_create_agent_task)
+
+    runtime.subagent_store.create_instance(
+        agent_id="abusybg1",
+        description="running instance",
+        launch_spec=AgentLaunchSpec(
+            agent_id="abusybg1",
+            subagent_type="coder",
+            model_override=None,
+            effective_model=None,
+        ),
+    )
+    runtime.subagent_store.update_instance("abusybg1", status="running_background")
+    spec = TaskSpec(
+        id="agent-busy1",
+        kind="agent",
+        session_id=runtime.session.id,
+        description="busy agent task",
+        tool_call_id="tool-busy",
+        kind_payload={"agent_id": "abusybg1"},
+    )
+    runtime.background_tasks.store.create_task(spec)
+    runtime.background_tasks.store.write_runtime(spec.id, TaskRuntime(status="running"))
+
+    with tool_call_context("Agent"):
+        result = await agent_tool(
+            agent_tool.params(
+                description="resume work",
+                prompt="report your findings",
+                resume="abusybg1",
+                run_in_background=True,
+            )
+        )
+
+    assert result.is_error
+    assert "cannot be resumed concurrently" in result.message
+    assert "agent-busy1" in result.message
+    assert "TaskOutput" in result.message
+    assert launched is False
+
+
+async def test_agent_tool_background_resume_reconciles_stale_record(
+    agent_tool, runtime, monkeypatch
+):
+    runtime.labor_market.add_builtin_type(
+        AgentTypeDefinition(
+            name="coder",
+            description="Good at general software engineering tasks.",
+            agent_file=runtime.subagent_store.root / "coder.yaml",
+            tool_policy=ToolPolicy(mode="inherit"),
+        )
+    )
+    created = []
+
+    def fake_create_agent_task(**kwargs):
+        created.append(kwargs)
+        return SimpleNamespace(
+            spec=SimpleNamespace(id="a-task-2", kind="agent", description=kwargs["description"]),
+            runtime=SimpleNamespace(status="starting"),
+        )
+
+    monkeypatch.setattr(runtime.background_tasks, "create_agent_task", fake_create_agent_task)
+
+    runtime.subagent_store.create_instance(
+        agent_id="astalebg1",
+        description="finished instance",
+        launch_spec=AgentLaunchSpec(
+            agent_id="astalebg1",
+            subagent_type="coder",
+            model_override=None,
+            effective_model=None,
+        ),
+    )
+    runtime.subagent_store.update_instance("astalebg1", status="running_background")
+    spec = TaskSpec(
+        id="agent-stale1",
+        kind="agent",
+        session_id=runtime.session.id,
+        description="finished agent task",
+        tool_call_id="tool-stale",
+        kind_payload={"agent_id": "astalebg1"},
+    )
+    runtime.background_tasks.store.create_task(spec)
+    runtime.background_tasks.store.write_runtime(spec.id, TaskRuntime(status="completed"))
+
+    with tool_call_context("Agent"):
+        result = await agent_tool(
+            agent_tool.params(
+                description="follow-up work",
+                prompt="summarize your findings",
+                resume="astalebg1",
+                run_in_background=True,
+            )
+        )
+
+    assert not result.is_error
+    assert len(created) == 1
+    assert "agent_id: astalebg1" in result.output
+
+
+async def test_agent_tool_foreground_resume_of_background_instance_names_task(
+    agent_tool, runtime
+):
+    runtime.subagent_store.create_instance(
+        agent_id="abusybg2",
+        description="running instance",
+        launch_spec=AgentLaunchSpec(
+            agent_id="abusybg2",
+            subagent_type="coder",
+            model_override=None,
+            effective_model=None,
+        ),
+    )
+    runtime.subagent_store.update_instance("abusybg2", status="running_background")
+    spec = TaskSpec(
+        id="agent-busy2",
+        kind="agent",
+        session_id=runtime.session.id,
+        description="busy agent task",
+        tool_call_id="tool-busy2",
+        kind_payload={"agent_id": "abusybg2"},
+    )
+    runtime.background_tasks.store.create_task(spec)
+    runtime.background_tasks.store.write_runtime(spec.id, TaskRuntime(status="running"))
+
+    result = await agent_tool(
+        agent_tool.params(
+            description="resume work",
+            prompt="report your findings",
+            resume="abusybg2",
+        )
+    )
+
+    assert result.is_error
+    assert "cannot be resumed concurrently" in result.message
+    assert "agent-busy2" in result.message
+    assert "TaskOutput" in result.message
 
 
 async def test_agent_tool_background_resume_marks_running_before_dispatch(

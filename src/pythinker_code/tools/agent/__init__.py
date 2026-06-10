@@ -12,7 +12,11 @@ from pythinker_code.execution_profiles import resolve_execution_policy
 from pythinker_code.soul.agent import Runtime
 from pythinker_code.soul.toolset import get_current_tool_call_or_none
 from pythinker_code.subagents.models import AgentLaunchSpec, AgentTypeDefinition
-from pythinker_code.subagents.runner import ForegroundRunRequest, ForegroundSubagentRunner
+from pythinker_code.subagents.runner import (
+    ForegroundRunRequest,
+    ForegroundSubagentRunner,
+    busy_resume_message,
+)
 from pythinker_code.subagents.usage import summarize_batch
 from pythinker_code.tools.utils import ToolResultStatus, load_desc, tool_status_line
 from pythinker_code.utils.logging import logger
@@ -332,12 +336,15 @@ class AgentTool(CallableTool2[Params]):
             requested_type = params.subagent_type or "coder"
             if params.resume:
                 record = self._runtime.subagent_store.require_instance(params.resume)
+                task_view = None
+                if record.status == "running_background":
+                    task_view = self._runtime.background_tasks.reconcile_stale_agent_record(
+                        record.agent_id
+                    )
+                    record = self._runtime.subagent_store.require_instance(params.resume)
                 if record.status in {"running_foreground", "running_background"}:
                     return ToolError(
-                        message=(
-                            f"Agent instance {record.agent_id} is still {record.status} and cannot "
-                            "be resumed concurrently."
-                        ),
+                        message=busy_resume_message(record, task_view),
                         brief="Agent already running",
                     )
                 actual_type = record.subagent_type
@@ -441,8 +448,10 @@ class AgentTool(CallableTool2[Params]):
                     "one — blocking waits only for that task and freezes the turn until the "
                     "slowest finishes. Return control and rely on the completion notifications."
                 ),
-                f'resume_hint: Use Agent(resume="{agent_id}", prompt="...") to continue this '
-                "instance later.",
+                f"resume_hint: After this task reaches a terminal state, use "
+                f'Agent(resume="{agent_id}", prompt="...") for follow-up work. Its final report '
+                "arrives via the completion notification and TaskOutput — do not resume while it "
+                "is still running.",
             ]
             return ToolReturnValue(
                 is_error=False,

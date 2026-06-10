@@ -688,6 +688,43 @@ class BackgroundTaskManager:
             return
         self._runtime.subagent_store.update_instance(agent_id, status=target)
 
+    def find_agent_task_view(self, agent_id: str) -> TaskView | None:
+        """Return the latest agent task (by creation time) linked to ``agent_id``.
+
+        The link is the ``kind_payload["agent_id"]`` stamped by
+        :meth:`create_agent_task`; the latest view wins because a resumed agent
+        reuses its agent_id across multiple tasks.
+        """
+        candidates = [
+            view
+            for view in self._store.list_views()
+            if view.spec.kind == "agent"
+            and (view.spec.kind_payload or {}).get("agent_id") == agent_id
+        ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda view: view.spec.created_at)
+
+    def reconcile_stale_agent_record(self, agent_id: str) -> TaskView | None:
+        """Mid-session, single-agent counterpart of :meth:`recover`.
+
+        If the latest task linked to ``agent_id`` is already terminal and not
+        owned by a live in-process run, settle a subagent record still parked at
+        ``running_background`` so a resume attempt is not rejected against a
+        record that otherwise only a process restart would reconcile. Returns
+        the latest linked task view, or ``None`` when the agent has no task.
+        """
+        view = self.find_agent_task_view(agent_id)
+        if view is None:
+            return None
+        if view.spec.id in self._live_agent_tasks:
+            return view
+        runtime_status = self._store.read_runtime(view.spec.id).status
+        if not is_terminal_status(runtime_status):
+            return view
+        self._reconcile_subagent_status(agent_id, runtime_status, set())
+        return view
+
     def reconcile(self, *, limit: int | None = None) -> list[str]:
         self.recover()
         published = self.publish_terminal_notifications(limit=limit)

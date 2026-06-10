@@ -214,6 +214,39 @@ async def run_with_summary_continuation(
 # ---------------------------------------------------------------------------
 
 
+def busy_resume_message(record: AgentInstanceRecord, task_view: object | None) -> str:
+    """Actionable rejection text for resuming an instance that is still running.
+
+    Keeps the "cannot be resumed concurrently" marker (callers match on it) and
+    tells the parent how to actually retrieve the result instead of dead-ending.
+    """
+    base = (
+        f"Agent instance {record.agent_id} is still {record.status} and cannot be "
+        "resumed concurrently."
+    )
+    if record.status != "running_background":
+        return base + " Wait for its current run to finish, then resume."
+    if task_view is not None:
+        import time as _time
+
+        task_id = task_view.spec.id  # type: ignore[attr-defined]
+        task_runtime = getattr(task_view, "runtime", None)
+        status = getattr(task_runtime, "status", None) or "non-terminal"
+        started_at = getattr(task_runtime, "started_at", None)
+        age = f", started {int(_time.time() - started_at)}s ago" if started_at else ""
+        return base + (
+            f" Its background task {task_id} is verifiably still {status}{age} — it has NOT"
+            " completed, even if earlier output suggested otherwise. You will be notified"
+            " automatically when it finishes. Use"
+            f' TaskOutput(task_id="{task_id}") for a progress snapshot (block=true only if'
+            " you intend to wait), and resume this instance only after completion."
+        )
+    return base + (
+        " You will be notified automatically when it finishes; use TaskOutput for a"
+        " progress snapshot and resume only after completion."
+    )
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ForegroundRunRequest:
     description: str
@@ -406,11 +439,14 @@ class ForegroundSubagentRunner:
     async def _prepare_instance(self, req: ForegroundRunRequest) -> PreparedInstance:
         if req.resume:
             record = self._store.require_instance(req.resume)
+            task_view = None
+            if record.status == "running_background":
+                manager = getattr(self._runtime, "background_tasks", None)
+                if manager is not None:
+                    task_view = manager.reconcile_stale_agent_record(record.agent_id)
+                    record = self._store.require_instance(req.resume)
             if record.status in {"running_foreground", "running_background"}:
-                raise RuntimeError(
-                    f"Agent instance {record.agent_id} is still {record.status} and cannot be "
-                    "resumed concurrently."
-                )
+                raise RuntimeError(busy_resume_message(record, task_view))
             return PreparedInstance(
                 record=record,
                 actual_type=record.subagent_type,
