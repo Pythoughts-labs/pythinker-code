@@ -41,6 +41,21 @@ def _quota_url(base_url: str) -> str:
     return f"{parsed.scheme}://{host}{_QUOTA_PATH}"
 
 
+def _endpoint_without_quota_api(base_url: str) -> bool:
+    """Endpoints where the configured API key cannot fetch a live quota/balance.
+
+    The Token Plan (``token-plan…maas.aliyuncs.com``) and Coding Plan
+    (``coding…dashscope``) hosts return 404 on ``/api/v1/quotas``. The Token Plan
+    balance lives only in the console, and its usage policy forbids automated
+    balance polling — so we never probe these and instead show Pythinker's local
+    tally plus a console pointer.
+    """
+    host = urlparse(base_url).netloc
+    if host.startswith("coding") and "dashscope" in host:
+        return True
+    return host.startswith("token-plan") and host.endswith("maas.aliyuncs.com")
+
+
 def _parse_quota_response(data: object) -> list[UsageRow]:
     """Parse DashScope /api/v1/quotas response into UsageRow list.
 
@@ -124,24 +139,34 @@ class AlibabaAdapter:
         # --- DashScope quota API (best-effort; logs + notes on failure) ---
         quota_rows: list[UsageRow] = []
         notes: list[str] = []
-        try:
-            async with (
-                new_client_session(timeout=_TIMEOUT) as session,
-                session.get(
-                    _quota_url(base_url),
-                    headers={"Authorization": f"Bearer {api_key}"},
-                ) as resp,
-            ):
-                if resp.status == 200:
-                    data = await resp.json(content_type=None)
-                    quota_rows = _parse_quota_response(data)
-                elif resp.status in (401, 403):
-                    notes.append(
-                        "DashScope quota API: authorization failed — quota data unavailable."
-                    )
-        except (aiohttp.ClientError, TimeoutError) as e:
-            logger.debug("DashScope quota API request failed: {error}", error=e, exc_info=True)
-            notes.append("DashScope quota API unavailable right now — retry in a moment.")
+        if _endpoint_without_quota_api(base_url):
+            # No quota API on this host (and the Token Plan policy forbids automated
+            # balance polling), so don't probe it. The figures above are Pythinker's
+            # local tally, not the plan's Credits balance.
+            notes.append(
+                "No usage API for this plan — the token counts above are Pythinker's "
+                "local tally, not your Credits balance. View remaining Credits in the "
+                "Model Studio console (My Subscriptions / Usage Analysis)."
+            )
+        else:
+            try:
+                async with (
+                    new_client_session(timeout=_TIMEOUT) as session,
+                    session.get(
+                        _quota_url(base_url),
+                        headers={"Authorization": f"Bearer {api_key}"},
+                    ) as resp,
+                ):
+                    if resp.status == 200:
+                        data = await resp.json(content_type=None)
+                        quota_rows = _parse_quota_response(data)
+                    elif resp.status in (401, 403):
+                        notes.append(
+                            "DashScope quota API: authorization failed — quota data unavailable."
+                        )
+            except (aiohttp.ClientError, TimeoutError) as e:
+                logger.debug("DashScope quota API request failed: {error}", error=e, exc_info=True)
+                notes.append("DashScope quota API unavailable right now — retry in a moment.")
 
         # --- Rate-limit headers from last response (if DashScope ever sends them) ---
         rl_rows: list[UsageRow] = []

@@ -78,3 +78,6 @@ blackbox/
 coverage.xml
 htmlcov/
 *.scratchpad.lock
+
+.playwright-mcp/
+.playwright/
