@@ -23,6 +23,7 @@ from pythinker_code.utils.export import (
     build_export_yaml,
     build_import_message,
     is_importable_file,
+    parse_import_args,
     perform_export,
     perform_import,
     resolve_import_source,
@@ -871,6 +872,43 @@ class TestIsImportableFile:
 
     def test_importable_extensions_is_frozenset(self) -> None:
         assert isinstance(_IMPORTABLE_EXTENSIONS, frozenset)
+
+
+# ---------------------------------------------------------------------------
+# parse_import_args
+# ---------------------------------------------------------------------------
+
+
+class TestParseImportArgs:
+    def test_plain_path(self) -> None:
+        assert parse_import_args("/tmp/x.yaml") == ("/tmp/x.yaml", False)
+
+    def test_trailing_force(self) -> None:
+        assert parse_import_args("/tmp/x.yaml --force") == ("/tmp/x.yaml", True)
+
+    def test_leading_force(self) -> None:
+        assert parse_import_args("--force /tmp/x.yaml") == ("/tmp/x.yaml", True)
+
+    def test_force_alone_yields_empty_path(self) -> None:
+        assert parse_import_args("--force") == ("", True)
+
+    def test_internal_whitespace_runs_preserved(self) -> None:
+        # The raw path must reach sanitization unchanged — tokenize-and-rejoin
+        # collapsed `my  notes.md` to `my notes.md` (file-not-found).
+        assert parse_import_args("my  notes.md") == ("my  notes.md", False)
+
+    def test_quoted_path_with_spaces(self) -> None:
+        # sanitize_cli_path strips the outer quotes (macOS drag-in shape).
+        assert parse_import_args("'my  notes.md'") == ("my  notes.md", False)
+
+    def test_force_inside_quoted_path_is_not_a_flag(self) -> None:
+        assert parse_import_args("'weird --force name.md'") == (
+            "weird --force name.md",
+            False,
+        )
+
+    def test_quoted_path_with_trailing_force(self) -> None:
+        assert parse_import_args("'my notes.md' --force") == ("my notes.md", True)
 
 
 # ---------------------------------------------------------------------------

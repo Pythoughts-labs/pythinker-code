@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -36,6 +37,7 @@ from pythinker_code.wire.types import (
 )
 
 if TYPE_CHECKING:
+    from pythinker_code.background.models import TaskView
     from pythinker_code.soul.agent import Runtime
 
 SUMMARY_CONTINUATION_ATTEMPTS = 1
@@ -203,7 +205,13 @@ async def run_with_summary_continuation(
             "continuing the agent summary",
         )
         if failure is not None:
-            return None, failure
+            # The continuation is a nicety; a transient failure here must
+            # never convert the agent's completed work into a hard failure.
+            logger.warning(
+                "Summary continuation failed ({brief}); returning the existing summary",
+                brief=failure.brief,
+            )
+            break
         final_response = soul.context.history[-1].extract_text(sep="\n")
 
     return final_response, None
@@ -214,7 +222,7 @@ async def run_with_summary_continuation(
 # ---------------------------------------------------------------------------
 
 
-def busy_resume_message(record: AgentInstanceRecord, task_view: object | None) -> str:
+def busy_resume_message(record: AgentInstanceRecord, task_view: TaskView | None) -> str:
     """Actionable rejection text for resuming an instance that is still running.
 
     Keeps the "cannot be resumed concurrently" marker (callers match on it) and
@@ -227,13 +235,10 @@ def busy_resume_message(record: AgentInstanceRecord, task_view: object | None) -
     if record.status != "running_background":
         return base + " Wait for its current run to finish, then resume."
     if task_view is not None:
-        import time as _time
-
-        task_id = task_view.spec.id  # type: ignore[attr-defined]
-        task_runtime = getattr(task_view, "runtime", None)
-        status = getattr(task_runtime, "status", None) or "non-terminal"
-        started_at = getattr(task_runtime, "started_at", None)
-        age = f", started {int(_time.time() - started_at)}s ago" if started_at else ""
+        task_id = task_view.spec.id
+        status = task_view.runtime.status or "non-terminal"
+        started_at = task_view.runtime.started_at
+        age = f", started {int(time.time() - started_at)}s ago" if started_at else ""
         return base + (
             f" Its background task {task_id} is verifiably still {status}{age} — it has NOT"
             " completed, even if earlier output suggested otherwise. You will be notified"

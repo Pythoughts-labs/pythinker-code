@@ -77,3 +77,4 @@ blackbox/
 .coverage.*
 coverage.xml
 htmlcov/
+*.scratchpad.lock

@@ -26,7 +26,7 @@ from pythinker_code.wire import Wire
 
 if TYPE_CHECKING:
     from pythinker_code.approval_runtime.models import ApprovalRuntimeEvent
-    from pythinker_code.background.manager import BackgroundTaskManager
+    from pythinker_code.background.manager import AgentTaskOutcome, BackgroundTaskManager
     from pythinker_code.soul.agent import Runtime
 
 
@@ -38,6 +38,16 @@ def _timeout_recovery_message(*, timeout_s: int | None, agent_id: str) -> str:
         "prompt unchanged. Run targeted direct scans, or resume the saved agent with a "
         f'narrower continuation prompt: Agent(resume="{agent_id}", prompt="...", '
         "timeout=3600)."
+    )
+
+
+def _failure_recovery_message(*, reason: str, agent_id: str) -> str:
+    return (
+        f"Agent task failed: {reason}\n"
+        "Recovery: the subagent context is still saved. If the failure looks "
+        "transient (rate limit, network), resume the saved agent instead of "
+        f'relaunching the same prompt from scratch: Agent(resume="{agent_id}", '
+        'prompt="...").'
     )
 
 
@@ -66,6 +76,20 @@ class BackgroundAgentRunner:
         self._resumed = resumed
         self._builder = SubagentBuilder(runtime)
         self._approval_update_tasks: set[asyncio.Task[None]] = set()
+
+    def _finalize_safely(self, *, outcome: AgentTaskOutcome, reason: str | None = None) -> None:
+        """Finalize without letting store I/O replace the original failure.
+
+        An exception escaping finalize inside an error handler would kill the
+        runner task, leave the record non-terminal until a later reconcile
+        guesses "recoverable", and lose the real error entirely.
+        """
+        try:
+            self._manager.finalize_agent_task(
+                self._task_id, self._agent_id, outcome=outcome, reason=reason
+            )
+        except Exception:
+            logger.exception("Failed to finalize background agent task {tid}", tid=self._task_id)
 
     async def run(self) -> None:
         assert self._runtime.approval_runtime is not None
@@ -100,9 +124,7 @@ class BackgroundAgentRunner:
                     id=self._task_id,
                     t=self._timeout_s,
                 )
-                self._manager.finalize_agent_task(
-                    self._task_id,
-                    self._agent_id,
+                self._finalize_safely(
                     outcome="timed_out",
                     reason=f"Agent task timed out after {self._timeout_s}s",
                 )
@@ -112,30 +134,22 @@ class BackgroundAgentRunner:
             else:
                 # Internal timeout (e.g. aiohttp request) — treat as generic failure
                 logger.exception("Background agent runner failed")
-                self._manager.finalize_agent_task(
-                    self._task_id, self._agent_id, outcome="failed", reason=str(exc)
-                )
-                output.error(str(exc))
+                self._finalize_safely(outcome="failed", reason=str(exc))
+                output.error(_failure_recovery_message(reason=str(exc), agent_id=self._agent_id))
         except asyncio.CancelledError:
-            self._manager.finalize_agent_task(
-                self._task_id, self._agent_id, outcome="killed", reason="Stopped by TaskStop"
-            )
+            self._finalize_safely(outcome="killed", reason="Stopped by TaskStop")
             output.stage("cancelled")
             raise
         except RunCancelled:
             # RunCancelled is Exception (not BaseException), so re-raising it from
             # an asyncio.create_task would trigger "Task exception was never retrieved".
             # Just mark killed and return — cleanup is already done.
-            self._manager.finalize_agent_task(
-                self._task_id, self._agent_id, outcome="killed", reason="Run was cancelled"
-            )
+            self._finalize_safely(outcome="killed", reason="Run was cancelled")
             output.stage("cancelled")
         except Exception as exc:
             logger.exception("Background agent runner failed")
-            self._manager.finalize_agent_task(
-                self._task_id, self._agent_id, outcome="failed", reason=str(exc)
-            )
-            output.error(str(exc))
+            self._finalize_safely(outcome="failed", reason=str(exc))
+            output.error(_failure_recovery_message(reason=str(exc), agent_id=self._agent_id))
         finally:
             # Whatever happens in approval cleanup below, the dict pop must
             # run — it is the *only* place that removes this task from
@@ -204,19 +218,15 @@ class BackgroundAgentRunner:
             ),
         )
         if failure is not None:
-            self._manager.finalize_agent_task(
-                self._task_id, self._agent_id, outcome="failed", reason=failure.message
-            )
+            self._finalize_safely(outcome="failed", reason=failure.message)
+            output.error(_failure_recovery_message(reason=failure.message, agent_id=self._agent_id))
             output.stage(f"failed: {failure.brief}")
             return
         output.stage("run_soul_finished")
 
         if final_response is None:
-            self._manager.finalize_agent_task(
-                self._task_id,
-                self._agent_id,
-                outcome="failed",
-                reason="Agent completed but produced no output.",
+            self._finalize_safely(
+                outcome="failed", reason="Agent completed but produced no output."
             )
             output.stage("failed: empty output")
             return
@@ -226,7 +236,7 @@ class BackgroundAgentRunner:
         # the written transcript rather than the immediate (launch-stub) tool return.
         output.usage(format_usage_lines("child", soul.cumulative_usage, soul.model_name))
         output.summary(final_response)
-        self._manager.finalize_agent_task(self._task_id, self._agent_id, outcome="completed")
+        self._finalize_safely(outcome="completed")
 
     def _on_approval_runtime_event(self, event: ApprovalRuntimeEvent) -> None:
         request = event.request

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass
 from typing import Literal
 
@@ -231,6 +232,21 @@ class ActivitySnapshot:
 
 def reduced_motion_enabled() -> bool:
     return motion_disabled()
+
+
+_BLINK_PERIOD_S = 0.8
+
+
+def blink_visible(now: float | None = None) -> bool:
+    """Shared blink phase: True during the visible half of the 0.8s cycle.
+
+    Reduced motion pins the element visible. Pass *now* when the caller has
+    already sampled ``time.monotonic()`` so co-rendered elements blink in phase.
+    """
+    if reduced_motion_enabled():
+        return True
+    t = time.monotonic() if now is None else now
+    return int(t / _BLINK_PERIOD_S) % 2 == 0
 
 
 def spinner_frame_at(

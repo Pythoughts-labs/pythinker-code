@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, fields, replace
+from functools import lru_cache
 from typing import Any, Literal, cast
 
 from prompt_toolkit.styles import Style as PTKStyle
@@ -635,22 +636,28 @@ def thinking_frame_color(level: str, *, theme: ThemeName | None = None) -> str:
     return table.get(level) or get_tui_tokens(theme).border
 
 
+@lru_cache(maxsize=32)
+def _dimmed_frame_hex(level: str, name: ThemeName) -> str:
+    color = thinking_frame_color(level, theme=name)
+    rgb = parse_hex_color(color)
+    if rgb is not None:
+        pole = (255, 255, 255) if name == "light" else (0, 0, 0)
+        color = to_hex_color(blend(rgb, pole, 0.7))
+    return color
+
+
 def thinking_frame_style(level: str, *, theme: ThemeName | None = None) -> str:
     """prompt_toolkit input-bar style for *level*, or ``""`` when colors are off.
 
     The bars are chrome, not content: the level color is dimmed (blended
     toward the theme's background pole) so the input frame hints at the
-    effort level without competing with the text being typed.
+    effort level without competing with the text being typed. The blend is
+    cached — it is re-derived on every prompt_toolkit redraw otherwise.
     """
     if colors_disabled():
         return ""
-    color = thinking_frame_color(level, theme=theme)
-    rgb = parse_hex_color(color)
-    if rgb is not None:
-        name = theme if theme is not None else _active_theme
-        pole = (255, 255, 255) if name == "light" else (0, 0, 0)
-        color = to_hex_color(blend(rgb, pole, 0.7))
-    return f"fg:{color}"
+    name = theme if theme is not None else _active_theme
+    return f"fg:{_dimmed_frame_hex(level, name)}"
 
 
 def thinking_dot_style(level: str, *, theme: ThemeName | None = None) -> str:

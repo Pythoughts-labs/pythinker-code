@@ -270,6 +270,19 @@ def _malformed_empty_tool_call_summary(
     return "; ".join(missing_by_tool)
 
 
+async def _settle_shielded(task: asyncio.Task[None]) -> None:
+    """Wait out *task* even while further cancellations keep arriving.
+
+    asyncio.shield protects the task from a surrounding cancellation, but each
+    NEW cancellation re-raises out of the await while the task keeps running
+    detached. Re-awaiting until the task is done guarantees a context write is
+    never orphaned mid-flight; a real exception from the task still propagates.
+    """
+    while not task.done():
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.shield(task)
+
+
 def _is_all_error_batch(tool_results: Sequence[ToolResult]) -> bool:
     """True when a non-empty tool batch had *every* call fail."""
     return bool(tool_results) and all(r.return_value.is_error for r in tool_results)
@@ -1692,7 +1705,13 @@ class PythinkerSoul:
                     )
                     for tc in result.tool_calls
                 ]
-                await asyncio.shield(asyncio.create_task(self._grow_context(result, interrupted)))
+                interrupted_grow_task = asyncio.create_task(self._grow_context(result, interrupted))
+                try:
+                    await asyncio.shield(interrupted_grow_task)
+                except asyncio.CancelledError:
+                    # A second interrupt landed mid-write: still wait the marker
+                    # write out so the context never keeps unanswered tool_calls.
+                    await _settle_shielded(interrupted_grow_task)
                 raise
         logger.debug("Got tool results: {results}", results=results)
 
@@ -1706,7 +1725,7 @@ class PythinkerSoul:
         try:
             await asyncio.shield(grow_context_task)
         except asyncio.CancelledError:
-            await asyncio.shield(grow_context_task)
+            await _settle_shielded(grow_context_task)
             raise
 
         if invalid_summary := _malformed_empty_tool_call_summary(result.tool_calls, results):
@@ -1980,6 +1999,7 @@ class PythinkerSoul:
         restore_context = await build_compaction_restore_context(
             history_before_compaction,
             work_dir=self._runtime.builtin_args.PYTHINKER_WORK_DIR,
+            additional_dirs=self._runtime.additional_dirs,
             active_skill_names=getattr(self._runtime.session.state, "active_skills", ()),
             skills_by_name=getattr(self._runtime, "skills", {}),
         )

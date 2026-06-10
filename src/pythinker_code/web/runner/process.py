@@ -569,20 +569,22 @@ class SessionProcess:
 
     async def add_websocket_and_begin_replay(
         self, ws: WebSocket, wire_file: Path | None = None
-    ) -> int:
+    ) -> int | None:
         """Atomically attach a WebSocket and enter replay mode for it.
 
-        Returns the byte watermark of *wire_file* captured under the lock, or 0
-        if no wire_file was given. Callers should replay only up to this
-        watermark so that events written after the buffer was attached arrive
-        via the live buffer rather than being replayed a second time.
+        Returns the byte watermark of *wire_file* captured under the lock, or
+        None when no watermark could be established (no wire_file, or its stat
+        failed). Callers should replay only up to this watermark so that events
+        written after the buffer was attached arrive via the live buffer rather
+        than being replayed a second time; None means replay everything —
+        bounded duplicates beat silently losing history.
         """
         async with self._ws_lock:
             if ws not in self._websockets:
                 self._websockets.add(ws)
                 self._websocket_count = len(self._websockets)
             self._replay_buffers.setdefault(ws, [])
-            watermark = 0
+            watermark: int | None = None
             if wire_file is not None:
                 try:
                     # Offload the blocking stat so a slow filesystem can't stall
@@ -590,7 +592,7 @@ class SessionProcess:
                     stat_result = await asyncio.to_thread(wire_file.stat)
                     watermark = stat_result.st_size
                 except OSError:
-                    watermark = 0
+                    watermark = None
         logger.debug(f"WebSocket added (replay mode), count={self._websocket_count}")
         return watermark
 

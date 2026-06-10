@@ -259,7 +259,13 @@ def _unwrap_fenced_markdown_tables(markup: str) -> str:
             out.append(line)
             if match is not None:
                 fence = match.group("fence")
-                if fence[0] == other_char and len(fence) >= other_len:
+                # CommonMark closing fences carry no info string; without that
+                # check a "```python" line inside the open fence would end it.
+                if (
+                    fence[0] == other_char
+                    and len(fence) >= other_len
+                    and not body[match.end() :].strip()
+                ):
                     in_other_fence = False
             i += 1
             continue

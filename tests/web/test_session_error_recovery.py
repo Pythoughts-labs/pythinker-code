@@ -245,6 +245,7 @@ async def test_add_websocket_watermark_caps_replay(tmp_path: Path) -> None:
     watermark = await sp.add_websocket_and_begin_replay(mock_ws, wire_file)
 
     # Watermark should equal the current byte size of wire.jsonl
+    assert watermark is not None
     assert watermark == wire_file.stat().st_size
     assert watermark > 0
 
@@ -264,6 +265,34 @@ async def test_add_websocket_watermark_caps_replay(tmp_path: Path) -> None:
     # Without a watermark cap, all N+1 records would be returned (verify assumption)
     all_lines = _read_wire_lines(wire_file, None)
     assert len(all_lines) > len(lines), "Expected extra record visible without watermark"
+
+
+@pytest.mark.asyncio
+async def test_add_websocket_watermark_stat_failure_replays_everything(
+    tmp_path: Path,
+) -> None:
+    """A failed stat must yield watermark=None (replay the whole file), not 0.
+
+    _read_wire_lines(wire_file, 0) returns zero lines, so a transient stat
+    error right after has_history succeeded would silently hand the client an
+    empty history; bounded duplicates beat total history loss.
+    """
+    wire_file = tmp_path / "wire.jsonl"
+    record = json.dumps({"message": {"type": "TurnBegin", "payload": {"user_input": "m"}}})
+    wire_file.write_text(record + "\n", encoding="utf-8")
+
+    sp = SessionProcess(uuid4())
+    mock_ws = MagicMock()
+
+    # Point the attach at a path whose stat raises.
+    missing = tmp_path / "gone.jsonl"
+    watermark = await sp.add_websocket_and_begin_replay(mock_ws, missing)
+
+    assert watermark is None
+    # None flows into _read_wire_lines as "no cap" — the full history survives.
+    assert len(_read_wire_lines(wire_file, watermark)) == 1
+    # The wrong sentinel (0) would have dropped everything.
+    assert _read_wire_lines(wire_file, 0) == []
 
 
 # ---------------------------------------------------------------------------

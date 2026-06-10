@@ -6,10 +6,13 @@ for both the Web API and CLI slash commands (/undo, /fork).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import mimetypes
+import os
 import re
 import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -52,24 +55,44 @@ def enumerate_turns(wire_path: Path) -> list[TurnInfo]:
             if not stripped:
                 continue
 
-            try:
-                record: dict[str, Any] = json.loads(stripped)
-            except json.JSONDecodeError:
+            record = _loads_object(stripped)
+            if record is None or record.get("type") == "metadata":
                 continue
 
-            if record.get("type") == "metadata":
-                continue
-
-            message: dict[str, Any] = record.get("message", {})
+            message = _message_of(record)
             msg_type: str | None = message.get("type")
 
             if msg_type == "TurnBegin":
                 current_turn += 1
-                user_input = message.get("payload", {}).get("user_input", "")
+                payload = message.get("payload")
+                user_input = (
+                    cast(dict[str, Any], payload).get("user_input", "")
+                    if isinstance(payload, dict)
+                    else ""
+                )
                 text = _extract_user_text(user_input)
                 turns.append(TurnInfo(index=current_turn, user_text=text))
 
     return turns
+
+
+def _loads_object(line: str) -> dict[str, Any] | None:
+    """json.loads a line, returning None unless it yields a dict.
+
+    Wire/context files can contain torn or interleaved lines after a crash or
+    a concurrent writer; the fork/undo scanners must skip them like every other
+    reader (Context.restore, WireFile.iter_records) instead of crashing.
+    """
+    try:
+        record: Any = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    return cast(dict[str, Any], record) if isinstance(record, dict) else None
+
+
+def _message_of(record: dict[str, Any]) -> dict[str, Any]:
+    message = record.get("message")
+    return cast(dict[str, Any], message) if isinstance(message, dict) else {}
 
 
 def _extract_user_text(user_input: str | list[Any]) -> str:
@@ -119,9 +142,8 @@ def truncate_wire_at_turn(wire_path: Path, turn_index: int) -> list[str]:
             if not stripped:
                 continue
 
-            try:
-                record: dict[str, Any] = json.loads(stripped)
-            except json.JSONDecodeError:
+            record = _loads_object(stripped)
+            if record is None:
                 continue
 
             # Always keep metadata header
@@ -129,8 +151,7 @@ def truncate_wire_at_turn(wire_path: Path, turn_index: int) -> list[str]:
                 lines.append(stripped)
                 continue
 
-            message: dict[str, Any] = record.get("message", {})
-            msg_type: str | None = message.get("type")
+            msg_type: str | None = _message_of(record).get("type")
 
             if msg_type == "TurnBegin":
                 current_turn += 1
@@ -183,13 +204,10 @@ def _wire_user_message_count(wire_path: Path, turn_index: int) -> int | None:
             stripped = line.strip()
             if not stripped:
                 continue
-            try:
-                record: dict[str, Any] = json.loads(stripped)
-            except json.JSONDecodeError:
+            record = _loads_object(stripped)
+            if record is None or record.get("type") == "metadata":
                 continue
-            if record.get("type") == "metadata":
-                continue
-            msg_type = record.get("message", {}).get("type")
+            msg_type = _message_of(record).get("type")
             if msg_type == "TurnBegin":
                 current_turn += 1
                 if current_turn > turn_index:
@@ -233,9 +251,8 @@ def truncate_context_at_turn(
             if not stripped:
                 continue
 
-            try:
-                record: dict[str, Any] = json.loads(stripped)
-            except json.JSONDecodeError:
+            record = _loads_object(stripped)
+            if record is None:
                 continue
 
             if record.get("role") == "user" and not _is_checkpoint_user_message(record):
@@ -302,17 +319,15 @@ async def fork_session(
     # Copy referenced video files
     _copy_referenced_videos(source_session_dir, new_session_dir, truncated_wire_lines)
 
-    # Write truncated wire.jsonl
+    # Write atomically (tmp + os.replace), context.jsonl LAST: a crash mid-fork
+    # then leaves either a recognizably empty session (cleaned by the existing
+    # empty-session sweep) or a complete one — never a half-materialized fork
+    # that shows up in the resume picker with amputated history.
     new_wire_path = new_session_dir / "wire.jsonl"
-    with open(new_wire_path, "w", encoding="utf-8") as f:
-        for line in truncated_wire_lines:
-            f.write(line + "\n")
+    _atomic_write_lines(new_wire_path, truncated_wire_lines)
 
-    # Write truncated context.jsonl (overwrites the empty file from create())
     new_context_path = new_session_dir / "context.jsonl"
-    with open(new_context_path, "w", encoding="utf-8") as f:
-        for line in truncated_context_lines:
-            f.write(line + "\n")
+    _atomic_write_lines(new_context_path, truncated_context_lines)
 
     # Set title
     if source_title is None:
@@ -328,6 +343,21 @@ async def fork_session(
     save_session_state(new_state, new_session_dir)
 
     return new_session.id
+
+
+def _atomic_write_lines(path: Path, lines: list[str]) -> None:
+    """Write *lines* to *path* via a unique temp file + os.replace."""
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            for line in lines:
+                f.write(line + "\n")
+        os.replace(tmp_path, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink()
+        raise
 
 
 def _read_all_lines(path: Path) -> list[str]:

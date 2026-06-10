@@ -151,14 +151,17 @@ def materialize_markdown_agent_specs(
     seen_filenames: set[str] = set()
     for agent in agents:
         filename = _safe_filename(agent.name)
-        if filename in seen_filenames:
+        # Compare casefolded: on case-insensitive filesystems (macOS default)
+        # 'Coder-…' and 'coder-…' are the same file, so a case-sensitive set
+        # would let the second write silently clobber the first.
+        if filename.casefold() in seen_filenames:
             logger.warning(
                 "Skipping agent {name!r}: filename {filename!r} collides with another agent",
                 name=agent.name,
                 filename=filename,
             )
             continue
-        seen_filenames.add(filename)
+        seen_filenames.add(filename.casefold())
         wrapper_path = output_dir / f"{filename}.yaml"
         prompt_path = output_dir / f"{filename}.system.md"
         try:

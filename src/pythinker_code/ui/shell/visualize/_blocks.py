@@ -36,7 +36,7 @@ from pythinker_code.ui.shell.mcp_status import mcp_startup_header
 from pythinker_code.ui.shell.motion import (
     ActivitySnapshot,
     activity_status_line,
-    reduced_motion_enabled,
+    blink_visible,
 )
 from pythinker_code.ui.shell.spacing import BLANK_ROW
 from pythinker_code.ui.shell.tips import FEATURE_TIPS
@@ -386,7 +386,7 @@ class _ContentBlock:
         """
         if self._has_printed_bullet:
             return BulletColumns(renderable, bullet=Text(" "))
-        visible = reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0
+        visible = blink_visible()
         glyph = TRANSCRIPT_ASSISTANT_MARKER if visible else " "
         return BulletColumns(
             renderable,
@@ -1242,7 +1242,7 @@ class _ProgressNoteBlock:
 
     def compose(self) -> RenderableType:
         title = Text(
-            self.event.title.strip() or "Progress",
+            sanitize_ansi(self.event.title).strip() or "Progress",
             style=tui_rich_style("tool_title") + Style(bold=True),
         )
         if not self.event.body.strip():

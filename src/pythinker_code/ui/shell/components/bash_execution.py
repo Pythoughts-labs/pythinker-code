@@ -10,7 +10,6 @@ We model the same shape as a stateless Rich renderable factory so callers
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
 from typing import Literal
 
@@ -23,7 +22,7 @@ from pythinker_code.ui.shell.components.render_utils import (
     truncate_middle_to_visual_lines,
 )
 from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ACTIVE_MARKER, TRANSCRIPT_ASSISTANT_MARKER
-from pythinker_code.ui.shell.motion import reduced_motion_enabled
+from pythinker_code.ui.shell.motion import blink_visible
 from pythinker_code.ui.theme import tui_rich_style
 
 __all__ = [
@@ -98,11 +97,7 @@ def _output_lines(output: str) -> list[str]:
 
 
 def _pulsing_marker() -> Text:
-    glyph = (
-        TRANSCRIPT_ASSISTANT_MARKER
-        if reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0
-        else " "
-    )
+    glyph = TRANSCRIPT_ASSISTANT_MARKER if blink_visible() else " "
     return Text(f"{glyph} ", style=tui_rich_style("muted"))
 
 

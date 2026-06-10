@@ -11,6 +11,7 @@ from pythinker_core.chat_provider import ThinkingEffort
 from pythinker_code.config import LLMModel, get_config_file, load_config, save_config
 from pythinker_code.llm import ProviderType, derive_model_capabilities
 from pythinker_code.utils.logging import logger
+from pythinker_code.utils.server import is_local_host
 from pythinker_code.web.runner.process import PythinkerCLIRunner
 
 
@@ -239,8 +240,7 @@ async def update_config_toml(
             continue  # unchanged provider host is allowed
         host = urlparse(provider.base_url)
         hostname = (host.hostname or "").lower()
-        is_loopback = hostname in {"localhost", "127.0.0.1", "::1"}
-        if host.scheme != "https" and not is_loopback:
+        if host.scheme != "https" and not is_local_host(hostname):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(

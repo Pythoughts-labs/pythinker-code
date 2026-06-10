@@ -902,7 +902,10 @@ def test_find_xargs_awk_classified() -> None:
         "find . -exec rm -rf {} +",
         "find . -execdir touch f {} ;",
         "echo x | xargs rm -rf",
+        "echo x | xargs -L 1 rm -rf",
         "awk 'BEGIN{system(\"rm -rf /tmp/x\")}'",
+        "awk '{print | \"rm -rf /tmp/x\"}'",
+        "awk '{\"rm -rf /tmp/x\" | getline}'",
     ):
         assert M(cmd) is not None, f"expected mutating: {cmd!r}"
 
@@ -910,7 +913,10 @@ def test_find_xargs_awk_classified() -> None:
     for cmd in (
         "find . -exec rm -rf {} +",
         "echo x | xargs rm -rf",
+        "echo x | xargs -L 1 rm -rf",
         "find . -execdir rm -rf {} ;",
+        "awk 'BEGIN{system(\"rm -rf ~/x\")}'",
+        "awk '{print | \"rm -rf /tmp/x\"}'",
     ):
         assert D(cmd) is not None, f"expected destructive: {cmd!r}"
 
@@ -919,6 +925,8 @@ def test_find_xargs_awk_classified() -> None:
         'find . -name "*.py" -print',
         "find . -type f",
         "echo x | xargs grep foo",
+        "echo x | xargs -L 1 grep foo",
+        "awk '/foo|bar/ {print $1}'",
     ):
         assert M(cmd) is None, f"expected benign: {cmd!r}"
 

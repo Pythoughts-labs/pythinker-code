@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shlex
 from collections.abc import Sequence
 from datetime import datetime
@@ -39,21 +40,26 @@ _HINT_KEYS = ("path", "file_path", "command", "query", "url", "name", "pattern")
 """Common tool-call argument keys whose values make good one-line hints."""
 
 
+_FORCE_PREFIX = re.compile(r"^--force(?:\s+|$)")
+_FORCE_SUFFIX = re.compile(r"(?:^|\s+)--force$")
+
+
 def parse_import_args(args: str) -> tuple[str, bool]:
     """Parse ``/import`` arguments into ``(sanitized_path, force)``.
 
-    Uses shell-style tokenization so quoted/escaped paths with spaces survive
-    instead of being collapsed by ``str.split``. ``--force`` anywhere in the
-    tokens sets the flag and is dropped from the path before sanitization.
+    ``--force`` is recognized only as a standalone leading or trailing token,
+    so everything else reaches ``sanitize_cli_path`` byte-for-byte unchanged:
+    unquoted paths with internal whitespace runs survive (tokenize-and-rejoin
+    collapsed them), and a quoted path containing ``--force`` is neither
+    truncated nor misread as the flag.
     """
-    try:
-        tokens = shlex.split(args)
-    except ValueError:
-        # Unbalanced quotes: fall back to a plain split rather than raising.
-        tokens = args.split()
-    force = "--force" in tokens
-    path = sanitize_cli_path(" ".join(t for t in tokens if t != "--force"))
-    return path, force
+    rest = args.strip()
+    force = False
+    if m := _FORCE_PREFIX.match(rest):
+        rest, force = rest[m.end() :], True
+    elif m := _FORCE_SUFFIX.search(rest):
+        rest, force = rest[: m.start()], True
+    return sanitize_cli_path(rest), force
 
 
 def _is_checkpoint_message(msg: Message) -> bool:

@@ -516,8 +516,8 @@ def _segment_mutation_reason(tokens: list[str]) -> str | None:
         payload = _xargs_payload(args)
         if payload and (r := _segment_mutation_reason(payload)):
             return f"xargs: {r}"
-    if base == "awk" and any("system(" in a or ">" in a for a in args):
-        return "awk system/redirection"
+    if base == "awk" and (reason := _awk_shell_reason(args)):
+        return reason
     return None
 
 
@@ -653,7 +653,7 @@ def _exec_payload(args: list[str]) -> list[str] | None:
     return None
 
 
-_XARGS_VALUE_OPTS = {"-I", "-i", "-n", "-P", "-s", "-d", "-E", "-a"}
+_XARGS_VALUE_OPTS = {"-I", "-i", "-n", "-L", "-P", "-s", "-d", "-E", "-a"}
 
 
 def _xargs_payload(args: list[str]) -> list[str]:
@@ -662,6 +662,28 @@ def _xargs_payload(args: list[str]) -> list[str]:
     while i < len(args) and args[i].startswith("-"):
         i += 2 if args[i] in _XARGS_VALUE_OPTS and i + 1 < len(args) else 1
     return args[i:]
+
+
+# awk pipe to/from an external command: ``print ... | "cmd"`` or ``"cmd" | getline``.
+# Restricted to a pipe adjacent to a quote so it does not fire on regex
+# alternation (``/foo|bar/``), which would only over-prompt but is avoidable.
+_AWK_PIPE_RE = re.compile(r"""\|\s*["']|["']\s*\|\s*getline""")
+
+
+def _awk_shell_reason(args: list[str]) -> str | None:
+    """Reason string if an awk program shells out, else None.
+
+    awk can escape its sandbox three ways, all opaque to the token parser: a
+    ``system("...")`` call, a pipe to/from an external command, or output
+    redirection (``> file``). The program text survives shlex as one token, so
+    detection is substring/regex based.
+    """
+    program = " ".join(args)
+    if "system(" in program or ">" in program:
+        return "awk system/redirection"
+    if _AWK_PIPE_RE.search(program):
+        return "awk pipe to command"
+    return None
 
 
 # Sub-namespaces under ``uv`` that gate a second-level verb: ``uv pip install``,
@@ -936,6 +958,10 @@ def _segment_destructive_reason(tokens: list[str]) -> str | None:
     # Inline-code interpreters are opaque to the token parser -> deliberate.
     if base in _OPAQUE_INTERPRETERS and any(arg in _INLINE_CODE_FLAGS for arg in args):
         return f"opaque inline code via {base}"
+    # awk that shells out is equally opaque: the embedded command could be
+    # irreversible (system("rm -rf ...")), so the backstop must re-prompt.
+    if base == "awk" and _awk_shell_reason(args):
+        return "opaque shell exec via awk"
     if base in ("find", "xargs"):
         payload = _exec_payload(args) if base == "find" else _xargs_payload(args)
         if payload and (r := _segment_destructive_reason(payload)):

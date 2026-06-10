@@ -61,7 +61,9 @@ def test_render_mcp_prompt_respects_reduced_motion(monkeypatch) -> None:
         tools=0,
         servers=(MCPServerSnapshot(name="slow-test", status="pending", tools=()),),
     )
-    monkeypatch.setattr("pythinker_code.ui.shell.mcp_status.reduced_motion_enabled", lambda: True)
+    monkeypatch.setattr(
+        "pythinker_code.ui.shell.mcp_status.blink_visible", lambda now=None: True
+    )
 
     prompt_text = "".join(fragment[1] for fragment in render_mcp_prompt(snapshot, now=0.9))
 

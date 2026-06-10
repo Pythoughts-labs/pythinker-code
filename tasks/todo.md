@@ -718,3 +718,37 @@ Verified: make check-pythinker-code green; full pytest tests: 4757 passed.
 - Phase 2/3 backlog: per-hunk diff syntax highlighting, Codex table column
   sizing + key/value narrow fallback, per-file multi-file diff summaries,
   URL-aware wrap, custom themes, compact JSON, transcript export.
+
+## Review — 2026-06-10 deep-scan remediation + robustness pass
+
+Deep multi-agent review of feat/tui-enhancements (9 finder angles → 1-vote
+verify → sweep), then fixes landed for every confirmed finding, plus the
+multi-instance/orchestration robustness directive and the openai.py package
+split. Highlights:
+
+- Security: awk pipe/getline + xargs -L permission bypasses closed (both
+  gates); Glob symlink-escape fixed; progress-note title ANSI-sanitized.
+- Correctness: grep field-separator parsing (digit-hyphen paths), CRLF
+  multi-line replace fallback, /import raw-path --force parsing, compaction
+  reminders for --add-dir files, double-cancel shield settle, replay
+  watermark stat-fail → full replay, agent-resume ValueError, oauth
+  refresh_token/expires_in/device-id hardening, /theme auto re-probe,
+  markdown fence close-with-info-string, MCP cross-server shadow warning.
+- Multi-instance: per-session writer flock (.owner.lock), locked
+  pythinker.json mutate helper, JSONL torn-line repair, atomic fork writes,
+  strict memory reads (no wipe-on-EIO), journal cap (100), atomic inbox
+  claim, recall mtime re-arm, scratchpad/memory flock via to_thread.
+- Orchestration: continuation failure keeps completed results; hallucinated
+  subagent types fail fast w/ valid list (Agent + RunAgents); background
+  failures carry Agent ID + resume hint; finalize guarded; runner crashes
+  logged via done-callback; copy_for_role shares live-task registry.
+
+### Out of scope / deferred (next branch candidates)
+- Retry-After-aware backoff + larger background retry budget (O3) and
+  foreground timeout inside the runner with usage+resume hint (O4).
+- Scratch cap rewrite via mkstemp+replace (M4); _ensure_dir share-dir
+  re-resolution (M7); snapshot per-section budget clamp (M8).
+- Token-rate tracker triplication (prompt.py/_live_view/_blocks), head/tail
+  truncation + fence-walker dedup, todo-glyph mapping hoist, bullet factory.
+- web config API: optional private-range carve-out for plain-HTTP LAN
+  providers (currently CLI-only flow, deliberate).

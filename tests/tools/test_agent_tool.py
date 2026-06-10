@@ -205,9 +205,12 @@ async def test_agent_tool_rejects_resume_when_instance_is_already_running(agent_
     assert "cannot be resumed concurrently" in result.message
 
 
-async def test_agent_tool_marks_instance_failed_when_summary_continuation_hits_max_steps(
+async def test_agent_tool_keeps_result_when_summary_continuation_hits_max_steps(
     agent_tool, runtime, monkeypatch
 ):
+    """The summary continuation is a nicety: a failure there must not convert
+    the agent's completed work into a hard failure — the existing (short)
+    summary is returned and the instance stays resumable."""
     runtime.labor_market.add_builtin_type(
         AgentTypeDefinition(
             name="coder",
@@ -249,15 +252,16 @@ async def test_agent_tool_marks_instance_failed_when_summary_continuation_hits_m
         )
     )
 
-    assert result.is_error
-    assert result.brief == "Max steps reached"
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    assert "too short" in result.output
     records = [
         record
         for record in runtime.subagent_store.list_instances()
         if record.description == "investigate bug"
     ]
     assert len(records) == 1
-    assert records[0].status == "failed"
+    assert records[0].status == "idle"
 
 
 async def test_agent_tool_marks_instance_killed_when_summary_continuation_is_cancelled(
@@ -571,6 +575,14 @@ async def test_run_agents_launches_background_children_with_base_prompt(runtime,
 
 
 async def test_run_agents_foreground_reports_completed_status(runtime):
+    runtime.labor_market.add_builtin_type(
+        AgentTypeDefinition(
+            name="code-reviewer",
+            description="Reviews diffs.",
+            agent_file=runtime.subagent_store.root / "code-reviewer.yaml",
+            tool_policy=ToolPolicy(mode="inherit"),
+        )
+    )
     calls = []
 
     class FakeAgentTool:

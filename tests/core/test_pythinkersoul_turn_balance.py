@@ -176,3 +176,64 @@ async def test_step_persists_assistant_message_when_tool_results_cancelled(
         f"tool message has wrong tool_call_id; "
         f"expected={tool_call.id}, got={tool_messages[0].tool_call_id}"
     )
+
+
+async def test_step_persists_markers_when_cancelled_twice(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A second interrupt while the shielded marker write is in flight must not
+    orphan the write: by the time the cancellation propagates out of _step, the
+    assistant message and synthetic tool results are already persisted (the old
+    single-shot shield let the write task detach and race the next turn)."""
+    soul = _make_soul(runtime, tmp_path)
+
+    tool_call = ToolCall(
+        id="call-cancel-2",
+        function=ToolCall.FunctionBody(name="Noop", arguments="{}"),
+    )
+    pending_future: asyncio.Future[ToolResult] = asyncio.get_event_loop().create_future()
+
+    async def fake_pythinker_core_step(chat_provider, system_prompt, toolset, history, **kwargs):
+        return StepResult(
+            id="step-cancel-2",
+            message=Message(role="assistant", content=[TextPart(text="I'll use a tool.")]),
+            usage=None,
+            tool_calls=[tool_call],
+            _tool_result_futures={"call-cancel-2": pending_future},
+        )
+
+    async def fake_collect_injections() -> list[DynamicInjection]:
+        return []
+
+    real_grow = soul._grow_context
+    write_started = asyncio.Event()
+
+    async def slow_grow(result, results):
+        write_started.set()
+        for _ in range(5):
+            await asyncio.sleep(0)
+        await real_grow(result, results)
+
+    monkeypatch.setattr(soul, "_collect_injections", fake_collect_injections)
+    monkeypatch.setattr(soul, "_grow_context", slow_grow)
+    monkeypatch.setattr(pythinkersoul_module.pythinker_core, "step", fake_pythinker_core_step)
+    monkeypatch.setattr(pythinkersoul_module, "wire_send", lambda _msg: None)
+
+    step_task = asyncio.create_task(soul._step())
+    for _ in range(10):
+        await asyncio.sleep(0)
+    step_task.cancel()
+    await write_started.wait()
+    step_task.cancel()  # second interrupt lands mid marker-write
+
+    with pytest.raises(asyncio.CancelledError):
+        await step_task
+
+    # No further loop yields: the settle loop must have completed the write
+    # BEFORE the cancellation propagated.
+    history = list(soul.context.history)
+    tool_messages = [m for m in history if m.role == "tool"]
+    assert tool_messages, f"marker write was orphaned; history={history}"
+    assert tool_messages[0].tool_call_id == tool_call.id

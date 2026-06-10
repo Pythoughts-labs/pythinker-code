@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from pythinker_host.path import HostPath
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from pythinker_code.metadata import load_metadata, save_metadata
+from pythinker_code.metadata import Metadata, load_metadata, mutate_metadata
 from pythinker_code.session import Session as PythinkerCLISession
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.subprocess_env import get_clean_env
@@ -593,14 +593,13 @@ def _update_last_session_id(session: JointSession) -> None:
     pythinker_session = session.pythinker_code_session
     work_dir = pythinker_session.work_dir
 
-    metadata = load_metadata()
-    work_dir_meta = metadata.get_work_dir_meta(work_dir)
+    def _mark_last(metadata: Metadata) -> None:
+        work_dir_meta = metadata.get_work_dir_meta(work_dir)
+        if work_dir_meta is None:
+            work_dir_meta = metadata.new_work_dir_meta(work_dir)
+        work_dir_meta.last_session_id = pythinker_session.id
 
-    if work_dir_meta is None:
-        work_dir_meta = metadata.new_work_dir_meta(work_dir)
-
-    work_dir_meta.last_session_id = pythinker_session.id
-    save_metadata(metadata)
+    mutate_metadata(_mark_last)
 
 
 @router.delete("/{session_id}", summary="Delete a session")
@@ -612,12 +611,14 @@ async def delete_session(
     await runner.remove_session(session_id)
     wd_meta = session.pythinker_code_session.work_dir_meta
     if wd_meta.last_session_id == str(session_id):
-        metadata = load_metadata()
-        for wd in metadata.work_dirs:
-            if wd.path == wd_meta.path:
-                wd.last_session_id = None
-                break
-        save_metadata(metadata)
+
+        def _clear_last(metadata: Metadata) -> None:
+            for wd in metadata.work_dirs:
+                if wd.path == wd_meta.path:
+                    wd.last_session_id = None
+                    break
+
+        mutate_metadata(_clear_last)
     session_dir = session.pythinker_code_session.dir
     if session_dir.exists():
         shutil.rmtree(session_dir, ignore_errors=True)
@@ -688,8 +689,15 @@ def extract_first_turn_from_wire(session_dir: Path) -> tuple[str, str] | None:
                 if not line:
                     continue
                 try:
-                    record = json.loads(line)
-                    message = record.get("message", {})
+                    record: Any = json.loads(line)
+                    if not isinstance(record, dict):
+                        # Torn/garbage line (crash or concurrent writer): skip
+                        # like _read_wire_lines does instead of 500ing on it.
+                        continue
+                    message_raw = cast(dict[str, Any], record).get("message")
+                    if not isinstance(message_raw, dict):
+                        continue
+                    message = cast(dict[str, Any], message_raw)
                     msg_type = message.get("type")
 
                     if msg_type == "TurnBegin":
@@ -697,7 +705,12 @@ def extract_first_turn_from_wire(session_dir: Path) -> tuple[str, str] | None:
                             # Second turn started, stop
                             break
                         in_first_turn = True
-                        user_input = message.get("payload", {}).get("user_input")
+                        payload_raw = message.get("payload")
+                        user_input = (
+                            cast(dict[str, Any], payload_raw).get("user_input")
+                            if isinstance(payload_raw, dict)
+                            else None
+                        )
                         if user_input:
                             from pythinker_core.message import Message
 
@@ -705,9 +718,11 @@ def extract_first_turn_from_wire(session_dir: Path) -> tuple[str, str] | None:
                             user_message = msg.extract_text(" ")
 
                     elif msg_type == "ContentPart" and in_first_turn:
-                        payload = message.get("payload", {})
-                        if payload.get("type") == "text" and payload.get("text"):
-                            assistant_response_parts.append(payload["text"])
+                        payload_raw = message.get("payload")
+                        if isinstance(payload_raw, dict):
+                            payload = cast(dict[str, Any], payload_raw)
+                            if payload.get("type") == "text" and payload.get("text"):
+                                assistant_response_parts.append(payload["text"])
 
                     elif msg_type == "TurnEnd" and in_first_turn:
                         break

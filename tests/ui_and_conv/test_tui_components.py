@@ -351,14 +351,14 @@ def test_bash_execution_truncates_wrapped_output_to_terminal_width():
 
 def test_bash_execution_running_marker_pulses(monkeypatch):
     monkeypatch.setattr(
-        "pythinker_code.ui.shell.components.bash_execution.time.monotonic", lambda: 0.0
+        "pythinker_code.ui.shell.motion.time.monotonic", lambda: 0.0
     )
     first = render_plain(
         render_bash_execution(BashExecutionState(command="sleep 1", status="running")),
         width=80,
     )
     monkeypatch.setattr(
-        "pythinker_code.ui.shell.components.bash_execution.time.monotonic", lambda: 0.9
+        "pythinker_code.ui.shell.motion.time.monotonic", lambda: 0.9
     )
     second = render_plain(
         render_bash_execution(BashExecutionState(command="sleep 1", status="running")),

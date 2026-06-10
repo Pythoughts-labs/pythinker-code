@@ -60,15 +60,19 @@ class WriteFile(CallableTool2[Params]):
         self._plan_mode_checker = checker
         self._plan_file_path_getter = path_getter
 
-    async def _validate_path(self, path: HostPath, real_p: HostPath) -> ToolError | None:
+    def _validate_path(
+        self,
+        path: HostPath,
+        real_p: HostPath,
+        real_work: HostPath,
+        real_add: list[HostPath],
+    ) -> ToolError | None:
         """Validate that the path is safe to write.
 
         Uses `real_p` (symlink-resolved) for workspace checks while `path` is kept for
-        user-facing messages so reported paths remain unchanged.
+        user-facing messages so reported paths remain unchanged. The resolved
+        workspace roots come from the caller so they are realpath'd only once.
         """
-        real_work = await self._work_dir.realpath()
-        real_add = [await d.realpath() for d in self._additional_dirs]
-
         if not is_within_workspace(real_p, real_work, real_add) and not path.is_absolute():
             return ToolError(
                 message=(
@@ -102,7 +106,7 @@ class WriteFile(CallableTool2[Params]):
             real_work = await self._work_dir.realpath()
             real_add = [await d.realpath() for d in self._additional_dirs]
 
-            if err := await self._validate_path(raw, real_p):
+            if err := self._validate_path(raw, real_p, real_work, real_add):
                 return err
 
             plan_target = inspect_plan_edit_target(

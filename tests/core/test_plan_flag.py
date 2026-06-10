@@ -326,7 +326,7 @@ class TestWebWorkerResumedDetection:
             create_calls.append(kwargs)
             raise _StopWorker  # abort after capturing args
 
-        fake_session = SimpleNamespace(dir=session_dir)
+        fake_session = SimpleNamespace(dir=session_dir, acquire_ownership=lambda: True)
         fake_joint = SimpleNamespace(pythinker_code_session=fake_session)
 
         with (
@@ -360,7 +360,7 @@ class TestWebWorkerResumedDetection:
             create_calls.append(kwargs)
             raise _StopWorker
 
-        fake_session = SimpleNamespace(dir=session_dir)
+        fake_session = SimpleNamespace(dir=session_dir, acquire_ownership=lambda: True)
         fake_joint = SimpleNamespace(pythinker_code_session=fake_session)
 
         with (

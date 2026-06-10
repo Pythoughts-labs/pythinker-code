@@ -25,7 +25,7 @@ from rich.text import Text
 
 from pythinker_code.ui.shell.console import render_to_ansi
 from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ACTIVE_MARKER
-from pythinker_code.ui.shell.motion import reduced_motion_enabled
+from pythinker_code.ui.shell.motion import blink_visible
 from pythinker_code.ui.shell.spacing import DIALOG_PANEL_PADDING, blank_row
 from pythinker_code.ui.shell.visualize._blocks import Markdown
 from pythinker_code.ui.theme import tui_rich_style
@@ -102,11 +102,7 @@ class _BtwModalDelegate:
     # -- Title ---------------------------------------------------------------
 
     def _loading_marker(self) -> Text:
-        glyph = (
-            TRANSCRIPT_ACTIVE_MARKER
-            if reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0
-            else " "
-        )
+        glyph = TRANSCRIPT_ACTIVE_MARKER if blink_visible() else " "
         return Text(glyph, style=tui_rich_style("muted"))
 
     def _build_title(self) -> str:

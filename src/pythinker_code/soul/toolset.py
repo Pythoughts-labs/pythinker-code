@@ -244,6 +244,16 @@ class PythinkerToolset:
                     server=server_name,
                 )
                 continue
+            if isinstance(existing, MCPTool) and existing.mcp_server_name != server_name:
+                # Servers connect concurrently, so which one wins is nondeterministic;
+                # keep last-wins semantics but make the shadowing visible.
+                logger.warning(
+                    "MCP tool '{name}' from server '{server}' overrides the same-named"
+                    " tool from MCP server '{prev}'",
+                    name=tool.name,
+                    server=server_name,
+                    prev=existing.mcp_server_name,
+                )
             self.add(tool)
 
     def hide(self, tool_name: str) -> bool:
@@ -866,6 +876,11 @@ class MCPTool[T: ClientTransport](CallableTool):
         self._runtime = runtime
         self._timeout = timedelta(milliseconds=runtime.config.mcp.client.tool_call_timeout_ms)
         self._action_name = f"mcp:{mcp_tool.name}"
+
+    @property
+    def mcp_server_name(self) -> str:
+        """Name of the MCP server this tool belongs to."""
+        return self._mcp_server_name
 
     async def __call__(self, *args: Any, **kwargs: Any) -> ToolReturnValue:
         description = f"Call MCP tool `{self._mcp_tool.name}`."

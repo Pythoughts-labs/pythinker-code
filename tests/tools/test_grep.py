@@ -723,6 +723,27 @@ async def test_grep_content_disable_line_numbers(grep_tool: Grep, temp_work_dir:
             assert len(parts) == 2, f"Expected path:content without linenum, got: {line}"
 
 
+async def test_grep_content_no_line_numbers_keeps_digit_hyphen_paths(
+    grep_tool: Grep, temp_work_dir: HostPath
+):
+    """-n=false must not mangle paths containing `-<digits>-` or `:<digits>:` runs.
+
+    The old strip regex matched the first sep-digits-sep run lazily, so a path
+    like `utf-8-codec.py` lost its `8-` and kept the real line number instead.
+    """
+    temp_dir = str(temp_work_dir)
+    (Path(temp_dir) / "utf-8-codec.py").write_text("hello\nworld\n")
+
+    result = await grep_tool(
+        Params.model_validate(
+            {"pattern": "hello", "path": temp_dir, "output_mode": "content", "-n": False}
+        )
+    )
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    assert "utf-8-codec.py:hello" in result.output
+
+
 async def test_grep_count_summary(grep_tool: Grep, temp_work_dir: HostPath):
     """count_matches: summary in message (not output), accurate on full results."""
     temp_dir = str(temp_work_dir)

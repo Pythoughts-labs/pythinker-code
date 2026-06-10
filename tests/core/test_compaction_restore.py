@@ -290,3 +290,23 @@ def test_display_path_skips_out_of_workspace_absolute_paths(tmp_path: Path) -> N
 
     # Relative path: returned unchanged (strip leading ./)
     assert _display_path("src/app.py", work_dir=work) == "src/app.py"
+
+
+def test_display_path_keeps_additional_dir_files_absolute(tmp_path: Path) -> None:
+    work = HostPath.unsafe_from_local_path(tmp_path / "ws")
+    add = HostPath.unsafe_from_local_path(tmp_path / "lib")
+    lib_file = str(tmp_path / "lib" / "util.py")
+
+    # Files under an --add-dir root are legitimate workspace members and must
+    # survive in restore reminders (absolute, to stay unambiguous).
+    assert _display_path(lib_file, work_dir=work, additional_dirs=(add,)) == lib_file
+
+    # Without the additional root the same path is still skipped.
+    assert _display_path(lib_file, work_dir=work) is None
+
+    # A sibling sharing the additional root's prefix is not contained.
+    sneaky = str(tmp_path / "lib-extra" / "f.py")
+    assert _display_path(sneaky, work_dir=work, additional_dirs=(add,)) is None
+
+    # Out-of-workspace absolutes still never resurface.
+    assert _display_path("/etc/passwd", work_dir=work, additional_dirs=(add,)) is None

@@ -43,6 +43,7 @@ from pythinker_code.ui.shell.motion import (
     ActivitySnapshot,
     active_marker_frame,
     activity_status_line,
+    blink_visible,
     reduced_motion_enabled,
     shimmer_text,
 )
@@ -915,11 +916,7 @@ class _LiveView:
             case BtwBegin(question=question):
                 truncated = (question[:40] + "...") if len(question) > 40 else question
                 self._btw_question = question
-                glyph = (
-                    TRANSCRIPT_ACTIVE_MARKER
-                    if reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0
-                    else " "
-                )
+                glyph = TRANSCRIPT_ACTIVE_MARKER if blink_visible() else " "
                 line = Text(f"{glyph} ", style=tui_rich_style("muted"))
                 line.append(f"Side question... {truncated}", style=tui_rich_style("muted"))
                 self._btw_spinner = line

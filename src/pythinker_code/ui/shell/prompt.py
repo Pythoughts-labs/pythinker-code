@@ -72,7 +72,7 @@ from pythinker_code.ui.shell.glyphs import (
     TRANSCRIPT_PROMPT_MARKER,
     TRANSCRIPT_TOOL_GUTTER,
 )
-from pythinker_code.ui.shell.motion import shimmer_prompt_fragments
+from pythinker_code.ui.shell.motion import blink_visible, shimmer_prompt_fragments
 from pythinker_code.ui.shell.placeholders import (
     PromptPlaceholderManager,
     normalize_pasted_text,
@@ -2961,7 +2961,7 @@ class CustomPromptSession:
         now = time.monotonic()
         if getattr(self, "_bg_status_started_at", None) is None:
             self._bg_status_started_at = now
-        frame = TRANSCRIPT_ACTIVE_MARKER if int(now / 0.8) % 2 == 0 else " "
+        frame = TRANSCRIPT_ACTIVE_MARKER if blink_visible(now) else " "
         tokens = _get_tui_tokens()
         muted_style = f"fg:{tokens.muted}" if tokens.muted else ""
         frame_style = f"fg:{tokens.activity_spinner}" if tokens.activity_spinner else muted_style

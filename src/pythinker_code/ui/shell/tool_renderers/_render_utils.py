@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import time
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +14,7 @@ from rich.text import Text
 
 from pythinker_code.ui.shell.components import sanitize_ansi
 from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ASSISTANT_MARKER
-from pythinker_code.ui.shell.motion import reduced_motion_enabled
+from pythinker_code.ui.shell.motion import blink_visible
 from pythinker_code.ui.shell.render_constants import LISTING_LINE_NUMBER_MIN_WIDTH
 from pythinker_code.ui.theme import tui_rich_style
 
@@ -165,10 +164,9 @@ def loading_marker(
     """
     if done:
         return Text(f"{TRANSCRIPT_ASSISTANT_MARKER} ", style=tui_rich_style("success"))
-    if not pulse or reduced_motion_enabled():
+    if not pulse:
         return Text(f"{TRANSCRIPT_ASSISTANT_MARKER} ", style=tui_rich_style(style_token))
-    t = time.monotonic() if now is None else now
-    glyph = TRANSCRIPT_ASSISTANT_MARKER if int(t / 0.8) % 2 == 0 else " "
+    glyph = TRANSCRIPT_ASSISTANT_MARKER if blink_visible(now) else " "
     return Text(f"{glyph} ", style=tui_rich_style(style_token))
 
 

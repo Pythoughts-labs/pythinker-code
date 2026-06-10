@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any, cast
 
@@ -1032,6 +1033,12 @@ async def theme(app: Shell, args: str) -> None:
     from pythinker_code.telemetry import track
 
     track("theme_switch", theme=arg)
+    if arg == "auto":
+        # The reload stays in-process, so a probe that failed at startup would
+        # otherwise pin auto to the dark fallback; let it query the terminal again.
+        from pythinker_code.ui.terminal_background import reset_probe_cache
+
+        reset_probe_cache()
     console.print(f"[{_t_theme.success}]Switched to {_rich_escape(arg)} theme. Reloading...[/]")
     raise Reload(session_id=soul.runtime.session.id)
 
@@ -1397,8 +1404,10 @@ def restore(app: Shell, args: str) -> None:
             return
         restore_id = points[0].id
     else:
-        valid_ids = {p.id for p in list_file_restore_points(session)}
-        if arg not in valid_ids:
+        # Cheap format guard (ids are `<millis>-<8hex>`): rejects traversal
+        # attempts like `../../x` without loading every snapshot. Unknown but
+        # well-formed ids fall through to the FileNotFoundError handler below.
+        if not re.fullmatch(r"[A-Za-z0-9-]+", arg):
             console.print(f"[{_tok.error}]Restore point not found: {_rich_escape(arg)}[/]")
             return
         restore_id = arg

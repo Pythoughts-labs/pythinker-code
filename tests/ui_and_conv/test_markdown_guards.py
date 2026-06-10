@@ -81,6 +81,14 @@ def test_md_fence_inside_other_fence_is_untouched() -> None:
     assert _unwrap_fenced_markdown_tables(markup) == markup
 
 
+def test_info_string_fence_inside_other_fence_does_not_close_it() -> None:
+    # CommonMark closing fences carry no info string, so a ```python line
+    # inside an open ``` fence is content — the md fence after it must still
+    # be treated as fence interior, not unwrapped.
+    markup = f"```\n```python\n```md\n{_TABLE_BODY}```\n```\n"
+    assert _unwrap_fenced_markdown_tables(markup) == markup
+
+
 def test_pythinker_markdown_applies_unwrap_pass() -> None:
     md = PythinkerMarkdown(f"```markdown\n{_TABLE_BODY}```\n")
     assert "```" not in md.markup

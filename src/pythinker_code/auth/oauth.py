@@ -234,16 +234,32 @@ def _device_model() -> str:
     return "Unknown"
 
 
+def _read_device_id(path: Path) -> str:
+    """Read an existing device id, retrying briefly while the writer races us.
+
+    O_CREAT|O_EXCL publishes the file empty before its content lands, so a
+    loser of the creation race can observe a zero-byte file for a moment.
+    """
+    for _ in range(20):
+        existing = path.read_text(encoding="utf-8").strip()
+        if existing:
+            return existing
+        time.sleep(0.005)
+    return ""
+
+
 def get_device_id() -> str:
     path = _device_id_path()
-    if path.exists():
-        return path.read_text(encoding="utf-8").strip()
+    if path.exists() and (existing := _read_device_id(path)):
+        return existing
     device_id = uuid.uuid4().hex
     try:
         fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     except FileExistsError:
         # Another process won the race; use its id, do not re-fire telemetry.
-        return path.read_text(encoding="utf-8").strip()
+        # Fall back to a fresh in-memory id if the file stays empty (e.g. a
+        # legacy truncated file) rather than tagging the session with "".
+        return _read_device_id(path) or device_id
     try:
         os.write(fd, device_id.encode("utf-8"))
     finally:
@@ -682,6 +698,11 @@ async def login_pythinker_code(
                 status, data = await _request_device_token(auth)
                 if status == 200 and "access_token" in data:
                     token = OAuthToken.from_response(data)
+                    if not token.refresh_token:
+                        # Fail loud at login: a token saved without a refresh_token
+                        # can never refresh, deferring the failure to first expiry
+                        # with a far more confusing unauthorized error.
+                        raise OAuthError("Token response missing refresh_token.")
                     break
                 error_code = str(data.get("error") or "unknown_error")
                 if error_code == "expired_token":
@@ -1114,6 +1135,12 @@ class OAuthManager:
                     refreshed.account_id = current.account_id
                 if not refreshed.refresh_token:
                     refreshed.refresh_token = current.refresh_token
+                if refreshed.expires_in <= 0 and current.expires_in > 0:
+                    # A refresh response omitting expires_in would otherwise stamp
+                    # expires_at == now, making the freshness gate refresh again on
+                    # every tick; carry the previous lifetime forward instead.
+                    refreshed.expires_in = current.expires_in
+                    refreshed.expires_at = time.time() + current.expires_in
                 self._clear_rejected_refresh_token(ref)
                 save_tokens(ref, refreshed)
                 self._cache_access_token(ref, refreshed)

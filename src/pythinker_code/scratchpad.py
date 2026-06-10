@@ -404,23 +404,32 @@ async def ensure_git_excluded(
 
 
 async def _append_exclude_line(work_dir: HostPath, exclude_path: str, exclude_line: str) -> None:
-    """Append ``exclude_line`` to the resolved info/exclude if missing."""
+    """Append ``exclude_line`` to the resolved info/exclude if missing.
+
+    Runs in a worker thread: the flock acquisition can block on another
+    pythinker instance's holder (or a slow filesystem), which must not stall
+    this process's event loop at startup.
+    """
     path = Path(exclude_path)
     if not path.is_absolute():
         path = Path(str(work_dir)) / path
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with _exclude_lock(path):
-            existing = path.read_text(encoding="utf-8") if path.exists() else ""
-            if any(line.strip() == exclude_line for line in existing.splitlines()):
-                return
-            prefix = "" if existing == "" or existing.endswith("\n") else "\n"
-            with path.open("a", encoding="utf-8") as fh:
-                fh.write(f"{prefix}{exclude_line}\n")
+        await asyncio.to_thread(_append_exclude_line_sync, path, exclude_line)
     except OSError as exc:
         if is_transient_oserror(exc):
             raise TransientScratchpadError(str(exc)) from exc
         raise
+
+
+def _append_exclude_line_sync(path: Path, exclude_line: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _exclude_lock(path):
+        existing = path.read_text(encoding="utf-8") if path.exists() else ""
+        if any(line.strip() == exclude_line for line in existing.splitlines()):
+            return
+        prefix = "" if existing == "" or existing.endswith("\n") else "\n"
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(f"{prefix}{exclude_line}\n")
 
 
 @contextlib.contextmanager

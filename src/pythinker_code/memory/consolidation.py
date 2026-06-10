@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -95,13 +96,30 @@ async def generate_inbox_candidates(
     return candidates
 
 
+def _claim_candidate(path: Path) -> Path | None:
+    """Atomically claim a candidate file, or None when another process won.
+
+    os.rename is atomic, so concurrent approve/reject of the same candidate
+    cannot both act on it: exactly one claims the file, the other sees
+    "Candidate not found" — instead of e.g. a reject reporting success after
+    an approve already persisted the entry to durable memory.
+    """
+    claimed = path.with_suffix(".claimed")
+    try:
+        os.rename(path, claimed)
+    except OSError:
+        return None
+    return claimed
+
+
 async def approve_inbox_candidate(store: ProjectMemoryStore, candidate_id: str) -> str:
     directory = await inbox_dir(store)
     path = directory / f"{_safe_id(candidate_id)}.json"
-    if not path.is_file():
+    claimed = _claim_candidate(path)
+    if claimed is None:
         return "Candidate not found."
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(claimed.read_text(encoding="utf-8"))
         candidate = InboxCandidate(**data)
     except Exception as exc:
         logger.warning(
@@ -109,18 +127,23 @@ async def approve_inbox_candidate(store: ProjectMemoryStore, candidate_id: str) 
             path.name,
             exc,
         )
+        claimed.unlink(missing_ok=True)
         return "Candidate file is corrupt and cannot be approved."
     result = await store.add("memory", candidate.content)
     if not result.ok:
+        # Un-claim so the candidate can be retried after the failure clears.
+        with contextlib.suppress(OSError):
+            os.rename(claimed, path)
         return result.message
-    path.unlink(missing_ok=True)
+    claimed.unlink(missing_ok=True)
     return "Candidate approved and added to project memory."
 
 
 async def reject_inbox_candidate(store: ProjectMemoryStore, candidate_id: str) -> str:
     directory = await inbox_dir(store)
     path = directory / f"{_safe_id(candidate_id)}.json"
-    if not path.is_file():
+    claimed = _claim_candidate(path)
+    if claimed is None:
         return "Candidate not found."
-    path.unlink(missing_ok=True)
+    claimed.unlink(missing_ok=True)
     return "Candidate rejected."

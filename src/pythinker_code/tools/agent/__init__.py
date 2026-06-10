@@ -307,6 +307,10 @@ class AgentTool(CallableTool2[Params]):
         except FileNotFoundError as exc:
             logger.warning("Foreground agent resume target was not found: {err}", err=exc)
             return ToolError(message=str(exc), brief="Agent not found")
+        except ValueError as exc:
+            # Malformed resume id (store.instance_dir validates [A-Za-z0-9_-]{1,64}).
+            logger.warning("Foreground agent resume id was malformed: {err}", err=exc)
+            return ToolError(message=str(exc), brief="Agent not found")
         except RuntimeError as exc:
             if "cannot be resumed concurrently" in str(exc):
                 logger.warning("Foreground agent resume rejected: {err}", err=exc)
@@ -316,6 +320,16 @@ class AgentTool(CallableTool2[Params]):
             report_handled_error(exc, site="tool.agent.foreground", tool="Agent")
             logger.exception("Foreground agent run failed")
             return ToolError(message=f"Failed to run agent: {exc}", brief="Agent failed")
+        except KeyError as exc:
+            # Hallucinated subagent type: routine model error, not a crash —
+            # name the valid types so the model can self-correct.
+            return ToolError(
+                message=(
+                    f"{exc.args[0] if exc.args else exc}. Available types: "
+                    f"{', '.join(sorted(self._runtime.labor_market.builtin_types))}."
+                ),
+                brief="Invalid subagent type",
+            )
         except Exception as exc:
             from pythinker_code.telemetry.errors import report_handled_error
 
@@ -462,8 +476,17 @@ class AgentTool(CallableTool2[Params]):
             )
         except FileNotFoundError as exc:
             return ToolError(message=str(exc), brief="Agent not found")
+        except ValueError as exc:
+            # Malformed resume id (store.instance_dir validates [A-Za-z0-9_-]{1,64}).
+            return ToolError(message=str(exc), brief="Agent not found")
         except KeyError as exc:
-            return ToolError(message=str(exc), brief="Invalid subagent type")
+            return ToolError(
+                message=(
+                    f"{exc.args[0] if exc.args else exc}. Available types: "
+                    f"{', '.join(sorted(self._runtime.labor_market.builtin_types))}."
+                ),
+                brief="Invalid subagent type",
+            )
         except RuntimeError as exc:
             logger.exception("Background agent launch failed")
             return ToolError(message=str(exc), brief="Background start failed")
@@ -584,6 +607,19 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
             )
         for child in params.agents:
             requested_type = child.subagent_type or "coder"
+            # Fail fast on a hallucinated type BEFORE any child launches:
+            # discovering it mid-loop leaves earlier children running, and a
+            # corrected retry then double-launches them (the orchestration
+            # fingerprint is already approved by that point).
+            if self._runtime.labor_market.get_builtin_type(requested_type) is None:
+                return ToolError(
+                    message=(
+                        f"Unknown subagent type {requested_type!r} for agent "
+                        f"{child.name!r}. Available types: "
+                        f"{', '.join(sorted(self._runtime.labor_market.builtin_types))}."
+                    ),
+                    brief="Invalid subagent type",
+                )
             if err := self._agent_tool.check_execution_policy(requested_type):
                 return err
         capacity = self._background_capacity(params)

@@ -121,7 +121,8 @@ def probe_terminal_background(timeout: float = _PROBE_TIMEOUT_S) -> RGB | None:
     """Return the terminal's default background RGB, cached per process.
 
     A failed probe is also cached (as ``None``) so the terminal is never
-    queried twice in one session.
+    queried twice in one session. Use :func:`reset_probe_cache` to allow a
+    deliberate re-probe (e.g. when the user re-selects the auto theme).
     """
     global _cached_bg, _probe_attempted
     with _probe_lock:
@@ -130,6 +131,19 @@ def probe_terminal_background(timeout: float = _PROBE_TIMEOUT_S) -> RGB | None:
         _probe_attempted = True
         _cached_bg = _probe_uncached(timeout)
         return _cached_bg
+
+
+def reset_probe_cache() -> None:
+    """Forget the cached probe result so the next probe queries the terminal again.
+
+    Without this, a probe that failed at startup (slow or unresponsive terminal)
+    pins ``theme=auto`` to the dark fallback for the whole process — even after
+    the user re-picks auto via /theme, which reloads in-process.
+    """
+    global _cached_bg, _probe_attempted
+    with _probe_lock:
+        _probe_attempted = False
+        _cached_bg = None
 
 
 def detect_background_theme() -> Literal["dark", "light"] | None:

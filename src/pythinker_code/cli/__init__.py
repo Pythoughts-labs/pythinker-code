@@ -663,7 +663,7 @@ def pythinker(
     from pythinker_code.config import Config, load_config_from_string
     from pythinker_code.exception import ConfigError
     from pythinker_code.hooks import events as hook_events
-    from pythinker_code.metadata import load_metadata, save_metadata
+    from pythinker_code.metadata import Metadata, mutate_metadata
     from pythinker_code.session import Session
     from pythinker_code.ui.shell.startup import ShellStartupProgress
     from pythinker_code.utils.logging import logger, open_original_stderr, redirect_stderr_to_logger
@@ -848,6 +848,17 @@ def pythinker(
             else:
                 session = await Session.create(work_dir)
                 logger.info("Created new session: {session_id}", session_id=session.id)
+
+            # One writer per session: a second pythinker process appending to the
+            # same context/wire files would interleave turns and corrupt history.
+            # Checked before registering the session for cleanup so a refused
+            # session is never deleted from under its real owner.
+            if not session.acquire_ownership():
+                raise typer.BadParameter(
+                    f"Session {session.id} is already open in another pythinker process. "
+                    "Close it there, or start a new session.",
+                    param_hint="--resume/--continue",
+                )
 
             nonlocal _latest_created_session
             _latest_created_session = session
@@ -1057,11 +1068,13 @@ def pythinker(
             session_id=session.id,
         )
         await session.delete()
-        meta = load_metadata()
-        wdm = meta.get_work_dir_meta(session.work_dir)
-        if wdm is not None and wdm.last_session_id == session.id:
-            wdm.last_session_id = None
-            save_metadata(meta)
+
+        def _clear_last(meta: Metadata) -> None:
+            wdm = meta.get_work_dir_meta(session.work_dir)
+            if wdm is not None and wdm.last_session_id == session.id:
+                wdm.last_session_id = None
+
+        await asyncio.to_thread(mutate_metadata, _clear_last)
 
     def _print_resume_hint(session: Session) -> None:
         """Print a hint for resuming the session after exit."""
@@ -1096,16 +1109,19 @@ def pythinker(
             # Always clean up empty sessions regardless of exit code
             await _delete_empty_session(last_session)
         elif exit_code == ExitCode.SUCCESS:
-            metadata = load_metadata()
-            work_dir_meta = metadata.get_work_dir_meta(last_session.work_dir)
-            if work_dir_meta is None:
-                logger.warning(
-                    "Work dir metadata missing when marking last session, recreating: {work_dir}",
-                    work_dir=last_session.work_dir,
-                )
-                work_dir_meta = metadata.new_work_dir_meta(last_session.work_dir)
-            work_dir_meta.last_session_id = last_session.id
-            save_metadata(metadata)
+
+            def _mark_last(metadata: Metadata) -> None:
+                work_dir_meta = metadata.get_work_dir_meta(last_session.work_dir)
+                if work_dir_meta is None:
+                    logger.warning(
+                        "Work dir metadata missing when marking last session, "
+                        "recreating: {work_dir}",
+                        work_dir=last_session.work_dir,
+                    )
+                    work_dir_meta = metadata.new_work_dir_meta(last_session.work_dir)
+                work_dir_meta.last_session_id = last_session.id
+
+            await asyncio.to_thread(mutate_metadata, _mark_last)
 
     async def _reload_loop(session_id: str | None) -> tuple[str | None, int]:
         """Run the main loop, handling Reload/SwitchToWeb/SwitchToVis.
@@ -1122,6 +1138,11 @@ def pythinker(
                     last_session, exit_code = await _run(session_id, prefill_text=prefill_text)
                     break
                 except Reload as e:
+                    # Release the writer lock before re-opening: a same-session
+                    # reload (/theme, /model) re-acquires on a fresh fd, and
+                    # flock treats that fd as a separate owner even in-process.
+                    if _latest_created_session is not None:
+                        _latest_created_session.release_ownership()
                     # Clean up old empty session when switching to a different session
                     old = e.source_session
                     if old is not None and old.id != e.session_id and old.is_empty():
@@ -1137,12 +1158,17 @@ def pythinker(
                     prefill_text = e.prefill_text
                     continue
                 except SwitchToWeb as e:
+                    # The web worker subprocess becomes the session's writer.
+                    if _latest_created_session is not None:
+                        _latest_created_session.release_ownership()
                     if e.session_id is not None:
                         session = await Session.find(work_dir, e.session_id)
                         if session is not None:
                             await _post_run(session, ExitCode.SUCCESS)
                     return "web", ExitCode.SUCCESS
                 except SwitchToVis as e:
+                    if _latest_created_session is not None:
+                        _latest_created_session.release_ownership()
                     if e.session_id is not None:
                         session = await Session.find(work_dir, e.session_id)
                         if session is not None:
@@ -1150,6 +1176,7 @@ def pythinker(
                     return "vis", ExitCode.SUCCESS
             assert last_session is not None
             await _post_run(last_session, exit_code)
+            last_session.release_ownership()
             return None, exit_code
         except (SwitchToWeb, SwitchToVis):
             # Currently handled inside the loop (return), but re-raise explicitly

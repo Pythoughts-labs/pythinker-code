@@ -74,6 +74,22 @@ def test_failed_probe_is_cached_too(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(calls) == 1
 
 
+def test_reset_probe_cache_allows_reprobe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Re-selecting the auto theme must be able to retry a failed startup probe."""
+    results: list[tuple[int, int, int] | None] = [None, (30, 30, 46)]
+    calls: list[float] = []
+
+    def fake_probe(timeout: float) -> tuple[int, int, int] | None:
+        calls.append(timeout)
+        return results[len(calls) - 1]
+
+    monkeypatch.setattr(terminal_background, "_probe_uncached", fake_probe)
+    assert terminal_background.probe_terminal_background() is None
+    terminal_background.reset_probe_cache()
+    assert terminal_background.probe_terminal_background() == (30, 30, 46)
+    assert len(calls) == 2
+
+
 def test_resolve_theme_name_passthrough(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(terminal_background, "detect_background_theme", lambda: None)
     assert terminal_background.resolve_theme_name("dark") == "dark"

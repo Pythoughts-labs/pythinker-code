@@ -280,6 +280,25 @@ class RecallInjectionProvider(DynamicInjectionProvider):
         self._last_working_set: frozenset[str] = frozenset()
         self._last_injection_turns = 0
         self._last_block = ""
+        self._last_memory_mtime = 0.0
+
+    async def _memory_files_mtime(self) -> float:
+        """Newest mtime across the durable memory files (0.0 when absent)."""
+        try:
+            root = await self._store.ensure_root()
+        except Exception:
+            return 0.0
+
+        def _scan() -> float:
+            newest = 0.0
+            for name in ("MEMORY.md", "USER.md", "JOURNAL.md"):
+                try:
+                    newest = max(newest, (root / "memory" / name).stat().st_mtime)
+                except OSError:
+                    continue
+            return newest
+
+        return await asyncio.to_thread(_scan)
 
     async def get_injections(
         self, history: Sequence[Message], soul: PythinkerSoul
@@ -295,11 +314,17 @@ class RecallInjectionProvider(DynamicInjectionProvider):
             if turns_since < _REARM_MIN_ASSISTANT_TURNS:
                 return []
             current_ws = _working_set(history)
-            if not current_ws:
-                return []
-            if _jaccard(current_ws, self._last_working_set) >= _REARM_JACCARD:
-                return []  # working set has not shifted materially
-            self._injected = False  # re-arm for a fresh, working-set-aware recall
+            # Another pythinker instance may have written new durable memory;
+            # one stat batch (throttled by the turn check above) makes those
+            # facts visible without waiting for a working-set shift.
+            if await self._memory_files_mtime() > self._last_memory_mtime:
+                self._injected = False
+            else:
+                if not current_ws:
+                    return []
+                if _jaccard(current_ws, self._last_working_set) >= _REARM_JACCARD:
+                    return []  # working set has not shifted materially
+                self._injected = False  # re-arm for a fresh, working-set-aware recall
         else:
             current_ws = _working_set(history)
         try:
@@ -340,6 +365,7 @@ class RecallInjectionProvider(DynamicInjectionProvider):
         self._injected = True
         self._last_working_set = current_ws
         self._last_injection_turns = _assistant_turns(history)
+        self._last_memory_mtime = await self._memory_files_mtime()
         if not block.strip() or block == self._last_block:
             return []
         self._last_block = block

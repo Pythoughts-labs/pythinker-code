@@ -266,6 +266,37 @@ async def test_concurrent_add_on_same_loop_does_not_deadlock(tmp_path, monkeypat
     assert sorted(entries) == ["alpha", "beta"]
 
 
+async def test_concurrent_add_across_instances_does_not_deadlock(tmp_path, monkeypatch):
+    """Two store INSTANCES over the same work_dir share only the per-file flock.
+
+    The per-instance asyncio.Lock cannot serialise them, so the flock acquisition
+    must not run on the loop thread: a holder suspended inside the critical
+    section would otherwise deadlock the whole process.
+    """
+    import asyncio
+
+    from pythinker_code.project_memory import ProjectMemoryStore
+
+    store_a = _store(tmp_path, monkeypatch)
+    store_b = _store(tmp_path, monkeypatch)
+
+    orig_write = ProjectMemoryStore._write_entries
+
+    async def slow_write(self, target, entries) -> None:
+        await asyncio.sleep(0)  # yield inside the critical section
+        await orig_write(self, target, entries)
+
+    monkeypatch.setattr(ProjectMemoryStore, "_write_entries", slow_write)
+
+    results = await asyncio.wait_for(
+        asyncio.gather(store_a.add("memory", "alpha"), store_b.add("memory", "beta")),
+        timeout=5,
+    )
+    assert all(r.ok for r in results)
+    entries = await store_a.read_entries("memory")
+    assert sorted(entries) == ["alpha", "beta"]
+
+
 async def test_end_to_end_written_fact_is_recalled(tmp_path, monkeypatch):
     monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path / "share"))
     from pythinker_code.project_memory import ProjectMemoryInjectionProvider, ProjectMemoryStore
