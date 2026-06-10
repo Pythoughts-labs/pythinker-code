@@ -874,8 +874,9 @@ class PythinkerCLI:
         # Repos without agent guidance benefit most from /init — surface the
         # tip emphasized (WARN renders bold) only when neither file exists.
         try:
-            work_dir = Path.cwd()
-            has_agent_docs = (work_dir / "AGENTS.md").exists() or (work_dir / "CLAUDE.md").exists()
+            has_agent_docs = (
+                await (work_dir / "AGENTS.md").exists() or await (work_dir / "CLAUDE.md").exists()
+            )
         except OSError:
             has_agent_docs = True
         if not has_agent_docs:

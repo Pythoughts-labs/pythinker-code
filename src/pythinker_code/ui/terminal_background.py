@@ -10,7 +10,7 @@ so callers keep their configured fallback.
 
 from __future__ import annotations
 
-import contextlib
+import logging
 import os
 import re
 import select
@@ -23,6 +23,8 @@ from pythinker_code.ui.color_utils import RGB, is_light
 
 if TYPE_CHECKING:
     from pythinker_code.ui.theme import ThemeName
+
+_log = logging.getLogger(__name__)
 
 _OSC11_QUERY = "\x1b]11;?\x1b\\"
 # Reply shape: ``ESC ] 11 ; rgb:RRRR/GGGG/BBBB`` terminated by BEL or ST.
@@ -81,7 +83,8 @@ def _probe_uncached(timeout: float) -> RGB | None:
 
     try:
         old_attrs = termios.tcgetattr(fd)
-    except (termios.error, OSError):
+    except (termios.error, OSError) as exc:
+        _log.debug("OSC11 probe failed while reading terminal attrs", exc_info=exc)
         return None
     try:
         tty.setcbreak(fd)
@@ -102,13 +105,16 @@ def _probe_uncached(timeout: float) -> RGB | None:
             if "\x07" in buf or "\x1b\\" in buf:
                 break
         return parse_osc11_response(buf)
-    except (OSError, ValueError):
+    except (OSError, ValueError) as exc:
+        _log.debug("OSC11 probe failed during probe I/O", exc_info=exc)
         return None
     finally:
         # Never let restore failure escape — a raised tcsetattr here would
         # both crash startup and leave the terminal in cbreak mode anyway.
-        with contextlib.suppress(termios.error, OSError):
+        try:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
+        except (termios.error, OSError) as exc:
+            _log.debug("OSC11 probe failed to restore terminal mode", exc_info=exc)
 
 
 def probe_terminal_background(timeout: float = _PROBE_TIMEOUT_S) -> RGB | None:

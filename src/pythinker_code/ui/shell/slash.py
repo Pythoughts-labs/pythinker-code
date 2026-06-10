@@ -1293,7 +1293,7 @@ async def settings(app: Shell, args: str):
         if config_file is None:
             console.print(
                 f"[{_t_set.warning}]Toggling recaps requires a config file; "
-                f"restart without --config text to persist settings.[/]"
+                f"restart without --config (or use --config-file) to persist settings.[/]"
             )
             return
         try:

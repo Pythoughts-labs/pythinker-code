@@ -39,7 +39,7 @@ def blend(fg: RGB, bg: RGB, alpha: float) -> RGB:
 
 
 def luma(rgb: RGB) -> float:
-    """ITU-R BT.601 perceived brightness in the 0–255 range."""
+    """ITU-R BT.601 perceived brightness in the 0-255 range."""
     return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
 
 

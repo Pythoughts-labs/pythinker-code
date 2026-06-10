@@ -261,8 +261,8 @@ def test_thinking_status_line_uses_compact_activity_metadata():
     console = Console(record=True, width=120, color_system=None)
     console.print(block.compose())
     output = console.export_text()
-    assert "Thinking…" in output
-    assert "(" in output and ")" in output
+    assert "Thinking… (" in output
+    assert "tokens" in output
     assert "esc to interrupt" not in output
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 
 from pythinker_code.ui.shell.components import (
@@ -18,7 +20,7 @@ from pythinker_code.ui.shell.tool_renderers._file_diff import diff_frame
 
 
 @pytest.fixture(autouse=True)
-def _isolated_registry():
+def _isolated_registry() -> Iterator[None]:
     clear_tool_renderers()
     yield
     clear_tool_renderers()
