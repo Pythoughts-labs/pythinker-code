@@ -25,6 +25,7 @@ from pythinker_code.utils.server import (
     format_url,
     get_network_addresses,
     is_local_host,
+    missing_ui_page,
 )
 from pythinker_code.web.api import (
     config_router,
@@ -218,9 +219,24 @@ def create_app(
         """Health check endpoint."""
         return {"status": "ok"}
 
-    # Mount static files as fallback (must be last)
-    if STATIC_DIR.exists():
+    # Mount static files as fallback (must be last). Gate on index.html, not
+    # just the directory: a build that skipped the web bundle can still ship
+    # the git-tracked brand/ files, and StaticFiles(html=True) would then 404
+    # on "/" with no hint of why.
+    if (STATIC_DIR / "index.html").is_file():
         application.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+    else:
+        logger.warning(
+            "Web UI assets missing at {static_dir}; serving setup instructions on /",
+            static_dir=STATIC_DIR,
+        )
+
+        @application.get("/", include_in_schema=False)
+        async def missing_web_ui() -> HTMLResponse:  # pyright: ignore[reportUnusedFunction]
+            return HTMLResponse(
+                status_code=503,
+                content=missing_ui_page("pythinker_code/web/static/index.html", "make build-web"),
+            )
 
     return application
 

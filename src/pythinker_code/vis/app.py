@@ -10,6 +10,7 @@ from urllib.parse import quote
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from pythinker_code.utils.server import (
@@ -18,6 +19,7 @@ from pythinker_code.utils.server import (
     format_url,
     get_network_addresses,
     is_local_host,
+    missing_ui_page,
     print_banner,
 )
 from pythinker_code.vis.api import sessions_router, statistics_router, system_router
@@ -82,8 +84,18 @@ def create_app() -> FastAPI:
     async def health_probe() -> dict[str, Any]:  # pyright: ignore[reportUnusedFunction]
         return {"status": "ok"}
 
-    if STATIC_DIR.exists():
+    # Gate on index.html, not just the directory: a build that skipped the vis
+    # bundle would otherwise answer "/" with a bare 404 instead of a hint.
+    if (STATIC_DIR / "index.html").is_file():
         application.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+    else:
+
+        @application.get("/", include_in_schema=False)
+        async def missing_vis_ui() -> HTMLResponse:  # pyright: ignore[reportUnusedFunction]
+            return HTMLResponse(
+                status_code=503,
+                content=missing_ui_page("pythinker_code/vis/static/index.html", "make build-vis"),
+            )
 
     return application
 

@@ -1,7 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
-from pythinker_code.utils.pyinstaller import datas, hiddenimports
+from pythinker_code.utils.pyinstaller import datas, hiddenimports, require_ui_assets
+
+# Fail loud when the gitignored web/vis bundles haven't been built; a freeze
+# without them ships a binary whose web UI 404s on "/".
+require_ui_assets()
 
 # Read codesign identity from environment variable (for macOS signing in CI)
 codesign_identity = os.environ.get("APPLE_SIGNING_IDENTITY", None)

@@ -5,6 +5,7 @@ import sys
 from importlib.metadata import version
 from pathlib import Path
 
+import pytest
 from inline_snapshot import snapshot
 
 
@@ -332,3 +333,23 @@ def test_pyinstaller_hiddenimports_include_lazy_cli_subcommands():
     }
 
     assert expected_hiddenimports <= set(hiddenimports)
+
+
+def test_require_ui_assets_accepts_built_tree(tmp_path: Path) -> None:
+    from pythinker_code.utils.pyinstaller import require_ui_assets
+
+    for rel in ("web/static/index.html", "vis/static/index.html"):
+        target = tmp_path / rel
+        target.parent.mkdir(parents=True)
+        target.write_text("<!doctype html>")
+
+    require_ui_assets(tmp_path)  # must not raise
+
+
+def test_require_ui_assets_rejects_unbuilt_tree(tmp_path: Path) -> None:
+    """A freeze without the gitignored web/vis bundles ships a web UI that
+    404s on "/"; the guard must abort the build with an actionable message."""
+    from pythinker_code.utils.pyinstaller import require_ui_assets
+
+    with pytest.raises(SystemExit, match="build-web"):
+        require_ui_assets(tmp_path)
