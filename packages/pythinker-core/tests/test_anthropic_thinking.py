@@ -114,6 +114,18 @@ def test_supports_adaptive_thinking(model: str, expected: bool) -> None:
         ("claude-opus-4-8", "max", "max"),
         ("claude-opus-5-0", "max", "max"),
         ("claude-opus-5-0", "xhigh", "high"),
+        # Qwen via the Anthropic-compatible endpoint (Alibaba Model Studio /
+        # OpenCode Go @ai-sdk/anthropic): a non-Claude model, so it takes the
+        # pre-4.6 budget path. Effort must land in {low, medium, high} so the
+        # budgets[...] lookup in with_thinking can never KeyError, and xhigh/max
+        # clamp to high while minimal floors to low.
+        ("qwen3.7-max", "off", "off"),
+        ("qwen3.7-max", "minimal", "low"),
+        ("qwen3.7-max", "low", "low"),
+        ("qwen3.7-max", "medium", "medium"),
+        ("qwen3.7-max", "high", "high"),
+        ("qwen3.7-max", "xhigh", "high"),
+        ("qwen3.7-max", "max", "high"),
     ],
 )
 def test_clamp_effort(model: str, effort: str, expected: str) -> None:

@@ -15,6 +15,7 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Reasoning-effort control for Qwen native-thinking models on OpenCode Go.** Qwen3.x/3.7 models (e.g. `qwen3.7-max`) served through the OpenCode Go Anthropic-shaped route now carry the controllable `thinking` capability, so their reasoning effort is user-selectable instead of fixed. Effort maps onto the standard Anthropic `thinking` block (`{"type": "enabled", "budget_tokens": N}` / `{"type": "disabled"}`) that Alibaba Model Studio's Anthropic-compatible endpoint accepts, clamping to the budget-safe `low`/`medium`/`high` range. The Alibaba plan already exposed Qwen thinking effort; this brings the OpenCode Go plan to parity. Unlike GLM/MiniMax (always-on reasoning), Qwen is hybrid, so effort can also be turned off.
 - **TUI enhancements: adaptive theme, layout, and agent prompt overhaul.** Adaptive terminal-background probe + color-depth blending; reference-CLI layout and palette refinements; unified todo-list renderer; white running-task titles with consistent diff palette; elapsed/tokens/t-s metadata on the background status line; transcript-row bullet fix; renderer guards and markdown fence table unwrapping. All default agent prompts restructured with explicit Mission / Hard Constraints / Workflow / Output Contract sections. Background manager and subagent runner hardened with stale-record reconciliation and resume contract enforcement. Automatic turn recaps disabled by default.
 
 ## 0.39.0 (2026-06-09)

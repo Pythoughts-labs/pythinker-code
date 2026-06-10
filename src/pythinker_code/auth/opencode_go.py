@@ -144,10 +144,22 @@ MODELS_DEV_ANTHROPIC_NPM = "@ai-sdk/anthropic"
 
 
 def _native_thinking_capabilities(model_id: str) -> set[ModelCapability] | None:
-    """Model families whose reasoning is built in, not controlled by Pythinker."""
+    """Reasoning capability for native-thinking model families on OpenCode Go.
+
+    GLM and MiniMax reason unconditionally (``always_thinking`` — the user
+    cannot turn reasoning off, only pick an effort). Qwen3.x/3.7 are *hybrid*
+    thinking models: reasoning is toggleable per request via the standard
+    Anthropic ``thinking`` block, which Alibaba's Anthropic-compatible endpoint
+    (and the OpenCode Go @ai-sdk/anthropic route) accepts as
+    ``{"type": "enabled", "budget_tokens": N}`` / ``{"type": "disabled"}``. So
+    Qwen gets the controllable ``thinking`` capability, letting ``with_thinking``
+    map the effort level onto a thinking budget.
+    """
     normalized = model_id.lower().replace("_", "-")
     if normalized.startswith(("glm-", "minimax-")):
         return {"always_thinking"}
+    if normalized.startswith("qwen"):
+        return {"thinking"}
     return None
 
 
