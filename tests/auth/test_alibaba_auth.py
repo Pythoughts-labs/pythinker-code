@@ -738,7 +738,7 @@ async def test_logout_alibaba_rejects_non_default_config_location():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("key", ["sk-sp-test-key", "sk-tok-test-key"])
+@pytest.mark.parametrize("key", ["sk-sp-test-key", "sk-tok-test-key", "sk-ws-test-key"])
 async def test_login_alibaba_plan_key_routes_to_token_plan(monkeypatch, tmp_path, key):
     """Subscription plan keys (sk-sp-/sk-tok-/sk-ws-) all use the Token Plan endpoint."""
     from pythinker_code.auth.alibaba import ALIBABA_TOKEN_PLAN_BASE_URL, login_alibaba_api_key
