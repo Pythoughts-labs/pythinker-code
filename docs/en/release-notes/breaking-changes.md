@@ -4,6 +4,10 @@ This page documents breaking changes in Pythinker Code releases and provides mig
 
 ## Unreleased
 
+## 0.40.1 (2026-06-10)
+
+No breaking changes. This release is compatible with 0.40.0 user configuration, native installs, and session data.
+
 ## 0.40.0 (2026-06-10)
 
 **`pythinker web` / `pythinker vis` `-h` host flag renamed to `-H`.** The short flag `-h` is now a help alias on both subcommands (matching the root CLI); previously `-h <ip>` bound the host. Scripts using `-h 0.0.0.0` must switch to `-H <ip>` or `--host <ip>`.
