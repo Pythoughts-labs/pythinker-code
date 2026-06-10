@@ -166,6 +166,8 @@ _PROMPT_STYLE_DARK = {
     "compact-input": "",
     "compact-input.prompt": "fg:#F4F4F5 bold",
     "compact-input.frame": "fg:#3A506D",
+    # Muted level word in the top-border effort label (the dot carries the color).
+    "compact-input.effort": "fg:#A3A3A3",
     "running-prompt-placeholder": "fg:#A3A3A3 italic",
     "running-prompt-separator": "fg:#2B3A52",
     # Slash completion menu — selected row gets the same selected-bg as cards.
@@ -204,6 +206,8 @@ _PROMPT_STYLE_LIGHT = {
     "compact-input": "",
     "compact-input.prompt": "fg:#213853 bold",
     "compact-input.frame": "fg:#495F7C",
+    # Muted level word in the top-border effort label (the dot carries the color).
+    "compact-input.effort": "fg:#666666",
     "running-prompt-placeholder": "fg:#666666 italic",
     "running-prompt-separator": "fg:#C8BEC0",
     "slash-completion-menu": "",
@@ -647,3 +651,16 @@ def thinking_frame_style(level: str, *, theme: ThemeName | None = None) -> str:
         pole = (255, 255, 255) if name == "light" else (0, 0, 0)
         color = to_hex_color(blend(rgb, pole, 0.7))
     return f"fg:{color}"
+
+
+def thinking_dot_style(level: str, *, theme: ThemeName | None = None) -> str:
+    """prompt_toolkit style for the small effort *dot* on the input top border.
+
+    Unlike :func:`thinking_frame_style` (which dims the color because it paints
+    a full-width bar), the dot is a single glyph, so it carries the level color
+    at full strength — the one intentional accent on an otherwise static-grey
+    border. Returns ``""`` when colors are disabled.
+    """
+    if colors_disabled():
+        return ""
+    return f"fg:{thinking_frame_color(level, theme=theme)}"

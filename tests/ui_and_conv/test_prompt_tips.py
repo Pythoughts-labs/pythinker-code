@@ -605,8 +605,11 @@ def test_card_toolbar_agent_label_is_light_and_context_is_muted(monkeypatch: Any
     ) in fragments
 
 
-def test_card_toolbar_separator_matches_thinking_prompt_color(monkeypatch: Any) -> None:
-    from pythinker_code.ui.theme import set_active_theme, thinking_frame_style
+def test_card_toolbar_separator_is_static_grey_regardless_of_effort(monkeypatch: Any) -> None:
+    # The input border no longer borrows the thinking-effort color; every
+    # separator is the one static frame grey (the effort signal moved to the
+    # top-border label instead).
+    from pythinker_code.ui.theme import set_active_theme
 
     prompt_session = _make_toolbar_session(
         model_name="fast-model", model_capabilities={"thinking"}, tips=[]
@@ -631,9 +634,50 @@ def test_card_toolbar_separator_matches_thinking_prompt_color(monkeypatch: Any) 
     fragments = list(prompt_session._render_bottom_toolbar())
 
     assert fragments[0] == (
-        thinking_frame_style("xhigh", theme="dark"),
+        "class:compact-input.frame",
         shell_prompt._prompt_rule(120),
     )
+
+
+def test_input_top_border_shows_effort_label() -> None:
+    from prompt_toolkit.utils import get_cwidth
+
+    from pythinker_code.ui.theme import set_active_theme, thinking_dot_style
+
+    set_active_theme("dark")
+    session = _make_toolbar_session(
+        model_name="fast-model", model_capabilities={"thinking"}, tips=[]
+    )
+    session._thinking = True
+    session._thinking_effort = "high"
+
+    fragments = session._render_input_top_border(80, "class:fallback")
+
+    # Border stays static grey; effort color lives only in the trailing dot.
+    assert fragments[0][0] == "class:compact-input.frame"
+    assert fragments[-2] == (thinking_dot_style("high", theme="dark"), "● ")
+    assert fragments[-1] == ("class:compact-input.effort", "high")
+    # The whole line stays within the rule budget so it never wraps.
+    total = sum(get_cwidth(ch) for _, text in fragments for ch in text)
+    assert total == len(shell_prompt._prompt_rule(80))
+
+
+def test_input_top_border_hides_effort_label_for_native_and_nonthinking() -> None:
+    # Native-thinking model (always_thinking, no user dial): no label.
+    native = _make_toolbar_session(
+        model_name="MiniMax M2.7", model_capabilities={"always_thinking"}, tips=[]
+    )
+    assert native._effort_label_fragments() == []
+    assert native._render_input_top_border(80, "class:fallback") == [
+        ("class:compact-input.frame", shell_prompt._prompt_rule(80))
+    ]
+
+    # Non-thinking model: no label either.
+    plain = _make_toolbar_session(model_name="fast-model", model_capabilities=set(), tips=[])
+    assert plain._effort_label_fragments() == []
+    assert plain._render_input_top_border(80, "class:fallback") == [
+        ("class:compact-input.frame", shell_prompt._prompt_rule(80))
+    ]
 
 
 def test_card_toolbar_separator_uses_standard_frame_for_non_thinking_models(

@@ -80,7 +80,7 @@ from pythinker_code.ui.shell.placeholders import (
 )
 from pythinker_code.ui.shell.spacing import ensure_prompt_newline
 from pythinker_code.ui.shell.spinner_words import spinner_message
-from pythinker_code.ui.theme import get_prompt_style, get_toolbar_colors, thinking_frame_style
+from pythinker_code.ui.theme import get_prompt_style, get_toolbar_colors, thinking_dot_style
 from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
 from pythinker_code.ui.tui_config import is_card_style
 from pythinker_code.utils.clipboard import (
@@ -2441,12 +2441,47 @@ class CustomPromptSession:
     def _prompt_separator_style(self, fallback: str) -> str:
         if getattr(self, "_mode", PromptMode.AGENT) != PromptMode.AGENT:
             return fallback
-        if not self._supports_thinking_effort():
-            # Non-effort models use the standard input frame color (#3A506D in dark mode)
-            # instead of borrowing a thinking level color.
-            return "class:compact-input.frame"
+        # The input border is one static frame color regardless of thinking
+        # effort; the effort signal lives in the top-border label instead
+        # (see _effort_label_fragments) rather than recoloring the whole bar.
+        return "class:compact-input.frame"
+
+    def _effort_label_fragments(self) -> list[tuple[str, str]]:
+        """Dot + level label shown at the right end of the input's top border.
+
+        Returns ``[]`` when there is no effort to choose: non-AGENT modes,
+        non-thinking models, and native-thinking models (``always_thinking``
+        without a user 'thinking' dial). The dot carries the cold→hot level
+        color; the word stays muted so it never competes with the input.
+        """
+        if getattr(self, "_mode", PromptMode.AGENT) != PromptMode.AGENT:
+            return []
+        if self._uses_native_thinking() or not self._supports_thinking_effort():
+            return []
         level = self._current_thinking_effort()
-        return thinking_frame_style(level) or fallback
+        return [
+            (thinking_dot_style(level), "● "),
+            ("class:compact-input.effort", level),
+        ]
+
+    def _render_input_top_border(self, columns: int, fallback: str) -> list[tuple[str, str]]:
+        """Static-grey top border for the input card, effort label flushed right.
+
+        The rule is shortened by the measured label width so the line never
+        wraps; when no label applies it spans the full rule like before.
+        """
+        border_style = self._prompt_separator_style(fallback)
+        rule = _prompt_rule(columns)
+        label = self._effort_label_fragments()
+        if not label:
+            return [(border_style, rule)]
+        gap = 2
+        label_width = sum(get_cwidth(ch) for _, text in label for ch in text)
+        rule_width = max(0, len(rule) - gap - label_width)
+        return [
+            (border_style, "─" * rule_width + " " * gap),
+            *label,
+        ]
 
     def _thinking_footer_label(self) -> str:
         if self._uses_native_thinking():
@@ -2719,7 +2754,7 @@ class CustomPromptSession:
         if is_card_style():
             ensure_prompt_newline(fragments)
             tc = get_toolbar_colors()
-            fragments.append((self._prompt_separator_style(tc.separator), _prompt_rule(columns)))
+            fragments.extend(self._render_input_top_border(columns, tc.separator))
             fragments.append(("", "\n"))
             fragments.append(("", _card_side_indent()))
         else:
