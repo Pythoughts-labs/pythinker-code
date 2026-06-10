@@ -13,6 +13,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from pythinker_code.utils.server import (
+    PYTHINKER_BANNER_ART,
     find_available_port,
     format_url,
     get_network_addresses,
@@ -135,12 +136,7 @@ def run_vis_server(
     browser_url = f"{format_url(browser_host, actual_port)}/?token={quote(session_token)}"
 
     banner_lines = [
-        "<center>██╗  ██╗██╗███╗   ███╗██╗    ██╗   ██╗██╗███████╗",
-        "<center>██║ ██╔╝██║████╗ ████║██║    ██║   ██║██║██╔════╝",
-        "<center>█████╔╝ ██║██╔████╔██║██║    ██║   ██║██║███████╗",
-        "<center>██╔═██╗ ██║██║╚██╔╝██║██║    ╚██╗ ██╔╝██║╚════██║",
-        "<center>██║  ██╗██║██║ ╚═╝ ██║██║     ╚████╔╝ ██║███████║",
-        "<center>╚═╝  ╚═╝╚═╝╚═╝     ╚═╝╚═╝      ╚═══╝  ╚═╝╚══════╝",
+        *PYTHINKER_BANNER_ART,
         "",
         "<center>AGENT TRACING VISUALIZER (Technical Preview)",
         "",

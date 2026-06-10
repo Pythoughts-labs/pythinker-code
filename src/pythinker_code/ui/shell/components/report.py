@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast, get_args
 
@@ -32,7 +33,7 @@ from rich.rule import Rule
 from rich.style import Style as RichStyle
 from rich.text import Text
 
-from pythinker_code.ui.shell.components.markdown import pythinker_markdown
+from pythinker_code.ui.shell.components.markdown import PythinkerMarkdown, pythinker_markdown
 from pythinker_code.ui.shell.spacing import REPORT_PANEL_PADDING
 from pythinker_code.ui.theme import ThemeName, tui_rich_style
 
@@ -123,6 +124,150 @@ class Report:
     note: str | None = None  # closing "most actionable" line
 
 
+@dataclass(frozen=True, slots=True)
+class _ReportProseSection:
+    """One top-level ``Label: body`` section in report-like assistant prose."""
+
+    title: str
+    body: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ReportProse:
+    preamble: str
+    sections: tuple[_ReportProseSection, ...]
+
+
+_REPORT_LABEL_RE = re.compile(
+    r"""
+    ^\s*
+    (?:
+        \*\*(?P<bold_colon>[^*\n]{3,120}?):\*\* |
+        \*\*(?P<bold>[^*\n:]{3,120}?)\*\*: |
+        (?P<plain>[^:\n|]{3,120}?):
+    )
+    \s*(?P<body>.*)$
+    """,
+    re.VERBOSE,
+)
+_FENCE_LINE_RE = re.compile(r"^\s{0,3}(?P<fence>`{3,}|~{3,})")
+
+
+def _clean_report_label(line: str) -> tuple[str, str] | None:
+    """Return ``(title, first_body)`` for a top-level report label line.
+
+    This is deliberately conservative. It ignores lists, block quotes, tables,
+    paths/URLs, and lowercase prose labels so normal chat paragraphs such as
+    ``note: ...`` remain ordinary Markdown.
+    """
+    stripped = line.strip()
+    if not stripped or stripped.startswith(("- ", "* ", "+ ", ">", "|")):
+        return None
+    if _FENCE_LINE_RE.match(stripped):
+        return None
+
+    match = _REPORT_LABEL_RE.match(line)
+    if match is None:
+        return None
+
+    title = match.group("bold_colon") or match.group("bold") or match.group("plain") or ""
+    title = title.strip()
+    body = match.group("body").strip()
+    if not title or "://" in title or title.startswith(("/", "./", "../", "~")):
+        return None
+    if not any(ch.isalpha() for ch in title):
+        return None
+    if not (line.lstrip().startswith("**") or title[0].isupper()):
+        return None
+    # Avoid turning whole sentences into fake headings. Report labels are short
+    # phrases: "Exit codes", "Residual unknowns", "Next step suggestion", etc.
+    if len(title.split()) > 12:
+        return None
+    return title, body
+
+
+def _parse_report_prose(text: str) -> _ReportProse | None:
+    """Parse dense final-answer prose into top-level report sections.
+
+    LLMs often produce report summaries as adjacent ``**Label:** body`` lines.
+    Markdown renders those as crammed paragraphs. When there are multiple such
+    labels, treat them as sections with real vertical rhythm and body indentation.
+    """
+    lines = text.splitlines()
+    preamble: list[str] = []
+    sections: list[tuple[str, list[str]]] = []
+    current: tuple[str, list[str]] | None = None
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+
+    def target_lines() -> list[str]:
+        return preamble if current is None else current[1]
+
+    for line in lines:
+        fence_match = _FENCE_LINE_RE.match(line)
+        if in_fence:
+            target_lines().append(line)
+            if fence_match is not None:
+                fence = fence_match.group("fence")
+                if fence.startswith(fence_char) and len(fence) >= fence_len:
+                    in_fence = False
+                    fence_char = ""
+                    fence_len = 0
+            continue
+        if fence_match is not None:
+            fence = fence_match.group("fence")
+            in_fence = True
+            fence_char = fence[0]
+            fence_len = len(fence)
+            target_lines().append(line)
+            continue
+
+        label = _clean_report_label(line)
+        if label is not None:
+            title, first_body = label
+            body_lines = [first_body] if first_body else []
+            current = (title, body_lines)
+            sections.append(current)
+            continue
+        target_lines().append(line)
+
+    if len(sections) < 2:
+        return None
+    return _ReportProse(
+        preamble="\n".join(preamble).strip("\n"),
+        sections=tuple(
+            _ReportProseSection(title=title, body="\n".join(body).strip("\n"))
+            for title, body in sections
+        ),
+    )
+
+
+def _render_report_prose(text: str, *, theme: ThemeName | None = None) -> RenderableType | None:
+    report = _parse_report_prose(text)
+    if report is None:
+        return None
+
+    rows: list[RenderableType] = []
+    if report.preamble.strip():
+        rows.append(pythinker_markdown(report.preamble))
+
+    body_style = tui_rich_style("text", theme=theme)
+    for section in report.sections:
+        if rows:
+            rows.append(Text(""))
+        # Use a lower-level Markdown heading so inline code / links inside labels
+        # keep the standard muted-blue highlight without promoting every report
+        # subsection to the muted-yellow H1 treatment.
+        rows.append(PythinkerMarkdown(f"### {section.title}"))
+        if section.body.strip():
+            rows.append(
+                Padding(PythinkerMarkdown(section.body.strip(), style=body_style), (0, 0, 0, 2))
+            )
+
+    return Group(*rows)
+
+
 def _counts(findings: tuple[ReportFinding, ...]) -> dict[Severity, int]:
     counts: dict[Severity, int] = dict.fromkeys(_SEVERITY_ORDER, 0)
     for finding in findings:
@@ -159,7 +304,7 @@ def _render_finding(finding: ReportFinding, theme: ThemeName | None) -> Renderab
 
     title = Text()
     title.append(f"{_DOT} ", style=_severity_style(finding.severity, theme))
-    title.append(finding.title, style=tui_rich_style("text", theme=theme) + RichStyle(bold=True))
+    title.append(finding.title, style=tui_rich_style("border", theme=theme) + RichStyle(bold=True))
     rows.append(title)
 
     if finding.location:
@@ -171,7 +316,10 @@ def _render_finding(finding: ReportFinding, theme: ThemeName | None) -> Renderab
         )
 
     if finding.body.strip():
-        rows.append(Padding(pythinker_markdown(finding.body.strip()), (0, 0, 0, 2)))
+        body_style = tui_rich_style("text", theme=theme)
+        rows.append(
+            Padding(PythinkerMarkdown(finding.body.strip(), style=body_style), (0, 0, 0, 2))
+        )
 
     return Group(*rows)
 
@@ -204,7 +352,7 @@ def render_report(report: Report, *, theme: ThemeName | None = None) -> Renderab
             Text(report.note, style=tui_rich_style("muted", theme=theme)),
         ]
 
-    title = Text(report.title, style=tui_rich_style("text", theme=theme) + RichStyle(bold=True))
+    title = Text(report.title, style=tui_rich_style("warning", theme=theme) + RichStyle(bold=True))
     return Panel(
         Group(*rows),
         title=title,
@@ -310,6 +458,9 @@ def render_agent_body(text: str, *, theme: ThemeName | None = None) -> Renderabl
         cursor = end
 
     if not segments:
+        report_prose = _render_report_prose(text, theme=theme)
+        if report_prose is not None:
+            return report_prose
         return pythinker_markdown(text)
 
     rest = "\n".join(lines[cursor:]).strip("\n")

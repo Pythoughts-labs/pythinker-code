@@ -77,6 +77,60 @@ def test_create_bash_task_respects_max_running_tasks(runtime, monkeypatch):
         )
 
 
+def _create_turn_bash_task(runtime, *, tool_call_id: str, description: str):
+    return runtime.background_tasks.create_bash_task(
+        command="sleep 5",
+        description=description,
+        timeout_s=60,
+        tool_call_id=tool_call_id,
+        shell_name="bash",
+        shell_path="/bin/bash",
+        cwd=str(runtime.session.work_dir),
+    )
+
+
+def test_kill_turn_tasks_kills_only_tasks_started_this_turn(runtime, monkeypatch):
+    """ESC must stop background tasks spawned by the interrupted turn while
+    leaving tasks from earlier turns running."""
+    manager = runtime.background_tasks
+    monkeypatch.setattr(manager, "_launch_worker", lambda task_dir: 4242)
+
+    earlier = _create_turn_bash_task(runtime, tool_call_id="tool-prev", description="earlier turn")
+    manager.begin_turn()
+    current = _create_turn_bash_task(runtime, tool_call_id="tool-cur", description="current turn")
+
+    killed = manager.kill_turn_tasks(reason="Interrupted by user")
+
+    assert killed == [current.spec.id]
+    current_view = manager.store.merged_view(current.spec.id)
+    assert current_view.control.kill_requested_at is not None
+    assert current_view.control.kill_reason == "Interrupted by user"
+    earlier_view = manager.store.merged_view(earlier.spec.id)
+    assert earlier_view.control.kill_requested_at is None
+    # The turn registry is consumed — a second interrupt is a no-op.
+    assert manager.kill_turn_tasks() == []
+
+
+def test_kill_turn_tasks_skips_already_terminal_tasks(runtime, monkeypatch):
+    manager = runtime.background_tasks
+    monkeypatch.setattr(manager, "_launch_worker", lambda task_dir: 4242)
+
+    manager.begin_turn()
+    view = _create_turn_bash_task(runtime, tool_call_id="tool-done", description="finished")
+    manager.store.write_runtime(
+        view.spec.id,
+        TaskRuntime(
+            status="completed",
+            exit_code=0,
+            finished_at=time.time(),
+            updated_at=time.time(),
+        ),
+    )
+
+    assert manager.kill_turn_tasks() == []
+    assert manager.store.merged_view(view.spec.id).control.kill_requested_at is None
+
+
 def test_create_bash_task_does_not_overwrite_worker_terminal_state(runtime, monkeypatch):
     manager = runtime.background_tasks
     store = manager.store

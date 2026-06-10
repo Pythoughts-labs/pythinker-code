@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.tsx";
 import { ErrorBoundary } from "./components/error-boundary";
+import { consumeAuthTokenFromUrl, setAuthToken } from "./lib/auth";
 import { pythinkerBrand } from "./lib/brand";
 
 const DYNAMIC_IMPORT_ERROR_PATTERNS: string[] = [
@@ -54,6 +55,13 @@ const setupDynamicImportRecovery = (): void => {
 };
 
 setupDynamicImportRecovery();
+// Store the URL token BEFORE React mounts. Doing this in a component effect is
+// too late: data-fetching mount effects fire first and would send a stale
+// localStorage token from a previous server run, yielding 401s on first load.
+const urlToken = consumeAuthTokenFromUrl();
+if (urlToken) {
+  setAuthToken(urlToken);
+}
 document.title = pythinkerBrand.appTitle;
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from pythinker_core.chat_provider import ThinkingEffort
 
 from pythinker_code.config import LLMModel, get_config_file, load_config, save_config
+from pythinker_code.constant import get_version
 from pythinker_code.llm import ProviderType, derive_model_capabilities
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.server import is_local_host
@@ -33,6 +34,7 @@ class ConfigModel(LLMModel):
 class GlobalConfig(BaseModel):
     """Global configuration snapshot for frontend."""
 
+    version: str = Field(default="", description="Installed pythinker-code version")
     default_model: str = Field(description="Current default model key")
     default_thinking: bool = Field(description="Current default thinking mode")
     default_thinking_effort: ThinkingEffort | None = Field(
@@ -116,7 +118,17 @@ def _build_global_config() -> GlobalConfig:
             )
         )
 
+    try:
+        cli_version = get_version()
+    except Exception as e:
+        # Non-fatal: the version banner falls back to "", but surface the
+        # failure so an operator can see get_version() broke (matches the
+        # logger.warning convention used by the config.toml handlers below).
+        logger.warning(f"Failed to get CLI version: {e}", exc_info=True)
+        cli_version = ""
+
     return GlobalConfig(
+        version=cli_version,
         default_model=config.default_model,
         default_thinking=config.default_thinking,
         default_thinking_effort=config.default_thinking_effort,

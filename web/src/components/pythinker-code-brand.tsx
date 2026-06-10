@@ -1,4 +1,4 @@
-import { pythinkerCliVersion } from "@/lib/version";
+import { usePythinkerVersion } from "@/hooks/usePythinkerVersion";
 import { pythinkerBrand } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,7 @@ export function PythinkerCodeBrand({
   size = "md",
   showVersion = true,
 }: PythinkerCodeBrandProps) {
+  const pythinkerCliVersion = usePythinkerVersion();
   const textSizeClass = size === "sm" ? "text-base" : "text-lg";
   const versionPadding = size === "sm" ? "text-xs" : "text-sm";
   const logoSize = size === "sm" ? "size-6" : "size-7";

@@ -28,6 +28,12 @@ import {
  */
 export interface GlobalConfig {
     /**
+     * Installed pythinker-code version
+     * @type {string}
+     * @memberof GlobalConfig
+     */
+    version?: string;
+    /**
      * Current default model key
      * @type {string}
      * @memberof GlobalConfig
@@ -66,7 +72,8 @@ export function GlobalConfigFromJSONTyped(json: any, ignoreDiscriminator: boolea
         return json;
     }
     return {
-        
+
+        'version': json['version'] == null ? undefined : json['version'],
         'defaultModel': json['default_model'],
         'defaultThinking': json['default_thinking'],
         'models': ((json['models'] as Array<any>).map(ConfigModelFromJSON)),
@@ -83,7 +90,8 @@ export function GlobalConfigToJSONTyped(value?: GlobalConfig | null, ignoreDiscr
     }
 
     return {
-        
+
+        'version': value['version'],
         'default_model': value['defaultModel'],
         'default_thinking': value['defaultThinking'],
         'models': ((value['models'] as Array<any>).map(ConfigModelToJSON)),
