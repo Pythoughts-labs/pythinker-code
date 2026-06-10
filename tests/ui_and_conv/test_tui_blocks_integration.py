@@ -174,9 +174,7 @@ def test_card_style_running_subagent_uses_solid_circle(_force_card_style, monkey
     from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
 
     register_builtin_renderers()
-    monkeypatch.setattr(
-        "pythinker_code.ui.shell.motion.time.monotonic", lambda: 0.0
-    )
+    monkeypatch.setattr("pythinker_code.ui.shell.motion.time.monotonic", lambda: 0.0)
     block = _ToolCallBlock(
         _make_tool_call(name="Agent", args='{"description":"Audit UI","prompt":"check"}')
     )
@@ -220,9 +218,7 @@ def test_card_style_running_task_output_uses_solid_circle(_force_card_style, mon
     from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
 
     register_builtin_renderers()
-    monkeypatch.setattr(
-        "pythinker_code.ui.shell.motion.time.monotonic", lambda: 0.0
-    )
+    monkeypatch.setattr("pythinker_code.ui.shell.motion.time.monotonic", lambda: 0.0)
     block = _ToolCallBlock(
         _make_tool_call(
             name="TaskOutput",
@@ -243,18 +239,14 @@ def test_card_style_running_subagent_marker_pulses(_force_card_style, monkeypatc
     from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
 
     register_builtin_renderers()
-    monkeypatch.setattr(
-        "pythinker_code.ui.shell.motion.time.monotonic", lambda: 0.0
-    )
+    monkeypatch.setattr("pythinker_code.ui.shell.motion.time.monotonic", lambda: 0.0)
     block = _ToolCallBlock(
         _make_tool_call(name="Agent", args='{"description":"Audit UI","prompt":"check"}')
     )
     block.mark_execution_started()
 
     first = render_plain(block.compose(), width=80)
-    monkeypatch.setattr(
-        "pythinker_code.ui.shell.motion.time.monotonic", lambda: 0.9
-    )
+    monkeypatch.setattr("pythinker_code.ui.shell.motion.time.monotonic", lambda: 0.9)
     second = render_plain(block.compose(), width=80)
 
     assert first != second
@@ -268,9 +260,7 @@ def test_card_style_background_subagent_result_keeps_solid_circle(_force_card_st
     from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
 
     register_builtin_renderers()
-    monkeypatch.setattr(
-        "pythinker_code.ui.shell.motion.time.monotonic", lambda: 0.0
-    )
+    monkeypatch.setattr("pythinker_code.ui.shell.motion.time.monotonic", lambda: 0.0)
     block = _ToolCallBlock(
         _make_tool_call(
             name="Agent",
@@ -300,9 +290,7 @@ def test_card_style_background_subagent_marker_pulses(_force_card_style, monkeyp
     from pythinker_code.ui.shell.tool_renderers import register_builtin_renderers
 
     register_builtin_renderers()
-    monkeypatch.setattr(
-        "pythinker_code.ui.shell.motion.time.monotonic", lambda: 0.0
-    )
+    monkeypatch.setattr("pythinker_code.ui.shell.motion.time.monotonic", lambda: 0.0)
     block = _ToolCallBlock(
         _make_tool_call(
             name="Agent",
@@ -320,9 +308,7 @@ def test_card_style_background_subagent_marker_pulses(_force_card_style, monkeyp
     )
 
     first = render_plain(block.compose(), width=80)
-    monkeypatch.setattr(
-        "pythinker_code.ui.shell.motion.time.monotonic", lambda: 0.9
-    )
+    monkeypatch.setattr("pythinker_code.ui.shell.motion.time.monotonic", lambda: 0.9)
     second = render_plain(block.compose(), width=80)
 
     assert first != second
