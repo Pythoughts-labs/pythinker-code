@@ -15,6 +15,8 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **TUI enhancements: adaptive theme, layout, and agent prompt overhaul.** Adaptive terminal-background probe + color-depth blending; reference-CLI layout and palette refinements; unified todo-list renderer; white running-task titles with consistent diff palette; elapsed/tokens/t-s metadata on the background status line; transcript-row bullet fix; renderer guards and markdown fence table unwrapping. All default agent prompts restructured with explicit Mission / Hard Constraints / Workflow / Output Contract sections. Background manager and subagent runner hardened with stale-record reconciliation and resume contract enforcement. Automatic turn recaps disabled by default.
+
 ## 0.39.0 (2026-06-09)
 
 - **Refreshed TUI theme and Catppuccin syntax highlighting.** The interface adopts a brand periwinkle/indigo accent (`#B3B9F4` dark / `#0B114E` light) with a reharmonized selection tint, and code blocks now highlight with Catppuccin Mocha (dark) / Latte (light), adaptive to the active theme — implemented as foreground-only Pygments styles with no new dependency. Markdown inline code and links render terminal-native cyan, blockquotes green, and ordered-list markers bright blue (so they adapt per terminal), and user messages sit on a neutral grey block instead of the prior blue tint.
