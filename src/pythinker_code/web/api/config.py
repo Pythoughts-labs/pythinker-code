@@ -120,7 +120,11 @@ def _build_global_config() -> GlobalConfig:
 
     try:
         cli_version = get_version()
-    except Exception:
+    except Exception as e:
+        # Non-fatal: the version banner falls back to "", but surface the
+        # failure so an operator can see get_version() broke (matches the
+        # logger.warning convention used by the config.toml handlers below).
+        logger.warning(f"Failed to get CLI version: {e}", exc_info=True)
         cli_version = ""
 
     return GlobalConfig(

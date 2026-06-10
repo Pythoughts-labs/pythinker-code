@@ -47,6 +47,12 @@ subagents, skills, web/visualization UIs, and multi-provider LLM authentication.
 - **Do not manually edit auto-synced changelog files.** `docs/en/release-notes/changelog.md` is
   generated from the root `CHANGELOG.md`; edit `CHANGELOG.md` and run `npm run sync` from `docs/`
   instead of hand-editing the generated docs changelog.
+- **Before opening any PR that touches shipped code, add a `## Unreleased` entry to `CHANGELOG.md`.**
+  The required `changelog-entry-required` check fails a PR that changes shipped paths (`src/*`,
+  `packages/*`, installers, release/installer workflows, `pythinker.spec`) but adds no new non-blank
+  line under the `## Unreleased` heading — and this has repeatedly blocked PRs. Add a `- ...` bullet
+  describing the user-facing change up front. Only skip via the `no-changelog` label or
+  `[skip changelog]` in the PR body when the change is genuinely user-invisible.
 - **When working on a PR or GitHub Actions failure, investigate and identify the root cause first.**
   Provide the best-practice, most robust design solution; never provide fast fixes or workarounds.
   This is a hard constraint.

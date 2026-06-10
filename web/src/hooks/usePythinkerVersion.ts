@@ -11,7 +11,8 @@ async function fetchServerVersion(): Promise<string | null> {
   try {
     const config = await apiClient.config.getGlobalConfigApiConfigGet();
     return config.version || null;
-  } catch {
+  } catch (error) {
+    console.warn("Failed to fetch backend version:", error);
     return null;
   }
 }
@@ -33,6 +34,11 @@ export function usePythinkerVersion(): string {
         if (!cancelled) {
           setVersion(serverVersion);
         }
+      } else {
+        // Failed or empty fetch: clear the shared promise so a later mount
+        // retries instead of reusing a permanently-failed result for the
+        // rest of the session.
+        serverVersionPromise = null;
       }
     });
     return () => {

@@ -51,7 +51,7 @@ def test_local_mode_populates_allowed_origins(
 ) -> None:
     captured_port: dict[str, int] = {}
 
-    def fake_uvicorn_run(*args: object, **kwargs: object) -> None:
+    def fake_uvicorn_run(*_args: object, **kwargs: object) -> None:
         captured_port["port"] = int(kwargs["port"])  # type: ignore[arg-type]
 
     monkeypatch.setattr("uvicorn.run", fake_uvicorn_run)
