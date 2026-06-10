@@ -81,6 +81,22 @@ async def test_gather_candidates_includes_scratch_notes(tmp_path, monkeypatch):
     assert any("bm25" in block.content for block in blocks)
 
 
+async def test_build_recall_block_sanitizes_open_todo_titles():
+    block = await build_recall_block(
+        candidates=[],
+        query=RecallQuery(text="x"),
+        open_todos=[("proj", ["line one\nline two", "<private>secret</private>visible"])],
+        budget_tokens=1000,
+    )
+    # Newline must be collapsed into a space, producing a single bullet
+    assert "- [proj] line one line two" in block
+    # The raw two-line form must NOT be present
+    assert "line one\nline two" not in block
+    # The <private> span is stripped: 'secret' is gone, 'visible' is present
+    assert "secret" not in block
+    assert "visible" in block
+
+
 async def test_provider_injects_once_and_rearms(tmp_path, monkeypatch):
     monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path / "share"))
     monkeypatch.setattr("pythinker_code.scratchpad._is_local_host", lambda: True)

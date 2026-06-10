@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -96,16 +96,29 @@ async def _discover_lm_studio_models(
         return _parse_openai_compat_models(payload)
 
 
-def _parse_native_lm_studio_models(payload: object) -> tuple[LMStudioModel, ...]:
-    if not isinstance(payload, dict):
-        return ()
-    payload = cast(dict[str, Any], payload)
-    raw_items = payload.get("data")
-    if not isinstance(raw_items, list):
-        return ()
+def _iter_model_objects(payload: object) -> Iterator[Mapping[str, Any]]:
+    """Yield each ``data[]`` entry of an LM Studio ``/models`` payload that is a JSON
+    object, centralizing the untrusted-shape handling (the payload may not be a dict,
+    ``data`` may be missing or not a list, and entries may not be objects) so the
+    per-format parsers below only ever see validated mappings.
 
+    The ``cast``s only restate the true JSON shape after each runtime check — a JSON
+    object is ``Mapping[str, Any]`` and a JSON array is ``list[Any]`` — rather than the
+    old ``list[dict[...]]`` cast that falsely claimed every entry was an object.
+    """
+    if not isinstance(payload, Mapping):
+        return
+    raw_items = cast("Mapping[str, Any]", payload).get("data")
+    if not isinstance(raw_items, list):
+        return
+    for item in cast("list[Any]", raw_items):
+        if isinstance(item, Mapping):
+            yield cast("Mapping[str, Any]", item)
+
+
+def _parse_native_lm_studio_models(payload: object) -> tuple[LMStudioModel, ...]:
     result: list[LMStudioModel] = []
-    for item in cast(list[dict[str, Any]], raw_items):
+    for item in _iter_model_objects(payload):
         model_id = item.get("id")
         if not isinstance(model_id, str):
             continue
@@ -146,14 +159,8 @@ def _parse_native_lm_studio_models(payload: object) -> tuple[LMStudioModel, ...]
 
 
 def _parse_openai_compat_models(payload: object) -> tuple[LMStudioModel, ...]:
-    if not isinstance(payload, dict):
-        return ()
-    payload = cast(dict[str, Any], payload)
-    raw_items = payload.get("data")
-    if not isinstance(raw_items, list):
-        return ()
     result: list[LMStudioModel] = []
-    for item in cast(list[dict[str, Any]], raw_items):
+    for item in _iter_model_objects(payload):
         model_id = item.get("id")
         if not isinstance(model_id, str):
             continue

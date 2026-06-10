@@ -98,6 +98,11 @@ class BackgroundTaskManager:
             owner_role=role,
         )
         manager._runtime = self._runtime
+        # Share the live-task registry: orphan detection is "non-terminal and
+        # not in _live_agent_tasks", so a copy with an empty dict would let a
+        # reconcile through it finalize the root's actively running agents as
+        # recoverable — enabling a corrupting double-resume.
+        manager._live_agent_tasks = self._live_agent_tasks
         return manager
 
     def bind_runtime(self, runtime: Runtime) -> None:
@@ -357,13 +362,24 @@ class BackgroundTaskManager:
             ).run()
         )
         self._live_agent_tasks[task_id] = task
+
         # Cleanup safety net for the case where the runner is cancelled before
         # its first event-loop step. Python throws CancelledError into a
         # FRAME_CREATED coroutine without executing any of the function body,
         # so the runner's finally block never runs and cannot pop the entry
         # itself. The done callback fires regardless of how the task ends, and
         # is idempotent with the runner's own pop (both use pop(..., None)).
-        task.add_done_callback(lambda _t, tid=task_id: self._live_agent_tasks.pop(tid, None))
+        # It also retrieves a crash of the runner ITSELF (e.g. store I/O failing
+        # inside an error handler) — otherwise the exception surfaces only as
+        # GC-time "never retrieved" noise and the failure is silently lost.
+        def _reap_agent_task(t: asyncio.Task[None], tid: str = task_id) -> None:
+            self._live_agent_tasks.pop(tid, None)
+            if not t.cancelled() and (exc := t.exception()) is not None:
+                logger.exception(
+                    "Background agent runner for task {tid} crashed", tid=tid, exception=exc
+                )
+
+        task.add_done_callback(_reap_agent_task)
         view = self._store.merged_view(task_id)
         self._journal_task_milestone("background task started", view)
         return view
@@ -688,6 +704,43 @@ class BackgroundTaskManager:
             return
         self._runtime.subagent_store.update_instance(agent_id, status=target)
 
+    def find_agent_task_view(self, agent_id: str) -> TaskView | None:
+        """Return the latest agent task (by creation time) linked to ``agent_id``.
+
+        The link is the ``kind_payload["agent_id"]`` stamped by
+        :meth:`create_agent_task`; the latest view wins because a resumed agent
+        reuses its agent_id across multiple tasks.
+        """
+        candidates = [
+            view
+            for view in self._store.list_views()
+            if view.spec.kind == "agent"
+            and (view.spec.kind_payload or {}).get("agent_id") == agent_id
+        ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda view: view.spec.created_at)
+
+    def reconcile_stale_agent_record(self, agent_id: str) -> TaskView | None:
+        """Mid-session, single-agent counterpart of :meth:`recover`.
+
+        If the latest task linked to ``agent_id`` is already terminal and not
+        owned by a live in-process run, settle a subagent record still parked at
+        ``running_background`` so a resume attempt is not rejected against a
+        record that otherwise only a process restart would reconcile. Returns
+        the latest linked task view, or ``None`` when the agent has no task.
+        """
+        view = self.find_agent_task_view(agent_id)
+        if view is None:
+            return None
+        if view.spec.id in self._live_agent_tasks:
+            return view
+        runtime_status = self._store.read_runtime(view.spec.id).status
+        if not is_terminal_status(runtime_status):
+            return view
+        self._reconcile_subagent_status(agent_id, runtime_status, set())
+        return view
+
     def reconcile(self, *, limit: int | None = None) -> list[str]:
         self.recover()
         published = self.publish_terminal_notifications(limit=limit)
@@ -737,6 +790,13 @@ class BackgroundTaskManager:
                 f"Status: {status}",
                 f"Description: {view.spec.description}",
             ]
+            if view.spec.kind == "agent":
+                # The agent id is the handle the parent needs to resume a
+                # failed/timed-out agent instead of relaunching from scratch.
+                payload = view.spec.kind_payload or {}
+                agent_id = payload.get("agent_id")
+                if isinstance(agent_id, str):
+                    body_lines.append(f"Agent ID: {agent_id}")
             if terminal_reason != status:
                 body_lines.append(f"Terminal reason: {terminal_reason}")
             if view.runtime.exit_code is not None:

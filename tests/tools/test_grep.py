@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
 from inline_snapshot import snapshot
+from pythinker_host.path import HostPath
 
 import pythinker_code.tools.file.grep_local as grep_module
+from pythinker_code.soul.agent import Runtime
 from pythinker_code.tools.file.grep_local import (
     Grep,
     Params,
@@ -22,12 +24,24 @@ from pythinker_code.tools.utils import DEFAULT_MAX_CHARS
 from tests.tools._untrusted import assert_wrapped
 
 
-@pytest_asyncio.fixture(scope="module")
-async def grep_tool() -> Grep:
+def _make_grep_for(work_dir: Path) -> Grep:
+    """Create a Grep bound to work_dir — for tests that own their own temp directory."""
+    mock_runtime = SimpleNamespace(
+        builtin_args=SimpleNamespace(
+            PYTHINKER_WORK_DIR=HostPath.unsafe_from_local_path(work_dir.resolve())
+        ),
+        additional_dirs=[],
+        skills_dirs=[],
+    )
+    return Grep(mock_runtime)  # type: ignore[arg-type]
+
+
+@pytest_asyncio.fixture
+async def grep_tool(runtime: Runtime) -> Grep:
     """Create a Grep tool instance when a local ripgrep binary is available."""
     if await _find_existing_rg(_rg_binary_name()) is None:
         pytest.skip("ripgrep binary is not available in this environment")
-    return Grep()
+    return Grep(runtime)
 
 
 @pytest.mark.asyncio
@@ -41,12 +55,12 @@ async def test_find_existing_rg_honors_env_path(monkeypatch, tmp_path):
 
 
 @pytest.fixture
-def temp_test_files():
-    """Create temporary test files for grep testing."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Create test files
-        test_file1 = Path(temp_dir) / "test1.py"
-        test_file1.write_text("""def hello_world():
+def temp_test_files(temp_work_dir: HostPath):
+    """Create temporary test files inside temp_work_dir for grep testing."""
+    temp_dir = Path(str(temp_work_dir))
+    # Create test files
+    test_file1 = temp_dir / "test1.py"
+    test_file1.write_text("""def hello_world():
     print("Hello, World!")
     return "hello"
 
@@ -55,8 +69,8 @@ class TestClass:
         self.message = "hello there"
 """)
 
-        test_file2 = Path(temp_dir) / "test2.js"
-        test_file2.write_text("""function helloWorld() {
+    test_file2 = temp_dir / "test2.js"
+    test_file2.write_text("""function helloWorld() {
     console.log("Hello, World!");
     return "hello";
 }
@@ -68,19 +82,19 @@ class TestClass {
 }
 """)
 
-        test_file3 = Path(temp_dir) / "readme.txt"
-        test_file3.write_text("""This is a readme file.
+    test_file3 = temp_dir / "readme.txt"
+    test_file3.write_text("""This is a readme file.
 It contains some text.
 Hello world example is here.
 """)
 
-        # Create a subdirectory with files
-        subdir = Path(temp_dir) / "subdir"
-        subdir.mkdir()
-        subfile = subdir / "subtest.py"
-        subfile.write_text("def sub_hello():\n    return 'hello from subdir'\n")
+    # Create a subdirectory with files
+    subdir = temp_dir / "subdir"
+    subdir.mkdir()
+    subfile = subdir / "subtest.py"
+    subfile.write_text("def sub_hello():\n    return 'hello from subdir'\n")
 
-        yield temp_dir, [test_file1, test_file2, test_file3, subfile]
+    yield str(temp_dir), [test_file1, test_file2, test_file3, subfile]
 
 
 async def test_grep_files_with_matches(grep_tool: Grep, temp_test_files):
@@ -109,7 +123,9 @@ async def test_grep_falls_back_to_python_when_ripgrep_unavailable(monkeypatch, t
     monkeypatch.setattr("pythinker_code.tools.file.grep_local._ensure_rg_path", fail_rg_path)
     temp_dir, _ = temp_test_files
 
-    result = await Grep()(Params(pattern="hello|sub_hello", path=temp_dir, output_mode="content"))
+    result = await _make_grep_for(Path(temp_dir))(
+        Params(pattern="hello|sub_hello", path=temp_dir, output_mode="content")
+    )
 
     assert not result.is_error
     assert isinstance(result.output, str)
@@ -126,7 +142,7 @@ async def test_grep_python_fallback_honors_type_filter(monkeypatch, temp_test_fi
     monkeypatch.setattr("pythinker_code.tools.file.grep_local._ensure_rg_path", fail_rg_path)
     temp_dir, _ = temp_test_files
 
-    result = await Grep()(
+    result = await _make_grep_for(Path(temp_dir))(
         Params(pattern="hello", path=temp_dir, output_mode="files_with_matches", type="py")
     )
 
@@ -151,7 +167,9 @@ async def test_grep_python_fallback_honors_basic_gitignore(monkeypatch, tmp_path
     ignored_dir.mkdir()
     (ignored_dir / "nested.txt").write_text("needle\n")
 
-    result = await Grep()(Params(pattern="needle", path=str(tmp_path), output_mode="content"))
+    result = await _make_grep_for(tmp_path)(
+        Params(pattern="needle", path=str(tmp_path), output_mode="content")
+    )
 
     assert not result.is_error
     assert isinstance(result.output, str)
@@ -325,75 +343,75 @@ async def test_grep_head_limit(grep_tool: Grep, temp_test_files):
     assert "Results truncated to 2 lines" in result.message
 
 
-async def test_grep_output_truncation(grep_tool: Grep):
+async def test_grep_output_truncation(grep_tool: Grep, temp_work_dir: HostPath):
     """Ensure extremely long output is truncated automatically."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        test_file = Path(temp_dir) / "big.txt"
-        test_file.write_text(
-            "match line with filler content that keeps growing for truncation purposes\n" * 2000
+    temp_dir = str(temp_work_dir)
+    test_file = Path(temp_dir) / "big.txt"
+    test_file.write_text(
+        "match line with filler content that keeps growing for truncation purposes\n" * 2000
+    )
+
+    result = await grep_tool(
+        Params.model_validate(
+            {
+                "pattern": "match",
+                "path": temp_dir,
+                "output_mode": "content",
+                "head_limit": 0,
+                "-n": True,
+            }
         )
+    )
 
-        result = await grep_tool(
-            Params.model_validate(
-                {
-                    "pattern": "match",
-                    "path": temp_dir,
-                    "output_mode": "content",
-                    "head_limit": 0,
-                    "-n": True,
-                }
-            )
-        )
-
-        assert not result.is_error
-        assert isinstance(result.output, str)
-        assert result.message == snapshot("Output is truncated to fit in the message.")
-        assert len(result.output) < DEFAULT_MAX_CHARS + 100
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    assert result.message == snapshot("Output is truncated to fit in the message.")
+    assert len(result.output) < DEFAULT_MAX_CHARS + 100
 
 
-async def test_grep_multiline_mode(grep_tool: Grep):
+async def test_grep_multiline_mode(grep_tool: Grep, temp_work_dir: HostPath):
     """Test multiline pattern matching."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Create a file with multiline content
-        test_file = Path(temp_dir) / "multiline.py"
-        test_file.write_text(
-            """def function():
+    temp_dir = str(temp_work_dir)
+    # Create a file with multiline content
+    test_file = Path(temp_dir) / "multiline.py"
+    test_file.write_text(
+        """def function():
     '''This is a
     multiline docstring'''
     pass
 """,
-            newline="\n",
+        newline="\n",
+    )
+
+    # Test multiline pattern
+    result = await grep_tool(
+        Params(
+            pattern=r"This is a\n    multiline",
+            path=temp_dir,
+            output_mode="content",
+            multiline=True,
         )
+    )
+    assert not result.is_error
+    assert isinstance(result.output, str)
 
-        # Test multiline pattern
-        result = await grep_tool(
-            Params(
-                pattern=r"This is a\n    multiline",
-                path=temp_dir,
-                output_mode="content",
-                multiline=True,
-            )
-        )
-        assert not result.is_error
-        assert isinstance(result.output, str)
-
-        # Should find the multiline pattern
-        assert "This is a" in result.output
-        assert "multiline" in result.output
+    # Should find the multiline pattern
+    assert "This is a" in result.output
+    assert "multiline" in result.output
 
 
-async def test_grep_no_matches(grep_tool: Grep):
+async def test_grep_no_matches(grep_tool: Grep, temp_work_dir: HostPath):
     """Test when no matches are found."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        test_file = Path(temp_dir) / "empty.py"
-        test_file.write_text("# This file has no matching content\n")
+    temp_dir = str(temp_work_dir)
+    test_file = Path(temp_dir) / "empty.py"
+    test_file.write_text("# This file has no matching content\n")
 
-        result = await grep_tool(
-            Params(pattern="nonexistent_pattern", path=temp_dir, output_mode="files_with_matches")
-        )
-        assert not result.is_error
-        assert result.output == ""
-        assert "No matches found" in result.message
+    result = await grep_tool(
+        Params(pattern="nonexistent_pattern", path=temp_dir, output_mode="files_with_matches")
+    )
+    assert not result.is_error
+    assert result.output == ""
+    assert "No matches found" in result.message
 
 
 async def test_grep_invalid_pattern(grep_tool: Grep):
@@ -403,29 +421,28 @@ async def test_grep_invalid_pattern(grep_tool: Grep):
     assert "Failed to grep" in result.message
 
 
-async def test_grep_single_file(grep_tool: Grep):
+async def test_grep_single_file(grep_tool: Grep, temp_work_dir: HostPath):
     """Test searching in a single file."""
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".py") as f:
-        f.write("def test_function():\n    return 'hello world'\n")
-        f.flush()
+    test_file = Path(str(temp_work_dir)) / "single_test.py"
+    test_file.write_text("def test_function():\n    return 'hello world'\n")
 
-        result = await grep_tool(
-            Params.model_validate(
-                {
-                    "pattern": "hello",
-                    "path": f.name,
-                    "output_mode": "content",
-                    "-n": True,
-                }
-            )
+    result = await grep_tool(
+        Params.model_validate(
+            {
+                "pattern": "hello",
+                "path": str(test_file),
+                "output_mode": "content",
+                "-n": True,
+            }
         )
-        assert not result.is_error
-        assert isinstance(result.output, str)
+    )
+    assert not result.is_error
+    assert isinstance(result.output, str)
 
-        assert "hello" in result.output
-        # For single file search, filename might not be in content output
-        # Let's just check that we got valid content
-        assert len(result.output.strip()) > 0
+    assert "hello" in result.output
+    # For single file search, filename might not be in content output
+    # Let's just check that we got valid content
+    assert len(result.output.strip()) > 0
 
 
 async def test_grep_before_after_context(grep_tool: Grep, temp_test_files):
@@ -474,181 +491,179 @@ async def test_grep_before_after_context(grep_tool: Grep, temp_test_files):
 # === Tests for new features ===
 
 
-async def test_grep_default_head_limit(grep_tool: Grep):
+async def test_grep_default_head_limit(grep_tool: Grep, temp_work_dir: HostPath):
     """Default head_limit=250 truncates large result sets."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        for i in range(300):
-            (Path(temp_dir) / f"file_{i:03d}.txt").write_text("marker\n")
+    temp_dir = str(temp_work_dir)
+    for i in range(300):
+        (Path(temp_dir) / f"file_{i:03d}.txt").write_text("marker\n")
 
-        result = await grep_tool(
-            Params(pattern="marker", path=temp_dir, output_mode="files_with_matches")
-        )
-        assert not result.is_error
-        assert isinstance(result.output, str)
-        lines = [x for x in result.output.split("\n") if x.strip()]
-        assert len(lines) == 250
-        assert "Results truncated to 250 lines" in result.message
-        assert "total: 300" in result.message
-        assert "Use offset=250 to see more" in result.message
+    result = await grep_tool(
+        Params(pattern="marker", path=temp_dir, output_mode="files_with_matches")
+    )
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    lines = [x for x in result.output.split("\n") if x.strip()]
+    assert len(lines) == 250
+    assert "Results truncated to 250 lines" in result.message
+    assert "total: 300" in result.message
+    assert "Use offset=250 to see more" in result.message
 
 
-async def test_grep_head_limit_zero_unlimited(grep_tool: Grep):
+async def test_grep_head_limit_zero_unlimited(grep_tool: Grep, temp_work_dir: HostPath):
     """head_limit=0 returns all results without truncation."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        for i in range(300):
-            (Path(temp_dir) / f"file_{i:03d}.txt").write_text("marker\n")
+    temp_dir = str(temp_work_dir)
+    for i in range(300):
+        (Path(temp_dir) / f"file_{i:03d}.txt").write_text("marker\n")
 
-        result = await grep_tool(
-            Params(pattern="marker", path=temp_dir, output_mode="files_with_matches", head_limit=0)
-        )
-        assert not result.is_error
-        assert isinstance(result.output, str)
-        lines = [x for x in result.output.split("\n") if x.strip()]
-        assert len(lines) == 300
-        assert "truncated" not in result.message.lower()
+    result = await grep_tool(
+        Params(pattern="marker", path=temp_dir, output_mode="files_with_matches", head_limit=0)
+    )
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    lines = [x for x in result.output.split("\n") if x.strip()]
+    assert len(lines) == 300
+    assert "truncated" not in result.message.lower()
 
 
-async def test_grep_offset_pagination(grep_tool: Grep):
+async def test_grep_offset_pagination(grep_tool: Grep, temp_work_dir: HostPath):
     """offset skips the first N results; combined with head_limit enables pagination."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Use a single file with many lines to avoid mtime sort instability
-        (Path(temp_dir) / "data.txt").write_text(
-            "\n".join(f"line{i} word" for i in range(10)) + "\n"
+    temp_dir = str(temp_work_dir)
+    # Use a single file with many lines to avoid mtime sort instability
+    (Path(temp_dir) / "data.txt").write_text("\n".join(f"line{i} word" for i in range(10)) + "\n")
+
+    # Page 1: first 3
+    r1 = await grep_tool(
+        Params(
+            pattern="word",
+            path=temp_dir,
+            output_mode="content",
+            head_limit=3,
+            offset=0,
         )
+    )
+    assert isinstance(r1.output, str)
+    lines1 = [x for x in assert_wrapped(r1.output).split("\n") if x.strip()]
+    assert len(lines1) == 3
+    assert "Use offset=3 to see more" in r1.message
 
-        # Page 1: first 3
-        r1 = await grep_tool(
-            Params(
-                pattern="word",
-                path=temp_dir,
-                output_mode="content",
-                head_limit=3,
-                offset=0,
-            )
+    # Page 2: next 3
+    r2 = await grep_tool(
+        Params(
+            pattern="word",
+            path=temp_dir,
+            output_mode="content",
+            head_limit=3,
+            offset=3,
         )
-        assert isinstance(r1.output, str)
-        lines1 = [x for x in assert_wrapped(r1.output).split("\n") if x.strip()]
-        assert len(lines1) == 3
-        assert "Use offset=3 to see more" in r1.message
-
-        # Page 2: next 3
-        r2 = await grep_tool(
-            Params(
-                pattern="word",
-                path=temp_dir,
-                output_mode="content",
-                head_limit=3,
-                offset=3,
-            )
-        )
-        assert isinstance(r2.output, str)
-        lines2 = [x for x in assert_wrapped(r2.output).split("\n") if x.strip()]
-        assert len(lines2) == 3
-        # No overlap between pages (content mode has stable line order)
-        assert set(lines1).isdisjoint(set(lines2))
+    )
+    assert isinstance(r2.output, str)
+    lines2 = [x for x in assert_wrapped(r2.output).split("\n") if x.strip()]
+    assert len(lines2) == 3
+    # No overlap between pages (content mode has stable line order)
+    assert set(lines1).isdisjoint(set(lines2))
 
 
-async def test_grep_offset_content_mode(grep_tool: Grep):
+async def test_grep_offset_content_mode(grep_tool: Grep, temp_work_dir: HostPath):
     """offset works correctly with content mode output."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        (Path(temp_dir) / "a.txt").write_text("\n".join(f"line{i} match" for i in range(10)) + "\n")
+    temp_dir = str(temp_work_dir)
+    (Path(temp_dir) / "a.txt").write_text("\n".join(f"line{i} match" for i in range(10)) + "\n")
 
-        # Get all results
-        r_all = await grep_tool(
-            Params(pattern="match", path=temp_dir, output_mode="content", head_limit=0)
+    # Get all results
+    r_all = await grep_tool(
+        Params(pattern="match", path=temp_dir, output_mode="content", head_limit=0)
+    )
+    assert isinstance(r_all.output, str)
+    all_lines = [x for x in assert_wrapped(r_all.output).split("\n") if x.strip()]
+    assert len(all_lines) == 10
+
+    # Get with offset=5
+    r_offset = await grep_tool(
+        Params(
+            pattern="match",
+            path=temp_dir,
+            output_mode="content",
+            head_limit=3,
+            offset=5,
         )
-        assert isinstance(r_all.output, str)
-        all_lines = [x for x in assert_wrapped(r_all.output).split("\n") if x.strip()]
-        assert len(all_lines) == 10
-
-        # Get with offset=5
-        r_offset = await grep_tool(
-            Params(
-                pattern="match",
-                path=temp_dir,
-                output_mode="content",
-                head_limit=3,
-                offset=5,
-            )
-        )
-        assert isinstance(r_offset.output, str)
-        offset_lines = [x for x in assert_wrapped(r_offset.output).split("\n") if x.strip()]
-        assert len(offset_lines) == 3
-        # Should be lines 5,6,7 from original
-        assert offset_lines[0] == all_lines[5]
-        assert offset_lines[2] == all_lines[7]
+    )
+    assert isinstance(r_offset.output, str)
+    offset_lines = [x for x in assert_wrapped(r_offset.output).split("\n") if x.strip()]
+    assert len(offset_lines) == 3
+    # Should be lines 5,6,7 from original
+    assert offset_lines[0] == all_lines[5]
+    assert offset_lines[2] == all_lines[7]
 
 
-async def test_grep_offset_beyond_results(grep_tool: Grep):
+async def test_grep_offset_beyond_results(grep_tool: Grep, temp_work_dir: HostPath):
     """offset larger than total results returns no matches."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        (Path(temp_dir) / "only.txt").write_text("data\n")
+    temp_dir = str(temp_work_dir)
+    (Path(temp_dir) / "only.txt").write_text("data\n")
 
-        result = await grep_tool(
-            Params(
-                pattern="data",
-                path=temp_dir,
-                output_mode="files_with_matches",
-                offset=100,
-            )
+    result = await grep_tool(
+        Params(
+            pattern="data",
+            path=temp_dir,
+            output_mode="files_with_matches",
+            offset=100,
         )
-        assert not result.is_error
-        assert "No matches found" in result.message
+    )
+    assert not result.is_error
+    assert "No matches found" in result.message
 
 
-async def test_grep_hidden_files(grep_tool: Grep):
+async def test_grep_hidden_files(grep_tool: Grep, temp_work_dir: HostPath):
     """Hidden dotfiles (non-sensitive) are searchable."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        (Path(temp_dir) / ".eslintrc.json").write_text('{"rule": "marker"}\n')
-        (Path(temp_dir) / "visible.txt").write_text("marker\n")
+    temp_dir = str(temp_work_dir)
+    (Path(temp_dir) / ".eslintrc.json").write_text('{"rule": "marker"}\n')
+    (Path(temp_dir) / "visible.txt").write_text("marker\n")
 
-        result = await grep_tool(
-            Params(pattern="marker", path=temp_dir, output_mode="files_with_matches")
-        )
-        assert not result.is_error
-        assert ".eslintrc.json" in result.output
-        assert "visible.txt" in result.output
+    result = await grep_tool(
+        Params(pattern="marker", path=temp_dir, output_mode="files_with_matches")
+    )
+    assert not result.is_error
+    assert ".eslintrc.json" in result.output
+    assert "visible.txt" in result.output
 
 
-async def test_grep_vcs_exclusion(grep_tool: Grep):
+async def test_grep_vcs_exclusion(grep_tool: Grep, temp_work_dir: HostPath):
     """.git directory is excluded from search."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        git_dir = Path(temp_dir) / ".git"
-        git_dir.mkdir()
-        (git_dir / "config").write_text("vcs_marker\n")
-        (Path(temp_dir) / "real.txt").write_text("vcs_marker\n")
+    temp_dir = str(temp_work_dir)
+    git_dir = Path(temp_dir) / ".git"
+    git_dir.mkdir()
+    (git_dir / "config").write_text("vcs_marker\n")
+    (Path(temp_dir) / "real.txt").write_text("vcs_marker\n")
 
-        result = await grep_tool(
-            Params(pattern="vcs_marker", path=temp_dir, output_mode="files_with_matches")
-        )
-        assert not result.is_error
-        assert "real.txt" in result.output
-        assert ".git" not in result.output
+    result = await grep_tool(
+        Params(pattern="vcs_marker", path=temp_dir, output_mode="files_with_matches")
+    )
+    assert not result.is_error
+    assert "real.txt" in result.output
+    assert ".git" not in result.output
 
 
-async def test_grep_mtime_sorting(grep_tool: Grep):
+async def test_grep_mtime_sorting(grep_tool: Grep, temp_work_dir: HostPath):
     """files_with_matches returns most recently modified files first."""
     import os as _os
     import time
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        old_file = Path(temp_dir) / "old.txt"
-        old_file.write_text("sortme\n")
-        old_mtime = time.time() - 100
-        _os.utime(old_file, (old_mtime, old_mtime))
+    temp_dir = str(temp_work_dir)
+    old_file = Path(temp_dir) / "old.txt"
+    old_file.write_text("sortme\n")
+    old_mtime = time.time() - 100
+    _os.utime(old_file, (old_mtime, old_mtime))
 
-        new_file = Path(temp_dir) / "new.txt"
-        new_file.write_text("sortme\n")
+    new_file = Path(temp_dir) / "new.txt"
+    new_file.write_text("sortme\n")
 
-        result = await grep_tool(
-            Params(pattern="sortme", path=temp_dir, output_mode="files_with_matches")
-        )
-        assert not result.is_error
-        assert isinstance(result.output, str)
-        lines = [x for x in result.output.split("\n") if x.strip()]
-        assert len(lines) == 2
-        assert lines[0] == "new.txt"
-        assert lines[1] == "old.txt"
+    result = await grep_tool(
+        Params(pattern="sortme", path=temp_dir, output_mode="files_with_matches")
+    )
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    lines = [x for x in result.output.split("\n") if x.strip()]
+    assert len(lines) == 2
+    assert lines[0] == "new.txt"
+    assert lines[1] == "old.txt"
 
 
 @pytest.mark.parametrize("output_mode", ["files_with_matches", "content", "count_matches"])
@@ -674,95 +689,115 @@ async def test_grep_relative_paths(grep_tool: Grep, temp_test_files, output_mode
         assert not Path(path_part).is_absolute(), f"Expected relative path, got: {line}"
 
 
-async def test_grep_content_default_line_numbers(grep_tool: Grep):
+async def test_grep_content_default_line_numbers(grep_tool: Grep, temp_work_dir: HostPath):
     """content mode includes line numbers by default (without explicit -n)."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        (Path(temp_dir) / "a.txt").write_text("hello\nworld\n")
+    temp_dir = str(temp_work_dir)
+    (Path(temp_dir) / "a.txt").write_text("hello\nworld\n")
 
-        result = await grep_tool(Params(pattern="hello", path=temp_dir, output_mode="content"))
-        assert not result.is_error
-        assert isinstance(result.output, str)
-        for line in assert_wrapped(result.output).split("\n"):
-            if line.strip() and not line.startswith("--"):
-                parts = line.split(":")
-                assert len(parts) >= 3, f"Expected path:line:content, got: {line}"
-                assert parts[1].strip().isdigit(), f"Expected line number, got: {parts[1]}"
+    result = await grep_tool(Params(pattern="hello", path=temp_dir, output_mode="content"))
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    for line in assert_wrapped(result.output).split("\n"):
+        if line.strip() and not line.startswith("--"):
+            parts = line.split(":")
+            assert len(parts) >= 3, f"Expected path:line:content, got: {line}"
+            assert parts[1].strip().isdigit(), f"Expected line number, got: {parts[1]}"
 
 
-async def test_grep_content_disable_line_numbers(grep_tool: Grep):
+async def test_grep_content_disable_line_numbers(grep_tool: Grep, temp_work_dir: HostPath):
     """content mode can opt-out of line numbers with -n=false."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        (Path(temp_dir) / "a.txt").write_text("hello\nworld\n")
+    temp_dir = str(temp_work_dir)
+    (Path(temp_dir) / "a.txt").write_text("hello\nworld\n")
 
-        result = await grep_tool(
-            Params.model_validate(
-                {"pattern": "hello", "path": temp_dir, "output_mode": "content", "-n": False}
-            )
+    result = await grep_tool(
+        Params.model_validate(
+            {"pattern": "hello", "path": temp_dir, "output_mode": "content", "-n": False}
         )
-        assert not result.is_error
-        assert isinstance(result.output, str)
-        for line in assert_wrapped(result.output).split("\n"):
-            if line.strip() and not line.startswith("--"):
-                parts = line.split(":")
-                # path:content (2 parts), NOT path:linenum:content (3 parts)
-                assert len(parts) == 2, f"Expected path:content without linenum, got: {line}"
+    )
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    for line in assert_wrapped(result.output).split("\n"):
+        if line.strip() and not line.startswith("--"):
+            parts = line.split(":")
+            # path:content (2 parts), NOT path:linenum:content (3 parts)
+            assert len(parts) == 2, f"Expected path:content without linenum, got: {line}"
 
 
-async def test_grep_count_summary(grep_tool: Grep):
+async def test_grep_content_no_line_numbers_keeps_digit_hyphen_paths(
+    grep_tool: Grep, temp_work_dir: HostPath
+):
+    """-n=false must not mangle paths containing `-<digits>-` or `:<digits>:` runs.
+
+    The old strip regex matched the first sep-digits-sep run lazily, so a path
+    like `utf-8-codec.py` lost its `8-` and kept the real line number instead.
+    """
+    temp_dir = str(temp_work_dir)
+    (Path(temp_dir) / "utf-8-codec.py").write_text("hello\nworld\n")
+
+    result = await grep_tool(
+        Params.model_validate(
+            {"pattern": "hello", "path": temp_dir, "output_mode": "content", "-n": False}
+        )
+    )
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    assert "utf-8-codec.py:hello" in result.output
+
+
+async def test_grep_count_summary(grep_tool: Grep, temp_work_dir: HostPath):
     """count_matches: summary in message (not output), accurate on full results."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        for i in range(10):
-            (Path(temp_dir) / f"f{i}.txt").write_text("word\nword\nword\n")
+    temp_dir = str(temp_work_dir)
+    for i in range(10):
+        (Path(temp_dir) / f"f{i}.txt").write_text("word\nword\nword\n")
 
-        result = await grep_tool(
-            Params(pattern="word", path=temp_dir, output_mode="count_matches", head_limit=3)
-        )
-        assert not result.is_error
-        assert isinstance(result.output, str)
+    result = await grep_tool(
+        Params(pattern="word", path=temp_dir, output_mode="count_matches", head_limit=3)
+    )
+    assert not result.is_error
+    assert isinstance(result.output, str)
 
-        # Output is pure path:count (no summary text)
-        output_lines = [x for x in result.output.split("\n") if x.strip()]
-        assert len(output_lines) == 3
-        for line in output_lines:
-            assert "Found" not in line, f"Summary leaked into output: {line}"
+    # Output is pure path:count (no summary text)
+    output_lines = [x for x in result.output.split("\n") if x.strip()]
+    assert len(output_lines) == 3
+    for line in output_lines:
+        assert "Found" not in line, f"Summary leaked into output: {line}"
 
-        # Summary in message reflects ALL 10 files x 3 matches = 30
-        assert "Found 30 total occurrences across 10 files" in result.message
-        # Pagination info also present
-        assert "Results truncated to 3 lines" in result.message
+    # Summary in message reflects ALL 10 files x 3 matches = 30
+    assert "Found 30 total occurrences across 10 files" in result.message
+    # Pagination info also present
+    assert "Results truncated to 3 lines" in result.message
 
 
-async def test_grep_content_with_context_lines(grep_tool: Grep):
+async def test_grep_content_with_context_lines(grep_tool: Grep, temp_work_dir: HostPath):
     """content mode with context: both match and context lines have relative paths."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        (Path(temp_dir) / "a.txt").write_text("aaa\nbbb\nccc\n")
+    temp_dir = str(temp_work_dir)
+    (Path(temp_dir) / "a.txt").write_text("aaa\nbbb\nccc\n")
 
-        result = await grep_tool(
-            Params.model_validate(
-                {"pattern": "bbb", "path": temp_dir, "output_mode": "content", "-C": 1}
-            )
+    result = await grep_tool(
+        Params.model_validate(
+            {"pattern": "bbb", "path": temp_dir, "output_mode": "content", "-C": 1}
         )
-        assert not result.is_error
-        assert isinstance(result.output, str)
-        assert "bbb" in result.output
-        # ALL lines (match and context) should have relative paths
-        for line in result.output.split("\n"):
-            if line.strip() and line != "--":
-                assert not Path(line).is_absolute(), f"Line has absolute path: {line}"
+    )
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    assert "bbb" in result.output
+    # ALL lines (match and context) should have relative paths
+    for line in result.output.split("\n"):
+        if line.strip() and line != "--":
+            assert not Path(line).is_absolute(), f"Line has absolute path: {line}"
 
 
-async def test_grep_single_file_relative_path(grep_tool: Grep):
+async def test_grep_single_file_relative_path(grep_tool: Grep, temp_work_dir: HostPath):
     """Searching a single file still returns relative paths."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        test_file = Path(temp_dir) / "target.py"
-        test_file.write_text("def foo():\n    pass\n")
+    test_file = Path(str(temp_work_dir)) / "target.py"
+    test_file.write_text("def foo():\n    pass\n")
 
-        result = await grep_tool(Params(pattern="foo", path=str(test_file), output_mode="content"))
-        assert not result.is_error
-        assert isinstance(result.output, str)
-        for line in result.output.split("\n"):
-            if line.strip() and not line.startswith("--"):
-                assert not Path(line).is_absolute(), f"Expected relative path, got: {line}"
+    result = await grep_tool(Params(pattern="foo", path=str(test_file), output_mode="content"))
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    for line in result.output.split("\n"):
+        if line.strip() and not line.startswith("--"):
+            assert not Path(line).is_absolute(), f"Expected relative path, got: {line}"
 
 
 # === Unit tests for internal functions ===
@@ -893,40 +928,42 @@ def test_strip_path_prefix_similar_names():
 # === Tests for include_ignored feature ===
 
 
-async def test_grep_include_ignored_finds_gitignored_files(grep_tool: Grep):
+async def test_grep_include_ignored_finds_gitignored_files(
+    grep_tool: Grep, temp_work_dir: HostPath
+):
     """include_ignored=True should find files that are listed in .gitignore."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Set up a git repo with .gitignore
-        import subprocess
+    import subprocess
 
-        subprocess.run(["git", "init", "-q", temp_dir], check=True)
-        (Path(temp_dir) / ".git" / "test_marker").write_text("SECRET=leaked\n")
-        # Use a non-sensitive ignored file (build output) to test include_ignored
-        (Path(temp_dir) / ".gitignore").write_text("build.log\n")
-        (Path(temp_dir) / "build.log").write_text("SECRET=in_build_log\n")
-        (Path(temp_dir) / "visible.txt").write_text("SECRET=visible\n")
+    temp_dir = str(temp_work_dir)
+    # Set up a git repo with .gitignore
+    subprocess.run(["git", "init", "-q", temp_dir], check=True)
+    (Path(temp_dir) / ".git" / "test_marker").write_text("SECRET=leaked\n")
+    # Use a non-sensitive ignored file (build output) to test include_ignored
+    (Path(temp_dir) / ".gitignore").write_text("build.log\n")
+    (Path(temp_dir) / "build.log").write_text("SECRET=in_build_log\n")
+    (Path(temp_dir) / "visible.txt").write_text("SECRET=visible\n")
 
-        # Without include_ignored: build.log should be excluded
-        result = await grep_tool(
-            Params(pattern="SECRET", path=temp_dir, output_mode="files_with_matches")
+    # Without include_ignored: build.log should be excluded
+    result = await grep_tool(
+        Params(pattern="SECRET", path=temp_dir, output_mode="files_with_matches")
+    )
+    assert not result.is_error
+    assert "visible.txt" in result.output
+    assert "build.log" not in result.output
+
+    # With include_ignored: build.log should be found
+    result = await grep_tool(
+        Params(
+            pattern="SECRET",
+            path=temp_dir,
+            output_mode="files_with_matches",
+            include_ignored=True,
         )
-        assert not result.is_error
-        assert "visible.txt" in result.output
-        assert "build.log" not in result.output
-
-        # With include_ignored: build.log should be found
-        result = await grep_tool(
-            Params(
-                pattern="SECRET",
-                path=temp_dir,
-                output_mode="files_with_matches",
-                include_ignored=True,
-            )
-        )
-        assert not result.is_error
-        assert "build.log" in result.output
-        assert "visible.txt" in result.output
-        assert ".git" not in result.output  # VCS directories still excluded
+    )
+    assert not result.is_error
+    assert "build.log" in result.output
+    assert "visible.txt" in result.output
+    assert ".git" not in result.output  # VCS directories still excluded
 
 
 async def test_grep_include_ignored_default_false(grep_tool: Grep):
@@ -947,99 +984,136 @@ def test_build_rg_args_include_ignored():
     assert "--no-ignore" not in args_default
 
 
-async def test_grep_filters_sensitive_files_always(grep_tool: Grep):
+async def test_grep_filters_sensitive_files_always(grep_tool: Grep, temp_work_dir: HostPath):
     """Sensitive files (.env, SSH keys) are always filtered, even without include_ignored."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # No git repo — .env is not gitignored, just a normal dotfile
-        (Path(temp_dir) / ".env").write_text("SECRET=hunter2\n")
-        (Path(temp_dir) / "id_rsa").write_text("SECRET=private_key\n")
-        (Path(temp_dir) / "visible.txt").write_text("SECRET=visible\n")
+    temp_dir = str(temp_work_dir)
+    # No git repo — .env is not gitignored, just a normal dotfile
+    (Path(temp_dir) / ".env").write_text("SECRET=hunter2\n")
+    (Path(temp_dir) / "id_rsa").write_text("SECRET=private_key\n")
+    (Path(temp_dir) / "visible.txt").write_text("SECRET=visible\n")
 
-        result = await grep_tool(
-            Params(pattern="SECRET", path=temp_dir, output_mode="files_with_matches")
-        )
-        assert not result.is_error
-        assert "visible.txt" in result.output
-        assert ".env" not in result.output
-        assert "id_rsa" not in result.output
-        assert "sensitive" in result.message.lower()
+    result = await grep_tool(
+        Params(pattern="SECRET", path=temp_dir, output_mode="files_with_matches")
+    )
+    assert not result.is_error
+    assert "visible.txt" in result.output
+    assert ".env" not in result.output
+    assert "id_rsa" not in result.output
+    assert "sensitive" in result.message.lower()
 
 
-async def test_grep_filters_sensitive_in_content_mode(grep_tool: Grep):
+async def test_grep_filters_sensitive_in_content_mode(grep_tool: Grep, temp_work_dir: HostPath):
     """Sensitive file filtering works in content output mode."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        (Path(temp_dir) / ".env").write_text("SECRET=hunter2\n")
-        (Path(temp_dir) / "visible.txt").write_text("SECRET=visible\n")
+    temp_dir = str(temp_work_dir)
+    (Path(temp_dir) / ".env").write_text("SECRET=hunter2\n")
+    (Path(temp_dir) / "visible.txt").write_text("SECRET=visible\n")
 
-        result = await grep_tool(Params(pattern="SECRET", path=temp_dir, output_mode="content"))
-        assert not result.is_error
-        assert "visible.txt" in result.output
-        assert ".env" not in result.output
-        assert "sensitive" in result.message.lower()
+    result = await grep_tool(Params(pattern="SECRET", path=temp_dir, output_mode="content"))
+    assert not result.is_error
+    assert "visible.txt" in result.output
+    assert ".env" not in result.output
+    assert "sensitive" in result.message.lower()
 
 
-async def test_grep_filters_sensitive_context_lines(grep_tool: Grep):
+async def test_grep_filters_sensitive_in_content_mode_without_line_numbers(
+    grep_tool: Grep, temp_work_dir: HostPath
+):
+    """Sensitive file filtering must work even when -n=false (no line numbers).
+
+    When the model passes line_number=False, ripgrep omits the line-number
+    field, so the path-attribution regex fails and the .env content leaks.
+    After the fix, --line-number is always forced in content mode and the
+    number is stripped from display output when params.line_number is False.
+    """
+    temp_dir = str(temp_work_dir)
+    (Path(temp_dir) / ".env").write_text("SECRET=hunter2\n")
+    (Path(temp_dir) / "visible.txt").write_text("SECRET=visible\n")
+
+    result = await grep_tool(
+        Params.model_validate(
+            {"pattern": "SECRET", "path": temp_dir, "output_mode": "content", "-n": False}
+        )
+    )
+    assert not result.is_error
+    # .env content must be suppressed regardless of line_number setting
+    assert ".env" not in result.output
+    assert "hunter2" not in result.output
+    # The non-sensitive file must still appear
+    assert "visible.txt" in result.output
+    # A sensitive-file warning must be present
+    assert "sensitive" in result.message.lower()
+    # Display must NOT include line numbers (user asked for -n=false).
+    # Use assert_wrapped to get the inner content and skip wrapper tag lines.
+    inner = assert_wrapped(result.output)
+    for line in inner.split("\n"):
+        if line.strip() and not line.startswith("--"):
+            parts = line.split(":")
+            # path:content (2 parts), NOT path:linenum:content (3 parts)
+            assert len(parts) == 2, f"Expected path:content without linenum, got: {line}"
+
+
+async def test_grep_filters_sensitive_context_lines(grep_tool: Grep, temp_work_dir: HostPath):
     """Context lines (ripgrep -C) for sensitive files must also be filtered."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        (Path(temp_dir) / ".env").write_text("line1\nSECRET=hunter2\nline3\n")
-        (Path(temp_dir) / "visible.txt").write_text("lineA\nSECRET=visible\nlineC\n")
+    temp_dir = str(temp_work_dir)
+    (Path(temp_dir) / ".env").write_text("line1\nSECRET=hunter2\nline3\n")
+    (Path(temp_dir) / "visible.txt").write_text("lineA\nSECRET=visible\nlineC\n")
 
-        result = await grep_tool(
-            Params.model_validate(
-                {"pattern": "SECRET", "path": temp_dir, "output_mode": "content", "-C": 1}
-            )
+    result = await grep_tool(
+        Params.model_validate(
+            {"pattern": "SECRET", "path": temp_dir, "output_mode": "content", "-C": 1}
         )
-        assert not result.is_error
-        assert "visible.txt" in result.output
-        # Neither match lines nor context lines from .env should appear
-        assert ".env" not in result.output
-        assert "hunter2" not in result.output
-        assert "sensitive" in result.message.lower()
+    )
+    assert not result.is_error
+    assert "visible.txt" in result.output
+    # Neither match lines nor context lines from .env should appear
+    assert ".env" not in result.output
+    assert "hunter2" not in result.output
+    assert "sensitive" in result.message.lower()
 
 
-async def test_grep_filters_sensitive_hyphenated_path(grep_tool: Grep):
+async def test_grep_filters_sensitive_hyphenated_path(grep_tool: Grep, temp_work_dir: HostPath):
     """Sensitive file in a hyphenated directory should be correctly filtered in content mode."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        sub = Path(temp_dir) / "my-project"
-        sub.mkdir()
-        (sub / ".env").write_text("SECRET=leaked\n")
-        (Path(temp_dir) / "safe.txt").write_text("SECRET=ok\n")
+    temp_dir = str(temp_work_dir)
+    sub = Path(temp_dir) / "my-project"
+    sub.mkdir()
+    (sub / ".env").write_text("SECRET=leaked\n")
+    (Path(temp_dir) / "safe.txt").write_text("SECRET=ok\n")
 
-        result = await grep_tool(
-            Params.model_validate(
-                {"pattern": "SECRET", "path": temp_dir, "output_mode": "content", "-C": 1}
-            )
+    result = await grep_tool(
+        Params.model_validate(
+            {"pattern": "SECRET", "path": temp_dir, "output_mode": "content", "-C": 1}
         )
-        assert not result.is_error
-        assert "safe.txt" in result.output
-        assert ".env" not in result.output
-        assert "leaked" not in result.output
+    )
+    assert not result.is_error
+    assert "safe.txt" in result.output
+    assert ".env" not in result.output
+    assert "leaked" not in result.output
 
 
-async def test_grep_all_sensitive_preserves_warning(grep_tool: Grep):
+async def test_grep_all_sensitive_preserves_warning(grep_tool: Grep, temp_work_dir: HostPath):
     """When all results are sensitive, warning should not be lost to 'No matches found'."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        (Path(temp_dir) / ".env").write_text("ONLY_IN_ENV=secret\n")
+    temp_dir = str(temp_work_dir)
+    (Path(temp_dir) / ".env").write_text("ONLY_IN_ENV=secret\n")
 
-        result = await grep_tool(
-            Params(pattern="ONLY_IN_ENV", path=temp_dir, output_mode="files_with_matches")
-        )
-        assert not result.is_error
-        assert "No matches found" in result.message
-        assert "sensitive" in result.message.lower()
-        assert ".env" in result.message
+    result = await grep_tool(
+        Params(pattern="ONLY_IN_ENV", path=temp_dir, output_mode="files_with_matches")
+    )
+    assert not result.is_error
+    assert "No matches found" in result.message
+    assert "sensitive" in result.message.lower()
+    assert ".env" in result.message
 
 
-async def test_grep_allows_env_example(grep_tool: Grep):
+async def test_grep_allows_env_example(grep_tool: Grep, temp_work_dir: HostPath):
     """.env.example is not sensitive and should appear in results."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        (Path(temp_dir) / ".env.example").write_text("API_KEY=placeholder\n")
+    temp_dir = str(temp_work_dir)
+    (Path(temp_dir) / ".env.example").write_text("API_KEY=placeholder\n")
 
-        result = await grep_tool(
-            Params(pattern="API_KEY", path=temp_dir, output_mode="files_with_matches")
-        )
-        assert not result.is_error
-        assert ".env.example" in result.output
+    result = await grep_tool(
+        Params(pattern="API_KEY", path=temp_dir, output_mode="files_with_matches")
+    )
+    assert not result.is_error
+    assert ".env.example" in result.output
 
 
 async def test_python_fallback_bounds_wall_clock(monkeypatch, tmp_path):
@@ -1067,7 +1141,7 @@ async def test_python_fallback_bounds_wall_clock(monkeypatch, tmp_path):
 
     monkeypatch.setattr(grep_module.time, "monotonic", _fake_monotonic)
 
-    result = await Grep()(
+    result = await _make_grep_for(tmp_path)(
         Params(pattern="needle", path=str(tmp_path), output_mode="files_with_matches")
     )
 
@@ -1088,7 +1162,9 @@ async def test_grep_content_output_wrapped_python_fallback(monkeypatch, temp_tes
     monkeypatch.setattr("pythinker_code.tools.file.grep_local._ensure_rg_path", fail_rg_path)
     temp_dir, _ = temp_test_files
 
-    result = await Grep()(Params(pattern="hello", path=temp_dir, output_mode="content"))
+    result = await _make_grep_for(Path(temp_dir))(
+        Params(pattern="hello", path=temp_dir, output_mode="content")
+    )
 
     assert not result.is_error
     inner = assert_wrapped(result.output)
@@ -1115,7 +1191,7 @@ async def test_grep_no_match_content_is_not_wrapped(monkeypatch, temp_test_files
     monkeypatch.setattr("pythinker_code.tools.file.grep_local._ensure_rg_path", fail_rg_path)
     temp_dir, _ = temp_test_files
 
-    result = await Grep()(
+    result = await _make_grep_for(Path(temp_dir))(
         Params(pattern="zzz_no_such_pattern_zzz", path=temp_dir, output_mode="content")
     )
 
@@ -1133,7 +1209,55 @@ async def test_grep_files_with_matches_is_not_wrapped(monkeypatch, temp_test_fil
     monkeypatch.setattr("pythinker_code.tools.file.grep_local._ensure_rg_path", fail_rg_path)
     temp_dir, _ = temp_test_files
 
-    result = await Grep()(Params(pattern="hello", path=temp_dir, output_mode="files_with_matches"))
+    result = await _make_grep_for(Path(temp_dir))(
+        Params(pattern="hello", path=temp_dir, output_mode="files_with_matches")
+    )
 
     assert not result.is_error
     assert "<untrusted_data" not in (result.output or "")
+
+
+# === Path workspace validation tests ===
+
+
+async def test_grep_rejects_path_outside_workspace(runtime: Runtime, tmp_path: Path):
+    """Grep must reject paths that lie outside the workspace.
+
+    Before the fix Grep accepted any absolute path (including /etc, ~/.ssh, etc.)
+    and returned matched content.  After the fix it must return a ToolError whose
+    message contains 'outside the workspace'.
+    """
+    # Create a sibling directory that is NOT inside runtime.work_dir
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    (outside_dir / "secret.txt").write_text("SECRET content\n")
+
+    grep = Grep(runtime)
+    result = await grep(Params(pattern="SECRET", path=str(outside_dir), output_mode="content"))
+
+    assert result.is_error
+    assert "outside the workspace" in result.message
+
+
+async def test_grep_rejects_symlink_escaping_workspace(tmp_path: Path):
+    """A symlink inside the workspace whose real target is outside must be rejected.
+
+    Grep validated paths with a lexical canonical() (no symlink resolution), so an
+    in-workspace symlink pointing outside was accepted and ripgrep — which follows an
+    explicit symlink path argument — leaked the outside content. The boundary check must
+    resolve the real (symlink-followed) path first, matching the read/write/edit tools.
+    """
+    work_dir = tmp_path / "ws"
+    work_dir.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "data.txt").write_text("PASSWORD=hunter2\n", encoding="utf-8")
+    (work_dir / "link").symlink_to(outside)
+
+    grep = _make_grep_for(work_dir)
+    result = await grep(
+        Params(pattern="PASSWORD", path=str(work_dir / "link"), output_mode="content")
+    )
+
+    assert result.is_error
+    assert "outside the workspace" in result.message

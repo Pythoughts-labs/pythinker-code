@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
 from enum import Enum
 
@@ -17,9 +16,10 @@ from pythinker_code.tools.display import (
     TodoDisplayBlock,
 )
 from pythinker_code.ui.shell.components.markdown import PythinkerMarkdown as Markdown
+from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
 from pythinker_code.ui.shell.design_system import ShellTone, StatusName, shell_style, status_icon
 from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ACTIVE_MARKER
-from pythinker_code.ui.shell.motion import reduced_motion_enabled
+from pythinker_code.ui.shell.motion import blink_visible
 from pythinker_code.ui.shell.spacing import REPORT_PANEL_PADDING, WORKLOG_PANEL_PADDING
 from pythinker_code.ui.theme import get_tui_tokens, tui_rich_style
 from pythinker_code.utils.rich.columns import BulletColumns
@@ -96,11 +96,7 @@ _STATE_ICON: dict[WorkLogState, StatusName] = {
 
 def _state_icon(state: WorkLogState) -> Text:
     icon = status_icon(_STATE_ICON[state])
-    if (
-        state == WorkLogState.RUNNING
-        and not reduced_motion_enabled()
-        and int(time.monotonic() / 0.8) % 2 != 0
-    ):
+    if state == WorkLogState.RUNNING and not blink_visible():
         return Text(" ", style=icon.style)
     return icon
 
@@ -146,15 +142,15 @@ def render_worklog_entry(
     if icon_renderable is None:
         line.append_text(_state_icon(state))
         line.append(" ")
-    line.append(label, style="bold")
+    line.append(sanitize_ansi(label), style="bold")
     if target:
         line.append(" ")
-        line.append(target, style=tui_rich_style("muted"))
+        line.append(sanitize_ansi(target), style=tui_rich_style("muted"))
     line.append(" ")
     line.append(state.value, style=_STATE_STYLE[state])
     if detail:
         line.append(" · ", style=tui_rich_style("muted"))
-        line.append(detail, style=_STATE_STYLE[state])
+        line.append(sanitize_ansi(detail), style=_STATE_STYLE[state])
     if icon_renderable is not None:
         return BulletColumns(
             line if not children else Group(line, *children),

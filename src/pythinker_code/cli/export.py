@@ -285,7 +285,7 @@ def export(
         str | None,
         typer.Option(
             "--format",
-            help="Transcript format to add at the archive root. Currently supports yaml.",
+            help="Transcript format (always included as yaml). Only 'yaml' is accepted.",
         ),
     ] = None,
 ) -> None:

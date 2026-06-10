@@ -48,7 +48,8 @@ def test_intel_client_disables_implicit_redirects() -> None:
     from pythinker_review.security_intel.client import IntelHttpClient
 
     client = IntelHttpClient()
-    assert any(isinstance(h, _NoRedirectHandler) for h in client._opener.handlers)
+    handlers = client._opener.handlers  # pyright: ignore[reportAttributeAccessIssue]
+    assert any(isinstance(h, _NoRedirectHandler) for h in handlers)
 
 
 def test_intel_cache_roundtrip(tmp_path: Path) -> None:

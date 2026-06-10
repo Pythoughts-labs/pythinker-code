@@ -6,6 +6,7 @@ from typing import TextIO, cast
 
 from pythinker_code.ui.terminal_capabilities import (
     ascii_glyphs_enabled,
+    color_depth,
     colors_disabled,
     motion_disabled,
 )
@@ -34,6 +35,52 @@ def test_motion_capability_honors_static_output_env_vars() -> None:
     assert motion_disabled({"PYTHINKER_NO_ANIMATION": "true"})
     assert motion_disabled({"PYTHINKER_STATIC_OUTPUT": "yes"})
     assert not motion_disabled({"TERM": "xterm-256color"})
+
+
+def test_color_depth_three_tiers() -> None:
+    assert color_depth({"NO_COLOR": "1"}) == "none"
+    assert color_depth({"TERM": "dumb"}) == "none"
+    assert color_depth({"COLORTERM": "truecolor", "TERM": "xterm-256color"}) == "truecolor"
+    assert color_depth({"COLORTERM": "24bit"}) == "truecolor"
+    assert color_depth({"TERM": "xterm-direct"}) == "truecolor"
+    assert color_depth({"TERM": "xterm-256color"}) == "256"
+    assert color_depth({"TERM": "xterm"}) == "16"
+    assert color_depth({}) == "16"
+
+
+def test_color_depth_force_color_levels_win() -> None:
+    assert color_depth({"FORCE_COLOR": "3", "TERM": "xterm"}) == "truecolor"
+    assert color_depth({"FORCE_COLOR": "2", "COLORTERM": "truecolor"}) == "256"
+    assert color_depth({"FORCE_COLOR": "1", "COLORTERM": "truecolor"}) == "16"
+    # Non-level FORCE_COLOR values defer to the remaining detection chain.
+    assert color_depth({"FORCE_COLOR": "true", "TERM": "xterm-256color"}) == "256"
+
+
+def test_color_depth_windows_terminal_promotion() -> None:
+    assert color_depth({"WT_SESSION": "guid", "TERM": "xterm"}) == "truecolor"
+    # An explicit FORCE_COLOR level overrides the promotion.
+    assert color_depth({"WT_SESSION": "guid", "FORCE_COLOR": "2"}) == "256"
+
+
+def test_diff_colors_fall_back_to_foregrounds_on_16_color(monkeypatch) -> None:
+    from pythinker_code.ui.theme import get_diff_colors
+
+    for var in (
+        "NO_COLOR",
+        "PYTHINKER_NO_COLOR",
+        "CLICOLOR",
+        "COLORTERM",
+        "WT_SESSION",
+        "FORCE_COLOR",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("TERM", "xterm")
+
+    colors = get_diff_colors()
+    assert colors.add_bg.bgcolor is None
+    assert colors.del_bg.bgcolor is None
+    assert colors.add_bg.color is not None and colors.add_bg.color.name == "green"
+    assert colors.del_bg.color is not None and colors.del_bg.color.name == "red"
 
 
 def test_theme_resolvers_strip_colors_when_no_color_is_set(monkeypatch) -> None:

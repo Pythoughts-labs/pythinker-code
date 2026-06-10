@@ -413,3 +413,74 @@ async def test_replace_empty_strings(
     assert not result.is_error
     assert "successfully edited" in result.message
     assert await file_path.read_text() == "Hello !"
+
+
+async def test_replace_preserves_crlf_line_endings(
+    str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+):
+    """StrReplaceFile must round-trip CRLF line endings unchanged.
+
+    Write a CRLF file via write_bytes (bypassing newline normalization), apply
+    a replacement, and assert that every \\r\\n survives intact — only the
+    edited token changes.
+    """
+    file_path = temp_work_dir / "test.txt"
+    await file_path.write_bytes(b"a\r\nworld\r\nc\r\n")
+
+    result = await str_replace_file_tool(
+        Params(path=str(file_path), edit=Edit(old="world", new="universe"))
+    )
+
+    assert not result.is_error
+    assert await file_path.read_bytes() == b"a\r\nuniverse\r\nc\r\n"
+
+
+async def test_replace_multiline_lf_old_on_crlf_file(
+    str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+):
+    """A multi-line LF-joined old string must still match a CRLF file.
+
+    Files are read with newline='' (CRLF preserved) while models echo old
+    strings LF-joined, so without the CRLF fallback every multi-line edit on a
+    CRLF file failed with 'not found'. The replacement must gain CRLF joints
+    too, so the file does not end up with mixed line endings.
+    """
+    file_path = temp_work_dir / "test.txt"
+    await file_path.write_bytes(b"a\r\nb\r\nc\r\n")
+
+    result = await str_replace_file_tool(
+        Params(path=str(file_path), edit=Edit(old="a\nb", new="a\nB"))
+    )
+
+    assert not result.is_error
+    assert await file_path.read_bytes() == b"a\r\nB\r\nc\r\n"
+
+
+async def test_replace_multiline_lf_old_on_crlf_file_replace_all(
+    str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+):
+    """replace_all applies the CRLF-translated needle to every occurrence."""
+    file_path = temp_work_dir / "test.txt"
+    await file_path.write_bytes(b"x\r\ny\r\nz\r\nx\r\ny\r\n")
+
+    result = await str_replace_file_tool(
+        Params(path=str(file_path), edit=Edit(old="x\ny", new="x\nY", replace_all=True))
+    )
+
+    assert not result.is_error
+    assert await file_path.read_bytes() == b"x\r\nY\r\nz\r\nx\r\nY\r\n"
+
+
+async def test_replace_multiline_crlf_ambiguity_still_detected(
+    str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+):
+    """Uniqueness is re-checked against the CRLF-translated needle."""
+    file_path = temp_work_dir / "test.txt"
+    await file_path.write_bytes(b"x\r\ny\r\nz\r\nx\r\ny\r\n")
+
+    result = await str_replace_file_tool(
+        Params(path=str(file_path), edit=Edit(old="x\ny", new="x\nY"))
+    )
+
+    assert result.is_error
+    assert "occurs 2 times" in result.message

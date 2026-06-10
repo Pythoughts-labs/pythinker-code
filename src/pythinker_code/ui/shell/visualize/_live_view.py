@@ -21,6 +21,7 @@ from rich import box
 from rich.console import Group, RenderableType
 from rich.live import Live
 from rich.markup import escape as rich_escape
+from rich.padding import Padding
 from rich.panel import Panel
 from rich.style import Style
 from rich.text import Text
@@ -42,6 +43,7 @@ from pythinker_code.ui.shell.motion import (
     ActivitySnapshot,
     active_marker_frame,
     activity_status_line,
+    blink_visible,
     reduced_motion_enabled,
     shimmer_text,
 )
@@ -53,6 +55,8 @@ from pythinker_code.ui.shell.visualize._approval_panel import (
     show_approval_in_pager,
 )
 from pythinker_code.ui.shell.visualize._blocks import (
+    _TOKEN_RATE_MIN_SAMPLES,
+    _TOKEN_RATE_WINDOW_S,
     Markdown,
     _CompactionBlock,
     _ContentBlock,
@@ -211,6 +215,10 @@ class _LiveView:
         self._active_turn_depth = 0
         self._turn_start_time: float | None = None
         self._latest_context_tokens = initial_status.context_tokens
+        # Sliding window of (monotonic time, context tokens) samples backing
+        # the t/s readout on the working/todo activity lines. Mirrors the
+        # per-content-block tracker in _ContentBlock._record_token_rate_sample.
+        self._turn_token_samples: deque[tuple[float, int]] = deque()
         self._latest_todos: tuple[TodoDisplayItem, ...] = ()
         self._pinned_todos_visible = True
         self._compaction_block: _CompactionBlock | None = None
@@ -593,8 +601,13 @@ class _LiveView:
         if not line:
             return
         console.print()
+        # Pad the recap to the same horizontal inset as message/tool cards so
+        # it stays aligned with the transcript instead of spanning edge-to-edge.
         console.print(
-            Markdown(sanitize_ansi(line), style=tui_rich_style("muted") + Style(italic=True))
+            Padding(
+                Markdown(sanitize_ansi(line), style=tui_rich_style("muted") + Style(italic=True)),
+                (0, 1),
+            )
         )
         console.print()
 
@@ -627,6 +640,7 @@ class _LiveView:
                 label=spinner_message(now),
                 elapsed_s=elapsed,
                 tokens=getattr(self, "_latest_context_tokens", None) or 0,
+                token_rate=self._turn_token_rate(now),
             ),
             width=width,
         )
@@ -638,6 +652,32 @@ class _LiveView:
         tip.append(current_tip(now), style=tui_rich_style("dim"))
         return Group(line, tip)
 
+    def _turn_token_rate(self, now: float) -> int | None:
+        """Stable recent tokens/sec for the running turn, or None until known.
+
+        Samples the cumulative context token counter at refresh cadence and
+        derives the rate over a short sliding window, so the readout tracks
+        live throughput instead of a whole-turn average.
+        """
+        tokens = getattr(self, "_latest_context_tokens", None) or 0
+        # Lazy init: subclasses used in tests don't always run __init__.
+        samples = getattr(self, "_turn_token_samples", None)
+        if samples is None:
+            samples = self._turn_token_samples = deque()
+        samples.append((now, tokens))
+        while len(samples) > 1 and now - samples[0][0] > _TOKEN_RATE_WINDOW_S:
+            samples.popleft()
+        if len(samples) < _TOKEN_RATE_MIN_SAMPLES:
+            return None
+        first_t, first_tokens = samples[0]
+        last_t, last_tokens = samples[-1]
+        elapsed = last_t - first_t
+        token_delta = last_tokens - first_tokens
+        if elapsed <= 0 or token_delta <= 0:
+            return None
+        rate = int(token_delta / elapsed)
+        return rate if rate > 0 else None
+
     def _todo_activity_line(
         self, label: str, *, elapsed_s: float, width: int, shimmer_label: bool = True
     ) -> Text:
@@ -645,7 +685,10 @@ class _LiveView:
         parts = [format_elapsed(elapsed_s)]
         if self._latest_context_tokens:
             parts.append(f"↓ {format_token_count(self._latest_context_tokens)} tokens")
-        metadata = f"({' · '.join(parts)})"
+        rate = self._turn_token_rate(time.monotonic())
+        if rate:
+            parts.append(f"{rate} t/s")
+        metadata = f"({', '.join(parts)})"
         prefix = f"{active_marker_frame(elapsed_s)} "
         suffix = f" {metadata}"
         label_width = max(1, width - cell_width(prefix) - cell_width(suffix))
@@ -661,10 +704,10 @@ class _LiveView:
                 )
             )
         else:
-            # The active-todo title uses the blue ``accent`` highlight (the same
-            # tone as other highlighted text) so the pinned line stands out from
-            # neutral body text.
-            line.append(label_text, style=tui_rich_style("accent") + Style(bold=True))
+            # The active-todo title matches the coral activity color (same as
+            # the in-progress ■ boxes) so everything "working" reads as one
+            # family, distinct from neutral body text.
+            line.append(label_text, style=tui_rich_style("activity_verb") + Style(bold=True))
         line.append(suffix, style=tui_rich_style("muted"))
         return line
 
@@ -741,7 +784,7 @@ class _LiveView:
     ) -> Text:
         if todo.status == "done":
             icon = "✓"
-            icon_token = "muted"
+            icon_token = "success"
             title_style = tui_rich_style("muted") + Style(strike=True)
         elif todo.status == "cancelled":
             icon = "✕"
@@ -749,8 +792,10 @@ class _LiveView:
             title_style = tui_rich_style("muted") + Style(strike=True)
         elif todo.status == "in_progress":
             icon = "■"
+            # Reference design: the box carries the coral activity accent
+            # while the title reads bold in the primary text color.
             icon_token = "activity_verb"
-            title_style = tui_rich_style("activity_label") + Style(bold=True)
+            title_style = tui_rich_style("text") + Style(bold=True)
         else:
             icon = "□"
             icon_token = "muted"
@@ -760,7 +805,11 @@ class _LiveView:
         prefix = f"  {TRANSCRIPT_TOOL_GUTTER}    " if is_first else "       "
         title_budget = max(1, width - cell_width(prefix) - 2)
         title = truncate_to_width(todo.title.strip(), title_budget)
-        row = Text(prefix, style=tui_rich_style("muted"))
+        # No base style on the row: a muted base would bleed through spans
+        # that set no color of their own (the bold running-task title must
+        # fall back to the terminal default white, not muted grey).
+        row = Text()
+        row.append(prefix, style=tui_rich_style("muted"))
         row.append(icon, style=tui_rich_style(icon_token))
         row.append(" ")
         row.append(title, style=title_style)
@@ -867,11 +916,7 @@ class _LiveView:
             case BtwBegin(question=question):
                 truncated = (question[:40] + "...") if len(question) > 40 else question
                 self._btw_question = question
-                glyph = (
-                    TRANSCRIPT_ACTIVE_MARKER
-                    if reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0
-                    else " "
-                )
+                glyph = TRANSCRIPT_ACTIVE_MARKER if blink_visible() else " "
                 line = Text(f"{glyph} ", style=tui_rich_style("muted"))
                 line.append(f"Side question... {truncated}", style=tui_rich_style("muted"))
                 self._btw_spinner = line

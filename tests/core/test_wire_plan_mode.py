@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import MagicMock
 
 from pythinker_code.soul.toolset import PythinkerToolset
@@ -76,3 +77,30 @@ class TestSyncPlanModeToolVisibility:
         server._sync_plan_mode_tool_visibility(ts)
         assert "ExitPlanMode" in {t.name for t in ts.tools}
         assert "EnterPlanMode" in {t.name for t in ts.tools}
+
+
+async def test_handle_set_plan_mode_returns_invalid_state_when_streaming() -> None:
+    """_handle_set_plan_mode must return INVALID_STATE when a turn is in progress.
+
+    Mirrors the guard already present in _handle_replay and _handle_initialize.
+    """
+    from pythinker_code.soul.pythinkersoul import PythinkerSoul
+    from pythinker_code.wire.jsonrpc import (
+        ErrorCodes,
+        JSONRPCErrorResponse,
+        JSONRPCSetPlanModeMessage,
+    )
+    from pythinker_code.wire.server import WireServer
+
+    server = WireServer.__new__(WireServer)
+    # _soul must be a PythinkerSoul to pass the isinstance guard
+    server._soul = MagicMock(spec=PythinkerSoul)
+    # Simulate an active turn: _cancel_event is not None → _is_streaming is True
+    server._cancel_event = asyncio.Event()
+
+    msg = JSONRPCSetPlanModeMessage(id="req-1", params={"enabled": True})  # type: ignore[arg-type]
+    result = await server._handle_set_plan_mode(msg)
+
+    assert isinstance(result, JSONRPCErrorResponse)
+    assert result.error.code == ErrorCodes.INVALID_STATE
+    assert "in progress" in result.error.message

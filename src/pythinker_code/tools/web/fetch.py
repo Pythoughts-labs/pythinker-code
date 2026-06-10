@@ -25,6 +25,14 @@ MAX_FETCH_REDIRECTS = 10  # matches aiohttp's default redirect cap
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
+def _ip_is_blocked(address: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return True  # fail closed: block addresses we cannot parse/classify
+    return (not ip.is_global) or ip.is_multicast  # W2 fail-closed shape
+
+
 def _validate_fetch_url(url: str, allowed_domains: list[str] | None = None) -> str | None:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
@@ -46,7 +54,10 @@ def _validate_fetch_url(url: str, allowed_domains: list[str] | None = None) -> s
             ip = ipaddress.ip_address(address)
         except ValueError:
             continue
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+        # Fail closed: only allow globally-routable, non-multicast destinations.
+        # `not is_global` also covers CGNAT (100.64/10), 0.0.0.0/::, and future
+        # IANA special-use ranges the old explicit deny-list missed.
+        if (not ip.is_global) or ip.is_multicast:
             return (
                 "Fetching private, local, link-local, multicast, or reserved addresses is blocked."
             )
@@ -178,7 +189,9 @@ class FetchURL(CallableTool2[Params]):
         try:
             # Fetching arbitrary web pages can take a while on large/slow sites.
             fetch_timeout = aiohttp.ClientTimeout(total=180, sock_read=60, sock_connect=15)
-            async with new_client_session(timeout=fetch_timeout) as session:
+            async with new_client_session(
+                timeout=fetch_timeout, ip_blocked=_ip_is_blocked
+            ) as session:
                 try:
                     response = await _get_revalidating_redirects(
                         session, params.url, headers, allowed_domains

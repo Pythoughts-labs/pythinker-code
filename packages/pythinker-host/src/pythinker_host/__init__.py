@@ -156,6 +156,10 @@ class Host(Protocol):
         """Change the current working directory."""
         ...
 
+    async def realpath(self, path: StrOrHostPath) -> HostPath:
+        """Resolve symlinks and return the real absolute path."""
+        ...
+
     async def stat(self, path: StrOrHostPath, *, follow_symlinks: bool = True) -> StatResult:
         """Get the stat result for a path."""
         ...
@@ -280,6 +284,10 @@ def getcwd() -> HostPath:
 
 async def chdir(path: StrOrHostPath) -> None:
     await get_current_host().chdir(path)
+
+
+async def realpath(path: StrOrHostPath) -> HostPath:
+    return await get_current_host().realpath(path)
 
 
 async def stat(path: StrOrHostPath, *, follow_symlinks: bool = True) -> StatResult:

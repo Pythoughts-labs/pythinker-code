@@ -343,3 +343,64 @@ async def test_large_output_spills_with_recovery_hint(shell_tool: Shell):
     result = await shell_tool(Params(command="for i in $(seq 1 20000); do echo 'aaaaaaaaaa'; done"))
     assert 'ReadFile(path="' in result.message
     assert "saved to" in result.message
+
+
+async def test_timeout_kills_process_when_wait_hangs(
+    shell_tool: Shell, monkeypatch: pytest.MonkeyPatch
+):
+    """W3: process.wait() must be inside the bounded region so a self-detaching
+    command whose streams drain but whose wait() blocks forever cannot hang the
+    turn past the timeout.  The except-TimeoutError branch must also await
+    process.wait() after kill() to reap the process and prevent zombies.
+
+    Before the fix: the except-TimeoutError branch calls kill() but does NOT
+    await process.wait(), so wait_calls_after_kill == 0 and the assertion fails.
+    After the fix: the branch awaits process.wait() after kill(), so
+    wait_calls_after_kill == 1.
+    """
+
+    class ImmediateReadable:
+        async def read(self, n: int = -1) -> bytes:
+            return b""
+
+    class FakeStdin:
+        def close(self) -> None:
+            pass
+
+    class FakeProcess:
+        def __init__(self) -> None:
+            self.stdin = FakeStdin()
+            self.stdout = ImmediateReadable()
+            self.stderr = ImmediateReadable()
+            self.kill_calls = 0
+            self.wait_calls_after_kill = 0
+            self._killed = asyncio.Event()
+
+        async def wait(self) -> int:
+            # Blocks until kill() has been called, simulating a self-detaching
+            # child that lingers after its streams close.
+            if not self._killed.is_set():
+                await self._killed.wait()
+            self.wait_calls_after_kill += 1
+            return 1
+
+        async def kill(self) -> None:
+            self.kill_calls += 1
+            self._killed.set()
+
+    fake_process = FakeProcess()
+
+    async def fake_exec(*_args, **_kwargs) -> FakeProcess:
+        return fake_process
+
+    monkeypatch.setattr("pythinker_code.tools.shell.pythinker_host.exec", fake_exec)
+
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(
+            shell_tool._run_shell_command("detach", lambda _: None, lambda _: None, 1),
+            5.0,
+        )
+
+    assert fake_process.kill_calls == 1
+    # The except-TimeoutError branch must reap the process after kill.
+    assert fake_process.wait_calls_after_kill == 1

@@ -7,6 +7,7 @@ import re
 
 import pytest
 
+from pythinker_code.project_memory import scan_memory_content
 from pythinker_code.utils.trust import UntrustedData
 
 
@@ -68,3 +69,22 @@ def test_dataclass_is_frozen():
     instance = UntrustedData(raw_content="x")
     with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
         instance.raw_content = "mutate"  # type: ignore[misc]
+
+
+def test_render_strips_tags_block_and_bidi_isolates():
+    # Build content with a Tags-block char (U+E0001), another Tags-block char (U+E0049),
+    # and a bidi-isolate char (U+2066 = LRI), plus visible lead/tail.
+    content = "lead" + chr(0xE0001) + chr(0xE0049) + chr(0x2066) + "tail"
+    rendered = UntrustedData(raw_content=content).render_for_prompt()
+
+    # All Tags-block (U+E0000-U+E007F) and bidi-isolate (U+2066-U+2069) chars are gone.
+    assert all(
+        not (0xE0000 <= ord(c) <= 0xE007F) and not (0x2066 <= ord(c) <= 0x2069) for c in rendered
+    )
+    # Visible text is preserved.
+    assert "lead" in rendered
+    assert "tail" in rendered
+
+    # scan_memory_content should BLOCK on Tags-block content (returns non-None).
+    tags_payload = "lead" + chr(0xE0001) + "tail"
+    assert scan_memory_content(tags_payload) is not None

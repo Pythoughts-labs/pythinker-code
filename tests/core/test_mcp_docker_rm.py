@@ -7,6 +7,11 @@ daemon-managed container. ensure_docker_rm adds --rm so the container is cleaned
 
 from __future__ import annotations
 
+import os
+import stat
+import sys
+from pathlib import Path
+
 import pytest
 
 from pythinker_code.cli.mcp import ensure_docker_rm
@@ -41,3 +46,40 @@ def test_full_path_runtime_is_recognized() -> None:
     # A docker binary referenced by path should still be treated as docker.
     args = ensure_docker_rm("/usr/bin/docker", ["run", "img"])
     assert args == ["run", "--rm", "img"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions not available on Windows")
+def test_save_mcp_config_is_owner_only(
+    tmp_path: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """_save_mcp_config must write mcp.json with permissions 0600 (owner-read/write only)."""
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    from pythinker_code.cli.mcp import _save_mcp_config, get_global_mcp_config_file
+
+    _save_mcp_config({"mcpServers": {}})
+    mcp_file = get_global_mcp_config_file()
+    assert mcp_file.exists(), "mcp.json was not created"
+    file_mode = stat.S_IMODE(os.stat(mcp_file).st_mode)
+    assert file_mode == 0o600, f"Expected 0o600, got {oct(file_mode)}"
+
+    # A pre-existing 0644 file (e.g. from an older version) must be tightened to 0600
+    # on the next save — and the secret content is only written after the tighten.
+    os.chmod(mcp_file, 0o644)
+    _save_mcp_config({"mcpServers": {"x": {"command": "echo", "args": ["secret"]}}})
+    assert stat.S_IMODE(os.stat(mcp_file).st_mode) == 0o600
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions not available on Windows")
+def test_get_share_dir_hardens_preexisting_loose_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """get_share_dir must re-tighten a pre-existing world-traversable (0755) dir to 0700."""
+    from pythinker_code.share import get_share_dir
+
+    share = tmp_path / "share"
+    share.mkdir()
+    os.chmod(share, 0o755)  # simulate an older version's loose perms
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(share))
+
+    result = get_share_dir()
+    assert stat.S_IMODE(os.stat(result).st_mode) == 0o700

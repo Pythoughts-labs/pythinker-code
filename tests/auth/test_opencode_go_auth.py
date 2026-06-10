@@ -332,11 +332,15 @@ def test_build_models_falls_back_to_catalog_then_heuristic_without_metadata():
     assert by_id["minimax-m9.9"].provider_key == OPENCODE_GO_ANTHROPIC_PROVIDER_KEY
 
 
-def test_native_thinking_capabilities_cover_glm_and_minimax_only():
+def test_native_thinking_capabilities_by_family():
     from pythinker_code.auth.opencode_go import _native_thinking_capabilities
 
+    # GLM / MiniMax / Qwen reason natively — always_thinking, no user dial.
     assert _native_thinking_capabilities("glm-5") == {"always_thinking"}
     assert _native_thinking_capabilities("minimax-m2.7") == {"always_thinking"}
+    assert _native_thinking_capabilities("qwen3.7-max") == {"always_thinking"}
+    assert _native_thinking_capabilities("qwen3.5-plus") == {"always_thinking"}
+    # Other families carry no native-thinking capability here.
     assert _native_thinking_capabilities("kimi-k2.6") is None
 
 
@@ -512,7 +516,8 @@ def test_apply_opencode_go_models_adds_new_and_corrects_shape_preserving_user_pr
     # New model now present on the Anthropic-shaped provider.
     assert config.models["opencode-go/qwen3.7-max"].provider == OPENCODE_GO_ANTHROPIC_PROVIDER_KEY
     assert config.models["opencode-go/qwen3.7-max"].max_context_size == 1_000_000
-    assert config.models["opencode-go/qwen3.7-max"].capabilities is None
+    # Qwen reasons natively: always_thinking, no user dial.
+    assert config.models["opencode-go/qwen3.7-max"].capabilities == {"always_thinking"}
     # Existing Qwen corrected from OpenAI → Anthropic shape.
     assert config.models["opencode-go/qwen3.5-plus"].provider == OPENCODE_GO_ANTHROPIC_PROVIDER_KEY
     # User preferences untouched.

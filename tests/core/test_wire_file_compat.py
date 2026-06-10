@@ -8,6 +8,7 @@ old `wire.jsonl` files for every frontend (Shell, Web, Vis, ACP).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from pathlib import Path
@@ -17,6 +18,7 @@ from pythinker_code.wire.file import (
     WireFileMetadata,
     WireMessageRecord,
     _load_protocol_version,
+    parse_wire_file_metadata,
 )
 from pythinker_code.wire.protocol import (
     WIRE_PROTOCOL_LEGACY_VERSION,
@@ -79,3 +81,27 @@ def test_load_protocol_version_none_for_headerless(tmp_path: Path) -> None:
     path = tmp_path / "wire.jsonl"
     path.write_text(_record_line(), encoding="utf-8")
     assert _load_protocol_version(path) is None
+
+
+async def test_concurrent_append_writes_single_metadata_header(tmp_path: Path) -> None:
+    """Concurrent append_message calls must produce exactly one metadata header.
+
+    Without the asyncio.Lock guard in append_record, two coroutines can each
+    observe an empty file before either writes the header and both emit one,
+    producing two metadata lines. The lock makes the check-and-write atomic.
+    """
+    path = tmp_path / "wire.jsonl"
+    wire_file = WireFile(path)
+
+    msg = TurnBegin(user_input=[TextPart(text="hello")])
+
+    N = 8
+    await asyncio.gather(*[wire_file.append_message(msg) for _ in range(N)])
+
+    lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    metadata_count = sum(1 for line in lines if parse_wire_file_metadata(line) is not None)
+
+    assert metadata_count == 1, (
+        f"Expected exactly 1 metadata header, got {metadata_count}. "
+        "Concurrent appends must not write duplicate headers."
+    )

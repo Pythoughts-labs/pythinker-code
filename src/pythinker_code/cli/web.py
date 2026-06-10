@@ -4,7 +4,10 @@ from typing import Annotated
 
 import typer
 
-cli = typer.Typer(help="Run Pythinker CLI web interface.")
+cli = typer.Typer(
+    help="Run Pythinker CLI web interface.",
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
 
 
 @cli.callback(invoke_without_command=True)
@@ -12,7 +15,7 @@ def web(
     ctx: typer.Context,
     host: Annotated[
         str | None,
-        typer.Option("--host", "-h", help="Bind to specific IP address"),
+        typer.Option("--host", "-H", help="Bind to specific IP address"),
     ] = None,
     network: Annotated[
         bool,

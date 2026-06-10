@@ -338,20 +338,6 @@ class PythinkerCLI:
         _cleanup_stale_foreground_subagents(runtime)
         _phase_timings_ms["init_ms"] = int((time.monotonic() - _phase_t) * 1000)
 
-        # Refresh plugin configs with fresh credentials (e.g. OAuth tokens)
-        try:
-            from pythinker_code.plugin.manager import (
-                collect_host_values,
-                get_plugins_dir,
-                refresh_plugin_configs,
-            )
-
-            host_values = collect_host_values(config, oauth)
-            if host_values.get("api_key"):
-                refresh_plugin_configs(get_plugins_dir(), host_values)
-        except Exception:
-            logger.debug("Failed to refresh plugin configs, skipping")
-
         if agent_file is None:
             agent_file = DEFAULT_AGENT_FILE
         if startup_progress is not None:
@@ -885,6 +871,22 @@ class PythinkerCLI:
                 level=WelcomeInfoItem.Level.INFO,
             )
         )
+        # Repos without agent guidance benefit most from /init — surface the
+        # tip emphasized (WARN renders bold) only when neither file exists.
+        try:
+            has_agent_docs = (
+                await (work_dir / "AGENTS.md").exists() or await (work_dir / "CLAUDE.md").exists()
+            )
+        except OSError:
+            has_agent_docs = True
+        if not has_agent_docs:
+            welcome_info.append(
+                WelcomeInfoItem(
+                    name="Tip",
+                    value="No AGENTS.md/CLAUDE.md found — run /init to generate one.",
+                    level=WelcomeInfoItem.Level.WARN,
+                )
+            )
         welcome_info.append(
             WelcomeInfoItem(
                 name="Tip",

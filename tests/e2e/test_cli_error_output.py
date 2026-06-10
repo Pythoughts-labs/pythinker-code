@@ -31,6 +31,7 @@ def _run_pythinker(args: list[str], *, share_dir: Path) -> subprocess.CompletedP
         text=True,
         env=env,
         timeout=30,
+        check=False,  # the test asserts on returncode itself
     )
 
 
@@ -193,3 +194,40 @@ Error:
 Invalid value for --continue: No previous session found for the working directory
 """
     )
+
+
+def _run_pythinker_main(args: list[str]) -> subprocess.CompletedProcess[str]:
+    """Run via python -m pythinker_code (__main__.py) rather than pythinker_code.cli."""
+    env = os.environ.copy()
+    env["PYTHINKER_SHARE_DIR"] = str(Path.home() / ".pythinker-test-share")
+    env["NO_COLOR"] = "1"
+    env["TERM"] = "dumb"
+    env["COLUMNS"] = "120"
+    env["LINES"] = "40"
+    cmd = [sys.executable, "-m", "pythinker_code", *args]
+    return subprocess.run(
+        cmd,
+        cwd=_repo_root(),
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
+        check=False,  # the test asserts on returncode itself
+    )
+
+
+def test_root_help_lists_live_options() -> None:
+    """--help must go through Typer (live options), not a stale static ROOT_HELP block.
+
+    The static ROOT_HELP block in __main__.py omits the 'skill' subcommand that was
+    added after ROOT_HELP was written. Typer renders it with the description
+    "Inspect and lock Pythinker skills." which is absent from the static block.
+    Also asserts exit_code==0 and that 'export' (a real command) is present.
+    """
+    result = _run_pythinker_main(["--help"])
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0
+    assert "export" in combined
+    # This help text for the 'skill' command exists in live Typer output but is absent
+    # from the static ROOT_HELP block, so this assertion fails while the fast-path exists.
+    assert "Inspect and lock Pythinker skills" in combined

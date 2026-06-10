@@ -65,6 +65,7 @@ async def build_compaction_restore_context(
     history: Sequence[Message],
     *,
     work_dir: HostPath,
+    additional_dirs: Sequence[HostPath] = (),
     active_skill_names: Sequence[str] = (),
     skills_by_name: dict[str, Skill] | None = None,
     max_files: int = MAX_RESTORED_FILES,
@@ -76,7 +77,9 @@ async def build_compaction_restore_context(
     read, and the bodies of skills the user explicitly invoked in this session.
     """
 
-    files = collect_recent_file_context(history, work_dir=work_dir, max_files=max_files)
+    files = collect_recent_file_context(
+        history, work_dir=work_dir, additional_dirs=additional_dirs, max_files=max_files
+    )
     skill_context, restored_skills = await _restore_active_skills(
         active_skill_names,
         skills_by_name or {},
@@ -122,6 +125,7 @@ def collect_recent_file_context(
     history: Sequence[Message],
     *,
     work_dir: HostPath,
+    additional_dirs: Sequence[HostPath] = (),
     max_files: int = MAX_RESTORED_FILES,
 ) -> _FileContext:
     """Collect recently referenced/read paths from message text and tool calls."""
@@ -130,16 +134,16 @@ def collect_recent_file_context(
 
     for message in history:
         for path in _extract_file_mentions(message.extract_text(" ")):
-            _append_unique(referenced, path, work_dir=work_dir)
+            _append_unique(referenced, path, work_dir=work_dir, additional_dirs=additional_dirs)
 
         for tool_call in message.tool_calls or []:
             args = _parse_tool_arguments(tool_call.function.arguments)
             paths = list(_extract_path_values(args))
             for path in paths:
-                _append_unique(referenced, path, work_dir=work_dir)
+                _append_unique(referenced, path, work_dir=work_dir, additional_dirs=additional_dirs)
             if tool_call.function.name in _READ_TOOL_NAMES:
                 for path in paths:
-                    _append_unique(read, path, work_dir=work_dir)
+                    _append_unique(read, path, work_dir=work_dir, additional_dirs=additional_dirs)
 
     return _FileContext(
         read_files=tuple(_most_recent(read, max_files)),
@@ -217,13 +221,33 @@ def _extract_file_mentions(text: str) -> Iterable[str]:
         yield match.group("path")
 
 
-def _append_unique(paths: list[str], raw_path: str, *, work_dir: HostPath) -> None:
-    display = _display_path(raw_path, work_dir=work_dir)
+def _append_unique(
+    paths: list[str],
+    raw_path: str,
+    *,
+    work_dir: HostPath,
+    additional_dirs: Sequence[HostPath] = (),
+) -> None:
+    display = _display_path(raw_path, work_dir=work_dir, additional_dirs=additional_dirs)
     if display and display not in paths:
         paths.append(display)
 
 
-def _display_path(raw_path: str, *, work_dir: HostPath) -> str | None:
+def _is_contained(raw: str, root: str) -> bool:
+    try:
+        rel = os.path.relpath(raw, root)
+    except ValueError:
+        # Cannot relativize (e.g. different drive on Windows).
+        return False
+    return not rel.startswith(".." + os.sep) and rel != ".."
+
+
+def _display_path(
+    raw_path: str,
+    *,
+    work_dir: HostPath,
+    additional_dirs: Sequence[HostPath] = (),
+) -> str | None:
     raw = raw_path.strip().strip("`'\"")
     if not raw or "\n" in raw or "\x00" in raw:
         return None
@@ -233,15 +257,16 @@ def _display_path(raw_path: str, *, work_dir: HostPath) -> str | None:
 
     work = str(work_dir)
     if os.path.isabs(raw):
-        try:
+        if _is_contained(raw, work):
             rel = os.path.relpath(raw, work)
-        except ValueError:
+            return None if rel == "." else rel
+        # Additional workspace roots (--add-dir) are legitimate session members;
+        # keep them absolute so they stay unambiguous next to work-relative paths.
+        if any(_is_contained(raw, str(d)) for d in additional_dirs):
             return raw
-        if rel == ".":
-            return None
-        if not rel.startswith(".." + os.sep) and rel != "..":
-            return rel
-        return raw
+        # Absolute path escaping the workspace -> skip; do not surface
+        # out-of-workspace absolutes (e.g. /etc/passwd) in restore reminders.
+        return None
     return raw.removeprefix("./")
 
 

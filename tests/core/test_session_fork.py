@@ -21,7 +21,7 @@ from pythinker_code.session_fork import (
 )
 from pythinker_code.wire.file import WireFileMetadata, WireMessageRecord  # noqa: I001
 from pythinker_code.wire.protocol import WIRE_PROTOCOL_VERSION
-from pythinker_code.wire.types import TextPart, TurnBegin, TurnEnd
+from pythinker_code.wire.types import SteerInput, TextPart, TurnBegin, TurnEnd
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -421,3 +421,108 @@ class TestForkSession:
         new_video = new_session.dir / "uploads" / "test.mp4"
         assert new_video.exists()
         assert new_video.read_text() == "fake video"
+
+    async def test_fork_keeps_wire_and_context_aligned_with_pre_cut_steer(
+        self, isolated_share_dir: Path, work_dir: HostPath
+    ):
+        """Fork at turn 1 keeps context aligned even when turn 0 has a SteerInput.
+
+        The wire has:
+          - turn 0: TurnBegin("t0") + SteerInput("t0-steer") + TurnEnd
+          - turn 1: TurnBegin("t1") + TurnEnd
+
+        The context has an extra user message for the steer follow-up:
+          - user "t0", assistant "r0", user "t0-steer" (steer follow-up), assistant "r0s", user "t1", assistant "r1"
+
+        Before the fix, truncate_context_at_turn counts user messages independently
+        and stops after seeing 2 user messages (treating "t0-steer" as turn 1), so
+        "t1" is dropped from context.  After the fix, the wire's authoritative count
+        drives context truncation and "t1" is retained.
+        """
+        from pythinker_code.session import Session
+
+        source = await Session.create(work_dir)
+
+        # Build wire: turn 0 has a SteerInput, turn 1 is normal
+        wire_path = source.dir / "wire.jsonl"
+        metadata = WireFileMetadata(protocol_version=WIRE_PROTOCOL_VERSION)
+        ts = time.time()
+        records = [
+            metadata.model_dump(mode="json"),
+            WireMessageRecord.from_wire_message(
+                TurnBegin(user_input=[TextPart(text="t0")]), timestamp=ts
+            ).model_dump(mode="json"),
+            WireMessageRecord.from_wire_message(
+                SteerInput(user_input="t0-steer"), timestamp=ts + 0.1
+            ).model_dump(mode="json"),
+            WireMessageRecord.from_wire_message(TurnEnd(), timestamp=ts + 0.2).model_dump(
+                mode="json"
+            ),
+            WireMessageRecord.from_wire_message(
+                TurnBegin(user_input=[TextPart(text="t1")]), timestamp=ts + 1
+            ).model_dump(mode="json"),
+            WireMessageRecord.from_wire_message(TurnEnd(), timestamp=ts + 1.1).model_dump(
+                mode="json"
+            ),
+        ]
+        with wire_path.open("w", encoding="utf-8") as f:
+            for r in records:
+                f.write(json.dumps(r) + "\n")
+
+        # Build context: steer follow-up is an extra user message inside turn 0
+        context_path = source.dir / "context.jsonl"
+        context_records = [
+            {"role": "user", "content": "t0"},
+            {"role": "assistant", "content": "r0"},
+            {"role": "user", "content": "t0-steer"},  # steer follow-up in context
+            {"role": "assistant", "content": "r0s"},
+            {"role": "user", "content": "t1"},
+            {"role": "assistant", "content": "r1"},
+        ]
+        with context_path.open("w", encoding="utf-8") as f:
+            for r in context_records:
+                f.write(json.dumps(r) + "\n")
+
+        new_id = await fork_session(
+            source_session_dir=source.dir,
+            work_dir=work_dir,
+            turn_index=1,
+            source_title="Steered Session",
+        )
+
+        new_session = await Session.find(work_dir, new_id)
+        assert new_session is not None
+
+        new_wire_path = new_session.dir / "wire.jsonl"
+        new_context_path = new_session.dir / "context.jsonl"
+
+        # Count TurnBegin records in the new wire
+        wire_turn_begins = sum(
+            1
+            for line in new_wire_path.read_text(encoding="utf-8").splitlines()
+            if line.strip() and json.loads(line).get("message", {}).get("type") == "TurnBegin"
+        )
+
+        # Count non-steer, non-checkpoint user messages in new context
+        ctx_user_msgs: list[str] = []
+        for line in new_context_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            r = json.loads(line)
+            if r.get("role") == "user" and not _is_checkpoint_user_message(r):
+                content = r.get("content", "")
+                if isinstance(content, str) and content != "t0-steer":
+                    ctx_user_msgs.append(content)
+                elif isinstance(content, list):
+                    ctx_user_msgs.append(str(content))
+
+        # Wire has 2 TurnBegins (turns 0 and 1); context should have 2 real user messages
+        assert wire_turn_begins == 2
+        assert len(ctx_user_msgs) == 2
+
+        # turn-1 user text must appear in both files
+        new_wire_text = new_wire_path.read_text(encoding="utf-8")
+        new_ctx_text = new_context_path.read_text(encoding="utf-8")
+        assert "t1" in new_wire_text
+        assert "t1" in new_ctx_text

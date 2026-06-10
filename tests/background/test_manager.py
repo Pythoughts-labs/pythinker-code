@@ -826,6 +826,44 @@ def test_finalize_agent_task_completed_parks_instance_idle(runtime):
     assert runtime.subagent_store.require_instance("adoneagent").status == "idle"
 
 
+def test_reconcile_stale_agent_record_settles_completed_task(runtime):
+    manager = runtime.background_tasks
+    _seed_agent_task(
+        runtime,
+        task_id="astaletask1",
+        agent_id="astaleagent1",
+        task_status="completed",
+        instance_status="running_background",
+    )
+
+    view = manager.reconcile_stale_agent_record("astaleagent1")
+
+    assert view is not None
+    assert view.spec.id == "astaletask1"
+    assert runtime.subagent_store.require_instance("astaleagent1").status == "idle"
+
+
+def test_reconcile_stale_agent_record_leaves_running_task_untouched(runtime):
+    manager = runtime.background_tasks
+    _seed_agent_task(
+        runtime,
+        task_id="alivetask1",
+        agent_id="aliveagent1",
+        task_status="running",
+        instance_status="running_background",
+    )
+
+    view = manager.reconcile_stale_agent_record("aliveagent1")
+
+    assert view is not None
+    assert view.spec.id == "alivetask1"
+    assert runtime.subagent_store.require_instance("aliveagent1").status == "running_background"
+
+
+def test_reconcile_stale_agent_record_without_task_returns_none(runtime):
+    assert runtime.background_tasks.reconcile_stale_agent_record("anosuch") is None
+
+
 def test_reconcile_prunes_aged_terminal_tasks(runtime):
     manager = runtime.background_tasks
     store = manager.store

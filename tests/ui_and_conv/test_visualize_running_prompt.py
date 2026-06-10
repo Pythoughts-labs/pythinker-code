@@ -283,7 +283,7 @@ def test_prompt_status_shows_working_spinner_for_background_tasks() -> None:
     text = "".join(item[1] for item in rendered)
 
     assert "…" in text
-    assert "2 background agents" in text
+    assert "background agent" not in text  # footer owns the count
 
 
 def test_prompt_status_block_renders_above_agent_input_preamble() -> None:
@@ -305,9 +305,12 @@ def test_prompt_status_block_renders_above_agent_input_preamble() -> None:
 
 def test_background_status_splits_verb_and_count_styles(monkeypatch) -> None:
     import pythinker_code.ui.shell.prompt as prompt_module
-    from pythinker_code.ui.theme import get_active_theme, get_tui_tokens, set_active_theme
+    from pythinker_code.ui.theme import get_active_theme, set_active_theme
 
     monkeypatch.setattr(prompt_module.time, "monotonic", lambda: 0.88)
+    # Pin the discrete three-step sheen (256-color tier) for determinism.
+    monkeypatch.delenv("COLORTERM", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
     saved_theme = get_active_theme()
     try:
         set_active_theme("dark")
@@ -319,7 +322,6 @@ def test_background_status_splits_verb_and_count_styles(monkeypatch) -> None:
         set_active_theme(saved_theme)
 
     fragments = [(style, text) for style, text, *_ in rendered]
-    muted_style = f"fg:{get_tui_tokens('dark').muted}"
     shimmer_styles = {style.lower() for style, text in fragments if text.strip(" …")}
 
     assert {
@@ -327,7 +329,8 @@ def test_background_status_splits_verb_and_count_styles(monkeypatch) -> None:
         f"fg:{_SHIMMER_MID.lower()}",
         f"fg:{_SHIMMER_HIGHLIGHT.lower()}",
     } <= shimmer_styles
-    assert any(style == muted_style and "2 background agents" in text for style, text in fragments)
+    # The footer owns the background-task count; this line carries only the verb.
+    assert not any("background agent" in text for _style, text in fragments)
     assert all(style != "ansicyan" for style, _ in fragments)
 
 
@@ -347,7 +350,7 @@ def test_prompt_status_falls_back_to_background_spinner_after_turn_end() -> None
     text = "".join(item[1] for item in rendered)
 
     assert "…" in text
-    assert "1 background agent" in text
+    assert "1 background agent" not in text
 
 
 def test_prompt_status_keeps_todos_visible_during_background_tasks() -> None:
@@ -363,9 +366,9 @@ def test_prompt_status_keeps_todos_visible_during_background_tasks() -> None:
     rendered = CustomPromptSession._render_agent_status(session, 100)
     text = "".join(item[1] for item in rendered)
 
-    assert "3 background agents" in text
-    assert "⎿  ◼ Security vulnerability scan" in text
-    assert "◻ Code quality review" in text
+    assert "3 background agents" not in text
+    assert "⎿  ■ Security vulnerability scan" in text
+    assert "□ Code quality review" in text
 
 
 def test_prompt_background_todo_rows_align_icons_and_titles() -> None:
@@ -384,10 +387,10 @@ def test_prompt_background_todo_rows_align_icons_and_titles() -> None:
     rendered = CustomPromptSession._render_background_todo_rows(session, 120)
     lines = "".join(item[1] for item in rendered).splitlines()
 
-    assert lines[0].startswith("  ⎿  ◼ ")
-    assert lines[1].startswith("     ◻ ")
-    assert lines[2].startswith("     ◻ ")
-    assert lines[1].index("◻") == lines[0].index("◼")
+    assert lines[0].startswith("  ⎿  ■ ")
+    assert lines[1].startswith("     □ ")
+    assert lines[2].startswith("     □ ")
+    assert lines[1].index("□") == lines[0].index("■")
     assert lines[2].index("Synthesize") == lines[0].index("Launch")
 
 
@@ -410,9 +413,9 @@ def test_background_status_drops_verb_when_working_indicator_pinned() -> None:
     rendered = CustomPromptSession._render_agent_status(session, 80)
     text = "".join(item[1] for item in rendered)
 
-    # Count stays visible…
-    assert "3 background agents" in text
-    # …but the verb is not duplicated here (the pinned tail carries it).
+    # The pinned tail owns the verb and the footer owns the count — nothing
+    # is duplicated under the executing step.
+    assert "background agent" not in text
     assert "…" not in text
 
 
@@ -428,19 +431,13 @@ def test_background_status_omits_todos_when_verb_pinned() -> None:
         TodoDisplayItem(title="Code quality review", status="pending"),
     )
 
-    # show_verb=False ⟺ an in-flight turn's pinned tail is already showing todos.
-    pinned = CustomPromptSession._render_background_working_status(session, 100, show_verb=False)
-    pinned_text = "".join(item[1] for item in pinned)
-    assert "3 background agents" in pinned_text
-    assert "Security vulnerability scan" not in pinned_text
-    assert "Code quality review" not in pinned_text
-
-    # Between turns (no pinned tail) the background line is the only surface, so
-    # it must still carry the todos.
-    standalone = CustomPromptSession._render_background_working_status(session, 100, show_verb=True)
+    # Between turns (no pinned tail) the background line is the only surface,
+    # so it must carry the todos — but never a count (the footer owns that).
+    standalone = CustomPromptSession._render_background_working_status(session, 100)
     standalone_text = "".join(item[1] for item in standalone)
     assert "Security vulnerability scan" in standalone_text
     assert "Code quality review" in standalone_text
+    assert "background agent" not in standalone_text
 
 
 def test_running_prompt_hides_placeholder() -> None:
@@ -1060,6 +1057,20 @@ def test_running_prompt_handles_approval_panel_keys_and_clears_buffer() -> None:
     assert dispatched == [shell_visualize.KeyEvent.DOWN]
 
 
+def test_running_prompt_escape_sets_cancel_event() -> None:
+    view = object.__new__(_PromptLiveView)
+    view._current_approval_request_panel = None
+    view._turn_ended = False
+    view._cancel_event = asyncio.Event()
+
+    assert view.should_handle_running_prompt_key("escape") is True
+
+    event = type("_Event", (), {"app": None, "current_buffer": Buffer()})()
+    view.handle_running_prompt_key("escape", event)
+
+    assert view._cancel_event.is_set()
+
+
 def test_question_delegate_clears_buffer_when_exiting_other_input_mode() -> None:
     QuestionPromptDelegate = shell_visualize.QuestionPromptDelegate
 
@@ -1541,3 +1552,37 @@ async def test_approval_request_feedback_available_before_wait():
 
     # feedback is available synchronously, no need to await
     assert request.feedback == "try rm -i instead"
+
+
+def test_background_status_shows_elapsed_tokens_and_rate(monkeypatch) -> None:
+    """The line above the input carries (elapsed, ↓ tokens, t/s) — the same
+    metadata design as the live view's working indicator."""
+    import pythinker_code.ui.shell.prompt as prompt_module
+    from pythinker_code.soul import StatusSnapshot
+
+    session = object.__new__(CustomPromptSession)
+    session._background_task_count_provider = lambda: BgTaskCounts(agent=2)
+    session._latest_todos = ()
+    state = {"now": 100.0, "tokens": 40_000}
+    session._status_provider = lambda: StatusSnapshot(
+        context_usage=0.0, context_tokens=state["tokens"]
+    )
+    monkeypatch.setattr(prompt_module.time, "monotonic", lambda: state["now"])
+
+    def render() -> str:
+        rendered = CustomPromptSession._render_background_working_status(session, 120)
+        return "".join(item[1] for item in rendered)
+
+    first = render()
+    assert "(<1s, ↓ 40k tokens)" in first  # no rate until the window fills
+
+    state["now"], state["tokens"] = 100.4, 40_400
+    render()
+    state["now"], state["tokens"] = 100.8, 40_800
+    third = render()
+    assert "(<1s, ↓ 40.8k tokens, 1000 t/s)" in third
+
+    # Draining background work resets the trackers.
+    session._background_task_count_provider = lambda: BgTaskCounts()
+    assert render() == ""
+    assert session._bg_status_started_at is None

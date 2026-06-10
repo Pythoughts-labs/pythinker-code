@@ -14,8 +14,11 @@ from pythinker_code.ui.shell.keymap import key_text
 
 __all__ = [
     "DIFF_CONTEXT_LINES",
+    "DIFF_EXPANDED_MAX_LINES",
     "DIFF_LINE_NUMBER_MIN_WIDTH",
     "LISTING_LINE_NUMBER_MIN_WIDTH",
+    "MAX_HIGHLIGHT_BYTES",
+    "MAX_HIGHLIGHT_LINES",
     "EXPAND_KEY_ID",
     "EXPAND_KEY_FALLBACK",
     "expand_hint",
@@ -23,6 +26,16 @@ __all__ = [
 
 #: Lines of unchanged context kept around each diff hunk.
 DIFF_CONTEXT_LINES: Final = 3
+#: Hard cap on rendered diff lines even when a card is expanded. Beyond this
+#: the renderer shows head + tail with an explicit omitted-count notice so a
+#: pathological diff cannot freeze or flood the terminal.
+DIFF_EXPANDED_MAX_LINES: Final = 400
+
+#: Syntax-highlighting size guards (Codex parity: render/highlight.rs). Code
+#: blocks beyond either limit render as plain text with a notice instead of
+#: paying an unbounded Pygments lexing cost.
+MAX_HIGHLIGHT_BYTES: Final = 512 * 1024
+MAX_HIGHLIGHT_LINES: Final = 10_000
 #: Minimum gutter width for diff line numbers (diffs are usually short hunks).
 DIFF_LINE_NUMBER_MIN_WIDTH: Final = 2
 #: Minimum gutter width for full file listings (more lines → wider numbers).

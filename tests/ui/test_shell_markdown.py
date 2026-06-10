@@ -119,14 +119,16 @@ def test_shell_markdown_simplifies_report_emoji_icons() -> None:
         )
     )
 
-    assert "• Review ✓ Complete" in output
+    assert "⏺ Review ✓ Complete" in output
     assert "● High" in output
     assert "● Medium" in output
     assert "● Low" in output
     assert "! Warning" in output
     assert "⌕ Results" in output
     assert "▣ Actions" in output
-    for emoji in ("⏺", "✅", "🔴", "🟡", "🔵", "⚠️", "🔍", "📋"):
+    # "⏺" stays (it is the transcript row marker on this platform); the
+    # remaining report emoji must still normalize to compact glyphs.
+    for emoji in ("✅", "🔴", "🟡", "🔵", "⚠️", "🔍", "📋"):
         assert emoji not in output
 
 

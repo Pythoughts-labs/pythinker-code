@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import time
 from dataclasses import dataclass
 from typing import Literal
 
@@ -10,6 +12,7 @@ from rich.style import Style
 from rich.text import Text
 
 from pythinker_code.soul import format_token_count
+from pythinker_code.ui.color_utils import blend, parse_hex_color, to_hex_color
 from pythinker_code.ui.shell.components.render_utils import cell_width
 from pythinker_code.ui.shell.design_system import ShellTone, shell_style
 from pythinker_code.ui.shell.glyphs import (
@@ -22,7 +25,7 @@ from pythinker_code.ui.shell.glyphs import (
     SPINNER_FRAMES,
     TRANSCRIPT_ACTIVE_MARKER,
 )
-from pythinker_code.ui.terminal_capabilities import colors_disabled, motion_disabled
+from pythinker_code.ui.terminal_capabilities import color_depth, colors_disabled, motion_disabled
 from pythinker_code.ui.theme import get_tui_tokens, tui_rich_style
 from pythinker_code.utils.datetime import format_elapsed
 
@@ -86,13 +89,16 @@ def _wave_colors(
     base: str,
     mid: str,
     highlight: str,
+    smooth: bool = False,
 ) -> list[str | None]:
     """Per-character colors for a single traveling-wave sweep.
 
     One bright highlight crosses the label with an asymmetric, slightly wider
     trail behind it — an angled sheen rather than a flat pulse. ``rightward``
     flips both the travel direction and the trailing side so the trail always
-    lags behind the head.
+    lags behind the head. With ``smooth`` (truecolor terminals), the sheen is a
+    continuous cosine-falloff blend from highlight into base (Codex shimmer)
+    instead of the discrete three-step ramp.
     """
     n = len(chars)
     if rightward:
@@ -101,44 +107,28 @@ def _wave_colors(
     else:
         head = n + 2 - local_phase
         trail = (-1, 1, 2, 3)
+    base_rgb = parse_hex_color(base) if smooth else None
+    highlight_rgb = parse_hex_color(highlight) if smooth else None
+    blend_smoothly = base_rgb is not None and highlight_rgb is not None
     colors: list[str | None] = []
     for i, char in enumerate(chars):
         if char.isspace():
             colors.append(None)
             continue
         offset = i - head
-        if offset == 0:
+        if blend_smoothly:
+            assert base_rgb is not None and highlight_rgb is not None
+            behind = (offset < 0) if rightward else (offset > 0)
+            falloff_width = 3.5 if behind else 1.5
+            dist = abs(offset)
+            if dist <= falloff_width:
+                t = 0.5 * (1.0 + math.cos(math.pi * dist / falloff_width))
+                colors.append(to_hex_color(blend(highlight_rgb, base_rgb, t)))
+            else:
+                colors.append(base)
+        elif offset == 0:
             colors.append(highlight)
         elif offset in trail:
-            colors.append(mid)
-        else:
-            colors.append(base)
-    return colors
-
-
-def _splash_colors(
-    chars: list[str], local_phase: int, *, base: str, mid: str, highlight: str
-) -> list[str | None]:
-    """Per-character colors for the center-out splash bloom.
-
-    A wavefront expands from the middle of the label toward both edges, leaving
-    a filled sheen behind it, then settles the whole word to the base activity color.
-    """
-    n = len(chars)
-    fill_frames = (n + 1) // 2 + 1  # frames for the wavefront to clear both edges
-    center = (n - 1) / 2
-    if local_phase >= fill_frames:  # settle beat before the next wave launches
-        return [None if char.isspace() else base for char in chars]
-    radius = local_phase
-    colors: list[str | None] = []
-    for i, char in enumerate(chars):
-        if char.isspace():
-            colors.append(None)
-            continue
-        dist = abs(i - center)
-        if radius - 0.5 <= dist <= radius + 0.5:
-            colors.append(highlight)
-        elif dist < radius - 0.5:
             colors.append(mid)
         else:
             colors.append(base)
@@ -151,9 +141,11 @@ def _shimmer_segments(
     """Return coalesced ``(hex_color, text)`` shimmer segments.
 
     This is shared by Rich renderables and prompt_toolkit fragments so every
-    active-work label uses the same visual language. The motion is a four-phase
-    loop that reads like traveling waves: a wave sweeps right-to-left, splashes
-    outward from the middle, sweeps back left-to-right, splashes again, repeat.
+    active-work label uses the same visual language. The motion is a calm
+    bidirectional sheen: a wave sweeps right-to-left, the word settles to its
+    base color for a beat, the wave sweeps back left-to-right, settles, repeat.
+    On truecolor terminals the sheen is a continuous cosine blend; lower color
+    tiers keep the discrete three-step ramp.
     """
     if not label:
         return []
@@ -165,29 +157,29 @@ def _shimmer_segments(
 
     chars = list(label)
     n = len(chars)
+    smooth = color_depth() == "truecolor"
     wave_len = n + 6
-    splash_len = (n + 1) // 2 + 3
-    cycle_len = 2 * wave_len + 2 * splash_len
+    settle_len = 4  # calm beat between sweeps so the motion never feels busy
+    cycle_len = 2 * (wave_len + settle_len)
     frame = int(max(0.0, elapsed_s) / _SHIMMER_INTERVAL_S) % cycle_len
     if frame < wave_len:
         colors = _wave_colors(
-            chars, frame, rightward=False, base=base, mid=mid, highlight=highlight
+            chars, frame, rightward=False, base=base, mid=mid, highlight=highlight, smooth=smooth
         )
-    elif frame < wave_len + splash_len:
-        colors = _splash_colors(chars, frame - wave_len, base=base, mid=mid, highlight=highlight)
-    elif frame < 2 * wave_len + splash_len:
+    elif frame < wave_len + settle_len:
+        colors = [None if char.isspace() else base for char in chars]
+    elif frame < 2 * wave_len + settle_len:
         colors = _wave_colors(
             chars,
-            frame - wave_len - splash_len,
+            frame - wave_len - settle_len,
             rightward=True,
             base=base,
             mid=mid,
             highlight=highlight,
+            smooth=smooth,
         )
     else:
-        colors = _splash_colors(
-            chars, frame - 2 * wave_len - splash_len, base=base, mid=mid, highlight=highlight
-        )
+        colors = [None if char.isspace() else base for char in chars]
 
     segments: list[tuple[str | None, str]] = []
     for char, color in zip(chars, colors, strict=True):
@@ -240,6 +232,21 @@ class ActivitySnapshot:
 
 def reduced_motion_enabled() -> bool:
     return motion_disabled()
+
+
+_BLINK_PERIOD_S = 0.8
+
+
+def blink_visible(now: float | None = None) -> bool:
+    """Shared blink phase: True during the visible half of the 0.8s cycle.
+
+    Reduced motion pins the element visible. Pass *now* when the caller has
+    already sampled ``time.monotonic()`` so co-rendered elements blink in phase.
+    """
+    if reduced_motion_enabled():
+        return True
+    t = time.monotonic() if now is None else now
+    return int(t / _BLINK_PERIOD_S) % 2 == 0
 
 
 def spinner_frame_at(
@@ -336,13 +343,12 @@ def activity_status_line(snapshot: ActivitySnapshot, *, width: int | None = None
         base_width = cell_width(text.plain)
         kept: list[str] = []
         for part in parts:
-            candidate = " · ".join([*kept, part])
+            candidate = ", ".join([*kept, part])
             if base_width + 3 + cell_width(candidate) <= width:
                 kept.append(part)
         parts = kept
     if parts:
-        secondary_style = thinking_style
-        text.append(" ", style=secondary_style)
-        text.append("· ", style=secondary_style)
-        text.append(" · ".join(parts), style=secondary_style)
+        # Parenthesized metadata matches the pinned-todo activity line so the
+        # working and todo headers share one visual language.
+        text.append(f" ({', '.join(parts)})", style=thinking_style)
     return text

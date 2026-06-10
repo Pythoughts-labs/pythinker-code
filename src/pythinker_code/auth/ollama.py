@@ -122,7 +122,7 @@ async def _enrich_with_show(
             raise_for_status=True,
         ) as response:
             payload: object = await response.json(content_type=None)
-    except (aiohttp.ClientError, TimeoutError):
+    except (aiohttp.ClientError, TimeoutError, ValueError):
         return model
 
     if not isinstance(payload, dict):
@@ -242,7 +242,7 @@ async def login_ollama(
             f"Ollama model listing failed ({exc.status}); the provider was not saved.",
         )
         return
-    except (aiohttp.ClientError, TimeoutError, ConnectionError) as exc:
+    except (aiohttp.ClientError, TimeoutError, ConnectionError, ValueError) as exc:
         try:
             detail = str(exc)
         except Exception:

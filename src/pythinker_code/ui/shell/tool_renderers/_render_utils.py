@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import time
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +14,7 @@ from rich.text import Text
 
 from pythinker_code.ui.shell.components import sanitize_ansi
 from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ASSISTANT_MARKER
-from pythinker_code.ui.shell.motion import reduced_motion_enabled
+from pythinker_code.ui.shell.motion import blink_visible
 from pythinker_code.ui.shell.render_constants import LISTING_LINE_NUMBER_MIN_WIDTH
 from pythinker_code.ui.theme import tui_rich_style
 
@@ -61,13 +60,13 @@ def fg(token: str, content: str | Text) -> Text:
         out = content.copy()
         out.stylize(style)
         return out
-    return Text(content, style=style)
+    return Text(sanitize_ansi(content), style=style)
 
 
 def tool_title(label: str) -> Text:
     """Bold tool-name title ."""
     base = tui_rich_style("tool_title")
-    return Text(label, style=base + RichStyle(bold=True))
+    return Text(sanitize_ansi(label), style=base + RichStyle(bold=True))
 
 
 def _status_marker(style_token: str) -> str:
@@ -83,19 +82,25 @@ def tool_call_header(
 ) -> Text:
     """Return the compact tool-use row.
 
-    Shape: ``● Tool summary`` for completed rows, ``✘ Tool summary`` for
-    failed rows. The surrounding ``ToolExecutionComponent`` owns result
-    gutters; individual renderers should keep this row compact.
+    Shape: ``⏺ Tool(summary)`` for completed rows, ``✘ Tool(summary)`` for
+    failed rows (reference-CLI parenthesized form). The surrounding
+    ``ToolExecutionComponent`` owns result gutters; individual renderers
+    should keep this row compact.
     """
     header = Text()
     header.append(f"{_status_marker(style_token)} ", style=tui_rich_style(style_token))
     header.append_text(tool_title(name))
     if summary is not None:
-        header.append(" ")
+        header.append("(", style=tui_rich_style("muted"))
         if isinstance(summary, Text):
             header.append_text(summary)
         else:
-            header.append(summary, style=tui_rich_style(summary_style_token))
+            header.append(sanitize_ansi(summary), style=tui_rich_style(summary_style_token))
+        header.append(")", style=tui_rich_style("muted"))
+    # Single-line contract (reference CLI): long summaries ellipsize at the
+    # terminal edge instead of wrapping the header onto a second row.
+    header.no_wrap = True
+    header.overflow = "ellipsis"
     return header
 
 
@@ -135,7 +140,10 @@ def safe_arg_keys_summary(args: dict[str, Any], *, max_keys: int = 4) -> Text | 
     summary = Text(f"{len(keys)} {label}", style=tui_rich_style("muted"))
     if shown:
         summary.append(": ", style=tui_rich_style("muted"))
-        summary.append(", ".join(shown), style=tui_rich_style("tool_output"))
+        # Arg key names are model/MCP-controlled; strip ANSI so a crafted key like
+        # "\x1b]0;title\x07" can't drive the terminal through the Text-summary path
+        # (tool_call_header appends a Text summary verbatim).
+        summary.append(sanitize_ansi(", ".join(shown)), style=tui_rich_style("tool_output"))
     if hidden > 0:
         summary.append(f", +{hidden} more", style=tui_rich_style("muted"))
     return summary
@@ -156,10 +164,9 @@ def loading_marker(
     """
     if done:
         return Text(f"{TRANSCRIPT_ASSISTANT_MARKER} ", style=tui_rich_style("success"))
-    if not pulse or reduced_motion_enabled():
+    if not pulse:
         return Text(f"{TRANSCRIPT_ASSISTANT_MARKER} ", style=tui_rich_style(style_token))
-    t = time.monotonic() if now is None else now
-    glyph = TRANSCRIPT_ASSISTANT_MARKER if int(t / 0.8) % 2 == 0 else " "
+    glyph = TRANSCRIPT_ASSISTANT_MARKER if blink_visible(now) else " "
     return Text(f"{glyph} ", style=tui_rich_style(style_token))
 
 

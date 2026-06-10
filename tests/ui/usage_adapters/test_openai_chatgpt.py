@@ -72,6 +72,65 @@ def test_parse_codex_usage_non_mapping_emits_note() -> None:
     assert any("response" in n.lower() for n in report.notes)
 
 
+def test_parse_codex_usage_fractional_window_does_not_hang() -> None:
+    """_format_reset_delta with a fractional limit_window_seconds (e.g. 0.5) must not
+    spin forever. int(0.5)==0, so the old while-loop added 0 and hung. The fix must
+    detect step==0 and bail out immediately with reset_hint=='reset'."""
+    import threading
+
+    # reset_at in the past (epoch 0) so delta is negative → normalization loop triggers
+    payload = {
+        "rate_limit": {
+            "primary_window": {
+                "percent_left": 50,
+                "limit_window_seconds": 0.5,
+                "reset_at": 0,  # past unix timestamp
+            },
+        }
+    }
+
+    result: list = []
+    exc: list = []
+
+    def _run() -> None:
+        try:
+            report = parse_codex_usage_payload(payload)
+            result.append(report)
+        except Exception as e:  # noqa: BLE001
+            exc.append(e)
+
+    thread = threading.Thread(target=_run, daemon=True)
+    thread.start()
+    thread.join(timeout=3)  # 3 s is more than enough for a correct impl
+
+    assert not thread.is_alive(), (
+        "parse_codex_usage_payload hung (infinite loop in _format_reset_delta)"
+    )
+    assert not exc, f"Unexpected exception: {exc[0]}"
+    assert result, "No result returned"
+    hint = result[0].summary.reset_hint if result[0].summary else None
+    assert hint == "reset", f"Expected 'reset', got {hint!r}"
+
+
+def test_parse_codex_usage_naive_iso_reset_does_not_crash() -> None:
+    """parse_codex_usage_payload with a tz-less ISO-8601 reset_at must not raise
+    TypeError (offset-naive vs offset-aware subtraction in _format_reset_delta).
+    The result should have a non-None summary whose reset_hint contains 'resets in'."""
+    payload = {
+        "rate_limit": {
+            "primary_window": {
+                "percent_left": 50,
+                "limit_window_seconds": 18000,
+                "reset_at": "2099-12-31T23:59:59",  # naive ISO-8601, no tz
+            },
+        }
+    }
+    report = parse_codex_usage_payload(payload)
+    assert report.summary is not None
+    hint = report.summary.reset_hint or ""
+    assert "resets in" in hint
+
+
 def test_codex_adapter_metadata() -> None:
     assert OpenAIChatGPTAdapter.platform_id == "openai-chatgpt"
     assert OpenAIChatGPTAdapter.requires_admin_key is False

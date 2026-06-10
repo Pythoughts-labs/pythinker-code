@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from pythinker_host.path import HostPath
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from pythinker_code.metadata import load_metadata, save_metadata
+from pythinker_code.metadata import Metadata, load_metadata, mutate_metadata
 from pythinker_code.session import Session as PythinkerCLISession
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.subprocess_env import get_clean_env
@@ -190,11 +190,22 @@ def _ensure_public_file_access_allowed(
         )
 
 
-def _read_wire_lines(wire_file: Path) -> list[str]:
-    """Read and parse wire.jsonl into JSONRPC event strings (runs in thread)."""
+def _read_wire_lines(wire_file: Path, max_bytes: int | None = None) -> list[str]:
+    """Read and parse wire.jsonl into JSONRPC event strings (runs in thread).
+
+    If *max_bytes* is given, stop reading once the file position exceeds that
+    offset.  This lets callers replay only up to a byte watermark captured at
+    attach time, preventing duplicate delivery of events that arrive after the
+    live broadcast buffer was attached.
+    """
     result: list[str] = []
     with open(wire_file, encoding="utf-8") as f:
-        for line in f:
+        while True:
+            line = f.readline()
+            if not line:
+                break
+            if max_bytes is not None and f.tell() > max_bytes:
+                break
             line = line.strip()
             if not line:
                 continue
@@ -231,14 +242,14 @@ def _read_wire_lines(wire_file: Path) -> list[str]:
     return result
 
 
-async def replay_history(ws: WebSocket, session_dir: Path) -> None:
+async def replay_history(ws: WebSocket, session_dir: Path, max_bytes: int | None = None) -> None:
     """Replay historical wire messages from wire.jsonl to a WebSocket."""
     wire_file = session_dir / "wire.jsonl"
     if not await asyncio.to_thread(wire_file.exists):
         return
 
     try:
-        lines = await asyncio.to_thread(_read_wire_lines, wire_file)
+        lines = await asyncio.to_thread(_read_wire_lines, wire_file, max_bytes)
         for event_text in lines:
             await ws.send_text(event_text)
     except Exception:
@@ -582,14 +593,13 @@ def _update_last_session_id(session: JointSession) -> None:
     pythinker_session = session.pythinker_code_session
     work_dir = pythinker_session.work_dir
 
-    metadata = load_metadata()
-    work_dir_meta = metadata.get_work_dir_meta(work_dir)
+    def _mark_last(metadata: Metadata) -> None:
+        work_dir_meta = metadata.get_work_dir_meta(work_dir)
+        if work_dir_meta is None:
+            work_dir_meta = metadata.new_work_dir_meta(work_dir)
+        work_dir_meta.last_session_id = pythinker_session.id
 
-    if work_dir_meta is None:
-        work_dir_meta = metadata.new_work_dir_meta(work_dir)
-
-    work_dir_meta.last_session_id = pythinker_session.id
-    save_metadata(metadata)
+    mutate_metadata(_mark_last)
 
 
 @router.delete("/{session_id}", summary="Delete a session")
@@ -598,17 +608,17 @@ async def delete_session(
 ) -> None:
     """Delete a session."""
     session = get_editable_session(session_id, runner)
-    session_process = runner.get_session(session_id)
-    if session_process is not None:
-        await session_process.stop()
+    await runner.remove_session(session_id)
     wd_meta = session.pythinker_code_session.work_dir_meta
     if wd_meta.last_session_id == str(session_id):
-        metadata = load_metadata()
-        for wd in metadata.work_dirs:
-            if wd.path == wd_meta.path:
-                wd.last_session_id = None
-                break
-        save_metadata(metadata)
+
+        def _clear_last(metadata: Metadata) -> None:
+            for wd in metadata.work_dirs:
+                if wd.path == wd_meta.path:
+                    wd.last_session_id = None
+                    break
+
+        mutate_metadata(_clear_last)
     session_dir = session.pythinker_code_session.dir
     if session_dir.exists():
         shutil.rmtree(session_dir, ignore_errors=True)
@@ -679,8 +689,15 @@ def extract_first_turn_from_wire(session_dir: Path) -> tuple[str, str] | None:
                 if not line:
                     continue
                 try:
-                    record = json.loads(line)
-                    message = record.get("message", {})
+                    record: Any = json.loads(line)
+                    if not isinstance(record, dict):
+                        # Torn/garbage line (crash or concurrent writer): skip
+                        # like _read_wire_lines does instead of 500ing on it.
+                        continue
+                    message_raw = cast(dict[str, Any], record).get("message")
+                    if not isinstance(message_raw, dict):
+                        continue
+                    message = cast(dict[str, Any], message_raw)
                     msg_type = message.get("type")
 
                     if msg_type == "TurnBegin":
@@ -688,7 +705,12 @@ def extract_first_turn_from_wire(session_dir: Path) -> tuple[str, str] | None:
                             # Second turn started, stop
                             break
                         in_first_turn = True
-                        user_input = message.get("payload", {}).get("user_input")
+                        payload_raw = message.get("payload")
+                        user_input = (
+                            cast(dict[str, Any], payload_raw).get("user_input")
+                            if isinstance(payload_raw, dict)
+                            else None
+                        )
                         if user_input:
                             from pythinker_core.message import Message
 
@@ -696,9 +718,11 @@ def extract_first_turn_from_wire(session_dir: Path) -> tuple[str, str] | None:
                             user_message = msg.extract_text(" ")
 
                     elif msg_type == "ContentPart" and in_first_turn:
-                        payload = message.get("payload", {})
-                        if payload.get("type") == "text" and payload.get("text"):
-                            assistant_response_parts.append(payload["text"])
+                        payload_raw = message.get("payload")
+                        if isinstance(payload_raw, dict):
+                            payload = cast(dict[str, Any], payload_raw)
+                            if payload.get("type") == "text" and payload.get("text"):
+                                assistant_response_parts.append(payload["text"])
 
                     elif msg_type == "TurnEnd" and in_first_turn:
                         break
@@ -970,13 +994,15 @@ async def session_stream(
     attached = False
     try:
         if has_history:
-            # Attach WebSocket in replay mode before history replay
-            await session_process.add_websocket_and_begin_replay(websocket)
+            # Attach WebSocket in replay mode and capture the watermark atomically.
+            # Events written to wire.jsonl after this point arrive via the live
+            # buffer, so we replay only up to the watermark to avoid duplicates.
+            watermark = await session_process.add_websocket_and_begin_replay(websocket, wire_file)
             attached = True
 
             # Replay history
             try:
-                await replay_history(websocket, session_dir)
+                await replay_history(websocket, session_dir, watermark)
             except Exception as e:
                 logger.warning(f"Failed to replay history: {e}")
 
@@ -995,7 +1021,7 @@ async def session_stream(
             if not attached:
                 # No history: attach and start worker
                 session_process = await runner.get_or_create_session(session_id)
-                await session_process.add_websocket_and_begin_replay(websocket)
+                await session_process.add_websocket_and_begin_replay(websocket, wire_file)
                 attached = True
 
             assert session_process is not None
@@ -1083,6 +1109,8 @@ async def session_stream(
     finally:
         if attached and session_process:
             await session_process.remove_websocket(websocket)
+            if session_process.websocket_count == 0 and not session_process.is_alive:
+                await runner.remove_session(session_id)
 
 
 # Work dirs cache

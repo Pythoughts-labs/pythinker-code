@@ -63,15 +63,23 @@ class Glob(CallableTool2[Params]):
         return None
 
     async def _validate_directory(self, directory: HostPath) -> ToolError | None:
-        """Validate that the directory is safe to search."""
-        resolved_dir = directory.canonical()
+        """Validate that the directory is safe to search.
+
+        Resolves symlinks (every component, incl. the leaf) before the boundary
+        check so a symlink inside the workspace pointing outside it cannot smuggle
+        an out-of-workspace search.
+        """
+        real_dir = await directory.realpath()
+        real_work = await self._work_dir.realpath()
+        real_add = [await d.realpath() for d in self._additional_dirs]
+        real_skills = [await d.realpath() for d in self._skills_dirs]
 
         # Allow directories within the workspace (work_dir or additional dirs)
-        if is_within_workspace(resolved_dir, self._work_dir, self._additional_dirs):
+        if is_within_workspace(real_dir, real_work, real_add):
             return None
 
         # Allow directories within any discovered skills root
-        if any(is_within_directory(resolved_dir, d) for d in self._skills_dirs):
+        if any(is_within_directory(real_dir, d) for d in real_skills):
             return None
 
         return ToolError(

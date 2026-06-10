@@ -574,3 +574,83 @@ def test_refresh_threshold_uses_minimum_when_small():
 def test_refresh_threshold_zero_expires_in():
     """When expires_in is 0, fall back to the minimum."""
     assert _refresh_threshold(0) == 300.0
+
+
+# ── non-rotating server (refresh_token omitted from response) ─────
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_preserves_prior_refresh_when_server_omits_it():
+    """refresh_token() must not crash when the server omits refresh_token/expires_in,
+    and the OAuthManager._refresh_tokens path must preserve the prior refresh_token."""
+
+    # ── Part 1: bare refresh_token() call with an omitting server ──
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_response.json = AsyncMock(
+        return_value={
+            "access_token": "new-access",
+            "scope": "pythinker-code",
+            "token_type": "Bearer",
+            # refresh_token and expires_in intentionally absent
+        }
+    )
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        def post(self, *args, **kwargs):
+            return FakeContext()
+
+    class FakeContext:
+        async def __aenter__(self):
+            return mock_response
+
+        async def __aexit__(self, *args):
+            pass
+
+    with patch("pythinker_code.auth.oauth.new_client_session", return_value=FakeSession()):
+        result = await refresh_token("old-refresh")
+
+    # No KeyError — token is returned cleanly
+    assert result.access_token == "new-access"
+    assert result.refresh_token == ""
+
+    # ── Part 2: manager path preserves prior refresh_token ──
+    prior_token = _make_token(access="old-access", refresh="old-refresh", expires_in=30)
+    prior_token.expires_at = 0.0  # force stale so refresh is triggered
+
+    manager = _make_manager(prior_token)
+
+    saved_tokens: list[OAuthToken] = []
+
+    def _fake_save(ref, tok):
+        saved_tokens.append(tok)
+
+    blank_rotation_token = OAuthToken(
+        access_token="new-access",
+        refresh_token="",
+        expires_at=9999999999.0,
+        scope="pythinker-code",
+        token_type="Bearer",
+        expires_in=900,
+    )
+
+    with (
+        patch("pythinker_code.auth.oauth.load_tokens", return_value=prior_token),
+        patch(
+            "pythinker_code.auth.oauth.refresh_token",
+            AsyncMock(return_value=blank_rotation_token),
+        ),
+        patch("pythinker_code.auth.oauth.save_tokens", side_effect=_fake_save),
+    ):
+        await manager.ensure_fresh(force=True)
+
+    assert saved_tokens, "save_tokens must have been called"
+    assert saved_tokens[-1].refresh_token == "old-refresh", (
+        "Prior refresh_token must be preserved when the server returns a blank one"
+    )

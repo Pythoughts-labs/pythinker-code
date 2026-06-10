@@ -2,16 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import builtins
+import contextlib
 import json
 import shutil
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, cast
 
 from pythinker_core.message import Message
 from pythinker_host.path import HostPath
 
-from pythinker_code.metadata import WorkDirMeta, load_metadata, save_metadata
+from pythinker_code.metadata import Metadata, WorkDirMeta, load_metadata, mutate_metadata
 from pythinker_code.session_state import SessionState, load_session_state, save_session_state
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.string import shorten
@@ -45,6 +47,43 @@ class Session:
     updated_at: float
     """The timestamp of the last update to the session."""
 
+    _owner_lock_fh: Any = field(default=None, init=False, repr=False, compare=False)
+    """Held flock handle while this process owns the session (see acquire_ownership)."""
+
+    def acquire_ownership(self) -> bool:
+        """Try to become this session's writer (cross-process, non-blocking).
+
+        Two processes appending to the same context/wire files interleave turns
+        and corrupt the transcript, so a session may have at most one writer.
+        The flock is kernel-held: it releases automatically when the owning
+        process exits, including crashes, and the lock file is deliberately
+        never unlinked (unlinking would split the lock across inodes).
+        Returns False when another live process already owns the session.
+        """
+        if self._owner_lock_fh is not None:
+            return True
+        try:
+            import fcntl
+        except ImportError:  # non-POSIX: no advisory locking available
+            return True
+        fh = (self.dir / ".owner.lock").open("a+", encoding="utf-8")
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            fh.close()
+            return False
+        self._owner_lock_fh = fh
+        return True
+
+    def release_ownership(self) -> None:
+        """Release the writer lock (no-op when not held)."""
+        fh = self._owner_lock_fh
+        if fh is None:
+            return
+        self._owner_lock_fh = None
+        with contextlib.suppress(OSError):
+            fh.close()
+
     @property
     def dir(self) -> Path:
         """The absolute path of the session directory."""
@@ -71,7 +110,13 @@ class Session:
                     line = line.strip()
                     if not line:
                         continue
-                    role = json.loads(line, strict=False).get("role")
+                    record: Any = json.loads(line, strict=False)
+                    if not isinstance(record, dict):
+                        # Torn/garbage line (crash mid-append, two writers):
+                        # skip it like Context.restore does instead of crashing
+                        # the session picker on AttributeError.
+                        continue
+                    role = cast(dict[str, Any], record).get("role")
                     if isinstance(role, str) and not role.startswith("_"):
                         return False
         except FileNotFoundError:
@@ -136,10 +181,13 @@ class Session:
         work_dir = work_dir.canonical()
         logger.debug("Creating new session for work directory: {work_dir}", work_dir=work_dir)
 
-        metadata = load_metadata()
-        work_dir_meta = metadata.get_work_dir_meta(work_dir)
-        if work_dir_meta is None:
-            work_dir_meta = metadata.new_work_dir_meta(work_dir)
+        def _register_work_dir(metadata: Metadata) -> WorkDirMeta:
+            meta = metadata.get_work_dir_meta(work_dir)
+            return meta if meta is not None else metadata.new_work_dir_meta(work_dir)
+
+        # Locked read-modify-write: two processes registering different
+        # work_dirs concurrently must not drop each other's entries.
+        work_dir_meta = await asyncio.to_thread(mutate_metadata, _register_work_dir)
 
         if session_id is None:
             session_id = str(uuid.uuid4())
@@ -164,8 +212,6 @@ class Session:
             )
             context_file.unlink()
         context_file.touch()
-
-        save_metadata(metadata)
 
         session = Session(
             id=session_id,

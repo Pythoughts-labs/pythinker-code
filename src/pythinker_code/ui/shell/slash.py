@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any, cast
 
@@ -979,7 +980,6 @@ async def task(app: Shell, args: str):
 @shell_mode_registry.command(aliases=["color"])
 async def theme(app: Shell, args: str) -> None:
     """Switch terminal color theme — interactive picker when no args given"""
-    from pythinker_code.ui.theme import get_active_theme
     from pythinker_code.ui.theme import get_tui_tokens as _get_tok_theme
 
     soul = ensure_pythinker_soul(app)
@@ -987,7 +987,9 @@ async def theme(app: Shell, args: str) -> None:
         return
 
     _t_theme = _get_tok_theme()
-    current = get_active_theme()
+    # Compare against the *configured* value, not the resolved active theme:
+    # "auto" resolves to dark/light at startup but stays "auto" in config.
+    current = soul.runtime.config.theme
     arg = args.strip().lower()
 
     if not arg:
@@ -995,15 +997,16 @@ async def theme(app: Shell, args: str) -> None:
 
         chosen = await run_theme_selector(
             current_theme=current,
-            available_themes=["dark", "light"],
+            available_themes=["dark", "light", "auto"],
         )
         if chosen is None or chosen == current:
             return
         arg = chosen
 
-    if arg not in ("dark", "light"):
+    if arg not in ("dark", "light", "auto"):
         console.print(
-            f"[{_t_theme.error}]Unknown theme: {_rich_escape(arg)}. Use 'dark' or 'light'.[/]"
+            f"[{_t_theme.error}]Unknown theme: {_rich_escape(arg)}. "
+            f"Use 'dark', 'light', or 'auto'.[/]"
         )
         return
 
@@ -1030,6 +1033,12 @@ async def theme(app: Shell, args: str) -> None:
     from pythinker_code.telemetry import track
 
     track("theme_switch", theme=arg)
+    if arg == "auto":
+        # The reload stays in-process, so a probe that failed at startup would
+        # otherwise pin auto to the dark fallback; let it query the terminal again.
+        from pythinker_code.ui.terminal_background import reset_probe_cache
+
+        reset_probe_cache()
     console.print(f"[{_t_theme.success}]Switched to {_rich_escape(arg)} theme. Reloading...[/]")
     raise Reload(session_id=soul.runtime.session.id)
 
@@ -1213,7 +1222,7 @@ def tui(app: Shell, args: str):
 @registry.command(aliases=["config"])
 @shell_mode_registry.command(aliases=["config"])
 async def settings(app: Shell, args: str):
-    """Open the interactive settings panel; use `/settings show` for read-only view"""
+    """Open the interactive settings panel; `show` for read-only, `recaps on|off` to toggle"""
     from rich.console import Group, RenderableType
     from rich.table import Table
     from rich.text import Text
@@ -1277,8 +1286,37 @@ async def settings(app: Shell, args: str):
     if mode in {"show", "list", "view"}:
         print_settings_table()
         return
+    mode_parts = mode.split()
+    if mode_parts and mode_parts[0] == "recaps":
+        value = mode.removeprefix("recaps").strip()
+        if value not in {"on", "off"}:
+            console.print(f"[{_t_set.warning}]Usage: /settings recaps on|off[/]")
+            return
+        enabled = value == "on"
+        if config.tui.turn_recaps == enabled:
+            console.print(f"[{_t_set.warning}]Turn recaps already {value}.[/]")
+            return
+        config_file = config.source_file
+        if config_file is None:
+            console.print(
+                f"[{_t_set.warning}]Toggling recaps requires a config file; "
+                f"restart without --config (or use --config-file) to persist settings.[/]"
+            )
+            return
+        try:
+            config_for_save = load_config(config_file)
+            config_for_save.tui.turn_recaps = enabled
+            save_config(config_for_save, config_file)
+        except (ConfigError, OSError) as exc:
+            console.print(f"[{_t_set.error}]Failed to save config: {_rich_escape(exc)}[/]")
+            return
+        from pythinker_code.telemetry import track
+
+        track("settings_update", changed="tui.turn_recaps", count=1)
+        console.print(f"[{_t_set.success}]Turn recaps {value}. Reloading...[/]")
+        raise Reload(session_id=soul.runtime.session.id)
     if mode:
-        console.print(f"[{_t_set.warning}]Usage: /settings [show|list][/]")
+        console.print(f"[{_t_set.warning}]Usage: /settings [show|recaps on|off][/]")
         return
 
     config_file = config.source_file
@@ -1366,6 +1404,12 @@ def restore(app: Shell, args: str) -> None:
             return
         restore_id = points[0].id
     else:
+        # Cheap format guard (ids are `<millis>-<8hex>`): rejects traversal
+        # attempts like `../../x` without loading every snapshot. Unknown but
+        # well-formed ids fall through to the FileNotFoundError handler below.
+        if not re.fullmatch(r"[A-Za-z0-9-]+", arg):
+            console.print(f"[{_tok.error}]Restore point not found: {_rich_escape(arg)}[/]")
+            return
         restore_id = arg
 
     try:
@@ -1373,7 +1417,9 @@ def restore(app: Shell, args: str) -> None:
     except FileNotFoundError:
         console.print(f"[{_tok.error}]Restore point not found: {_rich_escape(restore_id)}[/]")
         return
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
+        # ValueError is raised by the file_restore containment check when a restore
+        # point's stored path escapes the workspace — surface it cleanly, don't crash.
         console.print(
             f"[{_tok.error}]Failed to restore {_rich_escape(restore_id)}: {_rich_escape(exc)}[/]"
         )

@@ -30,7 +30,7 @@ from rich.text import Text
 from pythinker_code.ui.shell.components.key_hints import key_hint
 from pythinker_code.ui.shell.components.render_utils import render_message_response
 from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ACTIVE_MARKER, TRANSCRIPT_ASSISTANT_MARKER
-from pythinker_code.ui.shell.motion import reduced_motion_enabled
+from pythinker_code.ui.shell.motion import blink_visible
 from pythinker_code.ui.shell.spacing import TINTED_CARD_PADDING
 from pythinker_code.ui.shell.tool_renderers import (
     ToolRenderContext,
@@ -187,7 +187,7 @@ class ToolExecutionComponent:
             except Exception:  # noqa: BLE001 — renderer crash falls back to header
                 call = self._call_fallback()
             if call is not None:
-                children.append(call)
+                children.append(self._blink_running_marker(call))
         else:
             children.append(self._call_fallback())
 
@@ -223,6 +223,27 @@ class ToolExecutionComponent:
         return Padding(body, TINTED_CARD_PADDING, style=bg_style)
 
     # -- Internals -----------------------------------------------------------
+
+    def _blink_running_marker(self, call: RenderableType) -> RenderableType:
+        """Blink the leading row marker while the tool is still running.
+
+        Applies centrally so every registered renderer gets the running blink
+        without threading status through each ``render_call``; completed rows
+        keep the renderer's own (green/red) marker untouched.
+        """
+        if self._status not in (ToolExecutionStatus.PENDING, ToolExecutionStatus.RUNNING):
+            return call
+        if not isinstance(call, Text):
+            return call
+        plain = call.plain
+        if not plain.startswith(f"{TRANSCRIPT_ASSISTANT_MARKER} "):
+            return call
+        if blink_visible():
+            return call
+        blinked = call.copy()
+        # Off-beat of the blink: hide the marker, keep the column stable.
+        blinked.plain = f" {plain[1:]}"
+        return blinked
 
     def _build_context(self, *, width: int = 0) -> ToolRenderContext:
         return ToolRenderContext(
@@ -264,7 +285,7 @@ class ToolExecutionComponent:
             glyph = f"{TRANSCRIPT_ACTIVE_MARKER} "
             glyph_style = tui_rich_style("warning") + Style(bold=True)
         else:
-            active = reduced_motion_enabled() or int(time.monotonic() / 0.8) % 2 == 0
+            active = blink_visible()
             glyph = f"{TRANSCRIPT_ASSISTANT_MARKER if active else ' '} "
             glyph_style = tui_rich_style("muted") + Style(bold=True)
         header = Text()
@@ -277,20 +298,36 @@ class ToolExecutionComponent:
         if result is None or not result.text:
             return None
         text = result.text
-        truncated = False
-        if not self._state.expanded:
-            lines = text.splitlines()
-            if len(lines) > _MAX_RESULT_LINES or len(text) > _MAX_RESULT_CHARS:
-                lines = lines[:_MAX_RESULT_LINES]
-                text = "\n".join(lines)[:_MAX_RESULT_CHARS]
-                truncated = True
         style = tui_rich_style("error") if result.is_error else tui_rich_style("muted")
-        body = Text(text, style=style)
-        if truncated:
-            body.append(
-                "\n… output truncated for display; full result preserved in session.",
-                style=tui_rich_style("muted") + Style(italic=True),
-            )
+        lines = text.splitlines()
+        within_limits = len(lines) <= _MAX_RESULT_LINES and len(text) <= _MAX_RESULT_CHARS
+        if self._state.expanded or within_limits:
+            return Text(text, style=style)
+
+        # Head-tail truncation: keep the start (identifies the command/result)
+        # and the end (usually the actionable part), omitting the middle.
+        if len(lines) > _MAX_RESULT_LINES:
+            head_count = _MAX_RESULT_LINES // 2
+            tail_count = _MAX_RESULT_LINES - head_count
+            omitted = len(lines) - head_count - tail_count
+            head = "\n".join(lines[:head_count])
+            tail = "\n".join(lines[-tail_count:])
+            notice = f"\n… {omitted} line{'s' if omitted != 1 else ''} omitted …\n"
+        else:
+            # Few lines but a huge body (e.g. one giant line): split the
+            # character budget between the start and the end.
+            head = text[: _MAX_RESULT_CHARS // 2]
+            tail = text[-(_MAX_RESULT_CHARS // 2) :]
+            notice = "\n… middle omitted …\n"
+        # Each side gets half the character budget so the combined render can
+        # never exceed _MAX_RESULT_CHARS even for line-heavy output.
+        body = Text(head[: _MAX_RESULT_CHARS // 2], style=style)
+        body.append(notice, style=tui_rich_style("muted") + Style(italic=True))
+        body.append(tail[-(_MAX_RESULT_CHARS // 2) :], style=style)
+        body.append(
+            "\n… output truncated for display; full result preserved in session.",
+            style=tui_rich_style("muted") + Style(italic=True),
+        )
         return body
 
     def _has_expandable_payload(self) -> bool:

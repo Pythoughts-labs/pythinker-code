@@ -17,12 +17,21 @@ INVISIBLE_CHARS = frozenset(
         0x200C,
         0x200D,
         0x2060,
+        0x2061,
+        0x2062,
+        0x2063,
+        0x2064,
         0xFEFF,
         0x202A,
         0x202B,
         0x202C,
         0x202D,
         0x202E,
+        0x2066,
+        0x2067,
+        0x2068,
+        0x2069,
+        *range(0xE0000, 0xE0080),  # Unicode Tags block (U+E0000-U+E007F)
     )
 )
 _INVISIBLE_TRANSLATION = dict.fromkeys((ord(c) for c in INVISIBLE_CHARS), None)

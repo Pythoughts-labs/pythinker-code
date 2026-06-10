@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import base64
+import binascii
+import re
 import time
 import uuid
+from json import JSONDecodeError
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from pythinker_code.session import Session
 from pythinker_code.utils.io import atomic_json_write
+
+_RESTORE_ID_RE = re.compile(r"^\d+-[0-9a-f]{8}$")
 
 _RESTORE_DIR = "file_restore_points"
 
@@ -29,7 +34,13 @@ def _restore_dir(session: Session) -> Path:
 
 
 def _restore_file(session: Session, restore_id: str) -> Path:
-    return _restore_dir(session) / f"{restore_id}.json"
+    if not _RESTORE_ID_RE.fullmatch(restore_id):
+        raise FileNotFoundError(f"Invalid restore id: {restore_id}")
+    base = _restore_dir(session)
+    candidate = (base / f"{restore_id}.json").resolve()
+    if not candidate.is_relative_to(base.resolve()):
+        raise FileNotFoundError(f"Restore id escapes restore dir: {restore_id}")
+    return candidate
 
 
 def create_file_restore_point(
@@ -70,14 +81,28 @@ def list_file_restore_points(
 
 
 def restore_file_restore_point(session: Session, restore_id: str) -> FileRestorePoint:
-    point = FileRestorePoint.model_validate_json(
-        _restore_file(session, restore_id).read_text(encoding="utf-8")
-    )
+    restore_path = _restore_file(session, restore_id)
+    try:
+        point = FileRestorePoint.model_validate_json(restore_path.read_text(encoding="utf-8"))
+    except (ValidationError, JSONDecodeError) as exc:
+        raise FileNotFoundError(f"Corrupt restore point: {restore_id}") from exc
+    work_dir = Path(str(session.work_dir)).resolve()
+    target = point.path.resolve()
+    if not target.is_relative_to(work_dir):
+        raise ValueError(f"Restore target outside workspace: {point.path}")
     if not point.existed:
         point.path.unlink(missing_ok=True)
         return point
-
+    # An existed-file restore must carry its content. Missing content (None) or
+    # malformed base64 is a corrupt restore point — fail loudly instead of
+    # silently writing an empty/garbage file. An empty string is a legitimately
+    # empty file and decodes to b"".
+    if point.content_b64 is None:
+        raise FileNotFoundError(f"Corrupt restore point: {restore_id}")
+    try:
+        content = base64.b64decode(point.content_b64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise FileNotFoundError(f"Corrupt restore point: {restore_id}") from exc
     point.path.parent.mkdir(parents=True, exist_ok=True)
-    content = base64.b64decode(point.content_b64 or "")
     point.path.write_bytes(content)
     return point

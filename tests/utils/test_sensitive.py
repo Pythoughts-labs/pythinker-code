@@ -82,6 +82,24 @@ def test_not_sensitive_normal_files(path: str):
     assert not is_sensitive_file(path)
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".ENV",
+        ".Env.Local",
+        "ID_RSA",
+        "/home/user/.SSH/ID_ED25519",
+        "/app/.AWS/credentials",
+    ],
+)
+def test_is_sensitive_case_insensitive(path: str):
+    assert is_sensitive_file(path)
+
+
+def test_is_sensitive_exemption_case_insensitive():
+    assert not is_sensitive_file(".ENV.EXAMPLE")
+
+
 def test_sensitive_file_warning_single():
     warning = sensitive_file_warning([".env"])
     assert "1 sensitive file(s)" in warning

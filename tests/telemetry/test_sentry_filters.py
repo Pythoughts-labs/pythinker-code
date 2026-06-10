@@ -117,3 +117,108 @@ def test_init_does_not_register_asyncio_integration(monkeypatch) -> None:
         "AsyncioIntegration must not be registered: its create_task wrapper orphans "
         "coroutines cancelled before their first step (never-awaited warnings)."
     )
+
+
+def test_before_send_redacts_paths_in_exception_value_and_message() -> None:
+    event = {
+        "exception": {
+            "values": [
+                {
+                    "type": "FileNotFoundError",
+                    "value": "FileNotFoundError: /Users/panda/.config/pythinker/secrets.yaml not found",
+                    "stacktrace": {
+                        "frames": [
+                            {
+                                "filename": "src/pythinker_code/tools/read.py",
+                                "abs_path": "/Users/panda/dev/src/pythinker_code/tools/read.py",
+                            }
+                        ]
+                    },
+                }
+            ]
+        },
+        "message": "failed at /home/alice/.ssh/id_rsa",
+        "logentry": {
+            "message": "read /home/alice/.aws/credentials",
+            "formatted": "read /home/alice/.aws/credentials",
+        },
+    }
+
+    result = _before_send(cast(Event, event), cast(Hint, {}))
+    assert result is not None
+
+    exc_value = result["exception"]["values"][0]["value"]  # type: ignore[index]
+    assert "/Users/panda/.config" not in exc_value
+    assert "<path>" in exc_value
+
+    assert "/home/alice" not in result["message"]  # type: ignore[index]
+
+    logentry = cast("dict[str, str]", result["logentry"])  # type: ignore[index]
+    assert "/home/alice" not in logentry["message"]
+    assert "/home/alice" not in logentry["formatted"]
+
+
+def test_scrub_path_redacts_home_for_pyinstaller_conda_layouts(monkeypatch) -> None:
+    """_scrub_path must replace a leading $HOME prefix with <home> for paths
+    that the env-token regex does not match (PyInstaller onedir, conda envs
+    without 'site-packages', editable scripts). The env-token regex must still
+    win for paths containing site-packages so the <env>/site-packages/... form
+    is preserved.
+    """
+    import pythinker_code.telemetry.sentry as sentry_mod
+    from pythinker_code.telemetry.sentry import _scrub_path  # pyright: ignore[reportPrivateUsage]
+
+    fake_home = "/Users/testuser"
+    monkeypatch.setattr(sentry_mod, "_HOME", fake_home)
+
+    # PyInstaller onedir — no site-packages token, home must be masked.
+    assert (
+        _scrub_path("/Users/testuser/.local/bin/_internal/dep.py")
+        == "<home>/.local/bin/_internal/dep.py"
+    )
+
+    # Conda env without site-packages token — home must be masked.
+    assert _scrub_path("/Users/testuser/miniforge3/envs/x/lib/python3.12/pkg/mod.py") == (
+        "<home>/miniforge3/envs/x/lib/python3.12/pkg/mod.py"
+    )
+
+    # Env-token regex wins — site-packages under home still maps to <env>/site-packages/...
+    assert _scrub_path("/Users/testuser/.venv/lib/python3.12/site-packages/foo/bar.py") == (
+        "<env>/site-packages/foo/bar.py"
+    )
+
+    # Path outside home is untouched (stdlib, no PII).
+    assert (
+        _scrub_path("/usr/lib/python3.12/asyncio/queues.py")
+        == "/usr/lib/python3.12/asyncio/queues.py"
+    )
+
+
+def test_init_disables_local_variables_and_source_context(monkeypatch) -> None:
+    """sentry_sdk 2.x defaults include_local_variables=True and
+    include_source_context=True, leaking frame locals and surrounding source
+    lines. Both must be explicitly disabled so secrets bound to locals under
+    non-denylisted names (auth_header, payload, token_value) and inlined
+    string literals cannot reach Bugsink."""
+    import pythinker_code.telemetry.sentry as sentry_mod
+
+    captured: dict[str, object] = {}
+
+    def _fake_init(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(sentry_mod, "_initialized", False)
+    monkeypatch.setattr(sentry_mod, "is_disabled", lambda: False)
+    monkeypatch.setattr(sentry_mod, "sentry_dsn", lambda: "https://pub@example.test/1")
+    monkeypatch.setattr(sentry_mod.sentry_sdk, "init", _fake_init)
+
+    assert sentry_mod.init(version="1.2.3") is True
+
+    assert captured.get("include_local_variables") is False, (
+        "include_local_variables must be False: frame locals can hold secrets "
+        "under names not covered by the denylist (auth_header, token, payload)."
+    )
+    assert captured.get("include_source_context") is False, (
+        "include_source_context must be False: context lines can contain "
+        "inlined string literals with secrets."
+    )

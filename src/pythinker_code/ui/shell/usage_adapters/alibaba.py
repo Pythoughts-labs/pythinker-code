@@ -11,7 +11,7 @@ import aiohttp
 from pythinker_code.auth import ALIBABA_PLATFORM_ID
 from pythinker_code.auth.alibaba import ALIBABA_BASE_URL
 from pythinker_code.ui.shell.stats_collector import load_all_stats as _load_all_stats
-from pythinker_code.ui.shell.usage_adapters.base import UsageReport, UsageRow
+from pythinker_code.ui.shell.usage_adapters.base import UsageReport, UsageRow, used_from_remaining
 from pythinker_code.usage_ratelimit_cache import get_cache
 from pythinker_code.utils.aiohttp import new_client_session
 from pythinker_code.utils.logging import logger
@@ -150,8 +150,8 @@ class AlibabaAdapter:
             if snap.requests_limit is not None and snap.requests_remaining is not None:
                 rl_rows.append(
                     UsageRow(
-                        label="Requests remaining",
-                        used=snap.requests_remaining,
+                        label="Requests",
+                        used=used_from_remaining(snap.requests_limit, snap.requests_remaining),
                         limit=snap.requests_limit,
                         unit="requests",
                     )
@@ -159,8 +159,8 @@ class AlibabaAdapter:
             if snap.tokens_limit is not None and snap.tokens_remaining is not None:
                 rl_rows.append(
                     UsageRow(
-                        label="Tokens remaining",
-                        used=snap.tokens_remaining,
+                        label="Tokens",
+                        used=used_from_remaining(snap.tokens_limit, snap.tokens_remaining),
                         limit=snap.tokens_limit,
                         unit="tokens",
                     )

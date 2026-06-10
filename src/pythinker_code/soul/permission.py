@@ -94,7 +94,11 @@ _SHELL_SEGMENT_SEPARATORS = {";", "&&", "||", "|", "&", "|&"}
 # which would false-positive; glued ``&`` is caught structurally instead (its signature
 # never collides with a benign base command).
 _GLUED_OPERATORS = {";", "&&", "||", "|"}
-_WRITING_REDIRECTION_RE = re.compile(r"(?:^|\s)(?:[0-9]*>>?|&>)\s*(\S+)")
+# Standalone & / |& separators. The punct lexer keeps the & of >&/&>/&>> glued
+# inside the redirection token, so a *bare* & token is always a real separator.
+_AMP_OPERATORS = {"&", "|&"}
+# Redirection operators that WRITE to a file target (vs >& which dups an fd).
+_WRITE_REDIRECTION_OPS = {">", ">>", "&>", "&>>"}
 _MUTATING_COMMANDS = {
     "chmod",
     "chown",
@@ -207,6 +211,37 @@ _GIT_MUTATIONS = {
 # diff/log/show/status stays allowed so judge/verifier can inspect changes).
 _GIT_NETWORK = {"clone", "fetch", "ls-remote"}
 _WRAPPER_COMMANDS = {"command", "env", "nohup", "sudo", "time"}
+# sudo options that consume a following separate word (the value is NOT the command).
+_SUDO_VALUE_OPTS = {
+    # Short value-taking options.
+    "-u",
+    "-g",
+    "-U",
+    "-C",
+    "-p",
+    "-r",
+    "-t",
+    "-T",
+    "-h",
+    "-R",
+    "-D",
+    # Long forms with a space-separated value (e.g. ``sudo --user alice rm``).
+    # The ``--opt=value`` form carries its value inline, so it is consumed as a
+    # single token and needs no entry here.
+    "--user",
+    "--group",
+    "--other-user",
+    "--close-from",
+    "--prompt",
+    "--role",
+    "--type",
+    "--command-timeout",
+    "--host",
+    "--chroot",
+    "--chdir",
+}
+# GNU time options that consume a following separate word.
+_TIME_VALUE_OPTS = {"-o", "-f", "--output", "--format"}
 
 
 def permission_profile_for_runtime(runtime: Runtime) -> PermissionProfile:
@@ -380,6 +415,13 @@ def _shell_hidden_command_reason(command: str) -> str | None:
     punct_ops = sum(1 for tok in punct_tokens if tok in _GLUED_OPERATORS)
     if punct_ops > plain_ops:
         return "ungrouped command operator"
+    # A bare &/|& between two tokens is a real separator the plain-split segment scan
+    # missed (ls&rm tokenizes as one word). A *trailing* & is a legitimate background
+    # job, not a hidden command, so ignore the final position. Redirection &s stay glued
+    # inside >&/&>/&>> tokens and never appear as a bare & here.
+    for i, tok in enumerate(punct_tokens):
+        if tok in _AMP_OPERATORS and i != len(punct_tokens) - 1:
+            return "ungrouped command operator"
     return None
 
 
@@ -395,16 +437,21 @@ def shell_mutation_reason(command: str) -> str | None:
     """
     if reason := _shell_hidden_command_reason(command):
         return reason
-    for match in _WRITING_REDIRECTION_RE.finditer(command):
-        target = match.group(1)
-        if target.startswith("&") or target in {"/dev/null", "NUL"}:
-            continue
-        return "output redirection"
-
     try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        punct_tokens = list(lexer)
         tokens = shlex.split(command, posix=True)
     except ValueError:
         return "unparsable shell command"
+    # Scan for write-redirection operators isolated by the punct lexer.
+    # NOTE: bare '>&' (fd dup, e.g. 2>&1) is intentionally not in _WRITE_REDIRECTION_OPS.
+    for i, tok in enumerate(punct_tokens):
+        if tok in _WRITE_REDIRECTION_OPS:
+            target = punct_tokens[i + 1] if i + 1 < len(punct_tokens) else ""
+            if target in {"/dev/null", "NUL", ""}:
+                continue
+            return "output redirection"
 
     segment: list[str] = []
     for token in [*tokens, ";"]:
@@ -442,10 +489,35 @@ def _segment_mutation_reason(tokens: list[str]) -> str | None:
             return f"git {subcommand}"
         if subcommand in _GIT_NETWORK:
             return f"network access via git {subcommand}"
-    if base in _PACKAGE_MANAGER_COMMANDS:
+    if base == "uv":
+        uv_args = _uv_strip_global_opts(args)
+        run_payload = _uv_run_payload(uv_args)
+        if run_payload and (r := _segment_mutation_reason(run_payload)):
+            return f"uv run: {r}"
+        nonopts = [a for a in uv_args if not a.startswith("-")]
+        if nonopts:
+            head = nonopts[0]
+            sub = nonopts[1] if (head in _UV_SUBNAMESPACES and len(nonopts) > 1) else head
+            if sub in _PACKAGE_MANAGER_MUTATIONS:
+                return f"uv {head} {sub}" if head in _UV_SUBNAMESPACES else f"uv {sub}"
+    elif base in _PACKAGE_MANAGER_COMMANDS:
         subcommand = _first_non_option(args)
         if subcommand in _PACKAGE_MANAGER_MUTATIONS:
             return f"{base} {subcommand}"
+    if base == "find":
+        if any(a == "-delete" for a in args):
+            return "find -delete"
+        payload = _exec_payload(args)
+        if payload:
+            if r := _segment_mutation_reason(payload):
+                return f"find -exec: {r}"
+            return "find -exec command"
+    if base == "xargs":
+        payload = _xargs_payload(args)
+        if payload and (r := _segment_mutation_reason(payload)):
+            return f"xargs: {r}"
+    if base == "awk" and (reason := _awk_shell_reason(args)):
+        return reason
     return None
 
 
@@ -487,7 +559,7 @@ def _segment_signature(tokens: list[str]) -> str:
     command, args = _unwrap_command(tokens)
     if command is None:
         return ""
-    base = command.rsplit("/", 1)[-1]
+    base = command.rsplit("/", 1)[-1].lower()
     if base == "git" and (sub := _git_subcommand(args)):
         return f"git {sub}"
     if base in _PACKAGE_MANAGER_COMMANDS and (sub := _first_non_option(args)):
@@ -499,14 +571,27 @@ def _unwrap_command(tokens: list[str]) -> tuple[str | None, list[str]]:
     remaining = list(tokens)
     while remaining:
         command = remaining.pop(0)
-        base = command.rsplit("/", 1)[-1]
+        base = command.rsplit("/", 1)[-1].lower()
         if "=" in command and not command.startswith("=") and command.split("=", 1)[0]:
             continue
         if base not in _WRAPPER_COMMANDS:
             return command, remaining
-        if base in {"sudo", "time", "nohup", "command"}:
+        if base in {"sudo", "command"}:
+            value_opts: set[str] = _SUDO_VALUE_OPTS if base == "sudo" else set()
             while remaining and remaining[0].startswith("-"):
-                remaining.pop(0)
+                opt = remaining.pop(0)
+                if opt == "--":
+                    break
+                if opt in value_opts and remaining:
+                    remaining.pop(0)
+        elif base in {"time", "nohup"}:
+            value_opts: set[str] = _TIME_VALUE_OPTS if base == "time" else set()
+            while remaining and remaining[0].startswith("-"):
+                opt = remaining.pop(0)
+                if opt == "--":
+                    break
+                if opt in value_opts and remaining:
+                    remaining.pop(0)
         elif base == "env":
             while remaining and (remaining[0].startswith("-") or "=" in remaining[0]):
                 remaining.pop(0)
@@ -555,6 +640,161 @@ def _first_non_option(args: list[str]) -> str | None:
     return None
 
 
+_FIND_EXEC_OPTS = {"-exec", "-execdir", "-ok", "-okdir"}
+
+
+def _exec_payload(args: list[str]) -> list[str] | None:
+    """Tokens of a find -exec/-ok command (up to a ';' or '+' terminator), else None."""
+    for i, a in enumerate(args):
+        if a in _FIND_EXEC_OPTS:
+            rest = args[i + 1 :]
+            end = next((j for j, t in enumerate(rest) if t in (";", "+")), len(rest))
+            return [t for t in rest[:end] if t != "{}"]
+    return None
+
+
+_XARGS_VALUE_OPTS = {"-I", "-i", "-n", "-L", "-P", "-s", "-d", "-E", "-a"}
+
+
+def _xargs_payload(args: list[str]) -> list[str]:
+    """Trailing command tokens after xargs options (skip opts and their values)."""
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        i += 2 if args[i] in _XARGS_VALUE_OPTS and i + 1 < len(args) else 1
+    return args[i:]
+
+
+# awk pipe to/from an external command: ``print ... | "cmd"`` or ``"cmd" | getline``.
+# Restricted to a pipe adjacent to a quote so it does not fire on regex
+# alternation (``/foo|bar/``), which would only over-prompt but is avoidable.
+_AWK_PIPE_RE = re.compile(r"""\|\s*["']|["']\s*\|\s*getline""")
+
+
+def _awk_shell_reason(args: list[str]) -> str | None:
+    """Reason string if an awk program shells out, else None.
+
+    awk can escape its sandbox three ways, all opaque to the token parser: a
+    ``system("...")`` call, a pipe to/from an external command, or output
+    redirection (``> file``). The program text survives shlex as one token, so
+    detection is substring/regex based.
+    """
+    program = " ".join(args)
+    if "system(" in program or ">" in program:
+        return "awk system/redirection"
+    if _AWK_PIPE_RE.search(program):
+        return "awk pipe to command"
+    return None
+
+
+# Sub-namespaces under ``uv`` that gate a second-level verb: ``uv pip install``,
+# ``uv tool install``, ``uv python install``.  Other first non-option tokens
+# (``add``, ``sync``, …) are top-level verbs checked directly against
+# ``_PACKAGE_MANAGER_MUTATIONS`` via the existing single-level path.
+_UV_SUBNAMESPACES = {"pip", "tool", "python"}
+# ``uv run`` options that consume a following separate word. Their value is a
+# version/package/path/url/setting — never the wrapped command — so it must be
+# skipped along with the flag, or the value (e.g. ``3.12``) is mistaken for the
+# command and the real command after it slips by. Boolean flags (``--no-sync``,
+# ``--isolated``, ``--frozen``, …) are skipped by the generic leading-``-`` scan.
+#
+# SAFETY INVARIANT: only list options that GENUINELY take a separate-word value.
+# A boolean flag wrongly listed here would skip the real command as its "value"
+# and OPEN a bypass (``uv run <wrongly-listed-bool> rm -rf`` → ``rm`` swallowed).
+# An option omitted here is treated as boolean (skip the flag only), which is the
+# safe failure mode. This set is the value-taking (``<VALUE>``-placeholder) subset
+# of ``uv run --help``; refresh it if uv's option surface changes.
+_UV_RUN_VALUE_OPTS = {
+    "--allow-insecure-host",
+    "--cache-dir",
+    "--color",
+    "--config-file",
+    "--config-setting",
+    "-C",
+    "--config-settings-package",
+    "--default-index",
+    "--directory",
+    "--env-file",
+    "--exclude-newer",
+    "--exclude-newer-package",
+    "--extra",
+    "--extra-index-url",
+    "--find-links",
+    "-f",
+    "--fork-strategy",
+    "--group",
+    "--index",
+    "--index-strategy",
+    "--index-url",
+    "-i",
+    "--keyring-provider",
+    "--link-mode",
+    "--no-binary-package",
+    "--no-build-isolation-package",
+    "--no-build-package",
+    "--no-extra",
+    "--no-group",
+    "--only-group",
+    "--package",
+    "--prerelease",
+    "--project",
+    "--python",
+    "-p",
+    "--python-platform",
+    "--refresh-package",
+    "--reinstall-package",
+    "--resolution",
+    "--upgrade-package",
+    "-P",
+    "--with",
+    "-w",
+    "--with-editable",
+    "--with-requirements",
+}
+
+
+def _uv_strip_global_opts(args: list[str]) -> list[str]:
+    """Drop uv's *global* options (and the values of value-taking ones) that
+    precede the subcommand, so ``uv --directory repo run rm`` resolves to
+    ``run rm`` and the wrapped command is not hidden behind a global flag's
+    value (``uv --directory repo run rm -rf /`` must still classify as ``rm``).
+
+    Reuses ``_UV_RUN_VALUE_OPTS`` (a superset of uv's value-taking global options)
+    to decide which flags consume a following word; ``--opt=value`` carries its
+    value inline and is consumed as one token.
+    """
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        if args[i] == "--":
+            i += 1
+            break
+        if "=" not in args[i] and args[i] in _UV_RUN_VALUE_OPTS and i + 1 < len(args):
+            i += 2
+        else:
+            i += 1
+    return args[i:]
+
+
+def _uv_run_payload(args: list[str]) -> list[str] | None:
+    """For ``uv run [opts] <cmd> ...``, return the wrapped command tokens, else ``None``.
+
+    ``uv run``'s own options precede the wrapped command and must be skipped, or a
+    leading option/value (``uv run --no-sync rm`` / ``uv run --python 3.12 rm``)
+    is mistaken for the command and the real ``rm`` after it bypasses the guards. A
+    ``--`` ends option parsing; value-taking options also consume their next word.
+    """
+    nonopts = [i for i, a in enumerate(args) if not a.startswith("-")]
+    if not (nonopts and args[nonopts[0]] == "run"):
+        return None
+    rest = args[nonopts[0] + 1 :]
+    i = 0
+    while i < len(rest) and rest[i].startswith("-"):
+        if rest[i] == "--":
+            i += 1
+            break
+        i += 2 if rest[i] in _UV_RUN_VALUE_OPTS and i + 1 < len(rest) else 1
+    return rest[i:]
+
+
 # --- Destructive (irreversible) classification -----------------------------
 # Distinct from "mutating": `mkdir`/`touch` mutate the workspace but are easy to
 # undo, so they only matter for read-only profile enforcement. A *destructive*
@@ -600,6 +840,7 @@ def _canonical_interpreter_name(base: str) -> str:
     subset must stay in sync with ``_OPAQUE_INTERPRETERS`` (identical today) for
     version-suffixed interpreters to be classified as mutating.
     """
+    base = base.lower()
     if base in _OPAQUE_INTERPRETERS:
         return base
     stripped = base.rstrip("0123456789.")
@@ -695,6 +936,8 @@ def _segment_destructive_reason(tokens: list[str]) -> str | None:
     if base in ("dd", "truncate"):
         return f"{base} raw write"
     if base == "git":
+        if _has_unsafe_git_global_option(args):
+            return "unsafe git option (-c/--config-env/--exec-path)"
         subcommand = _git_subcommand(args)
         if subcommand == "push" and any(
             arg in ("--force", "-f") or arg.startswith("--force-with-lease") for arg in args
@@ -715,4 +958,16 @@ def _segment_destructive_reason(tokens: list[str]) -> str | None:
     # Inline-code interpreters are opaque to the token parser -> deliberate.
     if base in _OPAQUE_INTERPRETERS and any(arg in _INLINE_CODE_FLAGS for arg in args):
         return f"opaque inline code via {base}"
+    # awk that shells out is equally opaque: the embedded command could be
+    # irreversible (system("rm -rf ...")), so the backstop must re-prompt.
+    if base == "awk" and _awk_shell_reason(args):
+        return "opaque shell exec via awk"
+    if base in ("find", "xargs"):
+        payload = _exec_payload(args) if base == "find" else _xargs_payload(args)
+        if payload and (r := _segment_destructive_reason(payload)):
+            return f"{base}: {r}"
+    if base == "uv":
+        run_payload = _uv_run_payload(_uv_strip_global_opts(args))
+        if run_payload and (r := _segment_destructive_reason(run_payload)):
+            return f"uv run: {r}"
     return None

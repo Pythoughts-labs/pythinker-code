@@ -548,8 +548,8 @@ def test_background_working_status_uses_pulsing_circle(monkeypatch: Any) -> None
 
     assert first != second
     assert first.startswith("● ")
-    assert "background agent" in first
-    assert "background agent" in second
+    assert "background agent" not in first  # footer owns the count
+    assert "background agent" not in second  # footer owns the count
 
 
 def test_card_toolbar_shows_codex_style_background_task_summary(monkeypatch: Any) -> None:
@@ -599,14 +599,18 @@ def test_card_toolbar_agent_label_is_light_and_context_is_muted(monkeypatch: Any
     fragments = list(prompt_session._render_bottom_toolbar())
 
     assert (f"fg:{tokens.muted}", "context: 0.0%") in fragments
+    # Footer shows mode + model only; thinking effort lives on the top border.
     assert (
         f"fg:{tokens.text or tokens.activity_label}",
-        "agent fast-model • thinking off",
+        "agent fast-model",
     ) in fragments
 
 
-def test_card_toolbar_separator_matches_thinking_prompt_color(monkeypatch: Any) -> None:
-    from pythinker_code.ui.theme import set_active_theme, thinking_frame_style
+def test_card_toolbar_separator_is_static_grey_regardless_of_effort(monkeypatch: Any) -> None:
+    # The input border no longer borrows the thinking-effort color; every
+    # separator is the one static frame grey (the effort signal moved to the
+    # top-border label instead).
+    from pythinker_code.ui.theme import set_active_theme
 
     prompt_session = _make_toolbar_session(
         model_name="fast-model", model_capabilities={"thinking"}, tips=[]
@@ -631,9 +635,73 @@ def test_card_toolbar_separator_matches_thinking_prompt_color(monkeypatch: Any) 
     fragments = list(prompt_session._render_bottom_toolbar())
 
     assert fragments[0] == (
-        thinking_frame_style("xhigh", theme="dark"),
+        "class:compact-input.frame",
         shell_prompt._prompt_rule(120),
     )
+
+
+def test_input_top_border_shows_effort_label() -> None:
+    from prompt_toolkit.utils import get_cwidth
+
+    from pythinker_code.ui.theme import set_active_theme, thinking_dot_style
+
+    set_active_theme("dark")
+    session = _make_toolbar_session(
+        model_name="fast-model", model_capabilities={"thinking"}, tips=[]
+    )
+    session._thinking = True
+    session._thinking_effort = "high"
+
+    fragments = session._render_input_top_border(80, "class:fallback")
+
+    # Border stays static grey; effort color lives only in the trailing dot.
+    assert fragments[0][0] == "class:compact-input.frame"
+    assert fragments[-2] == (thinking_dot_style("high", theme="dark"), "● ")
+    assert fragments[-1] == ("class:compact-input.effort", "high")
+    # The whole line stays within the rule budget so it never wraps.
+    total = sum(get_cwidth(ch) for _, text in fragments for ch in text)
+    assert total == len(shell_prompt._prompt_rule(80))
+
+
+def test_input_top_border_hides_effort_label_for_native_and_nonthinking() -> None:
+    # Native-thinking model (always_thinking, no user dial): no label.
+    native = _make_toolbar_session(
+        model_name="MiniMax M2.7", model_capabilities={"always_thinking"}, tips=[]
+    )
+    assert native._effort_label_fragments() == []
+    assert native._render_input_top_border(80, "class:fallback") == [
+        ("class:compact-input.frame", shell_prompt._prompt_rule(80))
+    ]
+
+    # Non-thinking model: no label either.
+    plain = _make_toolbar_session(model_name="fast-model", model_capabilities=set(), tips=[])
+    assert plain._effort_label_fragments() == []
+    assert plain._render_input_top_border(80, "class:fallback") == [
+        ("class:compact-input.frame", shell_prompt._prompt_rule(80))
+    ]
+
+
+def test_input_top_border_falls_back_to_plain_rule_when_too_narrow() -> None:
+    from prompt_toolkit.utils import get_cwidth
+
+    from pythinker_code.ui.theme import set_active_theme
+
+    set_active_theme("dark")
+    session = _make_toolbar_session(
+        model_name="fast-model", model_capabilities={"thinking"}, tips=[]
+    )
+    session._thinking = True
+    session._thinking_effort = "high"
+
+    # At this width the rule is too short for the label plus its gap; appending
+    # the flushed-right label would overflow the rule and wrap the line, so the
+    # border must collapse to the plain full-width rule instead.
+    narrow = 6
+    fragments = session._render_input_top_border(narrow, "class:fallback")
+
+    assert fragments == [("class:compact-input.frame", shell_prompt._prompt_rule(narrow))]
+    total = sum(get_cwidth(ch) for _, text in fragments for ch in text)
+    assert total == len(shell_prompt._prompt_rule(narrow))
 
 
 def test_card_toolbar_separator_uses_standard_frame_for_non_thinking_models(
@@ -684,27 +752,28 @@ def test_bottom_toolbar_drops_agent_badge_before_bash_when_narrow(monkeypatch: A
 
 
 def test_mode_shows_full_with_model_name_on_wide_terminal(monkeypatch: Any) -> None:
-    """On a wide terminal the full mode string includes model and thinking effort."""
+    """On a wide terminal the full mode string includes the model, but no effort."""
     session = _make_toolbar_session(model_name="fast-model")
     session._thinking = False
     lines = _render_toolbar_lines(session, 80, monkeypatch)
     assert "fast-model" in lines[1], f"model name missing on wide terminal: {lines[1]!r}"
-    assert "thinking off" in lines[1], f"thinking effort missing on wide terminal: {lines[1]!r}"
+    # Thinking effort is no longer shown in the footer (moved to the top border).
+    assert "thinking" not in lines[1], f"footer should not show thinking effort: {lines[1]!r}"
 
 
-def test_native_reasoning_model_does_not_show_thinking_off(monkeypatch: Any) -> None:
-    session = _make_toolbar_session(
+def test_footer_omits_thinking_effort_for_all_models(monkeypatch: Any) -> None:
+    # Neither controllable nor native-thinking models surface effort in the
+    # footer anymore — the effort signal is the top-border label only.
+    native = _make_toolbar_session(
         model_name="MiniMax M2.7",
         model_capabilities={"always_thinking"},
     )
-    session._thinking = False
-    session._thinking_effort = "off"
-
-    lines = _render_toolbar_lines(session, 100, monkeypatch)
-
+    native._thinking = False
+    native._thinking_effort = "off"
+    lines = _render_toolbar_lines(native, 100, monkeypatch)
     assert "MiniMax M2.7" in lines[1]
-    assert "native reasoning" in lines[1]
-    assert "thinking off" not in lines[1]
+    assert "native reasoning" not in lines[1]
+    assert "thinking" not in lines[1]
 
 
 def test_toolbar_mode_is_light_and_secondary_text_is_muted(monkeypatch: Any) -> None:
@@ -717,17 +786,17 @@ def test_toolbar_mode_is_light_and_secondary_text_is_muted(monkeypatch: Any) -> 
 
     assert (
         f"fg:{tokens.text or tokens.activity_label}",
-        "agent (fast-model • thinking off)",
+        "agent (fast-model)",
     ) in fragments
     assert (f"fg:{tokens.muted} bold", "?") in fragments
     assert (f"fg:{tokens.muted}", ": shortcuts") in fragments
 
 
 def test_mode_drops_model_name_on_narrow_terminal(monkeypatch: Any) -> None:
-    """On a terminal too narrow for the full mode string, model name is dropped but
-    the thinking effort is still shown."""
-    # "agent (a-very-long-model-name-that-is-40-chars • high)" is ~55 cols;
-    # a 30-col terminal forces mid-level degradation.
+    """On a terminal too narrow for "agent (model)", the model name is dropped to
+    the bare mode and the footer never overflows."""
+    # "agent (a-very-long-model-name-that-is-40-chars)" is ~47 cols; a 30-col
+    # terminal can't fit it, so it degrades to the bare mode name.
     long_model = "a-very-long-model-name-that-is-40-chars"
     session = _make_toolbar_session(model_name=long_model)
     session._thinking = True
@@ -735,7 +804,7 @@ def test_mode_drops_model_name_on_narrow_terminal(monkeypatch: Any) -> None:
     assert long_model not in lines[1], (
         f"model name should be dropped on 30-col terminal: {lines[1]!r}"
     )
-    assert "high" in lines[1], f"thinking effort should still appear at mid level: {lines[1]!r}"
+    assert "agent" in lines[1], f"bare mode name should remain: {lines[1]!r}"
     assert _display_width(lines[1]) <= 30
 
 

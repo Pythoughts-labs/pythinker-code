@@ -39,11 +39,11 @@ from pythinker_code.telemetry import track
 # the buffer; the *full* scrubbed stack is already in Sentry/Bugsink.
 
 _RECENT_BUFFER_SIZE = 10
-_ABSOLUTE_PATH_RE = re.compile(r"(?<!\w)(?:/[\w .~+@%=-]+)+|[A-Za-z]:\\(?:[^\\\r\n]+\\?)+")
+ABSOLUTE_PATH_RE = re.compile(r"(?<!\w)(?:/[\w .~+@%=-]+)+|[A-Za-z]:\\(?:[^\\\r\n]+\\?)+")
 
 
 def _redact_recent_message(message: str) -> str:
-    return _ABSOLUTE_PATH_RE.sub("<path>", message)[:200]
+    return ABSOLUTE_PATH_RE.sub("<path>", message)[:200]
 
 
 @dataclass(frozen=True, slots=True)

@@ -100,11 +100,11 @@ def test_loading_marker_pulses_muted_transcript_dot_then_finishes_green():
     hidden = loading_marker(now=0.9)
     done = loading_marker(done=True)
 
-    assert visible.plain == "● "
+    assert visible.plain == "⏺ "
     assert visible.style == tui_rich_style("muted")
     assert hidden.plain == "  "
     assert hidden.style == tui_rich_style("muted")
-    assert done.plain == "● "
+    assert done.plain == "⏺ "
     assert done.style == tui_rich_style("success")
 
 
@@ -119,7 +119,7 @@ def test_read_renders_path_and_range():
         {"path": "/repo/src/foo.py", "line_offset": 10, "n_lines": 30},
         output="line1\nline2",
     )
-    assert "● Read " in rendered
+    assert "⏺ Read(" in rendered
     assert "src/foo.py" in rendered
     assert ":10-39" in rendered
     assert "Read 1 file (ctrl+o to expand)" in rendered
@@ -207,7 +207,7 @@ def test_write_shows_path_and_content_preview():
         {"path": "/repo/new.py", "content": "def f():\n    return 1\n"},
         output="Successfully wrote",
     )
-    assert "● Write new.py" in rendered
+    assert "⏺ Write(new.py)" in rendered
     assert "Wrote 2 lines to new.py" in rendered
     assert "1 def f():" in rendered
 
@@ -395,7 +395,7 @@ def test_grep_renders_pattern_and_path():
         {"pattern": "def\\s+", "path": "/repo/src", "glob": "*.py"},
         output="src/foo.py:10: def hello():",
     )
-    assert "● Search " in rendered
+    assert "⏺ Search(" in rendered
     assert "/def\\s+/" in rendered
     assert "src" in rendered
     assert "*.py" in rendered
@@ -421,7 +421,7 @@ def test_invalid_empty_grep_call_names_missing_pattern():
         ),
         is_error=True,
     )
-    assert "✘ Search <missing pattern> in ." in rendered
+    assert "✘ Search(<missing pattern> in .)" in rendered
     assert "Error searching files" in rendered
     assert "Search ... in ." not in rendered
 
@@ -437,7 +437,7 @@ def test_glob_renders_pattern_and_directory():
         {"pattern": "**/*.py", "directory": "/repo/src"},
         output="src/a.py\nsrc/b.py",
     )
-    assert "● Find " in rendered
+    assert "⏺ Find(" in rendered
     assert "**/*.py" in rendered
     assert "Found 2 files" in rendered
 
@@ -449,7 +449,7 @@ def test_glob_renders_pattern_and_directory():
 
 def test_shell_renders_command_and_output_under_response_gutter():
     rendered = _render("Shell", {"command": "ls -la", "timeout": 60}, output="total 0")
-    assert "● Bash ls -la" in rendered
+    assert "⏺ Bash(ls -la)" in rendered
     assert "total 0" in rendered
     assert "⎿" in rendered
 
@@ -537,7 +537,7 @@ def test_shell_error_uses_structured_exit_code_when_available():
 def test_shell_uses_comment_label_for_long_script():
     command = "# build assets\n" + "\n".join(f"echo {i}" for i in range(5))
     rendered = _render("Shell", {"command": command, "timeout": 60}, output="ok")
-    assert "● Bash build assets" in rendered
+    assert "⏺ Bash(build assets)" in rendered
     assert "echo 0" not in rendered
 
 
@@ -559,23 +559,23 @@ def test_shell_background_marker():
 
 def test_running_tool_headers_do_not_duplicate_status_bullets():
     cases = [
-        ("Shell", {"command": "ls packages/pythinker-review/AGENTS.md"}, "Bash "),
-        ("ReadFile", {"path": "/repo/src/foo.py"}, "Read "),
-        ("WriteFile", {"path": "/repo/src/foo.py", "content": "x"}, "Write "),
+        ("Shell", {"command": "ls packages/pythinker-review/AGENTS.md"}, "Bash("),
+        ("ReadFile", {"path": "/repo/src/foo.py"}, "Read("),
+        ("WriteFile", {"path": "/repo/src/foo.py", "content": "x"}, "Write("),
         (
             "StrReplaceFile",
             {"path": "/repo/src/foo.py", "edit": {"old": "a", "new": "b"}},
-            "Update ",
+            "Update(",
         ),
-        ("Grep", {"pattern": "needle", "path": "/repo"}, "Search "),
-        ("Glob", {"pattern": "**/*.py", "directory": "/repo"}, "Find "),
-        ("ReadSkill", {"skill_name": "review-pr"}, "Skill "),
-        ("FetchURL", {"url": "https://example.com"}, "Fetch "),
-        ("SearchWeb", {"query": "python"}, "WebSearch "),
+        ("Grep", {"pattern": "needle", "path": "/repo"}, "Search("),
+        ("Glob", {"pattern": "**/*.py", "directory": "/repo"}, "Find("),
+        ("ReadSkill", {"skill_name": "review-pr"}, "Skill("),
+        ("FetchURL", {"url": "https://example.com"}, "Fetch("),
+        ("SearchWeb", {"query": "python"}, "WebSearch("),
         (
             "Agent",
             {"description": "audit", "prompt": "check", "subagent_type": "explore"},
-            "Agent ",
+            "Agent(",
         ),
         (
             "RunAgents",
@@ -583,20 +583,20 @@ def test_running_tool_headers_do_not_duplicate_status_bullets():
                 "summary": "audit",
                 "agents": [{"name": "scan", "prompt": "check", "subagent_type": "explore"}],
             },
-            "RunAgents ",
+            "RunAgents(",
         ),
-        ("AskUserQuestion", {"questions": [{"question": "Continue?"}]}, "Ask "),
+        ("AskUserQuestion", {"questions": [{"question": "Continue?"}]}, "Ask("),
         ("Think", {"thought": "check"}, "Think"),
-        ("TaskList", {"active_only": True}, "Tasks "),
-        ("TaskOutput", {"task_id": "abc"}, "TaskOutput "),
-        ("TaskStop", {"task_id": "abc"}, "TaskStop "),
-        ("EnterPlanMode", {}, "Plan "),
-        ("ExitPlanMode", {"options": [{"label": "Continue"}]}, "Plan "),
+        ("TaskList", {"active_only": True}, "Tasks("),
+        ("TaskOutput", {"task_id": "abc"}, "TaskOutput("),
+        ("TaskStop", {"task_id": "abc"}, "TaskStop("),
+        ("EnterPlanMode", {}, "Plan("),
+        ("ExitPlanMode", {"options": [{"label": "Continue"}]}, "Plan("),
     ]
     for tool, args, label in cases:
         rendered = _render_running(tool, args, width=64)
         assert label in rendered
-        assert "● ●" not in rendered
+        assert "⏺ ⏺" not in rendered
 
 
 def test_streaming_missing_args_use_preparing_rows_not_tool_ellipsis_placeholders():
@@ -634,7 +634,7 @@ def test_invalid_empty_shell_call_names_missing_command():
         ),
         is_error=True,
     )
-    assert "✘ Bash <missing command>" in rendered
+    assert "✘ Bash(<missing command>)" in rendered
     assert "$ ..." not in rendered
 
 
@@ -706,7 +706,7 @@ def test_generic_renderer_summarizes_arg_keys_without_values():
         },
     )
 
-    assert "UnknownTool 5 args:" in rendered
+    assert "UnknownTool(5 args:" in rendered
     assert "content" in rendered
     assert "path" in rendered
     assert "SECRET PAYLOAD" not in rendered
@@ -728,7 +728,7 @@ def test_read_skill_renders_as_skill_with_name_only():
         output="skill: review-pr\npath: /repo/skills/review-pr/SKILL.md\n\n# Review PR",
     )
 
-    assert "● Skill review-pr" in rendered
+    assert "⏺ Skill(review-pr)" in rendered
     assert "ReadSkill" not in rendered
     assert "arg:" not in rendered
     assert "# Review PR" in rendered
@@ -768,7 +768,7 @@ def test_agent_renders_type_and_description_without_prompt_preview():
         },
         output="Plan ready",
     )
-    assert "● Agent " in rendered
+    assert "⏺ Agent(" in rendered
     assert "code-architect" in rendered
     assert "design auth flow" in rendered
     assert "Prompt: Design the OAuth flow with PKCE" not in rendered
@@ -818,7 +818,7 @@ def test_run_agents_renders_compact_professional_summary():
         output=(
             "tool_status: success\n"
             "orchestration_approval: requested\n"
-            "orchestration_fingerprint: 13741c0a417d\n"
+            "orchestration_fingerprint: 9ab49da6d522\n"
             "summary: Run code and security scans on current diff\n"
             "mode: foreground\n"
             "agent_count: 2\n"
@@ -848,7 +848,7 @@ def test_run_agents_renders_compact_professional_summary():
         ),
         width=120,
     )
-    assert "● RunAgents " in rendered
+    assert "⏺ RunAgents(" in rendered
     assert "2 agents" in rendered
     assert "foreground" in rendered
     assert "code_scan" in rendered
@@ -881,8 +881,8 @@ def test_ask_user_renders_question_and_options():
             ]
         },
     )
-    assert "● Ask 1 question" in rendered
-    assert f"● Ask 1 question\n\n{QUESTION_MARKER} Which auth method?" in rendered
+    assert "⏺ Ask(1 question)" in rendered
+    assert f"⏺ Ask(1 question)\n\n{QUESTION_MARKER} Which auth method?" in rendered
     assert "OAuth" in rendered
     assert "API key" in rendered
 
@@ -908,7 +908,7 @@ def test_ask_user_renders_single_question_object_without_invalid_badge():
         },
     )
 
-    assert "● Ask 1 question" in rendered
+    assert "⏺ Ask(1 question)" in rendered
     assert "<invalid>" not in rendered
     assert "How should independent analyses run?" in rendered
     assert "Run concurrently (Recommended)" in rendered
@@ -921,7 +921,7 @@ def test_ask_user_renders_single_question_object_without_invalid_badge():
 
 def test_think_renders_thought_body():
     rendered = _render("Think", {"thought": "First, check the file layout.\nThen draft a fix."})
-    assert "● Think" in rendered
+    assert "⏺ Think" in rendered
     assert "First, check the file layout." in rendered
 
 
@@ -974,7 +974,7 @@ def test_todo_infers_nested_items_from_leading_spaces():
 
 def test_fetch_renders_url():
     rendered = _render("FetchURL", {"url": "https://example.com/page"}, output="<html>...")
-    assert "● Fetch " in rendered
+    assert "⏺ Fetch(" in rendered
     assert "example.com" in rendered
     assert "Received 9 bytes" in rendered
 
@@ -985,7 +985,7 @@ def test_search_renders_query_and_extras():
         {"query": "python typing", "limit": 10, "include_content": True},
         output="result 1",
     )
-    assert "● WebSearch " in rendered
+    assert "⏺ WebSearch(" in rendered
     assert "python typing" in rendered
     assert "limit 10" in rendered
     assert "with content" in rendered
@@ -1049,7 +1049,7 @@ def test_search_all_results_filtered_reports_zero():
 
 def test_task_list_renders_active_flag():
     rendered = _render("TaskList", {"active_only": True}, output="task-1: running")
-    assert "● Tasks active" in rendered
+    assert "⏺ Tasks(active)" in rendered
 
 
 def test_task_output_renders_id_and_block_flag():
@@ -1058,14 +1058,14 @@ def test_task_output_renders_id_and_block_flag():
         {"task_id": "abc-123", "block": True, "timeout": 60},
         output="logs...",
     )
-    assert "● TaskOutput " in rendered
+    assert "⏺ TaskOutput(" in rendered
     assert "abc-123" in rendered
     assert "block" in rendered
 
 
 def test_task_stop_renders_id():
     rendered = _render("TaskStop", {"task_id": "abc-123", "reason": "user requested"})
-    assert "● TaskStop " in rendered
+    assert "⏺ TaskStop(" in rendered
     assert "abc-123" in rendered
 
 
@@ -1076,7 +1076,7 @@ def test_task_stop_renders_id():
 
 def test_enter_plan_mode_renders():
     rendered = _render("EnterPlanMode", {})
-    assert "● Plan entering" in rendered
+    assert "⏺ Plan(entering)" in rendered
 
 
 def test_exit_plan_mode_renders_options():
@@ -1089,7 +1089,7 @@ def test_exit_plan_mode_renders_options():
             ]
         },
     )
-    assert "● Plan exiting" in rendered
+    assert "⏺ Plan(exiting)" in rendered
     assert "Refactor first" in rendered
     assert "Add tests first" in rendered
 
@@ -1103,7 +1103,7 @@ def test_card_renders_compact_without_outer_padding():
     """Compact tool cards should start at the title and avoid extra outer padding."""
     rendered = _render("Glob", {"pattern": "*.py", "directory": "/repo"}, output="foo.py")
     lines = [line.strip() for line in rendered.splitlines()]
-    assert lines[0] == "● Find *.py in /repo"
+    assert lines[0] == "⏺ Find(*.py in /repo)"
     assert lines[-1] == "⎿  Found 1 file ctrl+o expand"
 
 

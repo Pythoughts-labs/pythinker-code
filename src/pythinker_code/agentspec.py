@@ -129,7 +129,13 @@ def load_agent_spec(agent_file: Path) -> ResolvedAgentSpec:
     )
 
 
-def _load_agent_spec(agent_file: Path) -> AgentSpec:
+def _load_agent_spec(agent_file: Path, _visited: set[Path] | None = None) -> AgentSpec:
+    resolved = agent_file.resolve()
+    if _visited is None:
+        _visited = set()
+    if resolved in _visited:
+        raise AgentSpecError(f"Cyclic agent extend chain detected at {agent_file}")
+    _visited.add(resolved)
     if not agent_file.exists():
         raise AgentSpecError(f"Agent spec file not found: {agent_file}")
     if not agent_file.is_file():
@@ -160,7 +166,7 @@ def _load_agent_spec(agent_file: Path) -> AgentSpec:
             base_agent_file = DEFAULT_AGENT_FILE
         else:
             base_agent_file = (agent_file.parent / agent_spec.extend).absolute()
-        base_agent_spec = _load_agent_spec(base_agent_file)
+        base_agent_spec = _load_agent_spec(base_agent_file, _visited)
         if not isinstance(agent_spec.name, Inherit):
             base_agent_spec.name = agent_spec.name
         if not isinstance(agent_spec.system_prompt_path, Inherit):
