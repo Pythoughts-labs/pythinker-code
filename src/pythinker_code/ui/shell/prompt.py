@@ -2477,7 +2477,11 @@ class CustomPromptSession:
             return [(border_style, rule)]
         gap = 2
         label_width = sum(get_cwidth(ch) for _, text in label for ch in text)
-        rule_width = max(0, len(rule) - gap - label_width)
+        if len(rule) <= gap + label_width:
+            # Too narrow for the label plus its gap; a flushed-right label here
+            # would overflow and wrap, so fall back to the plain full-width rule.
+            return [(border_style, rule)]
+        rule_width = len(rule) - gap - label_width
         return [
             (border_style, "─" * rule_width + " " * gap),
             *label,

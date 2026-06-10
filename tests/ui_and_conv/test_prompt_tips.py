@@ -681,6 +681,29 @@ def test_input_top_border_hides_effort_label_for_native_and_nonthinking() -> Non
     ]
 
 
+def test_input_top_border_falls_back_to_plain_rule_when_too_narrow() -> None:
+    from prompt_toolkit.utils import get_cwidth
+
+    from pythinker_code.ui.theme import set_active_theme
+
+    set_active_theme("dark")
+    session = _make_toolbar_session(
+        model_name="fast-model", model_capabilities={"thinking"}, tips=[]
+    )
+    session._thinking = True
+    session._thinking_effort = "high"
+
+    # At this width the rule is too short for the label plus its gap; appending
+    # the flushed-right label would overflow the rule and wrap the line, so the
+    # border must collapse to the plain full-width rule instead.
+    narrow = 6
+    fragments = session._render_input_top_border(narrow, "class:fallback")
+
+    assert fragments == [("class:compact-input.frame", shell_prompt._prompt_rule(narrow))]
+    total = sum(get_cwidth(ch) for _, text in fragments for ch in text)
+    assert total == len(shell_prompt._prompt_rule(narrow))
+
+
 def test_card_toolbar_separator_uses_standard_frame_for_non_thinking_models(
     monkeypatch: Any,
 ) -> None:
