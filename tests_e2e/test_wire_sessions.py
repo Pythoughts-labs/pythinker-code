@@ -79,7 +79,7 @@ def test_session_files_created(tmp_path) -> None:
     assert context_file.stat().st_size > 0
     assert wire_file.stat().st_size > 0
     assert sorted(p.name for p in session_dir.iterdir()) == snapshot(
-        ["context.jsonl", "external_agents", "state.json", "wire.jsonl"]
+        [".owner.lock", "context.jsonl", "external_agents", "state.json", "wire.jsonl"]
     )
 
 

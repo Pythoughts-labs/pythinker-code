@@ -179,6 +179,29 @@ class SSHHost:
         await self._sftp.chdir(str(path))
         self._cwd = await self._sftp.realpath(".")
 
+    async def realpath(self, path: StrOrHostPath) -> HostPath:
+        """Resolve symlinks and return the real path via SFTP realpath.
+
+        ``os.path.realpath`` tolerates a missing leaf (resolves the existing
+        parent and re-appends the rest); strict SFTP servers instead error on
+        nonexistent paths, which would break e.g. WriteFile creating a new
+        file. Mirror the local tolerance by resolving the deepest existing
+        ancestor and re-appending the missing suffix.
+        """
+        parts: list[str] = []
+        candidate = posixpath.normpath(str(path))
+        while True:
+            try:
+                real = await self._sftp.realpath(candidate)
+            except asyncssh.SFTPError:
+                parent = posixpath.dirname(candidate)
+                if parent == candidate:  # filesystem root failed: give up
+                    raise OSError(f"realpath failed for {path}") from None
+                parts.append(posixpath.basename(candidate))
+                candidate = parent
+                continue
+            return HostPath(posixpath.join(real, *reversed(parts)) if parts else real)
+
     async def stat(
         self,
         path: StrOrHostPath,

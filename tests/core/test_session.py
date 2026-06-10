@@ -711,3 +711,25 @@ async def test_exception_cleanup_targets_current_not_previous(
 
     assert not session_b_dir.exists(), "Empty session B from failed _run() should be deleted"
     assert session_a_dir.exists(), "Non-empty session A from previous iteration must be preserved"
+
+
+async def test_session_ownership_lock(isolated_share_dir: Path, work_dir: HostPath):
+    """At most one writer per session: a second open (fresh fd — flock treats it
+    as a separate owner even in-process) must be refused until release."""
+    session = await Session.create(work_dir)
+    assert session.acquire_ownership()
+    # Idempotent for the holder.
+    assert session.acquire_ownership()
+
+    # A second Session object for the same id models a second process.
+    other = await Session.find(work_dir, session.id)
+    assert other is not None
+    assert not other.acquire_ownership()
+
+    session.release_ownership()
+    assert other.acquire_ownership()
+    other.release_ownership()
+
+    # The lock file must stay on disk (unlinking would split the lock
+    # across inodes for concurrent waiters).
+    assert (session.dir / ".owner.lock").exists()

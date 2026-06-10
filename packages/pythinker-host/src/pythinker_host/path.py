@@ -118,6 +118,10 @@ class HostPath:
             return home
         return home.joinpath(*parts[1:])
 
+    async def realpath(self) -> HostPath:
+        """Resolve symlinks and return the real absolute path."""
+        return await pythinker_host.realpath(self)
+
     async def stat(self, follow_symlinks: bool = True) -> pythinker_host.StatResult:
         """Return an os.stat_result for the path."""
         return await pythinker_host.stat(self, follow_symlinks=follow_symlinks)

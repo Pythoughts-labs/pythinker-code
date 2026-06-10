@@ -144,9 +144,15 @@ MODELS_DEV_ANTHROPIC_NPM = "@ai-sdk/anthropic"
 
 
 def _native_thinking_capabilities(model_id: str) -> set[ModelCapability] | None:
-    """Model families whose reasoning is built in, not controlled by Pythinker."""
+    """Model families whose reasoning is built in, not a user effort dial.
+
+    GLM, MiniMax, and Qwen reason natively (``always_thinking``): reasoning is
+    on by default with no user-facing off switch, so the effort dial and its
+    top-border label are hidden. Reasoning still flows over the Anthropic
+    ``thinking`` block on the @ai-sdk/anthropic route.
+    """
     normalized = model_id.lower().replace("_", "-")
-    if normalized.startswith(("glm-", "minimax-")):
+    if normalized.startswith(("glm-", "minimax-", "qwen")):
         return {"always_thinking"}
     return None
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from dataclasses import asdict
 from pathlib import Path
@@ -13,6 +14,12 @@ from pythinker_code.session import Session
 from pythinker_code.subagents.models import AgentInstanceRecord, AgentLaunchSpec, SubagentStatus
 from pythinker_code.utils.io import atomic_json_write
 from pythinker_code.utils.logging import logger
+
+# Conservative allowlist: blocks path separators, '..', and absolute paths while
+# remaining compatible with existing test/fixture ids (e.g. "aexisting", "alostagent").
+# The strict canonical form a[0-9a-f]{8} is always accepted; this pattern is intentionally
+# wider to avoid breaking legacy ids that never contained traversal characters.
+_AGENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 class _AgentLaunchSpecPayload(BaseModel):
@@ -79,6 +86,8 @@ class SubagentStore:
         return self._session.dir / "subagents"
 
     def instance_dir(self, agent_id: str, *, create: bool = False) -> Path:
+        if not _AGENT_ID_RE.fullmatch(agent_id):
+            raise ValueError(f"Invalid subagent id: {agent_id!r}")
         path = self.root / agent_id
         if create:
             path.mkdir(parents=True, exist_ok=True)

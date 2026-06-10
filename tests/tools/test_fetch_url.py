@@ -14,7 +14,7 @@ from inline_snapshot import snapshot
 from pythinker_core.tooling import ToolReturnValue
 
 from pythinker_code.tools.web import fetch as fetch_module
-from pythinker_code.tools.web.fetch import FetchURL, Params
+from pythinker_code.tools.web.fetch import FetchURL, Params, _validate_fetch_url
 
 from tests.tools._untrusted import unwrap_untrusted
 
@@ -23,10 +23,12 @@ from tests.tools._untrusted import unwrap_untrusted
 def _bypass_ssrf_validation(monkeypatch: pytest.MonkeyPatch) -> None:
     """The fetch tool blocks loopback / private IPs as SSRF mitigation, but
     every test in this module either talks to a localhost mock server or
-    exercises malformed-URL handling that pre-dates the validator. Disable it
-    for these unit tests; production callers still get the protection.
+    exercises malformed-URL handling that pre-dates the validator. Disable both
+    the up-front URL validator and the connector-level IP guard for these unit
+    tests; production callers still get the protection.
     """
     monkeypatch.setattr(fetch_module, "_validate_fetch_url", lambda _url, _allowed=None: None)
+    monkeypatch.setattr(fetch_module, "_ip_is_blocked", lambda _address: False)
 
 
 class MockServerFactory(Protocol):
@@ -482,3 +484,101 @@ async def test_fetch_url_redirect_loop_is_capped(
 
     assert result.is_error
     assert "too many redirects" in result.message
+
+
+def _make_addrinfo(ip_str: str):
+    """Build a minimal socket.getaddrinfo-style result for a single IP."""
+    import socket
+
+    return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", (ip_str, 80))]
+
+
+def _addrinfo_returning(ip_str: str):
+    """Return a fake socket.getaddrinfo callable that always resolves to *ip_str*."""
+
+    def _fake(*_args, **_kwargs):
+        return _make_addrinfo(ip_str)
+
+    return _fake
+
+
+async def test_fetch_url_connector_blocks_rebound_private_ip() -> None:
+    """DNS-rebinding guard: _SSRFConnector blocks a connection when _resolve_host
+    returns a private/loopback address, even if _validate_fetch_url was not called.
+
+    Fails before the fix because new_client_session uses a plain TCPConnector
+    that connects regardless of the resolved IP.
+    """
+    import aiohttp
+
+    from pythinker_code.utils.aiohttp import new_client_session
+
+    # ip_blocked returns True for any address — simulates the deny rule
+    def _always_blocked(address: str) -> bool:
+        return True
+
+    session = new_client_session(ip_blocked=_always_blocked)
+    async with session:
+        with pytest.raises(aiohttp.ClientConnectionError):
+            async with session.get("http://example.com/"):
+                pass
+
+
+async def test_fetch_url_connector_blocks_rebound_private_ip_via_resolve() -> None:
+    """Unit-guard for _SSRFConnector._resolve_host: checks the private API exists
+    and that it raises ClientConnectionError when ip_blocked returns True for a
+    resolved host record.  Fails loudly on aiohttp upgrades that change the
+    signature rather than silently disabling the guard.
+    """
+    import aiohttp
+    from unittest.mock import AsyncMock, patch
+
+    from pythinker_code.utils.aiohttp import _SSRFConnector
+
+    connector = _SSRFConnector(ssl=False, ip_blocked=lambda _: True)
+
+    fake_hosts = [{"host": "1.2.3.4", "port": 80}]
+
+    try:
+        with patch.object(
+            aiohttp.TCPConnector,
+            "_resolve_host",
+            new=AsyncMock(return_value=fake_hosts),
+        ):
+            with pytest.raises(aiohttp.ClientConnectionError):
+                await connector._resolve_host("1.2.3.4", 80)
+    finally:
+        await connector.close()
+
+
+def test_validate_fetch_url_blocks_cgnat_and_unspecified(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fail-closed SSRF guard: block CGNAT, unspecified, benchmarking, multicast;
+    allow a genuine public address."""
+
+    _BLOCKED = "Fetching private, local, link-local, multicast, or reserved addresses is blocked."
+
+    blocked_cases = [
+        ("100.64.0.1", "CGNAT (RFC 6598)"),
+        ("0.0.0.0", "unspecified address"),
+        ("198.18.0.1", "benchmarking range (RFC 2544)"),
+        ("224.0.0.1", "multicast"),
+    ]
+
+    for ip_str, label in blocked_cases:
+        monkeypatch.setattr(
+            fetch_module.socket,
+            "getaddrinfo",
+            _addrinfo_returning(ip_str),
+        )
+        result = _validate_fetch_url("http://example.com/")
+        assert result == _BLOCKED, f"Expected block for {label} ({ip_str}), got: {result!r}"
+
+    # Public address must still be allowed (no false positive).
+    monkeypatch.setattr(
+        fetch_module.socket,
+        "getaddrinfo",
+        _addrinfo_returning("8.8.8.8"),
+    )
+    assert _validate_fetch_url("http://example.com/") is None, "8.8.8.8 must not be blocked"

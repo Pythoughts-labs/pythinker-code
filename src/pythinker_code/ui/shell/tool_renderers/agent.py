@@ -344,6 +344,17 @@ def _status_style_token(status: str) -> str:
     return "muted"
 
 
+def _status_glyph(status: str) -> str:
+    normalized = status.lower()
+    if normalized in {"error", "failed", "failure"}:
+        return "✘"
+    if normalized in {"completed", "success", "succeeded"}:
+        return "✓"
+    if normalized in {"created", "starting", "running", "awaiting_approval", "launched"}:
+        return "●"
+    return "○"
+
+
 def _top_status_label(status: str) -> str:
     if status == "success":
         return "completed"
@@ -404,11 +415,14 @@ def _render_run_agents_result(
         subagent_type = agent.get("subagent_type") or agent.get("actual_subagent_type") or "coder"
         agent_status = agent.get("detail_status") or agent.get("status") or "unknown"
         task_id = agent.get("task_id")
+        status_token = _status_style_token(agent_status)
 
         row = Text(f"{branch} ", style=tui_rich_style("muted"))
-        row.append(name, style=tui_rich_style("tool_title") + RichStyle(bold=True))
-        row.append(f" · {subagent_type}", style=tui_rich_style("dim"))
-        row.append(f" · {agent_status}", style=tui_rich_style(_status_style_token(agent_status)))
+        row.append(_status_glyph(agent_status), style=tui_rich_style(status_token))
+        row.append(" ")
+        row.append(subagent_type, style=tui_rich_style("tool_title") + RichStyle(bold=True))
+        row.append(f" · {name}", style=tui_rich_style("dim"))
+        row.append(f" · {agent_status}", style=tui_rich_style(status_token))
         if task_id:
             row.append(f" · {task_id}", style=tui_rich_style("dim"))
         rows.append(row)
@@ -434,7 +448,9 @@ def _render_result(ctx: ToolRenderContext, result: ToolResultPayload) -> Rendera
             label = f"{label}: {description}"
         line = _subagent_loader(ctx)
         line.append(label, style=tui_rich_style("accent") + RichStyle(bold=True))
-        return Group(line, fg("dim", f"status: {background_status}"))
+        # Hang-indent the detail row under the label (past the 2-cell marker)
+        # so the block nests cleanly inside the result gutter.
+        return Group(line, fg("dim", f"  status: {background_status}"))
 
     body, remaining = format_lines_block(
         result.text,

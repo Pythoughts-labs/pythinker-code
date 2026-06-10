@@ -242,11 +242,14 @@ def run_web_server(
 
     import uvicorn
 
-    from pythinker_code.utils.server import print_banner
+    from pythinker_code.utils.server import PYTHINKER_BANNER_ART, print_banner
 
     public_mode = not is_local_host(host)
     parsed_allowed_origins = normalize_allowed_origins(allowed_origins)
-    auto_populate_origins = public_mode and not parsed_allowed_origins
+    # Always auto-populate when no explicit origins were given: with token auth
+    # enabled the origin check is enforced, and an empty allowlist would reject
+    # every request that carries an Origin header (WebSockets always do).
+    auto_populate_origins = not parsed_allowed_origins
 
     if restrict_sensitive_apis is None:
         # Only restrict sensitive APIs in public mode (non-LAN-only)
@@ -299,7 +302,7 @@ def run_web_server(
         else:
             # Explicit host specified: only add that host
             auto_origins.append(format_url(host, actual_port))
-        parsed_allowed_origins = auto_origins
+        parsed_allowed_origins = list(dict.fromkeys(auto_origins))
 
     if parsed_allowed_origins:
         os.environ[ENV_ALLOWED_ORIGINS] = ",".join(parsed_allowed_origins)
@@ -352,12 +355,7 @@ def run_web_server(
         thread.start()
 
     banner_lines = [
-        "<center>██╗  ██╗██╗███╗   ███╗██╗     ██████╗ ██████╗ ██████╗ ███████╗",
-        "<center>██║ ██╔╝██║████╗ ████║██║    ██╔════╝██╔═══██╗██╔══██╗██╔════╝",
-        "<center>█████╔╝ ██║██╔████╔██║██║    ██║     ██║   ██║██║  ██║█████╗  ",
-        "<center>██╔═██╗ ██║██║╚██╔╝██║██║    ██║     ██║   ██║██║  ██║██╔══╝  ",
-        "<center>██║  ██╗██║██║ ╚═╝ ██║██║    ╚██████╗╚██████╔╝██████╔╝███████╗",
-        "<center>╚═╝  ╚═╝╚═╝╚═╝     ╚═╝╚═╝     ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝",
+        *PYTHINKER_BANNER_ART,
         "",
         "<center>WEB UI (Technical Preview)",
         "",

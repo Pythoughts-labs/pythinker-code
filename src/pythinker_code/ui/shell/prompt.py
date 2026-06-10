@@ -72,7 +72,7 @@ from pythinker_code.ui.shell.glyphs import (
     TRANSCRIPT_PROMPT_MARKER,
     TRANSCRIPT_TOOL_GUTTER,
 )
-from pythinker_code.ui.shell.motion import shimmer_prompt_fragments
+from pythinker_code.ui.shell.motion import blink_visible, shimmer_prompt_fragments
 from pythinker_code.ui.shell.placeholders import (
     PromptPlaceholderManager,
     normalize_pasted_text,
@@ -80,7 +80,7 @@ from pythinker_code.ui.shell.placeholders import (
 )
 from pythinker_code.ui.shell.spacing import ensure_prompt_newline
 from pythinker_code.ui.shell.spinner_words import spinner_message
-from pythinker_code.ui.theme import get_prompt_style, get_toolbar_colors, thinking_frame_style
+from pythinker_code.ui.theme import get_prompt_style, get_toolbar_colors, thinking_dot_style
 from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
 from pythinker_code.ui.tui_config import is_card_style
 from pythinker_code.utils.clipboard import (
@@ -2441,23 +2441,57 @@ class CustomPromptSession:
     def _prompt_separator_style(self, fallback: str) -> str:
         if getattr(self, "_mode", PromptMode.AGENT) != PromptMode.AGENT:
             return fallback
-        if not self._supports_thinking_effort():
-            # Non-effort models use the standard input frame color (#3A506D in dark mode)
-            # instead of borrowing a thinking level color.
-            return "class:compact-input.frame"
-        level = self._current_thinking_effort()
-        return thinking_frame_style(level) or fallback
+        # The input border is one static frame color regardless of thinking
+        # effort; the effort signal lives in the top-border label instead
+        # (see _effort_label_fragments) rather than recoloring the whole bar.
+        return "class:compact-input.frame"
 
-    def _thinking_footer_label(self) -> str:
-        if self._uses_native_thinking():
-            return "native reasoning"
+    def _effort_label_fragments(self) -> list[tuple[str, str]]:
+        """Dot + level label shown at the right end of the input's top border.
+
+        Returns ``[]`` when there is no effort to choose: non-AGENT modes,
+        non-thinking models, and native-thinking models (``always_thinking``
+        without a user 'thinking' dial). The dot carries the cold→hot level
+        color; the word stays muted so it never competes with the input.
+        """
+        if getattr(self, "_mode", PromptMode.AGENT) != PromptMode.AGENT:
+            return []
+        if self._uses_native_thinking() or not self._supports_thinking_effort():
+            return []
         level = self._current_thinking_effort()
-        return "thinking off" if level == "off" else level
+        return [
+            (thinking_dot_style(level), "● "),
+            ("class:compact-input.effort", level),
+        ]
+
+    def _render_input_top_border(self, columns: int, fallback: str) -> list[tuple[str, str]]:
+        """Static-grey top border for the input card, effort label flushed right.
+
+        The rule is shortened by the measured label width so the line never
+        wraps; when no label applies it spans the full rule like before.
+        """
+        border_style = self._prompt_separator_style(fallback)
+        rule = _prompt_rule(columns)
+        label = self._effort_label_fragments()
+        if not label:
+            return [(border_style, rule)]
+        gap = 2
+        label_width = sum(get_cwidth(ch) for _, text in label for ch in text)
+        if len(rule) <= gap + label_width:
+            # Too narrow for the label plus its gap; a flushed-right label here
+            # would overflow and wrap, so fall back to the plain full-width rule.
+            return [(border_style, rule)]
+        rule_width = len(rule) - gap - label_width
+        return [
+            (border_style, "─" * rule_width + " " * gap),
+            *label,
+        ]
 
     def _mode_model_thinking_label(self) -> str:
+        # Thinking effort lives on the input's top-border label, not the footer.
         if not self._model_name:
             return str(self._mode)
-        return f"{self._mode} {self._model_name} • {self._thinking_footer_label()}"
+        return f"{self._mode} {self._model_name}"
 
     def _render_prompt_continuation(
         self,
@@ -2719,7 +2753,7 @@ class CustomPromptSession:
         if is_card_style():
             ensure_prompt_newline(fragments)
             tc = get_toolbar_colors()
-            fragments.append((self._prompt_separator_style(tc.separator), _prompt_rule(columns)))
+            fragments.extend(self._render_input_top_border(columns, tc.separator))
             fragments.append(("", "\n"))
             fragments.append(("", _card_side_indent()))
         else:
@@ -2797,10 +2831,13 @@ class CustomPromptSession:
                 rendered.append(("", "\n"))
                 return rendered
 
-        # An in-flight turn pins its own working indicator (the verb spinner);
-        # drop the verb here so the background-task line shows only the count.
+        # An in-flight turn pins its own working indicator (the verb spinner)
+        # and the bottom toolbar already reports background work — rendering a
+        # count line here too would duplicate it under the executing step.
         pinned_active = bool(self._render_pinned_status_tail(columns))
-        fragments = self._render_background_working_status(columns, show_verb=not pinned_active)
+        fragments = (
+            FormattedText([]) if pinned_active else self._render_background_working_status(columns)
+        )
         status = self._render_status_block(columns)
         if status:
             ensure_prompt_newline(fragments)
@@ -2861,19 +2898,13 @@ class CustomPromptSession:
         if not todos:
             return FormattedText([])
 
+        # Mirror _LiveView._pinned_todo_row exactly — both renderers must show
+        # one design: coral ■ + bold default-color (white) title for running
+        # rows, muted □ pending, green ✓ with struck muted titles when done.
         tokens = _get_tui_tokens()
         muted_style = f"fg:{tokens.muted}" if tokens.muted else ""
-        warning_style = f"fg:{tokens.warning}" if tokens.warning else muted_style
         success_style = f"fg:{tokens.success}" if tokens.success else muted_style
-        activity_style = f"fg:{tokens.activity_verb}" if tokens.activity_verb else warning_style
-        active_title_style = (
-            f"fg:{tokens.activity_label} bold" if tokens.activity_label else activity_style
-        )
-        text_style = (
-            f"fg:{tokens.text or tokens.activity_label}"
-            if tokens.text or tokens.activity_label
-            else ""
-        )
+        activity_style = f"fg:{tokens.activity_verb}" if tokens.activity_verb else muted_style
         fragments: FormattedText = FormattedText()
         visible = todos[:5]
         hidden = todos[5:]
@@ -2884,17 +2915,17 @@ class CustomPromptSession:
                 fragments.append(("", "\n"))
             prefix = first_prefix if index == 0 else continuation_prefix
             if todo.status == "done":
-                icon = "✔"
+                icon = "✓"
                 icon_style = success_style
-                title_style = muted_style
+                title_style = f"{muted_style} strike".strip()
             elif todo.status == "in_progress":
-                icon = "◼"
+                icon = "■"
                 icon_style = activity_style
-                title_style = active_title_style
+                title_style = "bold"
             else:
-                icon = "◻"
+                icon = "□"
                 icon_style = muted_style
-                title_style = text_style
+                title_style = muted_style
             title_budget = max(1, columns - _display_width(prefix) - _display_width(icon) - 1)
             fragments.append((muted_style, prefix))
             fragments.append((icon_style, icon))
@@ -2915,64 +2946,88 @@ class CustomPromptSession:
             fragments.append((muted_style, f"{continuation_prefix}… +{len(hidden)} {label}"))
         return fragments
 
-    def _render_background_working_status(
-        self, columns: int, *, show_verb: bool = True
-    ) -> FormattedText:
+    def _render_background_working_status(self, columns: int) -> FormattedText:
         """Render a prompt spinner while background work is active.
 
-        ``show_verb`` is set ``False`` when an in-flight turn already pins a
-        working indicator with the activity verb — then this line shows only the
-        background-task count, so the verb (``Reticulating…``) isn't duplicated.
+        Shows only the verb spinner (and pinned todo rows): the bottom toolbar
+        already reports the background-task count, so repeating "N background
+        agents" above the input would duplicate it.
         """
         counts = self._background_task_counts()
         total = counts.bash + counts.agent
         if total <= 0:
+            # Background work drained — reset the elapsed/rate trackers.
+            self._bg_status_started_at = None
+            samples = getattr(self, "_bg_token_samples", None)
+            if samples is not None:
+                samples.clear()
             return FormattedText([])
         now = time.monotonic()
-        frame = TRANSCRIPT_ACTIVE_MARKER if int(now / 0.8) % 2 == 0 else " "
-        noun = "process" if total == 1 else "processes"
-        detail = f"{total} background {noun}"
-        if counts.agent and counts.bash:
-            detail = f"{counts.agent} agent, {counts.bash} bash"
-        elif counts.agent:
-            detail = f"{counts.agent} background agent{'s' if counts.agent != 1 else ''}"
-        elif counts.bash:
-            detail = f"{counts.bash} background bash task{'s' if counts.bash != 1 else ''}"
+        if getattr(self, "_bg_status_started_at", None) is None:
+            self._bg_status_started_at = now
+        frame = TRANSCRIPT_ACTIVE_MARKER if blink_visible(now) else " "
         tokens = _get_tui_tokens()
         muted_style = f"fg:{tokens.muted}" if tokens.muted else ""
         frame_style = f"fg:{tokens.activity_spinner}" if tokens.activity_spinner else muted_style
         frame_text = f"{frame} "
-        if show_verb:
-            verb_text = spinner_message(now)
-            detail_text = f" {detail}"
-            if _display_width(frame_text + verb_text + detail_text) > columns:
-                detail_budget = columns - _display_width(frame_text + verb_text)
-                if detail_budget > 0:
-                    detail_text = _truncate_right(detail_text, detail_budget)
-                else:
-                    detail_text = ""
-                    verb_text = _truncate_right(verb_text, columns - _display_width(frame_text))
-            fragments = FormattedText(
-                [
-                    (frame_style, frame_text),
-                    *shimmer_prompt_fragments(verb_text, now),
-                    (muted_style, detail_text),
-                ]
-            )
-            todo_rows = self._render_background_todo_rows(columns)
-            if todo_rows:
-                ensure_prompt_newline(fragments)
-                fragments.extend(todo_rows)
-            return fragments
+        verb_text = spinner_message(now)
+        metadata = self._background_status_metadata(now)
+        suffix = f" {metadata}" if metadata else ""
+        if _display_width(frame_text + verb_text + suffix) > columns:
+            # Narrow terminals: drop the metadata first, then trim the verb.
+            suffix = ""
+            if _display_width(frame_text + verb_text) > columns:
+                verb_text = _truncate_right(verb_text, columns - _display_width(frame_text))
+        fragments = FormattedText(
+            [
+                (frame_style, frame_text),
+                *shimmer_prompt_fragments(verb_text, now),
+            ]
+        )
+        if suffix:
+            fragments.append((muted_style, suffix))
+        todo_rows = self._render_background_todo_rows(columns)
+        if todo_rows:
+            ensure_prompt_newline(fragments)
+            fragments.extend(todo_rows)
+        return fragments
 
-        detail_text = detail
-        if _display_width(frame_text + detail_text) > columns:
-            detail_text = _truncate_right(detail_text, columns - _display_width(frame_text))
-        # ``show_verb=False`` means an in-flight turn's pinned status tail is already
-        # rendering the todo list under its verb spinner. Repeating the rows here
-        # would print the same todo list twice while the agent works, so this branch
-        # shows only the background-task count line.
-        return FormattedText([(muted_style, frame_text + detail_text)])
+    def _background_status_metadata(self, now: float) -> str:
+        """Compact ``(elapsed, ↓ Nk tokens, N t/s)`` suffix for the line above.
+
+        Same visual language as the live view's working/todo headers. Elapsed
+        counts from when background work first appeared; the rate is a short
+        sliding window over the status snapshot's context tokens (mirroring
+        ``_ContentBlock._record_token_rate_sample``).
+        """
+        from pythinker_code.soul import format_token_count
+        from pythinker_code.utils.datetime import format_elapsed
+
+        parts: list[str] = []
+        started = getattr(self, "_bg_status_started_at", None)
+        if started is not None:
+            parts.append(format_elapsed(max(0.0, now - started)))
+        provider = getattr(self, "_status_provider", None)
+        status = provider() if provider is not None else None
+        context_tokens = getattr(status, "context_tokens", None) or 0
+        if context_tokens:
+            parts.append(f"↓ {format_token_count(context_tokens)} tokens")
+            samples: deque[tuple[float, int]] | None = getattr(self, "_bg_token_samples", None)
+            if samples is None:
+                samples = deque()
+                self._bg_token_samples = samples
+            samples.append((now, context_tokens))
+            # 1.5s window, ≥3 samples — the live view's tracker parameters.
+            while len(samples) > 1 and now - samples[0][0] > 1.5:
+                samples.popleft()
+            if len(samples) >= 3:
+                window = samples[-1][0] - samples[0][0]
+                delta = samples[-1][1] - samples[0][1]
+                if window > 0 and delta > 0:
+                    rate = int(delta / window)
+                    if rate > 0:
+                        parts.append(f"{rate} t/s")
+        return f"({', '.join(parts)})" if parts else ""
 
     def _background_task_counts(self) -> BgTaskCounts:
         provider = getattr(self, "_background_task_count_provider", None)
@@ -3323,22 +3378,18 @@ class CustomPromptSession:
             fragments.extend([(tc.plan_label, "plan"), ("", "  ")])
             remaining -= 6
 
-        # Mode indicator (agent / shell) + model name + thinking indicator.
-        # Degrade gracefully on narrow terminals:
-        #   full: "agent (model-name ○)"  → mid: "agent ○"  → bare: "agent"
+        # Mode indicator (agent / shell) + model name. Thinking effort is shown
+        # on the input's top-border label, not in the footer. Degrade gracefully
+        # on narrow terminals: full "agent (model-name)" → bare "agent".
         tokens = _get_tui_tokens()
         mode_style = f"fg:{tokens.text or tokens.activity_label}"
         secondary_style = f"fg:{tokens.muted}"
         mode = str(self._mode)
         if self._mode == PromptMode.AGENT and self._model_name:
-            thinking_label = self._thinking_footer_label()
-            mode_full = f"{mode} ({self._model_name} • {thinking_label})"
-            mode_mid = f"{mode} {thinking_label}"
+            mode_full = f"{mode} ({self._model_name})"
             if _display_width(mode_full) <= remaining - 2:
                 mode = mode_full
-            elif _display_width(mode_mid) <= remaining - 2:
-                mode = mode_mid
-            # else: keep bare mode name — model_name and thinking label are both dropped
+            # else: keep bare mode name — model_name is dropped
         fragments.extend([(mode_style, mode), ("", "  ")])
         remaining -= _display_width(mode) + 2
 

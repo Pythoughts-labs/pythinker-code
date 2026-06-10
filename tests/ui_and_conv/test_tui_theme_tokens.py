@@ -46,11 +46,11 @@ def test_dark_tokens_have_brand_values():
     assert t.info == "#AFE3F1"  # cyan (unchanged; markdown code/links use ANSI cyan)
     assert t.success == "#7BC97F"
     assert t.error == "#EF5E62"
-    assert t.thinking_text == "#C0C0C0"  # lighter neutral grey, not purple-tinted muted
+    assert t.thinking_text == "#D4D4D4"  # light neutral grey, not purple-tinted muted
     assert t.thinking_text != t.muted
-    assert t.activity_verb == "#EE9983"  # muted coral resting (robot antenna accent)
-    assert t.activity_verb_mid == "#F4B5A5"  # light coral
-    assert t.activity_verb_highlight == "#FBD9CE"  # soft coral spark
+    assert t.activity_verb == "#C68D7E"  # muted clay-coral resting
+    assert t.activity_verb_mid == "#D8AC9E"  # soft coral
+    assert t.activity_verb_highlight == "#E9CDC2"  # calm coral spark
     assert t.activity_spinner == "#B8C0CC"
     assert t.tool_title == t.activity_label
     assert t.tool_pending_bg == "#1B2230"
@@ -67,9 +67,9 @@ def test_light_tokens_have_brand_values():
     assert t.error == "#C0392B"
     assert t.thinking_text == "#7A7A7A"  # lighter neutral grey, not blue/purple muted
     assert t.thinking_text != t.muted
-    assert t.activity_verb == "#C56B4F"  # contrast-safe coral activity verb
-    assert t.activity_verb_mid == "#B0573C"  # deeper coral
-    assert t.activity_verb_highlight == "#8F3A26"  # deep-coral spark (max contrast on light)
+    assert t.activity_verb == "#B26A52"  # muted contrast-safe coral activity verb
+    assert t.activity_verb_mid == "#9E563E"  # deeper muted coral
+    assert t.activity_verb_highlight == "#82412D"  # deep-coral spark (max contrast on light)
     assert t.activity_spinner == "#6B7280"
     assert t.tool_title == t.activity_label
     assert t.tool_pending_bg == "#EFE7E8"
@@ -160,7 +160,7 @@ def test_dark_markdown_uses_professional_report_roles():
     colors = get_markdown_colors("dark")
     assert colors.heading == "#F4F4F5"  # primary white, not coral/orange
     assert colors.strong == "#F4F4F5"
-    assert colors.emphasis == "#A3A3A3"  # neutral grey
+    assert colors.emphasis == "#6F6F6F"  # neutral UI grey
     assert colors.inline_code == "cyan"  # terminal-native ANSI
     assert colors.link == "cyan"
     assert colors.spinner_active == "#AFE3F1"  # spinners still use the info token

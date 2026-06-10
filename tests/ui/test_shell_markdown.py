@@ -119,14 +119,16 @@ def test_shell_markdown_simplifies_report_emoji_icons() -> None:
         )
     )
 
-    assert "• Review ✓ Complete" in output
+    assert "⏺ Review ✓ Complete" in output
     assert "● High" in output
     assert "● Medium" in output
     assert "● Low" in output
     assert "! Warning" in output
     assert "⌕ Results" in output
     assert "▣ Actions" in output
-    for emoji in ("⏺", "✅", "🔴", "🟡", "🔵", "⚠️", "🔍", "📋"):
+    # "⏺" stays (it is the transcript row marker on this platform); the
+    # remaining report emoji must still normalize to compact glyphs.
+    for emoji in ("✅", "🔴", "🟡", "🔵", "⚠️", "🔍", "📋"):
         assert emoji not in output
 
 
@@ -138,7 +140,7 @@ def test_shell_markdown_keeps_emoji_icons_in_code() -> None:
     assert "● High" in output
 
 
-def test_shell_markdown_renders_multi_column_tables_as_bordered_grid() -> None:
+def test_shell_markdown_renders_multi_column_tables_as_stacked_records() -> None:
     output = _render_text(
         PythinkerMarkdown(
             "| Area | Issue | Why it matters | Suggested improvement | Priority | Effort |\n"
@@ -149,14 +151,15 @@ def test_shell_markdown_renders_multi_column_tables_as_bordered_grid() -> None:
         )
     )
 
-    assert "┌" in output and "┬" in output and "┘" in output
-    assert "Area" in output and "Accessibil" in output and "ity" in output
-    # "Suggested improvement" wraps mid-word in its narrow column; the trailing
-    # "t" lands on the next row, so only this leading fragment survives on a line.
-    assert "Suggested" in output
-    assert "improvement"[:-1] in output
+    # Wide report tables stack into records so values wrap in one generous
+    # column instead of being sliced mid-word across narrow grid cells.
+    assert "┌" not in output and "┬" not in output and "┘" not in output
+    assert "• Accessibility" in output
+    assert "Issue" in output and "Search input relies" in output
+    assert "Why it matters" in output and "Placeholder-only labels" in output
+    assert "Suggested improvement" in output and "Add an aria-label" in output
     assert "Priority" in output and "High" in output
-    assert "Issue:" not in output
+    assert "Effort" in output and "XS" in output
 
 
 def test_shell_markdown_repairs_report_heading_crammed_into_table_header() -> None:
@@ -171,8 +174,8 @@ def test_shell_markdown_repairs_report_heading_crammed_into_table_header() -> No
     )
 
     assert "● MEDIUM — address soon" in output
-    assert "┌" in output and "┬" in output and "┘" in output
-    assert "M1" in output
+    assert "┌" not in output and "┬" not in output and "┘" not in output
+    assert "• M1" in output
     assert "approval.py:208–228" in output
     assert "CWE-285" in output
     assert "No per-subagent" in output and "approval" in output and "isolation." in output

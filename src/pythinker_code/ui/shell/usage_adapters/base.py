@@ -10,6 +10,16 @@ if TYPE_CHECKING:
 UsageUnit = str  # one of: "tokens", "USD", "CNY", "%", "requests", "credits"
 
 
+def used_from_remaining(limit: int, remaining: int) -> int:
+    """Convert a remaining-style quota to a used amount, clamped to [0, limit].
+
+    Providers report quotas as "remaining of limit"; UsageRow stores "used of
+    limit". Keeping the conversion in one place stops adapters drifting — one
+    had inverted it and displayed the remaining count as the used count.
+    """
+    return min(limit, max(0, limit - remaining))
+
+
 @dataclass(slots=True, frozen=True)
 class UsageRow:
     label: str

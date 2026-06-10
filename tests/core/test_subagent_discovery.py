@@ -106,7 +106,8 @@ async def test_materialize_markdown_agent_specs_creates_agent_type(tmp_path: Pat
     assert type_def.agent_file.is_file()
     wrapper = type_def.agent_file.read_text(encoding="utf-8")
     assert "system_prompt_path" in wrapper
-    assert (tmp_path / "out" / "local-plan.system.md").read_text(encoding="utf-8") == "Prompt"
+    system_md = type_def.agent_file.with_name(type_def.agent_file.stem + ".system.md")
+    assert system_md.read_text(encoding="utf-8") == "Prompt"
 
 
 @pytest.mark.asyncio
@@ -154,6 +155,49 @@ def test_materialize_warns_on_unknown_model(tmp_path: Path) -> None:
     mock_logger.warning.assert_called_once()
     warning_call_str = str(mock_logger.warning.call_args)
     assert "nonexistent-model-xyz" in warning_call_str
+
+
+def test_materialize_distinct_names_do_not_collide_on_filename(tmp_path: Path) -> None:
+    """'a b' and 'a/b' formerly both mapped to 'a_b.yaml'; with hash suffix they must differ."""
+    prompt1 = tmp_path / "agent1.md"
+    prompt2 = tmp_path / "agent2.md"
+    prompt1.write_text("Prompt for agent one", encoding="utf-8")
+    prompt2.write_text("Prompt for agent two", encoding="utf-8")
+
+    spec1 = MarkdownAgentSpec(
+        name="a b",
+        description="Agent A B",
+        prompt_file=HostPath.unsafe_from_local_path(prompt1),
+        scope="project",
+    )
+    spec2 = MarkdownAgentSpec(
+        name="a/b",
+        description="Agent A/B",
+        prompt_file=HostPath.unsafe_from_local_path(prompt2),
+        scope="project",
+    )
+
+    type_defs = materialize_markdown_agent_specs([spec1, spec2], output_dir=tmp_path / "out")
+
+    assert len(type_defs) == 2
+    assert type_defs[0].agent_file != type_defs[1].agent_file
+
+    system_md_1 = (
+        type_defs[0]
+        .agent_file.with_suffix("")
+        .with_suffix("")
+        .with_name(type_defs[0].agent_file.stem + ".system.md")
+    )
+    system_md_2 = (
+        type_defs[1]
+        .agent_file.with_suffix("")
+        .with_suffix("")
+        .with_name(type_defs[1].agent_file.stem + ".system.md")
+    )
+    assert system_md_1.exists()
+    assert system_md_2.exists()
+    assert system_md_1.read_text(encoding="utf-8") == "Prompt for agent one"
+    assert system_md_2.read_text(encoding="utf-8") == "Prompt for agent two"
 
 
 def test_materialize_no_warning_when_model_is_valid(tmp_path: Path) -> None:

@@ -32,6 +32,11 @@ async def run_worker(session_id: UUID) -> None:
     # Get the pythinker-code session object
     session = joint_session.pythinker_code_session
 
+    # One writer per session: a terminal CLI (or a second worker) appending to
+    # the same context/wire files would interleave turns and corrupt history.
+    if not session.acquire_ownership():
+        raise RuntimeError(f"Session {session.id} is already open in another pythinker process.")
+
     # Load default MCP config file if it exists
     default_mcp_file = get_global_mcp_config_file()
     mcp_configs: list[dict[str, Any]] = []

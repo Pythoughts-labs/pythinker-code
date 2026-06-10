@@ -47,16 +47,26 @@ def test_alibaba_model_catalog_contains_current_models():
     assert all(m.provider_key == "managed:alibaba" for m in ALIBABA_MODELS)
 
     by_alias = {m.alias: m for m in ALIBABA_MODELS}
-    assert by_alias["alibaba/qwen3.7-max"].capabilities == frozenset({"thinking", "image_in"})
+    # Qwen models reason natively (always_thinking): reasoning is built in, the
+    # effort dial and its label are hidden.
+    assert by_alias["alibaba/qwen3.7-max"].capabilities == frozenset(
+        {"always_thinking", "image_in"}
+    )
     assert by_alias["alibaba/qwen3.7-max"].max_context_size == 1_000_000
-    assert by_alias["alibaba/qwen3.7-plus"].capabilities == frozenset({"thinking", "image_in"})
+    assert by_alias["alibaba/qwen3.7-plus"].capabilities == frozenset(
+        {"always_thinking", "image_in"}
+    )
     assert by_alias["alibaba/qwen3.7-plus"].max_context_size == 1_000_000
-    assert by_alias["alibaba/qwen3.6-plus"].capabilities == frozenset({"thinking", "image_in"})
+    assert by_alias["alibaba/qwen3.6-plus"].capabilities == frozenset(
+        {"always_thinking", "image_in"}
+    )
     assert by_alias["alibaba/qwen3.6-plus"].max_context_size == 1_000_000
-    assert by_alias["alibaba/qwen3.6-flash"].capabilities == frozenset({"thinking", "image_in"})
-    assert by_alias["alibaba/qwen3-coder-plus"].capabilities == frozenset({"thinking"})
+    assert by_alias["alibaba/qwen3.6-flash"].capabilities == frozenset(
+        {"always_thinking", "image_in"}
+    )
+    assert by_alias["alibaba/qwen3-coder-plus"].capabilities == frozenset({"always_thinking"})
     assert by_alias["alibaba/qwen3-coder-plus"].max_context_size == 1_000_000
-    assert by_alias["alibaba/qwen3-coder-flash"].capabilities == frozenset({"thinking"})
+    assert by_alias["alibaba/qwen3-coder-flash"].capabilities == frozenset({"always_thinking"})
     assert by_alias["alibaba/qwen3-coder-flash"].max_context_size == 1_000_000
     assert by_alias["alibaba/deepseek-v4-pro"].capabilities == frozenset({"thinking"})
     assert by_alias["alibaba/deepseek-v4-flash"].capabilities == frozenset({"thinking"})
@@ -130,10 +140,14 @@ def test_apply_alibaba_config_writes_provider_and_default():
     assert "alibaba/qwen3.6-plus" in config.models
     assert config.models["alibaba/qwen3.6-plus"].provider == ALIBABA_PROVIDER_KEY
     assert config.models["alibaba/qwen3.6-plus"].model == "qwen3.6-plus"
-    assert config.models["alibaba/qwen3.7-max"].capabilities == frozenset({"thinking", "image_in"})
-    assert config.models["alibaba/qwen3.6-plus"].capabilities == frozenset({"thinking", "image_in"})
+    assert config.models["alibaba/qwen3.7-max"].capabilities == frozenset(
+        {"always_thinking", "image_in"}
+    )
+    assert config.models["alibaba/qwen3.6-plus"].capabilities == frozenset(
+        {"always_thinking", "image_in"}
+    )
     assert config.models["alibaba/qwen3.6-flash"].capabilities == frozenset(
-        {"thinking", "image_in"}
+        {"always_thinking", "image_in"}
     )
     assert config.models["alibaba/deepseek-v4-pro"].capabilities == frozenset({"thinking"})
     assert config.models["alibaba/kimi-k2.6"].capabilities == frozenset({"thinking", "image_in"})
@@ -561,7 +575,9 @@ async def test_login_alibaba_uses_discovered_context_length(monkeypatch, tmp_pat
 
     assert events[-1].type == "success"
     assert config.models["alibaba/qwen3.7-max"].max_context_size == 512_000
-    assert config.models["alibaba/qwen3.7-max"].capabilities == frozenset({"thinking", "image_in"})
+    assert config.models["alibaba/qwen3.7-max"].capabilities == frozenset(
+        {"always_thinking", "image_in"}
+    )
 
 
 @pytest.mark.asyncio
@@ -626,7 +642,7 @@ def test_parse_discovered_alibaba_models_preserves_capabilities():
     }
     result = _parse_discovered_models(payload)
     by_id = {m.model_id: m for m in result}
-    assert by_id["qwen3.6-plus"].capabilities == frozenset({"thinking", "image_in"})
+    assert by_id["qwen3.6-plus"].capabilities == frozenset({"always_thinking", "image_in"})
     assert by_id["deepseek-v3.2"].capabilities == frozenset({"thinking"})
 
 

@@ -25,7 +25,8 @@ if TYPE_CHECKING:
     from markdown_it import MarkdownIt
 
 from rich import box
-from rich.console import Console, ConsoleOptions, RenderResult
+from rich.console import Console, ConsoleOptions, Group, RenderResult
+from rich.padding import Padding
 from rich.panel import Panel
 from rich.style import Style as RichStyle
 from rich.syntax import Syntax
@@ -34,12 +35,17 @@ from rich.text import Text
 from rich.theme import Theme
 
 from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
+from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ASSISTANT_MARKER
+from pythinker_code.ui.shell.render_constants import MAX_HIGHLIGHT_BYTES, MAX_HIGHLIGHT_LINES
 from pythinker_code.ui.shell.spacing import CODE_BLOCK_PADDING, blank_row
 from pythinker_code.ui.theme import ThemeName, get_markdown_colors
-from pythinker_code.utils.rich.markdown import CodeBlock, Markdown
+from pythinker_code.utils.rich.markdown import CodeBlock, Markdown, TableElement
 
 _MARKDOWN_ICON_REPLACEMENTS: dict[str, str] = {
-    "⏺": "•",
+    # Model text mimicking the CLI transcript keeps the row-marker look; on
+    # platforms where U+23FA degrades (Windows emoji tile, ASCII mode) it
+    # normalizes to that platform's marker glyph.
+    "⏺": TRANSCRIPT_ASSISTANT_MARKER,
     "✅": "✓",
     "☑️": "✓",
     "☑": "✓",
@@ -206,6 +212,196 @@ def _repair_crammed_markdown_tables(markup: str) -> str:
     return "".join(repaired)
 
 
+_MARKDOWN_FENCE_INFOS = frozenset({"md", "markdown"})
+
+
+def _contains_markdown_table(lines: list[str]) -> bool:
+    """Whether *lines* hold a pipe-table header immediately above a delimiter row."""
+    previous: str | None = None
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            previous = None
+            continue
+        if (
+            previous is not None
+            and _is_table_separator_line(line)
+            and _is_table_header_fragment(previous)
+        ):
+            return True
+        previous = line
+    return False
+
+
+def _unwrap_fenced_markdown_tables(markup: str) -> str:
+    """Unwrap ```` ```md ```` fences whose body contains a markdown table.
+
+    Models sometimes wrap a whole markdown answer — tables included — in a
+    ``md``/``markdown`` fence, which renders the table as opaque code. Mirror
+    the Codex heuristic (markdown.rs): only fences explicitly tagged ``md`` or
+    ``markdown`` *and* containing a header+delimiter pair are unwrapped.
+    Other languages, untagged fences, md fences without tables, and unclosed
+    fences pass through unchanged.
+    """
+    if "```" not in markup and "~~~" not in markup:
+        return markup
+
+    lines = markup.splitlines(keepends=True)
+    out: list[str] = []
+    in_other_fence = False
+    other_char = ""
+    other_len = 0
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        body = line.rstrip("\r\n")
+        match = _FENCE_RE.match(body)
+        if in_other_fence:
+            out.append(line)
+            if match is not None:
+                fence = match.group("fence")
+                # CommonMark closing fences carry no info string; without that
+                # check a "```python" line inside the open fence would end it.
+                if (
+                    fence[0] == other_char
+                    and len(fence) >= other_len
+                    and not body[match.end() :].strip()
+                ):
+                    in_other_fence = False
+            i += 1
+            continue
+        if match is None:
+            out.append(line)
+            i += 1
+            continue
+        fence = match.group("fence")
+        info = body[match.end() :].strip().lower()
+        if info not in _MARKDOWN_FENCE_INFOS:
+            in_other_fence = True
+            other_char = fence[0]
+            other_len = len(fence)
+            out.append(line)
+            i += 1
+            continue
+
+        # ``md`` fence: find the matching close (same char, same-or-longer
+        # marker, no info string — CommonMark closing-fence rules).
+        close_index: int | None = None
+        for j in range(i + 1, len(lines)):
+            inner_body = lines[j].rstrip("\r\n")
+            inner_match = _FENCE_RE.match(inner_body)
+            if (
+                inner_match is not None
+                and inner_match.group("fence")[0] == fence[0]
+                and len(inner_match.group("fence")) >= len(fence)
+                and not inner_body[inner_match.end() :].strip()
+            ):
+                close_index = j
+                break
+        if close_index is None:
+            out.append(line)
+            i += 1
+            continue
+
+        fenced_body = lines[i + 1 : close_index]
+        if not _contains_markdown_table([raw.rstrip("\r\n") for raw in fenced_body]):
+            out.extend(lines[i : close_index + 1])
+            i = close_index + 1
+            continue
+
+        # Unwrap: drop the fence markers and keep the body as block-level
+        # markdown, padded with blank lines so adjacent prose can't glue on.
+        if out and out[-1].strip():
+            out.append("\n")
+        out.extend(fenced_body)
+        next_line = lines[close_index + 1] if close_index + 1 < len(lines) else None
+        ends_blank = bool(fenced_body) and not fenced_body[-1].strip()
+        if next_line is not None and next_line.strip() and not ends_blank:
+            out.append("\n")
+        i = close_index + 1
+    return "".join(out)
+
+
+class _ReportTableElement(TableElement):
+    """Markdown tables that stay readable in long reports.
+
+    Compact, low-column tables keep the normal bordered grid. Wide report
+    tables become stacked records so long paths and prose wrap in one generous
+    value column instead of being sliced across many narrow grid cells.
+    """
+
+    def _header_cells(self) -> list[Text]:
+        if self.header is None or self.header.row is None:
+            return []
+        return [cell.content for cell in self.header.row.cells]
+
+    def _body_rows(self) -> list[list[Text]]:
+        if self.body is None:
+            return []
+        return [[cell.content for cell in row.cells] for row in self.body.rows]
+
+    def _should_stack(self, options: ConsoleOptions) -> bool:
+        headers = self._header_cells()
+        rows = self._body_rows()
+        column_count = len(headers)
+        if column_count <= 2 or not rows:
+            return False
+
+        column_widths = [len(header.plain.strip()) for header in headers]
+        for row in rows:
+            for index, cell in enumerate(row[:column_count]):
+                column_widths[index] = max(column_widths[index], len(cell.plain.strip()))
+        longest_cell = max(column_widths, default=0)
+        estimated_grid_width = sum(min(width, 24) for width in column_widths) + column_count * 3 + 1
+        available_width = options.max_width or 80
+
+        if column_count >= 4:
+            return longest_cell >= 24 or estimated_grid_width > available_width
+        return longest_cell >= 36
+
+    def _render_stacked(self) -> RenderResult:
+        headers = self._header_cells()
+        rows = self._body_rows()
+        detail_headers = headers[1:]
+        label_width = min(
+            max((len(header.plain.strip()) for header in detail_headers), default=0),
+            22,
+        )
+
+        for index, row in enumerate(rows):
+            if index:
+                yield blank_row()
+
+            title = Text("• ", style="markdown.item.bullet")
+            if row:
+                title_value = row[0].copy()
+                title.append_text(title_value)
+                title.stylize("markdown.strong", 2, len(title))
+            detail_grid = Table.grid(expand=True, padding=(0, 2))
+            detail_grid.add_column(width=max(1, label_width), no_wrap=True)
+            detail_grid.add_column(ratio=1, overflow="fold")
+
+            has_details = False
+            for header, cell in zip(detail_headers, row[1:], strict=False):
+                label = header.plain.strip()
+                value = cell.copy()
+                if not value.plain.strip():
+                    value = Text("—", style="markdown.block_quote")
+                detail_grid.add_row(Text(label, style="markdown.strong"), value)
+                has_details = True
+
+            if has_details:
+                yield Group(title, Padding(detail_grid, (0, 0, 0, 2)))
+            else:
+                yield title
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        if self._should_stack(options):
+            yield from self._render_stacked()
+            return
+        yield from super().__rich_console__(console, options)
+
+
 class _BorderedCodeBlock(CodeBlock):
     """Code block with an aligned rounded frame and calm report styling."""
 
@@ -240,18 +436,28 @@ class _BorderedCodeBlock(CodeBlock):
             )
             syntax_bg = "default"
 
-        syntax = Syntax(
-            code_text,
-            self.lexer_name,
-            theme=self.theme,
-            word_wrap=True,
-            padding=0,
-            background_color=syntax_bg,
-        )
-        highlighted = syntax.highlight(code_text)
-        highlighted.rstrip()
         lexer_name = self.lexer_name.strip()
         title = lexer_name if lexer_name and lexer_name != "text" else None
+        # Size guard (Codex parity): skip Pygments for very large blocks so a
+        # pathological fence cannot stall the renderer. ``len()`` counts
+        # characters (a lower bound on UTF-8 bytes), which is enough for a
+        # guard heuristic without paying for an encode of the whole block.
+        line_count = code_text.count("\n") + 1
+        if line_count > MAX_HIGHLIGHT_LINES or len(code_text) > MAX_HIGHLIGHT_BYTES:
+            highlighted = Text(code_text)
+            skip_notice = f"highlighting skipped ({line_count:,} lines)"
+            title = f"{title} · {skip_notice}" if title else skip_notice
+        else:
+            syntax = Syntax(
+                code_text,
+                self.lexer_name,
+                theme=self.theme,
+                word_wrap=True,
+                padding=0,
+                background_color=syntax_bg,
+            )
+            highlighted = syntax.highlight(code_text)
+            highlighted.rstrip()
         # Frame the code block with a blank row above and below so it reads as a
         # distinct section instead of crowding the surrounding prose. Canonical
         # ``blank_row()`` (an empty ``Text``) never picks up the panel's tint.
@@ -561,11 +767,17 @@ class PythinkerMarkdown(Markdown):
     icons are then normalized to compact monochrome glyphs for calmer reports.
     """
 
-    elements = {**Markdown.elements, "fence": _BorderedCodeBlock, "code_block": _BorderedCodeBlock}
+    elements = {
+        **Markdown.elements,
+        "fence": _BorderedCodeBlock,
+        "code_block": _BorderedCodeBlock,
+        "table_open": _ReportTableElement,
+    }
 
     def __init__(self, markup: str, *args: Any, **kwargs: Any) -> None:
         safe_markup = sanitize_ansi(markup)
-        repaired_markup = _repair_crammed_markdown_tables(safe_markup)
+        unwrapped_markup = _unwrap_fenced_markdown_tables(safe_markup)
+        repaired_markup = _repair_crammed_markdown_tables(unwrapped_markup)
         normalized_markup = _normalize_markdown_tables(repaired_markup)
         super().__init__(_simplify_markdown_report_icons(normalized_markup), *args, **kwargs)
 

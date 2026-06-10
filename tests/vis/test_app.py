@@ -80,6 +80,22 @@ def test_vis_import_rejects_zip_slip_entries(monkeypatch, tmp_path: Path) -> Non
     assert not (tmp_path / "evil.txt").exists()
 
 
+def test_vis_import_rejects_dot_member(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    payload = _zip_bytes({"wire.jsonl": "{}\n", ".": ""})
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/api/vis/sessions/import",
+            files={"file": ("session.zip", payload, "application/zip")},
+        )
+
+    imported_root = tmp_path / "imported_sessions"
+    assert response.status_code == 400
+    assert "unsafe path" in response.json()["detail"]
+    assert not imported_root.exists() or list(imported_root.iterdir()) == []
+
+
 def test_vis_import_accepts_safe_zip(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
     payload = _zip_bytes({"session/wire.jsonl": "{}\n"})

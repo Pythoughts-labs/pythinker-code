@@ -6,10 +6,13 @@ for both the Web API and CLI slash commands (/undo, /fork).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import mimetypes
+import os
 import re
 import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -52,24 +55,44 @@ def enumerate_turns(wire_path: Path) -> list[TurnInfo]:
             if not stripped:
                 continue
 
-            try:
-                record: dict[str, Any] = json.loads(stripped)
-            except json.JSONDecodeError:
+            record = _loads_object(stripped)
+            if record is None or record.get("type") == "metadata":
                 continue
 
-            if record.get("type") == "metadata":
-                continue
-
-            message: dict[str, Any] = record.get("message", {})
+            message = _message_of(record)
             msg_type: str | None = message.get("type")
 
             if msg_type == "TurnBegin":
                 current_turn += 1
-                user_input = message.get("payload", {}).get("user_input", "")
+                payload = message.get("payload")
+                user_input = (
+                    cast(dict[str, Any], payload).get("user_input", "")
+                    if isinstance(payload, dict)
+                    else ""
+                )
                 text = _extract_user_text(user_input)
                 turns.append(TurnInfo(index=current_turn, user_text=text))
 
     return turns
+
+
+def _loads_object(line: str) -> dict[str, Any] | None:
+    """json.loads a line, returning None unless it yields a dict.
+
+    Wire/context files can contain torn or interleaved lines after a crash or
+    a concurrent writer; the fork/undo scanners must skip them like every other
+    reader (Context.restore, WireFile.iter_records) instead of crashing.
+    """
+    try:
+        record: Any = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    return cast(dict[str, Any], record) if isinstance(record, dict) else None
+
+
+def _message_of(record: dict[str, Any]) -> dict[str, Any]:
+    message = record.get("message")
+    return cast(dict[str, Any], message) if isinstance(message, dict) else {}
 
 
 def _extract_user_text(user_input: str | list[Any]) -> str:
@@ -119,9 +142,8 @@ def truncate_wire_at_turn(wire_path: Path, turn_index: int) -> list[str]:
             if not stripped:
                 continue
 
-            try:
-                record: dict[str, Any] = json.loads(stripped)
-            except json.JSONDecodeError:
+            record = _loads_object(stripped)
+            if record is None:
                 continue
 
             # Always keep metadata header
@@ -129,8 +151,7 @@ def truncate_wire_at_turn(wire_path: Path, turn_index: int) -> list[str]:
                 lines.append(stripped)
                 continue
 
-            message: dict[str, Any] = record.get("message", {})
-            msg_type: str | None = message.get("type")
+            msg_type: str | None = _message_of(record).get("type")
 
             if msg_type == "TurnBegin":
                 current_turn += 1
@@ -169,7 +190,37 @@ def _is_checkpoint_user_message(record: dict[str, Any]) -> bool:
     return False
 
 
-def truncate_context_at_turn(context_path: Path, turn_index: int) -> list[str]:
+def _wire_user_message_count(wire_path: Path, turn_index: int) -> int | None:
+    """Count user-input events (TurnBegin + SteerInput) in turns 0..turn_index.
+
+    Returns None if the wire is missing so context falls back to its own counting.
+    """
+    if not wire_path.exists():
+        return None
+    current_turn = -1
+    count = 0
+    with open(wire_path, encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            record = _loads_object(stripped)
+            if record is None or record.get("type") == "metadata":
+                continue
+            msg_type = _message_of(record).get("type")
+            if msg_type == "TurnBegin":
+                current_turn += 1
+                if current_turn > turn_index:
+                    break
+                count += 1
+            elif msg_type == "SteerInput" and 0 <= current_turn <= turn_index:
+                count += 1
+    return count
+
+
+def truncate_context_at_turn(
+    context_path: Path, turn_index: int, *, max_user_messages: int | None = None
+) -> list[str]:
     """Read context.jsonl and return all lines up to and including the given turn.
 
     Turn detection is based on real user messages, excluding synthetic checkpoint
@@ -178,12 +229,21 @@ def truncate_context_at_turn(context_path: Path, turn_index: int) -> list[str]:
     Unlike wire truncation, this is best-effort: if context has fewer user turns
     than ``turn_index`` (e.g. slash-command turns that did not mutate context),
     return all available context lines instead of failing.
+
+    Args:
+        context_path: Path to context.jsonl.
+        turn_index: 0-based turn index (used when ``max_user_messages`` is None).
+        max_user_messages: When provided, keep exactly this many non-checkpoint user
+            messages instead of using ``turn_index`` for counting.  Supplied by
+            ``fork_session`` from ``_wire_user_message_count`` so that steer
+            follow-ups in context are counted against the wire's authoritative budget.
     """
     if not context_path.exists():
         return []
 
     lines: list[str] = []
-    current_turn = -1  # Will become 0 on first real user message
+    current_turn = -1  # used only when max_user_messages is None
+    kept_user = 0
 
     with open(context_path, encoding="utf-8") as f:
         for line in f:
@@ -191,18 +251,21 @@ def truncate_context_at_turn(context_path: Path, turn_index: int) -> list[str]:
             if not stripped:
                 continue
 
-            try:
-                record: dict[str, Any] = json.loads(stripped)
-            except json.JSONDecodeError:
+            record = _loads_object(stripped)
+            if record is None:
                 continue
 
             if record.get("role") == "user" and not _is_checkpoint_user_message(record):
-                current_turn += 1
-                if current_turn > turn_index:
-                    break
+                if max_user_messages is not None:
+                    kept_user += 1
+                    if kept_user > max_user_messages:
+                        break
+                else:
+                    current_turn += 1
+                    if current_turn > turn_index:
+                        break
 
-            if current_turn <= turn_index:
-                lines.append(stripped)
+            lines.append(stripped)
 
     return lines
 
@@ -241,7 +304,10 @@ async def fork_session(
 
     if turn_index is not None:
         truncated_wire_lines = truncate_wire_at_turn(wire_path, turn_index)
-        truncated_context_lines = truncate_context_at_turn(context_path, turn_index)
+        max_user = _wire_user_message_count(wire_path, turn_index)
+        truncated_context_lines = truncate_context_at_turn(
+            context_path, turn_index, max_user_messages=max_user
+        )
     else:
         # Copy all content
         truncated_wire_lines = _read_all_lines(wire_path)
@@ -253,17 +319,15 @@ async def fork_session(
     # Copy referenced video files
     _copy_referenced_videos(source_session_dir, new_session_dir, truncated_wire_lines)
 
-    # Write truncated wire.jsonl
+    # Write atomically (tmp + os.replace), context.jsonl LAST: a crash mid-fork
+    # then leaves either a recognizably empty session (cleaned by the existing
+    # empty-session sweep) or a complete one — never a half-materialized fork
+    # that shows up in the resume picker with amputated history.
     new_wire_path = new_session_dir / "wire.jsonl"
-    with open(new_wire_path, "w", encoding="utf-8") as f:
-        for line in truncated_wire_lines:
-            f.write(line + "\n")
+    _atomic_write_lines(new_wire_path, truncated_wire_lines)
 
-    # Write truncated context.jsonl (overwrites the empty file from create())
     new_context_path = new_session_dir / "context.jsonl"
-    with open(new_context_path, "w", encoding="utf-8") as f:
-        for line in truncated_context_lines:
-            f.write(line + "\n")
+    _atomic_write_lines(new_context_path, truncated_context_lines)
 
     # Set title
     if source_title is None:
@@ -279,6 +343,21 @@ async def fork_session(
     save_session_state(new_state, new_session_dir)
 
     return new_session.id
+
+
+def _atomic_write_lines(path: Path, lines: list[str]) -> None:
+    """Write *lines* to *path* via a unique temp file + os.replace."""
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            for line in lines:
+                f.write(line + "\n")
+        os.replace(tmp_path, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink()
+        raise
 
 
 def _read_all_lines(path: Path) -> list[str]:

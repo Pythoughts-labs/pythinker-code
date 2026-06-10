@@ -97,6 +97,26 @@ def test_progress_note_block_renders_checkpoint_style_note() -> None:
     assert "First increment landed" in rendered
 
 
+def test_progress_note_block_strips_ansi_from_title() -> None:
+    """A model-controlled progress-note title must not pass terminal escapes through.
+
+    The title is rendered via rich Text(), which forwards raw control bytes, so an
+    OSC 52 clipboard-write or CSI sequence smuggled into the title would reach the
+    terminal unless sanitised — the body path already goes through PythinkerMarkdown.
+    """
+    block = _ProgressNoteBlock(
+        ProgressNote(
+            title="\x1b]52;c;ZXZpbA==\x07Checkpoint\x1b[31m!",
+            body="",
+        )
+    )
+
+    rendered = render_plain(block.compose(), width=100)
+
+    assert "\x1b]52" not in rendered
+    assert "Checkpoint" in rendered
+
+
 def test_working_indicator_includes_context_token_count(monkeypatch) -> None:
     monkeypatch.setattr(_live_view_mod.time, "monotonic", lambda: 10.0)
     view = _LiveView(StatusUpdate(context_tokens=110_800))

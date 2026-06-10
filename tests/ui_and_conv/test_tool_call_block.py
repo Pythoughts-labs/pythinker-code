@@ -74,7 +74,7 @@ def test_tool_call_block_renders_running_worklog_entry():
 
 
 def test_tool_call_block_renders_running_subagent_with_text_safe_solid_circle(monkeypatch):
-    monkeypatch.setattr(_worklog.time, "monotonic", lambda: 0.0)
+    monkeypatch.setattr(_worklog, "blink_visible", lambda now=None: True)
     block = _ToolCallBlock(_tool_call("Agent", '{"description":"Audit UI"}'))
     output = _plain(block.compose())
 

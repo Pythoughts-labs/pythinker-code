@@ -212,6 +212,9 @@ class ACPHost:
     async def chdir(self, path: StrOrHostPath) -> None:
         await self._fallback.chdir(path)
 
+    async def realpath(self, path: StrOrHostPath) -> HostPath:
+        return await self._fallback.realpath(path)
+
     async def stat(self, path: StrOrHostPath, *, follow_symlinks: bool = True) -> StatResult:
         return await self._fallback.stat(path, follow_symlinks=follow_symlinks)
 

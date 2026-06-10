@@ -9,8 +9,10 @@ from pydantic import BaseModel, Field
 from pythinker_core.chat_provider import ThinkingEffort
 
 from pythinker_code.config import LLMModel, get_config_file, load_config, save_config
+from pythinker_code.constant import get_version
 from pythinker_code.llm import ProviderType, derive_model_capabilities
 from pythinker_code.utils.logging import logger
+from pythinker_code.utils.server import is_local_host
 from pythinker_code.web.runner.process import PythinkerCLIRunner
 
 
@@ -32,6 +34,7 @@ class ConfigModel(LLMModel):
 class GlobalConfig(BaseModel):
     """Global configuration snapshot for frontend."""
 
+    version: str = Field(default="", description="Installed pythinker-code version")
     default_model: str = Field(description="Current default model key")
     default_thinking: bool = Field(description="Current default thinking mode")
     default_thinking_effort: ThinkingEffort | None = Field(
@@ -115,7 +118,17 @@ def _build_global_config() -> GlobalConfig:
             )
         )
 
+    try:
+        cli_version = get_version()
+    except Exception as e:
+        # Non-fatal: the version banner falls back to "", but surface the
+        # failure so an operator can see get_version() broke (matches the
+        # logger.warning convention used by the config.toml handlers below).
+        logger.warning(f"Failed to get CLI version: {e}", exc_info=True)
+        cli_version = ""
+
     return GlobalConfig(
+        version=cli_version,
         default_model=config.default_model,
         default_thinking=config.default_thinking,
         default_thinking_effort=config.default_thinking_effort,
@@ -215,13 +228,40 @@ async def update_config_toml(
     http_request: Request,
 ) -> UpdateConfigTomlResponse:
     """Update pythinker-code config.toml."""
+    from urllib.parse import urlparse
+
     from pythinker_code.config import load_config_from_string
 
     _ensure_sensitive_apis_allowed(http_request)
-    try:
-        # Validate the config first
-        load_config_from_string(request.content)
 
+    # Parse and validate the proposed config before touching the file.
+    # Raises ConfigError (caught below) on invalid TOML/schema.
+    try:
+        parsed = load_config_from_string(request.content)
+    except Exception as e:
+        logger.warning(f"Failed to update config.toml: {e}")
+        return UpdateConfigTomlResponse(success=False, error=str(e))
+
+    # Validate base_url changes — reject any non-HTTPS, non-loopback host.
+    # This runs OUTSIDE the write try/except so HTTPException propagates as a
+    # real 400 rather than being swallowed into success=False.
+    current = load_config()
+    for name, provider in parsed.providers.items():
+        old = current.providers.get(name)
+        if old is not None and provider.base_url == old.base_url:
+            continue  # unchanged provider host is allowed
+        host = urlparse(provider.base_url)
+        hostname = (host.hostname or "").lower()
+        if host.scheme != "https" and not is_local_host(hostname):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Provider '{name}' base_url must use https (or loopback);"
+                    f" got {provider.base_url}"
+                ),
+            )
+
+    try:
         # Write to file
         config_file = get_config_file()
         config_file.parent.mkdir(parents=True, exist_ok=True)

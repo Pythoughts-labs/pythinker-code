@@ -99,6 +99,12 @@ class LocalHost:
         local_path = path.unsafe_to_local_path() if isinstance(path, HostPath) else Path(path)
         os.chdir(local_path)
 
+    async def realpath(self, path: StrOrHostPath) -> HostPath:
+        """Resolve symlinks and return the real path (follows symlinks)."""
+        local = path.unsafe_to_local_path() if isinstance(path, HostPath) else Path(path)
+        resolved = await asyncio.to_thread(os.path.realpath, str(local))
+        return HostPath.unsafe_from_local_path(Path(resolved))
+
     async def stat(self, path: StrOrHostPath, *, follow_symlinks: bool = True) -> StatResult:
         local_path = path.unsafe_to_local_path() if isinstance(path, HostPath) else Path(path)
         st = await aiofiles.os.stat(local_path, follow_symlinks=follow_symlinks)
@@ -143,7 +149,7 @@ class LocalHost:
         errors: Literal["strict", "ignore", "replace"] = "strict",
     ) -> str:
         local_path = path.unsafe_to_local_path() if isinstance(path, HostPath) else Path(path)
-        async with aiofiles.open(local_path, encoding=encoding, errors=errors) as f:
+        async with aiofiles.open(local_path, encoding=encoding, errors=errors, newline="") as f:
             return await f.read()
 
     async def readlines(
@@ -154,7 +160,7 @@ class LocalHost:
         errors: Literal["strict", "ignore", "replace"] = "strict",
     ) -> AsyncGenerator[str]:
         local_path = path.unsafe_to_local_path() if isinstance(path, HostPath) else Path(path)
-        async with aiofiles.open(local_path, encoding=encoding, errors=errors) as f:
+        async with aiofiles.open(local_path, encoding=encoding, errors=errors, newline="") as f:
             async for line in f:
                 yield line
 

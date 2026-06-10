@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
+import os
+import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
@@ -13,6 +16,7 @@ from pythinker_core.message import Message
 
 from pythinker_code.soul.compaction import estimate_text_tokens
 from pythinker_code.soul.message import system
+from pythinker_code.utils.io import ends_with_newline
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.path import next_available_rotation
 
@@ -26,6 +30,18 @@ class Context:
         self._next_checkpoint_id: int = 0
         """The ID of the next checkpoint, starting from 0, incremented after each checkpoint."""
         self._system_prompt: str | None = None
+        self._tail_repaired: bool = False
+
+    def _tail_repair_prefix(self) -> str:
+        """One-time torn-line terminator for the append paths.
+
+        A crash mid-append can leave an unterminated final line; without the
+        repair the next record glues onto it and readers skip both lines.
+        """
+        if self._tail_repaired:
+            return ""
+        self._tail_repaired = True
+        return "" if ends_with_newline(self._file_backend) else "\n"
 
     async def restore(self) -> bool:
         logger.debug("Restoring context from file: {file_backend}", file_backend=self._file_backend)
@@ -103,18 +119,29 @@ class Context:
                 self._file_backend.write_text(prompt_line, encoding="utf-8")
                 return
 
-            tmp_path = self._file_backend.with_suffix(".tmp")
-            with (
-                tmp_path.open("w", encoding="utf-8") as tmp_f,
-                self._file_backend.open(encoding="utf-8") as src_f,
-            ):
-                tmp_f.write(prompt_line)
-                while True:
-                    chunk = src_f.read(64 * 1024)
-                    if not chunk:
-                        break
-                    tmp_f.write(chunk)
-            tmp_path.replace(self._file_backend)
+            # Unique temp name (NOT a fixed .tmp suffix): two processes
+            # resuming the same session would otherwise interleave writes into
+            # the same temp file and os.replace the garbage into place.
+            fd, tmp_name = tempfile.mkstemp(
+                dir=self._file_backend.parent, prefix=self._file_backend.name, suffix=".tmp"
+            )
+            tmp_path = Path(tmp_name)
+            try:
+                with (
+                    os.fdopen(fd, "w", encoding="utf-8") as tmp_f,
+                    self._file_backend.open(encoding="utf-8") as src_f,
+                ):
+                    tmp_f.write(prompt_line)
+                    while True:
+                        chunk = src_f.read(64 * 1024)
+                        if not chunk:
+                            break
+                        tmp_f.write(chunk)
+                tmp_path.replace(self._file_backend)
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    tmp_path.unlink()
+                raise
 
         await asyncio.to_thread(_write_system_prompt_sync)
 
@@ -126,7 +153,11 @@ class Context:
         logger.debug("Checkpointing, ID: {id}", id=checkpoint_id)
 
         async with aiofiles.open(self._file_backend, "a", encoding="utf-8") as f:
-            await f.write(json.dumps({"role": "_checkpoint", "id": checkpoint_id}) + "\n")
+            await f.write(
+                self._tail_repair_prefix()
+                + json.dumps({"role": "_checkpoint", "id": checkpoint_id})
+                + "\n"
+            )
         if add_user_message:
             await self.append_message(
                 Message(role="user", content=[system(f"CHECKPOINT {checkpoint_id}")])
@@ -236,6 +267,7 @@ class Context:
         self._pending_token_estimate += estimate_text_tokens(messages)
 
         async with aiofiles.open(self._file_backend, "a", encoding="utf-8") as f:
+            await f.write(self._tail_repair_prefix())
             for message in messages:
                 await f.write(message.model_dump_json(exclude_none=True) + "\n")
 
@@ -245,7 +277,11 @@ class Context:
         self._pending_token_estimate = 0
 
         async with aiofiles.open(self._file_backend, "a", encoding="utf-8") as f:
-            await f.write(json.dumps({"role": "_usage", "token_count": token_count}) + "\n")
+            await f.write(
+                self._tail_repair_prefix()
+                + json.dumps({"role": "_usage", "token_count": token_count})
+                + "\n"
+            )
 
     def _parse_context_line(
         self,

@@ -765,6 +765,7 @@ class Shell:
         if isinstance(self.soul, PythinkerSoul):
             from pythinker_code.extensions import run_pending_extensions
             from pythinker_code.ui.shell.visualize._blocks import set_smooth_streaming
+            from pythinker_code.ui.terminal_background import resolve_theme_name
             from pythinker_code.ui.theme import set_active_theme
             from pythinker_code.ui.tui_config import (
                 is_card_style,
@@ -772,7 +773,7 @@ class Shell:
             )
             from pythinker_code.utils.rich.syntax import set_active_code_theme
 
-            set_active_theme(self.soul.runtime.config.theme)
+            set_active_theme(resolve_theme_name(self.soul.runtime.config.theme))
             set_active_tui_style(self.soul.runtime.config.tui.style)
             set_active_code_theme(self.soul.runtime.config.tui.code_theme)
             set_smooth_streaming(self.soul.runtime.config.tui.smooth_streaming)
@@ -1351,6 +1352,8 @@ class Shell:
                 if isinstance(view, _PromptLiveView):
                     captured_view = view
 
+            if runtime is not None:
+                runtime.background_tasks.begin_turn()
             await run_soul(
                 self.soul,
                 user_input,
@@ -1404,6 +1407,8 @@ class Shell:
                     break
                 queued = pending.pop(0)
                 console.print(render_user_echo_text(queued.resolved_command))
+                if runtime is not None:
+                    runtime.background_tasks.begin_turn()
                 await run_soul(
                     self.soul,
                     queued.content,
@@ -1588,6 +1593,22 @@ class Shell:
             )
             track("turn_interrupted", at_step=_at_step)
             console.print(f"[{_get_tui_tokens().error}]Interrupted by user[/]")
+            # ESC must stop everything the interrupted turn started — without
+            # this, background subagents spawned during the turn keep running
+            # and re-deliver the abandoned task via completion notifications.
+            if isinstance(self.soul, PythinkerSoul):
+                try:
+                    killed = self.soul.runtime.background_tasks.kill_turn_tasks(
+                        reason="Interrupted by user"
+                    )
+                except Exception:
+                    logger.exception("Failed to kill background tasks on interrupt")
+                    killed = []
+                if killed:
+                    console.print(
+                        f"[{_get_tui_tokens().muted}]Stopped {len(killed)} background "
+                        f"task{'s' if len(killed) != 1 else ''} started this turn[/]"
+                    )
         except Exception as e:
             _t = _get_tui_tokens()
             logger.exception("Unexpected error:")

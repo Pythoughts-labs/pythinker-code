@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import json
+from collections.abc import Callable, Generator
 from hashlib import md5
 from pathlib import Path
 
@@ -77,3 +79,46 @@ def save_metadata(metadata: Metadata):
     metadata_file = get_metadata_file()
     logger.debug("Saving metadata to file: {file}", file=metadata_file)
     atomic_json_write(metadata.model_dump(), metadata_file)
+
+
+@contextlib.contextmanager
+def _metadata_lock() -> Generator[None]:
+    """Cross-process lock for read-modify-write cycles on pythinker.json.
+
+    atomic_json_write prevents torn files but not lost updates: two processes
+    that both load before either saves drop each other's changes — e.g. a
+    freshly registered work_dir vanishing, making its sessions unreachable.
+    The lock file is kept on disk (unlinking would split the lock across
+    inodes; see scratchpad._exclude_lock).
+    """
+    lock_file = get_metadata_file().with_name("pythinker.json.lock")
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+    fh = lock_file.open("a+", encoding="utf-8")
+    try:
+        try:
+            import fcntl
+        except ImportError:
+            yield
+        else:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                with contextlib.suppress(OSError):
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+    finally:
+        fh.close()
+
+
+def mutate_metadata[MutateResult](mutate: Callable[[Metadata], MutateResult]) -> MutateResult:
+    """Atomically load → mutate → save the shared metadata index.
+
+    *mutate* runs under a cross-process lock; whatever it returns is passed
+    through. Blocking (flock + small JSON I/O) — call via asyncio.to_thread
+    from event-loop code.
+    """
+    with _metadata_lock():
+        metadata = load_metadata()
+        result = mutate(metadata)
+        save_metadata(metadata)
+        return result

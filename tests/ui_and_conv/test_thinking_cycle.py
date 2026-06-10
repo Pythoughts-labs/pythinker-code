@@ -35,20 +35,21 @@ def test_next_thinking_level_cycles_and_wraps(
 def test_thinking_frame_color_maps_each_level_dark() -> None:
     from pythinker_code.ui.theme import thinking_frame_color
 
+    # Cold→hot gradient: slate off, cool blue/teal, warm amber/orange, dark red.
     assert thinking_frame_color("off", theme="dark") == "#64748b"  # slate-500
-    assert thinking_frame_color("min", theme="dark") == "#cbd5e1"  # slate-300 alias
-    assert thinking_frame_color("minimal", theme="dark") == "#cbd5e1"  # slate-300 canonical
-    assert thinking_frame_color("low", theme="dark") == "#3b82f6"  # blue-500
-    assert thinking_frame_color("medium", theme="dark") == "#22d3ee"  # cyan-400
-    assert thinking_frame_color("high", theme="dark") == "#c4b5fd"  # violet-300
-    assert thinking_frame_color("xhigh", theme="dark") == "#a855f7"  # purple-500
-    assert thinking_frame_color("max", theme="dark") == "#6d28d9"  # violet-700
+    assert thinking_frame_color("min", theme="dark") == "#60a5fa"  # blue-400 alias
+    assert thinking_frame_color("minimal", theme="dark") == "#60a5fa"  # blue-400 canonical
+    assert thinking_frame_color("low", theme="dark") == "#2dd4bf"  # teal-400
+    assert thinking_frame_color("medium", theme="dark") == "#fbbf24"  # amber-400
+    assert thinking_frame_color("high", theme="dark") == "#f97316"  # orange-500
+    assert thinking_frame_color("xhigh", theme="dark") == "#b91c1c"  # red-700
+    assert thinking_frame_color("max", theme="dark") == "#7f1d1d"  # red-900
 
 
 def test_thinking_frame_color_light_uses_same_standard_scale() -> None:
     from pythinker_code.ui.theme import thinking_frame_color
 
-    assert thinking_frame_color("high", theme="light") == "#c4b5fd"
+    assert thinking_frame_color("high", theme="light") == "#f97316"
     assert thinking_frame_color("high", theme="light") == thinking_frame_color("high", theme="dark")
 
 
@@ -59,9 +60,15 @@ def test_thinking_frame_color_unknown_level_falls_back_to_border() -> None:
 
 
 def test_thinking_frame_style_is_ptk_fg_directive() -> None:
+    from pythinker_code.ui.color_utils import blend, parse_hex_color, to_hex_color
     from pythinker_code.ui.theme import thinking_frame_style
 
-    assert thinking_frame_style("high", theme="dark") == "fg:#c4b5fd"
+    # Input bars are chrome: the level color is dimmed 30% toward the theme's
+    # background pole so the frame hints at effort without shouting.
+    rgb = parse_hex_color("#f97316")
+    assert rgb is not None
+    expected = to_hex_color(blend(rgb, (0, 0, 0), 0.7))
+    assert thinking_frame_style("high", theme="dark") == f"fg:{expected}"
 
 
 def test_core_thinking_cycle_uses_available_model_levels() -> None:

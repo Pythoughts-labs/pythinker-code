@@ -11,7 +11,7 @@ from rich.text import Text
 
 from pythinker_code.ui.shell.components.render_utils import cell_width, truncate_to_width
 from pythinker_code.ui.shell.design_system import ShellTone, shell_style, status_icon
-from pythinker_code.ui.shell.motion import reduced_motion_enabled, shimmer_text
+from pythinker_code.ui.shell.motion import blink_visible, shimmer_text
 
 ActivityState = Literal["running", "completed", "failed", "waiting", "denied", "interrupted"]
 
@@ -28,7 +28,7 @@ def _row_marker(state: ActivityState, now: float) -> Text:
     """Status marker for an activity row, pulsing the running dot in step with
     the rest of the shell (`loading_marker`/`_worklog`) on a 0.8s cadence."""
     icon = status_icon(state)
-    if state == "running" and not reduced_motion_enabled() and int(now / 0.8) % 2 != 0:
+    if state == "running" and not blink_visible(now):
         return Text(" ", style=icon.style)
     return icon
 

@@ -8,12 +8,13 @@ to per-project. Local-host only in v1.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import hashlib
 import os
 import re
 import tempfile
-from collections.abc import Generator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -37,6 +38,7 @@ ENTRY_DELIMITER = "\n§\n"
 MEMORY_CHAR_LIMIT = 2200
 USER_CHAR_LIMIT = 1375
 INJECTION_BUDGET_BYTES = 8 * 1024
+_JOURNAL_MAX_ENTRIES = 100
 
 Target = Literal["memory", "user"]
 
@@ -108,6 +110,7 @@ class ProjectMemoryStore:
         self._memory_limit = memory_char_limit
         self._user_limit = user_char_limit
         self._root: Path | None = None
+        self._async_lock = asyncio.Lock()
 
     async def _ensure_dir(self) -> Path:
         if self._root is None:
@@ -140,20 +143,31 @@ class ProjectMemoryStore:
     async def read_entries(self, target: Target) -> list[str]:
         path = await self._path_for(target)
         try:
-            if not path.exists():
-                return []
-            return self._split_entries(path.read_text(encoding="utf-8"))
+            return await self._read_entries_strict(target)
         except OSError:
-            logger.debug("project memory read failed for {t}", t=target)
+            logger.debug("project memory read failed for {t}: {p}", t=target, p=path)
             return []
 
+    async def _read_entries_strict(self, target: Target) -> list[str]:
+        """Like read_entries, but transient read failures PROPAGATE.
+
+        Mutating flows must use this: treating a failed read as "no entries"
+        would let add() atomically replace a populated MEMORY.md with just its
+        one new entry — silent total data loss.
+        """
+        path = await self._path_for(target)
+        if not path.exists():
+            return []
+        return self._split_entries(path.read_text(encoding="utf-8"))
+
     @staticmethod
-    @contextlib.contextmanager
-    def _file_lock(path: Path) -> Generator[None]:
-        # NOTE (v1): fcntl gives cross-process safety. The lock is held across
-        # await in callers, so do NOT invoke store mutations concurrently on one
-        # event loop / store instance in v1 (the Memory tool is root-only and
-        # sequential). Revisit with asyncio.to_thread / asyncio.Lock if that changes.
+    @contextlib.asynccontextmanager
+    async def _file_lock(path: Path) -> AsyncGenerator[None]:
+        # NOTE (v1): fcntl gives cross-process safety. self._async_lock serialises
+        # coroutines of the SAME store instance; that guarantee is per-instance
+        # only, so the blocking flock acquisition is offloaded to a thread —
+        # a holder elsewhere (another process, or another store instance for the
+        # same work_dir) can then never stall the event loop.
         lock_path = path.with_name(path.name + ".lock")
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         fh = lock_path.open("a+", encoding="utf-8")
@@ -163,7 +177,7 @@ class ProjectMemoryStore:
             except ImportError:
                 yield
             else:
-                fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+                await asyncio.to_thread(fcntl.flock, fh.fileno(), fcntl.LOCK_EX)
                 try:
                     yield
                 finally:
@@ -195,8 +209,13 @@ class ProjectMemoryStore:
         if blocked:
             return MemoryOpResult(False, blocked)
         path = await self._path_for(target)
-        with self._file_lock(path):
-            entries = await self.read_entries(target)
+        async with self._async_lock, self._file_lock(path):
+            try:
+                entries = await self._read_entries_strict(target)
+            except OSError as exc:
+                return MemoryOpResult(
+                    False, f"Memory read failed ({exc}); aborting write to avoid data loss."
+                )
             if content in entries:
                 return MemoryOpResult(True, "Entry already exists (no duplicate added).")
             limit = self._char_limit(target)
@@ -233,8 +252,13 @@ class ProjectMemoryStore:
         if blocked:
             return MemoryOpResult(False, blocked)
         path = await self._path_for(target)
-        with self._file_lock(path):
-            entries = await self.read_entries(target)
+        async with self._async_lock, self._file_lock(path):
+            try:
+                entries = await self._read_entries_strict(target)
+            except OSError as exc:
+                return MemoryOpResult(
+                    False, f"Memory read failed ({exc}); aborting write to avoid data loss."
+                )
             idx = self._match_one(entries, old_text)
             if isinstance(idx, MemoryOpResult):
                 return idx
@@ -251,8 +275,13 @@ class ProjectMemoryStore:
         if not old_text:
             return MemoryOpResult(False, "old_text cannot be empty.")
         path = await self._path_for(target)
-        with self._file_lock(path):
-            entries = await self.read_entries(target)
+        async with self._async_lock, self._file_lock(path):
+            try:
+                entries = await self._read_entries_strict(target)
+            except OSError as exc:
+                return MemoryOpResult(
+                    False, f"Memory read failed ({exc}); aborting write to avoid data loss."
+                )
             idx = self._match_one(entries, old_text)
             if isinstance(idx, MemoryOpResult):
                 return idx
@@ -270,11 +299,20 @@ class ProjectMemoryStore:
             return MemoryOpResult(False, blocked)
         root = await self._ensure_dir()
         path = root / "memory" / "JOURNAL.md"
-        with self._file_lock(path):
-            entries = self._split_entries(path.read_text(encoding="utf-8")) if path.exists() else []
+        async with self._async_lock, self._file_lock(path):
+            try:
+                entries = (
+                    self._split_entries(path.read_text(encoding="utf-8")) if path.exists() else []
+                )
+            except OSError as exc:
+                return MemoryOpResult(
+                    False, f"Journal read failed ({exc}); aborting write to avoid data loss."
+                )
             if recap in entries:
                 return MemoryOpResult(True, "Journal recap already exists (no duplicate added).")
-            await self._write_journal_entries([recap, *entries])
+            # Trim at write time: the file grows by one recap per session
+            # exit forever otherwise, and every reader parses all of it.
+            await self._write_journal_entries([recap, *entries][:_JOURNAL_MAX_ENTRIES])
         return MemoryOpResult(True, "Journal recap added.")
 
     async def _write_journal_entries(self, entries: list[str]) -> None:

@@ -11,10 +11,12 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Mapping
-from typing import TextIO
+from typing import Literal, TextIO
 
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on", "always"})
 _FALSE_VALUES = frozenset({"0", "false", "no", "off", "never"})
+
+type ColorDepth = Literal["none", "16", "256", "truecolor"]
 
 
 def _env(environ: Mapping[str, str] | None = None) -> Mapping[str, str]:
@@ -46,6 +48,39 @@ def colors_disabled(environ: Mapping[str, str] | None = None) -> bool:
     if _clean(env.get("TERM")) == "dumb":
         return True
     return _clean(env.get("CLICOLOR")) == "0"
+
+
+def color_depth(environ: Mapping[str, str] | None = None) -> ColorDepth:
+    """Classify the terminal's color support into three usable tiers.
+
+    Mirrors the Codex TUI detection order: an explicit ``FORCE_COLOR`` level
+    wins, then ``COLORTERM`` truecolor advertising, then the Windows Terminal
+    promotion (``WT_SESSION`` implies 24-bit support even when ``TERM`` is
+    conservative), then ``TERM`` itself. ``"none"`` mirrors
+    :func:`colors_disabled`. Rich does its own downgrade for printing; this
+    helper exists for UI decisions Rich can't make for us (e.g. skipping
+    background tints that quantize badly on 16-color terminals).
+    """
+    env = _env(environ)
+    if colors_disabled(env):
+        return "none"
+    force = _clean(env.get("FORCE_COLOR"))
+    if force == "3":
+        return "truecolor"
+    if force == "2":
+        return "256"
+    if force == "1":
+        return "16"
+    if _clean(env.get("COLORTERM")) in {"truecolor", "24bit"}:
+        return "truecolor"
+    if env.get("WT_SESSION"):
+        return "truecolor"
+    term = _clean(env.get("TERM"))
+    if "truecolor" in term or "direct" in term:
+        return "truecolor"
+    if "256color" in term:
+        return "256"
+    return "16"
 
 
 def ascii_glyphs_enabled(

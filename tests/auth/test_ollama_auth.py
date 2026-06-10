@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from typing import Any, cast
+from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
 import pytest
@@ -198,3 +200,48 @@ async def test_logout_ollama_clears_provider_and_models(tmp_path, monkeypatch):
     assert any(e.type == "success" for e in events)
     assert OLLAMA_PROVIDER_KEY not in config.providers
     assert all(m.provider != OLLAMA_PROVIDER_KEY for m in config.models.values())
+
+
+@pytest.mark.asyncio
+async def test_login_emits_error_on_non_json_body(monkeypatch):
+    """Non-JSON /api/tags or /api/show body must not crash login_ollama with an
+    uncaught JSONDecodeError; it should degrade to a clean error event."""
+    from pythinker_code.auth.ollama import (
+        OllamaModel,
+        _enrich_with_show,
+        login_ollama,
+    )
+
+    # --- Part 1: _discover_ollama_models raises JSONDecodeError (e.g. /api/tags
+    # returns garbage) → login_ollama should catch it and yield an error event.
+    async def _raise_json_error(*args, **kwargs):
+        raise json.JSONDecodeError("Expecting value", "", 0)
+
+    monkeypatch.setattr("pythinker_code.auth.ollama._discover_ollama_models", _raise_json_error)
+
+    config = Config(is_from_default_location=True)
+    events = [event async for event in login_ollama(config)]
+    assert any(e.type == "error" for e in events), "Expected an error event for non-JSON body"
+    assert "managed:ollama" not in config.providers
+
+    # --- Part 2: _enrich_with_show receives a response whose .json() raises
+    # JSONDecodeError → should swallow it and return the unenriched base model.
+    base_model = OllamaModel(model_id="llama3.1:8b", display_name="llama3.1:8b")
+
+    mock_response = MagicMock()
+    mock_response.json = AsyncMock(side_effect=json.JSONDecodeError("Expecting value", "", 0))
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=False)
+
+    mock_session = MagicMock()
+    mock_session.post = MagicMock(return_value=mock_response)
+
+    timeout = aiohttp.ClientTimeout(total=5)
+    result = await _enrich_with_show(
+        mock_session,
+        root="http://localhost:11434",
+        headers={},
+        model=base_model,
+        timeout=timeout,
+    )
+    assert result is base_model, "Expected unenriched base model on JSONDecodeError in /api/show"

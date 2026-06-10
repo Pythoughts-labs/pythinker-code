@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 import aiofiles
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from pythinker_code.utils.io import ends_with_newline
 from pythinker_code.utils.logging import logger
 from pythinker_code.wire.protocol import WIRE_PROTOCOL_LEGACY_VERSION, WIRE_PROTOCOL_VERSION
 from pythinker_code.wire.types import WireMessage, WireMessageEnvelope
@@ -60,6 +62,8 @@ def parse_wire_file_line(line: str) -> WireFileMetadata | WireMessageRecord:
 class WireFile:
     path: Path
     protocol_version: str = WIRE_PROTOCOL_VERSION
+    _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False, compare=False)
+    _tail_repaired: bool = field(default=False, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if self.path.exists():
@@ -122,13 +126,23 @@ class WireFile:
         await self.append_record(record)
 
     async def append_record(self, record: WireMessageRecord) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        needs_header = not self.path.exists() or self.path.stat().st_size == 0
-        async with aiofiles.open(self.path, mode="a", encoding="utf-8") as f:
-            if needs_header:
-                metadata = WireFileMetadata(protocol_version=self.protocol_version)
-                await f.write(_dump_line(metadata))
-            await f.write(_dump_line(record))
+        async with self._lock:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            needs_header = not self.path.exists() or self.path.stat().st_size == 0
+            repair_tail = False
+            if not self._tail_repaired:
+                # A crash mid-append can leave a torn, unterminated final line;
+                # terminate it once per process so the next record doesn't glue
+                # onto it (readers would skip both lines otherwise).
+                repair_tail = not needs_header and not ends_with_newline(self.path)
+                self._tail_repaired = True
+            async with aiofiles.open(self.path, mode="a", encoding="utf-8") as f:
+                if repair_tail:
+                    await f.write("\n")
+                if needs_header:
+                    metadata = WireFileMetadata(protocol_version=self.protocol_version)
+                    await f.write(_dump_line(metadata))
+                await f.write(_dump_line(record))
 
 
 def _dump_line(model: BaseModel) -> str:

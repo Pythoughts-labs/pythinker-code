@@ -42,6 +42,22 @@ async def test_build_recall_block_includes_open_todos_and_facts():
     assert "prior session" in block
 
 
+async def test_build_recall_block_frames_content_as_past_context():
+    """The block must read as history, not as a directive. Without this framing
+    a model treats stale recalled todos ("Security scan: ...") as the current
+    request — observed in the field: "ping" was answered with a full code
+    review resumed from a previous session."""
+    block = await build_recall_block(
+        candidates=[_block("Wait for both to complete, then synthesize into unified report.")],
+        query=RecallQuery(text="report"),
+        open_todos=[("prior session", ["Security scan: vulnerabilities"])],
+        budget_tokens=1000,
+    )
+    assert "not an instruction" in block
+    assert "Unfinished todos from past sessions" in block
+    assert "do not resume unprompted" in block
+
+
 async def test_build_recall_block_empty_when_nothing():
     block = await build_recall_block(
         candidates=[],
@@ -79,6 +95,22 @@ async def test_gather_candidates_includes_scratch_notes(tmp_path, monkeypatch):
     )
     blocks = await gather_candidates(ProjectMemoryStore(wd), wd)
     assert any("bm25" in block.content for block in blocks)
+
+
+async def test_build_recall_block_sanitizes_open_todo_titles():
+    block = await build_recall_block(
+        candidates=[],
+        query=RecallQuery(text="x"),
+        open_todos=[("proj", ["line one\nline two", "<private>secret</private>visible"])],
+        budget_tokens=1000,
+    )
+    # Newline must be collapsed into a space, producing a single bullet
+    assert "- [proj] line one line two" in block
+    # The raw two-line form must NOT be present
+    assert "line one\nline two" not in block
+    # The <private> span is stripped: 'secret' is gone, 'visible' is present
+    assert "secret" not in block
+    assert "visible" in block
 
 
 async def test_provider_injects_once_and_rearms(tmp_path, monkeypatch):

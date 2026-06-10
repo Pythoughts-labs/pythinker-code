@@ -97,7 +97,7 @@ async def test_import_file_sends_wire_markers(tmp_path: Path, monkeypatch) -> No
     assert "Imported context" in captured[0].text
 
 
-async def test_import_env_file_sends_warning(tmp_path: Path, monkeypatch) -> None:
+async def test_import_env_file_refused_without_force(tmp_path: Path, monkeypatch) -> None:
     captured: list[TextPart] = []
 
     def fake_wire_send(message: TextPart) -> None:
@@ -109,8 +109,15 @@ async def test_import_env_file_sends_warning(tmp_path: Path, monkeypatch) -> Non
     env_file = tmp_path / ".env"
     env_file.write_text("API_KEY=secret123", encoding="utf-8")
 
+    # A sensitive .env import is refused before any context mutation, and must
+    # point the user at --force (UT5: gate sensitive-file imports).
     await soul_slash.import_context(soul, str(env_file))  # type: ignore[reportGeneralTypeIssues]
+    assert len(captured) == 1
+    assert "refusing" in captured[0].text.lower()
+    assert "--force" in captured[0].text
 
-    assert len(captured) == 2
-    assert "Imported context" in captured[0].text
-    assert "secrets" in captured[1].text.lower()
+    # With --force the slash command proceeds with the import.
+    captured.clear()
+    await soul_slash.import_context(soul, f"{env_file} --force")  # type: ignore[reportGeneralTypeIssues]
+    assert any("Imported context" in m.text for m in captured)
+    assert not any("refusing" in m.text.lower() for m in captured)

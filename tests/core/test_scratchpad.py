@@ -634,3 +634,19 @@ def test_refresh_inserts_block_into_legacy_prompt():
     refreshed = refresh_system_prompt_scratchpad_section(prompt, "guard")
     assert "guard" in refreshed
     assert refreshed.index("guard") < refreshed.index("Before every tool response")
+
+
+def test_write_gitignore_entries_keeps_and_ignores_lock_file(tmp_path: Path):
+    """The advisory lock file is intentionally kept on disk (unlinking it would
+    split flock coordination across inodes); instead it is covered by the
+    ``*.scratchpad.lock`` pattern written into .gitignore."""
+    gitignore_path = tmp_path / ".gitignore"
+    scratchpad._write_gitignore_entries(gitignore_path)
+    # The gitignore file should have been created with the pythinker entries.
+    assert gitignore_path.exists(), ".gitignore was not written"
+    content = gitignore_path.read_text(encoding="utf-8")
+    assert ".pythinker/" in content, "expected pythinker entries in .gitignore"
+    # The lock file persists for correct coordination and is git-ignored.
+    assert "*.scratchpad.lock" in content, "lock pattern missing from .gitignore"
+    lock_file = tmp_path / ".gitignore.scratchpad.lock"
+    assert lock_file.exists(), "advisory lock file should persist for coordination"

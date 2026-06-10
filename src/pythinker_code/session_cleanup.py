@@ -139,42 +139,41 @@ def sweep_stale_work_dirs(*, share_dir: Path | None = None) -> int:
 
     Returns the number of entries pruned.
     """
-    from pythinker_code.metadata import WorkDirMeta, load_metadata, save_metadata
+    from pythinker_code.metadata import Metadata, WorkDirMeta, mutate_metadata
     from pythinker_code.share import get_share_dir
 
     root = share_dir or get_share_dir()
     sessions_root = root / _SESSIONS_DIR_NAME
 
+    def _prune(metadata: Metadata) -> int:
+        keep: list[WorkDirMeta] = []
+        pruned = 0
+        for wd in metadata.work_dirs:
+            if Path(wd.path).exists():
+                keep.append(wd)
+                continue
+            try:
+                hash_ = _md5(wd.path.encode("utf-8"), usedforsecurity=False).hexdigest()
+                bucket_name = hash_ if wd.host == _LOCAL_HOST else f"{wd.host}_{hash_}"
+                bucket_dir = sessions_root / bucket_name
+                has_sessions = bucket_dir.is_dir() and any(bucket_dir.iterdir())
+            except Exception:
+                has_sessions = True  # err on the side of keeping
+            if has_sessions:
+                keep.append(wd)
+            else:
+                pruned += 1
+        if pruned:
+            metadata.work_dirs = keep
+        return pruned
+
     try:
-        metadata = load_metadata()
+        pruned = mutate_metadata(_prune)
     except Exception:
+        logger.debug("session_cleanup: failed to prune work_dir registry")
         return 0
-
-    keep: list[WorkDirMeta] = []
-    pruned = 0
-    for wd in metadata.work_dirs:
-        if Path(wd.path).exists():
-            keep.append(wd)
-            continue
-        try:
-            hash_ = _md5(wd.path.encode("utf-8"), usedforsecurity=False).hexdigest()
-            bucket_name = hash_ if wd.host == _LOCAL_HOST else f"{wd.host}_{hash_}"
-            bucket_dir = sessions_root / bucket_name
-            has_sessions = bucket_dir.is_dir() and any(bucket_dir.iterdir())
-        except Exception:
-            has_sessions = True  # err on the side of keeping
-        if has_sessions:
-            keep.append(wd)
-        else:
-            pruned += 1
-
     if pruned:
-        metadata.work_dirs = keep
-        try:
-            save_metadata(metadata)
-            logger.debug("session_cleanup: pruned {n} stale work_dir(s) from registry", n=pruned)
-        except Exception:
-            logger.debug("session_cleanup: failed to save pruned metadata")
+        logger.debug("session_cleanup: pruned {n} stale work_dir(s) from registry", n=pruned)
 
     return pruned
 

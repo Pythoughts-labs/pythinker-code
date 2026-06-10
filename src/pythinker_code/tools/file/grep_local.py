@@ -1,6 +1,5 @@
 """
 The local version of the Grep tool using ripgrep.
-Be cautious that `HostPath` is not used in this implementation.
 """
 
 import asyncio
@@ -21,13 +20,36 @@ from typing import override
 import aiohttp
 from pydantic import BaseModel, Field, field_validator
 from pythinker_core.tooling import CallableTool2, ToolError, ToolReturnValue
+from pythinker_host.path import HostPath
 
 import pythinker_code
 from pythinker_code.share import get_share_dir
+from pythinker_code.soul.agent import Runtime
 from pythinker_code.tools.utils import ToolResultBuilder, load_desc
 from pythinker_code.utils.aiohttp import new_client_session
 from pythinker_code.utils.logging import logger
+from pythinker_code.utils.path import is_within_directory, is_within_workspace
 from pythinker_code.utils.sensitive import is_sensitive_file, sensitive_file_warning
+
+# Control-char field separators passed to ripgrep in content mode (unit/record
+# separators — cannot appear in real file paths), so `path SEP lineno SEP text`
+# splits unambiguously even when the path itself contains `:`/`-` digit runs.
+RG_MATCH_SEP = "\x1f"
+RG_CONTEXT_SEP = "\x1e"
+
+
+def _split_rg_content_line(line: str) -> tuple[str, str, str, str] | None:
+    """Split an rg content line into (path, display_sep, lineno, text), else None.
+
+    Match lines use RG_MATCH_SEP (display `:`), context lines RG_CONTEXT_SEP
+    (display `-`). The lineno field must be numeric — this rejects file text
+    that happens to contain a separator byte.
+    """
+    for raw_sep, display_sep in ((RG_MATCH_SEP, ":"), (RG_CONTEXT_SEP, "-")):
+        parts = line.split(raw_sep, 2)
+        if len(parts) == 3 and parts[1].isdigit():
+            return parts[0], display_sep, parts[1], parts[2]
+    return None
 
 
 class Params(BaseModel):
@@ -382,8 +404,17 @@ def _build_rg_args(rg_path: str, params: Params, *, single_threaded: bool = Fals
             args.extend(["--after-context", str(params.after_context)])
         if params.context is not None:
             args.extend(["--context", str(params.context)])
-        if params.line_number:
-            args.append("--line-number")
+        # Always force line numbers for reliable sensitive-file path attribution;
+        # the injected numbers are stripped for display when params.line_number is False.
+        args.append("--line-number")
+        # Use control-char field separators so the path/lineno/content split is
+        # unambiguous: with the default ':'/'-' separators a path like
+        # `utf-8-codec.py` parses as path `utf` + lineno `8`, mangling display
+        # and misattributing the sensitive-file check. Display lines are rebuilt
+        # with ':'/'-' in post-processing.
+        args.extend(
+            ["--field-match-separator", RG_MATCH_SEP, "--field-context-separator", RG_CONTEXT_SEP]
+        )
 
     # File filtering options
     if params.glob:
@@ -618,8 +649,12 @@ def _python_grep(params: Params, unavailable_reason: str, *, wrap: bool = True) 
                     continue
                 emitted.add(idx)
                 sep = ":" if idx == match_idx else "-"
-                line_no = f"{idx + 1}{sep}" if params.line_number else ""
-                matched_lines.append(f"{rel_path}{sep}{line_no}{lines[idx]}")
+                # Sensitive filtering already happened at file level (rel_path),
+                # so display lines can be built directly with/without numbers.
+                if params.line_number:
+                    matched_lines.append(f"{rel_path}{sep}{idx + 1}{sep}{lines[idx]}")
+                else:
+                    matched_lines.append(f"{rel_path}{sep}{lines[idx]}")
 
     if params.output_mode == "files_with_matches":
         matched_lines.sort(
@@ -691,12 +726,16 @@ class SmartSearch(CallableTool2[SmartSearchParams]):
     )
     params: type[SmartSearchParams] = SmartSearchParams
 
+    def __init__(self, runtime: Runtime) -> None:
+        super().__init__()
+        self._runtime = runtime
+
     @override
     async def __call__(self, params: SmartSearchParams) -> ToolReturnValue:
         seen_lines: set[str] = set()
         sections: list[str] = []
         per_pass_limit = max(10, min(params.max_results, 80))
-        grep = Grep()
+        grep = Grep(self._runtime)
         for label, pattern in _smart_search_patterns(params.query):
             grep_params = Params.model_validate(
                 {
@@ -752,11 +791,40 @@ class Grep(CallableTool2[Params]):
     description: str = load_desc(Path(__file__).parent / "grep.md")
     params: type[Params] = Params
 
+    def __init__(self, runtime: Runtime) -> None:
+        super().__init__()
+        self._work_dir = runtime.builtin_args.PYTHINKER_WORK_DIR
+        self._additional_dirs = runtime.additional_dirs
+        self._skills_dirs = runtime.skills_dirs
+
+    async def _validate_path(self, raw: str) -> ToolError | None:
+        # Resolve symlinks before the boundary check: ripgrep follows an explicit
+        # symlink path argument, so a lexical canonical() let an in-workspace symlink
+        # to an outside target escape. Mirror the read/write/edit tools' realpath check.
+        real_p = await HostPath(raw).expanduser().canonical().realpath()
+        real_work = await self._work_dir.realpath()
+        real_add = [await d.realpath() for d in self._additional_dirs]
+        if is_within_workspace(real_p, real_work, real_add):
+            return None
+        real_skills = [await d.realpath() for d in self._skills_dirs]
+        if any(is_within_directory(real_p, d) for d in real_skills):
+            return None
+        return ToolError(
+            message=(
+                f"`{raw}` is outside the workspace. "
+                "You can only search within the working directory, "
+                "additional directories, and skills directories."
+            ),
+            brief="Path outside workspace",
+        )
+
     @override
     async def __call__(
         self, params: Params, *, _retry: bool = False, _wrap: bool = True
     ) -> ToolReturnValue:
         try:
+            if err := await self._validate_path(params.path):
+                return err
             builder = ToolResultBuilder()
             if _wrap and params.output_mode == "content":
                 # Matched content lines are external file bytes; wrap them as
@@ -861,26 +929,32 @@ class Grep(CallableTool2[Params]):
                 search_base = os.path.dirname(search_base)
             output = _strip_path_prefix(output, search_base)
 
-            # Step 3: filter sensitive files from output
-            # Regex for ripgrep content lines: path:linenum:text (match) or
-            # path-linenum-text (context). The separator is `:` or `-` followed
-            # by digits then the same separator again.
-            _RG_LINE_RE = re.compile(r"^(.*?)([:\-])(\d+)\2")
-
+            # Step 3: filter sensitive files and rebuild content lines for display.
+            # Content lines arrive with control-char field separators (see
+            # _build_rg_args), so the path is recovered exactly — never misparsed
+            # from a ':'/'-' digit run inside the path itself — and the display
+            # line is rebuilt with ':'/'-', dropping the internally forced line
+            # number when the model asked for -n=false.
             out_lines = output.split("\n")
             filtered_paths: list[str] = []
             kept_lines: list[str] = []
             sensitive_path_set: set[str] = set()
             for line in out_lines:
                 if params.output_mode == "content":
-                    # Match lines: "file.py:10:matched text"
-                    # Context lines: "file.py-10-context text"
-                    # Separator: "--"
+                    # Block separator between context groups stays "--".
                     if line == "--":
                         kept_lines.append(line)
                         continue
-                    m = _RG_LINE_RE.match(line)
-                    file_path = m.group(1) if m else line
+                    fields = _split_rg_content_line(line)
+                    if fields is None:
+                        file_path = line
+                    else:
+                        file_path, sep, lineno, text = fields
+                        line = (
+                            f"{file_path}{sep}{lineno}{sep}{text}"
+                            if params.line_number
+                            else f"{file_path}{sep}{text}"
+                        )
                 elif params.output_mode == "count_matches":
                     # Count lines: "file.py:42"
                     idx = line.rfind(":")
@@ -900,9 +974,10 @@ class Grep(CallableTool2[Params]):
                 # Remove trailing "--" separators left after filtering
                 while kept_lines and kept_lines[-1] == "--":
                     kept_lines.pop()
-                output = "\n".join(kept_lines)
                 warning = sensitive_file_warning(filtered_paths)
                 message = f"{message} {warning}" if message else warning
+            # Always re-join: content lines were rebuilt from raw-separator form.
+            output = "\n".join(kept_lines)
 
             # Step 4: count_matches summary (before pagination, on full results)
             lines = output.split("\n")

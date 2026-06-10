@@ -9,6 +9,13 @@ from pythinker_code.tools.display import (
     TodoDisplayBlock,
     TodoDisplayItem,
 )
+from pythinker_code.ui.shell.components.bash_execution import format_bash_command_for_header
+from pythinker_code.ui.shell.tool_renderers._render_utils import (
+    fg,
+    safe_arg_keys_summary,
+    tool_call_header,
+    tool_title,
+)
 from pythinker_code.ui.shell.visualize._worklog import (
     WorkLogState,
     denied_error,
@@ -186,3 +193,57 @@ def test_diff_blocks_render_compact_summary_first_card():
     assert "+2" in output
     assert "-1" in output
     assert "Diff +" not in output
+
+
+def test_render_boundary_strips_ansi_escapes():
+    # tool_call_header: name and str summary containing a clear-screen escape
+    header = tool_call_header("ls\x1b[2J", summary="clear\x1b[2Jscreen")
+    assert "\x1b" not in header.plain, "tool_call_header should strip ANSI from name"
+    assert "\x1b" not in header.plain, "tool_call_header should strip ANSI from summary"
+
+    # tool_title: label containing an escape
+    title = tool_title("x\x1b[2J")
+    assert "\x1b" not in title.plain, "tool_title should strip ANSI from label"
+
+    # fg: str content containing an escape
+    colored = fg("error", "y\x1b[2J")
+    assert "\x1b" not in colored.plain, "fg should strip ANSI from str content"
+
+    # render_worklog_entry: target containing an escape
+    entry = render_worklog_entry(
+        label="Read",
+        target="f\x1b[2J.py",
+        state=WorkLogState.COMPLETED,
+    )
+    # entry may be a Text or a Group; extract plain text via console
+    console = Console(record=True, width=120, color_system=None)
+    console.print(entry)
+    entry_plain = console.export_text()
+    assert "\x1b" not in entry_plain, "render_worklog_entry should strip ANSI from target"
+
+    # format_bash_command_for_header: both expanded and collapsed branches
+    bash_expanded = format_bash_command_for_header("echo\x1b[2J", expanded=True)
+    assert "\x1b" not in bash_expanded, (
+        "format_bash_command_for_header (expanded) should strip ANSI"
+    )
+    bash_collapsed = format_bash_command_for_header("echo\x1b[2J", expanded=False)
+    assert "\x1b" not in bash_collapsed, (
+        "format_bash_command_for_header (collapsed) should strip ANSI"
+    )
+
+
+def test_generic_arg_key_names_strip_ansi_through_header():
+    # The generic renderer (fallback for every MCP/unknown tool) summarizes an
+    # unknown tool's *arg key names* — which are model/MCP-controlled. A crafted key
+    # must not reach the terminal via tool_call_header's Text-summary branch.
+    summary = safe_arg_keys_summary({"\x1b]0;PWNED\x07evil": 1, "normal": 2})
+    assert summary is not None
+    assert "\x1b" not in summary.plain, "arg key names must be ANSI-stripped"
+
+    header = tool_call_header("mcp__server__tool", summary=summary)
+    assert "\x1b" not in header.plain
+
+    # End-to-end through a real terminal stream: no escape byte may be emitted.
+    console = Console(record=True, width=120, color_system="truecolor", force_terminal=True)
+    console.print(header)
+    assert "\x1b]0;" not in console.export_text(styles=True)

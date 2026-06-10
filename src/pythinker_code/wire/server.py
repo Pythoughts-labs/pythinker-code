@@ -201,7 +201,25 @@ class WireServer:
         assert self._reader is not None
 
         while True:
-            raw_line = await self._reader.readline()
+            try:
+                raw_line = await self._reader.readline()
+            except ValueError:
+                # StreamReader.readline() raises ValueError when a single line
+                # exceeds STDIO_BUFFER_LIMIT (or no newline is seen before the
+                # limit). It has already drained its buffer to the next newline,
+                # so we report the bad line and keep serving instead of letting
+                # one oversized peer message kill the Wire process.
+                logger.error("Wire input line exceeded buffer limit; dropping line")
+                await self._send_msg(
+                    JSONRPCErrorResponseNullableID(
+                        id=None,
+                        error=JSONRPCErrorObject(
+                            code=ErrorCodes.PARSE_ERROR,
+                            message="Input line exceeded maximum size",
+                        ),
+                    )
+                )
+                continue
             if not raw_line:
                 logger.info("stdin closed, Wire server exiting")
                 break
@@ -402,6 +420,15 @@ class WireServer:
                 error=JSONRPCErrorObject(
                     code=ErrorCodes.INVALID_STATE,
                     message="An agent turn is already in progress",
+                ),
+            )
+
+        if self._initialized:
+            return JSONRPCErrorResponse(
+                id=msg.id,
+                error=JSONRPCErrorObject(
+                    code=ErrorCodes.INVALID_STATE,
+                    message="Connection is already initialized",
                 ),
             )
 
@@ -800,6 +827,15 @@ class WireServer:
                 error=JSONRPCErrorObject(
                     code=ErrorCodes.INVALID_STATE,
                     message="Plan mode is not supported",
+                ),
+            )
+
+        if self._is_streaming:
+            return JSONRPCErrorResponse(
+                id=msg.id,
+                error=JSONRPCErrorObject(
+                    code=ErrorCodes.INVALID_STATE,
+                    message="An agent turn is already in progress",
                 ),
             )
 

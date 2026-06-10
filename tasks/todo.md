@@ -1,3 +1,69 @@
+# Codex TUI adoption — Phase 1 (foundation)
+
+Source of truth: `blackbox/codex-main/codex-rs/tui`. Backlog: user-provided 48-item
+adoption list. Recon mapped every item to the real codebase first; many items
+already exist. This plan implements the genuine HIGH-priority gaps only.
+
+## Gap analysis (backlog item → reality)
+
+Already implemented (no work needed; documented for the record):
+- 4.2 Table holdback — `markdown_commit_boundary()` keeps the last top-level
+  block (incl. tables) mutable during streaming (components/markdown.py:610).
+- 4.3 Two-region streaming — Rich `Live(transient=True)` + scrollback commit
+  (`_ContentBlock._flush_committed`, visualize/_blocks.py:393).
+- 4.1 Adaptive chunking — backlog-proportional paced reveal already adapts step
+  size to backlog (`reveal_tick`, _blocks.py:270); continuous policy, no mode
+  oscillation to dampen. Skipping the Rust two-gear port (no user-visible win).
+- 7.4 Language aliases — Pygments already resolves py/js/ts/rs/sh/zsh/yml/golang.
+- 9.1 OSC 8 hyperlinks — `render_to_ansi` wraps OSC 8 for prompt_toolkit
+  (console.py:94-123) with tests.
+- 6.3 Exploring cells — ctrl+o expand/collapse on tool cards.
+- 5.2/5.4 Shimmer + reduced motion — motion.py honors PYTHINKER_REDUCED_MOTION.
+- 8.3 Grapheme/cell-aware truncation — render_utils.py uses rich cell_len.
+- 3.x markdown styling, 2.x diff context collapsing, 6.1 cards — present.
+
+## Phase 1 work items
+
+- [x] P1.0 Recaps off by default + `/config recaps on|off`
+      → verified: tests/ui_and_conv/test_settings_recaps_slash.py (5 tests).
+- [x] P1.1 Color-blend utilities (`ui/color_utils.py`): parse_hex/blend/luma/is_light.
+      → verified: tests/ui_and_conv/test_color_utils.py.
+- [x] P1.2 Three-tier color depth detection (truecolor/256/16/none; FORCE_COLOR
+      levels; WT_SESSION promotion); `get_diff_colors()` uses fg-only diff
+      styles on 16-color terminals.
+      → verified: env-matrix tests in test_terminal_capabilities.py.
+- [x] P1.3 Terminal background probing (`ui/terminal_background.py`): OSC 11,
+      100ms timeout, BT.601 luma; `theme = "auto"` resolved at shell startup
+      (fallback dark); /theme + settings selector accept "auto"; opt-out
+      PYTHINKER_NO_BG_PROBE.
+      → verified: tests/ui_and_conv/test_terminal_background.py (11 tests).
+- [x] P1.4 Syntax-highlight size guard (512 KiB / 10k lines → plain text +
+      "highlighting skipped (N lines)" title notice).
+      → verified: test_markdown_guards.py.
+- [x] P1.5 Fence unwrapping for tables (```md/```markdown + header+delimiter
+      pair → unwrap; everything else untouched).
+      → verified: 12-case matrix in test_markdown_guards.py.
+- [x] P1.6 Large diff guard: expanded diff capped at 400 lines, head+tail with
+      explicit omitted-count notice.
+      → verified: test_output_guards.py.
+- [x] P1.7 Head-tail truncation for generic tool output (was head-only).
+      → verified: test_output_guards.py.
+- [x] Focused tests: 143 passed; make check-pythinker-code all green.
+- [ ] Full `pytest tests` suite green.
+- [ ] Homebrew updater bug: `brew upgrade` runs against a stale tap and the
+      "already installed" warning is reported as "Updated successfully!".
+      Fix: refresh tap/brew before upgrade + verify installed version changed.
+
+## Out of scope (logged)
+
+- Phase 2/3 backlog items (per-hunk diff syntax highlighting, advanced table
+  column sizing/key-value fallback, custom theme files, animation variants,
+  compact JSON, URL-aware wrap, transcript export, HistoryCell protocol).
+- utils/string.py `shorten()` is not cell-aware (pre-existing; noted, untouched).
+- `/settings show` usage string update beyond the new recaps args.
+
+---
+
 # Alibaba Token Plan model compatibility fix
 
 ## Plan
@@ -612,3 +678,107 @@ issues fixed (TDD):
   and can't change, so the fix is test-only: a generous `_BROWSER_CALLBACK_TEST_TIMEOUT`
   for the connect/await deadlines and a bounded poll-until-done instead of a fixed sleep.
   Originally-flaky combo now 6/6 stable under random ordering; tests/auth+ui_and_conv 1822 pass.
+
+## Review — session 2026-06-09 (Phase 1 + design polish + hardening)
+
+Done beyond Phase 1 (user-directed design wave):
+- ⏺ transcript marker (Windows keeps ●, ASCII keeps *), blinking while
+  tools/preview run, solid green when finished; thinking rows use ⏺ too.
+- Muted clay-coral activity ramp; shimmer simplified to bidirectional sweep
+  with settle beats; truecolor gets cosine-blended sheen (color_utils.blend).
+- Activity/todo metadata unified: "Verb… (12s, ↓ 2.4k tokens, 45 t/s)" — no
+  middle dots; t/s counter added to working indicator + todo header.
+- Thinking-effort colors: cold→hot gradient (slate→blue→teal→amber→orange→
+  dark red xhigh).
+- Active todo title+box coral; concurrent in-progress rows light grey.
+- Diff word-level highlights: reverse-video → theme add/del highlight bgs.
+- Turn recap padded to card inset.
+- Hardening (validated from in-app review): select ValueError caught,
+  tcsetattr restore suppressed, probe reply byte cap, probe cache lock,
+  head/tail char budget halved per side, mode.split() once, ~~~md fence test.
+- Homebrew updater: user machine upgraded 0.38.0→0.39.0 (stale tap); the
+  code fix already shipped in v0.39.0 (PR #87).
+
+Verified: make check-pythinker-code green; full pytest tests: 4757 passed.
+
+## Out of scope / next (designs ready, not implemented)
+
+- /statusline command (Codex bottom_pane/status_line_setup.rs): config key
+  tui.status_line list[str], item registry (model, current-dir, git-branch,
+  context-remaining, used-tokens), wire into prompt.py
+  _render_card_bottom_toolbar; recon notes in session memory.
+- Background working status: replace "N background agents" suffix with
+  (elapsed, tokens, t/s) — needs an elapsed/tokens provider on
+  CustomPromptSession (footer already shows the bg count).
+- Slash-command audit verdict: nothing safely removable — /exit is
+  Shell-intercepted (completion needs the registry entry); /color,/status,
+  /cost,/config are deliberate Blackbox-style aliases guarded by
+  test_blackbox_style_slash_aliases_are_registered. Optional renames
+  (/sessions→/resume primary, /memory→/memories) left to user choice.
+- Phase 2/3 backlog: per-hunk diff syntax highlighting, Codex table column
+  sizing + key/value narrow fallback, per-file multi-file diff summaries,
+  URL-aware wrap, custom themes, compact JSON, transcript export.
+
+## Review — 2026-06-10 deep-scan remediation + robustness pass
+
+Deep multi-agent review of feat/tui-enhancements (9 finder angles → 1-vote
+verify → sweep), then fixes landed for every confirmed finding, plus the
+multi-instance/orchestration robustness directive and the openai.py package
+split. Highlights:
+
+- Security: awk pipe/getline + xargs -L permission bypasses closed (both
+  gates); Glob symlink-escape fixed; progress-note title ANSI-sanitized.
+- Correctness: grep field-separator parsing (digit-hyphen paths), CRLF
+  multi-line replace fallback, /import raw-path --force parsing, compaction
+  reminders for --add-dir files, double-cancel shield settle, replay
+  watermark stat-fail → full replay, agent-resume ValueError, oauth
+  refresh_token/expires_in/device-id hardening, /theme auto re-probe,
+  markdown fence close-with-info-string, MCP cross-server shadow warning.
+- Multi-instance: per-session writer flock (.owner.lock), locked
+  pythinker.json mutate helper, JSONL torn-line repair, atomic fork writes,
+  strict memory reads (no wipe-on-EIO), journal cap (100), atomic inbox
+  claim, recall mtime re-arm, scratchpad/memory flock via to_thread.
+- Orchestration: continuation failure keeps completed results; hallucinated
+  subagent types fail fast w/ valid list (Agent + RunAgents); background
+  failures carry Agent ID + resume hint; finalize guarded; runner crashes
+  logged via done-callback; copy_for_role shares live-task registry.
+
+### Out of scope / deferred (next branch candidates)
+- Retry-After-aware backoff + larger background retry budget (O3) and
+  foreground timeout inside the runner with usage+resume hint (O4).
+- Scratch cap rewrite via mkstemp+replace (M4); _ensure_dir share-dir
+  re-resolution (M7); snapshot per-section budget clamp (M8).
+- Token-rate tracker triplication (prompt.py/_live_view/_blocks), head/tail
+  truncation + fence-walker dedup, todo-glyph mapping hoist, bullet factory.
+- web config API: optional private-range carve-out for plain-HTTP LAN
+  providers (currently CLI-only flow, deliberate).
+
+## 2026-06-10 — ESC interrupt + recall hallucination fixes (fix/web-origins-banner-version)
+
+Root causes (investigated from real session 243fa26d + code trace):
+- "ping" hallucination: RecallInjectionProvider injected "Open todos from
+  recent sessions" + scratch notes containing imperatives ("Wait for both to
+  complete, then synthesize") with no "this is history, not an instruction"
+  framing → model treated it as the current task.
+- ESC: shell RunCancelled handler only prints "Interrupted by user".
+  Background tasks spawned during the turn keep running
+  (kill_all_active exists but is never called on interrupt).
+
+Plan:
+- [x] memory/recall.py: harden recall-block framing (header + open-todos
+      section) → verified: test_build_recall_block_frames_content_as_past_context.
+- [x] background/manager.py: begin_turn / kill_turn_tasks turn registry
+      → verified: 2 new tests in tests/background/test_manager.py.
+- [x] ui/shell/__init__.py: begin_turn before each run_soul; on RunCancelled
+      kill turn tasks + print count → verified: tests/ui_and_conv/test_shell_interrupt_cleanup.py.
+- [x] web/src/bootstrap.tsx: consume ?token= BEFORE React mounts (was a React
+      effect racing useSessions' mount fetches → first-load 401 with stale
+      localStorage token). App.tsx effect removed. dist rebuilt.
+- [x] Verification: 162 pytest green (background, recall, shell suites),
+      ruff + pyright clean on touched files, web tsc -b + biome clean.
+
+Review: ESC now kills background tasks spawned by the interrupted turn only
+(earlier turns' tasks deliberately survive). Recall block is explicitly framed
+as past context so stale todos can't be mistaken for the current request.
+Out of scope (observed, not touched): vis frontend keeps token in URL (no
+race); foreground subagent cancellation already correct via CancelledError.

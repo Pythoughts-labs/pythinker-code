@@ -3,6 +3,7 @@ from __future__ import annotations
 from pythinker_core.message import ToolCall
 from pythinker_core.tooling import ToolResult, ToolReturnValue
 from rich.console import Console, Group
+from rich.padding import Padding
 
 from pythinker_code.tools.display import TodoDisplayBlock, TodoDisplayItem
 from pythinker_code.ui.shell.components.markdown import PythinkerMarkdown
@@ -343,7 +344,10 @@ def test_live_view_prints_turn_recap_when_enabled(monkeypatch):
         for index, item in enumerate(printed)
         if item is not None and "※ recap:" in _render(item)
     )
-    assert isinstance(printed[recap_index], PythinkerMarkdown)
+    # The recap is padded to the card inset; the renderable inside is markdown.
+    recap_item = printed[recap_index]
+    assert isinstance(recap_item, Padding)
+    assert isinstance(recap_item.renderable, PythinkerMarkdown)
     assert printed[recap_index - 1] is None
     assert printed[recap_index + 1] is None
 

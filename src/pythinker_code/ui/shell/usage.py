@@ -16,7 +16,12 @@ from pythinker_code.ui.shell.slash import registry
 from pythinker_code.ui.shell.stats_collector import AllStats
 from pythinker_code.ui.shell.stats_collector import load_all_stats as _load_all_stats_raw
 from pythinker_code.ui.shell.usage_adapters import ADAPTERS
-from pythinker_code.ui.shell.usage_adapters.base import UsageAdapter, UsageReport, UsageRow
+from pythinker_code.ui.shell.usage_adapters.base import (
+    UsageAdapter,
+    UsageReport,
+    UsageRow,
+    used_from_remaining,
+)
 from pythinker_code.ui.shell.usage_adapters.pythinker import to_int as _to_int
 from pythinker_code.ui.shell.usage_render import (
     build_panel,
@@ -129,7 +134,7 @@ def _ratelimit_fallback_report(provider_key: str, provider_label: str) -> UsageR
         rows.append(
             UsageRow(
                 label="Requests",
-                used=snap.requests_remaining,
+                used=used_from_remaining(snap.requests_limit, snap.requests_remaining),
                 limit=snap.requests_limit,
                 unit="requests",
                 reset_hint=_seconds_to_reset_hint(snap.requests_reset_seconds),
@@ -139,7 +144,7 @@ def _ratelimit_fallback_report(provider_key: str, provider_label: str) -> UsageR
         rows.append(
             UsageRow(
                 label="Tokens",
-                used=snap.tokens_remaining,
+                used=used_from_remaining(snap.tokens_limit, snap.tokens_remaining),
                 limit=snap.tokens_limit,
                 unit="tokens",
                 reset_hint=_seconds_to_reset_hint(snap.tokens_reset_seconds),

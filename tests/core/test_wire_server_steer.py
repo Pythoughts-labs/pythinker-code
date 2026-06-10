@@ -19,6 +19,7 @@ from pythinker_code.wire.jsonrpc import (
     ClientInfo,
     ErrorCodes,
     JSONRPCErrorResponse,
+    JSONRPCErrorResponseNullableID,
     JSONRPCEventMessage,
     JSONRPCPromptMessage,
     JSONRPCSteerMessage,
@@ -312,3 +313,44 @@ async def test_handle_prompt_cleanup_keeps_background_approval_pending(
     assert runtime.approval_runtime is not None
     record = runtime.approval_runtime.get_request("req-bg-prompt-1")
     assert record is None
+
+
+@pytest.mark.asyncio
+async def test_read_loop_survives_oversized_line(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_read_loop should send a PARSE_ERROR and continue when readline() raises ValueError."""
+    soul = _make_soul(runtime, tmp_path)
+    server = WireServer(soul)
+
+    # Stub reader: first call raises ValueError (oversized line), second returns b'' (EOF).
+    readline_calls = 0
+
+    class _StubReader:
+        async def readline(self) -> bytes:
+            nonlocal readline_calls
+            readline_calls += 1
+            if readline_calls == 1:
+                raise ValueError("Separator is found, but chunk is longer than the limit")
+            return b""
+
+    server._reader = _StubReader()  # type: ignore[assignment]
+
+    sent: list = []
+
+    async def fake_send_msg(msg: object) -> None:
+        sent.append(msg)
+
+    monkeypatch.setattr(server, "_send_msg", fake_send_msg)
+
+    # Before the fix this raises ValueError; after the fix it returns normally.
+    await server._read_loop()
+
+    # Exactly one error response must have been sent.
+    assert len(sent) == 1
+    err_msg = sent[0]
+    assert isinstance(err_msg, JSONRPCErrorResponseNullableID)
+    assert err_msg.error.code == ErrorCodes.PARSE_ERROR
+    assert err_msg.id is None

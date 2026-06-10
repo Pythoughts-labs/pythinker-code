@@ -655,6 +655,7 @@ async def import_session(file: UploadFile) -> dict[str, Any]:
             is_symlink = (info.external_attr >> 16) & 0o170000 == 0o120000
             if (
                 not filename
+                or not member_path.parts
                 or filename.startswith(("/", "\\"))
                 or member_path.is_absolute()
                 or any(part in {"", ".", ".."} for part in member_path.parts)
@@ -679,7 +680,7 @@ async def import_session(file: UploadFile) -> dict[str, Any]:
         try:
             for info in zf.infolist():
                 safe_extract_member(info)
-        except HTTPException:
+        except Exception:
             shutil.rmtree(session_dir, ignore_errors=True)
             raise
 

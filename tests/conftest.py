@@ -65,7 +65,7 @@ from pythinker_code.tools.background import (
 )
 from pythinker_code.tools.dmail import SendDMail
 from pythinker_code.tools.file.glob import Glob
-from pythinker_code.tools.file.grep_local import Grep
+from pythinker_code.tools.file.grep_local import Grep, SmartSearch
 from pythinker_code.tools.file.read import ReadFile
 from pythinker_code.tools.file.read_media import ReadMediaFile
 from pythinker_code.tools.file.replace import StrReplaceFile
@@ -357,9 +357,15 @@ def glob_tool(runtime: Runtime) -> Glob:
 
 
 @pytest.fixture
-def grep_tool() -> Grep:
+def grep_tool(runtime: Runtime) -> Grep:
     """Create a Grep tool instance."""
-    return Grep()
+    return Grep(runtime)
+
+
+@pytest.fixture
+def smart_search_tool(runtime: Runtime) -> SmartSearch:
+    """Create a SmartSearch tool instance."""
+    return SmartSearch(runtime)
 
 
 @pytest.fixture

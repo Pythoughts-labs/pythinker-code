@@ -102,12 +102,16 @@ def test_default_config_dump():
             "tui": {
                 "style": "card",
                 "prompt_history_enabled": True,
-                "turn_recaps": True,
+                "turn_recaps": False,
                 "code_theme": "catppuccin-adaptive",
                 "smooth_streaming": True,
             },
         }
     )
+
+
+def test_turn_recaps_default_off():
+    assert get_default_config().tui.turn_recaps is False
 
 
 def test_config_source_scopes_default_empty():
@@ -119,6 +123,11 @@ def test_config_source_scopes_not_in_dump():
     config = get_default_config()
     dumped = config.model_dump()
     assert "source_scopes" not in dumped
+
+
+def test_theme_accepts_auto():
+    config = load_config_from_string('theme = "auto"\n')
+    assert config.theme == "auto"
 
 
 def test_load_config_text_toml():

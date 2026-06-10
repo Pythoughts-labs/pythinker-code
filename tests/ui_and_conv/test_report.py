@@ -200,6 +200,35 @@ def test_render_agent_body_plain_markdown_unchanged():
     assert "text" in out
 
 
+def test_render_agent_body_report_prose_gets_section_rhythm():
+    text = (
+        "Exit codes: both `0`. Only a vendored warning remains.\n"
+        "**What this means for the recalled todos:** The named scope is green on `main`.\n"
+        "**Cross-check against PR #61 (`15e3342`):** It updated `tests/ui_and_conv/`.\n\n"
+        "**Residual unknowns (transparency):**\n"
+        "- The old scratch inventory was not persisted.\n"
+        "- Nothing in the current scope is red.\n"
+        "Next step suggestion: keep the loop closed unless you want a proactive pass.\n"
+    )
+
+    out = _plain(render_agent_body(text), width=100)
+    lines = out.splitlines()
+
+    assert any(line.strip() == "Exit codes" for line in lines)
+    assert any(line.startswith("  both 0.") for line in lines)
+    assert "Exit codes: both" not in out
+    assert "Cross-check against PR #61 (15e3342)" in out
+    assert "`15e3342`" not in out
+    assert any(line.startswith("  • The old scratch") for line in lines)
+    assert "\n\nWhat this means" in out
+    assert "\n\nNext step suggestion" in out
+
+
+def test_render_agent_body_single_label_stays_plain_markdown():
+    out = _plain(render_agent_body("Note: keep this as ordinary prose."), width=100)
+    assert "Note: keep this as ordinary prose." in out
+
+
 def test_streaming_commit_keeps_report_fence_atomic_and_renders():
     """Integration contract for the live shell: the incremental renderer
     (_blocks._flush_committed) commits at markdown_commit_boundary and renders

@@ -19,7 +19,6 @@ import difflib
 import re
 from dataclasses import dataclass
 
-from rich.style import Style as RichStyle
 from rich.text import Text
 
 from pythinker_code.ui.shell.render_constants import (
@@ -175,13 +174,17 @@ def _parse_diff_line(line: str) -> tuple[str, str, str] | None:
 
 
 def _intra_line_diff(old_content: str, new_content: str) -> tuple[Text, Text]:
-    """Word-level inverse highlighting on changed tokens (the same behavior).
+    """Word-level highlighting on changed tokens.
 
-    Returns ``(removed_text, added_text)`` already styled (with the inverse
-    bit set on tokens that differ), but *not* yet wrapped in red/green —
-    callers add the row-level style.
+    Returns ``(removed_text, added_text)`` with changed tokens carrying the
+    theme's brighter add/del highlight backgrounds (GitHub-style word
+    emphasis), but *not* yet wrapped in red/green — callers add the
+    row-level style. Reverse video is deliberately avoided: it reads as
+    glaring blocks on dark terminals.
     """
-    inverse = RichStyle(reverse=True)
+    colors = get_diff_colors()
+    removed_hl = colors.del_hl
+    added_hl = colors.add_hl
 
     def _tokenize(s: str) -> list[str]:
         return re.findall(r"\s+|\S+", s)
@@ -211,11 +214,11 @@ def _intra_line_diff(old_content: str, new_content: str) -> tuple[Text, Text]:
                 if leading:
                     removed.append(leading)
                 if stripped:
-                    removed.append(stripped, style=inverse)
+                    removed.append(stripped, style=removed_hl)
                 if stripped:
                     first_removed = False
             else:
-                removed.append(piece, style=inverse)
+                removed.append(piece, style=removed_hl)
         if tag in ("insert", "replace"):
             piece = "".join(new_tokens[j1:j2])
             if first_added:
@@ -224,11 +227,11 @@ def _intra_line_diff(old_content: str, new_content: str) -> tuple[Text, Text]:
                 if leading:
                     added.append(leading)
                 if stripped:
-                    added.append(stripped, style=inverse)
+                    added.append(stripped, style=added_hl)
                 if stripped:
                     first_added = False
             else:
-                added.append(piece, style=inverse)
+                added.append(piece, style=added_hl)
     return removed, added
 
 
@@ -243,8 +246,13 @@ def render_diff(diff_text: str) -> Text:
         return Text("")
 
     colors = get_diff_colors()
-    added_style = tui_rich_style("tool_diff_added") + colors.add_bg
-    removed_style = tui_rich_style("tool_diff_removed") + colors.del_bg
+    # Signs/line numbers carry the green/red accent; row content stays in the
+    # terminal's default text color over the tinted row background, so diffs
+    # read as white-on-deep-green/red rather than fully recolored text.
+    added_sign = tui_rich_style("tool_diff_added") + colors.add_bg
+    removed_sign = tui_rich_style("tool_diff_removed") + colors.del_bg
+    added_body = colors.add_bg
+    removed_body = colors.del_bg
     context_style = tui_rich_style("tool_diff_context")
 
     out = Text()
@@ -284,7 +292,19 @@ def render_diff(diff_text: str) -> Text:
                 added_block.append((p[1], p[2]))
                 i += 1
 
+            use_word_level = False
             if len(removed_block) == 1 and len(added_block) == 1:
+                # Word-level emphasis only helps when the lines are mostly
+                # similar; on heavy rewrites it would flood the row with the
+                # brighter highlight tint and read as a different palette
+                # from plain added/removed rows.
+                use_word_level = (
+                    difflib.SequenceMatcher(
+                        None, removed_block[0][1], added_block[0][1], autojunk=False
+                    ).ratio()
+                    >= 0.5
+                )
+            if use_word_level:
                 rln, rcontent = removed_block[0]
                 aln, acontent = added_block[0]
                 rem_inner, add_inner = _intra_line_diff(
@@ -292,25 +312,29 @@ def render_diff(diff_text: str) -> Text:
                     _replace_tabs(acontent),
                 )
                 _newline()
-                row = Text(f"-{rln} ", style=removed_style)
+                row = Text(f"-{rln} ", style=removed_sign)
+                # Underlay the row tint so word-level highlight spans stay on top.
+                rem_inner.stylize_before(removed_body)
                 row.append_text(rem_inner)
-                row.stylize(removed_style)
                 out.append_text(row)
                 _newline()
-                row = Text(f"+{aln} ", style=added_style)
+                row = Text(f"+{aln} ", style=added_sign)
+                add_inner.stylize_before(added_body)
                 row.append_text(add_inner)
-                row.stylize(added_style)
                 out.append_text(row)
             else:
                 for ln, content in removed_block:
                     _newline()
-                    out.append(f"-{ln} {_replace_tabs(content)}", style=removed_style)
+                    out.append(f"-{ln} ", style=removed_sign)
+                    out.append(_replace_tabs(content), style=removed_body)
                 for ln, content in added_block:
                     _newline()
-                    out.append(f"+{ln} {_replace_tabs(content)}", style=added_style)
+                    out.append(f"+{ln} ", style=added_sign)
+                    out.append(_replace_tabs(content), style=added_body)
         elif prefix == "+":
             _newline()
-            out.append(f"+{line_num} {_replace_tabs(content)}", style=added_style)
+            out.append(f"+{line_num} ", style=added_sign)
+            out.append(_replace_tabs(content), style=added_body)
             i += 1
         else:
             _newline()

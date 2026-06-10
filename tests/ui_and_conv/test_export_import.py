@@ -23,6 +23,7 @@ from pythinker_code.utils.export import (
     build_export_yaml,
     build_import_message,
     is_importable_file,
+    parse_import_args,
     perform_export,
     perform_import,
     resolve_import_source,
@@ -874,6 +875,43 @@ class TestIsImportableFile:
 
 
 # ---------------------------------------------------------------------------
+# parse_import_args
+# ---------------------------------------------------------------------------
+
+
+class TestParseImportArgs:
+    def test_plain_path(self) -> None:
+        assert parse_import_args("/tmp/x.yaml") == ("/tmp/x.yaml", False)
+
+    def test_trailing_force(self) -> None:
+        assert parse_import_args("/tmp/x.yaml --force") == ("/tmp/x.yaml", True)
+
+    def test_leading_force(self) -> None:
+        assert parse_import_args("--force /tmp/x.yaml") == ("/tmp/x.yaml", True)
+
+    def test_force_alone_yields_empty_path(self) -> None:
+        assert parse_import_args("--force") == ("", True)
+
+    def test_internal_whitespace_runs_preserved(self) -> None:
+        # The raw path must reach sanitization unchanged — tokenize-and-rejoin
+        # collapsed `my  notes.md` to `my notes.md` (file-not-found).
+        assert parse_import_args("my  notes.md") == ("my  notes.md", False)
+
+    def test_quoted_path_with_spaces(self) -> None:
+        # sanitize_cli_path strips the outer quotes (macOS drag-in shape).
+        assert parse_import_args("'my  notes.md'") == ("my  notes.md", False)
+
+    def test_force_inside_quoted_path_is_not_a_flag(self) -> None:
+        assert parse_import_args("'weird --force name.md'") == (
+            "weird --force name.md",
+            False,
+        )
+
+    def test_quoted_path_with_trailing_force(self) -> None:
+        assert parse_import_args("'my notes.md' --force") == ("my notes.md", True)
+
+
+# ---------------------------------------------------------------------------
 # perform_export
 # ---------------------------------------------------------------------------
 
@@ -1392,3 +1430,47 @@ class TestPerformImport:
         assert isinstance(result, tuple)
         _desc, content_len = result
         assert content_len == len(raw)
+
+    async def test_sensitive_file_import_blocked_until_forced(self, tmp_path: Path) -> None:
+        """Sensitive files are blocked unless force=True is passed."""
+        src = tmp_path / ".env"
+        src.write_text("SECRET=1", encoding="utf-8")
+        ctx = _make_mock_context()
+
+        # Without force: should return an error string and NOT mutate context.
+        result = await perform_import(str(src), "curr-id", tmp_path, context=ctx)  # type: ignore[arg-type]
+        assert isinstance(result, str)
+        assert "secret" in result.lower()
+        ctx.append_message.assert_not_awaited()
+        ctx.update_token_count.assert_not_awaited()
+
+        # With force=True: should succeed and mutate context exactly once.
+        result2 = await perform_import(str(src), "curr-id", tmp_path, context=ctx, force=True)  # type: ignore[arg-type]
+        assert isinstance(result2, tuple)
+        ctx.append_message.assert_awaited_once()
+        ctx.update_token_count.assert_awaited_once()
+
+    async def test_ssh_private_key_import_blocked_until_forced(self, tmp_path: Path) -> None:
+        """SSH private keys (id_rsa/id_ed25519) must be gated like other secrets.
+
+        They have no extension and were missing from the import gate's local pattern
+        list, so they imported silently; the gate now uses the hardened sensitive-file
+        check that ReadFile uses, which covers the SSH key family.
+        """
+        for name in ("id_rsa", "id_ed25519"):
+            src = tmp_path / name
+            src.write_text("-----BEGIN OPENSSH PRIVATE KEY-----\n", encoding="utf-8")
+            ctx = _make_mock_context()
+
+            # Without force: refused, context untouched.
+            result = await perform_import(str(src), "curr-id", tmp_path, context=ctx)  # type: ignore[arg-type]
+            assert isinstance(result, str), name
+            assert "secret" in result.lower(), name
+            ctx.append_message.assert_not_awaited()
+            ctx.update_token_count.assert_not_awaited()
+
+            # With force=True: import proceeds.
+            result2 = await perform_import(str(src), "curr-id", tmp_path, context=ctx, force=True)  # type: ignore[arg-type]
+            assert isinstance(result2, tuple), name
+            ctx.append_message.assert_awaited_once()
+            ctx.update_token_count.assert_awaited_once()

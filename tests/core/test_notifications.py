@@ -604,3 +604,64 @@ async def test_compaction_appends_active_task_snapshot(runtime: Runtime, tmp_pat
     texts = [message.extract_text("\n") for message in context.history]
     assert any("<active-background-tasks>" in text for text in texts)
     assert any("task_id: b3333345" in text for text in texts)
+
+
+@pytest.mark.asyncio
+async def test_run_soul_cancels_child_soul_task_when_outer_cancelled() -> None:
+    """soul_task must be cancelled+awaited in finally when run_soul itself is cancelled."""
+    recorded_task: asyncio.Task[None] | None = None
+    blocker = asyncio.Event()
+
+    class _BlockingSoul:
+        name = "blocking"
+        model_name = ""
+        model_capabilities = None
+        thinking = None
+        thinking_effort = None
+
+        @property
+        def status(self) -> StatusSnapshot:
+            return StatusSnapshot(context_usage=0.0)
+
+        @property
+        def hook_engine(self):  # type: ignore[override]
+            raise NotImplementedError
+
+        @property
+        def available_slash_commands(self):
+            return []
+
+        async def run(self, _user_input, **_kwargs) -> None:
+            nonlocal recorded_task
+            recorded_task = asyncio.current_task()
+            await blocker.wait()
+
+    async def _drain_ui(wire: Wire) -> None:
+        wire_ui = wire.ui_side(merge=True)
+        while True:
+            try:
+                await wire_ui.receive()
+            except QueueShutDown:
+                return
+
+    outer_task = asyncio.create_task(
+        run_soul(_BlockingSoul(), "hi", _drain_ui, asyncio.Event())  # type: ignore[arg-type]
+    )
+
+    # Give run_soul time to create soul_task and reach asyncio.wait
+    for _ in range(100):
+        await asyncio.sleep(0)
+        if recorded_task is not None:
+            break
+
+    assert recorded_task is not None, "soul.run() never started"
+
+    outer_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await outer_task
+
+    # The inner soul_task must have been cancelled and awaited in finally,
+    # not left as a pending orphan.
+    assert recorded_task.cancelled(), (
+        "soul_task was orphaned (not cancelled) when run_soul was cancelled"
+    )

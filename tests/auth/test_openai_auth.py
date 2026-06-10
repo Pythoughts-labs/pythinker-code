@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 from pathlib import Path
+from typing import cast
 from urllib.parse import parse_qs, urlsplit
 
 import aiohttp
@@ -35,6 +36,7 @@ from pythinker_code.auth.openai import (
     _build_authorize_url,
     _callback_html,
     _exchange_id_token_for_api_key,
+    _handle_browser_callback,
     _select_default_openai_model,
     _token_from_openai_response,
     _wait_for_browser_code,
@@ -223,7 +225,7 @@ async def test_exchange_id_token_for_api_key_uses_codex_requested_token(monkeypa
             captured["data"] = data
             return FakeResponse()
 
-    monkeypatch.setattr("pythinker_code.auth.openai.new_client_session", FakeSession)
+    monkeypatch.setattr("pythinker_code.auth.openai.oauth_client.new_client_session", FakeSession)
 
     token = await _exchange_id_token_for_api_key("id-token")
 
@@ -257,10 +259,12 @@ _BROWSER_CALLBACK_TEST_TIMEOUT = 15.0
 @pytest.mark.asyncio
 async def test_wait_for_browser_code_accepts_localhost_callback(monkeypatch):
     monkeypatch.setattr(
-        "pythinker_code.auth.openai._generate_pkce",
+        "pythinker_code.auth.openai.browser_flow._generate_pkce",
         lambda: PkceCodes(code_verifier="verifier", code_challenge="challenge"),
     )
-    monkeypatch.setattr("pythinker_code.auth.openai._generate_state", lambda: "state-123")
+    monkeypatch.setattr(
+        "pythinker_code.auth.openai.browser_flow._generate_state", lambda: "state-123"
+    )
 
     task = asyncio.create_task(_wait_for_browser_code(open_browser=False))
     writer = None
@@ -304,10 +308,12 @@ async def test_wait_for_browser_code_accepts_localhost_callback(monkeypatch):
 @pytest.mark.asyncio
 async def test_wait_for_browser_code_cleans_up_idle_callback_tasks(monkeypatch):
     monkeypatch.setattr(
-        "pythinker_code.auth.openai._generate_pkce",
+        "pythinker_code.auth.openai.browser_flow._generate_pkce",
         lambda: PkceCodes(code_verifier="verifier", code_challenge="challenge"),
     )
-    monkeypatch.setattr("pythinker_code.auth.openai._generate_state", lambda: "state-123")
+    monkeypatch.setattr(
+        "pythinker_code.auth.openai.browser_flow._generate_state", lambda: "state-123"
+    )
 
     task = asyncio.create_task(_wait_for_browser_code(open_browser=False))
     writer = None
@@ -445,7 +451,7 @@ async def test_login_openai_api_key_saves_config_on_model_discovery(monkeypatch,
         assert api_key == "sk-test"
         return [_model("gpt-5.2", reasoning=True)]
 
-    monkeypatch.setattr("pythinker_code.auth.openai.list_models", fake_list_models)
+    monkeypatch.setattr("pythinker_code.auth.openai.login.list_models", fake_list_models)
 
     events = [event async for event in login_openai_api_key(config, api_key="sk-test")]
 
@@ -466,11 +472,32 @@ async def test_login_openai_api_key_does_not_save_on_401(monkeypatch, tmp_path):
         request_info = _request_info("https://api.openai.com/v1/models")
         raise aiohttp.ClientResponseError(request_info, (), status=401, message="Unauthorized")
 
-    monkeypatch.setattr("pythinker_code.auth.openai.list_models", fake_list_models)
+    monkeypatch.setattr("pythinker_code.auth.openai.login.list_models", fake_list_models)
 
     events = [event async for event in login_openai_api_key(config, api_key="sk-bad")]
     assert events[-1].type == "error"
     assert "Invalid OpenAI API key" in events[-1].message
+    assert config.providers == {}
+    assert config.models == {}
+
+
+@pytest.mark.asyncio
+async def test_login_openai_api_key_does_not_save_on_403(monkeypatch, tmp_path):
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    config = Config(is_from_default_location=True)
+
+    async def fake_list_models(platform, api_key):
+        request_info = _request_info("https://api.openai.com/v1/models")
+        raise aiohttp.ClientResponseError(request_info, (), status=403, message="Forbidden")
+
+    monkeypatch.setattr("pythinker_code.auth.openai.login.list_models", fake_list_models)
+
+    events = [event async for event in login_openai_api_key(config, api_key="sk-bad")]
+    assert events[-1].type == "error"
+    # 403 is permission/region, not an invalid key — the message must not
+    # mislabel it, but the key still must not be saved.
+    assert "HTTP 403" in events[-1].message
+    assert "was not saved" in events[-1].message
     assert config.providers == {}
     assert config.models == {}
 
@@ -490,7 +517,7 @@ async def test_discover_chatgpt_models_reraises_401(monkeypatch):
             request_info = _request_info(url)
             raise aiohttp.ClientResponseError(request_info, (), status=401, message="Unauthorized")
 
-    monkeypatch.setattr("pythinker_code.auth.openai.new_client_session", FakeSession)
+    monkeypatch.setattr("pythinker_code.auth.openai.models.new_client_session", FakeSession)
 
     with pytest.raises(aiohttp.ClientResponseError) as exc_info:
         await discover_chatgpt_models("bad-token")
@@ -548,7 +575,7 @@ async def test_discover_chatgpt_models_uses_account_scoped_codex_catalog(monkeyp
             captured["raise_for_status"] = raise_for_status
             return FakeResponse()
 
-    monkeypatch.setattr("pythinker_code.auth.openai.new_client_session", FakeSession)
+    monkeypatch.setattr("pythinker_code.auth.openai.models.new_client_session", FakeSession)
 
     models = await discover_chatgpt_models("access-token", account_id="acc_123")
 
@@ -589,7 +616,7 @@ async def test_discover_chatgpt_models_uses_custom_base_url(monkeypatch):
             captured["url"] = url
             return FakeResponse()
 
-    monkeypatch.setattr("pythinker_code.auth.openai.new_client_session", FakeSession)
+    monkeypatch.setattr("pythinker_code.auth.openai.models.new_client_session", FakeSession)
 
     models = await discover_chatgpt_models(
         "access-token",
@@ -612,7 +639,7 @@ async def test_discover_chatgpt_models_does_not_fallback_when_catalog_unavailabl
         def get(self, *args, **kwargs):
             raise RuntimeError("models endpoint unavailable")
 
-    monkeypatch.setattr("pythinker_code.auth.openai.new_client_session", FakeSession)
+    monkeypatch.setattr("pythinker_code.auth.openai.models.new_client_session", FakeSession)
 
     with pytest.raises(RuntimeError, match="models endpoint unavailable"):
         await discover_chatgpt_models("access-token")
@@ -634,7 +661,7 @@ async def test_login_openai_api_key_falls_back_to_public_models_on_non_auth_fail
             message="Server error",
         )
 
-    monkeypatch.setattr("pythinker_code.auth.openai.list_models", fake_list_models)
+    monkeypatch.setattr("pythinker_code.auth.openai.login.list_models", fake_list_models)
 
     events = [event async for event in login_openai_api_key(config, api_key="sk-test")]
 
@@ -672,6 +699,7 @@ async def test_refresh_managed_models_replaces_stale_chatgpt_codex_model_with_li
         assert base_url == chatgpt_base_url
         return [_model("gpt-5.5", reasoning=True)]
 
+    # refresh_managed_models lazily imports from the package, so patch the package attribute.
     monkeypatch.setattr(
         "pythinker_code.auth.openai.discover_chatgpt_models", fake_discover_chatgpt_models
     )
@@ -723,17 +751,19 @@ async def test_login_openai_headless_stores_chatgpt_tokens(monkeypatch, tmp_path
         assert account_id == "acc_headless"
         return [_model("gpt-5.1-codex", reasoning=True)]
 
-    monkeypatch.setattr("pythinker_code.auth.openai._request_device_code", fake_request_device_code)
-    monkeypatch.setattr("pythinker_code.auth.openai._poll_device_code", fake_poll_device_code)
     monkeypatch.setattr(
-        "pythinker_code.auth.openai._exchange_code_for_tokens", fake_exchange_code_for_tokens
+        "pythinker_code.auth.openai.login._request_device_code", fake_request_device_code
+    )
+    monkeypatch.setattr("pythinker_code.auth.openai.login._poll_device_code", fake_poll_device_code)
+    monkeypatch.setattr(
+        "pythinker_code.auth.openai.login._exchange_code_for_tokens", fake_exchange_code_for_tokens
     )
     monkeypatch.setattr(
-        "pythinker_code.auth.openai._exchange_id_token_for_api_key",
+        "pythinker_code.auth.openai.login._exchange_id_token_for_api_key",
         fake_exchange_id_token_for_api_key,
     )
     monkeypatch.setattr(
-        "pythinker_code.auth.openai.discover_chatgpt_models",
+        "pythinker_code.auth.openai.login.discover_chatgpt_models",
         fake_discover_chatgpt_models,
     )
 
@@ -783,17 +813,17 @@ async def test_login_openai_browser_finishes_with_callback_code(monkeypatch, tmp
         return [_model("gpt-5.1-codex", reasoning=True)]
 
     monkeypatch.setattr(
-        "pythinker_code.auth.openai._wait_for_browser_code", fake_wait_for_browser_code
+        "pythinker_code.auth.openai.login._wait_for_browser_code", fake_wait_for_browser_code
     )
     monkeypatch.setattr(
-        "pythinker_code.auth.openai._exchange_code_for_tokens", fake_exchange_code_for_tokens
+        "pythinker_code.auth.openai.login._exchange_code_for_tokens", fake_exchange_code_for_tokens
     )
     monkeypatch.setattr(
-        "pythinker_code.auth.openai._exchange_id_token_for_api_key",
+        "pythinker_code.auth.openai.login._exchange_id_token_for_api_key",
         fake_exchange_id_token_for_api_key,
     )
     monkeypatch.setattr(
-        "pythinker_code.auth.openai.discover_chatgpt_models", fake_discover_chatgpt_models
+        "pythinker_code.auth.openai.login.discover_chatgpt_models", fake_discover_chatgpt_models
     )
 
     events = [event async for event in login_openai_browser(config, open_browser=False)]
@@ -826,17 +856,17 @@ def _patch_browser_login_returning_account(monkeypatch, account_id: str) -> None
         return [_model("gpt-5.1-codex", reasoning=True)]
 
     monkeypatch.setattr(
-        "pythinker_code.auth.openai._wait_for_browser_code", fake_wait_for_browser_code
+        "pythinker_code.auth.openai.login._wait_for_browser_code", fake_wait_for_browser_code
     )
     monkeypatch.setattr(
-        "pythinker_code.auth.openai._exchange_code_for_tokens", fake_exchange_code_for_tokens
+        "pythinker_code.auth.openai.login._exchange_code_for_tokens", fake_exchange_code_for_tokens
     )
     monkeypatch.setattr(
-        "pythinker_code.auth.openai._exchange_id_token_for_api_key",
+        "pythinker_code.auth.openai.login._exchange_id_token_for_api_key",
         fake_exchange_id_token_for_api_key,
     )
     monkeypatch.setattr(
-        "pythinker_code.auth.openai.discover_chatgpt_models", fake_discover_chatgpt_models
+        "pythinker_code.auth.openai.login.discover_chatgpt_models", fake_discover_chatgpt_models
     )
 
 
@@ -892,3 +922,63 @@ async def test_login_does_not_warn_when_account_changes(monkeypatch, tmp_path):
     token = load_tokens(OAuthRef(storage="file", key=OPENAI_CHATGPT_OAUTH_KEY))
     assert token is not None
     assert token.account_id == "acc_new"
+
+
+class _FakeWriter:
+    """Minimal asyncio.StreamWriter stand-in that captures written bytes."""
+
+    def __init__(self) -> None:
+        self._buf = bytearray()
+        self._closed = False
+
+    def write(self, data: bytes) -> None:
+        self._buf.extend(data)
+
+    async def drain(self) -> None:
+        pass
+
+    def close(self) -> None:
+        self._closed = True
+
+    async def wait_closed(self) -> None:
+        pass
+
+    @property
+    def captured(self) -> bytes:
+        return bytes(self._buf)
+
+
+def _make_reader(raw: bytes) -> asyncio.StreamReader:
+    reader = asyncio.StreamReader()
+    reader.feed_data(raw)
+    reader.feed_eof()
+    return reader
+
+
+@pytest.mark.asyncio
+async def test_handle_browser_callback_ignores_non_callback_probe():
+    # --- probe request (favicon.ico): should 404 and return (None, None) ---
+    probe_reader = _make_reader(b"GET /favicon.ico HTTP/1.1\r\n\r\n")
+    probe_writer = _FakeWriter()
+    code, error = await _handle_browser_callback(
+        probe_reader, cast("asyncio.StreamWriter", probe_writer), state="s"
+    )
+
+    assert (code, error) == (None, None), (
+        "Stray probe must return (None, None) so the shared future is not resolved"
+    )
+    assert probe_writer.captured.startswith(b"HTTP/1.1 404"), (
+        f"Expected 404 response for probe; got: {probe_writer.captured[:80]!r}"
+    )
+
+    # --- sibling assertion: real callback path with missing code still errors ---
+    callback_reader = _make_reader(b"GET /auth/callback?state=s HTTP/1.1\r\n\r\n")
+    callback_writer = _FakeWriter()
+    code2, error2 = await _handle_browser_callback(
+        callback_reader, cast("asyncio.StreamWriter", callback_writer), state="s"
+    )
+
+    assert code2 is None, "No authorization code should be extracted"
+    assert error2 is not None, (
+        "A real /auth/callback request without a code must still produce an error"
+    )

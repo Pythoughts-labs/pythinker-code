@@ -11,12 +11,26 @@ from pythinker_code.tools.display import TodoDisplayBlock, TodoDisplayItem
 from pythinker_code.tools.utils import load_desc
 from pythinker_code.utils.logging import logger
 
+TodoStatus = Literal["pending", "in_progress", "done", "cancelled"]
+_STATUS_ALIASES: dict[str, TodoStatus] = {
+    "complete": "done",
+    "completed": "done",
+    "finished": "done",
+    "canceled": "cancelled",
+}
+
 
 class Todo(BaseModel):
     title: str = Field(description="The title of the todo", min_length=1)
-    status: Literal["pending", "in_progress", "done", "cancelled"] = Field(
-        description="The status of the todo"
-    )
+    status: TodoStatus = Field(description="The status of the todo")
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _normalize_status(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            normalized = v.strip().lower().replace("-", "_").replace(" ", "_")
+            return _STATUS_ALIASES.get(normalized, normalized)
+        return v
 
 
 class Params(BaseModel):

@@ -23,6 +23,9 @@ if TYPE_CHECKING:
     from pythinker_code.wire.types import DisplayBlock
 
 
+_MAX_TERMINAL_RECORDS = 256
+
+
 class ApprovalCancelledError(Exception):
     """Raised when a pending approval is cancelled by its source lifecycle."""
 
@@ -143,6 +146,7 @@ class ApprovalRuntime:
             waiter.set_result((response, feedback))
         self._publish_event(ApprovalRuntimeEvent(kind="request_resolved", request=request))
         self._publish_wire_response(request_id, response, feedback)
+        self._evict_terminal_overflow()
         return True
 
     def _cancel_request(self, request_id: str, feedback: str = "") -> None:
@@ -161,6 +165,7 @@ class ApprovalRuntime:
             waiter.set_exception(ApprovalCancelledError(request_id))
         self._publish_event(ApprovalRuntimeEvent(kind="request_resolved", request=request))
         self._publish_wire_response(request_id, "reject", feedback)
+        self._evict_terminal_overflow()
 
     def cancel_by_source(self, source_kind: ApprovalSourceKind, source_id: str) -> int:
         cancelled = 0
@@ -180,7 +185,17 @@ class ApprovalRuntime:
             self._publish_event(ApprovalRuntimeEvent(kind="request_resolved", request=request))
             self._publish_wire_response(request_id, "reject")
             cancelled += 1
+        self._evict_terminal_overflow()
         return cancelled
+
+    def _evict_terminal_overflow(self) -> None:
+        terminal_ids = [rid for rid, r in self._requests.items() if r.status != "pending"]
+        overflow = len(terminal_ids) - _MAX_TERMINAL_RECORDS
+        if overflow <= 0:
+            return
+        # dict preserves insertion order; terminal_ids is already oldest-first
+        for rid in terminal_ids[:overflow]:
+            self._requests.pop(rid, None)
 
     def list_pending(self) -> list[ApprovalRequestRecord]:
         pending = [request for request in self._requests.values() if request.status == "pending"]

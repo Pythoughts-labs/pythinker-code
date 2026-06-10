@@ -617,3 +617,28 @@ async def test_read_tail_line_truncation(read_file_tool: ReadFile, temp_work_dir
     line_4 = [x for x in output_lines if x.strip().startswith("4")][0]
     actual_content = line_4.split("\t", 1)[1]
     assert actual_content.endswith("...")
+
+
+async def test_read_symlink_to_outside_sensitive_is_blocked(
+    read_file_tool: ReadFile, temp_work_dir: HostPath, tmp_path: Path
+):
+    """A symlink inside the workspace pointing at an outside sensitive file must be blocked.
+
+    Before the fix the read succeeds and leaks the secret.  After the fix the
+    real target is resolved and the sensitive-file check blocks the read.
+    """
+    # Create a real sensitive file outside the workspace
+    outside_env = tmp_path / ".env"
+    outside_env.write_text("SECRET=hunter2\n")
+
+    # Create a symlink inside the workspace that points at the outside .env
+    symlink_path = temp_work_dir / "innocent.txt"
+    symlink_path.unsafe_to_local_path().symlink_to(outside_env)
+
+    result = await read_file_tool(Params(path=str(symlink_path)))
+
+    # The read must be blocked — the secret must not be leaked
+    assert result.is_error
+    assert "sensitive" in result.message.lower() or "secrets" in result.message.lower(), (
+        f"Expected sensitive-file error but got: {result.message}"
+    )

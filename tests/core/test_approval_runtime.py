@@ -407,3 +407,57 @@ async def test_pythinkersoul_run_cancels_own_foreground_approvals_on_cancel(
     assert background is not None
     assert background.status == "pending"
     assert runtime.approval_runtime.list_pending() == [background]
+
+
+def test_approval_runtime_evicts_old_terminal_records() -> None:
+    from pythinker_code.approval_runtime.runtime import _MAX_TERMINAL_RECORDS
+
+    rt = ApprovalRuntime()
+
+    # Create one PENDING request that should never be evicted
+    pending_source = ApprovalSource(kind="foreground_turn", id="turn-pending-forever")
+    pending = rt.create_request(
+        request_id="pending-forever",
+        tool_call_id="call-pending-forever",
+        sender="Shell",
+        action="run command",
+        description="pending forever",
+        display=[],
+        source=pending_source,
+    )
+    pending_id = pending.id
+
+    # Create and resolve N = _MAX_TERMINAL_RECORDS + 50 requests
+    n = _MAX_TERMINAL_RECORDS + 50
+    last_resolved_id = None
+    for i in range(n):
+        req_id = f"resolved-{i}"
+        rt.create_request(
+            request_id=req_id,
+            tool_call_id=f"call-{i}",
+            sender="Shell",
+            action="run command",
+            description=f"request {i}",
+            display=[],
+            source=ApprovalSource(kind="foreground_turn", id=f"turn-{i}"),
+        )
+        rt.resolve(req_id, "approve")
+        last_resolved_id = req_id
+
+    # After fix: total records <= _MAX_TERMINAL_RECORDS + 1 (pending stays)
+    assert len(rt._requests) <= _MAX_TERMINAL_RECORDS + 1, (
+        f"Expected at most {_MAX_TERMINAL_RECORDS + 1} records, got {len(rt._requests)}"
+    )
+
+    # Pending request must NOT be evicted
+    assert rt.get_request(pending_id) is not None
+    pending_records = rt.list_pending()
+    assert any(r.id == pending_id for r in pending_records), (
+        "Pending request was incorrectly evicted"
+    )
+
+    # Most recent resolved record must still be retrievable (replay window)
+    assert last_resolved_id is not None
+    assert rt.get_request(last_resolved_id) is not None, (
+        "Most recent resolved record was evicted (replay window broken)"
+    )

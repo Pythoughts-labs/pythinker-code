@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, fields, replace
+from functools import lru_cache
 from typing import Any, Literal, cast
 
 from prompt_toolkit.styles import Style as PTKStyle
 from rich.style import Style as RichStyle
 
-from pythinker_code.ui.terminal_capabilities import colors_disabled
+from pythinker_code.ui.color_utils import blend, parse_hex_color, to_hex_color
+from pythinker_code.ui.terminal_capabilities import color_depth, colors_disabled
 
 type ThemeName = Literal["dark", "light"]
 
@@ -60,10 +62,10 @@ class DiffColors:
 
 
 _DIFF_DARK = DiffColors(
-    add_bg=RichStyle(bgcolor="#12261e"),
-    del_bg=RichStyle(bgcolor="#2d1214"),
-    add_hl=RichStyle(bgcolor="#1a4a2e"),
-    del_hl=RichStyle(bgcolor="#5c1a1d"),
+    add_bg=RichStyle(bgcolor="#052e05"),
+    del_bg=RichStyle(bgcolor="#3a0808"),
+    add_hl=RichStyle(bgcolor="#0e5a0e"),
+    del_hl=RichStyle(bgcolor="#6b1414"),
 )
 
 _DIFF_LIGHT = DiffColors(
@@ -78,6 +80,16 @@ _DIFF_PLAIN = DiffColors(
     del_bg=RichStyle(),
     add_hl=RichStyle(),
     del_hl=RichStyle(),
+)
+
+# Basic 16-color terminals: the hex background tints above quantize into
+# unreadable mud, so fall back to plain green/red foregrounds (Codex's
+# ANSI16 diff tier). The fields still act as overlay styles for diff rows.
+_DIFF_ANSI16 = DiffColors(
+    add_bg=RichStyle(color="green"),
+    del_bg=RichStyle(color="red"),
+    add_hl=RichStyle(color="green", bold=True),
+    del_hl=RichStyle(color="red", bold=True),
 )
 
 
@@ -155,6 +167,8 @@ _PROMPT_STYLE_DARK = {
     "compact-input": "",
     "compact-input.prompt": "fg:#F4F4F5 bold",
     "compact-input.frame": "fg:#3A506D",
+    # Muted level word in the top-border effort label (the dot carries the color).
+    "compact-input.effort": "fg:#A3A3A3",
     "running-prompt-placeholder": "fg:#A3A3A3 italic",
     "running-prompt-separator": "fg:#2B3A52",
     # Slash completion menu — selected row gets the same selected-bg as cards.
@@ -193,6 +207,8 @@ _PROMPT_STYLE_LIGHT = {
     "compact-input": "",
     "compact-input.prompt": "fg:#213853 bold",
     "compact-input.frame": "fg:#495F7C",
+    # Muted level word in the top-border effort label (the dot carries the color).
+    "compact-input.effort": "fg:#666666",
     "running-prompt-placeholder": "fg:#666666 italic",
     "running-prompt-separator": "fg:#C8BEC0",
     "slash-completion-menu": "",
@@ -250,10 +266,10 @@ _TOOLBAR_DARK = ToolbarColors(
     auto_label="bold fg:#7BC97F",
     plan_label="bold fg:#AFE3F1",
     plan_prompt="fg:#AFE3F1",
-    cwd="fg:#5F6B7E",
-    bg_tasks="fg:#A3A3A3",
-    tip="fg:#A3A3A3",
-    tip_key="fg:#A3A3A3 bold",
+    cwd="fg:#6F6F6F",
+    bg_tasks="fg:#6F6F6F",
+    tip="fg:#6F6F6F",
+    tip_key="fg:#6F6F6F bold",
 )
 
 _TOOLBAR_LIGHT = ToolbarColors(
@@ -397,6 +413,8 @@ def get_active_theme() -> ThemeName:
 def get_diff_colors() -> DiffColors:
     if colors_disabled():
         return _DIFF_PLAIN
+    if color_depth() == "16":
+        return _DIFF_ANSI16
     return _DIFF_LIGHT if _active_theme == "light" else _DIFF_DARK
 
 
@@ -490,14 +508,14 @@ _TUI_TOKENS_DARK = TuiTokens(
     success="#7BC97F",
     error="#EF5E62",
     warning="#E6B450",
-    muted="#A3A3A3",
-    dim="#5F6B7E",
+    muted="#6F6F6F",
+    dim="#5F5F5F",
     text="",
-    thinking_text="#C0C0C0",
+    thinking_text="#D4D4D4",
     activity_label="#F4F4F5",
-    activity_verb="#EE9983",
-    activity_verb_mid="#F4B5A5",
-    activity_verb_highlight="#FBD9CE",
+    activity_verb="#C68D7E",
+    activity_verb_mid="#D8AC9E",
+    activity_verb_highlight="#E9CDC2",
     activity_spinner="#B8C0CC",
     selected_bg=_SELECTED_BG_DARK,
     user_message_bg="#333333",
@@ -508,10 +526,10 @@ _TUI_TOKENS_DARK = TuiTokens(
     tool_pending_bg="#1B2230",
     tool_error_bg="#2E1D24",
     tool_title="#F4F4F5",
-    tool_output="#A3A3A3",
-    tool_diff_added="#7BC97F",
-    tool_diff_removed="#EF5E62",
-    tool_diff_context="#A3A3A3",
+    tool_output="#D4D4D4",
+    tool_diff_added="#81C784",
+    tool_diff_removed="#E57373",
+    tool_diff_context="#B8B8B8",
     bash_mode="#7BC97F",
     code_block_bg="#1f2030",
 )
@@ -531,9 +549,9 @@ _TUI_TOKENS_LIGHT = TuiTokens(
     text="#213853",
     thinking_text="#7A7A7A",
     activity_label="#213853",
-    activity_verb="#C56B4F",
-    activity_verb_mid="#B0573C",
-    activity_verb_highlight="#8F3A26",
+    activity_verb="#B26A52",
+    activity_verb_mid="#9E563E",
+    activity_verb_highlight="#82412D",
     activity_spinner="#6B7280",
     selected_bg=_SELECTED_BG_LIGHT,
     user_message_bg="#E0E0E0",
@@ -594,15 +612,17 @@ def tui_rich_style(token: str, *, theme: ThemeName | None = None) -> RichStyle:
 # ThinkingLevel value; ``min`` is accepted as the compact palette step alias.
 # ---------------------------------------------------------------------------
 
+# A single cold→hot gradient so the levels read as one dial: slate when off,
+# cool blue/teal at low effort, warming amber/orange, ending on dark red.
 _THINKING_FRAME_SCALE: dict[str, str] = {
     "off": "#64748b",  # muted grey / slate-500
-    "min": "#cbd5e1",  # lighter grey / slate-300
-    "minimal": "#cbd5e1",  # canonical value for minimum
-    "low": "#3b82f6",  # rich digital blue / blue-500
-    "medium": "#22d3ee",  # electric light cyan / cyan-400
-    "high": "#c4b5fd",  # whitish purple / violet-300
-    "xhigh": "#a855f7",  # vibrant purple / purple-500
-    "max": "#6d28d9",  # deep violet / violet-700
+    "min": "#60a5fa",  # cool blue / blue-400
+    "minimal": "#60a5fa",  # canonical value for minimum
+    "low": "#2dd4bf",  # teal / teal-400
+    "medium": "#fbbf24",  # warm amber / amber-400
+    "high": "#f97316",  # hot orange / orange-500
+    "xhigh": "#b91c1c",  # dark red / red-700
+    "max": "#7f1d1d",  # deepest red / red-900
 }
 
 _THINKING_FRAME_DARK: dict[str, str] = _THINKING_FRAME_SCALE
@@ -616,8 +636,38 @@ def thinking_frame_color(level: str, *, theme: ThemeName | None = None) -> str:
     return table.get(level) or get_tui_tokens(theme).border
 
 
+@lru_cache(maxsize=32)
+def _dimmed_frame_hex(level: str, name: ThemeName) -> str:
+    color = thinking_frame_color(level, theme=name)
+    rgb = parse_hex_color(color)
+    if rgb is not None:
+        pole = (255, 255, 255) if name == "light" else (0, 0, 0)
+        color = to_hex_color(blend(rgb, pole, 0.7))
+    return color
+
+
 def thinking_frame_style(level: str, *, theme: ThemeName | None = None) -> str:
-    """prompt_toolkit frame style for *level* (``"fg:#A78BFA"``), or ``""`` when colors are off."""
+    """prompt_toolkit input-bar style for *level*, or ``""`` when colors are off.
+
+    The bars are chrome, not content: the level color is dimmed (blended
+    toward the theme's background pole) so the input frame hints at the
+    effort level without competing with the text being typed. The blend is
+    cached — it is re-derived on every prompt_toolkit redraw otherwise.
+    """
+    if colors_disabled():
+        return ""
+    name = theme if theme is not None else _active_theme
+    return f"fg:{_dimmed_frame_hex(level, name)}"
+
+
+def thinking_dot_style(level: str, *, theme: ThemeName | None = None) -> str:
+    """prompt_toolkit style for the small effort *dot* on the input top border.
+
+    Unlike :func:`thinking_frame_style` (which dims the color because it paints
+    a full-width bar), the dot is a single glyph, so it carries the level color
+    at full strength — the one intentional accent on an otherwise static-grey
+    border. Returns ``""`` when colors are disabled.
+    """
     if colors_disabled():
         return ""
     return f"fg:{thinking_frame_color(level, theme=theme)}"

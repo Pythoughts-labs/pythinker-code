@@ -163,6 +163,7 @@ def is_config_surface_path(path: HostPath, work_dir: HostPath | None = None) -> 
     write tools do this before classifying (see ``WriteFile``/``StrReplaceFile``).
     """
     posix = str(path).replace("\\", "/")
+    posix_lower = posix.lower()
     base = posix.rsplit("/", 1)[-1].lower()
     if base == "agents.md":
         if work_dir is None:
@@ -171,13 +172,13 @@ def is_config_surface_path(path: HostPath, work_dir: HostPath | None = None) -> 
         # re-injected set) or nested beneath work_dir (defense-in-depth).
         agents_dir = path.parent
         return is_within_directory(work_dir, agents_dir) or is_within_directory(path, work_dir)
-    if "/.pythinker/" in posix and base in ("config.toml", "config.local.toml"):
+    if "/.pythinker/" in posix_lower and base in ("config.toml", "config.local.toml"):
         return True
     # Agent-spec dirs hold both YAML wrappers and Claude/Agents-style ``*.md``
     # frontmatter specs (see ``discover_markdown_agents``); both define a subagent's
     # tool policy and system prompt, so both are config surfaces.
     return base.endswith((".yaml", ".yml", ".md")) and any(
-        m in posix for m in _AGENT_SPEC_DIR_MARKERS
+        m in posix_lower for m in _AGENT_SPEC_DIR_MARKERS
     )
 
 

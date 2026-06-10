@@ -106,6 +106,24 @@ class Params(BaseModel):
         return values
 
 
+def _crlf_translated_edit(content: str, edit: Edit) -> Edit | None:
+    """CRLF-translated variant of *edit* when the file is CRLF and the LF needle missed.
+
+    Files are read with newline='' so CRLF joints survive verbatim, while models
+    overwhelmingly echo multi-line old strings LF-joined (the \\r is invisible in
+    the numbered ReadFile output). Translating the needle — and the replacement,
+    unless it already carries CRLF — keeps multi-line edits working without
+    silently rewriting the file's line endings.
+    """
+    if "\r\n" not in content or "\n" not in edit.old or "\r" in edit.old:
+        return None
+    old = edit.old.replace("\n", "\r\n")
+    if old not in content:
+        return None
+    new = edit.new if "\r" in edit.new else edit.new.replace("\n", "\r\n")
+    return Edit(old=old, new=new, replace_all=edit.replace_all)
+
+
 class StrReplaceFile(CallableTool2[Params]):
     name: str = "StrReplaceFile"
     description: str = _BASE_DESCRIPTION
@@ -127,14 +145,20 @@ class StrReplaceFile(CallableTool2[Params]):
         self._plan_mode_checker = checker
         self._plan_file_path_getter = path_getter
 
-    async def _validate_path(self, path: HostPath) -> ToolError | None:
-        """Validate that the path is safe to edit."""
-        resolved_path = path.canonical()
+    def _validate_path(
+        self,
+        path: HostPath,
+        real_p: HostPath,
+        real_work: HostPath,
+        real_add: list[HostPath],
+    ) -> ToolError | None:
+        """Validate that the path is safe to edit.
 
-        if (
-            not is_within_workspace(resolved_path, self._work_dir, self._additional_dirs)
-            and not path.is_absolute()
-        ):
+        Uses `real_p` (symlink-resolved) for workspace checks while `path` is kept for
+        user-facing messages so reported paths remain unchanged. The resolved
+        workspace roots come from the caller so they are realpath'd only once.
+        """
+        if not is_within_workspace(real_p, real_work, real_add) and not path.is_absolute():
             return ToolError(
                 message=(
                     f"`{path}` is not an absolute path. "
@@ -161,10 +185,17 @@ class StrReplaceFile(CallableTool2[Params]):
             )
 
         try:
-            p = HostPath(params.path).expanduser()
-            if err := await self._validate_path(p):
+            raw = HostPath(params.path).expanduser()
+            p = raw.canonical()
+
+            # Resolve the real (symlink-followed) path for security checks only.
+            # os.path.realpath follows symlinks at every component including the leaf.
+            real_p = await p.realpath()
+            real_work = await self._work_dir.realpath()
+            real_add = [await d.realpath() for d in self._additional_dirs]
+
+            if err := self._validate_path(raw, real_p, real_work, real_add):
                 return err
-            p = p.canonical()
 
             plan_target = inspect_plan_edit_target(
                 p,
@@ -227,6 +258,9 @@ class StrReplaceFile(CallableTool2[Params]):
                     )
 
                 match_count = content.count(edit.old)
+                if match_count == 0 and (crlf_edit := _crlf_translated_edit(content, edit)):
+                    edit = crlf_edit
+                    match_count = content.count(edit.old)
                 if match_count == 0:
                     return ToolError(
                         message=(
@@ -257,7 +291,7 @@ class StrReplaceFile(CallableTool2[Params]):
                 str(p), original_content, content
             )
 
-            action = classify_edit_action(p, self._work_dir, self._additional_dirs)
+            action = classify_edit_action(real_p, real_work, real_add)
 
             # Plan file edits are auto-approved; all other edits need approval.
             if not is_plan_file_edit:

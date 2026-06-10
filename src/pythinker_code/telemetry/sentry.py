@@ -38,9 +38,25 @@ _PATH_SCRUB = re.compile(
     r"^(.*?)(site-packages|pythinker_code|src/pythinker_code)/",
 )
 
+_HOME = os.path.expanduser("~")
+
 
 def _scrub_path(path: str) -> str:
-    return _PATH_SCRUB.sub(r"<env>/\2/", path)
+    scrubbed = _PATH_SCRUB.sub(r"<env>/\2/", path)
+    if scrubbed != path:
+        return scrubbed
+    # Catch-all for layouts the env regex misses (PyInstaller onedir
+    # ~/.local/bin/_internal, conda envs, editable/bare-home scripts):
+    # collapse the user's home prefix so frames never expose $HOME.
+    if _HOME and path.startswith(_HOME):
+        return "<home>" + path[len(_HOME) :]
+    return scrubbed
+
+
+def _scrub_message_text(text: str) -> str:
+    from pythinker_code.telemetry.errors import ABSOLUTE_PATH_RE  # lazy: avoids circular import
+
+    return ABSOLUTE_PATH_RE.sub("<path>", text)
 
 
 def _frame_path(frame: dict[str, Any]) -> str:
@@ -126,6 +142,21 @@ def _before_send(event: Event, hint: Hint) -> Event | None:
             filename = frame.get("filename")
             if isinstance(filename, str):
                 frame["filename"] = _scrub_path(filename)
+        value = exception.get("value")
+        if isinstance(value, str):
+            exception["value"] = _scrub_message_text(value)
+
+    message = event.get("message")
+    if isinstance(message, str):
+        event["message"] = _scrub_message_text(message)
+
+    logentry = event.get("logentry")
+    if isinstance(logentry, dict):
+        for k in ("message", "formatted"):
+            v = logentry.get(k)
+            if isinstance(v, str):
+                logentry[k] = _scrub_message_text(v)
+
     return event
 
 
@@ -158,6 +189,11 @@ def init(
         traces_sample_rate=0.0,
         profiles_sample_rate=0.0,
         send_default_pii=False,
+        # Do not serialize frame locals or source context: locals can hold
+        # secrets under names our denylist does not cover (auth_header, token,
+        # payload), and context lines can contain inlined literals.
+        include_local_variables=False,
+        include_source_context=False,
         attach_stacktrace=True,
         max_breadcrumbs=50,
         # Only the integrations that catch unhandled errors. Skip stdlib
