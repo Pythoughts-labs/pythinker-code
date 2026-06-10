@@ -42,6 +42,22 @@ async def test_build_recall_block_includes_open_todos_and_facts():
     assert "prior session" in block
 
 
+async def test_build_recall_block_frames_content_as_past_context():
+    """The block must read as history, not as a directive. Without this framing
+    a model treats stale recalled todos ("Security scan: ...") as the current
+    request — observed in the field: "ping" was answered with a full code
+    review resumed from a previous session."""
+    block = await build_recall_block(
+        candidates=[_block("Wait for both to complete, then synthesize into unified report.")],
+        query=RecallQuery(text="report"),
+        open_todos=[("prior session", ["Security scan: vulnerabilities"])],
+        budget_tokens=1000,
+    )
+    assert "not an instruction" in block
+    assert "Unfinished todos from past sessions" in block
+    assert "do not resume unprompted" in block
+
+
 async def test_build_recall_block_empty_when_nothing():
     block = await build_recall_block(
         candidates=[],

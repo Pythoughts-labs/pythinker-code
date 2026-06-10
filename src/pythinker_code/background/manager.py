@@ -70,6 +70,7 @@ class BackgroundTaskManager:
         self._store = BackgroundTaskStore(session.context_file.parent / "tasks")
         self._runtime: Runtime | None = None
         self._live_agent_tasks: dict[str, asyncio.Task[None]] = {}
+        self._current_turn_task_ids: set[str] = set()
         self._completion_event: asyncio.Event = asyncio.Event()
 
     @property
@@ -103,6 +104,7 @@ class BackgroundTaskManager:
         # reconcile through it finalize the root's actively running agents as
         # recoverable — enabling a corrupting double-resume.
         manager._live_agent_tasks = self._live_agent_tasks
+        manager._current_turn_task_ids = self._current_turn_task_ids
         return manager
 
     def bind_runtime(self, runtime: Runtime) -> None:
@@ -281,6 +283,7 @@ class BackgroundTaskManager:
             return True
 
         self._store.update_runtime(task_id, mark_worker_started)
+        self._current_turn_task_ids.add(task_id)
         view = self._store.merged_view(task_id)
         self._journal_task_milestone("background task started", view)
         return view
@@ -380,6 +383,7 @@ class BackgroundTaskManager:
                 )
 
         task.add_done_callback(_reap_agent_task)
+        self._current_turn_task_ids.add(task_id)
         view = self._store.merged_view(task_id)
         self._journal_task_milestone("background task started", view)
         return view
@@ -559,6 +563,31 @@ class BackgroundTaskManager:
         self._store.write_control(task_id, control)
         self._best_effort_kill(task_id, view.runtime)
         return self._store.merged_view(task_id)
+
+    def begin_turn(self) -> None:
+        """Mark the start of an interactive turn.
+
+        Tasks created after this call belong to the turn and are killed by
+        ``kill_turn_tasks`` if the user interrupts it. Tasks from earlier
+        turns are deliberately left alone — an ESC means "stop what you are
+        doing now", not "tear down everything I started before".
+        """
+        self._current_turn_task_ids.clear()
+
+    def kill_turn_tasks(self, *, reason: str = "Interrupted by user") -> list[str]:
+        """Kill still-active background tasks spawned during the current turn."""
+        killed: list[str] = []
+        for task_id in sorted(self._current_turn_task_ids):
+            try:
+                view = self._store.merged_view(task_id)
+                if is_terminal_status(view.runtime.status):
+                    continue
+                self.kill(task_id, reason=reason)
+                killed.append(task_id)
+            except Exception:
+                logger.exception("Failed to kill turn task {task_id} on interrupt", task_id=task_id)
+        self._current_turn_task_ids.clear()
+        return killed
 
     def kill_all_active(self, *, reason: str = "CLI session ended") -> list[str]:
         """Kill all non-terminal background tasks. Used during CLI shutdown."""

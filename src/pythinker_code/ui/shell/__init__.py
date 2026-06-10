@@ -1352,6 +1352,8 @@ class Shell:
                 if isinstance(view, _PromptLiveView):
                     captured_view = view
 
+            if runtime is not None:
+                runtime.background_tasks.begin_turn()
             await run_soul(
                 self.soul,
                 user_input,
@@ -1405,6 +1407,8 @@ class Shell:
                     break
                 queued = pending.pop(0)
                 console.print(render_user_echo_text(queued.resolved_command))
+                if runtime is not None:
+                    runtime.background_tasks.begin_turn()
                 await run_soul(
                     self.soul,
                     queued.content,
@@ -1589,6 +1593,22 @@ class Shell:
             )
             track("turn_interrupted", at_step=_at_step)
             console.print(f"[{_get_tui_tokens().error}]Interrupted by user[/]")
+            # ESC must stop everything the interrupted turn started — without
+            # this, background subagents spawned during the turn keep running
+            # and re-deliver the abandoned task via completion notifications.
+            if isinstance(self.soul, PythinkerSoul):
+                try:
+                    killed = self.soul.runtime.background_tasks.kill_turn_tasks(
+                        reason="Interrupted by user"
+                    )
+                except Exception:
+                    logger.exception("Failed to kill background tasks on interrupt")
+                    killed = []
+                if killed:
+                    console.print(
+                        f"[{_get_tui_tokens().muted}]Stopped {len(killed)} background "
+                        f"task{'s' if len(killed) != 1 else ''} started this turn[/]"
+                    )
         except Exception as e:
             _t = _get_tui_tokens()
             logger.exception("Unexpected error:")
