@@ -12,6 +12,7 @@ from pythinker_code.hooks.runner import HookResult
 from pythinker_code.skill import Skill
 from pythinker_code.soul.agent import Agent, Runtime
 from pythinker_code.soul.compaction_restore import (
+    _display_path,
     build_compaction_restore_context,
     build_hook_context_message,
     compact_summary_text,
@@ -180,6 +181,60 @@ async def test_compact_context_restores_files_and_hook_context(
 
 
 @pytest.mark.asyncio
+async def test_compact_context_restores_history_when_rebuild_fails(
+    runtime: Runtime,
+    tmp_path: Path,
+) -> None:
+    agent = Agent(
+        name="Test Agent",
+        system_prompt="Test system prompt.",
+        toolset=EmptyToolset(),
+        runtime=runtime,
+    )
+    context = Context(file_backend=tmp_path / "history-rebuild-fail.jsonl")
+    soul = PythinkerSoul(agent, context=context)
+    runtime.session.state.active_skills = []
+
+    # Seed two messages so history_before_compaction is non-trivial
+    msg_user = Message(role="user", content=[TextPart(text="Hello")])
+    msg_assistant = Message(role="assistant", content=[TextPart(text="World")])
+    await context.append_message(msg_user)
+    await context.append_message(msg_assistant)
+
+    before = list(context.history)
+
+    fake_result = MagicMock()
+    fake_result.messages = [Message(role="user", content=[TextPart(text="compacted-summary")])]
+    fake_result.estimated_token_count = 5
+    fake_result.usage = None
+    soul._run_with_connection_recovery = AsyncMock(return_value=fake_result)  # pyright: ignore[reportPrivateUsage]
+    soul._checkpoint = AsyncMock()  # pyright: ignore[reportPrivateUsage]
+    soul._hook_engine.trigger = AsyncMock(return_value=[])  # pyright: ignore[reportPrivateUsage]
+
+    # Wrap append_message: raise when seeing the compacted summary text so the
+    # fault lands after clear() has already rotated the backing file.
+    real_append = context.append_message
+
+    async def flaky_append(message):
+        msgs = [message] if isinstance(message, Message) else list(message)
+        for m in msgs:
+            if "compacted-summary" in m.extract_text(""):
+                raise RuntimeError("disk full")
+        return await real_append(message)
+
+    context.append_message = flaky_append  # type: ignore[method-assign]
+
+    with (
+        patch("pythinker_code.soul.pythinkersoul.wire_send"),
+        patch("pythinker_code.telemetry.track"),
+        pytest.raises(RuntimeError, match="disk full"),
+    ):
+        await soul.compact_context()
+
+    assert list(context.history) == before
+
+
+@pytest.mark.asyncio
 async def test_compact_context_emits_end_when_compaction_fails(
     runtime: Runtime,
     tmp_path: Path,
@@ -221,3 +276,17 @@ async def test_compact_context_emits_end_when_compaction_fails(
         before_tokens=context.token_count,
         success=False,
     )
+
+
+def test_display_path_skips_out_of_workspace_absolute_paths(tmp_path: Path) -> None:
+    work = HostPath.unsafe_from_local_path(tmp_path)
+
+    # Out-of-workspace absolute paths must return None (security: no /etc/passwd resurface)
+    assert _display_path("/etc/passwd", work_dir=work) is None
+    assert _display_path(str(tmp_path.parent / "sibling.py"), work_dir=work) is None
+
+    # In-workspace absolute: still relativized correctly
+    assert _display_path(str(tmp_path / "src/app.py"), work_dir=work) == "src/app.py"
+
+    # Relative path: returned unchanged (strip leading ./)
+    assert _display_path("src/app.py", work_dir=work) == "src/app.py"

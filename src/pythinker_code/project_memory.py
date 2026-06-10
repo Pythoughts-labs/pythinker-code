@@ -8,6 +8,7 @@ to per-project. Local-host only in v1.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import hashlib
 import os
@@ -108,6 +109,7 @@ class ProjectMemoryStore:
         self._memory_limit = memory_char_limit
         self._user_limit = user_char_limit
         self._root: Path | None = None
+        self._async_lock = asyncio.Lock()
 
     async def _ensure_dir(self) -> Path:
         if self._root is None:
@@ -150,10 +152,10 @@ class ProjectMemoryStore:
     @staticmethod
     @contextlib.contextmanager
     def _file_lock(path: Path) -> Generator[None]:
-        # NOTE (v1): fcntl gives cross-process safety. The lock is held across
-        # await in callers, so do NOT invoke store mutations concurrently on one
-        # event loop / store instance in v1 (the Memory tool is root-only and
-        # sequential). Revisit with asyncio.to_thread / asyncio.Lock if that changes.
+        # NOTE (v1): fcntl gives cross-process safety. Same-loop serialisation
+        # is provided by self._async_lock, which every mutating method acquires
+        # before entering this block; that prevents a second same-loop coroutine
+        # from calling flock (a blocking syscall) while another holds it.
         lock_path = path.with_name(path.name + ".lock")
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         fh = lock_path.open("a+", encoding="utf-8")
@@ -195,20 +197,21 @@ class ProjectMemoryStore:
         if blocked:
             return MemoryOpResult(False, blocked)
         path = await self._path_for(target)
-        with self._file_lock(path):
-            entries = await self.read_entries(target)
-            if content in entries:
-                return MemoryOpResult(True, "Entry already exists (no duplicate added).")
-            limit = self._char_limit(target)
-            new_total = len(ENTRY_DELIMITER.join([*entries, content]))
-            if new_total > limit:
-                current = len(ENTRY_DELIMITER.join(entries))
-                return MemoryOpResult(
-                    False,
-                    f"Memory at {current}/{limit} chars; this entry ({len(content)}) "
-                    "exceeds the limit. Replace or remove entries first.",
-                )
-            await self._write_entries(target, [*entries, content])
+        async with self._async_lock:
+            with self._file_lock(path):
+                entries = await self.read_entries(target)
+                if content in entries:
+                    return MemoryOpResult(True, "Entry already exists (no duplicate added).")
+                limit = self._char_limit(target)
+                new_total = len(ENTRY_DELIMITER.join([*entries, content]))
+                if new_total > limit:
+                    current = len(ENTRY_DELIMITER.join(entries))
+                    return MemoryOpResult(
+                        False,
+                        f"Memory at {current}/{limit} chars; this entry ({len(content)}) "
+                        "exceeds the limit. Replace or remove entries first.",
+                    )
+                await self._write_entries(target, [*entries, content])
         return MemoryOpResult(True, "Entry added.")
 
     @staticmethod
@@ -233,17 +236,20 @@ class ProjectMemoryStore:
         if blocked:
             return MemoryOpResult(False, blocked)
         path = await self._path_for(target)
-        with self._file_lock(path):
-            entries = await self.read_entries(target)
-            idx = self._match_one(entries, old_text)
-            if isinstance(idx, MemoryOpResult):
-                return idx
-            limit = self._char_limit(target)
-            candidate = list(entries)
-            candidate[idx] = new_content
-            if len(ENTRY_DELIMITER.join(candidate)) > limit:
-                return MemoryOpResult(False, f"Replacement would exceed the {limit}-char limit.")
-            await self._write_entries(target, candidate)
+        async with self._async_lock:
+            with self._file_lock(path):
+                entries = await self.read_entries(target)
+                idx = self._match_one(entries, old_text)
+                if isinstance(idx, MemoryOpResult):
+                    return idx
+                limit = self._char_limit(target)
+                candidate = list(entries)
+                candidate[idx] = new_content
+                if len(ENTRY_DELIMITER.join(candidate)) > limit:
+                    return MemoryOpResult(
+                        False, f"Replacement would exceed the {limit}-char limit."
+                    )
+                await self._write_entries(target, candidate)
         return MemoryOpResult(True, "Entry replaced.")
 
     async def remove(self, target: Target, old_text: str) -> MemoryOpResult:
@@ -251,13 +257,14 @@ class ProjectMemoryStore:
         if not old_text:
             return MemoryOpResult(False, "old_text cannot be empty.")
         path = await self._path_for(target)
-        with self._file_lock(path):
-            entries = await self.read_entries(target)
-            idx = self._match_one(entries, old_text)
-            if isinstance(idx, MemoryOpResult):
-                return idx
-            entries.pop(idx)
-            await self._write_entries(target, entries)
+        async with self._async_lock:
+            with self._file_lock(path):
+                entries = await self.read_entries(target)
+                idx = self._match_one(entries, old_text)
+                if isinstance(idx, MemoryOpResult):
+                    return idx
+                entries.pop(idx)
+                await self._write_entries(target, entries)
         return MemoryOpResult(True, "Entry removed.")
 
     async def append_journal(self, recap: str) -> MemoryOpResult:
@@ -270,11 +277,16 @@ class ProjectMemoryStore:
             return MemoryOpResult(False, blocked)
         root = await self._ensure_dir()
         path = root / "memory" / "JOURNAL.md"
-        with self._file_lock(path):
-            entries = self._split_entries(path.read_text(encoding="utf-8")) if path.exists() else []
-            if recap in entries:
-                return MemoryOpResult(True, "Journal recap already exists (no duplicate added).")
-            await self._write_journal_entries([recap, *entries])
+        async with self._async_lock:
+            with self._file_lock(path):
+                entries = (
+                    self._split_entries(path.read_text(encoding="utf-8")) if path.exists() else []
+                )
+                if recap in entries:
+                    return MemoryOpResult(
+                        True, "Journal recap already exists (no duplicate added)."
+                    )
+                await self._write_journal_entries([recap, *entries])
         return MemoryOpResult(True, "Journal recap added.")
 
     async def _write_journal_entries(self, entries: list[str]) -> None:

@@ -413,3 +413,23 @@ async def test_replace_empty_strings(
     assert not result.is_error
     assert "successfully edited" in result.message
     assert await file_path.read_text() == "Hello !"
+
+
+async def test_replace_preserves_crlf_line_endings(
+    str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+):
+    """StrReplaceFile must round-trip CRLF line endings unchanged.
+
+    Write a CRLF file via write_bytes (bypassing newline normalization), apply
+    a replacement, and assert that every \\r\\n survives intact — only the
+    edited token changes.
+    """
+    file_path = temp_work_dir / "test.txt"
+    await file_path.write_bytes(b"a\r\nworld\r\nc\r\n")
+
+    result = await str_replace_file_tool(
+        Params(path=str(file_path), edit=Edit(old="world", new="universe"))
+    )
+
+    assert not result.is_error
+    assert await file_path.read_bytes() == b"a\r\nuniverse\r\nc\r\n"

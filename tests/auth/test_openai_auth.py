@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 from pathlib import Path
+from typing import cast
 from urllib.parse import parse_qs, urlsplit
 
 import aiohttp
@@ -35,6 +36,7 @@ from pythinker_code.auth.openai import (
     _build_authorize_url,
     _callback_html,
     _exchange_id_token_for_api_key,
+    _handle_browser_callback,
     _select_default_openai_model,
     _token_from_openai_response,
     _wait_for_browser_code,
@@ -476,6 +478,24 @@ async def test_login_openai_api_key_does_not_save_on_401(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_login_openai_api_key_does_not_save_on_403(monkeypatch, tmp_path):
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    config = Config(is_from_default_location=True)
+
+    async def fake_list_models(platform, api_key):
+        request_info = _request_info("https://api.openai.com/v1/models")
+        raise aiohttp.ClientResponseError(request_info, (), status=403, message="Forbidden")
+
+    monkeypatch.setattr("pythinker_code.auth.openai.list_models", fake_list_models)
+
+    events = [event async for event in login_openai_api_key(config, api_key="sk-bad")]
+    assert events[-1].type == "error"
+    assert "Invalid OpenAI API key" in events[-1].message
+    assert config.providers == {}
+    assert config.models == {}
+
+
+@pytest.mark.asyncio
 async def test_discover_chatgpt_models_reraises_401(monkeypatch):
     class FakeSession:
         async def __aenter__(self):
@@ -892,3 +912,63 @@ async def test_login_does_not_warn_when_account_changes(monkeypatch, tmp_path):
     token = load_tokens(OAuthRef(storage="file", key=OPENAI_CHATGPT_OAUTH_KEY))
     assert token is not None
     assert token.account_id == "acc_new"
+
+
+class _FakeWriter:
+    """Minimal asyncio.StreamWriter stand-in that captures written bytes."""
+
+    def __init__(self) -> None:
+        self._buf = bytearray()
+        self._closed = False
+
+    def write(self, data: bytes) -> None:
+        self._buf.extend(data)
+
+    async def drain(self) -> None:
+        pass
+
+    def close(self) -> None:
+        self._closed = True
+
+    async def wait_closed(self) -> None:
+        pass
+
+    @property
+    def captured(self) -> bytes:
+        return bytes(self._buf)
+
+
+def _make_reader(raw: bytes) -> asyncio.StreamReader:
+    reader = asyncio.StreamReader()
+    reader.feed_data(raw)
+    reader.feed_eof()
+    return reader
+
+
+@pytest.mark.asyncio
+async def test_handle_browser_callback_ignores_non_callback_probe():
+    # --- probe request (favicon.ico): should 404 and return (None, None) ---
+    probe_reader = _make_reader(b"GET /favicon.ico HTTP/1.1\r\n\r\n")
+    probe_writer = _FakeWriter()
+    code, error = await _handle_browser_callback(
+        probe_reader, cast("asyncio.StreamWriter", probe_writer), state="s"
+    )
+
+    assert (code, error) == (None, None), (
+        "Stray probe must return (None, None) so the shared future is not resolved"
+    )
+    assert probe_writer.captured.startswith(b"HTTP/1.1 404"), (
+        f"Expected 404 response for probe; got: {probe_writer.captured[:80]!r}"
+    )
+
+    # --- sibling assertion: real callback path with missing code still errors ---
+    callback_reader = _make_reader(b"GET /auth/callback?state=s HTTP/1.1\r\n\r\n")
+    callback_writer = _FakeWriter()
+    code2, error2 = await _handle_browser_callback(
+        callback_reader, cast("asyncio.StreamWriter", callback_writer), state="s"
+    )
+
+    assert code2 is None, "No authorization code should be extracted"
+    assert error2 is not None, (
+        "A real /auth/callback request without a code must still produce an error"
+    )

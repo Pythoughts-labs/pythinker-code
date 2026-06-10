@@ -749,6 +749,22 @@ async def test_request_bounces_destructive_background_shell_under_default_auto()
         assert second, "deliberated retry in a later generation runs (no fail-closed loop)"
 
 
+def test_config_surface_classifier_is_case_insensitive() -> None:
+    """permgate-2: config-surface classification is case-insensitive for directory/segment
+    markers so .Claude/Agents/, .PyThinker/, and .PYTHINKER/ are all recognized on
+    case-insensitive filesystems like macOS APFS."""
+    from pythinker_host.path import HostPath
+
+    from pythinker_code.utils.path import is_config_surface_path
+
+    # Case-variant agent-spec dirs must be recognized.
+    assert is_config_surface_path(HostPath("/repo/.Claude/Agents/coder.md"))
+    assert is_config_surface_path(HostPath("/repo/.PyThinker/config.toml"))
+    assert is_config_surface_path(HostPath("/repo/.PYTHINKER/agents/x.yaml"))
+    # Negative control: an ordinary markdown file outside config dirs is not a surface.
+    assert not is_config_surface_path(HostPath("/repo/docs/Notes.md"))
+
+
 def test_approval_state_honors_auto_deliberate_flag() -> None:
     # With no user present (auto) the destructive backstop is always on, so the flag's
     # distinct effect is on the INTERACTIVE-yolo case (a user is present, approvals skipped).

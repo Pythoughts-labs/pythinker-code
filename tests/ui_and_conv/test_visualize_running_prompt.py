@@ -1557,15 +1557,16 @@ async def test_approval_request_feedback_available_before_wait():
 def test_background_status_shows_elapsed_tokens_and_rate(monkeypatch) -> None:
     """The line above the input carries (elapsed, ↓ tokens, t/s) — the same
     metadata design as the live view's working indicator."""
-    from types import SimpleNamespace
-
     import pythinker_code.ui.shell.prompt as prompt_module
+    from pythinker_code.soul import StatusSnapshot
 
     session = object.__new__(CustomPromptSession)
     session._background_task_count_provider = lambda: BgTaskCounts(agent=2)
     session._latest_todos = ()
     state = {"now": 100.0, "tokens": 40_000}
-    session._status_provider = lambda: SimpleNamespace(context_tokens=state["tokens"])
+    session._status_provider = lambda: StatusSnapshot(
+        context_usage=0.0, context_tokens=state["tokens"]
+    )
     monkeypatch.setattr(prompt_module.time, "monotonic", lambda: state["now"])
 
     def render() -> str:

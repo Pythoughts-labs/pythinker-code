@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import time
+import uuid
 from pathlib import Path
 
+import pytest
+
 from pythinker_code.file_restore import (
+    _restore_dir,
     create_file_restore_point,
     list_file_restore_points,
     restore_file_restore_point,
@@ -13,6 +18,7 @@ from pythinker_code.tools.file.replace import Edit, StrReplaceFile
 from pythinker_code.tools.file.replace import Params as ReplaceParams
 from pythinker_code.tools.file.write import Params as WriteParams
 from pythinker_code.tools.file.write import WriteFile
+from pythinker_code.utils.io import atomic_json_write
 from tests.conftest import tool_call_context
 
 
@@ -74,3 +80,31 @@ async def test_write_and_replace_tools_create_restore_points(
     assert not write_result.is_error
     assert not replace_result.is_error
     assert [point.tool_name for point in points[:2]] == ["StrReplaceFile", "WriteFile"]
+
+
+def test_restore_rejects_id_traversal_and_out_of_workspace_path(
+    runtime: Runtime, temp_work_dir: object, tmp_path: Path
+) -> None:
+    # Part 1: traversal id — ../../etc/passwd fails the strict id regex
+    with pytest.raises(FileNotFoundError):
+        restore_file_restore_point(runtime.session, "../../etc/passwd")
+
+    # Part 2: valid-format id but point.path targets a file outside work_dir
+    evil_file = tmp_path / "evil.txt"
+    restore_id = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
+    point_data = {
+        "id": restore_id,
+        "created_at": time.time(),
+        "tool_name": "WriteFile",
+        "path": str(evil_file),
+        "existed": True,
+        "content_b64": None,
+    }
+    restore_json_path = _restore_dir(runtime.session) / f"{restore_id}.json"
+    atomic_json_write(point_data, restore_json_path)
+
+    with pytest.raises(ValueError):
+        restore_file_restore_point(runtime.session, restore_id)
+
+    # The out-of-workspace file must NOT have been created
+    assert not evil_file.exists()

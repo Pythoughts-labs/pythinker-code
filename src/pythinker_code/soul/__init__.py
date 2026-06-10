@@ -212,19 +212,20 @@ async def run_soul(
     logger.debug("Starting UI loop with function: {ui_loop_fn}", ui_loop_fn=ui_loop_fn)
     ui_task = asyncio.create_task(ui_loop_fn(wire))
 
-    logger.debug("Starting soul run")
-    soul_task = asyncio.create_task(
-        soul.run(user_input, skip_user_prompt_hook=skip_user_prompt_hook)
-    )
-    notification_task = asyncio.create_task(_pump_notifications_to_wire(runtime, wire))
-
-    cancel_event_task = asyncio.create_task(cancel_event.wait())
-    await asyncio.wait(
-        [soul_task, cancel_event_task],
-        return_when=asyncio.FIRST_COMPLETED,
-    )
-
+    soul_task: asyncio.Task[None] | None = None
+    notification_task: asyncio.Task[None] | None = None
+    cancel_event_task: asyncio.Task[bool] | None = None
     try:
+        logger.debug("Starting soul run")
+        soul_task = asyncio.create_task(
+            soul.run(user_input, skip_user_prompt_hook=skip_user_prompt_hook)
+        )
+        notification_task = asyncio.create_task(_pump_notifications_to_wire(runtime, wire))
+        cancel_event_task = asyncio.create_task(cancel_event.wait())
+        await asyncio.wait(
+            [soul_task, cancel_event_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
         if cancel_event.is_set():
             logger.debug("Cancelling the run task")
             soul_task.cancel()
@@ -234,14 +235,13 @@ async def run_soul(
                 raise RunCancelled from None
         else:
             assert soul_task.done()  # either stop event is set or the run task is done
-            cancel_event_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await cancel_event_task
             soul_task.result()  # this will raise if any exception was raised in the run task
     finally:
-        notification_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await notification_task
+        for task in (soul_task, cancel_event_task, notification_task):
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
         try:
             await _deliver_notifications_to_wire_once(runtime, wire)
         except Exception:

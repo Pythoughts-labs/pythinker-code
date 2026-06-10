@@ -4,11 +4,14 @@ import json
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
 from pythinker_code.cli import (
     _load_mcp_configs_from_cli_inputs,
     _yaml_files_with_misplaced_mcp_servers,
 )
+from pythinker_code.cli.vis import cli as vis_cli
+from pythinker_code.cli.web import cli as web_cli
 
 
 def test_load_mcp_configs_rechecks_default_file_between_reloads(
@@ -95,3 +98,28 @@ def test_load_mcp_configs_ignores_misplaced_yaml(
     monkeypatch.chdir(project)
 
     assert _load_mcp_configs_from_cli_inputs(None, None) == [expected]
+
+
+def test_web_dash_h_shows_help_not_host() -> None:
+    """-h on web/vis CLIs must show help (exit 0), not demand a host argument (exit 2)."""
+    runner = CliRunner()
+
+    # web: -h shows help
+    result = runner.invoke(web_cli, ["-h"], color=False)
+    assert result.exit_code == 0, f"web -h exit_code={result.exit_code!r}, output={result.output!r}"
+    assert "Usage" in result.output
+
+    # web: -H sets host without error
+    result_h = runner.invoke(web_cli, ["-H", "1.2.3.4", "--help"], color=False)
+    assert result_h.exit_code == 0
+
+    # vis: -h shows help
+    result_vis = runner.invoke(vis_cli, ["-h"], color=False)
+    assert result_vis.exit_code == 0, (
+        f"vis -h exit_code={result_vis.exit_code!r}, output={result_vis.output!r}"
+    )
+    assert "Usage" in result_vis.output
+
+    # vis: -H sets host without error
+    result_vis_h = runner.invoke(vis_cli, ["-H", "1.2.3.4", "--help"], color=False)
+    assert result_vis_h.exit_code == 0

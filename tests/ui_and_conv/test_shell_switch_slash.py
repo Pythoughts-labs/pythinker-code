@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable
+from pathlib import Path
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -300,3 +301,79 @@ class TestWebAndVisCoexistence:
             await _invoke_slash_command(vis_cmd, shell)
 
         assert web_exc.value.session_id == vis_exc.value.session_id == "shared-session"
+
+
+# ---------------------------------------------------------------------------
+# /init — snapshot/restore of shared tool bindings and runtime.rearm_injection
+# ---------------------------------------------------------------------------
+
+
+async def test_init_restores_parent_toolset_and_rearm_bindings(
+    runtime: Any,
+    tmp_path: Path,
+) -> None:
+    """After /init, runtime.rearm_injection and plan-mode tool bindings must
+    point at the *parent* soul, not the discarded temp soul."""
+    from pythinker_code.soul.agent import Agent
+    from pythinker_code.soul.context import Context
+    from pythinker_code.soul.pythinkersoul import PythinkerSoul
+    from pythinker_code.soul.slash import init as init_slash
+    from pythinker_code.soul.toolset import PythinkerToolset
+    from pythinker_code.tools.file.write import WriteFile
+    from pythinker_code.tools.plan.enter import EnterPlanMode
+
+    # Build a toolset with WriteFile and EnterPlanMode present.
+    toolset = PythinkerToolset(runtime)
+    toolset.add(WriteFile(runtime, runtime.approval))
+    toolset.add(EnterPlanMode())
+
+    agent = Agent(
+        name="Test Agent",
+        system_prompt="Test system prompt.",
+        toolset=toolset,
+        runtime=runtime,
+    )
+    soul = PythinkerSoul(agent, context=Context(file_backend=tmp_path / "history.jsonl"))
+
+    # Capture the parent soul's rearm callback before calling /init.
+    parent_rearm = soul.runtime.rearm_injection
+
+    # Monkeypatch PythinkerSoul.run so the temp INIT run is a no-op.
+    # Monkeypatch load_agents_md and telemetry.track so /init completes cleanly.
+    with (
+        patch.object(PythinkerSoul, "run", new_callable=AsyncMock),
+        patch(
+            "pythinker_code.soul.slash.load_agents_md",
+            new_callable=AsyncMock,
+            return_value="# Agents",
+        ),
+        patch("pythinker_code.telemetry.track", return_value=None),
+    ):
+        # Call the /init slash command handler directly. (init is `async def`;
+        # pyright mis-resolves the aliased import in this scope — verified awaitable.)
+        await init_slash(soul, "")  # pyright: ignore[reportGeneralTypeIssues]
+
+    # The temp soul's __init__ called runtime.rearm_injection = self.rearm_injection
+    # and agent.toolset.bind_plan_mode_tools() with closures pointing at the temp soul.
+    # After the fix, soul._bind_plan_mode_tools() is re-called in the finally block,
+    # restoring the parent soul's closures. runtime.rearm_injection is restored to
+    # the saved (parent) callback.
+
+    # 1. runtime.rearm_injection must be the parent's original callback (not the temp soul's).
+    assert soul.runtime.rearm_injection is parent_rearm, (
+        "runtime.rearm_injection was not restored: it still points at the discarded temp soul"
+    )
+
+    # 2. Plan-mode toggling must still flow through the parent soul's toolset checker.
+    #    Set plan mode on the parent and verify the WriteFile checker reflects it.
+    write_tool = toolset.find(WriteFile)
+    assert write_tool is not None, "WriteFile not found in toolset"
+    assert write_tool._plan_mode_checker is not None, "WriteFile._plan_mode_checker is None"
+
+    soul._plan_mode = True
+    assert write_tool._plan_mode_checker() is True, (
+        "WriteFile plan-mode checker does not track the parent soul (still bound to temp soul)"
+    )
+
+    soul._plan_mode = False
+    assert write_tool._plan_mode_checker() is False

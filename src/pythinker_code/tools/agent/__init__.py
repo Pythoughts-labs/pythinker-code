@@ -475,6 +475,8 @@ def _run_agents_fingerprint(params: RunAgentsParams) -> str:
         "base_prompt": params.base_prompt,
         "agent_count": len(params.agents),
         "agent_names": [agent.name for agent in params.agents],
+        "agent_prompts": [agent.prompt for agent in params.agents],
+        "agent_titles": [agent.title for agent in params.agents],
         "subagent_types": [agent.subagent_type or "coder" for agent in params.agents],
         "model": params.model,
         "run_in_background": params.run_in_background,

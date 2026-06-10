@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -147,8 +148,17 @@ def materialize_markdown_agent_specs(
     """Write small Pythinker YAML wrappers and return registered type definitions."""
     output_dir.mkdir(parents=True, exist_ok=True)
     type_defs: list[AgentTypeDefinition] = []
+    seen_filenames: set[str] = set()
     for agent in agents:
         filename = _safe_filename(agent.name)
+        if filename in seen_filenames:
+            logger.warning(
+                "Skipping agent {name!r}: filename {filename!r} collides with another agent",
+                name=agent.name,
+                filename=filename,
+            )
+            continue
+        seen_filenames.add(filename)
         wrapper_path = output_dir / f"{filename}.yaml"
         prompt_path = output_dir / f"{filename}.system.md"
         try:
@@ -239,4 +249,5 @@ def _first_body_line(content: str) -> str | None:
 
 def _safe_filename(name: str) -> str:
     safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in name).strip("._")
-    return safe or "agent"
+    digest = hashlib.sha256(name.casefold().encode("utf-8")).hexdigest()[:8]
+    return f"{safe or 'agent'}-{digest}"

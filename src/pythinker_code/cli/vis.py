@@ -4,7 +4,10 @@ from typing import Annotated
 
 import typer
 
-cli = typer.Typer(help="Run Pythinker Agent Tracing Visualizer.")
+cli = typer.Typer(
+    help="Run Pythinker Agent Tracing Visualizer.",
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
 
 
 @cli.callback(invoke_without_command=True)
@@ -12,7 +15,7 @@ def vis(
     ctx: typer.Context,
     host: Annotated[
         str | None,
-        typer.Option("--host", "-h", help="Bind to specific IP address"),
+        typer.Option("--host", "-H", help="Bind to specific IP address"),
     ] = None,
     network: Annotated[
         bool,

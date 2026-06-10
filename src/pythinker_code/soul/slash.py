@@ -14,7 +14,6 @@ from pythinker_code.soul.agent import load_agents_md
 from pythinker_code.soul.context import Context
 from pythinker_code.soul.dynamic_injections.auto_mode import AUTO_DISABLED_REMINDER
 from pythinker_code.soul.message import system, system_reminder
-from pythinker_code.utils.export import is_sensitive_file
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.path import sanitize_cli_path, shorten_home
 from pythinker_code.utils.slashcmd import SlashCommandRegistry
@@ -35,14 +34,21 @@ registry = SlashCommandRegistry[SoulSlashCmdFunc]()
 
 
 @registry.command
-async def init(soul: PythinkerSoul, args: str):
+async def init(soul: PythinkerSoul, args: str) -> None:
     """Analyze the codebase and generate an `AGENTS.md` file"""
     from pythinker_code.soul.pythinkersoul import PythinkerSoul
 
     with tempfile.TemporaryDirectory() as temp_dir:
         tmp_context = Context(file_backend=Path(temp_dir) / "context.jsonl")
+        saved_rearm = soul.runtime.rearm_injection
         tmp_soul = PythinkerSoul(soul.agent, context=tmp_context)
-        await tmp_soul.run(prompts.INIT)
+        try:
+            await tmp_soul.run(prompts.INIT)
+        finally:
+            # tmp_soul.__init__ rebound the SHARED agent.toolset plan-mode tools and
+            # runtime.rearm_injection to itself; re-point them back at the live soul.
+            soul.runtime.rearm_injection = saved_rearm
+            soul._bind_plan_mode_tools()  # pyright: ignore[reportPrivateUsage]
 
     agents_md = await load_agents_md(soul.runtime.builtin_args.PYTHINKER_WORK_DIR)
     system_message = system(
@@ -316,7 +322,9 @@ async def import_context(soul: PythinkerSoul, args: str):
     """Import context from a file or session ID"""
     from pythinker_code.utils.export import perform_import
 
-    target = sanitize_cli_path(args)
+    tokens = args.split()
+    force = "--force" in tokens
+    target = sanitize_cli_path(" ".join(t for t in tokens if t != "--force"))
     if not target:
         wire_send(TextPart(text="Usage: /import <file_path or session_id>"))
         return
@@ -336,6 +344,7 @@ async def import_context(soul: PythinkerSoul, args: str):
         work_dir=session.work_dir,
         context=soul.context,
         max_context_size=max_context_size,
+        force=force,
     )
     if isinstance(result, str):
         wire_send(TextPart(text=result))
@@ -343,10 +352,3 @@ async def import_context(soul: PythinkerSoul, args: str):
 
     source_desc, content_len = result
     wire_send(TextPart(text=f"Imported context from {source_desc} ({content_len} chars)."))
-    if source_desc.startswith("file") and is_sensitive_file(Path(target).name):
-        wire_send(
-            TextPart(
-                text="Warning: This file may contain secrets (API keys, tokens, credentials). "
-                "The content is now part of your session context."
-            )
-        )

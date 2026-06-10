@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import time
 
+import pytest
+
 from pythinker_code.subagents import AgentLaunchSpec, SubagentStore
 
 
@@ -206,6 +208,28 @@ def test_agent_launch_spec_parent_agent_id_defaults_none(session) -> None:
 
     assert loaded is not None
     assert loaded.launch_spec.parent_agent_id is None
+
+
+def test_instance_dir_rejects_path_traversal_ids(session) -> None:
+    store = SubagentStore(session)
+
+    # A valid canonical id resolves under store.root
+    valid = store.instance_dir("a1234567")
+    assert str(valid).startswith(str(store.root))
+
+    # Path traversal attempts must be rejected
+    with pytest.raises((ValueError, FileNotFoundError)):
+        store.instance_dir("../../etc")
+
+    with pytest.raises((ValueError, FileNotFoundError)):
+        store.instance_dir("a1234567/../../escape")
+
+    with pytest.raises((ValueError, FileNotFoundError)):
+        store.instance_dir("/abs/path")
+
+    # require_instance with a traversal id must also raise, not read outside root
+    with pytest.raises((ValueError, FileNotFoundError)):
+        store.require_instance("../../etc")
 
 
 def test_list_instances_skips_meta_with_invalid_field_types(session) -> None:

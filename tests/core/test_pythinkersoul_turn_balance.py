@@ -5,12 +5,16 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from pythinker_core import StepResult
+from pythinker_core.message import Message, ToolCall
+from pythinker_core.tooling import ToolResult
 from pythinker_core.tooling.empty import EmptyToolset
 
 import pythinker_code.soul.pythinkersoul as pythinkersoul_module
 from pythinker_code.soul.agent import Agent, Runtime
 from pythinker_code.soul.approval import Approval
 from pythinker_code.soul.context import Context
+from pythinker_code.soul.dynamic_injection import DynamicInjection
 from pythinker_code.soul.pythinkersoul import PythinkerSoul
 from pythinker_code.wire.types import StepBegin, StepInterrupted, TextPart, TurnBegin, TurnEnd
 
@@ -113,3 +117,62 @@ async def test_run_does_not_duplicate_turn_end_for_blocked_prompt(
         TextPart(text="blocked by hook"),
         TurnEnd(),
     ]
+
+
+@pytest.mark.asyncio
+async def test_step_persists_assistant_message_when_tool_results_cancelled(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_step must persist the assistant message and a synthetic tool-result message when
+    tool_results() is cancelled mid-await, so the next turn does not see unanswered
+    tool calls (which providers reject)."""
+    soul = _make_soul(runtime, tmp_path)
+
+    tool_call = ToolCall(
+        id="call-cancel-1",
+        function=ToolCall.FunctionBody(name="Noop", arguments="{}"),
+    )
+    pending_future: asyncio.Future[ToolResult] = asyncio.get_event_loop().create_future()
+
+    async def fake_pythinker_core_step(chat_provider, system_prompt, toolset, history, **kwargs):
+        return StepResult(
+            id="step-cancel-1",
+            message=Message(role="assistant", content=[TextPart(text="I'll use a tool.")]),
+            usage=None,
+            tool_calls=[tool_call],
+            _tool_result_futures={"call-cancel-1": pending_future},
+        )
+
+    async def fake_collect_injections() -> list[DynamicInjection]:
+        return []
+
+    monkeypatch.setattr(soul, "_collect_injections", fake_collect_injections)
+    monkeypatch.setattr(pythinkersoul_module.pythinker_core, "step", fake_pythinker_core_step)
+    monkeypatch.setattr(pythinkersoul_module, "wire_send", lambda _msg: None)
+
+    # Run _step in a task and cancel it while it is blocked in tool_results()
+    step_task = asyncio.create_task(soul._step())
+    # Yield enough times for the task to reach `await result.tool_results()` which
+    # then blocks on the pending_future.
+    for _ in range(10):
+        await asyncio.sleep(0)
+    step_task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await step_task
+
+    # Allow any asyncio.shield()-wrapped grow_context_task to complete.
+    for _ in range(10):
+        await asyncio.sleep(0)
+
+    history = list(soul.context.history)
+    roles = [m.role for m in history]
+    assert "assistant" in roles, f"assistant message not persisted; history={history}"
+    tool_messages = [m for m in history if m.role == "tool"]
+    assert tool_messages, f"no synthetic tool result message persisted; history={history}"
+    assert tool_messages[0].tool_call_id == tool_call.id, (
+        f"tool message has wrong tool_call_id; "
+        f"expected={tool_call.id}, got={tool_messages[0].tool_call_id}"
+    )

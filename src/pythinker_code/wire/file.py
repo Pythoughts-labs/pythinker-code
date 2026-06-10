@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -60,6 +61,7 @@ def parse_wire_file_line(line: str) -> WireFileMetadata | WireMessageRecord:
 class WireFile:
     path: Path
     protocol_version: str = WIRE_PROTOCOL_VERSION
+    _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.path.exists():
@@ -122,13 +124,14 @@ class WireFile:
         await self.append_record(record)
 
     async def append_record(self, record: WireMessageRecord) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        needs_header = not self.path.exists() or self.path.stat().st_size == 0
-        async with aiofiles.open(self.path, mode="a", encoding="utf-8") as f:
-            if needs_header:
-                metadata = WireFileMetadata(protocol_version=self.protocol_version)
-                await f.write(_dump_line(metadata))
-            await f.write(_dump_line(record))
+        async with self._lock:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            needs_header = not self.path.exists() or self.path.stat().st_size == 0
+            async with aiofiles.open(self.path, mode="a", encoding="utf-8") as f:
+                if needs_header:
+                    metadata = WireFileMetadata(protocol_version=self.protocol_version)
+                    await f.write(_dump_line(metadata))
+                await f.write(_dump_line(record))
 
 
 def _dump_line(model: BaseModel) -> str:

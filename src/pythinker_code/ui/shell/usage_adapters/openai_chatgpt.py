@@ -241,9 +241,12 @@ def _coerce_reset_datetime(raw: object) -> datetime | None:
         except (OverflowError, OSError, ValueError):
             pass
         try:  # ISO-8601
-            return datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+            dt = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
         except (TypeError, ValueError):
             return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt
     return None
 
 
@@ -253,8 +256,10 @@ def _format_reset_delta(dt: datetime, win_map: Mapping[str, Any]) -> str:
     if seconds <= 0:
         window_seconds = win_map.get("limit_window_seconds")
         if isinstance(window_seconds, int | float) and window_seconds > 0:
-            while seconds <= 0:
-                seconds += int(window_seconds)
+            step = int(window_seconds)
+            if step <= 0:
+                return "reset"
+            seconds += step * (1 + (-seconds) // step)
     if seconds <= 0:
         return "reset"
     return f"resets in {format_duration(seconds)}"

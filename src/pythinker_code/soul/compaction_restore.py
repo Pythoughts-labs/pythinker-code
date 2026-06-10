@@ -236,12 +236,16 @@ def _display_path(raw_path: str, *, work_dir: HostPath) -> str | None:
         try:
             rel = os.path.relpath(raw, work)
         except ValueError:
-            return raw
+            # Cannot relativize (e.g. different drive on Windows) -> not a
+            # workspace path; skip rather than resurface an absolute path.
+            return None
         if rel == ".":
             return None
         if not rel.startswith(".." + os.sep) and rel != "..":
             return rel
-        return raw
+        # Absolute path escaping the workspace -> skip; do not surface
+        # out-of-workspace absolutes (e.g. /etc/passwd) in restore reminders.
+        return None
     return raw.removeprefix("./")
 
 

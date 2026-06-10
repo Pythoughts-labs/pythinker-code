@@ -435,6 +435,8 @@ def _exclude_lock(path: Path) -> Generator[None]:
                     fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
     finally:
         fh.close()
+        with contextlib.suppress(OSError):
+            lock_file.unlink()
 
 
 async def _append_gitignore_entries(work_dir: HostPath) -> None:

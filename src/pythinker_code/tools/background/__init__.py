@@ -123,14 +123,8 @@ def _format_task_output(
     rendered_output = output or "[no output available]"
     if output_truncated:
         rendered_output = f"[Truncated. Full output: {output_path_str}]\n\n{rendered_output}"
-    return "\n".join(
-        lines
-        + [
-            "",
-            "[output]",
-            rendered_output,
-        ]
-    )
+    body = UntrustedData(rendered_output).render_for_prompt() if output else rendered_output
+    return "\n".join(lines + ["", "[output]", body])
 
 
 class TaskOutputParams(BaseModel):
@@ -332,7 +326,7 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
         self._runtime.background_tasks.store.write_consumer(params.task_id, consumer)
 
         tool_status = _tool_status_for_view(view)
-        raw_output = _format_task_output(
+        output_text = _format_task_output(
             view,
             tool_status=tool_status,
             retrieval_status=retrieval_status,
@@ -346,13 +340,9 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
             next_offset=next_offset,
             eof=eof,
         )
-        # Background task stdout/stderr is the same untrusted-input vector as
-        # foreground Shell output. Wrap it so prompt-injection payloads in
-        # command output cannot influence agent behaviour.
-        wrapped_output = UntrustedData(raw_output).render_for_prompt() if raw_output else raw_output
         return ToolReturnValue(
             is_error=False,
-            output=wrapped_output,
+            output=output_text,
             message=(
                 "Task snapshot retrieved."
                 if tool_status == ToolResultStatus.long_running_snapshot

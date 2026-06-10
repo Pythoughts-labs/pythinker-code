@@ -313,20 +313,22 @@ class Shell(CallableTool2[Params]):
         # EOF instead of hanging forever waiting for input that will never come.
         process.stdin.close()
 
-        try:
-            await asyncio.wait_for(
-                asyncio.gather(
-                    _read_stream(process.stdout, stdout_cb),
-                    _read_stream(process.stderr, stderr_cb),
-                ),
-                timeout,
+        async def _drain_and_wait() -> int:
+            await asyncio.gather(
+                _read_stream(process.stdout, stdout_cb),
+                _read_stream(process.stderr, stderr_cb),
             )
             return await process.wait()
+
+        try:
+            return await asyncio.wait_for(_drain_and_wait(), timeout)
         except asyncio.CancelledError:
             await process.kill()
+            await process.wait()
             raise
         except TimeoutError:
             await process.kill()
+            await process.wait()
             raise
 
     def _shell_args(self, command: str) -> tuple[str, ...]:

@@ -1112,8 +1112,10 @@ class _NotificationBlock:
 
     def compose(self) -> RenderableType:
         style = self._SEVERITY_STYLE.get(self.notification.severity, "cyan")
-        lines: list[RenderableType] = [Text(self.notification.title, style=f"bold {style}")]
-        body = self.notification.body.strip()
+        lines: list[RenderableType] = [
+            Text(sanitize_ansi(self.notification.title), style=f"bold {style}")
+        ]
+        body = sanitize_ansi(self.notification.body).strip()
         if body:
             body_lines = body.splitlines()
             preview = "\n".join(body_lines[:2])
@@ -1222,9 +1224,9 @@ class _QuestionAnsweredBlock:
         rows: list[RenderableType] = [title]
         for question, answer in self.event.answers.items():
             row = Text("· ", style=tui_rich_style("muted"))
-            row.append(question, style=tui_rich_style("muted"))
+            row.append(sanitize_ansi(question), style=tui_rich_style("muted"))
             row.append(" → ", style=tui_rich_style("dim"))
-            row.append(answer, style=tui_rich_style("accent") + Style(bold=True))
+            row.append(sanitize_ansi(answer), style=tui_rich_style("accent") + Style(bold=True))
             rows.append(row)
         return BulletColumns(
             Group(*rows),
@@ -1262,10 +1264,10 @@ class _SuggestionBlock:
 
     def compose(self) -> RenderableType:
         label = Text(
-            f"Suggested: {self.event.label.strip()}",
+            f"Suggested: {sanitize_ansi(self.event.label).strip()}",
             style=tui_rich_style("accent") + Style(bold=True),
         )
-        prefill = self.event.prefill.strip()
+        prefill = sanitize_ansi(self.event.prefill).strip()
         if not prefill:
             return BulletColumns(
                 label,

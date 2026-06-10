@@ -9,7 +9,6 @@ from rich.markup import escape
 from pythinker_code.ui.shell.console import console
 from pythinker_code.ui.shell.slash import ensure_pythinker_soul, registry, shell_mode_registry
 from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
-from pythinker_code.utils.export import is_sensitive_file
 from pythinker_code.utils.path import sanitize_cli_path, shorten_home
 from pythinker_code.wire.types import TurnBegin, TurnEnd
 
@@ -73,7 +72,9 @@ async def import_context(app: Shell, args: str):
     if soul is None:
         return
 
-    target = sanitize_cli_path(args)
+    tokens = args.split()
+    force = "--force" in tokens
+    target = sanitize_cli_path(" ".join(t for t in tokens if t != "--force"))
     _t = _get_tui_tokens()
     if not target:
         console.print(f"[{_t.warning}]Usage: /import <file_path or session_id>[/]")
@@ -94,6 +95,7 @@ async def import_context(app: Shell, args: str):
         work_dir=session.work_dir,
         context=soul.context,
         max_context_size=max_context_size,
+        force=force,
     )
     if isinstance(result, str):
         console.print(f"[{_t.error}]{escape(result)}[/]")
@@ -114,9 +116,3 @@ async def import_context(app: Shell, args: str):
         f"[{_t.success}]Imported context from {escape(source_desc)} "
         f"({content_len} chars) into current session.[/]"
     )
-    if source_desc.startswith("file") and is_sensitive_file(Path(target).name):
-        console.print(
-            f"[{_t.warning}]Warning: This file may contain secrets "
-            "(API keys, tokens, credentials). "
-            "The content is now part of your session context.[/]"
-        )

@@ -120,6 +120,7 @@ def _extract_comment_label(command: str) -> str | None:
 
 
 def format_bash_command_for_header(command: str, *, expanded: bool) -> str:
+    command = sanitize_ansi(command)
     if expanded:
         return command
 

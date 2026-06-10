@@ -313,6 +313,22 @@ async def test_login_warns_when_loaded_context_is_too_small(monkeypatch):
     assert "131072" in msg or "262144" in msg
 
 
+def test_parse_lm_studio_models_skip_non_dict_items():
+    from pythinker_code.auth.lm_studio import (
+        _parse_native_lm_studio_models,
+        _parse_openai_compat_models,
+    )
+
+    # Non-dict entries (str, None, int) must be skipped; only dicts are parsed.
+    native_result = _parse_native_lm_studio_models(
+        {"data": ["oops", None, 5, {"id": "good", "type": "llm"}]}
+    )
+    assert {m.model_id for m in native_result} == {"good"}
+
+    compat_result = _parse_openai_compat_models({"data": ["oops", {"id": "good"}]})
+    assert {m.model_id for m in compat_result} == {"good"}
+
+
 @pytest.mark.asyncio
 async def test_login_does_not_warn_for_unloaded_models(monkeypatch):
     """Unloaded models don't trigger the warning (their loaded ctx is 0)."""

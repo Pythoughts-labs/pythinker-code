@@ -79,14 +79,16 @@ class ReadFile(CallableTool2[Params]):
         self._work_dir = runtime.builtin_args.PYTHINKER_WORK_DIR
         self._additional_dirs = runtime.additional_dirs
 
-    async def _validate_path(self, path: HostPath) -> ToolError | None:
-        """Validate that the path is safe to read."""
-        resolved_path = path.canonical()
+    async def _validate_path(self, path: HostPath, real_p: HostPath) -> ToolError | None:
+        """Validate that the path is safe to read.
 
-        if (
-            not is_within_workspace(resolved_path, self._work_dir, self._additional_dirs)
-            and not path.is_absolute()
-        ):
+        Uses `real_p` (symlink-resolved) for workspace and sensitive-file checks while
+        `path` is kept for user-facing messages so reported paths remain unchanged.
+        """
+        real_work = await self._work_dir.realpath()
+        real_add = [await d.realpath() for d in self._additional_dirs]
+
+        if not is_within_workspace(real_p, real_work, real_add) and not path.is_absolute():
             # Outside files can only be read with absolute paths
             return ToolError(
                 message=(
@@ -107,12 +109,19 @@ class ReadFile(CallableTool2[Params]):
             )
 
         try:
-            p = HostPath(params.path).expanduser()
-            if err := await self._validate_path(p):
-                return err
-            p = p.canonical()
+            raw = HostPath(params.path).expanduser()
+            p = raw.canonical()
 
-            if is_sensitive_file(str(p)):
+            # Resolve the real (symlink-followed) path for security checks only.
+            # os.path.realpath follows symlinks at every component including the leaf,
+            # so a symlink to an outside sensitive file is correctly detected here.
+            # I/O operations continue to use `p` so user-facing paths are unchanged.
+            real_p = await p.realpath()
+
+            if err := await self._validate_path(raw, real_p):
+                return err
+
+            if is_sensitive_file(str(real_p)):
                 return ToolError(
                     message=(
                         f"`{params.path}` appears to contain secrets "

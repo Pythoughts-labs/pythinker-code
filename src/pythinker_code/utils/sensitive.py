@@ -29,12 +29,13 @@ SENSITIVE_EXEMPTIONS: set[str] = {
 
 def is_sensitive_file(path: str) -> bool:
     """Check if a file path matches any sensitive file pattern."""
-    name = PurePath(path).name
+    name = PurePath(path).name.lower()
+    path_lower = path.lower()
     if name in SENSITIVE_EXEMPTIONS:
         return False
     for pattern in SENSITIVE_PATTERNS:
         if "/" in pattern:
-            if path.endswith(pattern) or ("/" + pattern) in path:
+            if path_lower.endswith(pattern) or ("/" + pattern) in path_lower:
                 return True
         else:
             if fnmatch.fnmatch(name, pattern):

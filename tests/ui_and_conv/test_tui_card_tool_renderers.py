@@ -818,7 +818,7 @@ def test_run_agents_renders_compact_professional_summary():
         output=(
             "tool_status: success\n"
             "orchestration_approval: requested\n"
-            "orchestration_fingerprint: 13741c0a417d\n"
+            "orchestration_fingerprint: 9ab49da6d522\n"
             "summary: Run code and security scans on current diff\n"
             "mode: foreground\n"
             "agent_count: 2\n"

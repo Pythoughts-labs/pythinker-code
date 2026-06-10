@@ -16,6 +16,7 @@ from pythinker_code.notifications.llm import is_notification_message
 from pythinker_code.soul.message import is_system_reminder_message, system
 from pythinker_code.utils.message import message_stringify
 from pythinker_code.utils.path import sanitize_cli_path
+from pythinker_code.utils.sensitive import is_sensitive_file as is_sensitive_path
 from pythinker_code.utils.string import shorten
 from pythinker_code.wire.types import (
     AudioURLPart,
@@ -637,7 +638,14 @@ _SENSITIVE_FILE_PATTERNS: tuple[str, ...] = (
 
 
 def is_sensitive_file(filename: str) -> bool:
-    """Return True if *filename* looks like it may contain secrets."""
+    """Heuristic substring check used to filter sensitive *values* out of hints.
+
+    This is intentionally looser than :func:`pythinker_code.utils.sensitive.is_sensitive_file`
+    (the path-based gate used for the import boundary): it matches a sensitive
+    substring anywhere in the string so an arbitrary tool-call value such as
+    ``cat secrets.txt`` is still suppressed. Use the ``sensitive`` module's check,
+    not this one, for any security boundary.
+    """
     name = filename.lower()
     return any(pat in name for pat in _SENSITIVE_FILE_PATTERNS)
 
@@ -775,6 +783,7 @@ async def perform_import(
     work_dir: HostPath,
     context: Context,
     max_context_size: int | None = None,
+    force: bool = False,
 ) -> tuple[str, int] | str:
     """High-level import operation: resolve source, validate, build message, update context.
 
@@ -783,6 +792,10 @@ async def perform_import(
     (excluding wrapper markup), suitable for user-facing display.
     The caller is responsible for any additional side-effects (wire file writes,
     UI output, etc.).
+
+    If the resolved source is a file whose name matches sensitive patterns (e.g.
+    ``.env``, ``*.key``) and *force* is ``False``, the import is refused before
+    any context mutation occurs.  Pass ``force=True`` to bypass this gate.
     """
     from pythinker_code.soul.compaction import estimate_text_tokens
 
@@ -795,6 +808,14 @@ async def perform_import(
         return result
 
     content, source_desc = result
+
+    # Gate: refuse sensitive-file imports unless the caller explicitly forces it.
+    if not force and source_desc.startswith("file") and is_sensitive_path(target):
+        return (
+            f"Refusing to import '{Path(target).name}': it looks like it may contain "
+            "secrets (API keys, tokens, credentials). Re-run with --force to import anyway."
+        )
+
     message = build_import_message(content, source_desc)
 
     # Token budget check — reject before mutating context.

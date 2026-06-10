@@ -256,21 +256,29 @@ async def _handle_browser_callback(
     code: str | None = None
     error: str | None = None
 
-    if len(parts) < 2:
-        error = "Invalid OpenAI callback request."
-    else:
+    is_callback = False
+    if len(parts) >= 2:
         parsed = urlsplit(parts[1])
-        params = parse_qs(parsed.query)
-        if parsed.path != OPENAI_BROWSER_REDIRECT_PATH:
-            error = "Invalid OpenAI callback path."
-        elif params.get("state", [None])[0] != state:
-            error = "Invalid OpenAI callback state."
-        elif params.get("error", [None])[0]:
-            error = params.get("error_description", params["error"])[0]
-        else:
-            code = params.get("code", [None])[0]
-            if not code:
-                error = "OpenAI callback did not include an authorization code."
+        if parsed.path == OPENAI_BROWSER_REDIRECT_PATH:
+            is_callback = True
+            params = parse_qs(parsed.query)
+            if params.get("state", [None])[0] != state:
+                error = "Invalid OpenAI callback state."
+            elif params.get("error", [None])[0]:
+                error = params.get("error_description", params["error"])[0]
+            else:
+                code = params.get("code", [None])[0]
+                if not code:
+                    error = "OpenAI callback did not include an authorization code."
+
+    if not is_callback:
+        # Stray probe (favicon, /, port scanner): 404 and keep waiting.
+        # Returning (None, None) leaves the shared future unresolved.
+        writer.write(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+        return None, None
 
     ok = code is not None and error is None
     response_html = _callback_html(ok=ok, message=error)
@@ -583,6 +591,9 @@ def _optional_bool(value: object) -> bool | None:
 
 
 def _optional_int(value: object) -> int | None:
+    # bool is an int subclass: a JSON ``true`` is a flag, not the integer 1.
+    if isinstance(value, bool):
+        return None
     if isinstance(value, int | float | str):
         try:
             return int(value)
@@ -694,17 +705,16 @@ def _parse_chatgpt_models_payload(payload: object) -> list[ModelInfo]:
                     context_length=_chatgpt_model_context(model_id, item),
                     supports_reasoning=supports_reasoning,
                     supports_image_in=_chatgpt_model_supports_image(model_id, item),
-                    supports_video_in=bool(
-                        _optional_bool(
-                            _field(
-                                item,
-                                "supports_video_in",
-                                "supportsVideoIn",
-                                "supports_video",
-                                "supportsVideo",
-                            )
+                    supports_video_in=_optional_bool(
+                        _field(
+                            item,
+                            "supports_video_in",
+                            "supportsVideoIn",
+                            "supports_video",
+                            "supportsVideo",
                         )
-                    ),
+                    )
+                    is True,
                     display_name=display_name,
                 ),
             )
@@ -942,7 +952,7 @@ async def login_openai_api_key(
     try:
         models = await list_models(platform, api_key)
     except aiohttp.ClientResponseError as exc:
-        if exc.status == 401:
+        if exc.status in {401, 403}:
             yield OAuthEvent("error", "Invalid OpenAI API key; the key was not saved.")
             return
         models = list(OPENAI_API_FALLBACK_MODELS)

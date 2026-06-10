@@ -190,11 +190,22 @@ def _ensure_public_file_access_allowed(
         )
 
 
-def _read_wire_lines(wire_file: Path) -> list[str]:
-    """Read and parse wire.jsonl into JSONRPC event strings (runs in thread)."""
+def _read_wire_lines(wire_file: Path, max_bytes: int | None = None) -> list[str]:
+    """Read and parse wire.jsonl into JSONRPC event strings (runs in thread).
+
+    If *max_bytes* is given, stop reading once the file position exceeds that
+    offset.  This lets callers replay only up to a byte watermark captured at
+    attach time, preventing duplicate delivery of events that arrive after the
+    live broadcast buffer was attached.
+    """
     result: list[str] = []
     with open(wire_file, encoding="utf-8") as f:
-        for line in f:
+        while True:
+            line = f.readline()
+            if not line:
+                break
+            if max_bytes is not None and f.tell() > max_bytes:
+                break
             line = line.strip()
             if not line:
                 continue
@@ -231,14 +242,14 @@ def _read_wire_lines(wire_file: Path) -> list[str]:
     return result
 
 
-async def replay_history(ws: WebSocket, session_dir: Path) -> None:
+async def replay_history(ws: WebSocket, session_dir: Path, max_bytes: int | None = None) -> None:
     """Replay historical wire messages from wire.jsonl to a WebSocket."""
     wire_file = session_dir / "wire.jsonl"
     if not await asyncio.to_thread(wire_file.exists):
         return
 
     try:
-        lines = await asyncio.to_thread(_read_wire_lines, wire_file)
+        lines = await asyncio.to_thread(_read_wire_lines, wire_file, max_bytes)
         for event_text in lines:
             await ws.send_text(event_text)
     except Exception:
@@ -598,9 +609,7 @@ async def delete_session(
 ) -> None:
     """Delete a session."""
     session = get_editable_session(session_id, runner)
-    session_process = runner.get_session(session_id)
-    if session_process is not None:
-        await session_process.stop()
+    await runner.remove_session(session_id)
     wd_meta = session.pythinker_code_session.work_dir_meta
     if wd_meta.last_session_id == str(session_id):
         metadata = load_metadata()
@@ -970,13 +979,15 @@ async def session_stream(
     attached = False
     try:
         if has_history:
-            # Attach WebSocket in replay mode before history replay
-            await session_process.add_websocket_and_begin_replay(websocket)
+            # Attach WebSocket in replay mode and capture the watermark atomically.
+            # Events written to wire.jsonl after this point arrive via the live
+            # buffer, so we replay only up to the watermark to avoid duplicates.
+            watermark = await session_process.add_websocket_and_begin_replay(websocket, wire_file)
             attached = True
 
             # Replay history
             try:
-                await replay_history(websocket, session_dir)
+                await replay_history(websocket, session_dir, watermark)
             except Exception as e:
                 logger.warning(f"Failed to replay history: {e}")
 
@@ -995,7 +1006,7 @@ async def session_stream(
             if not attached:
                 # No history: attach and start worker
                 session_process = await runner.get_or_create_session(session_id)
-                await session_process.add_websocket_and_begin_replay(websocket)
+                await session_process.add_websocket_and_begin_replay(websocket, wire_file)
                 attached = True
 
             assert session_process is not None
@@ -1083,6 +1094,8 @@ async def session_stream(
     finally:
         if attached and session_process:
             await session_process.remove_websocket(websocket)
+            if session_process.websocket_count == 0 and not session_process.is_alive:
+                await runner.remove_session(session_id)
 
 
 # Work dirs cache

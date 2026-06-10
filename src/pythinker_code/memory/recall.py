@@ -138,10 +138,21 @@ async def build_recall_block(
         return ""
     lines: list[str] = ["Relevant project memory — recalled by relevance, not the full store."]
     if open_todos:
-        lines.append("\n## Open todos from recent sessions")
+        todo_lines: list[str] = []
         for label, titles in open_todos:
+            clean_label = sanitize_candidate_block(label)
+            if clean_label is None:
+                continue
+            clean_label = " ".join(clean_label.split())
             for title in titles:
-                lines.append(f"- [{label}] {title}")
+                clean_title = sanitize_candidate_block(title)
+                if clean_title is None:
+                    continue
+                clean_title = " ".join(clean_title.split())
+                todo_lines.append(f"- [{clean_label}] {clean_title}")
+        if todo_lines:
+            lines.append("\n## Open todos from recent sessions")
+            lines.extend(todo_lines)
     if ranked:
         lines.append("\n## Recalled notes & facts")
         for block in ranked:

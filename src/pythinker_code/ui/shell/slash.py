@@ -1397,6 +1397,10 @@ def restore(app: Shell, args: str) -> None:
             return
         restore_id = points[0].id
     else:
+        valid_ids = {p.id for p in list_file_restore_points(session)}
+        if arg not in valid_ids:
+            console.print(f"[{_tok.error}]Restore point not found: {_rich_escape(arg)}[/]")
+            return
         restore_id = arg
 
     try:
@@ -1404,7 +1408,9 @@ def restore(app: Shell, args: str) -> None:
     except FileNotFoundError:
         console.print(f"[{_tok.error}]Restore point not found: {_rich_escape(restore_id)}[/]")
         return
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
+        # ValueError is raised by the file_restore containment check when a restore
+        # point's stored path escapes the workspace — surface it cleanly, don't crash.
         console.print(
             f"[{_tok.error}]Failed to restore {_rich_escape(restore_id)}: {_rich_escape(exc)}[/]"
         )

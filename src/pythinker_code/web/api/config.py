@@ -215,13 +215,41 @@ async def update_config_toml(
     http_request: Request,
 ) -> UpdateConfigTomlResponse:
     """Update pythinker-code config.toml."""
+    from urllib.parse import urlparse
+
     from pythinker_code.config import load_config_from_string
 
     _ensure_sensitive_apis_allowed(http_request)
-    try:
-        # Validate the config first
-        load_config_from_string(request.content)
 
+    # Parse and validate the proposed config before touching the file.
+    # Raises ConfigError (caught below) on invalid TOML/schema.
+    try:
+        parsed = load_config_from_string(request.content)
+    except Exception as e:
+        logger.warning(f"Failed to update config.toml: {e}")
+        return UpdateConfigTomlResponse(success=False, error=str(e))
+
+    # Validate base_url changes — reject any non-HTTPS, non-loopback host.
+    # This runs OUTSIDE the write try/except so HTTPException propagates as a
+    # real 400 rather than being swallowed into success=False.
+    current = load_config()
+    for name, provider in parsed.providers.items():
+        old = current.providers.get(name)
+        if old is not None and provider.base_url == old.base_url:
+            continue  # unchanged provider host is allowed
+        host = urlparse(provider.base_url)
+        hostname = (host.hostname or "").lower()
+        is_loopback = hostname in {"localhost", "127.0.0.1", "::1"}
+        if host.scheme != "https" and not is_loopback:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Provider '{name}' base_url must use https (or loopback);"
+                    f" got {provider.base_url}"
+                ),
+            )
+
+    try:
         # Write to file
         config_file = get_config_file()
         config_file.parent.mkdir(parents=True, exist_ok=True)

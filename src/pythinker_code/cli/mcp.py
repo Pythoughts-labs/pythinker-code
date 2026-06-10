@@ -1,4 +1,6 @@
+import contextlib
 import json
+import os
 from pathlib import Path, PurePath
 from typing import Annotated, Any, Literal
 
@@ -54,9 +56,19 @@ def _load_mcp_config() -> dict[str, Any]:
 
 
 def _save_mcp_config(config: dict[str, Any]) -> None:
-    """Save MCP config to default file."""
+    """Save MCP config to the default file, owner-only (0600).
+
+    Open and tighten the mode BEFORE writing any content so the file (which may
+    carry MCP server secrets) is never briefly world-readable — the previous
+    ``write_text`` then ``chmod`` left a 0644 window.
+    """
     mcp_file = get_global_mcp_config_file()
-    mcp_file.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+    payload = json.dumps(config, indent=2, ensure_ascii=False)
+    fd = os.open(mcp_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        with contextlib.suppress(OSError):
+            os.fchmod(fh.fileno(), 0o600)  # tighten a pre-existing 0644 file before writing
+        fh.write(payload)
 
 
 def _get_mcp_server(name: str, *, require_remote: bool = False) -> dict[str, Any]:

@@ -3,7 +3,7 @@ from unittest.mock import patch
 import pytest
 
 from pythinker_code.hooks.config import HookDef
-from pythinker_code.hooks.engine import HookEngine
+from pythinker_code.hooks.engine import HookEngine, WireHookSubscription
 
 
 @pytest.fixture
@@ -70,6 +70,18 @@ async def test_invalid_regex_skips_hook():
     # Should not raise, just skip the hook with invalid regex
     results = await engine.trigger("PreToolUse", matcher_value="Shell", input_data={})
     assert len(results) == 0
+
+
+def test_add_wire_subscriptions_dedups_by_id():
+    """Calling add_wire_subscriptions twice with the same id must not
+    accumulate duplicate entries — summary count stays 1, not 2."""
+    engine = HookEngine([])
+    sub = WireHookSubscription(id="h1", event="PreToolUse", matcher="Shell")
+    engine.add_wire_subscriptions([sub])
+    # Second call with identical subscription (same id)
+    engine.add_wire_subscriptions([sub])
+    assert engine.summary.get("PreToolUse", 0) == 1
+    assert len(engine._wire_by_event["PreToolUse"]) == 1
 
 
 @pytest.mark.asyncio

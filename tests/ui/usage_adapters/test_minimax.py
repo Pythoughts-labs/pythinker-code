@@ -26,19 +26,19 @@ def test_parse_minimax_payload_real_shape() -> None:
     against real Token-Plan accounts.
 
     The `*_usage_count` field names are misleading — MiniMax actually
-    returns *remaining* counts there, not used. We compute used as
-    min(total, remaining) for the UsageRow (which the renderer treats
-    as the displayed remaining value)."""
+    returns *remaining* counts there, not used. We compute
+    used = min(total, max(0, total - remaining)) so the renderer's
+    progress bar shows actual consumption, not the leftover quota."""
     payload = {
         "base_resp": {"status_code": 0, "status_msg": ""},
         "model_remains": [
             {
                 "model_name": "MiniMax-M2.7",
                 "current_interval_total_count": 1500,
-                "current_interval_usage_count": 1473,
+                "current_interval_usage_count": 1473,  # REMAINING, not used
                 "remains_time": 12345,
                 "current_weekly_total_count": 15000,
-                "current_weekly_usage_count": 14500,
+                "current_weekly_usage_count": 14500,  # REMAINING, not used
                 "weekly_remains_time": 432000,
             },
         ],
@@ -47,14 +47,14 @@ def test_parse_minimax_payload_real_shape() -> None:
     assert report.summary is not None
     assert report.summary.label == "MiniMax-M2.7 5h"
     assert report.summary.unit == "requests"
-    assert report.summary.used == 1473
+    assert report.summary.used == 27  # 1500 - 1473 = consumed
     assert report.summary.limit == 1500
     assert "resets in" in (report.summary.reset_hint or "")
 
     assert len(report.limits) == 1
     weekly = report.limits[0]
     assert weekly.label == "MiniMax-M2.7 weekly"
-    assert weekly.used == 14500
+    assert weekly.used == 500  # 15000 - 14500 = consumed
     assert weekly.limit == 15000
 
 
@@ -98,8 +98,9 @@ def test_parse_minimax_payload_clamps_remaining_above_total() -> None:
             {
                 "model_name": "MiniMax-M2.7",
                 "current_interval_total_count": 100,
-                # Bogus value — MiniMax sometimes returns numbers larger than
-                # the total during edge cases. Clamp to total.
+                # Bogus value — MiniMax sometimes returns remaining > total
+                # during edge cases. used = max(0, total - remaining) clamps
+                # the floor to 0 (can't have negative consumption).
                 "current_interval_usage_count": 99999,
                 "remains_time": 0,
                 "current_weekly_total_count": 1000,
@@ -110,7 +111,7 @@ def test_parse_minimax_payload_clamps_remaining_above_total() -> None:
     }
     report = parse_minimax_payload(payload)
     assert report.summary is not None
-    assert report.summary.used == 100  # clamped
+    assert report.summary.used == 0  # max(0, 100 - 99999) = 0
 
 
 def test_parse_minimax_payload_error_status_surfaces_message() -> None:

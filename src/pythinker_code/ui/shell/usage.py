@@ -129,7 +129,10 @@ def _ratelimit_fallback_report(provider_key: str, provider_label: str) -> UsageR
         rows.append(
             UsageRow(
                 label="Requests",
-                used=snap.requests_remaining,
+                used=min(
+                    snap.requests_limit,
+                    max(0, snap.requests_limit - snap.requests_remaining),
+                ),
                 limit=snap.requests_limit,
                 unit="requests",
                 reset_hint=_seconds_to_reset_hint(snap.requests_reset_seconds),
@@ -139,7 +142,10 @@ def _ratelimit_fallback_report(provider_key: str, provider_label: str) -> UsageR
         rows.append(
             UsageRow(
                 label="Tokens",
-                used=snap.tokens_remaining,
+                used=min(
+                    snap.tokens_limit,
+                    max(0, snap.tokens_limit - snap.tokens_remaining),
+                ),
                 limit=snap.tokens_limit,
                 unit="tokens",
                 reset_hint=_seconds_to_reset_hint(snap.tokens_reset_seconds),

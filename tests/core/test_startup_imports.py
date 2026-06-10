@@ -153,14 +153,15 @@ print("ok")
     assert proc.stdout.strip() == "ok"
 
 
-def test_package_entrypoint_help_fast_path_avoids_cli_import() -> None:
+def test_package_entrypoint_help_renders_live_typer_help() -> None:
+    # CLI2 deleted the static ROOT_HELP fast-path so `--help` renders from the live
+    # Typer root callback (one source of truth, no option drift). This intentionally
+    # gives up the old "--help avoids importing pythinker_code.cli" optimization in
+    # exchange for help that can never go stale; assert the live, accurate behavior.
     proc = _run_python(
         """
 import io
-import sys
 from contextlib import redirect_stdout
-
-sys.modules.pop("pythinker_code.cli", None)
 
 from pythinker_code.__main__ import main
 
@@ -168,9 +169,24 @@ stdout = io.StringIO()
 with redirect_stdout(stdout):
     exit_code = main(["--help"])
 
+out = stdout.getvalue()
 assert exit_code == 0
-assert "Pythinker, your next CLI agent." in stdout.getvalue()
-assert "pythinker_code.cli" not in sys.modules
+assert "Pythinker, your next CLI agent." in out
+# Live Typer help lists real commands — proof it is not a stale static block.
+assert "login" in out
+print("ok")
+"""
+    )
+    assert proc.stdout.strip() == "ok"
+
+
+def test_refresh_plugin_configs_removed() -> None:
+    proc = _run_python(
+        """
+import pythinker_code.plugin.manager as mgr
+assert not hasattr(mgr, 'refresh_plugin_configs'), (
+    "refresh_plugin_configs is dead code and must be removed from manager.py"
+)
 print("ok")
 """
     )

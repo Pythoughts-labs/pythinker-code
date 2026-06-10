@@ -76,7 +76,9 @@ async def test_default_agent(runtime: Runtime):
                     "pythinker_code.tools.file:WriteFile",
                     "pythinker_code.tools.file:StrReplaceFile",
                     "pythinker_code.tools.skill:ReadSkill",
-                    "pythinker_code.tools.web:SearchWeb", "pythinker_code.tools.web:FetchURL"),
+                    "pythinker_code.tools.web:SearchWeb",
+                    "pythinker_code.tools.web:FetchURL",
+                ),
             ),
             (
                 "code-reviewer",

@@ -195,7 +195,7 @@ def _rows_from_minimax_model_entry(entry: Mapping[str, Any]) -> list[UsageRow]:
         rows.append(
             UsageRow(
                 label=f"{model_name} 5h",
-                used=min(interval_total, max(0, interval_remaining)),
+                used=min(interval_total, max(0, interval_total - interval_remaining)),
                 limit=interval_total,
                 unit="requests",
                 reset_hint=_seconds_to_reset_hint(interval_remains_seconds),
@@ -209,7 +209,7 @@ def _rows_from_minimax_model_entry(entry: Mapping[str, Any]) -> list[UsageRow]:
         rows.append(
             UsageRow(
                 label=f"{model_name} weekly",
-                used=min(weekly_total, max(0, weekly_remaining)),
+                used=min(weekly_total, max(0, weekly_total - weekly_remaining)),
                 limit=weekly_total,
                 unit="requests",
                 reset_hint=_seconds_to_reset_hint(weekly_remains_seconds),

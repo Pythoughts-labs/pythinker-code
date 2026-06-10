@@ -1,6 +1,5 @@
 """
 The local version of the Grep tool using ripgrep.
-Be cautious that `HostPath` is not used in this implementation.
 """
 
 import asyncio
@@ -21,12 +20,15 @@ from typing import override
 import aiohttp
 from pydantic import BaseModel, Field, field_validator
 from pythinker_core.tooling import CallableTool2, ToolError, ToolReturnValue
+from pythinker_host.path import HostPath
 
 import pythinker_code
 from pythinker_code.share import get_share_dir
+from pythinker_code.soul.agent import Runtime
 from pythinker_code.tools.utils import ToolResultBuilder, load_desc
 from pythinker_code.utils.aiohttp import new_client_session
 from pythinker_code.utils.logging import logger
+from pythinker_code.utils.path import is_within_directory, is_within_workspace
 from pythinker_code.utils.sensitive import is_sensitive_file, sensitive_file_warning
 
 
@@ -382,8 +384,9 @@ def _build_rg_args(rg_path: str, params: Params, *, single_threaded: bool = Fals
             args.extend(["--after-context", str(params.after_context)])
         if params.context is not None:
             args.extend(["--context", str(params.context)])
-        if params.line_number:
-            args.append("--line-number")
+        # Always force line numbers for reliable sensitive-file path attribution;
+        # the injected numbers are stripped for display when params.line_number is False.
+        args.append("--line-number")
 
     # File filtering options
     if params.glob:
@@ -618,7 +621,9 @@ def _python_grep(params: Params, unavailable_reason: str, *, wrap: bool = True) 
                     continue
                 emitted.add(idx)
                 sep = ":" if idx == match_idx else "-"
-                line_no = f"{idx + 1}{sep}" if params.line_number else ""
+                # Always include line number internally for unambiguous path attribution;
+                # strip for display below when params.line_number is False.
+                line_no = f"{idx + 1}{sep}"
                 matched_lines.append(f"{rel_path}{sep}{line_no}{lines[idx]}")
 
     if params.output_mode == "files_with_matches":
@@ -626,6 +631,21 @@ def _python_grep(params: Params, unavailable_reason: str, *, wrap: bool = True) 
             key=lambda p: os.path.getmtime(search_base / p) if (search_base / p).exists() else 0,
             reverse=True,
         )
+
+    # Strip injected line numbers for display when params.line_number is False.
+    # They are always emitted internally for consistent path:linenum:content
+    # format, which ensures sensitive-file attribution is reliable.
+    if params.output_mode == "content" and not params.line_number:
+        _py_line_re = re.compile(r"^(.*?)([:\-])(\d+)\2")
+        stripped_ml: list[str] = []
+        for ml in matched_lines:
+            m2 = _py_line_re.match(ml)
+            if m2:
+                path2, sep2 = m2.group(1), m2.group(2)
+                stripped_ml.append(f"{path2}{sep2}{ml[m2.end() :]}")
+            else:
+                stripped_ml.append(ml)
+        matched_lines = stripped_ml
 
     matched_lines, pagination_message = _apply_python_pagination(matched_lines, params)
     messages = [f"ripgrep unavailable ({unavailable_reason}); used Python fallback."]
@@ -691,12 +711,16 @@ class SmartSearch(CallableTool2[SmartSearchParams]):
     )
     params: type[SmartSearchParams] = SmartSearchParams
 
+    def __init__(self, runtime: Runtime) -> None:
+        super().__init__()
+        self._runtime = runtime
+
     @override
     async def __call__(self, params: SmartSearchParams) -> ToolReturnValue:
         seen_lines: set[str] = set()
         sections: list[str] = []
         per_pass_limit = max(10, min(params.max_results, 80))
-        grep = Grep()
+        grep = Grep(self._runtime)
         for label, pattern in _smart_search_patterns(params.query):
             grep_params = Params.model_validate(
                 {
@@ -752,11 +776,40 @@ class Grep(CallableTool2[Params]):
     description: str = load_desc(Path(__file__).parent / "grep.md")
     params: type[Params] = Params
 
+    def __init__(self, runtime: Runtime) -> None:
+        super().__init__()
+        self._work_dir = runtime.builtin_args.PYTHINKER_WORK_DIR
+        self._additional_dirs = runtime.additional_dirs
+        self._skills_dirs = runtime.skills_dirs
+
+    async def _validate_path(self, raw: str) -> ToolError | None:
+        # Resolve symlinks before the boundary check: ripgrep follows an explicit
+        # symlink path argument, so a lexical canonical() let an in-workspace symlink
+        # to an outside target escape. Mirror the read/write/edit tools' realpath check.
+        real_p = await HostPath(raw).expanduser().canonical().realpath()
+        real_work = await self._work_dir.realpath()
+        real_add = [await d.realpath() for d in self._additional_dirs]
+        if is_within_workspace(real_p, real_work, real_add):
+            return None
+        real_skills = [await d.realpath() for d in self._skills_dirs]
+        if any(is_within_directory(real_p, d) for d in real_skills):
+            return None
+        return ToolError(
+            message=(
+                f"`{raw}` is outside the workspace. "
+                "You can only search within the working directory, "
+                "additional directories, and skills directories."
+            ),
+            brief="Path outside workspace",
+        )
+
     @override
     async def __call__(
         self, params: Params, *, _retry: bool = False, _wrap: bool = True
     ) -> ToolReturnValue:
         try:
+            if err := await self._validate_path(params.path):
+                return err
             builder = ToolResultBuilder()
             if _wrap and params.output_mode == "content":
                 # Matched content lines are external file bytes; wrap them as
@@ -903,6 +956,24 @@ class Grep(CallableTool2[Params]):
                 output = "\n".join(kept_lines)
                 warning = sensitive_file_warning(filtered_paths)
                 message = f"{message} {warning}" if message else warning
+
+            # Strip the injected line numbers for display when the model
+            # requested -n=false (we always force --line-number internally in
+            # content mode so that sensitive-file attribution is reliable).
+            if params.output_mode == "content" and not params.line_number:
+                stripped: list[str] = []
+                for line in kept_lines:
+                    if line == "--":
+                        stripped.append(line)
+                        continue
+                    m = _RG_LINE_RE.match(line)
+                    if m:
+                        path, sep = m.group(1), m.group(2)
+                        stripped.append(f"{path}{sep}{line[m.end() :]}")
+                    else:
+                        stripped.append(line)
+                kept_lines = stripped
+                output = "\n".join(kept_lines)
 
             # Step 4: count_matches summary (before pagination, on full results)
             lines = output.split("\n")

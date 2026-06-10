@@ -1392,3 +1392,43 @@ class TestPerformImport:
         assert isinstance(result, tuple)
         _desc, content_len = result
         assert content_len == len(raw)
+
+    async def test_sensitive_file_import_blocked_until_forced(self, tmp_path: Path) -> None:
+        """Sensitive files are blocked unless force=True is passed."""
+        src = tmp_path / ".env"
+        src.write_text("SECRET=1", encoding="utf-8")
+        ctx = _make_mock_context()
+
+        # Without force: should return an error string and NOT mutate context.
+        result = await perform_import(str(src), "curr-id", tmp_path, context=ctx)  # type: ignore[arg-type]
+        assert isinstance(result, str)
+        assert "secret" in result.lower()
+        ctx.append_message.assert_not_awaited()
+
+        # With force=True: should succeed and mutate context exactly once.
+        result2 = await perform_import(str(src), "curr-id", tmp_path, context=ctx, force=True)  # type: ignore[arg-type]
+        assert isinstance(result2, tuple)
+        ctx.append_message.assert_awaited_once()
+
+    async def test_ssh_private_key_import_blocked_until_forced(self, tmp_path: Path) -> None:
+        """SSH private keys (id_rsa/id_ed25519) must be gated like other secrets.
+
+        They have no extension and were missing from the import gate's local pattern
+        list, so they imported silently; the gate now uses the hardened sensitive-file
+        check that ReadFile uses, which covers the SSH key family.
+        """
+        for name in ("id_rsa", "id_ed25519"):
+            src = tmp_path / name
+            src.write_text("-----BEGIN OPENSSH PRIVATE KEY-----\n", encoding="utf-8")
+            ctx = _make_mock_context()
+
+            # Without force: refused, context untouched.
+            result = await perform_import(str(src), "curr-id", tmp_path, context=ctx)  # type: ignore[arg-type]
+            assert isinstance(result, str), name
+            assert "secret" in result.lower(), name
+            ctx.append_message.assert_not_awaited()
+
+            # With force=True: import proceeds.
+            result2 = await perform_import(str(src), "curr-id", tmp_path, context=ctx, force=True)  # type: ignore[arg-type]
+            assert isinstance(result2, tuple), name
+            ctx.append_message.assert_awaited_once()

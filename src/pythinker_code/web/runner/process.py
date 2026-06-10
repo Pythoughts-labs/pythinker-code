@@ -306,6 +306,7 @@ class SessionProcess:
                         stderr = await self._process.stderr.read()
                         if not stderr:
                             stderr = b"No stderr"
+                        stderr_text = stderr.decode("utf-8", errors="replace")
                         # Clear in-flight IDs before broadcasting so that
                         # is_busy is already False when the frontend reacts
                         # to the error and sends a new prompt.
@@ -315,24 +316,23 @@ class SessionProcess:
                                 id=str(uuid4()),
                                 error=JSONRPCErrorObject(
                                     code=self._process.returncode or -1,
-                                    message=stderr.decode("utf-8"),
+                                    message=stderr_text,
                                 ),
                             ).model_dump_json()
                         )
                         logger.warning(
-                            f"Process exited with {self._process.returncode}: "
-                            f"{stderr.decode('utf-8')}"
+                            f"Process exited with {self._process.returncode}: {stderr_text}"
                         )
                         await self._emit_status(
                             "error",
                             reason="process_exit",
-                            detail=stderr.decode("utf-8"),
+                            detail=stderr_text,
                         )
                         break
                     else:
                         continue
 
-                await self._broadcast(line.decode("utf-8").rstrip("\n"))
+                await self._broadcast(line.decode("utf-8", errors="replace").rstrip("\n"))
 
                 # Handle out message
                 try:
@@ -567,14 +567,29 @@ class SessionProcess:
                 f"remaining={self._websocket_count}"
             )
 
-    async def add_websocket_and_begin_replay(self, ws: WebSocket) -> None:
-        """Atomically attach a WebSocket and enter replay mode for it."""
+    async def add_websocket_and_begin_replay(
+        self, ws: WebSocket, wire_file: Path | None = None
+    ) -> int:
+        """Atomically attach a WebSocket and enter replay mode for it.
+
+        Returns the byte watermark of *wire_file* captured under the lock, or 0
+        if no wire_file was given. Callers should replay only up to this
+        watermark so that events written after the buffer was attached arrive
+        via the live buffer rather than being replayed a second time.
+        """
         async with self._ws_lock:
             if ws not in self._websockets:
                 self._websockets.add(ws)
                 self._websocket_count = len(self._websockets)
             self._replay_buffers.setdefault(ws, [])
+            watermark = 0
+            if wire_file is not None:
+                try:
+                    watermark = wire_file.stat().st_size
+                except OSError:
+                    watermark = 0
         logger.debug(f"WebSocket added (replay mode), count={self._websocket_count}")
+        return watermark
 
     async def end_replay(self, ws: WebSocket) -> None:
         """Flush buffered live messages for a websocket after history replay."""
@@ -640,6 +655,7 @@ class SessionProcess:
         assert process.stdin is not None
 
         # Handle in message
+        in_message = None
         try:
             in_message = JSONRPCInMessageAdapter.validate_json(message)
             if isinstance(in_message, JSONRPCPromptMessage):
@@ -657,8 +673,13 @@ class SessionProcess:
             new_message = await self._handle_in_message(in_message)
             if new_message is not None:
                 message = new_message
-        except ValueError as e:
-            logger.error(f"{e.__class__.__name__} {e}: Invalid JSONRPC in message: {message}")
+        except Exception as e:
+            logger.error(f"{e.__class__.__name__} {e}: failed to handle in message: {message}")
+            if isinstance(in_message, JSONRPCPromptMessage):
+                was_busy = self.is_busy
+                self._in_flight_prompt_ids.discard(in_message.id)
+                if was_busy and not self.is_busy:
+                    await self._emit_status("idle", reason="prompt_error")
             return
 
         process.stdin.write((message + "\n").encode("utf-8"))
@@ -700,6 +721,13 @@ class PythinkerCLIRunner:
     def get_session(self, session_id: UUID) -> SessionProcess | None:
         """Get a session process if it exists."""
         return self._sessions.get(session_id)
+
+    async def remove_session(self, session_id: UUID) -> None:
+        """Stop the session process (if any) and drop it from the registry."""
+        async with self._lock:
+            session = self._sessions.pop(session_id, None)
+        if session is not None:
+            await session.stop()
 
     async def detach_websocket(self, ws: WebSocket, session_id: UUID) -> None:
         """Detach a WebSocket from a session."""

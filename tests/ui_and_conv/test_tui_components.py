@@ -368,3 +368,82 @@ def test_bash_execution_running_marker_pulses(monkeypatch):
     assert first != second
     assert "⏺ Running $ sleep 1" in first
     assert "Running $ sleep 1" in second
+
+
+# ---------------------------------------------------------------------------
+# ANSI sanitization in raw Text(...) blocks
+# ---------------------------------------------------------------------------
+
+
+def _collect_text_plains(renderable: object) -> list[str]:
+    """Recursively collect all .plain values from Text nodes in a renderable tree."""
+    from rich.console import Group
+    from rich.text import Text
+
+    plains: list[str] = []
+    if isinstance(renderable, Text):
+        plains.append(renderable.plain)
+    elif isinstance(renderable, Group):
+        for child in renderable.renderables:
+            plains.extend(_collect_text_plains(child))
+    elif hasattr(renderable, "__rich_console__"):
+        # BulletColumns and similar Rich objects expose their children via
+        # __rich_console__; render them into a plain console and check output.
+        from rich.console import Console
+
+        con = Console(record=True, color_system=None, width=120)
+        con.print(renderable)  # type: ignore[arg-type]
+        plains.append(con.export_text())
+    return plains
+
+
+def test_raw_text_blocks_strip_ansi_escapes():
+    """_NotificationBlock, _QuestionAnsweredBlock, and _SuggestionBlock must not
+    let raw ANSI escape sequences through into Text .plain (or rendered output)."""
+    from pythinker_code.ui.shell.visualize._blocks import (
+        _NotificationBlock,
+        _QuestionAnsweredBlock,
+        _SuggestionBlock,
+    )
+    from pythinker_code.wire.types import Notification, QuestionAnswered, Suggestion
+
+    ESC = "\x1b"
+
+    # --- _NotificationBlock ---
+    notif = Notification(
+        id="n1",
+        category="system",
+        type="test",
+        source_kind="agent",
+        source_id="a1",
+        title=f"t{ESC}[2J",
+        body=f"b{ESC}[2J",
+        severity="info",
+        created_at=0.0,
+    )
+    notif_renderable = _NotificationBlock(notif).compose()
+    notif_plains = _collect_text_plains(notif_renderable)
+    assert notif_plains, "Expected at least one text fragment from _NotificationBlock"
+    for plain in notif_plains:
+        assert ESC not in plain, f"ANSI escape leaked into notification fragment: {plain!r}"
+
+    # --- _QuestionAnsweredBlock ---
+    qa = QuestionAnswered(
+        request_id="r1",
+        tool_call_id="tc1",
+        answers={f"q{ESC}[2J": f"a{ESC}[2J"},
+        dismissed=False,
+    )
+    qa_renderable = _QuestionAnsweredBlock(qa).compose()
+    qa_plains = _collect_text_plains(qa_renderable)
+    assert qa_plains, "Expected at least one text fragment from _QuestionAnsweredBlock"
+    for plain in qa_plains:
+        assert ESC not in plain, f"ANSI escape leaked into question-answered fragment: {plain!r}"
+
+    # --- _SuggestionBlock ---
+    sug = Suggestion(label=f"l{ESC}[2J", prefill=f"p{ESC}[2J")
+    sug_renderable = _SuggestionBlock(sug).compose()
+    sug_plains = _collect_text_plains(sug_renderable)
+    assert sug_plains, "Expected at least one text fragment from _SuggestionBlock"
+    for plain in sug_plains:
+        assert ESC not in plain, f"ANSI escape leaked into suggestion fragment: {plain!r}"

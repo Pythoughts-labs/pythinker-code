@@ -121,27 +121,6 @@ def install_plugin(
     return parse_plugin_json(dest / PLUGIN_JSON)
 
 
-def refresh_plugin_configs(plugins_dir: Path, host_values: dict[str, str]) -> None:
-    """Re-inject host values into all installed plugin config files.
-
-    Called at startup so that OAuth tokens and other credentials
-    stay fresh even after the initial install.
-    """
-    if not plugins_dir.is_dir():
-        return
-
-    for child in sorted(plugins_dir.iterdir()):
-        plugin_json = child / PLUGIN_JSON
-        if not child.is_dir() or not plugin_json.is_file():
-            continue
-        try:
-            spec = parse_plugin_json(plugin_json)
-            if spec.inject:
-                _validate_inject_values(spec, host_values)
-        except Exception:
-            continue
-
-
 def list_plugins(plugins_dir: Path) -> list[PluginSpec]:
     """List all installed plugins."""
     if not plugins_dir.is_dir():

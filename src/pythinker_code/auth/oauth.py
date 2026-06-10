@@ -114,13 +114,13 @@ class OAuthToken:
 
     @classmethod
     def from_response(cls, payload: dict[str, Any]) -> OAuthToken:
-        expires_in = float(payload["expires_in"])
+        expires_in = float(payload.get("expires_in") or 0)
         return cls(
             access_token=str(payload["access_token"]),
-            refresh_token=str(payload["refresh_token"]),
+            refresh_token=str(payload.get("refresh_token") or ""),
             expires_at=time.time() + expires_in,
-            scope=str(payload["scope"]),
-            token_type=str(payload["token_type"]),
+            scope=str(payload.get("scope") or ""),
+            token_type=str(payload.get("token_type") or ""),
             expires_in=expires_in,
             account_id=str(account_id) if (account_id := payload.get("account_id")) else None,
         )
@@ -239,7 +239,16 @@ def get_device_id() -> str:
     if path.exists():
         return path.read_text(encoding="utf-8").strip()
     device_id = uuid.uuid4().hex
-    path.write_text(device_id, encoding="utf-8")
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        # Another process won the race; use its id, do not re-fire telemetry.
+        return path.read_text(encoding="utf-8").strip()
+    try:
+        os.write(fd, device_id.encode("utf-8"))
+    finally:
+        os.close(fd)
+    # os.open mode is umask-masked; tighten defensively to 0o600.
     _ensure_private_file(path)
     from pythinker_code.telemetry import track
 
@@ -1103,6 +1112,8 @@ class OAuthManager:
                     return
                 if refreshed.account_id is None:
                     refreshed.account_id = current.account_id
+                if not refreshed.refresh_token:
+                    refreshed.refresh_token = current.refresh_token
                 self._clear_rejected_refresh_token(ref)
                 save_tokens(ref, refreshed)
                 self._cache_access_token(ref, refreshed)

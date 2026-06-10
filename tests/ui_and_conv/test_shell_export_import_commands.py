@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+import pytest
 from pythinker_core.message import Message
 from rich.console import Console
 
@@ -148,4 +149,84 @@ async def test_import_directory_path_prints_clear_error(tmp_path: Path, monkeypa
     assert "directory" in rendered.lower()
     assert "provide a file" in rendered.lower()
     assert app.soul.context.append_message.await_count == 0
-    assert app.soul.wire_file.append_message.await_count == 0
+
+
+def test_restore_rejects_path_traversal_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The /restore handler must reject traversal args before calling restore_file_restore_point."""
+    import pythinker_code.file_restore as file_restore_mod
+    from pythinker_code.soul.pythinkersoul import PythinkerSoul
+    from pythinker_code.ui.shell import slash as shell_slash
+    from pythinker_code.ui.shell.slash import registry as shell_slash_registry
+
+    # A sentinel outside the session dir — must remain untouched
+    secret = tmp_path / "secret.json"
+    secret.write_text('{"secret": true}', encoding="utf-8")
+
+    # Build a mock shell whose soul passes the PythinkerSoul isinstance check
+    mock_soul = Mock(spec=PythinkerSoul)
+    mock_soul.runtime.session = Mock()
+    shell = Mock()
+    shell.soul = mock_soul
+
+    # No valid restore points exist — so any supplied arg is not a member
+    monkeypatch.setattr(file_restore_mod, "list_file_restore_points", lambda _session, **kw: [])
+
+    # restore_file_restore_point must NOT be invoked on the traversal path
+    def _should_not_be_called(*args, **kwargs):
+        pytest.fail("restore_file_restore_point was called with a traversal id")
+
+    monkeypatch.setattr(file_restore_mod, "restore_file_restore_point", _should_not_be_called)
+
+    # Capture console output
+    print_mock = Mock()
+    monkeypatch.setattr(shell_slash.console, "print", print_mock)
+
+    cmd = shell_slash_registry.find_command("restore")
+    assert cmd is not None
+    cmd.func(shell, "../../secret")
+
+    # The sentinel file must be untouched
+    assert secret.exists()
+    assert secret.read_text(encoding="utf-8") == '{"secret": true}'
+
+    # The handler must have printed "Restore point not found"
+    rendered = " ".join(str(arg) for args in print_mock.call_args_list for arg in args.args)
+    assert "Restore point not found" in rendered
+
+
+def test_restore_surfaces_value_error_cleanly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A *valid* restore id whose stored path escapes the workspace must surface a clean
+    'Failed to restore' message (file_restore raises ValueError), not crash uncaught."""
+    import pythinker_code.file_restore as file_restore_mod
+    from pythinker_code.soul.pythinkersoul import PythinkerSoul
+    from pythinker_code.ui.shell import slash as shell_slash
+    from pythinker_code.ui.shell.slash import registry as shell_slash_registry
+
+    mock_soul = Mock(spec=PythinkerSoul)
+    mock_soul.runtime.session = Mock()
+    shell = Mock()
+    shell.soul = mock_soul
+
+    # A valid restore point so the membership guard passes and we reach the restore call.
+    point = Mock()
+    point.id = "a1b2c3d4"
+    monkeypatch.setattr(
+        file_restore_mod, "list_file_restore_points", lambda _session, **kw: [point]
+    )
+
+    def _raise_value_error(*args, **kwargs):
+        raise ValueError("Restore target outside workspace")
+
+    monkeypatch.setattr(file_restore_mod, "restore_file_restore_point", _raise_value_error)
+
+    print_mock = Mock()
+    monkeypatch.setattr(shell_slash.console, "print", print_mock)
+
+    cmd = shell_slash_registry.find_command("restore")
+    assert cmd is not None
+    cmd.func(shell, "a1b2c3d4")  # must NOT raise
+
+    rendered = " ".join(str(arg) for args in print_mock.call_args_list for arg in args.args)
+    assert "Failed to restore" in rendered

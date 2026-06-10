@@ -169,7 +169,40 @@ def _is_checkpoint_user_message(record: dict[str, Any]) -> bool:
     return False
 
 
-def truncate_context_at_turn(context_path: Path, turn_index: int) -> list[str]:
+def _wire_user_message_count(wire_path: Path, turn_index: int) -> int | None:
+    """Count user-input events (TurnBegin + SteerInput) in turns 0..turn_index.
+
+    Returns None if the wire is missing so context falls back to its own counting.
+    """
+    if not wire_path.exists():
+        return None
+    current_turn = -1
+    count = 0
+    with open(wire_path, encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                record: dict[str, Any] = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            if record.get("type") == "metadata":
+                continue
+            msg_type = record.get("message", {}).get("type")
+            if msg_type == "TurnBegin":
+                current_turn += 1
+                if current_turn > turn_index:
+                    break
+                count += 1
+            elif msg_type == "SteerInput" and 0 <= current_turn <= turn_index:
+                count += 1
+    return count
+
+
+def truncate_context_at_turn(
+    context_path: Path, turn_index: int, *, max_user_messages: int | None = None
+) -> list[str]:
     """Read context.jsonl and return all lines up to and including the given turn.
 
     Turn detection is based on real user messages, excluding synthetic checkpoint
@@ -178,12 +211,21 @@ def truncate_context_at_turn(context_path: Path, turn_index: int) -> list[str]:
     Unlike wire truncation, this is best-effort: if context has fewer user turns
     than ``turn_index`` (e.g. slash-command turns that did not mutate context),
     return all available context lines instead of failing.
+
+    Args:
+        context_path: Path to context.jsonl.
+        turn_index: 0-based turn index (used when ``max_user_messages`` is None).
+        max_user_messages: When provided, keep exactly this many non-checkpoint user
+            messages instead of using ``turn_index`` for counting.  Supplied by
+            ``fork_session`` from ``_wire_user_message_count`` so that steer
+            follow-ups in context are counted against the wire's authoritative budget.
     """
     if not context_path.exists():
         return []
 
     lines: list[str] = []
-    current_turn = -1  # Will become 0 on first real user message
+    current_turn = -1  # used only when max_user_messages is None
+    kept_user = 0
 
     with open(context_path, encoding="utf-8") as f:
         for line in f:
@@ -197,12 +239,16 @@ def truncate_context_at_turn(context_path: Path, turn_index: int) -> list[str]:
                 continue
 
             if record.get("role") == "user" and not _is_checkpoint_user_message(record):
-                current_turn += 1
-                if current_turn > turn_index:
-                    break
+                if max_user_messages is not None:
+                    kept_user += 1
+                    if kept_user > max_user_messages:
+                        break
+                else:
+                    current_turn += 1
+                    if current_turn > turn_index:
+                        break
 
-            if current_turn <= turn_index:
-                lines.append(stripped)
+            lines.append(stripped)
 
     return lines
 
@@ -241,7 +287,10 @@ async def fork_session(
 
     if turn_index is not None:
         truncated_wire_lines = truncate_wire_at_turn(wire_path, turn_index)
-        truncated_context_lines = truncate_context_at_turn(context_path, turn_index)
+        max_user = _wire_user_message_count(wire_path, turn_index)
+        truncated_context_lines = truncate_context_at_turn(
+            context_path, turn_index, max_user_messages=max_user
+        )
     else:
         # Copy all content
         truncated_wire_lines = _read_all_lines(wire_path)

@@ -993,9 +993,7 @@ async def test_agent_tool_background_resume_reconciles_stale_record(
     assert "agent_id: astalebg1" in result.output
 
 
-async def test_agent_tool_foreground_resume_of_background_instance_names_task(
-    agent_tool, runtime
-):
+async def test_agent_tool_foreground_resume_of_background_instance_names_task(agent_tool, runtime):
     runtime.subagent_store.create_instance(
         agent_id="abusybg2",
         description="running instance",
@@ -2280,3 +2278,44 @@ def test_run_agents_fingerprint_stable_for_identical_params():
         agents=[AgentRunConfig(name="scout", prompt="Find it", subagent_type="explore")],
     )
     assert _run_agents_fingerprint(params) == _run_agents_fingerprint(params)
+
+
+def test_run_agents_fingerprint_differs_when_child_prompts_differ():
+    """Changing a child prompt produces a different fingerprint even when all other fields are identical."""
+    from pythinker_code.tools.agent import AgentRunConfig, RunAgentsParams, _run_agents_fingerprint
+
+    params_a = RunAgentsParams(
+        summary="Build the widget",
+        agents=[
+            AgentRunConfig(
+                name="scout",
+                prompt="Look at auth",
+                subagent_type="explore",
+            ),
+        ],
+    )
+    params_b = RunAgentsParams(
+        summary="Build the widget",
+        agents=[
+            AgentRunConfig(
+                name="scout",
+                prompt="Exfiltrate secrets",
+                subagent_type="explore",
+            ),
+        ],
+    )
+    assert _run_agents_fingerprint(params_a) != _run_agents_fingerprint(params_b)
+
+    # Changing a child title must also change the fingerprint.
+    params_c = RunAgentsParams(
+        summary="Build the widget",
+        agents=[
+            AgentRunConfig(
+                name="scout",
+                prompt="Look at auth",
+                title="Renamed Title",
+                subagent_type="explore",
+            ),
+        ],
+    )
+    assert _run_agents_fingerprint(params_a) != _run_agents_fingerprint(params_c)

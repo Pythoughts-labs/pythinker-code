@@ -24,6 +24,7 @@ from pythinker_core.chat_provider import (
     TokenUsage,
 )
 from pythinker_core.message import Message, ToolCall
+from pythinker_core.tooling.error import ToolRuntimeError
 from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
 from pythinker_code.approval_runtime import (
@@ -1664,7 +1665,22 @@ class PythinkerSoul:
         # it bound here also covers any future implementation that starts work lazily in
         # tool_results().
         with deliberation_scope(deliberation_context_id, deliberation_generation):
-            results = await result.tool_results()
+            try:
+                results = await result.tool_results()
+            except asyncio.CancelledError:
+                # Interrupted mid-tool: persist the assistant message and a synthetic
+                # interruption marker for every tool_call so the next turn does not see
+                # unanswered tool_calls (which providers reject).  Shield the write from
+                # the same cancellation so it completes, then re-raise.
+                interrupted = [
+                    ToolResult(
+                        tool_call_id=tc.id,
+                        return_value=ToolRuntimeError(message="Tool call interrupted by user."),
+                    )
+                    for tc in result.tool_calls
+                ]
+                await asyncio.shield(asyncio.create_task(self._grow_context(result, interrupted)))
+                raise
         logger.debug("Got tool results: {results}", results=results)
 
         # If a tool (EnterPlanMode/ExitPlanMode) changed plan mode during execution,
@@ -1970,68 +1986,84 @@ class PythinkerSoul:
                     self._cumulative_usage, compaction_result.usage
                 )
             await self._context.clear()
-            await self._context.write_system_prompt(self._agent.system_prompt)
-            await self._checkpoint()
-            await self._context.append_message(compaction_result.messages)
-            estimated_token_count = compaction_result.estimated_token_count
-            summary_text = compact_summary_text(compaction_result.messages)
+            try:
+                await self._context.write_system_prompt(self._agent.system_prompt)
+                await self._checkpoint()
+                await self._context.append_message(compaction_result.messages)
+                estimated_token_count = compaction_result.estimated_token_count
+                summary_text = compact_summary_text(compaction_result.messages)
 
-            if restore_context.messages:
-                await self._context.append_message(restore_context.messages)
-                estimated_token_count += estimate_text_tokens(restore_context.messages)
+                if restore_context.messages:
+                    await self._context.append_message(restore_context.messages)
+                    estimated_token_count += estimate_text_tokens(restore_context.messages)
 
-            if self._runtime.role == "root":
-                active_task_snapshot = build_active_task_snapshot(self._runtime.background_tasks)
-                if active_task_snapshot is not None:
-                    active_task_message = Message(
-                        role="user",
-                        content=[
-                            system(
-                                "The following background tasks are still active after compaction. "
-                                "Use TaskList if you need to re-enumerate them later."
-                            ),
-                            TextPart(text=active_task_snapshot),
-                        ],
+                if self._runtime.role == "root":
+                    active_task_snapshot = build_active_task_snapshot(
+                        self._runtime.background_tasks
                     )
-                    await self._context.append_message(active_task_message)
-                    estimated_token_count += estimate_text_tokens([active_task_message])
+                    if active_task_snapshot is not None:
+                        active_task_message = Message(
+                            role="user",
+                            content=[
+                                system(
+                                    "The following background tasks are still active"
+                                    " after compaction. Use TaskList if you need to"
+                                    " re-enumerate them later."
+                                ),
+                                TextPart(text=active_task_snapshot),
+                            ],
+                        )
+                        await self._context.append_message(active_task_message)
+                        estimated_token_count += estimate_text_tokens([active_task_message])
 
-            post_compact_results = await self._hook_engine.trigger(
-                "PostCompact",
-                matcher_value=trigger_reason,
-                input_data=events.post_compact(
-                    session_id=self._runtime.session.id,
-                    cwd=_safe_cwd(str(self._runtime.session.work_dir)),
-                    trigger=trigger_reason,
-                    estimated_token_count=estimated_token_count,
-                    compact_summary=summary_text,
-                ),
-            )
-            session_start_results = await self._hook_engine.trigger(
-                "SessionStart",
-                matcher_value="compact",
-                input_data=events.session_start(
-                    session_id=self._runtime.session.id,
-                    cwd=_safe_cwd(str(self._runtime.session.work_dir)),
-                    source="compact",
-                ),
-            )
-            hook_context_message = build_hook_context_message(
-                result.additional_context
-                for result in [*post_compact_results, *session_start_results]
-            )
-            if hook_context_message is not None:
-                await self._context.append_message(hook_context_message)
-                estimated_token_count += estimate_text_tokens([hook_context_message])
+                post_compact_results = await self._hook_engine.trigger(
+                    "PostCompact",
+                    matcher_value=trigger_reason,
+                    input_data=events.post_compact(
+                        session_id=self._runtime.session.id,
+                        cwd=_safe_cwd(str(self._runtime.session.work_dir)),
+                        trigger=trigger_reason,
+                        estimated_token_count=estimated_token_count,
+                        compact_summary=summary_text,
+                    ),
+                )
+                session_start_results = await self._hook_engine.trigger(
+                    "SessionStart",
+                    matcher_value="compact",
+                    input_data=events.session_start(
+                        session_id=self._runtime.session.id,
+                        cwd=_safe_cwd(str(self._runtime.session.work_dir)),
+                        source="compact",
+                    ),
+                )
+                hook_context_message = build_hook_context_message(
+                    result.additional_context
+                    for result in [*post_compact_results, *session_start_results]
+                )
+                if hook_context_message is not None:
+                    await self._context.append_message(hook_context_message)
+                    estimated_token_count += estimate_text_tokens([hook_context_message])
 
-            # Estimate token count so context_usage is not reported as 0%
-            await self._context.update_token_count(estimated_token_count)
+                # Estimate token count so context_usage is not reported as 0%
+                await self._context.update_token_count(estimated_token_count)
 
-            # Notify dynamic injection providers that history has been rebuilt so
-            # they can reset any one-shot throttling state. Failures are isolated
-            # per-provider so compaction completion (wire event + telemetry) is
-            # not affected by a buggy provider.
-            await self._notify_injection_providers_compacted()
+                # Notify dynamic injection providers that history has been rebuilt so
+                # they can reset any one-shot throttling state. Failures are isolated
+                # per-provider so compaction completion (wire event + telemetry) is
+                # not affected by a buggy provider.
+                await self._notify_injection_providers_compacted()
+            except Exception:
+                # Rebuild faulted after clear() rotated the backing file. Restore
+                # the pre-compaction history so an I/O fault cannot truncate the
+                # live context to just the system prompt. Same primitive as
+                # prune_context.
+                await self._context.clear()
+                await self._context.write_system_prompt(self._agent.system_prompt)
+                await self._checkpoint()
+                if history_before_compaction:
+                    await self._context.append_message(list(history_before_compaction))
+                await self._context.update_token_count(before_tokens)
+                raise
 
         except Exception:
             from pythinker_code.telemetry import track

@@ -150,8 +150,11 @@ class AlibabaAdapter:
             if snap.requests_limit is not None and snap.requests_remaining is not None:
                 rl_rows.append(
                     UsageRow(
-                        label="Requests remaining",
-                        used=snap.requests_remaining,
+                        label="Requests",
+                        used=min(
+                            snap.requests_limit,
+                            max(0, snap.requests_limit - snap.requests_remaining),
+                        ),
                         limit=snap.requests_limit,
                         unit="requests",
                     )
@@ -159,8 +162,11 @@ class AlibabaAdapter:
             if snap.tokens_limit is not None and snap.tokens_remaining is not None:
                 rl_rows.append(
                     UsageRow(
-                        label="Tokens remaining",
-                        used=snap.tokens_remaining,
+                        label="Tokens",
+                        used=min(
+                            snap.tokens_limit,
+                            max(0, snap.tokens_limit - snap.tokens_remaining),
+                        ),
                         limit=snap.tokens_limit,
                         unit="tokens",
                     )

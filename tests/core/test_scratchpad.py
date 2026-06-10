@@ -634,3 +634,18 @@ def test_refresh_inserts_block_into_legacy_prompt():
     refreshed = refresh_system_prompt_scratchpad_section(prompt, "guard")
     assert "guard" in refreshed
     assert refreshed.index("guard") < refreshed.index("Before every tool response")
+
+
+def test_write_gitignore_entries_leaves_no_lock_file(tmp_path: Path):
+    """_write_gitignore_entries must not leave a .scratchpad.lock file behind."""
+    gitignore_path = tmp_path / ".gitignore"
+    scratchpad._write_gitignore_entries(gitignore_path)
+    # The gitignore file should have been created with the pythinker entries.
+    assert gitignore_path.exists(), ".gitignore was not written"
+    content = gitignore_path.read_text(encoding="utf-8")
+    assert ".pythinker/" in content, "expected pythinker entries in .gitignore"
+    # No lock file should remain.
+    lock_file = tmp_path / ".gitignore.scratchpad.lock"
+    assert not lock_file.exists(), f"lock file was not cleaned up: {lock_file}"
+    remaining_locks = list(tmp_path.glob("*.scratchpad.lock"))
+    assert remaining_locks == [], f"stale lock files remain: {remaining_locks}"

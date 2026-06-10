@@ -232,6 +232,20 @@ class PythinkerToolset:
     def add(self, tool: ToolType) -> None:
         self._tool_dict[tool.name] = tool
 
+    def _register_mcp_tools(self, server_name: str, tools: list[MCPTool[Any]]) -> None:
+        """Register MCP tools, skipping any whose name conflicts with a non-MCP tool."""
+        for tool in tools:
+            existing = self.find(tool.name)
+            if existing is not None and not isinstance(existing, MCPTool):
+                logger.warning(
+                    "MCP tool '{name}' from server '{server}' conflicts with an existing"
+                    " tool, skipping",
+                    name=tool.name,
+                    server=server_name,
+                )
+                continue
+            self.add(tool)
+
     def hide(self, tool_name: str) -> bool:
         """Hide a tool from the LLM tool list. Returns True if the tool exists."""
         if tool_name in self._tool_dict:
@@ -707,8 +721,7 @@ class PythinkerToolset:
                         server_name, "prompts", client.list_prompts
                     )
 
-                for tool in server_info.tools:
-                    self.add(tool)
+                self._register_mcp_tools(server_name, server_info.tools)
 
                 server_info.status = "connected"
                 logger.info("Connected MCP server: {server_name}", server_name=server_name)

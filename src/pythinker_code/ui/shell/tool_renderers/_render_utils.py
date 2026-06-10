@@ -61,13 +61,13 @@ def fg(token: str, content: str | Text) -> Text:
         out = content.copy()
         out.stylize(style)
         return out
-    return Text(content, style=style)
+    return Text(sanitize_ansi(content), style=style)
 
 
 def tool_title(label: str) -> Text:
     """Bold tool-name title ."""
     base = tui_rich_style("tool_title")
-    return Text(label, style=base + RichStyle(bold=True))
+    return Text(sanitize_ansi(label), style=base + RichStyle(bold=True))
 
 
 def _status_marker(style_token: str) -> str:
@@ -96,7 +96,7 @@ def tool_call_header(
         if isinstance(summary, Text):
             header.append_text(summary)
         else:
-            header.append(summary, style=tui_rich_style(summary_style_token))
+            header.append(sanitize_ansi(summary), style=tui_rich_style(summary_style_token))
         header.append(")", style=tui_rich_style("muted"))
     # Single-line contract (reference CLI): long summaries ellipsize at the
     # terminal edge instead of wrapping the header onto a second row.
@@ -141,7 +141,10 @@ def safe_arg_keys_summary(args: dict[str, Any], *, max_keys: int = 4) -> Text | 
     summary = Text(f"{len(keys)} {label}", style=tui_rich_style("muted"))
     if shown:
         summary.append(": ", style=tui_rich_style("muted"))
-        summary.append(", ".join(shown), style=tui_rich_style("tool_output"))
+        # Arg key names are model/MCP-controlled; strip ANSI so a crafted key like
+        # "\x1b]0;title\x07" can't drive the terminal through the Text-summary path
+        # (tool_call_header appends a Text summary verbatim).
+        summary.append(sanitize_ansi(", ".join(shown)), style=tui_rich_style("tool_output"))
     if hidden > 0:
         summary.append(f", +{hidden} more", style=tui_rich_style("muted"))
     return summary

@@ -208,3 +208,27 @@ def test_export_help_is_leaf_command() -> None:
     output = _ANSI_RE.sub("", result.output)
     assert "Usage: root export [OPTIONS] [SESSION_ID]" in output
     assert "COMMAND [ARGS]..." not in output
+
+
+def test_export_includes_transcript_without_format_flag(
+    isolated_share_dir: Path, work_dir: HostPath, tmp_path: Path
+) -> None:
+    asyncio.run(_create_previous_session(work_dir))
+    output = tmp_path / "no-format.zip"
+
+    # Behavioral assertion: transcript.yaml is always included even without --format
+    result = CliRunner().invoke(
+        cli,
+        ["--work-dir", str(work_dir), "export", "--yes", "--output", str(output)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    with zipfile.ZipFile(output) as zf:
+        assert "transcript.yaml" in zf.namelist()
+
+    # Help-text assertion: --format help must state transcript is always included
+    help_result = CliRunner().invoke(cli, ["export", "--help"], color=False)
+    assert help_result.exit_code == 0, help_result.output
+    help_output = _ANSI_RE.sub("", help_result.output)
+    assert "always included" in help_output

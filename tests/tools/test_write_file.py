@@ -171,3 +171,50 @@ async def test_write_large_content(write_file_tool: WriteFile, temp_work_dir: Ho
     assert not result.is_error
     assert await file_path.exists()
     assert await file_path.read_text() == content
+
+
+async def test_write_symlink_escaping_workspace_classified_outside(
+    write_file_tool: WriteFile, temp_work_dir: HostPath, tmp_path: Path
+):
+    """Writing through an in-workspace symlink whose real target is outside the workspace
+    must be classified as EDIT_OUTSIDE (i.e. require outside-workspace approval), not as a
+    normal in-workspace edit.
+
+    Before the fix classify_edit_action sees the canonical (non-symlink-resolved) path that
+    still appears inside the workspace, so it returns EDIT — the symlink escapes undetected.
+    After the fix the real target is resolved first, so EDIT_OUTSIDE is returned.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    from pythinker_code.tools.file import FileActions
+
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    outside_target = outside_dir / "real_file.txt"
+    outside_target.write_text("original")
+
+    # Create an in-workspace symlink pointing at the outside file
+    symlink_path = temp_work_dir / "escape_link.txt"
+    symlink_path.unsafe_to_local_path().symlink_to(outside_target)
+
+    # Intercept the approval call to capture the action that was passed
+    captured_actions: list[FileActions] = []
+    original_request = write_file_tool._approval.request
+
+    async def capture_request(tool_name, action, description, **kwargs):  # type: ignore[no-untyped-def]
+        captured_actions.append(action)
+        # Auto-approve so the write proceeds and we just check the action
+        mock_result = MagicMock()
+        mock_result.__bool__ = lambda s: True
+        return mock_result
+
+    write_file_tool._approval.request = AsyncMock(side_effect=capture_request)  # type: ignore[method-assign]
+    try:
+        await write_file_tool(Params(path=str(symlink_path), content="new content"))
+    finally:
+        write_file_tool._approval.request = original_request  # type: ignore[method-assign]
+
+    assert captured_actions, "Approval was never requested"
+    assert captured_actions[0] == FileActions.EDIT_OUTSIDE, (
+        f"Expected EDIT_OUTSIDE for symlink escaping workspace, got {captured_actions[0]}"
+    )

@@ -179,6 +179,11 @@ class SSHHost:
         await self._sftp.chdir(str(path))
         self._cwd = await self._sftp.realpath(".")
 
+    async def realpath(self, path: StrOrHostPath) -> HostPath:
+        """Resolve symlinks and return the real path via SFTP realpath."""
+        real = await self._sftp.realpath(str(path))
+        return HostPath(real)
+
     async def stat(
         self,
         path: StrOrHostPath,

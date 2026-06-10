@@ -238,6 +238,34 @@ async def test_injection_provider_injects_once_and_resets_on_compaction(tmp_path
     assert len(again) == 1
 
 
+async def test_concurrent_add_on_same_loop_does_not_deadlock(tmp_path, monkeypatch):
+    import asyncio
+
+    from pythinker_code.project_memory import ProjectMemoryStore
+
+    store = _store(tmp_path, monkeypatch)
+
+    # Patch _write_entries to yield to the event loop while the file lock is held.
+    # This forces the interleaving scenario: coroutine A holds the OS flock, yields,
+    # then coroutine B tries to acquire the same flock — blocking the loop thread and
+    # causing a self-deadlock unless an asyncio.Lock serialises them first.
+    orig_write = ProjectMemoryStore._write_entries
+
+    async def slow_write(self, target, entries):
+        await asyncio.sleep(0)  # yield inside the critical section
+        await orig_write(self, target, entries)
+
+    monkeypatch.setattr(ProjectMemoryStore, "_write_entries", slow_write)
+
+    results = await asyncio.wait_for(
+        asyncio.gather(store.add("memory", "alpha"), store.add("memory", "beta")),
+        timeout=5,
+    )
+    assert all(r.ok for r in results)
+    entries = await store.read_entries("memory")
+    assert sorted(entries) == ["alpha", "beta"]
+
+
 async def test_end_to_end_written_fact_is_recalled(tmp_path, monkeypatch):
     monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path / "share"))
     from pythinker_code.project_memory import ProjectMemoryInjectionProvider, ProjectMemoryStore
