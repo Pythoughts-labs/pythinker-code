@@ -251,7 +251,7 @@ async def test_concurrent_add_on_same_loop_does_not_deadlock(tmp_path, monkeypat
     # causing a self-deadlock unless an asyncio.Lock serialises them first.
     orig_write = ProjectMemoryStore._write_entries
 
-    async def slow_write(self, target, entries):
+    async def slow_write(self, target, entries) -> None:
         await asyncio.sleep(0)  # yield inside the critical section
         await orig_write(self, target, entries)
 

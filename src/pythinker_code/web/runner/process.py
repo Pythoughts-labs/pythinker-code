@@ -585,7 +585,10 @@ class SessionProcess:
             watermark = 0
             if wire_file is not None:
                 try:
-                    watermark = wire_file.stat().st_size
+                    # Offload the blocking stat so a slow filesystem can't stall
+                    # the event loop while the ws lock is held.
+                    stat_result = await asyncio.to_thread(wire_file.stat)
+                    watermark = stat_result.st_size
                 except OSError:
                     watermark = 0
         logger.debug(f"WebSocket added (replay mode), count={self._websocket_count}")
@@ -674,6 +677,10 @@ class SessionProcess:
             if new_message is not None:
                 message = new_message
         except Exception as e:
+            # Intentionally broad: this is the per-message dispatch boundary, and
+            # a single malformed message or handler error (validation, OSError on
+            # file uploads, etc.) must not tear down the reader loop. The error is
+            # logged and in-flight prompt state is reconciled below before return.
             logger.error(f"{e.__class__.__name__} {e}: failed to handle in message: {message}")
             if isinstance(in_message, JSONRPCPromptMessage):
                 was_busy = self.is_busy

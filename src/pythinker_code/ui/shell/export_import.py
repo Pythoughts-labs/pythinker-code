@@ -9,7 +9,7 @@ from rich.markup import escape
 from pythinker_code.ui.shell.console import console
 from pythinker_code.ui.shell.slash import ensure_pythinker_soul, registry, shell_mode_registry
 from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
-from pythinker_code.utils.path import sanitize_cli_path, shorten_home
+from pythinker_code.utils.path import shorten_home
 from pythinker_code.wire.types import TurnBegin, TurnEnd
 
 if TYPE_CHECKING:
@@ -66,15 +66,13 @@ async def export(app: Shell, args: str):
 @shell_mode_registry.command(name="import")
 async def import_context(app: Shell, args: str):
     """Import context from a file or session ID"""
-    from pythinker_code.utils.export import perform_import
+    from pythinker_code.utils.export import parse_import_args, perform_import
 
     soul = ensure_pythinker_soul(app)
     if soul is None:
         return
 
-    tokens = args.split()
-    force = "--force" in tokens
-    target = sanitize_cli_path(" ".join(t for t in tokens if t != "--force"))
+    target, force = parse_import_args(args)
     _t = _get_tui_tokens()
     if not target:
         console.print(f"[{_t.warning}]Usage: /import <file_path or session_id>[/]")

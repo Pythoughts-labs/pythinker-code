@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import re
 import time
 import uuid
@@ -92,6 +93,16 @@ def restore_file_restore_point(session: Session, restore_id: str) -> FileRestore
     if not point.existed:
         point.path.unlink(missing_ok=True)
         return point
+    # An existed-file restore must carry its content. Missing content (None) or
+    # malformed base64 is a corrupt restore point — fail loudly instead of
+    # silently writing an empty/garbage file. An empty string is a legitimately
+    # empty file and decodes to b"".
+    if point.content_b64 is None:
+        raise FileNotFoundError(f"Corrupt restore point: {restore_id}")
+    try:
+        content = base64.b64decode(point.content_b64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise FileNotFoundError(f"Corrupt restore point: {restore_id}") from exc
     point.path.parent.mkdir(parents=True, exist_ok=True)
-    point.path.write_bytes(base64.b64decode(point.content_b64 or ""))
+    point.path.write_bytes(content)
     return point

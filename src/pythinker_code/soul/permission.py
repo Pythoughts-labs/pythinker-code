@@ -212,7 +212,34 @@ _GIT_MUTATIONS = {
 _GIT_NETWORK = {"clone", "fetch", "ls-remote"}
 _WRAPPER_COMMANDS = {"command", "env", "nohup", "sudo", "time"}
 # sudo options that consume a following separate word (the value is NOT the command).
-_SUDO_VALUE_OPTS = {"-u", "-g", "-U", "-C", "-p", "-r", "-t", "-T", "-h", "-R", "-D"}
+_SUDO_VALUE_OPTS = {
+    # Short value-taking options.
+    "-u",
+    "-g",
+    "-U",
+    "-C",
+    "-p",
+    "-r",
+    "-t",
+    "-T",
+    "-h",
+    "-R",
+    "-D",
+    # Long forms with a space-separated value (e.g. ``sudo --user alice rm``).
+    # The ``--opt=value`` form carries its value inline, so it is consumed as a
+    # single token and needs no entry here.
+    "--user",
+    "--group",
+    "--other-user",
+    "--close-from",
+    "--prompt",
+    "--role",
+    "--type",
+    "--command-timeout",
+    "--host",
+    "--chroot",
+    "--chdir",
+}
 # GNU time options that consume a following separate word.
 _TIME_VALUE_OPTS = {"-o", "-f", "--output", "--format"}
 
@@ -463,10 +490,11 @@ def _segment_mutation_reason(tokens: list[str]) -> str | None:
         if subcommand in _GIT_NETWORK:
             return f"network access via git {subcommand}"
     if base == "uv":
-        run_payload = _uv_run_payload(args)
+        uv_args = _uv_strip_global_opts(args)
+        run_payload = _uv_run_payload(uv_args)
         if run_payload and (r := _segment_mutation_reason(run_payload)):
             return f"uv run: {r}"
-        nonopts = [a for a in args if not a.startswith("-")]
+        nonopts = [a for a in uv_args if not a.startswith("-")]
         if nonopts:
             head = nonopts[0]
             sub = nonopts[1] if (head in _UV_SUBNAMESPACES and len(nonopts) > 1) else head
@@ -702,6 +730,28 @@ _UV_RUN_VALUE_OPTS = {
 }
 
 
+def _uv_strip_global_opts(args: list[str]) -> list[str]:
+    """Drop uv's *global* options (and the values of value-taking ones) that
+    precede the subcommand, so ``uv --directory repo run rm`` resolves to
+    ``run rm`` and the wrapped command is not hidden behind a global flag's
+    value (``uv --directory repo run rm -rf /`` must still classify as ``rm``).
+
+    Reuses ``_UV_RUN_VALUE_OPTS`` (a superset of uv's value-taking global options)
+    to decide which flags consume a following word; ``--opt=value`` carries its
+    value inline and is consumed as one token.
+    """
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        if args[i] == "--":
+            i += 1
+            break
+        if "=" not in args[i] and args[i] in _UV_RUN_VALUE_OPTS and i + 1 < len(args):
+            i += 2
+        else:
+            i += 1
+    return args[i:]
+
+
 def _uv_run_payload(args: list[str]) -> list[str] | None:
     """For ``uv run [opts] <cmd> ...``, return the wrapped command tokens, else ``None``.
 
@@ -891,7 +941,7 @@ def _segment_destructive_reason(tokens: list[str]) -> str | None:
         if payload and (r := _segment_destructive_reason(payload)):
             return f"{base}: {r}"
     if base == "uv":
-        run_payload = _uv_run_payload(args)
+        run_payload = _uv_run_payload(_uv_strip_global_opts(args))
         if run_payload and (r := _segment_destructive_reason(run_payload)):
             return f"uv run: {r}"
     return None

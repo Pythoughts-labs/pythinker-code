@@ -12,7 +12,7 @@ cli = typer.Typer(
 
 @cli.callback(invoke_without_command=True)
 def vis(
-    ctx: typer.Context,
+    _ctx: typer.Context,
     host: Annotated[
         str | None,
         typer.Option("--host", "-H", help="Bind to specific IP address"),

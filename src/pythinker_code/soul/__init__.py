@@ -238,10 +238,19 @@ async def run_soul(
             soul_task.result()  # this will raise if any exception was raised in the run task
     finally:
         for task in (soul_task, cancel_event_task, notification_task):
-            if task is not None:
-                task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await task
+            if task is None:
+                continue
+            if task.done():
+                # Already finished (e.g. soul_task raised and was surfaced above).
+                # Retrieve any exception so it isn't flagged "never retrieved", but
+                # do not re-await/re-raise — that would abort the rest of shutdown
+                # (notification flush, wire.shutdown/join) and leak UI resources.
+                if not task.cancelled():
+                    task.exception()
+                continue
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         try:
             await _deliver_notifications_to_wire_once(runtime, wire)
         except Exception:

@@ -31,6 +31,7 @@ def _run_pythinker(args: list[str], *, share_dir: Path) -> subprocess.CompletedP
         text=True,
         env=env,
         timeout=30,
+        check=False,  # the test asserts on returncode itself
     )
 
 
@@ -211,6 +212,7 @@ def _run_pythinker_main(args: list[str]) -> subprocess.CompletedProcess[str]:
         text=True,
         env=env,
         timeout=30,
+        check=False,  # the test asserts on returncode itself
     )
 
 

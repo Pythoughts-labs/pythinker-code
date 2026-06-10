@@ -1505,6 +1505,16 @@ class PythinkerSoul:
         # Normalize: merge adjacent user messages for clean API input
         effective_history = normalize_history(self._context.history)
 
+        # Capture tool results as they stream in. If the batch is interrupted
+        # mid-flight, already-completed calls must keep their real output rather
+        # than being overwritten with a synthetic "interrupted" marker; only the
+        # still-pending calls get the marker (see the CancelledError handler).
+        completed_tool_results: dict[str, ToolResult] = {}
+
+        def _on_tool_result(tool_result: ToolResult) -> None:
+            completed_tool_results[tool_result.tool_call_id] = tool_result
+            wire_send(tool_result)
+
         async def _run_step_once() -> StepResult:
             # run an LLM step (may be interrupted)
             from pythinker_code.telemetry import metrics as _m
@@ -1535,7 +1545,7 @@ class PythinkerSoul:
                                 self._agent.toolset,
                                 effective_history,
                                 on_message_part=wire_send,
-                                on_tool_result=wire_send,
+                                on_tool_result=_on_tool_result,
                             )
                     finally:
                         reset_step_permission_profile(profile_token)
@@ -1668,12 +1678,15 @@ class PythinkerSoul:
             try:
                 results = await result.tool_results()
             except asyncio.CancelledError:
-                # Interrupted mid-tool: persist the assistant message and a synthetic
-                # interruption marker for every tool_call so the next turn does not see
-                # unanswered tool_calls (which providers reject).  Shield the write from
-                # the same cancellation so it completes, then re-raise.
+                # Interrupted mid-tool: persist the assistant message plus a result
+                # for every tool_call so the next turn does not see unanswered
+                # tool_calls (which providers reject). Keep the real output of calls
+                # that already completed (streamed via on_tool_result); only the
+                # still-pending calls get a synthetic interruption marker. Shield the
+                # write from the same cancellation so it completes, then re-raise.
                 interrupted = [
-                    ToolResult(
+                    completed_tool_results.get(tc.id)
+                    or ToolResult(
                         tool_call_id=tc.id,
                         return_value=ToolRuntimeError(message="Tool call interrupted by user."),
                     )

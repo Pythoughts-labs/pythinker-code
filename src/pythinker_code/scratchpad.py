@@ -34,7 +34,14 @@ _SESSION_SCRATCH_IGNORE_SAMPLE = f"{SESSION_SCRATCH_DIR_REL_PATH}/session.md"
 
 # Patterns written to the project .gitignore when the agent starts in a git repo.
 # These directories are local-only agent state and must never be committed.
-_GITIGNORE_ENTRIES = (".pythinker/", ".pythinker-review/", ".pythinker-review-flow/")
+_GITIGNORE_ENTRIES = (
+    ".pythinker/",
+    ".pythinker-review/",
+    ".pythinker-review-flow/",
+    # The advisory lock file is kept on disk for correct flock coordination, so
+    # ignore it rather than letting it dirty the project's working tree.
+    "*.scratchpad.lock",
+)
 _GITIGNORE_SECTION_HEADER = "# pythinker — local agent state (do not commit)"
 
 StatusReason = Literal[
@@ -434,9 +441,11 @@ def _exclude_lock(path: Path) -> Generator[None]:
                 with contextlib.suppress(OSError):
                     fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
     finally:
+        # Keep the lock file on disk: unlinking it lets a concurrent writer
+        # create a fresh inode and acquire a second, independent flock, so the
+        # two writers would no longer be serialized. Releasing the flock (above)
+        # and closing the handle is enough.
         fh.close()
-        with contextlib.suppress(OSError):
-            lock_file.unlink()
 
 
 async def _append_gitignore_entries(work_dir: HostPath) -> None:

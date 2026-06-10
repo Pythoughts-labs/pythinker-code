@@ -1404,11 +1404,13 @@ class TestPerformImport:
         assert isinstance(result, str)
         assert "secret" in result.lower()
         ctx.append_message.assert_not_awaited()
+        ctx.update_token_count.assert_not_awaited()
 
         # With force=True: should succeed and mutate context exactly once.
         result2 = await perform_import(str(src), "curr-id", tmp_path, context=ctx, force=True)  # type: ignore[arg-type]
         assert isinstance(result2, tuple)
         ctx.append_message.assert_awaited_once()
+        ctx.update_token_count.assert_awaited_once()
 
     async def test_ssh_private_key_import_blocked_until_forced(self, tmp_path: Path) -> None:
         """SSH private keys (id_rsa/id_ed25519) must be gated like other secrets.
@@ -1427,8 +1429,10 @@ class TestPerformImport:
             assert isinstance(result, str), name
             assert "secret" in result.lower(), name
             ctx.append_message.assert_not_awaited()
+            ctx.update_token_count.assert_not_awaited()
 
             # With force=True: import proceeds.
             result2 = await perform_import(str(src), "curr-id", tmp_path, context=ctx, force=True)  # type: ignore[arg-type]
             assert isinstance(result2, tuple), name
             ctx.append_message.assert_awaited_once()
+            ctx.update_token_count.assert_awaited_once()

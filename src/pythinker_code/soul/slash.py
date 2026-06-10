@@ -320,11 +320,9 @@ async def export(soul: PythinkerSoul, args: str):
 @registry.command(name="import")
 async def import_context(soul: PythinkerSoul, args: str):
     """Import context from a file or session ID"""
-    from pythinker_code.utils.export import perform_import
+    from pythinker_code.utils.export import parse_import_args, perform_import
 
-    tokens = args.split()
-    force = "--force" in tokens
-    target = sanitize_cli_path(" ".join(t for t in tokens if t != "--force"))
+    target, force = parse_import_args(args)
     if not target:
         wire_send(TextPart(text="Usage: /import <file_path or session_id>"))
         return

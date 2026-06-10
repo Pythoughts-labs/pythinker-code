@@ -242,6 +242,10 @@ def test_shell_destructive_commands_classified() -> None:
         "rm -r -f node_modules",  # separate flags
         "rm --recursive --force dir",  # long flags
         "sudo rm -rf /var/x",  # wrapper-unwrapped
+        "sudo --user alice rm -rf /var/x",  # long value-opt must not hide the payload
+        "sudo --user=alice rm -rf /var/x",  # inline-value long opt
+        "uv --directory repo run rm -rf /var/x",  # uv global opt before `run`
+        "uv --project repo run rm -rf /var/x",
         "git push --force origin main",
         "git push -f",
         "git push --force-with-lease origin main",

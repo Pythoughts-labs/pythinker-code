@@ -29,7 +29,7 @@ def _ip_is_blocked(address: str) -> bool:
     try:
         ip = ipaddress.ip_address(address)
     except ValueError:
-        return False
+        return True  # fail closed: block addresses we cannot parse/classify
     return (not ip.is_global) or ip.is_multicast  # W2 fail-closed shape
 
 

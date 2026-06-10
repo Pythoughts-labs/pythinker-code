@@ -39,6 +39,23 @@ _HINT_KEYS = ("path", "file_path", "command", "query", "url", "name", "pattern")
 """Common tool-call argument keys whose values make good one-line hints."""
 
 
+def parse_import_args(args: str) -> tuple[str, bool]:
+    """Parse ``/import`` arguments into ``(sanitized_path, force)``.
+
+    Uses shell-style tokenization so quoted/escaped paths with spaces survive
+    instead of being collapsed by ``str.split``. ``--force`` anywhere in the
+    tokens sets the flag and is dropped from the path before sanitization.
+    """
+    try:
+        tokens = shlex.split(args)
+    except ValueError:
+        # Unbalanced quotes: fall back to a plain split rather than raising.
+        tokens = args.split()
+    force = "--force" in tokens
+    path = sanitize_cli_path(" ".join(t for t in tokens if t != "--force"))
+    return path, force
+
+
 def _is_checkpoint_message(msg: Message) -> bool:
     """Check if a message is an internal checkpoint marker."""
     if msg.role != "user" or len(msg.content) != 1:
