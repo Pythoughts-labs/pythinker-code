@@ -25,7 +25,8 @@ if TYPE_CHECKING:
     from markdown_it import MarkdownIt
 
 from rich import box
-from rich.console import Console, ConsoleOptions, RenderResult
+from rich.console import Console, ConsoleOptions, Group, RenderResult
+from rich.padding import Padding
 from rich.panel import Panel
 from rich.style import Style as RichStyle
 from rich.syntax import Syntax
@@ -38,7 +39,7 @@ from pythinker_code.ui.shell.glyphs import TRANSCRIPT_ASSISTANT_MARKER
 from pythinker_code.ui.shell.render_constants import MAX_HIGHLIGHT_BYTES, MAX_HIGHLIGHT_LINES
 from pythinker_code.ui.shell.spacing import CODE_BLOCK_PADDING, blank_row
 from pythinker_code.ui.theme import ThemeName, get_markdown_colors
-from pythinker_code.utils.rich.markdown import CodeBlock, Markdown
+from pythinker_code.utils.rich.markdown import CodeBlock, Markdown, TableElement
 
 _MARKDOWN_ICON_REPLACEMENTS: dict[str, str] = {
     # Model text mimicking the CLI transcript keeps the row-marker look; on
@@ -319,6 +320,86 @@ def _unwrap_fenced_markdown_tables(markup: str) -> str:
             out.append("\n")
         i = close_index + 1
     return "".join(out)
+
+
+class _ReportTableElement(TableElement):
+    """Markdown tables that stay readable in long reports.
+
+    Compact, low-column tables keep the normal bordered grid. Wide report
+    tables become stacked records so long paths and prose wrap in one generous
+    value column instead of being sliced across many narrow grid cells.
+    """
+
+    def _header_cells(self) -> list[Text]:
+        if self.header is None or self.header.row is None:
+            return []
+        return [cell.content for cell in self.header.row.cells]
+
+    def _body_rows(self) -> list[list[Text]]:
+        if self.body is None:
+            return []
+        return [[cell.content for cell in row.cells] for row in self.body.rows]
+
+    def _should_stack(self, options: ConsoleOptions) -> bool:
+        headers = self._header_cells()
+        rows = self._body_rows()
+        column_count = len(headers)
+        if column_count <= 2 or not rows:
+            return False
+
+        column_widths = [len(header.plain.strip()) for header in headers]
+        for row in rows:
+            for index, cell in enumerate(row[:column_count]):
+                column_widths[index] = max(column_widths[index], len(cell.plain.strip()))
+        longest_cell = max(column_widths, default=0)
+        estimated_grid_width = sum(min(width, 24) for width in column_widths) + column_count * 3 + 1
+        available_width = options.max_width or 80
+
+        if column_count >= 4:
+            return longest_cell >= 24 or estimated_grid_width > available_width
+        return longest_cell >= 36
+
+    def _render_stacked(self) -> RenderResult:
+        headers = self._header_cells()
+        rows = self._body_rows()
+        detail_headers = headers[1:]
+        label_width = min(
+            max((len(header.plain.strip()) for header in detail_headers), default=0),
+            22,
+        )
+
+        for index, row in enumerate(rows):
+            if index:
+                yield blank_row()
+
+            title = Text("• ", style="markdown.item.bullet")
+            if row:
+                title_value = row[0].copy()
+                title.append_text(title_value)
+                title.stylize("markdown.strong", 2, len(title))
+            detail_grid = Table.grid(expand=True, padding=(0, 2))
+            detail_grid.add_column(width=max(1, label_width), no_wrap=True)
+            detail_grid.add_column(ratio=1, overflow="fold")
+
+            has_details = False
+            for header, cell in zip(detail_headers, row[1:], strict=False):
+                label = header.plain.strip()
+                value = cell.copy()
+                if not value.plain.strip():
+                    value = Text("—", style="markdown.block_quote")
+                detail_grid.add_row(Text(label, style="markdown.strong"), value)
+                has_details = True
+
+            if has_details:
+                yield Group(title, Padding(detail_grid, (0, 0, 0, 2)))
+            else:
+                yield title
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        if self._should_stack(options):
+            yield from self._render_stacked()
+            return
+        yield from super().__rich_console__(console, options)
 
 
 class _BorderedCodeBlock(CodeBlock):
@@ -686,7 +767,12 @@ class PythinkerMarkdown(Markdown):
     icons are then normalized to compact monochrome glyphs for calmer reports.
     """
 
-    elements = {**Markdown.elements, "fence": _BorderedCodeBlock, "code_block": _BorderedCodeBlock}
+    elements = {
+        **Markdown.elements,
+        "fence": _BorderedCodeBlock,
+        "code_block": _BorderedCodeBlock,
+        "table_open": _ReportTableElement,
+    }
 
     def __init__(self, markup: str, *args: Any, **kwargs: Any) -> None:
         safe_markup = sanitize_ansi(markup)

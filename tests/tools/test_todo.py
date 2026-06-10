@@ -34,6 +34,11 @@ class TestParamsJsonStringCoercion:
         assert params.todos is not None
         assert params.todos[0].title == "Normal task"
 
+    def test_completed_status_alias_normalizes_to_done(self):
+        params = Params(todos=[{"title": "Write report", "status": "completed"}])  # type: ignore[list-item]
+        assert params.todos is not None
+        assert params.todos[0].status == "done"
+
     def test_todos_none_still_works(self):
         params = Params(todos=None)
         assert params.todos is None
@@ -80,6 +85,21 @@ class TestSetTodoListOutputNotEmpty:
         assert "— todo update" in scratch_text
         assert "items: 3; done: 1; in_progress: 1; pending: 1" in scratch_text
         assert "active: Write tests" in scratch_text
+
+    async def test_write_mode_persists_completed_alias_as_done(
+        self, set_todo_list_tool: SetTodoList, runtime: Runtime
+    ):
+        from pythinker_code.session_state import load_session_state
+        from pythinker_code.tools.display import TodoDisplayBlock
+
+        params = Params(todos=[{"title": "Write report", "status": "completed"}])  # type: ignore[list-item]
+        result = await set_todo_list_tool(params)
+
+        assert not result.is_error
+        assert isinstance(result.display[0], TodoDisplayBlock)
+        assert result.display[0].items[0].status == "done"
+        state = load_session_state(runtime.session.dir)
+        assert state.todos[0].status == "done"
 
     async def test_read_mode_returns_current_todos(self, set_todo_list_tool: SetTodoList):
         """When no todos are provided (None), the tool should return the current
