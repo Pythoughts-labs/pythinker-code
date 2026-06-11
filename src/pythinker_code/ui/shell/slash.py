@@ -1653,7 +1653,7 @@ def reports(app: Shell, args: str) -> NoReturn:
     """Open Pythinker session reports (Agent Tracing Visualizer) in browser"""
     from pythinker_code.telemetry import track
 
-    track("vis_opened")
+    track("reports_opened")
     soul = ensure_pythinker_soul(app)
     session_id = soul.runtime.session.id if soul else None
     raise SwitchToVis(session_id=session_id)

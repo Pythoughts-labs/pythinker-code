@@ -274,9 +274,7 @@ def _normalize_call_key(tool_name: str, arguments: str) -> ToolCallKey:
     return (tool_name, _canonical_tool_arguments_text(arguments))
 
 
-def _append_reminder_to_return_value(
-    return_value: Any, reminder_text: str = _REMINDER_TEXT_1
-) -> Any:
+def _append_reminder_to_return_value(return_value: Any, reminder_text: str) -> Any:
     """Append dedup reminder text to a ToolReturnValue output."""
     if not isinstance(return_value, ToolReturnValue):
         return return_value
@@ -726,23 +724,17 @@ class PythinkerToolset:
                     ),
                 )
 
+                # Append the dedup reminder inline (no-op on errors) so the
+                # returned task is the tool task itself: cancelling it cancels
+                # the tool, rather than orphaning it behind a wrapper task.
+                if reminder_text is not None:
+                    return ToolResult(
+                        tool_call_id=tool_call.id,
+                        return_value=_append_reminder_to_return_value(ret, reminder_text),
+                    )
                 return ToolResult(tool_call_id=tool_call.id, return_value=ret)
 
             task = asyncio.create_task(_call())
-            if reminder_text is not None:
-
-                async def _wrap_with_reminder(
-                    inner_task: asyncio.Task[ToolResult],
-                    text: str,
-                ) -> ToolResult:
-                    tr = await inner_task
-                    return ToolResult(
-                        tool_call_id=tr.tool_call_id,
-                        return_value=_append_reminder_to_return_value(tr.return_value, text),
-                    )
-
-                task = asyncio.create_task(_wrap_with_reminder(task, reminder_text))
-
             self._current_step_tasks[call_key] = task
             return task
         finally:

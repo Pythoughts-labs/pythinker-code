@@ -218,7 +218,7 @@ def _infer_capabilities(model_id: str) -> frozenset[ModelCapability] | None:
     if _VISION_RE.search(mid) or _QWEN_PLUS_RE.search(mid) or "kimi" in mid:
         caps.add("image_in")
     if _REASONING_RE.search(mid):
-        # DeepSeek/Moonshot expose a thinking dial; Qwen/GLM/MiniMax reason natively.
+        # DeepSeek/Kimi expose a thinking dial; Qwen/GLM/MiniMax reason natively.
         caps.add("thinking" if ("deepseek" in mid or "kimi" in mid) else "always_thinking")
     return frozenset(caps) or None
 
