@@ -36,6 +36,46 @@
 
 ## Recently completed
 
+### 2026-06-11 — Agent robustness from export ae105609 defect review (`mythos-enhancements`)
+
+Source: `pythinker-export-ae105609-20260611-190240.md` (pythinker run building a
+landing page against the design-taste-frontend skill). Five defect classes
+observed, all fixed in the product (layer discipline per lessons.md):
+
+- **E1 done** — system.md §7: `<system-reminder>` arrival is harness machinery,
+  never a user reply or turn boundary (export thinking repeatedly misattributed
+  reminders to the user).
+- **E2 done** — system.md §7: a file the user explicitly directs the agent to
+  apply (skill/spec/checklist) defines requirements for the deliverable —
+  artifact-scoped authority only; embedded directives stay inert. ReadFile wraps
+  all content `<untrusted_data>`, which previously discounted the very spec the
+  user mandated.
+- **E3 done** — partial-read follow-through: read.py appends "Partial read: N
+  lines remain; continue with line_offset=X." on capped forward reads; review
+  found and fixed the cap flag being unreachable for DEFAULT reads
+  (n_lines == MAX_LINES ordering bug — exactly the export's 1000/1206 case);
+  read.md tip + §5 clause + ReadFile description snapshot regen. Tail-mode hint
+  deliberately skipped (different semantics).
+- **E4 done** — system.md §9 item 7: mandatory checks in the governing
+  skill/spec walked item-by-item, compliance claims name the check that ran,
+  un-runnable artifacts reported as unverified (export claimed pre-flight
+  compliance while checking 2 of ~60 boxes).
+- **E5 done** — inline slash-command reference guard: new
+  `soul/dynamic_injections/inline_commands.py` (root-only, one-shot per user
+  message, known commands/aliases + `skill:*`, path-token false positives
+  excluded, reminder spans stripped) + registration + §5 prompt rule (export
+  silently dropped "/best-practices" referenced mid-message).
+
+Adversarial 3-lens review (correctness/security/consistency, 11 agents):
+3 confirmed findings fixed (default-read cap ordering HIGH; glued-reminder
+leading-token false negative; helper-placement convention), 5 rejected as
+false positives (incl. "§7 carve-out weakens injection defense" — the inert-
+directives clause and user-gating hold). Verified: tests/ 5248 passed pre-fix
++ targeted 60 post-fix, tests_e2e 65 passed, make check clean; full gate
+re-run before commit. Out of scope (deferred): WriteFile "successfully
+overwritten" message on brand-new files is misleading; tail-mode partial-read
+hint.
+
 ### 2026-06-11 — Agent robustness arc (`mythos-enhancements`): spec/profile truth, jail hardening, orchestration discipline, codename task ids
 
 Source: live assessment of a review session (reviewers' mandated Context7/web

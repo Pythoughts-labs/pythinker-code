@@ -77,6 +77,7 @@ from pythinker_code.soul.dynamic_injection import (
 )
 from pythinker_code.soul.dynamic_injections.auto_mode import AutoModeInjectionProvider
 from pythinker_code.soul.dynamic_injections.goal_mode import GoalModeInjectionProvider
+from pythinker_code.soul.dynamic_injections.inline_commands import InlineCommandReminderProvider
 from pythinker_code.soul.dynamic_injections.model_defense import ModelDefenseInjectionProvider
 from pythinker_code.soul.dynamic_injections.plan_mode import PlanModeInjectionProvider
 from pythinker_code.soul.flow_runner import FLOW_COMMAND_PREFIX, FlowRunner
@@ -443,6 +444,9 @@ class PythinkerSoul:
             # Self-filtering: emits a fragment only when the active model matches a
             # known-quirk family, so it is safe to register unconditionally.
             ModelDefenseInjectionProvider(),
+            # Self-filtering: root-only; flags inline /command references in the
+            # latest user message that the shell could not have executed.
+            InlineCommandReminderProvider(),
             *(
                 []
                 if self._runtime.config.skip_auto_prompt_injection

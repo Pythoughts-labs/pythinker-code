@@ -306,6 +306,7 @@ Read text content from a file.
 - Use negative `line_offset` to read from the end of the file (e.g. `line_offset=-100` reads the last 100 lines). This is useful for viewing the tail of log files. The absolute value cannot exceed 1000.
 - The tool always returns the total number of lines in the file in its message, which you can use to plan subsequent reads.
 - The maximum number of lines that can be read at once is 1000.
+- A result reporting fewer lines than the file total is a partial read — continue with `line_offset` until you have covered what the task depends on, especially for spec, skill, or checklist files you are implementing against.
 - Any lines longer than 2000 characters will be truncated, ending with "...".
 """
     )

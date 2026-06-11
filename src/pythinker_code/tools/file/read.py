@@ -212,10 +212,12 @@ class ReadFile(CallableTool2[Params]):
                 truncated_line_numbers.append(current_line_no)
             lines.append(truncated)
             n_bytes += len(truncated.encode("utf-8"))
-            if len(lines) >= params.n_lines:
-                collecting = False
-            elif len(lines) >= MAX_LINES:
+            # Check the hard cap before the requested count: n_lines defaults to
+            # MAX_LINES, and a capped read must say so for the continuation hint.
+            if len(lines) >= MAX_LINES:
                 max_lines_reached = True
+                collecting = False
+            elif len(lines) >= params.n_lines:
                 collecting = False
             elif n_bytes >= MAX_BYTES:
                 max_bytes_reached = True
@@ -241,6 +243,13 @@ class ReadFile(CallableTool2[Params]):
             message += f" Max {MAX_BYTES} bytes reached."
         elif len(lines) < params.n_lines:
             message += " End of file reached."
+        if max_lines_reached or max_bytes_reached:
+            next_line = start_line + len(lines)
+            if next_line <= total_lines:
+                message += (
+                    f" Partial read: {total_lines - next_line + 1} lines remain;"
+                    f" continue with line_offset={next_line}."
+                )
         if truncated_line_numbers:
             message += f" Lines {truncated_line_numbers} were truncated."
         return ToolOk(
