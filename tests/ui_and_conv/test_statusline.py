@@ -27,7 +27,10 @@ def test_config_has_statusline_section_with_defaults():
     sl = cfg.tui.statusline
     assert isinstance(sl, StatusLineConfig)
     assert sl.enabled is True
-    assert sl.segments == list(DEFAULT_STATUSLINE_SEGMENTS)
+    assert sl.segments == [
+        "spinner", "model", "cost", "speed", "effort", "cwd", "git",
+        "diff", "flags", "context", "elapsed", "clock",
+    ]
     assert sl.command is None
     assert sl.command_timeout_ms == 1000
 
@@ -62,9 +65,13 @@ def test_statusline_round_trips_through_dump():
 
 
 def test_resolve_segments_default_layout():
+    # The legacy resolver only recognizes the slice-1 zone sets; the new v2
+    # default list adds segments it filters out (spinner/cost/speed/etc.), so
+    # only cwd/git/flags land on line 1 and model/context on line 2 here.
+    # Task 9's renderer swap replaces this path with the registry assembler.
     layout = resolve_segments(StatusLineConfig())
     assert layout.line1 == ["cwd", "git", "flags"]
-    assert layout.line2_right == ["context", "tokens", "model"]
+    assert layout.line2_right == ["model", "context"]
     assert layout.show_command is False
 
 
