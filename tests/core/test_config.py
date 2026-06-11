@@ -437,8 +437,10 @@ def test_scope_lock_clean_dict():
     _check_scope_locks({"theme": "light", "default_model": "gpt-4"}, ".pythinker/config.toml")
 
 
-def test_scope_lock_error_mentions_env_var():
-    with pytest.raises(ConfigError, match="PYTHINKER_"):
+def test_scope_lock_error_points_to_user_config():
+    # No locked path has an env override, so the error must point at the user
+    # config file — not at a "corresponding PYTHINKER_*" var that doesn't exist.
+    with pytest.raises(ConfigError, match=r"Move it to ~/\.pythinker/config\.toml\."):
         _check_scope_locks({"providers": {}}, ".pythinker/config.toml")
 
 

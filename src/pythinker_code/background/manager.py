@@ -807,6 +807,11 @@ class BackgroundTaskManager:
             if not is_terminal_status(view.runtime.status):
                 continue
 
+            # A terminal task can never be polled-while-running again, so its
+            # escalation counter is dead weight; drop it here (not only in
+            # TaskOutput) so tasks that finish unpolled don't leak entries.
+            self._nonblocking_polls.pop(view.spec.id, None)
+
             status = view.runtime.status
             terminal_reason = "timed_out" if view.runtime.timed_out else status
             match terminal_reason:

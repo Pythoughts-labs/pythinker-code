@@ -157,7 +157,10 @@ def aggregate_findings(named_outputs: Iterable[tuple[str, str]]) -> list[str]:
     for name, output in named_outputs:
         for section in _FINDING_SECTIONS:
             for finding in _extract_section(output, section):
-                findings[section].setdefault(finding, []).append(name)
+                reporters = findings[section].setdefault(finding, [])
+                # A child repeating the same bullet must still be attributed once.
+                if name not in reporters:
+                    reporters.append(name)
     lines: list[str] = []
     for section in _FINDING_SECTIONS:
         if not findings[section]:

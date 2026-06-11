@@ -78,4 +78,6 @@ agent:
   exclude_tools:
     - "pythinker_code.tools.file:WriteFile"
     - "pythinker_code.tools.file:StrReplaceFile"
+  # Intentionally empty: overrides the subagent roster inherited from
+  # agent.yaml so this agent stays a leaf and cannot spawn children.
   subagents:

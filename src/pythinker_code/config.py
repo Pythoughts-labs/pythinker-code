@@ -138,10 +138,11 @@ def _check_scope_locks(scope_dict: dict[str, Any], scope_name: str) -> None:
                 scope_label = "project scope"
             else:
                 scope_label = scope_name
+            # No SCOPE_LOCKED_PATHS entry has an ENV_FIELD_MAP override, so the
+            # user config file is the only valid destination to point at.
             raise ConfigError(
                 f"'{field_path}' cannot be set in {scope_name} ({scope_label}).\n"
-                f"  Move it to ~/.pythinker/config.toml or set the corresponding "
-                f"PYTHINKER_* environment variable."
+                f"  Move it to ~/.pythinker/config.toml."
             )
 
 

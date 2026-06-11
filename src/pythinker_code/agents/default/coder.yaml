@@ -112,4 +112,6 @@ agent:
     - "pythinker_code.tools.ask_user:AskUserQuestion"
     - "pythinker_code.tools.plan:ExitPlanMode"
     - "pythinker_code.tools.plan.enter:EnterPlanMode"
+  # Intentionally empty: overrides the subagent roster inherited from
+  # agent.yaml so this agent stays a leaf and cannot spawn children.
   subagents:

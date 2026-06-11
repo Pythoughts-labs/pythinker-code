@@ -329,6 +329,14 @@ class _PromptLiveView(_LiveView):
                 task.cancel()
                 with suppress(asyncio.CancelledError, QueueShutDown):
                     await task
+            # Mid-turn slash-command tasks must not outlive the live view that
+            # displays their transient output. The runner already contains
+            # command exceptions; gather() retrieves the CancelledError.
+            if self._shell_command_tasks:
+                command_tasks = [*self._shell_command_tasks]
+                for task in command_tasks:
+                    task.cancel()
+                await asyncio.gather(*command_tasks, return_exceptions=True)
             self._status_refresh_task = None
             self._pending_local_steer_count = 0
             # Do NOT dismiss btw here — the shell will call

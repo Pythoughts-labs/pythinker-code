@@ -176,6 +176,19 @@ def test_aggregate_findings_empty_batch() -> None:
     assert aggregate_findings([]) == []
 
 
+def test_aggregate_findings_attributes_repeating_child_once() -> None:
+    # A child listing the same bullet twice must be attributed once, not
+    # rendered as "[child-a, child-a]".
+    output = """### RISKS
+- Parser assumes UTF-8 input.
+- Parser assumes UTF-8 input.
+"""
+    lines = aggregate_findings([("child-a", output)])
+    text = "\n".join(lines)
+    assert "Parser assumes UTF-8 input. [child-a]" in text
+    assert "child-a, child-a" not in text
+
+
 def test_aggregate_findings_survives_unclosed_code_fence() -> None:
     # A child that opens a code fence and never closes it must not swallow
     # the sections that follow the malformed block.

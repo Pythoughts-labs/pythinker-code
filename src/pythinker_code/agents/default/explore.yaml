@@ -77,4 +77,6 @@ agent:
     - "pythinker_code.tools.plan.enter:EnterPlanMode"
     - "pythinker_code.tools.file:WriteFile"
     - "pythinker_code.tools.file:StrReplaceFile"
+  # Intentionally empty: overrides the subagent roster inherited from
+  # agent.yaml so this agent stays a leaf and cannot spawn children.
   subagents:

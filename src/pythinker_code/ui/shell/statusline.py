@@ -544,7 +544,7 @@ class StatusLineCommandRunner:
     cancelled cleanly when the prompt session shuts down.
     """
 
-    def __init__(self, command: str, timeout_ms: int, interval_s: float | None = None):
+    def __init__(self, command: str, timeout_ms: int, interval_s: float | None = None) -> None:
         self._argv = self._parse_argv(command)
         self._timeout_s = max(timeout_ms, 1) / 1000
         if interval_s is None:

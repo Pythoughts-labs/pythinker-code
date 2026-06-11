@@ -1362,6 +1362,7 @@ async def settings(app: Shell, args: str):
 
 
 @registry.command(available_during_task=True)
+@shell_mode_registry.command
 async def statusline(app: Shell, args: str) -> None:
     """Customize the status line (footer): segments, on/off, external command"""
     from rich.table import Table
@@ -1620,11 +1621,14 @@ async def statusline(app: Shell, args: str) -> None:
 
             persist(_clear_budget, "Cost budget cleared.")
             return
+        import math
+
         try:
             budget = float(raw_budget.lstrip("$"))
         except ValueError:
             budget = -1.0
-        if budget < 0:
+        # float() accepts "nan"/"inf", and nan < 0 is False — guard explicitly.
+        if not math.isfinite(budget) or budget < 0:
             console.print(
                 f"[{_t.warning}]budget must be a non-negative dollar amount or 'none'.[/]"
             )

@@ -268,8 +268,9 @@ def test_rate_sampler_window_and_rate():
     assert s.update(0.5, 100) is None  # 2 samples
     rate = s.update(1.0, 200)  # 3 samples: 200 tokens over 1.0s
     assert rate == 200
-    # stale samples evicted beyond the window
-    assert s.update(3.0, 260) is not None or s.update(3.0, 260) is None  # smoke: no crash
+    # stale samples evicted beyond the window: only the new sample survives,
+    # which is below min_samples, so no rate is reported
+    assert s.update(3.0, 260) is None
 
 
 def test_rate_sampler_needs_min_samples():

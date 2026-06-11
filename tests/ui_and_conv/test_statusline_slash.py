@@ -343,6 +343,23 @@ async def test_statusline_budget_set_and_clear(
 
 
 @pytest.mark.asyncio
+async def test_statusline_budget_rejects_non_finite(
+    runtime: Runtime, tmp_path: Path, monkeypatch
+) -> None:
+    # float() parses "nan"/"inf", and nan < 0 is False — both must be rejected
+    # instead of persisted as a dollar amount.
+    runtime.config.source_file = (tmp_path / "config.toml").resolve()
+    app = _make_shell_app(runtime, tmp_path)
+    config_for_save = get_default_config()
+    monkeypatch.setattr(shell_slash, "load_config", Mock(return_value=config_for_save))
+    monkeypatch.setattr(shell_slash, "save_config", Mock())
+    monkeypatch.setattr(shell_slash.console, "print", Mock())
+    for raw in ("nan", "inf", "-inf", "-5"):
+        await _run_statusline(app, f"budget {raw}")  # no Reload raised
+        assert config_for_save.tui.statusline.cost_budget is None
+
+
+@pytest.mark.asyncio
 async def test_statusline_segments_bare_lists_all_ids(
     runtime: Runtime, tmp_path: Path, monkeypatch
 ) -> None:
