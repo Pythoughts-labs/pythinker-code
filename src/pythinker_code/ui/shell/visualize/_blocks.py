@@ -211,6 +211,70 @@ def _advance_by_display_cells(text: str, start: int, cell_budget: int) -> int:
     return len(text)
 
 
+def _markdown_fence_marker(line: str) -> tuple[str, int] | None:
+    stripped = line.lstrip(" ")
+    if len(line) - len(stripped) > 3 or not stripped.startswith(("```", "~~~")):
+        return None
+    marker = stripped[0]
+    marker_length = len(stripped) - len(stripped.lstrip(marker))
+    if marker_length < 3:
+        return None
+    return marker, marker_length
+
+
+def _markdown_fence_is_open(text: str) -> bool:
+    active_marker: str | None = None
+    active_length = 0
+    for line in text.splitlines():
+        marker = _markdown_fence_marker(line)
+        if marker is None:
+            continue
+        fence_marker, fence_length = marker
+        if active_marker is None:
+            active_marker = fence_marker
+            active_length = fence_length
+        elif fence_marker == active_marker and fence_length >= active_length:
+            active_marker = None
+            active_length = 0
+    return active_marker is not None
+
+
+def _backtick_run_length(text: str, start: int) -> int:
+    end = start
+    while end < len(text) and text[end] == "`":
+        end += 1
+    return end - start
+
+
+def _inline_markdown_is_closed(text: str) -> bool:
+    inline_code_ticks = 0
+    strong_markers = 0
+    i = 0
+    while i < len(text):
+        char = text[i]
+        if char == "\\":
+            i += 2
+            continue
+        if char == "`":
+            tick_count = _backtick_run_length(text, i)
+            if inline_code_ticks == 0:
+                inline_code_ticks = tick_count
+            elif inline_code_ticks == tick_count:
+                inline_code_ticks = 0
+            i += tick_count
+            continue
+        if inline_code_ticks == 0 and text.startswith(("**", "__"), i):
+            strong_markers += 1
+            i += 2
+            continue
+        i += 1
+    return inline_code_ticks == 0 and strong_markers % 2 == 0
+
+
+def _paced_preview_markdown_is_stable(text: str) -> bool:
+    return not _markdown_fence_is_open(text) and _inline_markdown_is_closed(text)
+
+
 class _ContentBlock:
     """Streaming content block with incremental markdown commitment.
 
@@ -458,11 +522,10 @@ class _ContentBlock:
         if not pending:
             return spinner
         preview = self._build_preview(pending, max_lines=_COMPOSING_PREVIEW_LINES)
-        if self._paced:
-            # At the fast reveal cadence, re-parsing markdown every frame makes
-            # partial syntax (``**bol`` → ``**bold``, half-open ``` fences)
-            # flicker char-by-char. Render the uncommitted tail as plain text;
-            # completed blocks still commit to full markdown via render_agent_body.
+        if self._paced and not _paced_preview_markdown_is_stable(preview):
+            # At the fast reveal cadence, half-open inline spans or fences would
+            # render as raw delimiters and then restyle a frame later. Keep only
+            # those unstable previews plain; stable previews still use Markdown.
             body: RenderableType = Text(sanitize_ansi(preview))
         else:
             body = Markdown(preview)

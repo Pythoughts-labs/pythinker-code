@@ -78,7 +78,7 @@ def test_system_prompt_explains_adding_mcp_servers(builtin_args: BuiltinSystemPr
     # The honest caveat survives: a new server loads on restart, not mid-session.
     assert "restart" in prompt.lower()
     # Explicitly steers off the Claude-host hallucination seen in the wild.
-    assert "not Claude Code or Claude Desktop" in prompt
+    assert "Never reference `~/.claude.json`" in prompt
 
 
 def test_system_prompt_explains_removing_and_rejects_yaml_mcp_config(
@@ -119,7 +119,7 @@ def test_system_prompt_treats_injected_date_as_authoritative(
 
     assert builtin_args.PYTHINKER_NOW in prompt
     assert "authoritative present" in prompt
-    assert "do not fall back on an earlier year" in prompt
+    assert "never fall back to a year assumed from training" in prompt
 
 
 def test_system_prompt_enforces_context_first_orchestration(
@@ -134,9 +134,9 @@ def test_system_prompt_enforces_context_first_orchestration(
         builtin_args,
     )
 
-    assert "# Context-First Orchestration Protocol" in prompt
-    assert "No context, no judgment" in prompt
-    assert "Minimum context packet before codebase judgment" in prompt
+    assert "## 3. Operating Loop" in prompt
+    assert "Gather — no context, no judgment" in prompt
+    assert "Minimum context packet before any codebase judgment" in prompt
     assert "Plan from evidence" in prompt
     assert "Treat subagent claims as leads, not proof" in prompt
 
@@ -154,8 +154,8 @@ def test_system_prompt_includes_markdown_table_formatting_guidance(
         builtin_args,
     )
 
-    assert "# Output Formatting" in prompt
-    assert "glue a table onto adjacent prose" in prompt
+    assert "**Terminal Markdown.**" in prompt
+    assert "never glued to prose" in prompt
     # Reports must not be wrapped in code fences (that is what preserves raw
     # emoji and breaks column alignment), and status icons should be sparing.
     assert "Code fences are for code only" in prompt
@@ -218,9 +218,9 @@ def test_system_prompt_platform_warning(temp_work_dir, os_kind, shell, expect_wi
     assert os_kind in prompt
     assert shell in prompt
     if expect_windows_warning:
-        assert "Many common Unix commands are not available" in prompt
+        assert "Many common Unix commands are unavailable" in prompt
     else:
-        assert "Many common Unix commands are not available" not in prompt
+        assert "Many common Unix commands are unavailable" not in prompt
 
 
 def test_load_system_prompt_allows_literal_dollar(builtin_args: BuiltinSystemPromptArgs):

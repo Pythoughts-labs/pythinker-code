@@ -73,9 +73,9 @@ agent:
     - "pythinker_code.tools.file:Grep"
     - "pythinker_code.tools.file:SmartSearch"
     - "pythinker_code.tools.skill:ReadSkill"
-    # MCP tools (Context7 + Tavily). The tool names after the server prefix are
-    # canonical; adjust the identifier format to whatever your registry exposes —
-    # confirm with `pythinker mcp list` / `pythinker mcp test <name>`.
+    # MCP tools (Context7 + Tavily), keyed `mcp__<server>__<tool>`; each attaches
+    # only when the parent session has that MCP server connected — confirm with
+    # `pythinker mcp list` / `pythinker mcp test <name>`.
     - "mcp__context7__resolve-library-id"
     - "mcp__context7__query-docs"
     - "mcp__tavily__tavily_search"

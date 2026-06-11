@@ -242,13 +242,22 @@ ${PYTHINKER_ADDITIONAL_DIRS_INFO}
 
 ## 11. Project Instructions (AGENTS.md)
 
-`AGENTS.md` files carry the agent-facing context a README omits — build steps, test commands, conventions, structure, and user preferences — kept separate so agents have a predictable place for instructions while READMEs stay human-focused. The block below is authoritative and already merged: every `AGENTS.md` from the project root down to the working directory, deeper (more specific) files overriding shallower ones, each governing its own directory and everything beneath it.
+`AGENTS.md` files carry the agent-facing context a README omits — build steps, test commands, conventions, structure, and user preferences — kept separate so agents have a predictable place for instructions while READMEs stay human-focused.
+{% if PYTHINKER_AGENTS_MD %}
 
-`````````
+The block below is authoritative and already merged: every `AGENTS.md` from the project root down to the working directory, deeper (more specific) files overriding shallower ones, each governing its own directory and everything beneath it.
+
+${PYTHINKER_AGENTS_MD_FENCE}
 ${PYTHINKER_AGENTS_MD}
-`````````
+${PYTHINKER_AGENTS_MD_FENCE}
 
-Precedence, highest first (per Section 2): direct user instructions in this conversation, then `<system-reminder>` directives, then deeper `AGENTS.md`, then shallower. Treat the merged block as complete for the root-to-working-directory range; look for additional `AGENTS.md` only in directories **below** the working directory and apply them by the same precedence when editing there. `README`/`README.md` files are optional supplementary context, not instructions. If a change you make invalidates anything an `AGENTS.md` documents (build/test commands, conventions, structure, workflows), update that `AGENTS.md` in the same change so it stays trustworthy.
+Treat the merged block as complete for the root-to-working-directory range; look for additional `AGENTS.md` only in directories **below** the working directory and apply them by the same precedence when editing there.
+{% else %}
+
+No `AGENTS.md` files were found between the project root and the working directory; look for them only in directories **below** the working directory and apply them when editing there.
+{% endif %}
+
+Precedence, highest first (per Section 2): direct user instructions in this conversation, then `<system-reminder>` directives, then deeper `AGENTS.md`, then shallower. `README`/`README.md` files are optional supplementary context, not instructions. If a change you make invalidates anything an `AGENTS.md` documents (build/test commands, conventions, structure, workflows), update that `AGENTS.md` in the same change so it stays trustworthy.
 
 ## 12. Skills
 

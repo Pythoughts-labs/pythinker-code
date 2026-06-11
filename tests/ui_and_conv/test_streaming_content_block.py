@@ -302,6 +302,35 @@ def test_composing_preview_has_standard_gap_after_activity_line(monkeypatch):
     assert "\n\n⏺ live preview without newline" in output
 
 
+def test_paced_composing_preview_renders_complete_inline_markdown(monkeypatch):
+    from pythinker_code.ui.shell.visualize import _blocks as blocks_module
+
+    block = _ContentBlock(is_think=False, paced=True)
+    block.append("**Planning agent tasks**")
+    block.reveal_all()
+    monkeypatch.setattr(blocks_module.time, "monotonic", lambda: 0.0)
+    console = Console(record=True, width=120, color_system=None)
+    console.print(block.compose())
+    output = console.export_text()
+
+    assert "Planning agent tasks" in output
+    assert "**Planning agent tasks**" not in output
+
+
+def test_paced_composing_preview_keeps_incomplete_inline_markdown_plain(monkeypatch):
+    from pythinker_code.ui.shell.visualize import _blocks as blocks_module
+
+    block = _ContentBlock(is_think=False, paced=True)
+    block.append("**Planning agent")
+    block.reveal_all()
+    monkeypatch.setattr(blocks_module.time, "monotonic", lambda: 0.0)
+    console = Console(record=True, width=120, color_system=None)
+    console.print(block.compose())
+    output = console.export_text()
+
+    assert "**Planning agent" in output
+
+
 def test_thinking_stream_preview_has_standard_gap_after_activity_line():
     block = _ContentBlock(is_think=True, show_thinking_stream=True)
     block.append("reasoning preview")
