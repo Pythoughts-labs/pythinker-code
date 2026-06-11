@@ -843,11 +843,23 @@ class Grep(CallableTool2[Params]):
             args = _build_rg_args(rg_path, params, single_threaded=_retry)
 
             # Execute search as async subprocess (non-blocking, cancellable)
-            process = await asyncio.create_subprocess_exec(
-                *args,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    *args,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+            except OSError as exc:
+                # Resolved binary can't execute (wrong arch "Exec format error",
+                # deleted file, broken override) — a packaging/setup defect worth
+                # reporting, but the tool must still degrade to the Python grep.
+                from pythinker_code.telemetry.errors import report_handled_error
+
+                report_handled_error(exc, site="tool.grep.rg_exec", tool="Grep")
+                logger.warning(
+                    "ripgrep failed to execute ({error}); using Python fallback", error=exc
+                )
+                return _python_grep(params, str(exc), wrap=_wrap)
 
             # Stream stdout/stderr incrementally with buffer limit
             stdout_buf = bytearray()

@@ -157,14 +157,18 @@ def _asyncio_handler(
         try:
             from pythinker_code.telemetry import sentry as _sentry
             from pythinker_code.telemetry import track
+            from pythinker_code.telemetry.errors import is_expected_error
 
+            expected = is_expected_error(exc)
             track(
                 "crash",
                 error_type=type(exc).__name__,
                 where=_phase,
                 source="asyncio_task",
+                expected=expected,
             )
-            _sentry.capture_exception(exc)
+            if not expected:
+                _sentry.capture_exception(exc)
         except Exception:
             logger.debug("Telemetry crash capture failed", exc_info=True)
 

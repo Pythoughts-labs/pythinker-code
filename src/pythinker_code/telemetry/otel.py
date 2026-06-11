@@ -48,6 +48,7 @@ from opentelemetry.sdk.trace.sampling import (
 from opentelemetry.trace import Status, StatusCode, Tracer
 
 from pythinker_code.telemetry.config import (
+    detect_environment,
     is_disabled,
     otel_endpoint,
     otel_ingest_token,
@@ -74,7 +75,7 @@ def _resource(*, version: str, ui_mode: str, device_id: str | None) -> Resource:
     attrs: dict[str, Any] = {
         "service.name": _SERVICE_NAME,
         "service.version": version or "unknown",
-        "deployment.environment": "production",
+        "deployment.environment": detect_environment(),
         "ui.mode": ui_mode or "shell",
         "host.arch": platform.machine(),
         "os.type": platform.system().lower(),

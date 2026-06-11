@@ -56,6 +56,37 @@ def _env_truthy(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in _TRUTHY
 
 
+# ---------------------------------------------------------------------------
+# Environment detection
+# ---------------------------------------------------------------------------
+
+
+def _is_source_checkout() -> bool:
+    """Whether pythinker-code runs from a source checkout (editable install)."""
+    try:
+        from pythinker_code.constant import source_checkout_version
+
+        return source_checkout_version() is not None
+    except Exception:
+        return False
+
+
+def detect_environment() -> str:
+    """Resolve the deployment environment reported to Sentry/Bugsink and OTel.
+
+    ``PYTHINKER_ENV`` always wins. Without it, source-checkout (editable) runs
+    report ``development`` so errors raised while hacking on the source tree
+    never pollute the production release stream; everything else is
+    ``production``.
+    """
+    env = os.environ.get("PYTHINKER_ENV", "").strip()
+    if env:
+        return env
+    if _is_source_checkout():
+        return "development"
+    return "production"
+
+
 def is_test_environment() -> bool:
     """Return True when running under pytest unless explicitly overridden.
 
