@@ -449,22 +449,17 @@ async def test_non_duplicate_allowed():
     assert ts.end_step() == [("ToolA", '{"value":"y"}')]
 
 
-def test_begin_end_step():
-    """begin_step and end_step should correctly manage deduplication state."""
+async def test_begin_end_step():
+    """begin_step seeds the prior step's calls; end_step captures this step's."""
     ts = _make_toolset()
 
     ts.begin_step([("ToolA", "{}")])
-    assert ts._previous_step_calls == [("ToolA", "{}")]
-    assert ts._current_step_calls == []
-    assert ts._current_step_tasks == {}
     assert ts.dedup_triggered is False
 
-    ts._current_step_calls.append(("ToolB", "{}"))
+    # A fresh (non-duplicate) call this step is captured by end_step() and does
+    # not trip cross-step dedup, since only ToolA was seen previously.
+    await ts.handle(ToolCall(id="b1", function=ToolCall.FunctionBody(name="ToolB", arguments="{}")))
     assert ts.end_step() == [("ToolB", "{}")]
-
-    # After end_step, internal lists are not cleared by end_step itself;
-    # the caller (PythinkerSoul) is expected to call begin_step again for the next step.
-    # But dedup_triggered should still reflect the last step's state.
     assert ts.dedup_triggered is False
 
 

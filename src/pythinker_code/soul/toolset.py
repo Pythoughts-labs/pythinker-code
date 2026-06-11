@@ -228,13 +228,23 @@ _REMINDER_TEXT_1 = (
 
 
 def _make_reminder_text_2(tool_name: str, repeat_count: int, canonical_args: str) -> str:
+    # Echo only a bounded preview of the arguments: large-payload tools
+    # (WriteFile, MultiEdit) would otherwise re-inject the whole body into
+    # context on every repeat — defeating the reminder by inflating tokens.
+    # Exact identity is preserved by the args_hash in the dedup telemetry.
+    args_limit = 256
+    if len(canonical_args) > args_limit:
+        dropped = len(canonical_args) - args_limit
+        args_preview = f"{canonical_args[:args_limit]}... [truncated {dropped} chars]"
+    else:
+        args_preview = canonical_args
     return (
         "\n\n<system-reminder>\n"
         "You have repeatedly called the same tool with identical parameters many times.\n"
         "Repeated tool call detected:\n"
         f"- tool: {tool_name}\n"
         f"- repeated_times: {repeat_count}\n"
-        f"- arguments: {canonical_args}\n"
+        f"- arguments: {args_preview}\n"
         "The previous repeated calls did not make progress. Do not call this exact same tool "
         "with the exact same arguments again.\n"
         "Carefully inspect the latest tool result and choose a different next action, "
