@@ -17,6 +17,38 @@ from pythinker_code.config import StatusLineConfig
 from pythinker_code.ui.shell.components import sanitize_ansi
 from pythinker_code.utils.logging import logger
 
+_EIGHTHS = ("", "▏", "▎", "▍", "▌", "▋", "▊", "▉")
+
+
+def usage_level(pct: int) -> str:
+    """Gradient bucket for a 0-100+ percentage: ok | mid | high | crit."""
+    if pct >= 90:
+        return "crit"
+    if pct >= 70:
+        return "high"
+    if pct >= 50:
+        return "mid"
+    return "ok"
+
+
+def smooth_bar(pct: int, *, width: int, ascii_only: bool = False) -> str:
+    """Render a progress bar with eighth-block sub-cell resolution.
+
+    ``pct`` is clamped to [0, 100]. ASCII mode degrades to '#'/'-' cells.
+    """
+    pct = max(0, min(100, pct))
+    if ascii_only:
+        filled = pct * width // 100
+        return "#" * filled + "-" * (width - filled)
+    total_eighths = pct * width * 8 // 100
+    full, rem = divmod(total_eighths, 8)
+    full = min(full, width)
+    bar = "█" * full
+    if rem and full < width:
+        bar += _EIGHTHS[rem]
+    return bar + "░" * (width - len(bar))
+
+
 DEFAULT_STATUSLINE_SEGMENTS: tuple[str, ...] = (
     "cwd",
     "git",
