@@ -13,6 +13,8 @@ Once the todo list is set, it is the single source of truth for in-progress work
 
 Once you finish a subtask/milestone, update its status before moving to the next item.
 
+At most one item can be in_progress at a time — lists with more than one are rejected. Do not jump an item from `pending` to `done`: set it `in_progress` first, and do not batch-complete multiple items after the fact.
+
 **Do NOT use this tool:**
 
 - During the planning or exploration phase, before the user has confirmed the approach.

@@ -67,6 +67,17 @@ class SetTodoList(CallableTool2[Params]):
     async def __call__(self, params: Params) -> ToolReturnValue:
         if params.todos is None:
             return self._read_todos()
+        in_progress = sum(1 for todo in params.todos if todo.status == "in_progress")
+        if in_progress > 1:
+            return ToolReturnValue(
+                is_error=True,
+                output=(
+                    "Invalid todo list: at most one item can be in_progress at a time. "
+                    "Resubmit with exactly one in_progress item."
+                ),
+                message="Invalid todo list",
+                display=[],
+            )
         result = self._write_todos(params.todos)
         if self._runtime.role == "root" and len(params.todos) >= 3:
             await self._journal_todo_update(params.todos)

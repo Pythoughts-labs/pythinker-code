@@ -341,3 +341,51 @@ class TestSetTodoListSubagent:
         assert "Also valid" in result.output
         # The malformed item should be silently skipped
         assert "bad" not in result.output
+
+
+class TestSingleInProgressInvariant:
+    """Ported from Codex CLI's plan tool contract (plan_spec.rs):
+    at most one step can be in_progress at a time."""
+
+    async def test_two_in_progress_items_rejected(
+        self, set_todo_list_tool: SetTodoList, runtime: Runtime
+    ):
+        result = await set_todo_list_tool(
+            Params(
+                todos=[
+                    Todo(title="Task A", status="in_progress"),
+                    Todo(title="Task B", status="in_progress"),
+                ]
+            )
+        )
+        assert result.is_error
+        assert "at most one" in result.output
+        # The invalid list must not be persisted.
+        assert runtime.session.state.todos == []
+
+    async def test_exactly_one_in_progress_accepted(self, set_todo_list_tool: SetTodoList):
+        result = await set_todo_list_tool(
+            Params(
+                todos=[
+                    Todo(title="Task A", status="done"),
+                    Todo(title="Task B", status="in_progress"),
+                    Todo(title="Task C", status="pending"),
+                ]
+            )
+        )
+        assert not result.is_error
+
+    async def test_zero_in_progress_accepted(self, set_todo_list_tool: SetTodoList):
+        result = await set_todo_list_tool(
+            Params(
+                todos=[
+                    Todo(title="Task A", status="done"),
+                    Todo(title="Task B", status="pending"),
+                ]
+            )
+        )
+        assert not result.is_error
+
+    async def test_read_mode_unaffected(self, set_todo_list_tool: SetTodoList):
+        result = await set_todo_list_tool(Params(todos=None))
+        assert not result.is_error
