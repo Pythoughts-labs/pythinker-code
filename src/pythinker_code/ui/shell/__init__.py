@@ -939,6 +939,11 @@ class Shell:
                 if isinstance(self.soul, PythinkerSoul)
                 else True
             ),
+            statusline_config=(
+                self.soul.runtime.config.tui.statusline
+                if isinstance(self.soul, PythinkerSoul)
+                else None
+            ),
         ) as prompt_session:
             self._prompt_session = prompt_session
             if self._prefill_text:

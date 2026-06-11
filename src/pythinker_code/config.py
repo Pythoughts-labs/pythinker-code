@@ -78,6 +78,7 @@ ENV_FIELD_MAP: dict[str, tuple[str, ...]] = {
     "PYTHINKER_TELEMETRY": ("telemetry",),
     "PYTHINKER_SESSION_RETENTION_DAYS": ("session_retention_days",),
     "PYTHINKER_MERGE_ALL_AVAILABLE_SKILLS": ("merge_all_available_skills",),
+    "PYTHINKER_STATUSLINE": ("tui", "statusline", "enabled"),
 }
 
 
@@ -633,6 +634,61 @@ class MCPClientConfig(BaseModel):
     """Timeout for tool calls in milliseconds."""
 
 
+STATUSLINE_SEGMENT_IDS: tuple[str, ...] = (
+    "cwd",
+    "git",
+    "flags",
+    "context",
+    "tokens",
+    "model",
+    "command",
+)
+
+
+class StatusLineConfig(BaseModel):
+    """Customizable shell status line (footer) configuration."""
+
+    enabled: bool = Field(
+        default=True,
+        description=(
+            "Master switch for status line customization. When false the shell "
+            "renders the stock footer regardless of the other fields."
+        ),
+    )
+    segments: list[str] = Field(
+        default_factory=lambda: [s for s in STATUSLINE_SEGMENT_IDS if s != "command"],
+        description=(
+            "Footer segments to display, in order. Known ids: cwd, git, flags, "
+            "context, tokens, model, command. Unknown ids are ignored so configs "
+            "stay forward-compatible."
+        ),
+    )
+    command: str | None = Field(
+        default=None,
+        description=(
+            "Optional external command whose first stdout line is shown in the "
+            "footer (requires the 'command' segment). Run without a shell; "
+            "killed after command_timeout_ms."
+        ),
+    )
+    command_timeout_ms: int = Field(
+        default=1000,
+        gt=0,
+        description="Timeout in milliseconds for the external status command.",
+    )
+
+    @field_validator("segments")
+    @classmethod
+    def _drop_unknown_and_duplicate_segments(cls, value: list[str]) -> list[str]:
+        seen: set[str] = set()
+        cleaned: list[str] = []
+        for segment in value:
+            if segment in STATUSLINE_SEGMENT_IDS and segment not in seen:
+                seen.add(segment)
+                cleaned.append(segment)
+        return cleaned
+
+
 class TUIConfig(BaseModel):
     """TUI rendering style configuration."""
 
@@ -669,6 +725,10 @@ class TUIConfig(BaseModel):
             "for the terminal-native ANSI look, or any Pygments style name (e.g. "
             "'monokai', 'dracula') to render on that style's solid background."
         ),
+    )
+    statusline: StatusLineConfig = Field(
+        default_factory=StatusLineConfig,
+        description="Customizable status line (footer) settings; see /statusline.",
     )
     smooth_streaming: bool = Field(
         default=True,

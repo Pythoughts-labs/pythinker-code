@@ -105,8 +105,12 @@ def test_default_config_dump():
                 "style": "card",
                 "prompt_history_enabled": True,
                 "turn_recaps": False,
-                "code_theme": "catppuccin-adaptive",
-                "smooth_streaming": True,
+                "code_theme": "catppuccin-adaptive", "statusline": {
+    "enabled": True,
+    "segments": ["cwd", "git", "flags", "context", "tokens", "model"],
+    "command": None,
+    "command_timeout_ms": 1000,
+}, "smooth_streaming": True,
             },
         }
     )

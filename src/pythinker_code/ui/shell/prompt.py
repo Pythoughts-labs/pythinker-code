@@ -60,6 +60,7 @@ from prompt_toolkit.utils import get_cwidth
 from pydantic import BaseModel, ValidationError
 from pythinker_host.path import HostPath
 
+from pythinker_code.config import StatusLineConfig
 from pythinker_code.llm import ModelCapability
 from pythinker_code.share import get_share_dir
 from pythinker_code.soul import StatusSnapshot, format_context_status
@@ -1840,7 +1841,18 @@ class CustomPromptSession:
         plan_mode_toggle_callback: Callable[[], Awaitable[bool]] | None = None,
         thinking_effort_cycle_callback: Callable[[], Awaitable[str | None]] | None = None,
         history_enabled: bool = True,
+        statusline_config: StatusLineConfig | None = None,
     ) -> None:
+        from pythinker_code.ui.shell.statusline import StatusLineCommandRunner, resolve_segments
+
+        _statusline_cfg = statusline_config or StatusLineConfig()
+        self._statusline_layout = resolve_segments(_statusline_cfg)
+        self._statusline_runner: StatusLineCommandRunner | None = None
+        if self._statusline_layout.show_command and _statusline_cfg.command:
+            self._statusline_runner = StatusLineCommandRunner(
+                command=_statusline_cfg.command,
+                timeout_ms=_statusline_cfg.command_timeout_ms,
+            )
         history_dir = get_share_dir() / "user-history"
         work_dir_id = md5(
             str(HostPath.cwd()).encode(encoding="utf-8"), usedforsecurity=False
@@ -3093,12 +3105,16 @@ class CustomPromptSession:
                 pass
 
         self._status_refresh_task = asyncio.create_task(_refresh())
+        if self._statusline_runner is not None:
+            self._statusline_runner.start()
         return self
 
     def __exit__(self, *_) -> None:
         if self._status_refresh_task is not None and not self._status_refresh_task.done():
             self._status_refresh_task.cancel()
         self._status_refresh_task = None
+        if self._statusline_runner is not None:
+            self._statusline_runner.cancel()
 
     def _get_placeholder_manager(self) -> PromptPlaceholderManager:
         manager = getattr(self, "_placeholder_manager", None)
@@ -3484,8 +3500,14 @@ class CustomPromptSession:
         Line 1: cwd (home-shortened) + ``(branch)`` + mode/flag chips.
         Line 2: context% + model on the right; toast/extension statuses left.
         """
+        from pythinker_code.config import StatusLineConfig
         from pythinker_code.extensions import footer_statuses
         from pythinker_code.ui.shell.components import format_tokens
+        from pythinker_code.ui.shell.statusline import StatusLineLayout, resolve_segments
+
+        layout: StatusLineLayout = getattr(self, "_statusline_layout", None) or resolve_segments(
+            StatusLineConfig()
+        )
 
         fragments: list[tuple[str, str]] = []
         tc = get_toolbar_colors()
@@ -3496,34 +3518,40 @@ class CustomPromptSession:
         fragments.append((self._prompt_separator_style(tc.separator), _prompt_rule(columns)))
         fragments.append(("", "\n"))
 
-        # ── line 1: cwd + git + status flags ───────────────────────────────
-        try:
-            cwd_str = _shorten_cwd(str(HostPath.cwd()))
-        except OSError:
-            app = get_app_or_none()
-            if app is not None:
-                app.exit(exception=CwdLostError())
-            return FormattedText([])
-        cwd_text = _truncate_left(cwd_str, _MAX_CWD_COLS)
-        branch = _get_git_branch()
-        if branch:
-            dirty, ahead, behind = _get_git_status()
-            branch_short = _truncate_right(branch, _MAX_BRANCH_COLS)
-            cwd_text = f"{cwd_text}  {_format_git_badge(branch_short, dirty, ahead, behind)}"
+        # ── line 1: cwd + git + status flags (each segment configurable) ───
+        cwd_text = ""
+        if "cwd" in layout.line1:
+            try:
+                cwd_str = _shorten_cwd(str(HostPath.cwd()))
+            except OSError:
+                app = get_app_or_none()
+                if app is not None:
+                    app.exit(exception=CwdLostError())
+                return FormattedText([])
+            cwd_text = _truncate_left(cwd_str, _MAX_CWD_COLS)
+        if "git" in layout.line1:
+            branch = _get_git_branch()
+            if branch:
+                dirty, ahead, behind = _get_git_status()
+                branch_short = _truncate_right(branch, _MAX_BRANCH_COLS)
+                badge = _format_git_badge(branch_short, dirty, ahead, behind)
+                cwd_text = f"{cwd_text}  {badge}" if cwd_text else badge
         cwd_text = _truncate_right(cwd_text, max(0, columns))
-        fragments.append((tc.cwd, cwd_text))
+        if cwd_text:
+            fragments.append((tc.cwd, cwd_text))
 
         status = self._status_provider()
-        flag_chips: list[tuple[str, str]] = []
-        if status.yolo_enabled:
-            flag_chips.append((tc.yolo_label, "yolo"))
-        if status.auto_enabled:
-            flag_chips.append((tc.auto_label, "auto"))
-        if status.plan_mode:
-            flag_chips.append((tc.plan_label, "plan"))
-        for style, label in flag_chips:
-            fragments.append(("", "  "))
-            fragments.append((style, label))
+        if "flags" in layout.line1:
+            flag_chips: list[tuple[str, str]] = []
+            if status.yolo_enabled:
+                flag_chips.append((tc.yolo_label, "yolo"))
+            if status.auto_enabled:
+                flag_chips.append((tc.auto_label, "auto"))
+            if status.plan_mode:
+                flag_chips.append((tc.plan_label, "plan"))
+            for style, label in flag_chips:
+                fragments.append(("", "  "))
+                fragments.append((style, label))
 
         fragments.append(("", "\n"))
 
@@ -3537,21 +3565,22 @@ class CustomPromptSession:
             right_fragments.append((style, text))
             right_parts.append(text)
 
-        _append_right(
-            secondary_style,
-            format_context_status(
-                status.context_usage,
-                status.context_tokens,
-                status.max_context_tokens,
-            ),
-        )
+        if "context" in layout.line2_right:
+            _append_right(
+                secondary_style,
+                format_context_status(
+                    status.context_usage,
+                    status.context_tokens,
+                    status.max_context_tokens,
+                ),
+            )
         # Compact ``17k/200k`` glyph next to the percentage when both sides are known.
-        if status.max_context_tokens:
+        if "tokens" in layout.line2_right and status.max_context_tokens:
             ctx_compact = (
                 f"{format_tokens(status.context_tokens)}/{format_tokens(status.max_context_tokens)}"
             )
             _append_right(secondary_style, ctx_compact)
-        if self._model_name:
+        if "model" in layout.line2_right and self._model_name:
             _append_right(mode_style, self._mode_model_thinking_label())
         right_text = "  ".join(right_parts)
         right_width = _display_width(right_text)
@@ -3566,8 +3595,17 @@ class CustomPromptSession:
         # then any active toast. The background-work copy is a compact footer
         # summary using Pythinker's single /task command.
         max_left_width = max(0, columns - right_width - 2)
+        command_line = ""
+        if layout.show_command:
+            runner = getattr(self, "_statusline_runner", None)
+            if runner is not None:
+                command_line = runner.current_line
         ext = footer_statuses()
-        if ext:
+        if command_line:
+            command_line = _truncate_right(command_line, max_left_width)
+            fragments.append((tc.tip, command_line))
+            left_width = _display_width(command_line)
+        elif ext:
             ordered = sorted(ext.items())
             ext_line = " ".join(f"{k}:{v}" for k, v in ordered)
             ext_line = _truncate_right(ext_line, max_left_width)

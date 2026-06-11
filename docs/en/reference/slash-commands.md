@@ -77,6 +77,20 @@ Usage:
 
 After switching, the configuration is saved to `config.toml` and the shell reloads automatically. The light theme adjusts colors for diff highlights, the task browser, the prompt completion menu, the bottom toolbar, and MCP status indicators to work well on light terminal backgrounds. You can also set `theme = "light"` directly in your config file — see [Config files](../configuration/config-files.md).
 
+### `/statusline`
+
+Customize the status line (the footer under the prompt): choose which segments are shown and optionally add an external status command.
+
+Usage:
+
+- `/statusline`: Show the current status line configuration
+- `/statusline on` / `/statusline off`: Enable or disable customization (off renders the stock footer)
+- `/statusline segments <id,...>`: Choose the segments to show, e.g. `/statusline segments cwd,git,model`
+- `/statusline command <argv...>`: Set an external command whose first stdout line is shown in the footer (refreshed periodically; run without a shell; killed after `command_timeout_ms`)
+- `/statusline command none`: Clear the external command
+
+Available segment ids: `cwd`, `git`, `flags`, `context`, `tokens`, `model`, `command`. Settings persist under `[tui.statusline]` in `config.toml`; `PYTHINKER_STATUSLINE=0` disables customization for a session. Customization applies to the default `card` footer style.
+
 ### `/reload`
 
 Reload the configuration file without exiting Pythinker Code.

@@ -1361,6 +1361,105 @@ async def settings(app: Shell, args: str):
     raise Reload(session_id=soul.runtime.session.id)
 
 
+@registry.command
+async def statusline(app: Shell, args: str) -> None:
+    """Customize the status line (footer): segments, on/off, external command"""
+    from rich.table import Table
+
+    from pythinker_code.config import STATUSLINE_SEGMENT_IDS
+    from pythinker_code.ui.theme import get_tui_tokens
+
+    _t = get_tui_tokens()
+    soul = ensure_pythinker_soul(app)
+    if soul is None:
+        return
+    config = soul.runtime.config
+    current = config.tui.statusline
+
+    usage_text = (
+        "Usage: /statusline [show|on|off|segments <id,...>|command <argv...>|command none]"
+        f" — segment ids: {', '.join(STATUSLINE_SEGMENT_IDS)}"
+    )
+
+    def print_table() -> None:
+        table = Table(show_header=False, box=None, pad_edge=False)
+        table.add_row("Enabled", "on" if current.enabled else "off")
+        table.add_row("Segments", ", ".join(current.segments) or "(none)")
+        table.add_row("Command", current.command or "(none)")
+        table.add_row("Command timeout", f"{current.command_timeout_ms} ms")
+        console.print(table)
+        console.print(f"[{_t.muted}]{usage_text}[/]")
+
+    def persist(mutate: Callable[[Any], None], message: str) -> NoReturn | None:
+        config_file = config.source_file
+        if config_file is None:
+            console.print(
+                f"[{_t.warning}]Changing the status line requires a config file; "
+                f"restart without --config text to persist settings.[/]"
+            )
+            return None
+        try:
+            config_for_save = load_config(config_file)
+            mutate(config_for_save.tui.statusline)
+            save_config(config_for_save, config_file)
+        except (ConfigError, OSError) as exc:
+            console.print(f"[{_t.error}]Failed to save config: {_rich_escape(exc)}[/]")
+            return None
+        from pythinker_code.telemetry import track
+
+        track("settings_update", changed="tui.statusline", count=1)
+        console.print(f"[{_t.success}]{message} Reloading...[/]")
+        raise Reload(session_id=soul.runtime.session.id)
+
+    mode = args.strip()
+    if mode in {"", "show", "list", "view"}:
+        print_table()
+        return
+    if mode in {"on", "off"}:
+        enabled = mode == "on"
+
+        def _set_enabled(sl: Any) -> None:
+            sl.enabled = enabled
+
+        persist(_set_enabled, f"Status line customization {mode}.")
+        return
+    if mode.startswith("segments"):
+        raw = mode.removeprefix("segments").strip()
+        wanted = [s.strip() for s in raw.split(",") if s.strip()]
+        unknown = [s for s in wanted if s not in STATUSLINE_SEGMENT_IDS]
+        if not wanted or unknown:
+            detail = f" Unknown: {', '.join(unknown)}." if unknown else ""
+            console.print(f"[{_t.warning}]{usage_text}{_rich_escape(detail)}[/]")
+            return
+
+        def _set_segments(sl: Any) -> None:
+            sl.segments = wanted
+
+        persist(_set_segments, f"Status line segments set to {', '.join(wanted)}.")
+        return
+    if mode.startswith("command"):
+        raw = mode.removeprefix("command").strip()
+        if not raw:
+            console.print(f"[{_t.warning}]{usage_text}[/]")
+            return
+        if raw == "none":
+
+            def _clear_command(sl: Any) -> None:
+                sl.command = None
+
+            persist(_clear_command, "Status line command cleared.")
+            return
+
+        def _set_command(sl: Any) -> None:
+            sl.command = raw
+            if "command" not in sl.segments:
+                sl.segments = [*sl.segments, "command"]
+
+        persist(_set_command, f"Status line command set to {raw!r}.")
+        return
+    console.print(f"[{_t.warning}]{usage_text}[/]")
+
+
 @registry.command(aliases=["rewind-files"])
 @shell_mode_registry.command(aliases=["rewind-files"])
 def restore(app: Shell, args: str) -> None:
