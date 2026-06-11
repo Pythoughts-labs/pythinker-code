@@ -63,8 +63,13 @@ Scouted via 6-explorer workflow + synthesis; primary sources re-read before port
 - [x] Pushed branch; PR #117 open. Full suite 4884 passed / 7 skipped; the one
       hung run was a load/ordering flake (0% CPU in kqueue select at ~2%,
       clean re-run green in 102s) — consistent with the repo's load-sensitivity.
-- [ ] Babysit PR #117: CI green + CodeRabbit review finished (success status on
-      head commit) before merge; merge itself is the user's call.
+- [x] PR #117 fully green on head 555107e5: all checks pass (test matrix,
+      builds, nix, CodeQL, changelog, typos) and CodeRabbit review completed.
+      Its 7 findings: 5 fixed (continuation gate on primary-turn outcome,
+      softened todo invariant + prose reconciliation, nullable docs type,
+      fence nit, config boundary tests), 2 declined with rationale on the PR
+      (mechanical blocked-audit enforcement; prompt-file H1s).
+- [ ] Merge PR #117 — user's call (CodeRabbit gate satisfied).
 
 ## Out of scope (observed, logged)
 
