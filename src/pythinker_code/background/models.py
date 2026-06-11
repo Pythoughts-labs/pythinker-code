@@ -57,6 +57,10 @@ class TaskSpec(BaseModel):
     shell_path: str | None = None
     cwd: str | None = None
     timeout_s: int | None = None
+    # Drop credential-looking env vars in the worker before spawning the child.
+    # Set for tasks created under restricted (no-shell-mutation) permission
+    # profiles; only the boolean is persisted, never the environment itself.
+    scrub_secrets: bool = False
     parent_task_id: str | None = None
     child_task_ids: list[str] = Field(default_factory=list)
     dependencies: list[str] = Field(default_factory=list)

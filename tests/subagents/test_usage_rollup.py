@@ -172,6 +172,13 @@ def test_aggregate_findings_skips_none_text_blockers() -> None:
     assert "Parser assumes UTF-8 input. [child-a]" in text
 
 
+def test_aggregate_findings_skips_none_observed_marker() -> None:
+    """`None observed.` is the empty-section marker the built-in agent report
+    contracts document; it must not roll up as a finding."""
+    report = "### RISKS\nNone observed.\n\n### BLOCKERS\nnone observed\n"
+    assert aggregate_findings([("child-a", report)]) == []
+
+
 def test_aggregate_findings_empty_batch() -> None:
     assert aggregate_findings([]) == []
 

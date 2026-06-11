@@ -574,6 +574,111 @@ async def test_run_agents_launches_background_children_with_base_prompt(runtime,
     ).is_file()
 
 
+async def test_run_agents_replaces_generic_names_with_codenames(runtime, monkeypatch):
+    """Children named after their own type (`code-reviewer:code-reviewer`) get
+    distinctive generated codenames; the type stays in its own field. Each
+    child in the batch gets a unique codename, and with no caller title the
+    description becomes `codename (type)` so notifications stay readable."""
+    from pythinker_code.subagents.codenames import _ADJECTIVES, _NOUNS
+
+    runtime.labor_market.add_builtin_type(
+        AgentTypeDefinition(
+            name="explore",
+            description="Read-only exploration.",
+            agent_file=runtime.subagent_store.root / "explore.yaml",
+            tool_policy=ToolPolicy(mode="inherit"),
+        )
+    )
+    created: list[dict[str, object]] = []
+
+    def fake_create_agent_task(**kwargs):
+        created.append(kwargs)
+        return SimpleNamespace(
+            spec=SimpleNamespace(
+                id=f"task-{len(created)}",
+                kind="agent",
+                description=kwargs["description"],
+            ),
+            runtime=SimpleNamespace(status="starting"),
+        )
+
+    monkeypatch.setattr(runtime.background_tasks, "create_agent_task", fake_create_agent_task)
+    tool = RunAgents(runtime)
+
+    with tool_call_context("RunAgents"):
+        result = await tool(
+            tool.params(
+                summary="parallel review",
+                agents=[
+                    AgentRunConfig(name="explore", subagent_type="explore", prompt="Scout A"),
+                    AgentRunConfig(name="explore", subagent_type="explore", prompt="Scout B"),
+                ],
+            )
+        )
+
+    assert not result.is_error
+    output = result.output if isinstance(result.output, str) else ""
+    names = [
+        line.removeprefix("- name: ").strip()
+        for line in output.splitlines()
+        if line.startswith("- name: ")
+    ]
+    assert len(names) == 2
+    assert len(set(names)) == 2, "each child must get a unique codename"
+    for name in names:
+        assert name != "explore"
+        adjective, _, noun = name.partition("-")
+        assert adjective in _ADJECTIVES and noun.split("-")[0] in _NOUNS, name
+    descriptions = [str(item["description"]) for item in created]
+    assert descriptions == [f"{name} (explore)" for name in names]
+
+
+async def test_run_agents_keeps_caller_chosen_names(runtime, monkeypatch):
+    """Distinct caller-supplied names and titles pass through untouched."""
+    runtime.labor_market.add_builtin_type(
+        AgentTypeDefinition(
+            name="explore",
+            description="Read-only exploration.",
+            agent_file=runtime.subagent_store.root / "explore.yaml",
+            tool_policy=ToolPolicy(mode="inherit"),
+        )
+    )
+    created: list[dict[str, object]] = []
+
+    def fake_create_agent_task(**kwargs):
+        created.append(kwargs)
+        return SimpleNamespace(
+            spec=SimpleNamespace(
+                id=f"task-{len(created)}",
+                kind="agent",
+                description=kwargs["description"],
+            ),
+            runtime=SimpleNamespace(status="starting"),
+        )
+
+    monkeypatch.setattr(runtime.background_tasks, "create_agent_task", fake_create_agent_task)
+    tool = RunAgents(runtime)
+
+    with tool_call_context("RunAgents"):
+        result = await tool(
+            tool.params(
+                summary="parallel scouting",
+                agents=[
+                    AgentRunConfig(
+                        name="api-scout",
+                        title="API scout",
+                        subagent_type="explore",
+                        prompt="Find API files",
+                    ),
+                ],
+            )
+        )
+
+    assert not result.is_error
+    assert "- name: api-scout" in result.output
+    assert [item["description"] for item in created] == ["API scout"]
+
+
 async def test_run_agents_foreground_reports_completed_status(runtime):
     runtime.labor_market.add_builtin_type(
         AgentTypeDefinition(

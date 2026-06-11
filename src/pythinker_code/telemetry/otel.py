@@ -200,7 +200,10 @@ def _install_error_log_forwarding() -> int | None:
     on failure.
     """
 
+    sink_failure_logged = False
+
     def _sink(message: Any) -> None:
+        nonlocal sink_failure_logged
         try:
             record = message.record
             attrs: dict[str, Any] = {
@@ -214,7 +217,14 @@ def _install_error_log_forwarding() -> int | None:
                 attrs["exc_class"] = exc.type.__name__
             emit_log(name="app_error_log", attributes=attrs, severity="error")
         except Exception:  # noqa: BLE001 — telemetry must never break logging
-            pass
+            # One-shot breadcrumb via stdlib logging (not loguru, so a broken
+            # sink cannot re-enter itself): a silent drop would otherwise make
+            # the app_error_log signal disappear with no way to notice.
+            if not sink_failure_logged:
+                sink_failure_logged = True
+                _log.debug(
+                    "app_error_log forwarding sink failed; suppressing repeats", exc_info=True
+                )
 
     try:
         from pythinker_code.utils.logging import logger as app_logger

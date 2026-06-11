@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import re
 import shlex
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from pythinker_core.tooling import ToolError
 
 from pythinker_code.execution_profiles import resolve_execution_policy
+from pythinker_code.utils.path import check_shell_path_argument
 
 if TYPE_CHECKING:
+    from pythinker_host.path import HostPath
+
     from pythinker_code.soul.agent import Runtime
 
 
@@ -25,6 +29,12 @@ class PermissionProfile:
     allow_file_mutation: bool
     allow_shell_mutation: bool
     allow_plan_file_mutation: bool = False
+    # Whether first-class network tools (SearchWeb/FetchURL) may execute.
+    # Fail-closed default: review/verify/read-only agents must work offline so
+    # reviewed diffs and tool output cannot be exfiltrated or used to fetch
+    # untrusted instructions. Plan/ask modes keep network because interactive
+    # planning research is a first-class use case.
+    allow_network: bool = False
 
 
 _PERMISSION_PROFILES: dict[PermissionProfileName, PermissionProfile] = {
@@ -33,6 +43,7 @@ _PERMISSION_PROFILES: dict[PermissionProfileName, PermissionProfile] = {
         description="read-only exploration",
         allow_file_mutation=False,
         allow_shell_mutation=False,
+        allow_network=False,
     ),
     "plan": PermissionProfile(
         name="plan",
@@ -40,30 +51,35 @@ _PERMISSION_PROFILES: dict[PermissionProfileName, PermissionProfile] = {
         allow_file_mutation=False,
         allow_shell_mutation=False,
         allow_plan_file_mutation=True,
+        allow_network=True,
     ),
     "ask": PermissionProfile(
         name="ask",
         description="ask-only mode",
         allow_file_mutation=False,
         allow_shell_mutation=False,
+        allow_network=True,
     ),
     "implement": PermissionProfile(
         name="implement",
         description="implementation mode",
         allow_file_mutation=True,
         allow_shell_mutation=True,
+        allow_network=True,
     ),
     "review": PermissionProfile(
         name="review",
         description="review mode",
         allow_file_mutation=False,
         allow_shell_mutation=False,
+        allow_network=False,
     ),
     "verify": PermissionProfile(
         name="verify",
         description="verification mode",
         allow_file_mutation=False,
         allow_shell_mutation=False,
+        allow_network=False,
     ),
 }
 
@@ -322,18 +338,30 @@ def check_shell_command_allowed(runtime: Runtime, command: str) -> ToolError | N
     profile = active_permission_profile(runtime)
     if profile.allow_shell_mutation:
         return None
-    reason = shell_mutation_reason(command)
-    if reason is None:
-        return None
-    return ToolError(
-        message=(
-            f"The active {profile.description} permission profile blocks this shell command "
-            f"because it appears to mutate the workspace or environment, or access the network "
-            f"({reason}). Use a read-only, offline command or switch to an implementation/coder "
-            "profile."
-        ),
-        brief="Permission profile restriction",
-    )
+    if reason := shell_mutation_reason(command):
+        return ToolError(
+            message=(
+                f"The active {profile.description} permission profile blocks this shell command "
+                f"because it appears to mutate the workspace or environment, or access the "
+                f"network ({reason}). Use a read-only, offline command or switch to an "
+                "implementation/coder profile."
+            ),
+            brief="Permission profile restriction",
+        )
+    if reason := shell_workspace_escape_reason(
+        command,
+        work_dir=runtime.session.work_dir,
+        additional_dirs=runtime.additional_dirs,
+    ):
+        return ToolError(
+            message=(
+                f"The active {profile.description} permission profile blocks this shell command "
+                f"because {reason}. Use the Glob/Grep/ReadFile tools or restrict path arguments "
+                "to the workspace and approved additional directories."
+            ),
+            brief="Permission profile restriction",
+        )
+    return None
 
 
 def check_external_tool_allowed(runtime: Runtime, tool_name: str) -> ToolError | None:
@@ -351,12 +379,39 @@ def check_external_tool_allowed(runtime: Runtime, tool_name: str) -> ToolError |
     )
 
 
+# First-class network tools, gated on PermissionProfile.allow_network. MCP and
+# plugin tools have their own fail-closed gate (check_external_tool_allowed).
+_NETWORK_TOOLS = {"SearchWeb", "FetchURL"}
+
+
+def check_network_tool_allowed(runtime: Runtime, tool_name: str) -> ToolError | None:
+    """Hard profile gate for first-class network tools.
+
+    Tool visibility filtering already hides these tools from restricted agents,
+    but visibility is advisory; this execution-time check is the enforcement
+    layer, and it must hold regardless of the root agent's yolo flag.
+    """
+    profile = active_permission_profile(runtime)
+    if profile.allow_network:
+        return None
+    return ToolError(
+        message=(
+            f"The active {profile.description} permission profile blocks the network tool "
+            f"`{tool_name}`. Review/read-only agents work offline; report a docs-freshness "
+            "or fetch need as a finding instead of accessing the network."
+        ),
+        brief="Permission profile restriction",
+    )
+
+
 def check_tool_call_allowed(
     runtime: Runtime, tool_name: str, arguments: dict[str, Any], *, tool: object | None = None
 ) -> ToolError | None:
     """Central permission guard for tool adapters that can bypass per-tool checks."""
     if tool_name == "Shell" and isinstance(arguments.get("command"), str):
         return check_shell_command_allowed(runtime, arguments["command"])
+    if tool_name in _NETWORK_TOOLS:
+        return check_network_tool_allowed(runtime, tool_name)
 
     tool_type = type(tool)
     module = getattr(tool_type, "__module__", "")
@@ -519,6 +574,249 @@ def _segment_mutation_reason(tokens: list[str]) -> str | None:
     if base == "awk" and (reason := _awk_shell_reason(args)):
         return reason
     return None
+
+
+# --- Workspace jail for read-style shell commands ---------------------------
+# The mutation/network classifier above keeps read-only profiles from writing or
+# reaching the network, but a benign-looking discovery command can still wander
+# outside the workspace (`find .. -name AGENTS.md` passes every gate above). The
+# escape classifier applies the same boundary the first-class file tools already
+# enforce (is_within_workspace) to the path arguments of common read commands.
+#
+# Two tiers, mirroring the file tools' semantics so Shell is never stricter:
+# * search/traversal commands (like Glob/Grep, which reject out-of-workspace
+#   searches): every path argument must resolve inside the workspace.
+# * file-read commands (like ReadFile, which allows absolute paths outside the
+#   workspace but rejects relative escapes): absolute arguments are allowed,
+#   relative arguments must not resolve outside the workspace.
+
+# Directory-listing/traversal commands whose positional args are all paths.
+_TRAVERSAL_PATH_COMMANDS = {"ls", "du", "tree"}
+# Search commands whose first positional is the pattern, the rest are paths.
+_SEARCH_PATH_COMMANDS = {"rg", "grep", "egrep", "fgrep"}
+# File-read commands whose positional args are all file paths (ReadFile parity).
+_FILE_READ_COMMANDS = {"cat", "head", "tail", "wc", "stat", "file", "nl", "less", "more", "cmp"}
+# Pattern-first file-read commands (script/program first, then file paths).
+_PATTERN_READ_COMMANDS = {"sed", "awk"}
+# Value-taking flags whose value scopes a command to a directory, on any command.
+_DIR_SCOPE_FLAGS = {"--directory", "--project"}
+_GIT_DIR_FLAGS = {"-C", "--git-dir", "--work-tree"}
+# Pseudo-files that are safe sinks/sources despite living outside the workspace.
+_DEVICE_PATH_ALLOW = {"/dev/null", "/dev/stdin", "/dev/stdout", "/dev/stderr", "/dev/tty"}
+_GLOB_CHARS = ("*", "?", "[")
+# Common value-taking options of grep/rg whose value is not a path (context
+# counts, globs, types). Unknown options are treated as boolean, which can only
+# misread a value as a path candidate — harmless unless it resolves outside the
+# workspace, which plain option values (numbers, type names) never do.
+_SEARCH_SKIP_VALUE_FLAGS = {
+    "-A",
+    "-B",
+    "-C",
+    "-m",
+    "-d",
+    "-g",
+    "-t",
+    "-T",
+    "-j",
+    "-M",
+    "--after-context",
+    "--before-context",
+    "--context",
+    "--max-count",
+    "--max-depth",
+    "--include",
+    "--exclude",
+    "--exclude-dir",
+    "--glob",
+    "--iglob",
+    "--type",
+    "--type-not",
+    "--threads",
+    "--color",
+    "--colour",
+    "--engine",
+    "--sort",
+    "--sortr",
+}
+
+
+def shell_workspace_escape_reason(
+    command: str,
+    *,
+    work_dir: HostPath,
+    additional_dirs: Sequence[HostPath] = (),
+) -> str | None:
+    """Reason a read-style command's path arguments escape the workspace, else ``None``.
+
+    Runs only for profiles without shell mutation rights, after
+    :func:`shell_mutation_reason` returned ``None`` — so hidden-command forms
+    (substitution, glued operators) are already rejected and the plain segment
+    scan here sees every sub-command.
+    """
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        return "the command is unparsable"
+    segment: list[str] = []
+    for token in [*tokens, ";"]:
+        if token in _SHELL_SEGMENT_SEPARATORS:
+            reason = _segment_workspace_escape_reason(segment, work_dir, additional_dirs)
+            if reason is not None:
+                return reason
+            segment = []
+        else:
+            segment.append(token)
+    return None
+
+
+def _segment_workspace_escape_reason(
+    tokens: list[str],
+    work_dir: HostPath,
+    additional_dirs: Sequence[HostPath],
+) -> str | None:
+    if not tokens:
+        return None
+    command, args = _unwrap_command(tokens)
+    if command is None:
+        return None
+    base = _canonical_interpreter_name(command.rsplit("/", 1)[-1])
+
+    # (candidate, absolute_allowed): absolute_allowed marks ReadFile-parity
+    # candidates where an absolute path outside the workspace stays permitted.
+    candidates: list[tuple[str, bool]] = [
+        (value, False) for value in _flag_values(args, _DIR_SCOPE_FLAGS)
+    ]
+    if base == "git":
+        candidates.extend((value, False) for value in _flag_values(args, _GIT_DIR_FLAGS))
+    elif base == "find":
+        candidates.extend((root, False) for root in _find_root_args(args))
+    elif base in _SEARCH_PATH_COMMANDS:
+        paths = _pattern_then_paths(
+            args,
+            pattern_value_flags={"-e", "--regexp"},
+            path_value_flags={"-f", "--file"},
+            skip_value_flags=_SEARCH_SKIP_VALUE_FLAGS,
+        )
+        candidates.extend((path, False) for path in paths)
+    elif base in _PATTERN_READ_COMMANDS:
+        paths = _pattern_then_paths(
+            args,
+            pattern_value_flags={"-e", "--expression"},
+            path_value_flags={"-f", "--file"},
+            skip_value_flags={"-v"},
+        )
+        candidates.extend((path, True) for path in paths)
+    elif base in _TRAVERSAL_PATH_COMMANDS:
+        candidates.extend((arg, False) for arg in args if not arg.startswith("-"))
+    elif base in _FILE_READ_COMMANDS:
+        candidates.extend((arg, True) for arg in args if not arg.startswith("-"))
+
+    for raw, absolute_allowed in candidates:
+        if _skip_path_candidate(raw):
+            continue
+        if absolute_allowed and Path(raw).expanduser().is_absolute():
+            continue
+        if not check_shell_path_argument(raw, work_dir, additional_dirs):
+            return f"path argument `{raw}` resolves outside the workspace ({base})"
+    return None
+
+
+def _skip_path_candidate(raw: str) -> bool:
+    """Tokens that are not checkable paths: stdin, devices, URLs, glob patterns."""
+    return (
+        not raw
+        or raw == "-"
+        or raw in _DEVICE_PATH_ALLOW
+        or "://" in raw
+        or any(ch in raw for ch in _GLOB_CHARS)
+    )
+
+
+def _flag_values(args: list[str], flags: set[str]) -> list[str]:
+    """Values of value-taking *flags*, both ``--flag value`` and ``--flag=value`` forms."""
+    values: list[str] = []
+    for i, arg in enumerate(args):
+        for flag in flags:
+            if arg == flag and i + 1 < len(args):
+                values.append(args[i + 1])
+            elif arg.startswith(f"{flag}="):
+                values.append(arg.split("=", 1)[1])
+    return values
+
+
+def _find_root_args(args: list[str]) -> list[str]:
+    """The root path arguments of a ``find`` invocation.
+
+    Roots are the positionals between find's pre-root options (``-H``/``-L``/
+    ``-P``/``-O``/``-D``) and the first expression token (``-name`` etc.).
+    Expression values (``-name AGENTS.md``) are matched names, not paths, so the
+    scan stops at the first expression.
+    """
+    i = 0
+    while i < len(args) and (args[i] in {"-H", "-L", "-P"} or args[i].startswith(("-O", "-D"))):
+        i += 1
+    roots: list[str] = []
+    while i < len(args) and not args[i].startswith("-") and args[i] not in {"(", "!"}:
+        roots.append(args[i])
+        i += 1
+    return roots
+
+
+def _pattern_then_paths(
+    args: list[str],
+    *,
+    pattern_value_flags: set[str],
+    path_value_flags: set[str],
+    skip_value_flags: set[str],
+) -> list[str]:
+    """Path arguments of a pattern-first command (grep/rg/sed/awk).
+
+    The first positional is the pattern/script unless *pattern_value_flags* or
+    *path_value_flags* already supplied it; *path_value_flags* values are file
+    arguments themselves; *skip_value_flags* values are non-path option values.
+    """
+    paths: list[str] = []
+    pattern_supplied = False
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--":
+            rest = args[i + 1 :]
+            if not pattern_supplied and rest:
+                rest = rest[1:]
+            paths.extend(rest)
+            break
+        if arg in pattern_value_flags:
+            pattern_supplied = True
+            i += 2
+            continue
+        if any(arg.startswith(f"{flag}=") for flag in pattern_value_flags):
+            pattern_supplied = True
+            i += 1
+            continue
+        if arg in path_value_flags:
+            if i + 1 < len(args):
+                paths.append(args[i + 1])
+            pattern_supplied = True
+            i += 2
+            continue
+        if any(arg.startswith(f"{flag}=") for flag in path_value_flags):
+            paths.append(arg.split("=", 1)[1])
+            pattern_supplied = True
+            i += 1
+            continue
+        if arg in skip_value_flags:
+            i += 2
+            continue
+        if arg.startswith("-") and arg != "-":
+            i += 1
+            continue
+        if pattern_supplied:
+            paths.append(arg)
+        else:
+            pattern_supplied = True
+        i += 1
+    return paths
 
 
 def shell_command_signature(command: str) -> str:

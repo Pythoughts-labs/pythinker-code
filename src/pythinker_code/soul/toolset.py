@@ -433,7 +433,9 @@ class PythinkerToolset:
         if tool.name == "Shell" and policy.shell == "deny":
             return False
 
-        if tool.name in {"SearchWeb", "FetchURL"} and policy.network == "deny":
+        if tool.name in {"SearchWeb", "FetchURL"} and (
+            policy.network == "deny" or not profile.allow_network
+        ):
             return False
 
         if tool.name in {"Agent", "RunAgents"} and (

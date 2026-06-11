@@ -173,6 +173,8 @@ _PROMPT_STYLE_DARK = {
     "running-prompt-separator": "fg:#2B3A52",
     # Recognized slash commands typed anywhere in the input area.
     "slash-command": "fg:#6CA1F5 bold",
+    # Inline ghost text completing a partially typed slash command (Tab accepts).
+    "auto-suggestion": "fg:#6B7280",
     # Slash completion menu — selected row gets the same selected-bg as cards.
     "slash-completion-menu": "",
     "slash-completion-menu.separator": "fg:#2B3A52",
@@ -215,6 +217,8 @@ _PROMPT_STYLE_LIGHT = {
     "running-prompt-separator": "fg:#C8BEC0",
     # Recognized slash commands typed anywhere in the input area.
     "slash-command": "fg:#1D63D8 bold",
+    # Inline ghost text completing a partially typed slash command (Tab accepts).
+    "auto-suggestion": "fg:#8A93A0",
     "slash-completion-menu": "",
     "slash-completion-menu.separator": "fg:#C8BEC0",
     "slash-completion-menu.marker": "fg:#8A93A0",

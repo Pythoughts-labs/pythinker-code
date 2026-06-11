@@ -27,7 +27,7 @@ def source_checkout_version() -> str | None:
     try:
         with pyproject.open("rb") as f:
             project = tomllib.load(f).get("project", {})
-    except OSError:
+    except (OSError, tomllib.TOMLDecodeError):
         return None
     if project.get("name") != "pythinker-code":
         return None

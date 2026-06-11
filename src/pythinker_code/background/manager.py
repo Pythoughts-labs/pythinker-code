@@ -245,6 +245,7 @@ class BackgroundTaskManager:
         shell_name: str,
         shell_path: str,
         cwd: str,
+        scrub_secrets: bool = False,
     ) -> TaskView:
         self._ensure_root()
         self._ensure_local_backend()
@@ -265,6 +266,7 @@ class BackgroundTaskManager:
             shell_path=shell_path,
             cwd=cwd,
             timeout_s=timeout_s,
+            scrub_secrets=scrub_secrets,
         )
         self._store.create_task(spec)
         from pythinker_code.telemetry import track

@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, override, runtim
 from prompt_toolkit import PromptSession
 from prompt_toolkit.application import Application
 from prompt_toolkit.application.current import get_app_or_none
+from prompt_toolkit.auto_suggest import AutoSuggest, Suggestion
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.clipboard.pyperclip import PyperclipClipboard
 from prompt_toolkit.completion import (
@@ -248,6 +249,36 @@ class SlashCommandHighlightLexer(Lexer):
             return fragments
 
         return get_line
+
+
+class SlashCommandAutoSuggest(AutoSuggest):
+    """Inline ghost-text completion for a partially typed slash command.
+
+    While the user types a root ``/name`` token, the remainder of the best
+    (alphabetically first) matching command renders as dim ghost text after the
+    cursor; Tab accepts it word-for-word. Rendering and the standard accept
+    bindings (right-arrow / ctrl-e) come from prompt_toolkit's auto-suggest
+    plumbing; the Tab binding is added in CustomPromptSession.
+    """
+
+    def __init__(self, known_names: Callable[[], frozenset[str]]) -> None:
+        self._known_names = known_names
+
+    @override
+    def get_suggestion(self, buffer: Buffer, document: Document) -> Suggestion | None:
+        token = _slash_command_token_before_cursor(document)
+        if token is None or len(token) < 2:
+            return None
+        typed = token[1:]
+        typed_lower = typed.lower()
+        matches = sorted(
+            name
+            for name in self._known_names()
+            if name.lower().startswith(typed_lower) and len(name) > len(typed)
+        )
+        if not matches:
+            return None
+        return Suggestion(matches[0][len(typed) :])
 
 
 class SlashCommandCompleter(Completer):
@@ -1721,7 +1752,7 @@ def _get_git_diffstat() -> tuple[int, int] | None:
                 stdout, _ = state.proc.communicate()
                 state.added, state.removed = parse_shortstat(stdout)
             except Exception:
-                pass
+                logger.debug("git diff --shortstat read/parse failed", exc_info=True)
             state.proc = None
         elif now - state.timestamp > _GIT_DIFFSTAT_TTL:
             with contextlib.suppress(Exception):
@@ -2067,6 +2098,13 @@ class CustomPromptSession:
                 else self._agent_command_names
             )
         )
+        self._slash_auto_suggest = SlashCommandAutoSuggest(
+            lambda: (
+                self._shell_command_names
+                if self._mode == PromptMode.SHELL
+                else self._agent_command_names
+            )
+        )
 
         # Build key bindings
         _kb = KeyBindings()
@@ -2115,6 +2153,17 @@ class CustomPromptSession:
         def _(event: KeyPressEvent) -> None:
             """Non-slash completion (file mentions, etc.): accept only."""
             _accept_completion(event.current_buffer)
+
+        def _has_slash_suggestion() -> bool:
+            buff = self._session.default_buffer
+            return bool(buff.suggestion and buff.suggestion.text)
+
+        @_kb.add("tab", filter=Condition(_has_slash_suggestion))
+        def _(event: KeyPressEvent) -> None:
+            """Slash command ghost suggestion: Tab completes the word inline."""
+            suggestion = event.current_buffer.suggestion
+            if suggestion and suggestion.text:
+                event.current_buffer.insert_text(suggestion.text)
 
         @_kb.add("?", eager=True)
         def _(event: KeyPressEvent) -> None:
@@ -2395,6 +2444,7 @@ class CustomPromptSession:
         self._session = PromptSession[str](
             message=self._render_message,
             completer=self._agent_mode_completer,
+            auto_suggest=self._slash_auto_suggest,
             complete_while_typing=True,
             reserve_space_for_menu=6,
             key_bindings=_kb,
@@ -3748,10 +3798,10 @@ class CustomPromptSession:
 
         try:
             ctx = self._build_statusline_context(columns)
-        except CwdLostError:
+        except CwdLostError as exc:
             app = get_app_or_none()
             if app is not None:
-                app.exit(exception=CwdLostError())
+                app.exit(exception=exc)
             return FormattedText([])
 
         segments = list(cfg.segments) if cfg.enabled else list(DEFAULT_STATUSLINE_SEGMENTS)

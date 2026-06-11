@@ -391,3 +391,55 @@ class TestSingleInProgressInvariant:
     async def test_read_mode_unaffected(self, set_todo_list_tool: SetTodoList):
         result = await set_todo_list_tool(Params(todos=None))
         assert not result.is_error
+
+    async def test_subagent_list_normalized_to_single_in_progress(self, runtime: Runtime):
+        """A subagent is a single sequential worker: extra in_progress items are
+        demoted to pending (first one wins, order preserved) and the
+        normalization is reported in the tool output."""
+        subagent_runtime = runtime.copy_for_subagent(
+            agent_id="test-sub-norm",
+            subagent_type="coder",
+        )
+        assert subagent_runtime.subagent_store is not None
+        subagent_runtime.subagent_store.instance_dir("test-sub-norm", create=True)
+        sub_tool = SetTodoList(subagent_runtime)
+
+        result = await sub_tool(
+            Params(
+                todos=[
+                    Todo(title="Task A", status="in_progress"),
+                    Todo(title="Task B", status="in_progress"),
+                    Todo(title="Task C", status="pending"),
+                ]
+            )
+        )
+
+        assert not result.is_error
+        assert "normalized 1 extra in_progress" in result.output
+
+        read_back = await sub_tool(Params(todos=None))
+        assert "[in_progress] Task A" in read_back.output
+        assert "[pending] Task B" in read_back.output
+        assert "[pending] Task C" in read_back.output
+
+    async def test_subagent_single_in_progress_not_normalized(self, runtime: Runtime):
+        """Positive control: a well-formed subagent list passes through untouched."""
+        subagent_runtime = runtime.copy_for_subagent(
+            agent_id="test-sub-ok",
+            subagent_type="coder",
+        )
+        assert subagent_runtime.subagent_store is not None
+        subagent_runtime.subagent_store.instance_dir("test-sub-ok", create=True)
+        sub_tool = SetTodoList(subagent_runtime)
+
+        result = await sub_tool(
+            Params(
+                todos=[
+                    Todo(title="Task A", status="done"),
+                    Todo(title="Task B", status="in_progress"),
+                ]
+            )
+        )
+
+        assert not result.is_error
+        assert "normalized" not in result.output

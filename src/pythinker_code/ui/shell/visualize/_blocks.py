@@ -681,7 +681,9 @@ class _ToolCallBlock:
             self._renderable = self._compose()
 
     def mark_execution_started(self) -> None:
-        if self._execution_started:
+        # Terminal states are monotonic: a late ToolExecutionStarted (event
+        # reordering, duplicate delivery) must not restyle a finished row.
+        if self._execution_started or self.finished:
             return
         self._execution_started = True
         if self._tui_card is not None:
@@ -698,6 +700,13 @@ class _ToolCallBlock:
         self._renderable = self._compose()
 
     def finish(self, result: ToolReturnValue):
+        # Monotonic terminal state: the first result wins. A duplicate or
+        # replayed ToolResult must not let a failed row become successful —
+        # a retry is a new tool call with its own id/row. Background-pending
+        # Agent rows are the one exception: their launch result is provisional
+        # until the terminal update arrives.
+        if self.finished and not self._is_background_pending:
+            return
         self._result = result
         result_text = self._card_result_text(result)
         self._is_background_pending = _is_active_background_agent(self._tool_name, result_text)

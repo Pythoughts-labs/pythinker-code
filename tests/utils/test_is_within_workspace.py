@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from pathlib import PurePosixPath, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
+import pytest
 from pythinker_host.path import HostPath
 
-from pythinker_code.utils.path import is_within_directory, is_within_workspace
+from pythinker_code.utils.path import (
+    check_shell_path_argument,
+    is_within_directory,
+    is_within_workspace,
+)
 
 
 def test_within_work_dir():
@@ -131,6 +136,70 @@ def test_is_within_directory_self():
     """A directory is considered within itself."""
     d = HostPath("/home/user/project")
     assert is_within_directory(d, d)
+
+
+# ── check_shell_path_argument (workspace jail for raw shell arguments) ──────
+#
+# The shell jail must mirror the file tools' boundary on real filesystems:
+# these tests use tmp_path so symlink resolution (os.path.realpath) is exercised
+# for real, not just pure-path containment.
+
+
+@pytest.fixture
+def jail_dirs(tmp_path: Path) -> tuple[HostPath, HostPath, Path]:
+    work = tmp_path / "workspace"
+    extra = tmp_path / "extra"
+    outside = tmp_path / "outside"
+    for d in (work, extra, outside):
+        d.mkdir()
+    return HostPath(str(work)), HostPath(str(extra)), outside
+
+
+def test_shell_path_relative_inside(jail_dirs):
+    work, _extra, _outside = jail_dirs
+    assert check_shell_path_argument(".", work)
+    assert check_shell_path_argument("src/main.py", work)
+    assert check_shell_path_argument("./nested/../src", work)
+
+
+def test_shell_path_relative_dotdot_escape(jail_dirs):
+    work, _extra, _outside = jail_dirs
+    assert not check_shell_path_argument("..", work)
+    assert not check_shell_path_argument("../outside", work)
+    assert not check_shell_path_argument("src/../../outside", work)
+
+
+def test_shell_path_absolute(jail_dirs):
+    work, _extra, outside = jail_dirs
+    assert check_shell_path_argument(str(work / "file.txt"), work)
+    assert not check_shell_path_argument(str(outside), work)
+    assert not check_shell_path_argument("/etc/passwd", work)
+
+
+def test_shell_path_additional_dirs(jail_dirs):
+    work, extra, outside = jail_dirs
+    assert check_shell_path_argument(str(extra / "f"), work, [extra])
+    assert check_shell_path_argument("../extra/f", work, [extra])
+    assert not check_shell_path_argument(str(outside), work, [extra])
+
+
+def test_shell_path_symlink_escape(jail_dirs):
+    """A symlink inside the workspace pointing outside must be detected."""
+    work, _extra, outside = jail_dirs
+    link = Path(str(work)) / "sneaky"
+    try:
+        link.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are unavailable in this test environment")
+    assert not check_shell_path_argument("sneaky", work)
+    assert not check_shell_path_argument("sneaky/sub", work)
+
+
+def test_shell_path_tilde_expansion(jail_dirs):
+    """``~`` expands to the home directory, which is outside a tmp workspace."""
+    work, _extra, _outside = jail_dirs
+    assert not check_shell_path_argument("~", work)
+    assert not check_shell_path_argument("~/anything", work)
 
 
 def test_is_within_workspace_uses_relative_to_not_string_ops():

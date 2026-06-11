@@ -107,7 +107,11 @@ def summarize_batch(results: Iterable[ToolReturnValue]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 _FINDING_SECTIONS = ("RISKS", "BLOCKERS")
-_NONE_PLACEHOLDERS = frozenset({"none", "none.", "n/a", "-", "(none)"})
+# Includes the `None observed.` marker the built-in agent report contracts
+# document for empty RISKS/BLOCKERS sections.
+_NONE_PLACEHOLDERS = frozenset(
+    {"none", "none.", "none observed", "none observed.", "n/a", "-", "(none)"}
+)
 
 
 def _extract_section(output: str, section: str) -> list[str]:

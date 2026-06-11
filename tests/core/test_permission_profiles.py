@@ -503,8 +503,10 @@ async def test_toolset_hides_rejected_tools_from_read_only_subagent(
 
     assert "ReadFile" in tool_names
     assert "Shell" in tool_names  # read-only shell commands are still possible
-    assert "SearchWeb" in tool_names
-    assert "FetchURL" in tool_names
+    # Read-only profiles have allow_network=False: web tools are hidden (and
+    # independently execution-denied) so review/explore agents work offline.
+    assert "SearchWeb" not in tool_names
+    assert "FetchURL" not in tool_names
     assert "WriteFile" not in tool_names
     assert "StrReplaceFile" not in tool_names
     assert "Agent" not in tool_names
@@ -964,6 +966,257 @@ def test_glued_output_redirection_classified() -> None:
         "ls > /dev/null",
     ):
         assert M(cmd) is None, f"expected benign: {cmd!r}"
+
+
+def test_yolo_does_not_escalate_subagent_profiles(runtime: Runtime) -> None:
+    """`yolo` may skip approvals, but it must never broaden a subagent's hard profile.
+
+    `permission_profile_for_runtime` only consults the yolo flag on the
+    root-agent branch; subagents resolve their type-based profile
+    unconditionally. This test locks that invariant (it held before the
+    allow_network field existed) and pins the network posture per type.
+    """
+    from pythinker_code.soul.permission import permission_profile_for_runtime
+
+    runtime.approval = Approval(yolo=True)
+    runtime.role = "subagent"
+
+    for subagent_type, expected in (
+        ("review", "review"),
+        ("code-reviewer", "review"),
+        ("security-reviewer", "review"),
+        ("judge", "verify"),
+        ("verifier", "verify"),
+        ("explore", "read_only"),
+    ):
+        runtime.subagent_type = subagent_type
+        profile = permission_profile_for_runtime(runtime)
+        assert profile.name == expected, subagent_type
+        assert not profile.allow_file_mutation, subagent_type
+        assert not profile.allow_shell_mutation, subagent_type
+        assert not profile.allow_network, subagent_type
+
+
+async def test_network_tools_execution_denied_for_review_subagent(
+    runtime: Runtime,
+    config,
+) -> None:
+    """SearchWeb/FetchURL are execution-denied (not just hidden) for offline profiles,
+    even under a yolo root — visibility filtering alone is not the guard."""
+    from pythinker_code.soul.toolset import PythinkerToolset
+    from pythinker_code.tools.web.search import SearchWeb
+    from pythinker_code.wire.types import ToolCall, ToolResult
+
+    runtime.approval = Approval(yolo=True)
+    runtime.role = "subagent"
+    runtime.subagent_type = "review"
+    toolset = PythinkerToolset(runtime)
+    toolset.add(SearchWeb(config, runtime))
+
+    assert {tool.name for tool in toolset.tools} == set()  # hidden
+
+    handle_result = toolset.handle(
+        ToolCall(
+            id="web-call",
+            function=ToolCall.FunctionBody(
+                name="SearchWeb", arguments=json.dumps({"query": "anything"})
+            ),
+        )
+    )
+    result = handle_result if isinstance(handle_result, ToolResult) else await handle_result
+
+    assert result.return_value.is_error
+    assert "blocks the network tool" in result.return_value.message
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="printenv example uses POSIX")
+async def test_restricted_profile_shell_scrubs_secret_env(
+    runtime: Runtime,
+    environment: Environment,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Shell subprocesses under read-only/review profiles must not inherit secrets."""
+    secret = "sk-test-scrub-proof"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", secret)
+    runtime.role = "subagent"
+    runtime.subagent_type = "review"
+
+    with tool_call_context("Shell"):
+        shell = Shell(Approval(yolo=True), environment, runtime)
+        result = await shell(ShellParams(command="printenv || true"))
+
+    assert not result.is_error
+    assert "PATH=" in result.output  # the command really ran and printed env
+    assert secret not in result.output
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="printenv example uses POSIX")
+async def test_implement_profile_shell_keeps_env(
+    runtime: Runtime,
+    environment: Environment,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Positive control: implementation profiles keep the full environment, so the
+    scrub above is profile-scoped rather than a global env change."""
+    secret = "sk-test-scrub-proof"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", secret)
+    runtime.role = "subagent"
+    runtime.subagent_type = "implementer"
+
+    with tool_call_context("Shell"):
+        shell = Shell(Approval(yolo=True), environment, runtime)
+        result = await shell(ShellParams(command="printenv || true"))
+
+    assert not result.is_error
+    assert secret in result.output
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="retry-cap examples use POSIX")
+async def test_restricted_profile_blocks_repeated_failing_command(
+    runtime: Runtime,
+    environment: Environment,
+) -> None:
+    """Flag-thrashing guard: under review/read-only profiles the same verbatim
+    command may fail at most twice; the third attempt is a hard denial with
+    fallback guidance, while different commands stay unaffected."""
+    runtime.role = "subagent"
+    runtime.subagent_type = "review"
+
+    with tool_call_context("Shell"):
+        shell = Shell(Approval(yolo=True), environment, runtime)
+        first = await shell(ShellParams(command="false"))
+        second = await shell(ShellParams(command="false"))
+        third = await shell(ShellParams(command="false"))
+        other = await shell(ShellParams(command="true"))
+
+    assert first.is_error and "exit code" in first.message
+    assert second.is_error and "exit code" in second.message
+    assert third.is_error
+    assert "repeating it verbatim is blocked" in third.message
+    assert not other.is_error
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="retry-cap examples use POSIX")
+async def test_implement_profile_has_no_retry_cap(
+    runtime: Runtime,
+    environment: Environment,
+) -> None:
+    """Positive control: implementation profiles may legitimately re-run failing
+    commands (e.g. a test command while iterating), so the cap is review-scoped."""
+    runtime.role = "subagent"
+    runtime.subagent_type = "implementer"
+
+    with tool_call_context("Shell"):
+        shell = Shell(Approval(yolo=True), environment, runtime)
+        results = [await shell(ShellParams(command="false")) for _ in range(3)]
+
+    assert all(r.is_error and "exit code" in r.message for r in results)
+    assert all("repeating it verbatim" not in r.message for r in results)
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Shell workspace jail examples use POSIX"
+)
+def test_shell_workspace_escape_classified(temp_work_dir: HostPath) -> None:
+    """Read-style commands with path arguments escaping the workspace are flagged.
+
+    Mirrors the first-class file tools' boundary: search/traversal commands
+    (find/rg/grep/ls/git -C/--directory) are fully jailed like Glob/Grep;
+    file-read commands (cat/head/sed/...) keep ReadFile parity — absolute paths
+    outside the workspace stay allowed, relative escapes are denied. Regression
+    for the transcript escape: ``find .. -name AGENTS.md`` passed every gate.
+    """
+    from pythinker_code.soul.permission import shell_workspace_escape_reason
+
+    def reason(cmd: str) -> str | None:
+        return shell_workspace_escape_reason(cmd, work_dir=temp_work_dir)
+
+    denied = (
+        "find .. -name AGENTS.md",  # the transcript escape
+        "find ../other -name x",
+        "find -L .. -name x",  # pre-root option must not hide the root
+        "find /etc -name passwd",
+        "grep -r foo ..",
+        "rg pattern ../outside",
+        "rg -e pattern ..",  # pattern via -e: first positional IS a path
+        "git -C .. log",
+        "git -C /etc log --oneline",
+        "git --git-dir=../other/.git log",
+        "ls ..",
+        "ls /etc",
+        "du -s ..",
+        "uv --directory ../elsewhere tree",
+        "cat ../../somewhere/secrets.txt",  # relative read escape
+        "sed -n 1,5p ../outside.txt",
+        "ls -la && find .. -name x",  # escape in a later chain segment
+    )
+    for cmd in denied:
+        assert reason(cmd) is not None, f"expected escape: {cmd!r}"
+
+    allowed = (
+        "find . -name AGENTS.md",
+        "find . -maxdepth 2 -type f",
+        "find src -name '*.py'",
+        "grep -r foo .",
+        "grep -r '..' .",  # leading regex positional is the pattern, not a path
+        "grep -rn TODO src",
+        "rg TODO src",
+        "git -C . status",
+        "git log --oneline",
+        "ls src",
+        "ls -la",
+        "cat notes.txt",
+        "cat /etc/hosts",  # ReadFile parity: absolute reads stay allowed
+        "head -n 5 /var/log/system.log",
+        "sed -n 1,5p /etc/hosts",
+        "wc -l README.md",
+        "cat -",  # stdin placeholder is skipped
+        "ls /dev/null",
+        "echo hello",  # non-path command untouched
+        "make test",  # unclassified commands untouched
+    )
+    for cmd in allowed:
+        assert reason(cmd) is None, f"expected allowed: {cmd!r}"
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Shell workspace jail examples use POSIX"
+)
+@pytest.mark.parametrize("subagent_type", ["review", "security-reviewer", "judge", "explore"])
+async def test_read_only_subagent_shell_denies_workspace_escape(
+    runtime: Runtime,
+    environment: Environment,
+    subagent_type: str,
+) -> None:
+    """`find .. -name AGENTS.md` must be denied for review/read-only subagents even
+    under a yolo approval — the jail is a hard profile boundary, not an approval."""
+    runtime.role = "subagent"
+    runtime.subagent_type = subagent_type
+
+    with tool_call_context("Shell"):
+        shell = Shell(Approval(yolo=True), environment, runtime)
+        result = await shell(ShellParams(command="find .. -name AGENTS.md"))
+
+    assert result.is_error
+    assert "resolves outside the workspace" in result.message
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Shell workspace jail examples use POSIX"
+)
+async def test_read_only_subagent_shell_allows_workspace_find(
+    runtime: Runtime,
+    environment: Environment,
+) -> None:
+    """Positive control: an in-workspace find still runs for review subagents."""
+    runtime.role = "subagent"
+    runtime.subagent_type = "review"
+
+    with tool_call_context("Shell"):
+        shell = Shell(Approval(yolo=True), environment, runtime)
+        result = await shell(ShellParams(command="find . -maxdepth 0 -name nope"))
+
+    assert not result.is_error
 
 
 @pytest.mark.skipif(

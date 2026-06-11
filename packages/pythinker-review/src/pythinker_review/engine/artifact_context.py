@@ -50,6 +50,8 @@ def build_artifact_context(
         "changed_files": ", ".join(resolved.changed_files),
         "head_sha": resolved.head_sha,
         "base_sha": resolved.base_sha,
+        "requested_base_ref": resolved.requested_base_ref,
+        "fallback_reason": resolved.fallback_reason or "",
         "commit_messages": _commit_messages(repo, resolved) or "",
     }
     return ArtifactDiffContext(

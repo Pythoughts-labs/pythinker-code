@@ -11,6 +11,7 @@ from pythinker_core.tooling import CallableTool2, ToolError, ToolReturnValue
 from pythinker_code.execution_profiles import resolve_execution_policy
 from pythinker_code.soul.agent import Runtime
 from pythinker_code.soul.toolset import get_current_tool_call_or_none
+from pythinker_code.subagents.codenames import generate_codename, is_generic_agent_name
 from pythinker_code.subagents.models import AgentLaunchSpec, AgentTypeDefinition
 from pythinker_code.subagents.runner import (
     ForegroundRunRequest,
@@ -529,6 +530,34 @@ class _BackgroundCapacity:
         return self.deferred_count > 0
 
 
+def _with_distinct_codenames(agents: list[AgentRunConfig]) -> list[AgentRunConfig]:
+    """Replace generic/duplicate child names with distinctive instance codenames.
+
+    Models routinely echo the subagent type as the name, producing identical
+    ``code-reviewer:code-reviewer`` rows for every parallel child. A generated
+    codename makes each instance distinguishable across the result tree,
+    TaskList, and notifications; caller-chosen distinct names are kept as-is.
+    When the caller gave no title either, the codename plus type becomes the
+    task description so notifications stay self-explanatory.
+    """
+    renamed: list[AgentRunConfig] = []
+    seen: set[str] = set()
+    for child in agents:
+        child_type = child.subagent_type or "coder"
+        name = child.name.strip()
+        if is_generic_agent_name(name, child_type) or name.lower() in seen:
+            codename = generate_codename(seen | {a.name.strip().lower() for a in agents})
+            child = child.model_copy(
+                update={
+                    "name": codename,
+                    "title": child.title or f"{codename} ({child_type})",
+                }
+            )
+        seen.add(child.name.strip().lower())
+        renamed.append(child)
+    return renamed
+
+
 class RunAgentsTool(CallableTool2[RunAgentsParams]):
     name: str = "RunAgents"
     params: type[RunAgentsParams] = RunAgentsParams
@@ -682,6 +711,9 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
         if capacity is not None and capacity.is_limited:
             agents_to_launch = params.agents[: capacity.launch_count]
             deferred_agents = params.agents[capacity.launch_count :]
+        # Applied after fingerprinting/approval (which use the caller's params
+        # verbatim, keeping re-approval stable) and only to launched children.
+        agents_to_launch = _with_distinct_codenames(agents_to_launch)
 
         from pythinker_code.scratchpad import append_scratch_event
 

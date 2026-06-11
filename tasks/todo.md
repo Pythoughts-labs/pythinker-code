@@ -2,6 +2,117 @@
 
 ## Active
 
+### Follow-ups from live-session observation (2026-06-11 afternoon)
+
+- [x] Investigate TaskOutput blocking-timeout retry loop + repeated "will be
+      notified" narration (session cffe7da6; report delivered — fix candidates:
+      reorder timeout retrieval_hint so "return control / rely on notification"
+      is the primary option; add escalation for consecutive blocking timeouts
+      per task, mirroring the non-blocking "STOP polling" counter, which today
+      RESETS on every blocking attempt).
+- [x] Distinctive subagent instance codenames (RunAgents generic/duplicate
+      names → generated `adjective-noun`; subagents/codenames.py).
+- [x] Slash-command inline ghost completion + Tab accept
+      (SlashCommandAutoSuggest in ui/shell/prompt.py, auto-suggestion theme
+      styles, Tab key binding).
+
+### CodeRabbit review triage (2026-06-11, 16 findings)
+
+Fixed (7): RunMeta.requested_base_ref → `str | None`; constant.py catches
+TOMLDecodeError; prompt.py CwdLostError re-raises caught instance; prompt.py
+shortstat bare-except now debug-logs; otel.py error-log sink one-shot
+breadcrumb (stdlib logging, recursion-safe); usage.py `none observed`
+placeholders (+ regression test); symlink test skips when unsupported.
+
+Declined as false positives (evidence):
+- 4× "subagents: null → []/{}": agentspec.py:60 types it `dict|None|Inherit`,
+  :128 resolves `or {}`; bare `subagents:` is the uniform 15-spec convention,
+  and the suggested `[]` would fail pydantic validation (dict expected).
+- agent.py add_shared_tools ordering: toolset.py:981 `_register_mcp_tools`
+  adds every connected MCP tool to the primary toolset anyway; bare-name
+  binding exists for subagents (parent map already populated). Proposed move
+  is a no-op for background loads.
+- CHANGELOG duplicate bullets: title-level scan finds zero duplicates.
+
+Out of scope / follow-ups:
+- test_learn_slash mocks soul._turn; test_soul_status_cost asserts an import —
+  pre-existing test design; black-boxing them is its own task.
+- add_shared_tools returning skipped names: no consumer today (YAGNI);
+  conflicts already log warnings.
+- Real narrow race: a subagent launched while the parent's background MCP
+  connect is still in flight misses shared MCP tools (map populated later).
+  Needs a re-bind or wait at subagent build; not addressed by any review
+  suggestion.
+
+### Agent review safety + TUI hardening — branch `mythos-enhancements`
+
+Plan: docs/superpowers/plans/2026-06-11-agent-review-safety-tui-hardening-plan.md
+
+Open-question decisions (autonomous defaults, reversible):
+
+1. Review/security subagents: zero network by default (`allow_network=False`);
+   SearchWeb/FetchURL hidden AND execution-denied. Plan/ask root profiles keep
+   network (planning research is a first-class use case).
+2. `find .` stays allowed in read-only shell; no command rewriting (prune
+   injection is brittle). Escape denials advise Glob/Grep instead.
+3. Missing `origin/main`: keep the existing fallback (CLI compat per the plan's
+   own rollout note) but make it loud via `requested_base_ref`/`fallback_reason`
+   metadata in ResolvedDiff + RunMeta. Strict-fail can be layered later.
+4. Profile registry: option (a) — keep `_SUBAGENT_PROFILES` in permission.py as
+   the single source of truth; no second registry in AgentTypeDefinition.
+5. Env scrubbing: scrub on Shell subprocess spawn for restricted profiles;
+   pattern-based (known names + *_API_KEY/_TOKEN/_SECRET/_PASSWORD/AWS_*/...).
+6. OS-level sandboxing (Seatbelt/Landlock): deferred (per plan note).
+
+- [x] 1. Phase 1 — workspace jail for shell path args
+      (`check_shell_path_argument` next to `is_within_workspace`;
+      `shell_workspace_escape_reason` wired into `check_shell_command_allowed`,
+      shared by fg+bg shell) → verified: 12 new unit/integration tests (find ..
+      denied, find . allowed, rg/grep/git -C, symlink escape, additional_dirs)
+- [x] 2. Phase 2 — declarative profiles (`allow_network` on PermissionProfile;
+      execution gate + visibility for SearchWeb/FetchURL; env scrubbing for
+      restricted-profile shell subprocesses incl. background via
+      TaskSpec.scrub_secrets; yolo non-escalation tests)
+- [x] 3. Phase 3 (scoped) — bounded retry: per-agent failed-command tracker in
+      Shell; verbatim command after 2 failures => hard denial (review-scoped;
+      implement profile unaffected)
+- [x] 4. Phase 4 — ResolvedDiff/RunMeta requested_base_ref + fallback_reason;
+      pretty renderer warning; artifact metadata → diff_source unit tests
+- [x] 5. Phase 7 — subagent todo lists normalized to single in_progress
+- [x] 6. Phase 6 (scoped) — monotonic _ToolCallBlock guards + tests
+- [x] 7. Changelog entry (7 bullets under Unreleased)
+- [x] 8. Verify: make check-pythinker-code ✓, check-pythinker-review ✓,
+      review pkg pytest ✓ (170 passed), tests/ ✓ (5170 passed),
+      tests_e2e ✓ (65 passed)
+- [x] 9. /clean-code-guard — guard pass on the full diff: fixed two introduced
+      duplications (Shell failure-count increment → _record_failed_attempt;
+      todo note-rebuild → _with_appended_note); re-verified (79+24 tests, ruff
+      check+format clean). No other imperative violations.
+
+Review: enforcement landed at the single choke points the codebase already
+uses — `check_shell_command_allowed` (fg+bg shell share it via Shell.__call__),
+`check_tool_call_allowed` (network tools), `_is_tool_visible` (advisory layer),
+and `get_clean_env`-adjacent scrubbing. The shell jail deliberately mirrors
+file-tool semantics (Glob/Grep full jail for search/traversal; ReadFile parity
+for reads) so Shell is never stricter than the first-class tools. Deviations
+from the plan text: no full ShellReadPolicy allowlist (would break
+verifier/test workflows — every unclassified command would be denied), no
+ReviewCapabilityRegistry (pythinker-review invokes no external scanners; the
+agent-side retry cap addresses the actual flag-thrashing), origin/main fallback
+kept (CLI compat) but made loud via metadata, Phase 5 heartbeats + full Phase 6
+event-store rewrite deferred as own PRs.
+
+Deferred (documented, not silently dropped):
+
+- Phase 1 full ShellReadPolicy allowlist: would deny every unclassified command
+  (pytest, make, …) and break verifier/ci workflows; classifier+jail covers the
+  transcript risks. Needs maintainer call.
+- Phase 3 ReviewCapabilityRegistry + scanner ladder/coverage metadata: no
+  external scanner subsystem exists in pythinker-review yet (verified).
+- Phase 5 heartbeats/token budgets: cross-cutting runner+TUI feature, own PR.
+- Phase 6 full TaskEventStore renderer rewrite: blocks already flush exactly
+  once; scoped monotonic guards land here, rewrite is its own PR.
+
 ### Default best-practices adoption — branch `feat/agentic-orchestration`
 
 Make the engineering best-practices profile a default, not just `/bp` opt-in:

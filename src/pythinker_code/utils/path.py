@@ -234,6 +234,27 @@ def is_within_workspace(
     return any(is_within_directory(path, d) for d in additional_dirs)
 
 
+def check_shell_path_argument(
+    path_str: str,
+    work_dir: HostPath,
+    additional_dirs: Sequence[HostPath] = (),
+) -> bool:
+    """Whether a shell path-like argument resolves inside the workspace.
+
+    Applies the same boundary the file tools enforce via :func:`is_within_workspace`
+    to raw shell command arguments: ``~`` is expanded, relative paths resolve against
+    *work_dir* (the shell's cwd), and symlinks are followed on both sides so a link
+    cannot smuggle a path out of (or fake a path into) the workspace.
+    """
+    candidate = Path(path_str).expanduser()
+    if not candidate.is_absolute():
+        candidate = Path(str(work_dir)) / candidate
+    resolved = HostPath(os.path.realpath(candidate))
+    real_work = HostPath(os.path.realpath(str(work_dir)))
+    real_add = [HostPath(os.path.realpath(str(d))) for d in additional_dirs]
+    return is_within_workspace(resolved, real_work, real_add)
+
+
 async def find_project_root(work_dir: HostPath) -> HostPath:
     """Walk up from *work_dir* to find the nearest directory containing ``.git``.
 
