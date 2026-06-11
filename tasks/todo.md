@@ -134,27 +134,21 @@ This is the biggest mechanical change. Use `sed` for the bulk pass, then verify 
   ```
 
 - [ ] **Verify no orphan `pythinker_cli` strings remain in *.py**:
-  ```bash
-  grep -rn "pythinker_cli" --include="*.py" src/ packages/ sdks/ tests/ tests_e2e/ tests_ai/ scripts/ examples/ \
-    | grep -v "pythinker_cli_session"
-  ```
-  Expect: empty output.
 
-- [ ] **Handle `pythinker_cli_session` attribute renames separately**:
   ```bash
-  find src tests -name "*.py" -type f \
-    -exec sed -i 's/\bpythinker_cli_session\b/pythinker_code_session/g' {} +
+  grep -rn "pythinker_cli" --include="*.py" src/ packages/ sdks/ tests/ tests_e2e/ tests_ai/ scripts/ examples/
   ```
+
+  Expect: empty output (all references should now be `pythinker_code`).
+
+- [ ] **Verify `pythinker_code_session` attribute usage**:
+  Confirm that attribute references like `joint_session.pythinker_code_session` and `session.pythinker_code_session` are correctly updated in web API and worker files.
 
 - [ ] **Run the test collector** to confirm all imports resolve:
+
   ```bash
   uv sync --frozen --all-extras --all-packages
   uv run pytest tests --co -q 2>&1 | tail -20
-  ```
-
-- [ ] **Update telemetry path regex** in `sentry.py`:
-  ```python
-  r"^(.*?)(site-packages|pythinker_code|src/pythinker_code)/"
   ```
 
 - [ ] Commit.
