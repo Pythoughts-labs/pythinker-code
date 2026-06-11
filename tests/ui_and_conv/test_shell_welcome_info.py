@@ -143,8 +143,9 @@ def test_welcome_banner_layout_width_matrix(monkeypatch):
 
         output = console.export_text()
         lines = [line.rstrip() for line in output.splitlines() if line.strip()]
-        max_panel_width = min(width, shell_module._WELCOME_MAX_WIDTH)
-        assert all(cell_width(line) <= max_panel_width for line in lines)
+        # The panel spans the full terminal width, like the prompt rules.
+        assert any(cell_width(line) == width for line in lines)
+        assert all(cell_width(line) <= width for line in lines)
         assert "Pythinker Code v9.9.9" in lines[0]
         assert "Welcome to Pythinker" in output
         assert "Directory" in output
@@ -156,6 +157,98 @@ def test_welcome_banner_layout_width_matrix(monkeypatch):
             assert "▛" not in output
         else:
             assert "▛" in output
+
+
+def test_welcome_two_column_layout_when_wide(monkeypatch):
+    from pythinker_code.ui.shell import WelcomeInfoItem
+
+    console = Console(record=True, width=120, color_system=None)
+    monkeypatch.setattr(shell_module, "console", console)
+    monkeypatch.setattr(shell_module, "get_version", lambda: "9.9.9")
+    monkeypatch.setattr(shell_module, "ascii_glyphs_enabled", lambda: False)
+
+    items = [
+        WelcomeInfoItem(name="Directory", value="/tmp/proj"),
+        WelcomeInfoItem(name="Tip", value="Type /help for commands."),
+    ]
+    shell_module._print_welcome_info("Pythinker Code", items)
+
+    lines = console.export_text().splitlines()
+    # Welcome copy and the Tips column share the first content row, separated
+    # by the vertical divider (panel edges + divider = 3 pipes).
+    head_line = next(ln for ln in lines if "Welcome to Pythinker" in ln)
+    assert "Tips" in head_line
+    assert head_line.count("│") == 3
+    # The robot mark renders in the left column.
+    assert any("▛" in ln for ln in lines)
+    # Facts sit inside the left column, so the divider crosses their rows too.
+    dir_line = next(ln for ln in lines if "Directory" in ln)
+    assert dir_line.count("│") == 3
+    assert "/tmp/proj" in dir_line
+
+
+def test_welcome_ascii_mode_emits_pure_ascii(monkeypatch):
+    from pythinker_code.ui.shell import WelcomeInfoItem
+
+    console = Console(record=True, width=120, color_system=None)
+    monkeypatch.setattr(shell_module, "console", console)
+    monkeypatch.setattr(shell_module, "get_version", lambda: "9.9.9")
+    monkeypatch.setattr(shell_module, "ascii_glyphs_enabled", lambda: True)
+
+    items = [
+        WelcomeInfoItem(
+            name="Auto-save",
+            value="~/.pythinker/sessions/" + "a" * 120 + "/context.json",
+        ),
+        WelcomeInfoItem(name="Tip", value="No AGENTS.md found — run /init to generate one."),
+    ]
+    shell_module._print_welcome_info("Pythinker Code", items)
+
+    output = console.export_text()
+    assert output.isascii(), [ch for ch in set(output) if not ch.isascii()]
+    assert "Welcome to Pythinker" in output
+    assert "Tips" in output
+
+
+def test_welcome_chip_degrades_to_ascii(monkeypatch):
+    monkeypatch.setattr(shell_module, "consume_whats_new", lambda: None)
+    monkeypatch.setattr(shell_module, "welcome_update_target", lambda: "1.2.3")
+    monkeypatch.setattr(shell_module, "ascii_glyphs_enabled", lambda: True)
+
+    chip = shell_module._welcome_banner_chip()
+
+    assert chip is not None
+    assert chip.plain.isascii()
+    assert "Update available" in chip.plain
+
+
+def test_logo_antenna_blinks_unless_motion_disabled(monkeypatch):
+    monkeypatch.setattr(shell_module, "motion_disabled", lambda: False)
+    spans = shell_module._logo_text().spans
+    assert any("blink" in str(span.style) for span in spans)
+
+    monkeypatch.setattr(shell_module, "motion_disabled", lambda: True)
+    spans = shell_module._logo_text().spans
+    assert not any("blink" in str(span.style) for span in spans)
+
+
+def test_welcome_tiny_width_does_not_crash(monkeypatch):
+    from pythinker_code.ui.shell import WelcomeInfoItem
+    from pythinker_code.ui.shell.components.render_utils import cell_width
+
+    console = Console(record=True, width=30, color_system=None)
+    monkeypatch.setattr(shell_module, "console", console)
+    monkeypatch.setattr(shell_module, "get_version", lambda: "9.9.9")
+
+    items = [
+        WelcomeInfoItem(name="Directory", value="/very/long/path/that/never/ends/project"),
+        WelcomeInfoItem(name="Tip", value="Type /help for commands."),
+    ]
+    shell_module._print_welcome_info("Pythinker Code", items)
+
+    lines = [ln.rstrip() for ln in console.export_text().splitlines() if ln.strip()]
+    assert lines
+    assert all(cell_width(ln) <= 30 for ln in lines)
 
 
 def test_welcome_auto_save_path_is_middle_truncated_not_wrapped(monkeypatch):

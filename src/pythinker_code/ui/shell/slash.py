@@ -1649,8 +1649,8 @@ def web(app: Shell, args: str):
 
 
 @registry.command
-def vis(app: Shell, args: str):
-    """Open Pythinker Agent Tracing Visualizer in browser"""
+def reports(app: Shell, args: str):
+    """Open Pythinker session reports (Agent Tracing Visualizer) in browser"""
     from pythinker_code.telemetry import track
 
     track("vis_opened")

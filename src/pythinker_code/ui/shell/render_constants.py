@@ -31,7 +31,7 @@ DIFF_CONTEXT_LINES: Final = 3
 #: pathological diff cannot freeze or flood the terminal.
 DIFF_EXPANDED_MAX_LINES: Final = 400
 
-#: Syntax-highlighting size guards (Codex parity: render/highlight.rs). Code
+#: Syntax-highlighting size guards. Code
 #: blocks beyond either limit render as plain text with a notice instead of
 #: paying an unbounded Pygments lexing cost.
 MAX_HIGHLIGHT_BYTES: Final = 512 * 1024

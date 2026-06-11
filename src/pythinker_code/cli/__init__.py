@@ -911,7 +911,7 @@ def pythinker(
             scratchpad_status = await ensure_git_excluded(work_dir)
 
             # Sweep accumulated state on startup (best-effort, non-blocking).
-            # Mirrors Claude Code's cleanupPeriodDays=30 model.
+            # Default 30-day retention sweep.
             _retention = config.session_retention_days if isinstance(config, Config) else 30
             await asyncio.to_thread(sweep_old_sessions, _retention)
             await asyncio.to_thread(sweep_old_plans, _retention)

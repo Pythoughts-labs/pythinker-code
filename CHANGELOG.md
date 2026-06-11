@@ -15,6 +15,10 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Shell error briefs now show the trailing output of a failed command.** When a `Shell`/`Terminal` command exits non-zero, times out, or is killed by a signal, the collapsed worklog card appended only `Failed with exit code: N`; you had to expand the result to see *why*. The brief now includes the last few non-empty output lines (e.g. the stderr message), rendered as plain text so shell metacharacters (backticks, `#`, `*`) and line breaks are preserved verbatim instead of being reflowed as Markdown.
+- **Subagents no longer receive plan-mode workflow reminders.** Plan mode is a session-wide flag shared with subagents (so it persists across resume), but subagent toolsets usually exclude `EnterPlanMode`/`ExitPlanMode`. Injecting the plan-mode reminder into a subagent only invited hallucinated calls to tools it doesn't have; the reminder is now root-only.
+- **Terminal no longer risks hanging in raw mode on exit.** The cursor-position probe left `stdin` in cbreak mode and could block in an uninterruptible `os.read()` if cancelled mid-probe (e.g. a race with prompt_toolkit's reader on shutdown). Reads are now non-blocking during the probe and `VMIN`/`VTIME` are restored to canonical defaults, so a hang or crash can't leave the terminal wedged.
+
 ## 0.40.1 (2026-06-10)
 
 - **Windows/Linux native installers: web UI no longer 404s on `/`.** The installer CI froze the app without building the gitignored web/vis frontend bundles, so `pythinker web` opened a browser onto `GET /?token=… → 404 Not Found`. Both installer workflows now build the bundles before PyInstaller (matching the PyPI release flow — pip/wheel installs were never affected), every PyInstaller spec refuses to freeze when the bundles are missing, and a build that still lacks them serves an explanatory page on `/` (with the REST API still reachable under `/api`) instead of a bare 404.

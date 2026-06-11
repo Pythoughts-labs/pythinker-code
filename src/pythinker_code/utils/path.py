@@ -174,7 +174,7 @@ def is_config_surface_path(path: HostPath, work_dir: HostPath | None = None) -> 
         return is_within_directory(work_dir, agents_dir) or is_within_directory(path, work_dir)
     if "/.pythinker/" in posix_lower and base in ("config.toml", "config.local.toml"):
         return True
-    # Agent-spec dirs hold both YAML wrappers and Claude/Agents-style ``*.md``
+    # Agent-spec dirs hold both YAML wrappers and Markdown-style ``*.md``
     # frontmatter specs (see ``discover_markdown_agents``); both define a subagent's
     # tool policy and system prompt, so both are config surfaces.
     return base.endswith((".yaml", ".yml", ".md")) and any(

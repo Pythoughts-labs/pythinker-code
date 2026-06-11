@@ -53,7 +53,7 @@ def colors_disabled(environ: Mapping[str, str] | None = None) -> bool:
 def color_depth(environ: Mapping[str, str] | None = None) -> ColorDepth:
     """Classify the terminal's color support into three usable tiers.
 
-    Mirrors the Codex TUI detection order: an explicit ``FORCE_COLOR`` level
+    Detection order: an explicit ``FORCE_COLOR`` level
     wins, then ``COLORTERM`` truecolor advertising, then the Windows Terminal
     promotion (``WT_SESSION`` implies 24-bit support even when ``TERM`` is
     conservative), then ``TERM`` itself. ``"none"`` mirrors

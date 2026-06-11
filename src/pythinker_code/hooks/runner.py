@@ -110,7 +110,7 @@ async def run_hook(
 
 
 def _extract_additional_context(parsed: dict[str, Any], hook_output: dict[str, Any]) -> str:
-    """Extract Claude-Code-style additionalContext from JSON hook output."""
+    """Extract ``additionalContext`` from JSON hook output."""
     candidates = (hook_output.get("additionalContext"), parsed.get("additionalContext"))
     for value in candidates:
         if isinstance(value, str) and value.strip():

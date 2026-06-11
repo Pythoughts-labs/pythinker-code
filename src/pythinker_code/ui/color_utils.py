@@ -1,7 +1,6 @@
 """Small color-math helpers for terminal-adaptive UI decisions.
 
-Ported from the Codex TUI reference (``codex-rs/tui/src/color.rs``): linear
-RGB blending plus an ITU-R BT.601 luma test used to classify terminal
+Linear RGB blending plus an ITU-R BT.601 luma test used to classify terminal
 backgrounds as light or dark. Pure functions, no terminal I/O.
 """
 

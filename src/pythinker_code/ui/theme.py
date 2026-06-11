@@ -83,8 +83,8 @@ _DIFF_PLAIN = DiffColors(
 )
 
 # Basic 16-color terminals: the hex background tints above quantize into
-# unreadable mud, so fall back to plain green/red foregrounds (Codex's
-# ANSI16 diff tier). The fields still act as overlay styles for diff rows.
+# unreadable mud, so fall back to plain green/red foregrounds (the ANSI16
+# diff tier). The fields still act as overlay styles for diff rows.
 _DIFF_ANSI16 = DiffColors(
     add_bg=RichStyle(color="green"),
     del_bg=RichStyle(color="red"),

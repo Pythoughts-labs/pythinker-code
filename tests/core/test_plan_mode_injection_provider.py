@@ -19,9 +19,11 @@ def _make_soul_mock(
     plan_mode: bool = True,
     plan_path: Path | None = None,
     consume_pending: bool = False,
+    is_subagent: bool = False,
 ) -> MagicMock:
     soul = MagicMock()
     type(soul).plan_mode = PropertyMock(return_value=plan_mode)
+    type(soul).is_subagent = PropertyMock(return_value=is_subagent)
     soul.get_plan_file_path.return_value = plan_path
     soul.consume_pending_plan_activation_injection.return_value = consume_pending
     return soul
@@ -133,6 +135,22 @@ class TestPlanModeInjectionProvider:
 
         await provider.get_injections([], soul)
         assert provider._inject_count == 0
+
+    async def test_subagent_receives_no_plan_mode_injection(self) -> None:
+        # Subagents share the session's plan_mode flag (for persistence/resume),
+        # but their YAML usually excludes EnterPlanMode/ExitPlanMode. Injecting the
+        # plan-mode workflow reminder would only invite hallucinated tool calls, so
+        # the provider must suppress it for subagents even while plan mode is active.
+        provider = PlanModeInjectionProvider()
+        soul = _make_soul_mock(
+            plan_mode=True,
+            plan_path=Path("/tmp/plan.md"),
+            is_subagent=True,
+        )
+
+        result = await provider.get_injections([], soul)
+
+        assert result == []
 
 
 class TestPlanModeVerificationClause:

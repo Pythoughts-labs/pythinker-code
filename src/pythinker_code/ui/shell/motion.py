@@ -97,7 +97,7 @@ def _wave_colors(
     trail behind it — an angled sheen rather than a flat pulse. ``rightward``
     flips both the travel direction and the trailing side so the trail always
     lags behind the head. With ``smooth`` (truecolor terminals), the sheen is a
-    continuous cosine-falloff blend from highlight into base (Codex shimmer)
+    continuous cosine-falloff blend from highlight into base
     instead of the discrete three-step ramp.
     """
     n = len(chars)

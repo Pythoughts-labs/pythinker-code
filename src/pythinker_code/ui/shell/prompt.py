@@ -865,8 +865,8 @@ class SlashCommandMenuControl(UIControl):
         if match_prefix_len <= 0:
             return FormattedText([(base_style, display)])
 
-        # Match highlighting mirrors Codex's slash popup: the leading slash stays
-        # in the normal command style; the typed command prefix is emphasized.
+        # Match highlighting for the slash popup: the leading slash stays in the
+        # normal command style; the typed command prefix is emphasized.
         match_end = min(len(text), 1 + match_prefix_len)
         match_style = (
             "class:slash-completion-menu.command.match.current"
@@ -1258,7 +1258,7 @@ class LocalFileMentionCompleter(Completer):
             now - self._cache_time <= self._refresh_interval and self._cache_scope == scope
         )
 
-        # Invalidate on .git/index mtime change (like Claude Code).
+        # Invalidate on .git/index mtime change.
         if cache_valid and self._is_git:
             mtime = git_index_mtime(self._root)
             if mtime != self._git_index_mtime:
@@ -3563,8 +3563,8 @@ class CustomPromptSession:
             right_width = _display_width(right_text)
 
         # Left side: prefer extension statuses, then active background work,
-        # then any active toast. The background-work copy mirrors Codex's
-        # compact footer summary while keeping Pythinker's single /task command.
+        # then any active toast. The background-work copy is a compact footer
+        # summary using Pythinker's single /task command.
         max_left_width = max(0, columns - right_width - 2)
         ext = footer_statuses()
         if ext:

@@ -25,6 +25,7 @@ from pythinker_core.chat_provider import (
     ChatProviderError,
 )
 from rich import box
+from rich.align import Align
 from rich.console import Group, RenderableType
 from rich.markup import escape
 from rich.panel import Panel
@@ -77,6 +78,7 @@ from pythinker_code.ui.shell.visualize import (
     ApprovalPromptDelegate,
     visualize,
 )
+from pythinker_code.ui.terminal_capabilities import ascii_glyphs_enabled, motion_disabled
 from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
 from pythinker_code.ui.theme import tui_rich_style
 from pythinker_code.utils.aioqueue import QueueShutDown
@@ -824,6 +826,12 @@ class Shell:
         else:
             self._start_background_task(self._auto_update())
 
+        if isinstance(self.soul, PythinkerSoul):
+            # Kick off MCP loading before the banner so servers connect in the
+            # background while the user reads it; the prompt's MCP status line
+            # carries the blinking "connecting" heartbeat without ever
+            # blocking input.
+            await self.soul.start_background_mcp_loading()
         _print_welcome_info(
             self.soul.name or "Pythinker CLI",
             self._welcome_info,
@@ -856,7 +864,6 @@ class Shell:
                 wire_file=self.soul.wire_file,
                 show_thinking_stream=self.soul.runtime.config.show_thinking_stream,
             )
-            await self.soul.start_background_mcp_loading()
 
         async def _plan_mode_toggle() -> bool:
             if isinstance(self.soul, PythinkerSoul):
@@ -2091,16 +2098,50 @@ class Shell:
 _LOGO_NAVY = "#213853"  # outline / chassis (head + body frame, mouth, neck)
 _LOGO_FACE = "#F9F2F5"  # face / chest interior (cream)
 _LOGO_CORAL = "#EE9983"  # antenna ball, ears, accent bits
+_LOGO_CORAL_LIT = "#FFB9A3"  # antenna ball "powered on" — lighter coral glow
 _LOGO_IRIS = "#AFE3F1"  # eye iris + chest button glow (brand cyan)
 
-_LOGO = (
-    f"      [{_LOGO_CORAL}]●[/]\n"
+# Head-only robot mark (antenna, ears, eyes, mouth). Only rendered when
+# ascii_glyphs_enabled() is false; ASCII terminals get the text-only banner
+# instead of a garbled silhouette. ``{antenna_style}`` is filled per render so
+# the antenna ball can carry the terminal's slow-blink attribute.
+_LOGO_TEMPLATE = (
+    "      [{antenna_style}]●[/]\n"
     f"      [{_LOGO_NAVY}]│[/]\n"
     f"  [{_LOGO_NAVY}]▛[/][{_LOGO_FACE}]▀▀▀▀▀▀▀[/][{_LOGO_NAVY}]▜[/]\n"
     f" [{_LOGO_CORAL}]◖[/][{_LOGO_NAVY}]█[/][{_LOGO_FACE}] [/]"
     f"[{_LOGO_IRIS}]◉[/][{_LOGO_FACE}]   [/][{_LOGO_IRIS}]◉[/]"
     f"[{_LOGO_FACE}] [/][{_LOGO_NAVY}]█[/][{_LOGO_CORAL}]◗[/]\n"
     f"  [{_LOGO_NAVY}]▙▄▄▄[/][{_LOGO_FACE}]≡[/][{_LOGO_NAVY}]▄▄▄▟[/]"
+)
+
+
+def _logo_text() -> Text:
+    """Robot mark with a glowing antenna ball.
+
+    The ball carries the terminal's SGR slow-blink attribute, so terminals
+    with blinking text enabled blink it indefinitely; everywhere else the
+    bold light-coral glow reads as "powered on". Reduced motion pins the
+    ball steady and muted.
+    """
+    antenna_style = _LOGO_CORAL if motion_disabled() else f"blink bold {_LOGO_CORAL_LIT}"
+    return Text.from_markup(_LOGO_TEMPLATE.format(antenna_style=antenna_style))
+
+
+# 1:1 ASCII stand-ins for every decorative glyph the welcome banner emits
+# (mirrors the server-banner fallback in utils/server.py). Welcome copy and
+# chips pass through this when ascii_glyphs_enabled() is true so legacy code
+# pages never see a raw Unicode glyph in the startup path.
+_WELCOME_ASCII_FALLBACKS = str.maketrans(
+    {
+        "✦": "*",
+        "↑": "^",
+        "•": "*",
+        "·": "-",
+        "—": "-",
+        "…": "~",
+        "─": "-",
+    }
 )
 
 
@@ -2131,7 +2172,7 @@ def _value_style_for_label(label: str, level: WelcomeInfoItem.Level) -> str:
     if label == "Model":
         return f"bold {tokens.text}" if tokens.text else "bold bright_white"
     if label == "Branch":
-        return tokens.info or "cyan"
+        return tokens.muted or "grey50"
     if label == "Auto-save":
         return tokens.muted or "grey50"
     return level.value
@@ -2148,22 +2189,37 @@ def _welcome_banner_chip() -> Text | None:
     whats_new_version = consume_whats_new()
     update_target = welcome_update_target()
 
-    if update_target:
-        chip = Text.from_markup(f"[{_t.warning}]↑ Update available — v{update_target} · /update[/]")
-        chip.highlight_regex(r"/[A-Za-z][A-Za-z0-9_-]*", f"bold {_t.warning}")
+    def _chip(markup: str, style: str) -> Text:
+        if ascii_glyphs_enabled():
+            markup = markup.translate(_WELCOME_ASCII_FALLBACKS)
+        chip = Text.from_markup(markup)
+        chip.highlight_regex(r"/[A-Za-z][A-Za-z0-9_-]*", f"bold {style}")
         return chip
 
+    if update_target:
+        return _chip(
+            f"[{_t.warning}]↑ Update available — v{update_target} · /update[/]", _t.warning
+        )
+
     if whats_new_version:
-        chip = Text.from_markup(f"[{_t.info}]✦ What's new in v{whats_new_version} · /changelog[/]")
-        chip.highlight_regex(r"/[A-Za-z][A-Za-z0-9_-]*", f"bold {_t.info}")
-        return chip
+        return _chip(f"[{_t.info}]✦ What's new in v{whats_new_version} · /changelog[/]", _t.info)
 
     return None
 
 
-_WELCOME_MAX_WIDTH = 100
 _WELCOME_LABEL_WIDTH = 10
 _WELCOME_PANEL_CHROME_WIDTH = 6  # border + horizontal padding used below
+# Content cells needed before tips move into a divided right-hand column
+# (welcome copy + robot on the left, tips on the right, facts full-width
+# below). Narrower terminals stack the same blocks vertically instead.
+_WELCOME_COLUMNS_MIN_WIDTH = 84
+# Two-column proportions: the left column stays narrow — wide enough
+# for the strapline (52 cells), growing up to the max to fit fact rows —
+# and tips absorb the remaining width.
+_WELCOME_LEFT_COLUMN_WIDTH = 52
+_WELCOME_LEFT_COLUMN_MAX_WIDTH = 64
+_WELCOME_TIPS_MIN_WIDTH = 24
+_WELCOME_COLUMNS_CHROME_WIDTH = 3  # divider + one pad cell each side
 
 
 def _take_cells_left(text: str, max_width: int) -> str:
@@ -2194,7 +2250,7 @@ def _take_cells_right(text: str, max_width: int) -> str:
     return "".join(reversed(out))
 
 
-def _truncate_middle_to_width(text: str, max_width: int) -> str:
+def _truncate_middle_to_width(text: str, max_width: int, *, ellipsis: str = "…") -> str:
     """Cell-aware middle truncation for paths and UUID-like values."""
     if max_width <= 0:
         return ""
@@ -2202,25 +2258,29 @@ def _truncate_middle_to_width(text: str, max_width: int) -> str:
     if cell_width(cleaned) <= max_width:
         return cleaned
     if max_width <= 1:
-        return truncate_to_width(cleaned, max_width)
+        return truncate_to_width(cleaned, max_width, ellipsis=ellipsis)
     left_width = max(1, (max_width - 1) // 2)
     right_width = max(1, max_width - 1 - left_width)
-    return f"{_take_cells_left(cleaned, left_width)}…{_take_cells_right(cleaned, right_width)}"
+    return (
+        f"{_take_cells_left(cleaned, left_width)}{ellipsis}"
+        f"{_take_cells_right(cleaned, right_width)}"
+    )
 
 
 def _welcome_panel_width() -> int:
-    columns = current_console_width(console, default=_WELCOME_MAX_WIDTH)
-    return max(1, min(columns, _WELCOME_MAX_WIDTH))
+    # Span the full terminal, matching the prompt/input rules below the
+    # banner; re-queried at print time so every tab/terminal gets its own fit.
+    return max(1, current_console_width(console, default=80))
 
 
-def _welcome_value(label: str, value: str, max_width: int) -> str:
+def _welcome_value(label: str, value: str, max_width: int, *, ellipsis: str = "…") -> str:
     cleaned = sanitize_ansi(value).replace("\r", " ").replace("\n", " ")
     if label.strip() in {"Directory", "Auto-save", "Session"}:
-        return _truncate_middle_to_width(cleaned, max_width)
-    return truncate_to_width(cleaned, max_width)
+        return _truncate_middle_to_width(cleaned, max_width, ellipsis=ellipsis)
+    return truncate_to_width(cleaned, max_width, ellipsis=ellipsis)
 
 
-def _welcome_tip_lines(value: str, max_width: int) -> list[str]:
+def _welcome_tip_lines(value: str, max_width: int, *, ellipsis: str = "…") -> list[str]:
     cleaned = sanitize_ansi(value).replace("\r", " ").replace("\n", " ").strip()
     if not cleaned:
         return [""]
@@ -2230,43 +2290,48 @@ def _welcome_tip_lines(value: str, max_width: int) -> list[str]:
         break_long_words=False,
         break_on_hyphens=False,
     ) or [cleaned]
-    return [truncate_to_width(line, max_width) for line in lines]
+    return [truncate_to_width(line, max_width, ellipsis=ellipsis) for line in lines]
 
 
 def _print_welcome_info(
     name: str, info_items: list[WelcomeInfoItem], *, banner: Text | None = None
 ) -> None:
+    """Print the welcome banner once; it must never block the prompt."""
     _t = _get_tui_tokens()
+    ascii_mode = ascii_glyphs_enabled()
+    ellipsis = "~" if ascii_mode else "…"
+    panel_box = box.ASCII if ascii_mode else box.ROUNDED
     panel_width = _welcome_panel_width()
     content_width = max(1, panel_width - _WELCOME_PANEL_CHROME_WIDTH)
 
-    head = Text.from_markup("[bold]Welcome to Pythinker — think first, then code.[/]")
-    strapline = Text.from_markup(
-        f"[{_t.muted}]Review · Secure · Diagnose · Build with confidence.[/]"
-    )
-    help_text = Text.from_markup(f"[{_t.muted}]Type /help for commands.[/]")
+    def _copy(markup: str) -> Text:
+        if ascii_mode:
+            markup = markup.translate(_WELCOME_ASCII_FALLBACKS)
+        return Text.from_markup(markup)
+
+    head = _copy("[bold]Welcome to Pythinker — think first, then code.[/]")
+    strapline = _copy(f"[{_t.muted}]Review · Secure · Diagnose · Build with confidence.[/]")
+    help_text = _copy(f"[{_t.muted}]Type /help for commands.[/]")
     help_text.highlight_regex(r"/help\b", f"bold {_LOGO_CORAL}")
 
-    rows: list[RenderableType] = []
-    if content_width >= 68:
-        # Logo on the left; the 3-line text block bottom-aligns against the 5-line
-        # robot so the antenna floats above and the lines sit beside the body.
-        logo = Text.from_markup(_LOGO)
-        table = Table.grid(padding=(0, 1))
-        table.add_column(justify="left", no_wrap=True)
-        table.add_column(justify="left", vertical="bottom", no_wrap=True)
-        table.add_row(logo, Group(head, strapline, help_text))
-        rows.append(table)
-    else:
-        rows.extend([head, strapline, help_text])
+    if ascii_mode:
+        # Caller-provided values (tips, notices) may carry the same decorative
+        # glyphs as our own copy; degrade them through the same table.
+        info_items = [
+            WelcomeInfoItem(
+                name=item.name,
+                value=item.value.translate(_WELCOME_ASCII_FALLBACKS),
+                level=item.level,
+            )
+            for item in info_items
+        ]
 
     facts = [item for item in info_items if item.name.strip() != "Tip"]
     tips = [item for item in info_items if item.name.strip() == "Tip"]
 
-    if facts:
-        rows.append(Text(""))  # empty line
-        label_width = min(_WELCOME_LABEL_WIDTH, max(4, content_width // 3))
-        value_width = max(4, content_width - label_width - 2)
+    def _facts_grid(width: int) -> Table:
+        label_width = min(_WELCOME_LABEL_WIDTH, max(4, width // 3))
+        value_width = max(4, width - label_width - 2)
         info_table = Table.grid(padding=(0, 1))
         info_table.add_column(
             justify="right",
@@ -2277,40 +2342,112 @@ def _print_welcome_info(
         info_table.add_column(justify="left", no_wrap=True, width=value_width)
         for item in facts:
             value_style = _value_style_for_label(item.name, item.level)
-            value = _welcome_value(item.name, item.value, value_width)
+            value = _welcome_value(item.name, item.value, value_width, ellipsis=ellipsis)
             info_table.add_row(item.name, Text(value, style=value_style, no_wrap=True))
-        rows.append(info_table)
+        return info_table
 
-    if tips:
-        rows.append(Text(""))  # empty line
-        rows.append(Text("Tips", style=tui_rich_style("muted")))
-        tip_width = max(4, content_width - 4)
+    def _tips_block(width: int, *, with_rule: bool) -> Group:
+        gutter = 2
+        tip_width = max(4, width - gutter)
+        parts: list[RenderableType] = [Text("Tips", style=tui_rich_style("muted"))]
+        if with_rule:
+            rule_char = "-" if ascii_mode else "─"
+            parts.append(Text(rule_char * max(4, width), style=tui_rich_style("muted")))
         tips_table = Table.grid(padding=(0, 0))
-        tips_table.add_column(style=tui_rich_style("muted"), no_wrap=True, width=4)
+        tips_table.add_column(style=tui_rich_style("muted"), no_wrap=True, width=gutter)
         tips_table.add_column(justify="left", no_wrap=True, width=tip_width)
+        bullet = "* " if ascii_mode else "• "
         for item in tips:
-            for index, line in enumerate(_welcome_tip_lines(item.value, tip_width)):
+            lines = _welcome_tip_lines(item.value, tip_width, ellipsis=ellipsis)
+            for index, line in enumerate(lines):
                 tip_text = Text(line, style=item.level.value, no_wrap=True)
                 tip_text.highlight_regex(r"/[A-Za-z][A-Za-z0-9_-]*", f"bold {_LOGO_CORAL}")
-                tips_table.add_row("  • " if index == 0 else "    ", tip_text)
-        rows.append(tips_table)
+                tips_table.add_row(bullet if index == 0 else "  ", tip_text)
+        parts.append(tips_table)
+        return Group(*parts)
+
+    show_logo = not ascii_mode
+    use_columns = bool(tips) and content_width >= _WELCOME_COLUMNS_MIN_WIDTH
+    logo_rendered = show_logo and (use_columns or content_width >= 68)
 
     version_title = Text.assemble(
         ("Pythinker Code", tui_rich_style("muted")),
         (f" v{get_version()}", tui_rich_style("dim")),
     )
 
-    console.print(
-        Panel(
+    def _panel() -> Panel:
+        rows: list[RenderableType] = []
+        if use_columns:
+            # Two-column split: welcome copy, the robot mark, and the fact
+            # rows on the left; tips in a divided right-hand column. The left
+            # column grows (within its cap) to fit the longest fact row so
+            # paths don't truncate while the tips column has slack.
+            wanted_left = _WELCOME_LEFT_COLUMN_WIDTH
+            if facts:
+                longest_fact = max(cell_width(item.value) for item in facts)
+                wanted_left = max(
+                    wanted_left,
+                    min(_WELCOME_LEFT_COLUMN_MAX_WIDTH, longest_fact + _WELCOME_LABEL_WIDTH + 2),
+                )
+            left_width = max(
+                _WELCOME_LEFT_COLUMN_WIDTH,
+                min(
+                    wanted_left,
+                    content_width - _WELCOME_COLUMNS_CHROME_WIDTH - _WELCOME_TIPS_MIN_WIDTH,
+                ),
+            )
+            tips_width = content_width - _WELCOME_COLUMNS_CHROME_WIDTH - left_width
+            left_rows: list[RenderableType] = [head, strapline, help_text]
+            if show_logo:
+                left_rows.extend([Text(""), Align.center(_logo_text())])
+            if facts:
+                left_rows.extend([Text(""), _facts_grid(left_width)])
+            columns = Table(
+                box=panel_box,
+                show_header=False,
+                show_edge=False,
+                show_lines=False,
+                pad_edge=False,
+                padding=(0, 1),
+                border_style=tui_rich_style("border"),
+                expand=False,
+            )
+            columns.add_column(width=left_width, justify="left", vertical="top")
+            columns.add_column(width=tips_width, justify="left", vertical="top")
+            columns.add_row(Group(*left_rows), _tips_block(tips_width, with_rule=True))
+            rows.append(columns)
+        else:
+            if logo_rendered:
+                # Logo on the left; the text block centers vertically against
+                # the robot so the lines sit beside the face while the antenna
+                # floats above.
+                table = Table.grid(padding=(0, 1))
+                table.add_column(justify="left", no_wrap=True)
+                table.add_column(justify="left", vertical="middle", no_wrap=True)
+                table.add_row(_logo_text(), Group(head, strapline, help_text))
+                rows.append(table)
+            else:
+                rows.extend([head, strapline, help_text])
+
+            if facts:
+                rows.append(Text(""))  # empty line
+                rows.append(_facts_grid(content_width))
+
+            if tips:
+                rows.append(Text(""))  # empty line
+                rows.append(_tips_block(content_width, with_rule=False))
+
+        return Panel(
             Group(*rows),
             title=version_title,
             title_align="left",
             subtitle=banner,
             subtitle_align="right",
             border_style=tui_rich_style("border"),
-            box=box.ROUNDED,
+            box=panel_box,
             expand=False,
             width=panel_width,
             padding=(1, 2),
         )
-    )
+
+    console.print(_panel())

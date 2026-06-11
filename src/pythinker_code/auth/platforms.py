@@ -176,7 +176,7 @@ def _select_retry_api_keys(
 
 
 def _openai_fallback_models(platform_id: str) -> list[ModelInfo] | None:
-    # ChatGPT Codex model availability is subscription/account-specific. Do not
+    # ChatGPT model availability is subscription/account-specific. Do not
     # replace the user's live catalog with a static fallback; stale fallback
     # slugs surface as 400 "model is not supported with a ChatGPT account".
     if platform_id == OPENAI_CHATGPT_PLATFORM_ID:

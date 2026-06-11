@@ -184,7 +184,7 @@ def _token_from_openai_response(payload: dict[str, Any]) -> OAuthToken:
     # it lives inside the OAuth JWT claims under
     # `https://api.openai.com/auth.chatgpt_account_id`. Hoist it onto the
     # response so OAuthToken.from_response() picks it up. Without this the
-    # ChatGPT usage adapter, model catalog endpoint, and Codex request headers
+    # ChatGPT usage adapter, model catalog endpoint, and request headers
     # cannot scope requests to the active Plus/Pro account.
     if "account_id" not in normalized:
         jwt_token = payload.get("id_token") or payload.get("access_token")

@@ -2174,7 +2174,7 @@ class PythinkerSoul:
         if not isinstance(exception, APIStatusError):
             return False
         if exception.status_code == 429 and _is_hard_usage_limit(exception):
-            # A subscription usage cap (e.g. ChatGPT Codex `usage_limit_reached`)
+            # A subscription usage cap (e.g. ChatGPT `usage_limit_reached`)
             # resets in hours, not seconds — retrying with backoff only adds
             # latency before the inevitable failure. Surface it immediately.
             return False

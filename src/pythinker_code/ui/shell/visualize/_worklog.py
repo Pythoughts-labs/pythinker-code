@@ -226,11 +226,18 @@ def render_display_blocks(
             if text:
                 title = "Error" if is_error else "Report"
                 style = tui_rich_style("error") if is_error else tui_rich_style("muted")
+                # Error briefs carry a trailing stderr tail (the failing command's
+                # last lines). Rendering that as Markdown reflows newlines and eats
+                # shell metacharacters (backticks, '#', '*'), so render errors as
+                # plain text and reserve Markdown for authored "Report" briefs.
+                body: RenderableType = (
+                    Text(text, style=style) if is_error else Markdown(text, style=style)
+                )
                 if "\n" in text or len(text) > 100:
                     rendered.append(
                         render_worklog_card(
                             title,
-                            Markdown(text, style=style),
+                            body,
                             border_style=tui_rich_style("error")
                             if is_error
                             else tui_rich_style("dim"),
@@ -238,7 +245,7 @@ def render_display_blocks(
                         )
                     )
                 else:
-                    rendered.append(Markdown(text, style=style))
+                    rendered.append(body)
             idx += 1
             continue
         if isinstance(block, TodoDisplayBlock):
