@@ -1379,7 +1379,8 @@ async def statusline(app: Shell, args: str) -> None:
     # Pre-escaped: the [show|on|off|...] brackets would otherwise be parsed
     # (and swallowed) as Rich markup when interpolated into styled prints.
     usage_text = _rich_escape(
-        "Usage: /statusline [show|on|off|segments <id,...>|command <argv...>|command none]"
+        "Usage: /statusline [show|on|off|segments <id,...>|style fancy|plain"
+        "|bar-width <4-20>|budget <usd|none>|command <argv...>|command none]"
         f" — segment ids: {', '.join(STATUSLINE_SEGMENT_IDS)}"
     )
 
@@ -1387,6 +1388,12 @@ async def statusline(app: Shell, args: str) -> None:
         table = Table(show_header=False, box=None, pad_edge=False)
         table.add_row("Enabled", "on" if current.enabled else "off")
         table.add_row("Segments", ", ".join(current.segments) or "(none)")
+        table.add_row("Style", current.style)
+        table.add_row("Bar width", str(current.bar_width))
+        table.add_row(
+            "Cost budget",
+            f"${current.cost_budget:g}" if current.cost_budget is not None else "(none)",
+        )
         table.add_row("Command", _rich_escape(current.command) if current.command else "(none)")
         table.add_row("Command timeout", f"{current.command_timeout_ms} ms")
         console.print(table)
@@ -1451,6 +1458,25 @@ async def statusline(app: Shell, args: str) -> None:
         )
         items.append(
             SettingItem(
+                id="style",
+                label="Style",
+                current_value=current.style,
+                description="Footer visual style: 'fancy' (colors + bar) or 'plain' (monochrome).",
+                values=("fancy", "plain"),
+            )
+        )
+        bar_width_values = sorted({current.bar_width, 6, 8, 10, 12, 16})
+        items.append(
+            SettingItem(
+                id="bar_width",
+                label="Bar width",
+                current_value=str(current.bar_width),
+                description="Width in cells of the context progress bar (4-20).",
+                values=[str(v) for v in bar_width_values],
+            )
+        )
+        items.append(
+            SettingItem(
                 id="command",
                 label="Command",
                 current_value=current.command or "(none)",
@@ -1471,6 +1497,10 @@ async def statusline(app: Shell, args: str) -> None:
                 sl.enabled = changes["enabled"] == "on"
             if "command_timeout_ms" in changes:
                 sl.command_timeout_ms = int(changes["command_timeout_ms"])
+            if "style" in changes:
+                sl.style = changes["style"]
+            if "bar_width" in changes:
+                sl.bar_width = int(changes["bar_width"])
             segment_changes = {
                 key.removeprefix("segment:"): value == "on"
                 for key, value in changes.items()
@@ -1509,6 +1539,20 @@ async def statusline(app: Shell, args: str) -> None:
     # `command` with argument "s" and silently persist a junk command.
     verb, _, verb_args = mode.partition(" ")
     if verb == "segments":
+        if not verb_args.strip():
+            from rich.table import Table as _Table
+
+            from pythinker_code.ui.shell.statusline import SEGMENT_REGISTRY
+
+            seg_table = _Table(show_header=True, box=None, pad_edge=False)
+            seg_table.add_column("id")
+            seg_table.add_column("zone")
+            seg_table.add_column("state")
+            for seg_id, spec in SEGMENT_REGISTRY.items():
+                seg_table.add_row(seg_id, spec.zone, "on" if seg_id in current.segments else "off")
+            console.print(seg_table)
+            console.print(f"[{_t.muted}]{usage_text}[/]")
+            return
         raw = verb_args.strip()
         wanted = [s.strip() for s in raw.split(",") if s.strip()]
         unknown = [s for s in wanted if s not in STATUSLINE_SEGMENT_IDS]
@@ -1541,6 +1585,55 @@ async def statusline(app: Shell, args: str) -> None:
                 sl.segments = [*sl.segments, "command"]
 
         persist(_set_command, f"Status line command set to {_rich_escape(repr(raw))}.")
+        return
+    if verb == "style":
+        choice = verb_args.strip()
+        if choice not in {"fancy", "plain"}:
+            console.print(f"[{_t.warning}]{usage_text}[/]")
+            return
+
+        def _set_style(sl: Any) -> None:
+            sl.style = choice
+
+        persist(_set_style, f"Status line style set to {choice}.")
+        return
+    if verb == "bar-width":
+        try:
+            width = int(verb_args.strip())
+        except ValueError:
+            width = -1
+        if not 4 <= width <= 20:
+            console.print(f"[{_t.warning}]bar-width must be between 4 and 20.[/]")
+            return
+
+        def _set_width(sl: Any) -> None:
+            sl.bar_width = width
+
+        persist(_set_width, f"Context bar width set to {width}.")
+        return
+    if verb == "budget":
+        raw_budget = verb_args.strip()
+        if raw_budget in {"none", "off", "clear"}:
+
+            def _clear_budget(sl: Any) -> None:
+                sl.cost_budget = None
+
+            persist(_clear_budget, "Cost budget cleared.")
+            return
+        try:
+            budget = float(raw_budget.lstrip("$"))
+        except ValueError:
+            budget = -1.0
+        if budget < 0:
+            console.print(
+                f"[{_t.warning}]budget must be a non-negative dollar amount or 'none'.[/]"
+            )
+            return
+
+        def _set_budget(sl: Any) -> None:
+            sl.cost_budget = budget
+
+        persist(_set_budget, f"Cost budget set to ${budget:g}.")
         return
     console.print(f"[{_t.warning}]{usage_text}[/]")
 

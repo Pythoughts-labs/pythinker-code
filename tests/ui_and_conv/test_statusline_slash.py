@@ -278,3 +278,72 @@ async def test_statusline_bare_falls_back_to_table_during_task(
     row_labels = list(tables[0].columns[0].cells)
     assert "Enabled" in row_labels
     assert "Segments" in row_labels
+
+
+@pytest.mark.asyncio
+async def test_statusline_style_persists(runtime: Runtime, tmp_path: Path, monkeypatch) -> None:
+    config_path = (tmp_path / "config.toml").resolve()
+    runtime.config.source_file = config_path
+    app = _make_shell_app(runtime, tmp_path)
+    config_for_save = get_default_config()
+    monkeypatch.setattr(shell_slash, "load_config", Mock(return_value=config_for_save))
+    monkeypatch.setattr(shell_slash, "save_config", Mock())
+    monkeypatch.setattr(shell_slash.console, "print", Mock())
+    with pytest.raises(Reload):
+        await _run_statusline(app, "style plain")
+    assert config_for_save.tui.statusline.style == "plain"
+
+
+@pytest.mark.asyncio
+async def test_statusline_style_rejects_unknown(runtime: Runtime, tmp_path: Path, monkeypatch) -> None:
+    runtime.config.source_file = (tmp_path / "config.toml").resolve()
+    app = _make_shell_app(runtime, tmp_path)
+    save_mock = Mock()
+    monkeypatch.setattr(shell_slash, "load_config", Mock(return_value=get_default_config()))
+    monkeypatch.setattr(shell_slash, "save_config", save_mock)
+    monkeypatch.setattr(shell_slash.console, "print", Mock())
+    await _run_statusline(app, "style neon")  # no Reload raised
+    save_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_statusline_bar_width_bounds(runtime: Runtime, tmp_path: Path, monkeypatch) -> None:
+    runtime.config.source_file = (tmp_path / "config.toml").resolve()
+    app = _make_shell_app(runtime, tmp_path)
+    config_for_save = get_default_config()
+    monkeypatch.setattr(shell_slash, "load_config", Mock(return_value=config_for_save))
+    monkeypatch.setattr(shell_slash, "save_config", Mock())
+    monkeypatch.setattr(shell_slash.console, "print", Mock())
+    with pytest.raises(Reload):
+        await _run_statusline(app, "bar-width 14")
+    assert config_for_save.tui.statusline.bar_width == 14
+    # out of range: rejected, no Reload
+    await _run_statusline(app, "bar-width 3")
+    assert config_for_save.tui.statusline.bar_width == 14
+
+
+@pytest.mark.asyncio
+async def test_statusline_budget_set_and_clear(runtime: Runtime, tmp_path: Path, monkeypatch) -> None:
+    runtime.config.source_file = (tmp_path / "config.toml").resolve()
+    app = _make_shell_app(runtime, tmp_path)
+    config_for_save = get_default_config()
+    monkeypatch.setattr(shell_slash, "load_config", Mock(return_value=config_for_save))
+    monkeypatch.setattr(shell_slash, "save_config", Mock())
+    monkeypatch.setattr(shell_slash.console, "print", Mock())
+    with pytest.raises(Reload):
+        await _run_statusline(app, "budget 50")
+    assert config_for_save.tui.statusline.cost_budget == 50.0
+    with pytest.raises(Reload):
+        await _run_statusline(app, "budget none")
+    assert config_for_save.tui.statusline.cost_budget is None
+
+
+@pytest.mark.asyncio
+async def test_statusline_segments_bare_lists_all_ids(runtime: Runtime, tmp_path: Path, monkeypatch) -> None:
+    app = _make_shell_app(runtime, tmp_path)
+    printed: list[object] = []
+    monkeypatch.setattr(shell_slash.console, "print", lambda *a, **k: printed.append(a[0] if a else None))
+    await _run_statusline(app, "segments")
+    blob = " ".join(str(p) for p in printed)
+    for seg in ("spinner", "speed", "limits", "clock"):
+        assert seg in blob
