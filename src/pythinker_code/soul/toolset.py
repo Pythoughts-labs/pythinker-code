@@ -423,7 +423,7 @@ class PythinkerToolset:
 
     def begin_step(
         self,
-        previous_calls: list[tuple[str, str]],
+        previous_calls: list[ToolCallKey],
         *,
         step_no: int = 0,
         turn_id: str = "",
@@ -447,7 +447,7 @@ class PythinkerToolset:
             if self._consecutive_key is None and self._consecutive_count == 0:
                 self._advance_consecutive_streak(self._previous_step_calls)
 
-    def end_step(self) -> list[tuple[str, str]]:
+    def end_step(self) -> list[ToolCallKey]:
         """Called after each step to capture the calls made in this step."""
         if not self._step_closed:
             self._advance_consecutive_streak(self._current_step_calls)

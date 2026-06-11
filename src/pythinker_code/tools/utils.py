@@ -216,17 +216,17 @@ class ToolResultBuilder:
     def tail(self, max_lines: int = 5, max_line_len: int = 200) -> str:
         """Return the last non-empty lines from the buffer, joined with newlines.
 
-        Useful for surfacing actionable error context (stderr) in tool result briefs.
+        Useful for surfacing actionable error context in tool result briefs.
         """
         collected: list[str] = []
         for chunk in reversed(self._buffer):
             for line in reversed(chunk.splitlines()):
-                stripped = line.rstrip()
-                if not stripped.strip():
+                rstripped = line.rstrip()
+                if not rstripped.strip():
                     continue
-                if len(stripped) > max_line_len:
-                    stripped = stripped[:max_line_len] + "..."
-                collected.append(stripped)
+                if len(rstripped) > max_line_len:
+                    rstripped = rstripped[:max_line_len] + "..."
+                collected.append(rstripped)
                 if len(collected) >= max_lines:
                     break
             if len(collected) >= max_lines:
