@@ -24,6 +24,8 @@ _AUTO_PROMPT_DESTRUCTIVE_DELIBERATE = (
     "- Irreversible auto-approved actions may be bounced once for deliberation. "
     "Weigh alternatives, then retry only if the exact action is still right.\n"
     "- Outside-workspace file writes are not auto-approved by auto mode.\n"
+    "- Proactively run tests and lint to verify your work before finishing — "
+    "no user is present to confirm validation steps.\n"
     "- Finish the user's request end-to-end in this run. Do not defer decisions "
     "to a human."
 )
@@ -42,6 +44,8 @@ _AUTO_PROMPT_DELIBERATE = (
     "decide). Do NOT ask routine confirmations or progress check-ins — proceed "
     "instantly on trivial, reversible choices.\n"
     "- Outside-workspace file writes are not auto-approved by auto mode.\n"
+    "- Proactively run tests and lint to verify your work before finishing — "
+    "no user is present to confirm validation steps.\n"
     "- Finish the user's request end-to-end in this run. Do not defer decisions "
     "to a human."
 )
@@ -54,7 +58,11 @@ AUTO_DISABLED_REMINDER = (
     "- AskUserQuestion is available again when a decision genuinely changes "
     "your next action. Do not ask routine confirmations or progress check-ins.\n"
     "- Tool calls are no longer auto-approved by auto mode. They may still be "
-    "auto-approved if yolo mode remains active."
+    "auto-approved if yolo mode remains active.\n"
+    "- Hold off on slow test/lint commands until the user is ready to finalize: "
+    "suggest what you want to run next and let the user confirm first. For "
+    "test-related tasks (adding tests, fixing tests, reproducing a bug), you "
+    "may still run tests proactively."
 )
 
 

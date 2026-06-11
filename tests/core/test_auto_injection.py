@@ -159,3 +159,22 @@ async def test_rearms_after_context_compaction() -> None:
     third = await provider.get_injections([], soul)
     assert len(third) == 1
     assert third[0].type == _AUTO_INJECTION_TYPE
+
+
+class TestApprovalModeValidationGuidance:
+    """Codex gpt_5_2_prompt.md:146-150 — validation effort keyed to approval mode."""
+
+    def test_auto_prompts_encourage_proactive_validation(self):
+        from pythinker_code.soul.dynamic_injections.auto_mode import (
+            _AUTO_PROMPT_DELIBERATE,
+            _AUTO_PROMPT_DESTRUCTIVE_DELIBERATE,
+        )
+
+        for text in (_AUTO_PROMPT_DELIBERATE, _AUTO_PROMPT_DESTRUCTIVE_DELIBERATE):
+            assert "Proactively run tests and lint" in text
+
+    def test_disabled_reminder_defers_slow_validation_to_user(self):
+        from pythinker_code.soul.dynamic_injections.auto_mode import AUTO_DISABLED_REMINDER
+
+        assert "suggest" in AUTO_DISABLED_REMINDER
+        assert "test-related" in AUTO_DISABLED_REMINDER

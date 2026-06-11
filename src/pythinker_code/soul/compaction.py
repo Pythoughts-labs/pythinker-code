@@ -144,8 +144,10 @@ if TYPE_CHECKING:
 
 
 class SimpleCompaction:
-    def __init__(self, max_preserved_messages: int = 2) -> None:
+    def __init__(self, max_preserved_messages: int = 2, base_prompt: str | None = None) -> None:
         self.max_preserved_messages = max_preserved_messages
+        # None -> the built-in prompts.COMPACT; set from config.compact_prompt.
+        self.base_prompt = base_prompt
 
     async def compact(
         self, messages: Sequence[Message], llm: LLM, *, custom_instruction: str = ""
@@ -224,7 +226,7 @@ class SimpleCompaction:
             compact_message.content.extend(
                 part for part in msg.content if isinstance(part, TextPart)
             )
-        prompt_text = "\n" + prompts.COMPACT
+        prompt_text = "\n" + (self.base_prompt or prompts.COMPACT)
         if custom_instruction:
             prompt_text += (
                 "\n\n**User's Custom Compaction Instruction:**\n"

@@ -274,3 +274,25 @@ def test_prepare_preserves_media_parts_in_recent_messages():
     # Preserved messages should keep their media parts intact
     preserved_user_msg = result.to_preserve[0]
     assert any(isinstance(p, VideoURLPart) for p in preserved_user_msg.content)
+
+
+def test_prepare_uses_custom_base_prompt_when_configured():
+    messages = [Message(role="user", content=[TextPart(text=f"msg {i}")]) for i in range(4)]
+
+    result = SimpleCompaction(max_preserved_messages=2, base_prompt="CUSTOM SUMMARY RULES").prepare(
+        messages
+    )
+
+    assert result.compact_message is not None
+    text = result.compact_message.extract_text(" ")
+    assert "CUSTOM SUMMARY RULES" in text
+    assert prompts.COMPACT not in text
+
+
+def test_prepare_defaults_to_builtin_compact_prompt():
+    messages = [Message(role="user", content=[TextPart(text=f"msg {i}")]) for i in range(4)]
+
+    result = SimpleCompaction(max_preserved_messages=2).prepare(messages)
+
+    assert result.compact_message is not None
+    assert prompts.COMPACT in result.compact_message.extract_text(" ")
