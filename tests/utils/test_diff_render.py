@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from rich.console import Console
+from rich.style import Style as RichStyle
 from rich.text import Text
 
 from pythinker_code.tools.display import DiffDisplayBlock
@@ -608,9 +609,22 @@ class TestDiffMarkerReferenceColors:
         set_active_theme("dark")
         hunks, a, r = _collect("old_line", "new_line")
         renderables, _ = render_diff_preview("test.py", hunks, a, r)
-        ansi_out = "".join(_render_with_color(renderable) for renderable in renderables)
-        assert "38;2;129;199;132" in ansi_out
-        assert "38;2;229;115;115" in ansi_out
+        # Assert on span styles, not rendered ANSI: Rich memoizes each Style's
+        # SGR string at its first render and shares value-equal combined
+        # styles process-wide, so ANSI rendered here reflects whichever
+        # console (e.g. a 256-color one earlier in the suite) rendered these
+        # styles first.
+        colors = set()
+        for renderable in renderables:
+            assert isinstance(renderable, Text)
+            for span in renderable.spans:
+                style = span.style
+                if not isinstance(style, RichStyle):
+                    continue
+                if style.color is not None and style.color.triplet is not None:
+                    colors.add(style.color.triplet)
+        assert (0x81, 0xC7, 0x84) in colors  # tool_diff_added
+        assert (0xE5, 0x73, 0x73) in colors  # tool_diff_removed
 
 
 # ---------------------------------------------------------------------------
