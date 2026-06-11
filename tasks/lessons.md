@@ -114,3 +114,19 @@ Format: trigger → rule.
   the FULL Bash command text, so a debug payload containing the trigger
   substring (`gh pr create`) re-triggers the gate on your own debug command —
   split the substring (`"gh pr %s" create`) when reproducing.
+- **When a color-assertion test passes locally but fails on CI** (or vice
+  versa) with quantized SGR codes (`38;5;N` where `38;2;r;g;b` was expected),
+  suspect Rich's per-instance ANSI memoization: `Style.render` caches its SGR
+  string at FIRST render with whatever console color system was active, and
+  value-equal combined styles (`style + bold`) are shared process-wide via
+  `lru_cache`. Whichever test renders a style first (under the suite's
+  TERM/COLORTERM) poisons every later console. Reproduce with
+  `env -u COLORTERM pytest tests/ui_and_conv <target>`; fix by asserting on
+  span Style objects (color triplets), never on rendered ANSI.
+- **asyncio `Process.wait()` needs EOF on every pipe, not just child exit.**
+  `wait()` resolves only in `_call_connection_lost`, gated on ALL pipe
+  transports being disconnected. A bounded `stdout.read(n)` that leaves the
+  reader flow-control-paused on a full buffer blocks EOF forever — so
+  `kill(); await proc.wait()` deadlocks even though the child is dead
+  (Linux pipe dynamics hit this deterministically; macOS rarely). After
+  killing a child with stdout=PIPE, drain the stream to EOF before waiting.
