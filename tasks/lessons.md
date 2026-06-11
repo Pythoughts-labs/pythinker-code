@@ -105,3 +105,12 @@ Format: trigger → rule.
   `tail`), and background notifications report that masked code. Never claim
   a gate passed from a notification summary — read the gate's own output for
   its verdict line, or run it unpiped with `; echo "EXIT=$?"`.
+- **When a PreToolUse gate denies with a claim that contradicts observable
+  state** (e.g. "changelog empty" while it plainly isn't), debug the hook
+  script itself before working around it. Two traps from the changelog-gate
+  incident: (1) `cmd | grep -q` under `set -o pipefail` SIGPIPEs the producer
+  once output exceeds the pipe buffer — a *successful* match reads as exit
+  141, so do presence checks inside awk or with `grep -c`; (2) hooks match on
+  the FULL Bash command text, so a debug payload containing the trigger
+  substring (`gh pr create`) re-triggers the gate on your own debug command —
+  split the substring (`"gh pr %s" create`) when reproducing.
