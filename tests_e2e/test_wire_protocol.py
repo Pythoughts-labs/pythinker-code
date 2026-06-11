@@ -81,6 +81,11 @@ def test_initialize_handshake(tmp_path) -> None:
                             "aliases": [],
                         },
                         {
+                            "name": "learn",
+                            "description": "Extract reusable lessons from this session and save them to project memory",
+                            "aliases": [],
+                        },
+                        {
                             "name": "best-practices",
                             "description": "Inject engineering best practices (code changes, testing, todos, debugging) into context",
                             "aliases": ["bp"],
@@ -273,6 +278,11 @@ def test_initialize_external_tool_conflict(tmp_path) -> None:
                         {
                             "name": "goal",
                             "description": "Set a thread goal pursued across turns until verified. Usage: /goal <objective> | view | pause | resume | clear",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "learn",
+                            "description": "Extract reusable lessons from this session and save them to project memory",
                             "aliases": [],
                         },
                         {
