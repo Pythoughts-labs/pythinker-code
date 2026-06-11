@@ -1,164 +1,3 @@
-# Task: Windows web 404 + PowerShell banner rendering (2026-06-10)
-
-## Diagnosis (verified)
-
-1. **`GET /?token=…` → 404 on Windows.** `src/pythinker_code/web/static/` and
-   `vis/static/` are gitignored build artifacts (`.gitignore:59`); only two
-   `web/static/brand/` files are tracked. `windows-installer.yml` and
-   `linux-installer.yml` freeze with PyInstaller **without building the web/vis
-   frontends** (unlike `release-pythinker-cli.yml`, which sets up Node and runs
-   the builds — the published 0.40.0 PyPI wheel contains all 448 web/static
-   files, so pip installs are fine). `collect_data_files()` silently collects
-   only the brand files → frozen app's `STATIC_DIR.exists()` is True but
-   `index.html` is missing → `StaticFiles(html=True)` 404s on `/`.
-2. **Banner garbled in PowerShell.** `print_banner()` (utils/server.py) raw-
-   prints Unicode block/box art. Verified it cannot encode to cp1252 →
-   UnicodeEncodeError on redirected Windows stdout, garbling in legacy
-   consoles. Existing `ascii_glyphs_enabled()` fallback infra is bypassed.
-   (Alignment itself is correct — all banner lines are exactly equal width;
-   the "long line" in the report was a paste artifact.)
-
-## Plan
-
-- [x] utils/server.py: ASCII fallback translation (1:1 width-preserving) wired
-      to `ascii_glyphs_enabled()` + crash-proof printing on UnicodeEncodeError.
-      → verified: 6 new tests in tests/utils/test_server.py + live cp1252 run
-- [x] web/app.py + vis/app.py: gate mount on `index.html`, serve explanatory
-      503 page instead of bare 404 when assets missing.
-      → verified: tests/web/test_web_ui_assets.py (web + vis)
-- [x] utils/pyinstaller.py helper + root pythinker.spec + both installer specs:
-      fail the freeze loudly when web/vis bundles are missing.
-      → verified: 2 tests in tests/utils/test_pyinstaller_utils.py + default-path run
-- [x] windows-installer.yml + linux-installer.yml: set up Node and build
-      web/vis bundles before PyInstaller (mirrors release-pythinker-cli.yml).
-      → verified: YAML parses; spec syntax parses; spec guard enforces assets
-- [x] CHANGELOG.md Unreleased entry.
-- [x] Run ruff + pyright + targeted pytest.
-- [x] Bonus bug found during run: `print_banner` crashed with TypeError on an
-      all-`<hr>` banner (`max(60, *[])`); fixed + regression test.
-
-## Review
-
-- Verification: `ruff check src tests` clean, `ruff format --check` clean,
-  `pyright` 0 errors on all touched src files (strict mode), typos clean,
-  428 passed / 1 skipped across tests/utils + tests/web + tests/vis.
-- Live repro of the user scenario: `PYTHONIOENCODING=cp1252` run now prints a
-  perfectly aligned ASCII banner instead of raising UnicodeEncodeError.
-- clean-code-guard pass: no violations; one documented exception — the
-  required-UI-assets check is inlined in both installer specs in addition to
-  the shared `require_ui_assets()` helper, because those specs are
-  deliberately self-contained (their own comments forbid importing the shared
-  datas module).
-- Out of scope (observed, not changed): `except (ImportError, Exception)` at
-  utils/server.py get_network_addresses is redundant (Exception covers
-  ImportError) — pre-existing, harmless; `➜`/`⚠` may render double-width in
-  some Windows fonts (cosmetic; ASCII opt-ins now cover it).
-
----
-
-# Codex TUI adoption — Phase 1 (foundation)
-
-Source of truth: `blackbox/codex-main/codex-rs/tui`. Backlog: user-provided 48-item
-adoption list. Recon mapped every item to the real codebase first; many items
-already exist. This plan implements the genuine HIGH-priority gaps only.
-
-## Gap analysis (backlog item → reality)
-
-Already implemented (no work needed; documented for the record):
-- 4.2 Table holdback — `markdown_commit_boundary()` keeps the last top-level
-  block (incl. tables) mutable during streaming (components/markdown.py:610).
-- 4.3 Two-region streaming — Rich `Live(transient=True)` + scrollback commit
-  (`_ContentBlock._flush_committed`, visualize/_blocks.py:393).
-- 4.1 Adaptive chunking — backlog-proportional paced reveal already adapts step
-  size to backlog (`reveal_tick`, _blocks.py:270); continuous policy, no mode
-  oscillation to dampen. Skipping the Rust two-gear port (no user-visible win).
-- 7.4 Language aliases — Pygments already resolves py/js/ts/rs/sh/zsh/yml/golang.
-- 9.1 OSC 8 hyperlinks — `render_to_ansi` wraps OSC 8 for prompt_toolkit
-  (console.py:94-123) with tests.
-- 6.3 Exploring cells — ctrl+o expand/collapse on tool cards.
-- 5.2/5.4 Shimmer + reduced motion — motion.py honors PYTHINKER_REDUCED_MOTION.
-- 8.3 Grapheme/cell-aware truncation — render_utils.py uses rich cell_len.
-- 3.x markdown styling, 2.x diff context collapsing, 6.1 cards — present.
-
-## Phase 1 work items
-
-- [x] P1.0 Recaps off by default + `/config recaps on|off`
-      → verified: tests/ui_and_conv/test_settings_recaps_slash.py (5 tests).
-- [x] P1.1 Color-blend utilities (`ui/color_utils.py`): parse_hex/blend/luma/is_light.
-      → verified: tests/ui_and_conv/test_color_utils.py.
-- [x] P1.2 Three-tier color depth detection (truecolor/256/16/none; FORCE_COLOR
-      levels; WT_SESSION promotion); `get_diff_colors()` uses fg-only diff
-      styles on 16-color terminals.
-      → verified: env-matrix tests in test_terminal_capabilities.py.
-- [x] P1.3 Terminal background probing (`ui/terminal_background.py`): OSC 11,
-      100ms timeout, BT.601 luma; `theme = "auto"` resolved at shell startup
-      (fallback dark); /theme + settings selector accept "auto"; opt-out
-      PYTHINKER_NO_BG_PROBE.
-      → verified: tests/ui_and_conv/test_terminal_background.py (11 tests).
-- [x] P1.4 Syntax-highlight size guard (512 KiB / 10k lines → plain text +
-      "highlighting skipped (N lines)" title notice).
-      → verified: test_markdown_guards.py.
-- [x] P1.5 Fence unwrapping for tables (```md/```markdown + header+delimiter
-      pair → unwrap; everything else untouched).
-      → verified: 12-case matrix in test_markdown_guards.py.
-- [x] P1.6 Large diff guard: expanded diff capped at 400 lines, head+tail with
-      explicit omitted-count notice.
-      → verified: test_output_guards.py.
-- [x] P1.7 Head-tail truncation for generic tool output (was head-only).
-      → verified: test_output_guards.py.
-- [x] Focused tests: 143 passed; make check-pythinker-code all green.
-- [ ] Full `pytest tests` suite green.
-- [ ] Homebrew updater bug: `brew upgrade` runs against a stale tap and the
-      "already installed" warning is reported as "Updated successfully!".
-      Fix: refresh tap/brew before upgrade + verify installed version changed.
-
-## Out of scope (logged)
-
-- Phase 2/3 backlog items (per-hunk diff syntax highlighting, advanced table
-  column sizing/key-value fallback, custom theme files, animation variants,
-  compact JSON, URL-aware wrap, transcript export, HistoryCell protocol).
-- utils/string.py `shorten()` is not cell-aware (pre-existing; noted, untouched).
-- `/settings show` usage string update beyond the new recaps args.
-
----
-
-# Alibaba Token Plan model compatibility fix
-
-## Plan
-
-- [x] Reproduce the Kimi-only request-shaping regression with a focused test.
-- [x] Preserve Moonshot/Z AI request formats for non-Alibaba providers.
-- [x] Confirm the generic Token Plan `/models` response does not validate `sk-ws-` credentials.
-- [x] Require the dedicated workspace Base URL for `sk-ws-` login.
-- [x] Re-test Kimi K2.6 and DeepSeek V3.2 request behavior for the dedicated endpoint.
-- [x] Fix the shell wire coroutine warning.
-- [x] Run focused Alibaba auth/LLM tests and `make check-pythinker-code`.
-
-## Acceptance criteria
-
-- Alibaba Token Plan Kimi K2.6 sends `extra_body.enable_thinking`, not
-  `extra_body.thinking.type` or `reasoning_effort`.
-- `sk-ws-` login requires and saves the dedicated Base URL shown in the Token Plan console.
-- Login cannot falsely succeed based only on the generic endpoint's public `/models` response.
-- DeepSeek V3.2 either produces a valid response or is excluded with evidence that the workspace
-  endpoint does not support it.
-- Existing generic, regional, Coding Plan, Moonshot, and GLM behavior remains covered.
-
-## Review
-
-- Token Plan keys now require an explicit dedicated endpoint and the shell passes that endpoint
-  directly to the login flow.
-- Regional fallback only saves a provider after the fallback endpoint authenticates successfully;
-  custom endpoints are never silently replaced.
-- Workspace Kimi entries are filtered when the advertised route is unusable, while DeepSeek V3.2
-  uses the verified non-streaming request path and DashScope `enable_thinking`.
-- Final focused agent-spec, auth, LLM, and shell tests: `122 passed`.
-- `make check-pythinker-code` passed.
-- Full Pythinker Code test target passed: `4427 passed, 6 skipped, 1 xfailed`; wire E2E
-  passed: `52 passed, 4 skipped`.
-
----
-
 # Plan: Full rename `pythinker-cli` → `pythinker-code`
 
 **Status**: Planning — DO NOT execute yet. User to review and approve.
@@ -299,544 +138,103 @@ This is the biggest mechanical change. Use `sed` for the bulk pass, then verify 
   grep -rn "pythinker_cli" --include="*.py" src/ packages/ sdks/ tests/ tests_e2e/ tests_ai/ scripts/ examples/ \
     | grep -v "pythinker_cli_session"
   ```
-  Expect: empty output. Any hits are either:
-  - Comments referencing the old name (ok to leave or update inline)
-  - Strings that intentionally hold the old name (e.g. backward-compat fallbacks)
+  Expect: empty output.
 
-- [ ] **Handle `pythinker_cli_session` attribute renames separately** — these are part of the property API, not imports:
+- [ ] **Handle `pythinker_cli_session` attribute renames separately**:
   ```bash
   find src tests -name "*.py" -type f \
     -exec sed -i 's/\bpythinker_cli_session\b/pythinker_code_session/g' {} +
   ```
-  Verify that the dataclass/typed-dict that *defines* this attribute also got renamed (likely in `src/pythinker_code/web/runner/worker.py` or similar).
 
 - [ ] **Run the test collector** to confirm all imports resolve:
   ```bash
   uv sync --frozen --all-extras --all-packages
   uv run pytest tests --co -q 2>&1 | tail -20
   ```
-  Expect: tests collect without `ModuleNotFoundError`.
-
-- [ ] **Spot-check import correctness** for known critical files:
-  - `src/pythinker_code/__main__.py`
-  - `src/pythinker_code/cli/__init__.py`
-  - `src/pythinker_code/cli/__main__.py`
-  - `src/pythinker_code/web/api/sessions.py`
-  - `src/pythinker_code/telemetry/sentry.py` (regex must be updated to match new path)
 
 - [ ] **Update telemetry path regex** in `sentry.py`:
   ```python
   r"^(.*?)(site-packages|pythinker_code|src/pythinker_code)/"
   ```
-  (Keep `pythinker_cli` if you want backward-compat for older stack frames, but it shouldn't be needed now that we control the codebase.)
 
-- [ ] Commit:
-  ```bash
-  git commit -am "refactor: rewrite pythinker_cli imports to pythinker_code"
-  ```
+- [ ] Commit.
 
 ---
 
 ### Phase 3 — pyproject.toml + workspace surgery (45 min)
 
-Three pyprojects change roles. The current state:
-
-| File | Today | After |
-|------|-------|-------|
-| `pyproject.toml` (root) | declares `pythinker-cli` w/ all deps + scripts | declares `pythinker-cli` (thin alias depending on `pythinker-code==1.1.0`); minimal stub |
-| `packages/pythinker-code/pyproject.toml` | declares `pythinker-code` w/ alias dep on `pythinker-cli==1.0.0` | becomes the canonical package: full deps, scripts, web/vis bundled, classifiers, urls |
-| `packages/pythinker-cli/pyproject.toml` | does not exist | NEW — moved from root, but role-flipped to be the alias |
-
-Wait — this is confusing. Let me restate the cleaner approach.
-
-**Cleaner approach:** Don't ship `pythinker-cli` at all in 1.1.0. Just retire it.
-
-- [ ] **Move root pyproject contents** to `packages/pythinker-code/pyproject.toml`:
-  - Copy `dependencies`, `dependency-groups`, `[project.scripts]`, `[project.urls]`, `classifiers`, `keywords` from root into `packages/pythinker-code/pyproject.toml`
-  - Update `name = "pythinker-code"`, `version = "1.1.0"` (semver bump for breaking change in package layout)
-  - Keep `module-name = ["pythinker_code"]` in `[tool.uv.build-backend]`
-  - Add `license`, `license-files`, `authors` (already there from earlier work)
-
-- [ ] **Decide root pyproject's fate** — pick one:
-  - **Option A**: Delete root `pyproject.toml` entirely, move workspace config into a new top-level file. (Cleanest but might break tooling.)
-  - **Option B**: Keep root `pyproject.toml` as a **dev/workspace-only** file with no package; uv can still treat the repo root as a workspace coordinator. Set `[project] name = "pythinker-monorepo"` private (do not publish).
-  - **Option C** (recommended): Keep root `pyproject.toml` as a thin alias for `pythinker-cli==1.1.0` that just `dependencies = ["pythinker-code==1.1.0"]`. Ships ONCE in 1.1.0 to give existing pythinker-cli users a deprecation upgrade path. Skip in 1.2.0+.
-
-  Recommend **Option C** for migration clarity.
-
-- [ ] **Update `[tool.uv.workspace]`** members list — depends on Option chosen.
-- [ ] **Update `[tool.uv.sources]`** to reflect new dependency wiring.
-- [ ] Update `module-name` in root pyproject's `[tool.uv.build-backend]` if Option C — point it at a stub directory (or remove the section if there's no module to build).
-
-- [ ] **Adjust `[project.scripts]`**:
-  - In `packages/pythinker-code/pyproject.toml`: 
-    ```toml
-    [project.scripts]
-    pythinker      = "pythinker_code.__main__:main"
-    pythinker-cli  = "pythinker_code.__main__:main"   # legacy alias for one release
-    pythinker-code = "pythinker_code.__main__:main"
-    ```
-
-- [ ] **Build all packages locally**:
-  ```bash
-  rm -rf dist/ packages/*/dist/ sdks/*/dist/
-  uv build --package pythinker-code --no-sources --out-dir dist
-  uv build --package pythinker-core --no-sources --out-dir dist
-  uv build --package pythinker-host --no-sources --out-dir dist
-  uv build --package pythinker-sdk  --no-sources --out-dir dist
-  # If Option C:
-  uv build --package pythinker-cli  --no-sources --out-dir dist
-  ```
-  All five must succeed.
-
-- [ ] Commit:
-  ```bash
-  git commit -am "refactor: pyproject swap - pythinker-code as canonical, pythinker-cli as alias"
-  ```
+- [ ] **Move root pyproject contents** to `packages/pythinker-code/pyproject.toml`
+- [ ] **Decide root pyproject's fate** — Option C (recommended): keep as thin `pythinker-cli==1.1.0` alias for one release
+- [ ] **Update `[tool.uv.workspace]`** members list
+- [ ] **Adjust `[project.scripts]`** in `packages/pythinker-code/pyproject.toml`
+- [ ] **Build all packages locally**
+- [ ] Commit.
 
 ---
 
 ### Phase 4 — Build/release infrastructure (30 min)
 
-- [ ] **Update `pythinker.spec` (PyInstaller)**:
-  ```python
-  from pythinker_code.utils.pyinstaller import datas, hiddenimports
-  # ...
-  ["src/pythinker_code/cli/__main__.py"],
-  ```
-- [ ] **Update `Makefile`** target body (Makefile target *names* can stay: `build-pythinker-cli` is just an internal alias, but rename for consistency):
-  ```makefile
-  build-pythinker-code: build-web build-vis
-      @uv build --package pythinker-code --no-sources --out-dir dist
-  ```
-  Keep `build-pythinker-cli` as a deprecated alias that calls the new target if you want to avoid breaking developer muscle memory.
-- [ ] **Update `scripts/build_web.py`** if it copies output into `src/pythinker_cli/web/...` — change to `src/pythinker_code/web/...`.
-- [ ] **Update `scripts/build_vis.py`** likewise.
-- [ ] **Update `scripts/check_pythinker_dependency_versions.py`** to validate `pythinker-code` vs old name.
-- [ ] **Local sanity build**:
-  ```bash
-  make build-pythinker-code
-  ls dist/   # verify pythinker_code-*.whl present
-  ```
-- [ ] **Local PyInstaller dry run** (catches the most catastrophic class of breakage early):
-  ```bash
-  PYINSTALLER_ONEDIR=1 make build-bin-onedir
-  dist/onedir/pythinker/pythinker --version   # should print 1.1.0
-  ```
+- [ ] Update `pythinker.spec` (PyInstaller)
+- [ ] Update `Makefile` targets
+- [ ] Update `scripts/build_web.py` and `scripts/build_vis.py`
+- [ ] Update `scripts/check_pythinker_dependency_versions.py`
+- [ ] Local PyInstaller dry run
 - [ ] Commit.
 
 ---
 
 ### Phase 5 — Workflow files & PyPI publisher records (45 min)
 
-**Decision**: Keep the workflow filenames as `release-pythinker-cli.yml` for one release cycle to avoid re-registering PyPI publishers, then rename to `release-pythinker-code.yml` in a follow-up.
-
-- [ ] **Edit `.github/workflows/release-pythinker-cli.yml`**:
-  - Update `make build-pythinker-cli` → `make build-pythinker-code`
-  - Update `environment.url` to `https://pypi.org/project/pythinker-code/`
-  - Validate-tag step: still uses root `pyproject.toml` version OR switch to `packages/pythinker-code/pyproject.toml` (depends on Option chosen in Phase 3)
-- [ ] **Update `scripts/check_version_tag.py` callsites** in workflow if pyproject paths changed.
-- [ ] **Update `scripts/check_pythinker_dependency_versions.py` callsite**.
-- [ ] **PyPI dashboard work** (manual via Chrome MCP or browser):
-  - Visit https://pypi.org/manage/project/pythinker-code/settings/publishing/
-  - Confirm the pending publisher (`release-pythinker-cli.yml`, env=pypi) is still there. After 1.1.0 publishes, it'll convert to active.
-  - If using Option C (keep cli alias for one release): confirm pythinker-cli's existing publisher still references `release-pythinker-cli.yml` with env=pypi. It will fire on 1.1.0 tag.
+- [ ] Edit `.github/workflows/release-pythinker-cli.yml` (keep filename, update content)
+- [ ] Update `scripts/check_version_tag.py` callsites
+- [ ] Verify PyPI dashboard trusted publishers still valid
 - [ ] Commit.
 
 ---
 
 ### Phase 6 — Documentation, examples, agent YAMLs (60 min)
 
-This is mostly mechanical sed-replace, but every file needs a quick eyeball pass to make sure the rename reads naturally in prose.
-
-- [ ] **README.md**: Replace `pythinker-cli` → `pythinker-code` in install commands, badges, package references. Lead the install section with `pip install pythinker-code`.
-- [ ] **CONTRIBUTING.md**, **SECURITY.md**, **CHANGELOG.md**: Update package references.
-- [ ] **`docs/en/**/*.md`**: 15+ files. Bulk sed first, then read each for prose oddity:
-  ```bash
-  find docs -name "*.md" -exec sed -i 's/pythinker-cli/pythinker-code/g; s/pythinker_cli/pythinker_code/g' {} +
-  ```
-- [ ] **`AGENTS.md`** (top-level + nested): same treatment.
-- [ ] **`.agents/skills/**/*.md`**: same.
-- [ ] **`tasks_ai/**/*.md`**: same.
-- [ ] **`examples/**`** (60 references):
-  - Update each `pyproject.toml` dependency line: `"pythinker-cli==1.0.0"` → `"pythinker-code==1.1.0"`
-  - Update example READMEs and yaml files
-- [ ] **Agent YAMLs** in `src/pythinker_code/agents/default/*.yaml`, `okabe/agent.yaml`:
-  - Update tool import paths: `"pythinker_cli.tools.shell:Shell"` → `"pythinker_code.tools.shell:Shell"` (×30+)
-  - These are CRITICAL — wrong paths cause runtime tool-loading failures, often only when a specific tool is invoked
-- [ ] **`web/openapi.json` and `web/package.json`**: Update package name references.
-- [ ] **`web/src/lib/api/docs/ConfigApi.md`**: doc reference.
-- [ ] **Skill markdown** (`src/pythinker_code/skills/pythinker-cli-help/SKILL.md`): rename directory itself to `pythinker-code-help/` and update internal references.
-- [ ] **Pre-commit config** `.pre-commit-config.yaml`: any path filters?
-- [ ] **`.python-version`, `flake.nix`, `flake.lock`**: scan for references.
+- [ ] README.md, CONTRIBUTING.md, CHANGELOG.md
+- [ ] `docs/en/**/*.md`, AGENTS.md, skills, tasks_ai
+- [ ] `examples/**` (60 references — pyproject + READMEs + yamls)
+- [ ] Agent YAMLs: tool import paths `"pythinker_cli.tools.*"` → `"pythinker_code.tools.*"`
 - [ ] Commit.
 
 ---
 
 ### Phase 7 — Verification (60 min)
 
-- [ ] **Full test suite**:
-  ```bash
-  uv run pytest tests -v 2>&1 | tail -50
-  ```
-  Expect: same pass/fail rate as `pre-rename-snapshot`. Compare:
-  ```bash
-  git diff pre-rename-snapshot HEAD --stat -- 'tests/**' 'src/**'
-  ```
-- [ ] **`uv sync` clean**:
-  ```bash
-  rm -rf .venv uv.lock
-  uv sync --frozen=false --all-extras --all-packages
-  ```
-- [ ] **Type check**:
-  ```bash
-  uv run pyright src/
-  uv run ty check
-  ```
-  Expect: no new errors.
-- [ ] **Ruff/lint**:
-  ```bash
-  uv run ruff check
-  uv run ruff format --check
-  ```
-- [ ] **Smoke import**:
-  ```bash
-  uv run python -c "import pythinker_code; print(pythinker_code.__file__)"
-  uv run python -c "from pythinker_code.cli import main"
-  ```
-- [ ] **Run the CLI**:
-  ```bash
-  uv run pythinker --version           # prints 1.1.0
-  uv run pythinker --help               # full help text
-  uv run pythinker-code --help          # alias works
-  ```
-- [ ] **PyInstaller binary** (the most common late-stage failure):
-  ```bash
-  rm -rf build/ dist/onedir/ dist/onefile/
-  PYINSTALLER_ONEDIR=1 make build-bin-onedir
-  dist/onedir/pythinker/pythinker --version   # 1.1.0
-  ```
-- [ ] **Web UI build** (if applicable):
-  ```bash
-  npm --prefix web run build
-  ```
-- [ ] **TestPyPI dry run** before PyPI:
-  ```bash
-  uv build --package pythinker-code --no-sources --out-dir dist
-  uvx twine upload --repository testpypi dist/pythinker_code-1.1.0*
-  ```
-  Then smoke install:
-  ```bash
-  python -m venv /tmp/v && /tmp/v/bin/pip install \
-    --index-url https://test.pypi.org/simple/ \
-    --extra-index-url https://pypi.org/simple/ \
-    pythinker-code==1.1.0
-  /tmp/v/bin/pythinker --version
-  ```
+- [ ] Full test suite vs pre-rename-snapshot
+- [ ] `uv sync` clean (rm .venv + uv.lock)
+- [ ] pyright + ruff
+- [ ] Smoke import + CLI run
+- [ ] PyInstaller binary
+- [ ] TestPyPI dry run
 
 ---
 
 ### Phase 8 — Tag and release (30 min)
 
-- [ ] Update `CHANGELOG.md` with 1.1.0 entry: rename, breaking changes, migration notes for users coming from `pythinker-cli==1.0.0`.
-- [ ] Squash-merge `rename/pythinker-code` to `main` (or fast-forward if commits are clean):
-  ```bash
-  git switch main
-  git merge --ff-only rename/pythinker-code
-  git push origin main
-  ```
-- [ ] Tag and push:
-  ```bash
-  git tag -a 1.1.0 -m "v1.1.0: rename pythinker-cli to pythinker-code"
-  git push origin 1.1.0
-  ```
-- [ ] **Watch the workflow**:
-  ```bash
-  gh run watch $(gh run list --workflow=release-pythinker-cli.yml --limit 1 --json databaseId --jq '.[0].databaseId') --exit-status
-  ```
-- [ ] **Verify on PyPI**:
-  ```bash
-  pip index versions pythinker-code   # 1.1.0
-  pip index versions pythinker-cli    # 1.0.0 + 1.1.0 (alias release)
-  ```
-- [ ] **Smoke install in clean venv**:
-  ```bash
-  python -m venv /tmp/v-final && /tmp/v-final/bin/pip install pythinker-code==1.1.0
-  /tmp/v-final/bin/pythinker --version
-  ```
+- [ ] CHANGELOG 1.1.0 entry with migration notes
+- [ ] Squash-merge to main and push tag
+- [ ] Watch release workflow
+- [ ] Verify on PyPI
 
 ---
 
 ### Phase 9 — Post-release cleanup (deferred to 1.2.0)
 
-To do later, in a separate PR after we know 1.1.0 is healthy:
-
-- [ ] Drop the `pythinker-cli` alias package — stop publishing it
-- [ ] Rename workflow files: `release-pythinker-cli.yml` → `release-pythinker-code.yml` and update PyPI publisher records
-- [ ] Remove `pythinker-cli` script entry from `[project.scripts]`
-- [ ] Update root README to remove the migration callout
-- [ ] Bump everything to 1.2.0
-
----
-
-## Out of scope
-
-- Renaming `pythinker-core`, `pythinker-host`, `pythinker-sdk` packages (their names are already fine)
-- Renaming the GitHub repo itself (`Pythoughts-labs/pythinker-code`) — name is already correct
-- Breaking the public Python API (we're keeping `import pythinker_code` ergonomic; the *internal* import path changes but the module's public API surface stays the same)
-- Migrating user data directories (the rename creates a new path, but no existing user data exists yet — by user statement)
-
----
-
-## Risks and rollback
-
-If anything goes catastrophically wrong:
-
-```bash
-# On the rename branch, before merging to main:
-git switch main           # back to clean state, rename branch unaffected
-
-# After merging, if 1.1.0 is broken on PyPI:
-# Yank the broken release (don't unpublish — that's permanent)
-twine ... # PyPI doesn't have CLI yank; do it via dashboard
-```
-
-PyPI 1.0.0 of pythinker-cli stays published forever. Anyone who installed it before 1.1.0 ships keeps working. 1.1.0 of pythinker-cli (the alias) and pythinker-code (canonical) ship together.
-
----
-
-## Success criteria
-
-- [ ] `pip install pythinker-code` from real PyPI in a clean venv succeeds
-- [ ] `pythinker --version` prints `1.1.0`
-- [ ] `import pythinker_code` works; `import pythinker_cli` does NOT (after 1.2.0)
-- [ ] PyInstaller binary on GitHub Releases for v1.1.0 runs and prints `1.1.0`
-- [ ] All tests pass at the same rate as `pre-rename-snapshot`
-- [ ] No new pyright/ty errors
-- [ ] Documentation (README, docs/, examples/) leads with `pythinker-code` everywhere
+- [ ] Drop `pythinker-cli` alias package
+- [ ] Rename workflow file + re-register PyPI publishers
+- [ ] Remove `pythinker-cli` script entry
+- [ ] Bump to 1.2.0
 
 ---
 
 ## Open questions — ANSWER BEFORE EXECUTION
 
-1. **Do you want to ship `pythinker-cli==1.1.0` as a one-shot deprecation alias** (Option C in Phase 3), or **drop it cold-turkey at 1.1.0** (Option A/B)? Cold-turkey is simpler but anyone who happened to grab `pythinker-cli==1.0.0` won't be migrated automatically.
-
-2. **Workflow filename**: keep `release-pythinker-cli.yml` for one release (no PyPI publisher changes needed), or rename to `release-pythinker-code.yml` immediately (requires re-registering PyPI publishers, which we just did once and rate-limited)?
-
-3. **Module name**: confirm `pythinker_code` is what you want for the Python module. Alternative: `pythinker` alone (cleaner but might collide with random PyPI projects).
-
-4. **Migration text in README**: Do you want a "migrating from pythinker-cli" callout in 1.1.0's README, or just silently switch?
-
-5. **CHANGELOG framing**: Is this a breaking change that warrants 2.0.0, or a layout change that's fine at 1.1.0? PyPI users perspective: install command changed, that's user-visible breakage. Could argue 2.0.0.
-
----
-
-# Web fetch/search domain allowlist (2026-05-27)
-
-Port of the one genuinely portable concept from pythinker-x's web search
-(`allowed_domains`) onto our self-hosted FetchURL/SearchWeb tools. Design spec:
-`docs/superpowers/specs/2026-05-27-web-allowed-domains-design.md`.
-
-- [x] `WebConfig.allowed_domains` config (+ field validator rejecting URLs/paths/host:port)
-- [x] `host_in_allowlist` helper (label-aware subdomain match, unrestricted when empty)
-- [x] FetchURL: reject out-of-allowlist hosts in `_validate_fetch_url` (no request made)
-- [x] SearchWeb: post-filter results, surface dropped count via `extras`
-- [x] TUI: muted "· N filtered to allowlist" indicator on the search result header
-- [x] Tests: helper, config validation, fetch rejection, search filter, renderer indicator
-- [x] Docs: `docs/en/configuration/config-files.md` `web` section + example
-
-## Review
-- All affected suites green (tools/core/ui = 2517 passed earlier; affected subset 100 passed).
-- ruff + ruff format clean; pyright clean on all changed files. The 8 pre-existing
-  pyright errors live in `cli/mcp.py` and `soul/toolset.py` (untouched, baseline).
-- Dropped from scope (cosmetic/redundant in our architecture): action taxonomy relabel,
-  disabled/cached/live mode gating. See design doc "Out of scope".
-
-## Out of scope (observed, not changed)
-- Pre-existing pyright errors in `cli/mcp.py`, `soul/toolset.py`.
-
-## Review follow-up (2026-05-27) — context7-validated hardening
-Reviewed the allowlist against context7 (aiohttp v3.13.2, pydantic v2) + 2026 agent-tool practice.
-- [x] HIGH: redirect bypass — `fetch_with_http_get` now sets `allow_redirects=False` and follows
-      redirects manually (max 5), re-validating each hop via `_validate_fetch_url` (allowlist +
-      SSRF). Closes a pre-existing SSRF gap the allowlist had inherited. Tests: follows validated
-      redirect, blocks redirect to disallowed host (never contacted), rejects redirect loop.
-- [x] LOW: `fetch.md` / `search.md` now state the allowlist constraint to the model.
-- [x] LOW: `WebConfig` validator now rejects empty/whitespace-only entries (was silently unrestricted).
-- Confirmed-good (context7): pydantic validator matches docs exactly; `extras` TUI channel;
-  fail-closed on unparsable hosts; allowlist-before-DNS ordering.
-- Known/accepted limitation (pre-existing, not addressed): DNS-rebinding TOCTOU — `_validate_fetch_url`
-  resolves+checks IPs but aiohttp re-resolves at connect time. Out of scope; would need a pinning connector.
-- Snapshots updated: `test_default_config_dump`, `test_fetch_url_description`, `test_search_web_description`.
-
----
-
-## Review: code-review `/diff` findings — robust fixes (this session)
-
-`/code-review` (xhigh) on `feat/agent-phase0-enhancements` surfaced 12 findings;
-research-backed (OWASP LLM Top 10, Python asyncio docs, ACP spec) TDD fixes applied.
-Each fix: failing test first → minimal change → green. Full gate: 4682 unit + 65 e2e
-pass; ruff + project-wide pyright clean.
-
-### Security (HIGH)
-- **#1 `soul/approval.py` approve-for-session drain → destructive sibling.** Stored an
-  authoritative `session_approvable` flag on `ApprovalRequestRecord` at create time (from
-  the real tool_call, not reconstructed from display blocks); both drains skip
-  non-session-approvable pending siblings. `rm <file>` approval can no longer clear a
-  queued `rm -rf`. (models.py + runtime.py + approval.py)
-- **#2 `utils/path.py` `.md` agent specs escaped EDIT_CONFIG.** Added `.md` to the
-  agent-spec-dir config-surface check; markdown subagent specs now re-confirm like YAMLs.
-
-### Correctness (MODERATE)
-- **#5 `soul/approval.py` unattended fail-closed hole.** `_unattended_denial_feedback` now
-  re-derives the two downstream auto-resolve conditions and denies anything that would
-  otherwise block forever — closes the safe-mode destructive-shared-key hang AND the
-  config-edit-in-non-safe-auto hang (same class, fixed beyond the original finding).
-- **#4 `acp/convert.py` `<untrusted_data>` leaked to ACP/IDE.** Strip the envelope at the
-  ACP output boundary (ACP defines no untrusted-output marking — we sanitize ourselves).
-- **#3 `background/agent_runner.py` child usage roll-up.** Added `output.usage(...)` so a
-  background child's `child_tokens:`/`child_cost_usd:` ride in its transcript.
-  **Limitation:** this surfaces spend in the *TaskOutput transcript* only;
-  `summarize_batch` aggregates launch-time stub results, so the structured parent roll-up
-  (`total_child_tokens`) still excludes background children. Deeper fix = pull child
-  `extras` from the completed background result; deferred.
-
-### Low / efficiency / cleanup
-- **#6 `soul/toolset.py`** narrow MCP capability-discovery errors: METHOD_NOT_FOUND =
-  expected/empty/debug; anything else = WARNING (transient ≠ "no capability"); deduped.
-- **#7 `tools/utils.py`** `async spill_to_disk()` offloads the on-truncation write via
-  `asyncio.to_thread` (idempotent; sync fallback preserved) + atomic temp+os.replace
-  (cancellation can't leave a partial recovery file). Wired into Shell/FetchURL/SearchWeb.
-- **#8/#9 `memory/recall.py`** arm `_injected`/baselines only after a successful snapshot
-  (transient failure retries instead of latching a stale baseline); defer the working-set
-  scan behind the cheap turn-throttle gate.
-- **#10 `soul/pythinkersoul.py`** prune anchors the token count to `before_tokens` minus
-  the estimated freed delta (same estimator both sides → bias cancels) instead of a full
-  re-estimate that could over-count and re-fire the rewrite every step.
-- **#11 `soul/pythinkersoul.py`** extracted `_opt_int` for the 4 repeated usage ternaries.
-
-### Declined (with rationale)
-- **#12 `model_defense.py` `excludes` field.** KEPT — it is tested
-  (`test_fragment_matches_with_patterns_and_excludes`) and a deliberate, documented
-  extension point in a registry built to grow; removing tested behavior isn't a clean
-  simplification (surgical-changes > YAGNI here, negligible cost).
-
-### Follow-up: investigated + fixed the concurrent OpenAI-feature changes (user-directed)
-A concurrent (paused) WIP appeared in the tree during the review session — ChatGPT 429
-usage-limit messaging + `/login` account-switch detection (auth/openai.py, chat_provider,
-ui/shell). Investigated properly: feature logic is correct and its tests pass. Two real
-issues fixed (TDD):
-- **Markup-escape bug** `ui/shell/__init__.py`: 429 summary/hint were interpolated into a
-  Rich-markup string unescaped, so a provider message containing `[...]` was silently
-  dropped. Extracted `_render_429_message(detail)` that `escape()`s both fields (matches
-  the sibling error branches); handler now calls it. New test in test_rate_limit_message.py.
-- **Flaky test** `tests/auth/test_openai_auth.py`: the two `_wait_for_browser_code` callback
-  tests used tight 2s/0.05s timing deadlines that flake under CPU load (clean TimeoutError;
-  load-correlated; the suspected port-leak order passes 10/10). Prod OAuth ports are fixed
-  and can't change, so the fix is test-only: a generous `_BROWSER_CALLBACK_TEST_TIMEOUT`
-  for the connect/await deadlines and a bounded poll-until-done instead of a fixed sleep.
-  Originally-flaky combo now 6/6 stable under random ordering; tests/auth+ui_and_conv 1822 pass.
-
-## Review — session 2026-06-09 (Phase 1 + design polish + hardening)
-
-Done beyond Phase 1 (user-directed design wave):
-- ⏺ transcript marker (Windows keeps ●, ASCII keeps *), blinking while
-  tools/preview run, solid green when finished; thinking rows use ⏺ too.
-- Muted clay-coral activity ramp; shimmer simplified to bidirectional sweep
-  with settle beats; truecolor gets cosine-blended sheen (color_utils.blend).
-- Activity/todo metadata unified: "Verb… (12s, ↓ 2.4k tokens, 45 t/s)" — no
-  middle dots; t/s counter added to working indicator + todo header.
-- Thinking-effort colors: cold→hot gradient (slate→blue→teal→amber→orange→
-  dark red xhigh).
-- Active todo title+box coral; concurrent in-progress rows light grey.
-- Diff word-level highlights: reverse-video → theme add/del highlight bgs.
-- Turn recap padded to card inset.
-- Hardening (validated from in-app review): select ValueError caught,
-  tcsetattr restore suppressed, probe reply byte cap, probe cache lock,
-  head/tail char budget halved per side, mode.split() once, ~~~md fence test.
-- Homebrew updater: user machine upgraded 0.38.0→0.39.0 (stale tap); the
-  code fix already shipped in v0.39.0 (PR #87).
-
-Verified: make check-pythinker-code green; full pytest tests: 4757 passed.
-
-## Out of scope / next (designs ready, not implemented)
-
-- /statusline command (Codex bottom_pane/status_line_setup.rs): config key
-  tui.status_line list[str], item registry (model, current-dir, git-branch,
-  context-remaining, used-tokens), wire into prompt.py
-  _render_card_bottom_toolbar; recon notes in session memory.
-- Background working status: replace "N background agents" suffix with
-  (elapsed, tokens, t/s) — needs an elapsed/tokens provider on
-  CustomPromptSession (footer already shows the bg count).
-- Slash-command audit verdict: nothing safely removable — /exit is
-  Shell-intercepted (completion needs the registry entry); /color,/status,
-  /cost,/config are deliberate Blackbox-style aliases guarded by
-  test_blackbox_style_slash_aliases_are_registered. Optional renames
-  (/sessions→/resume primary, /memory→/memories) left to user choice.
-- Phase 2/3 backlog: per-hunk diff syntax highlighting, Codex table column
-  sizing + key/value narrow fallback, per-file multi-file diff summaries,
-  URL-aware wrap, custom themes, compact JSON, transcript export.
-
-## Review — 2026-06-10 deep-scan remediation + robustness pass
-
-Deep multi-agent review of feat/tui-enhancements (9 finder angles → 1-vote
-verify → sweep), then fixes landed for every confirmed finding, plus the
-multi-instance/orchestration robustness directive and the openai.py package
-split. Highlights:
-
-- Security: awk pipe/getline + xargs -L permission bypasses closed (both
-  gates); Glob symlink-escape fixed; progress-note title ANSI-sanitized.
-- Correctness: grep field-separator parsing (digit-hyphen paths), CRLF
-  multi-line replace fallback, /import raw-path --force parsing, compaction
-  reminders for --add-dir files, double-cancel shield settle, replay
-  watermark stat-fail → full replay, agent-resume ValueError, oauth
-  refresh_token/expires_in/device-id hardening, /theme auto re-probe,
-  markdown fence close-with-info-string, MCP cross-server shadow warning.
-- Multi-instance: per-session writer flock (.owner.lock), locked
-  pythinker.json mutate helper, JSONL torn-line repair, atomic fork writes,
-  strict memory reads (no wipe-on-EIO), journal cap (100), atomic inbox
-  claim, recall mtime re-arm, scratchpad/memory flock via to_thread.
-- Orchestration: continuation failure keeps completed results; hallucinated
-  subagent types fail fast w/ valid list (Agent + RunAgents); background
-  failures carry Agent ID + resume hint; finalize guarded; runner crashes
-  logged via done-callback; copy_for_role shares live-task registry.
-
-### Out of scope / deferred (next branch candidates)
-- Retry-After-aware backoff + larger background retry budget (O3) and
-  foreground timeout inside the runner with usage+resume hint (O4).
-- Scratch cap rewrite via mkstemp+replace (M4); _ensure_dir share-dir
-  re-resolution (M7); snapshot per-section budget clamp (M8).
-- Token-rate tracker triplication (prompt.py/_live_view/_blocks), head/tail
-  truncation + fence-walker dedup, todo-glyph mapping hoist, bullet factory.
-- web config API: optional private-range carve-out for plain-HTTP LAN
-  providers (currently CLI-only flow, deliberate).
-
-## 2026-06-10 — ESC interrupt + recall hallucination fixes (fix/web-origins-banner-version)
-
-Root causes (investigated from real session 243fa26d + code trace):
-- "ping" hallucination: RecallInjectionProvider injected "Open todos from
-  recent sessions" + scratch notes containing imperatives ("Wait for both to
-  complete, then synthesize") with no "this is history, not an instruction"
-  framing → model treated it as the current task.
-- ESC: shell RunCancelled handler only prints "Interrupted by user".
-  Background tasks spawned during the turn keep running
-  (kill_all_active exists but is never called on interrupt).
-
-Plan:
-- [x] memory/recall.py: harden recall-block framing (header + open-todos
-      section) → verified: test_build_recall_block_frames_content_as_past_context.
-- [x] background/manager.py: begin_turn / kill_turn_tasks turn registry
-      → verified: 2 new tests in tests/background/test_manager.py.
-- [x] ui/shell/__init__.py: begin_turn before each run_soul; on RunCancelled
-      kill turn tasks + print count → verified: tests/ui_and_conv/test_shell_interrupt_cleanup.py.
-- [x] web/src/bootstrap.tsx: consume ?token= BEFORE React mounts (was a React
-      effect racing useSessions' mount fetches → first-load 401 with stale
-      localStorage token). App.tsx effect removed. dist rebuilt.
-- [x] Verification: 162 pytest green (background, recall, shell suites),
-      ruff + pyright clean on touched files, web tsc -b + biome clean.
-
-Review: ESC now kills background tasks spawned by the interrupted turn only
-(earlier turns' tasks deliberately survive). Recall block is explicitly framed
-as past context so stale todos can't be mistaken for the current request.
-Out of scope (observed, not touched): vis frontend keeps token in URL (no
-race); foreground subagent cancellation already correct via CancelledError.
+1. **Alias or cold-turkey?** Ship `pythinker-cli==1.1.0` as a one-shot deprecation alias (Option C), or drop at 1.1.0?
+2. **Workflow filename**: keep `release-pythinker-cli.yml` for one release, or rename immediately?
+3. **Module name**: confirm `pythinker_code` (vs. bare `pythinker`)?
+4. **Migration callout** in README?
+5. **Versioning**: breaking layout change at 1.1.0 or 2.0.0?
