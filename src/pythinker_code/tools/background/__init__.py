@@ -57,8 +57,15 @@ def _tool_status_for_view(view: TaskView) -> ToolResultStatus:
     return ToolResultStatus.error
 
 
-def _retrieval_hint_lines(retrieval_status: str) -> list[str]:
+def _retrieval_hint_lines(retrieval_status: str, *, poll_count: int = 1) -> list[str]:
     if retrieval_status == "not_ready":
+        if poll_count >= 2:
+            return [
+                f"retrieval_hint: This is non-blocking poll #{poll_count} on this "
+                "still-running task. STOP polling: call TaskOutput with block=true "
+                "and a generous timeout, or continue other work and rely on the "
+                "completion notification."
+            ]
         return [
             "retrieval_hint: Task is still running. Call TaskOutput again with "
             "block=true to wait for completion, or continue other work and rely "
@@ -78,6 +85,7 @@ def _format_task_output(
     *,
     tool_status: ToolResultStatus,
     retrieval_status: str,
+    poll_count: int = 1,
     output: str,
     output_path: Path,
     full_output_available: bool,
@@ -93,7 +101,7 @@ def _format_task_output(
     lines = [
         tool_status_line(tool_status),
         f"retrieval_status: {retrieval_status}",
-        *_retrieval_hint_lines(retrieval_status),
+        *_retrieval_hint_lines(retrieval_status, poll_count=poll_count),
         f"task_id: {view.spec.id}",
         f"kind: {view.spec.kind}",
         f"status: {view.runtime.status}",
@@ -260,6 +268,8 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
     def __init__(self, runtime: Runtime):
         super().__init__()
         self._runtime = runtime
+        self._nonblocking_polls: dict[str, int] = {}
+        """Consecutive non-blocking polls per still-running task, to escalate the hint."""
 
     def _missing_task_error(self, task_id: str) -> ToolReturnValue:
         return tool_error(
@@ -317,6 +327,13 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
         else:
             retrieval_status = "success" if is_terminal_status(view.runtime.status) else "not_ready"
 
+        if retrieval_status == "not_ready":
+            poll_count = self._nonblocking_polls.get(params.task_id, 0) + 1
+            self._nonblocking_polls[params.task_id] = poll_count
+        else:
+            poll_count = 1
+            self._nonblocking_polls.pop(params.task_id, None)
+
         (
             output,
             full_output_available,
@@ -345,6 +362,7 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
             view,
             tool_status=tool_status,
             retrieval_status=retrieval_status,
+            poll_count=poll_count,
             output=output,
             output_path=output_path,
             full_output_available=full_output_available,

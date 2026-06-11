@@ -162,15 +162,34 @@ def test_aggregate_findings_tolerates_free_text_children() -> None:
     assert lines == []
 
 
-def test_aggregate_findings_ignores_none_placeholders() -> None:
+def test_aggregate_findings_skips_none_text_blockers() -> None:
+    # _CHILD_A reports "### BLOCKERS\nNone" — the placeholder must not emit a
+    # blockers block, while the real RISKS finding still rolls up.
     lines = aggregate_findings([("child-a", _CHILD_A)])
     text = "\n".join(lines)
-    assert "blockers" not in text.lower()
-    assert "Parser assumes UTF-8 input." in text
+    assert "batch_blockers" not in text
+    assert "batch_risks:" in text
+    assert "Parser assumes UTF-8 input. [child-a]" in text
 
 
 def test_aggregate_findings_empty_batch() -> None:
     assert aggregate_findings([]) == []
+
+
+def test_aggregate_findings_survives_unclosed_code_fence() -> None:
+    # A child that opens a code fence and never closes it must not swallow
+    # the sections that follow the malformed block.
+    malformed = """### SUMMARY
+Did the thing.
+
+```python
+print("oops, never closed")
+
+### RISKS
+- Fence was never closed.
+"""
+    lines = aggregate_findings([("child-a", malformed)])
+    assert any("Fence was never closed." in line for line in lines)
 
 
 def test_aggregate_findings_preserves_leading_cli_flags() -> None:

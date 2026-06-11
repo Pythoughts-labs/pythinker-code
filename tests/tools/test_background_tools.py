@@ -293,6 +293,47 @@ async def test_task_output_returns_not_ready_for_running_task(runtime, task_outp
 
 
 @pytest.mark.asyncio
+async def test_task_output_escalates_hint_on_repeated_non_blocking_polls(runtime, task_output_tool):
+    spec = _write_task(
+        runtime,
+        "b6666667",
+        status="running",
+        output="still working\n",
+    )
+    params = task_output_tool.params(task_id=spec.id, block=False, timeout=0)
+
+    first = await task_output_tool(params)
+    second = await task_output_tool(params)
+    third = await task_output_tool(params)
+
+    assert "retrieval_hint: Task is still running" in first.output
+    assert "non-blocking poll #2" in second.output
+    assert "STOP polling" in second.output
+    assert "non-blocking poll #3" in third.output
+
+
+@pytest.mark.asyncio
+async def test_task_output_poll_escalation_resets_after_blocking_call(runtime, task_output_tool):
+    spec = _write_task(
+        runtime,
+        "b6666669",
+        status="running",
+        output="still working\n",
+    )
+    nonblocking = task_output_tool.params(task_id=spec.id, block=False, timeout=0)
+
+    await task_output_tool(nonblocking)
+    await task_output_tool(nonblocking)
+    # A blocking attempt (even one that times out) is the requested behavior
+    # and resets the escalation counter.
+    await task_output_tool(task_output_tool.params(task_id=spec.id, block=True, timeout=0))
+    result = await task_output_tool(nonblocking)
+
+    assert "retrieval_hint: Task is still running" in result.output
+    assert "STOP polling" not in result.output
+
+
+@pytest.mark.asyncio
 async def test_task_output_defaults_to_non_blocking_snapshot(runtime, task_output_tool):
     spec = _write_task(
         runtime,

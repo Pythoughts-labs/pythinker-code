@@ -115,12 +115,18 @@ def _extract_section(output: str, section: str) -> list[str]:
     collected: list[str] = []
     in_section = False
     in_fence = False
-    for raw_line in output.splitlines():
+    lines = output.splitlines()
+    fence_indices = [i for i, raw in enumerate(lines) if raw.strip().startswith("```")]
+    # An odd fence count means the last opener never closes; ignore it so a
+    # malformed child report can't swallow every section that follows it.
+    unclosed_fence_index = fence_indices[-1] if len(fence_indices) % 2 else None
+    for index, raw_line in enumerate(lines):
         line = raw_line.strip()
         if line.startswith("```"):
             # Lines inside fenced code blocks (e.g. `# comment` in a shell
             # snippet) must not be mistaken for section headers or findings.
-            in_fence = not in_fence
+            if index != unclosed_fence_index:
+                in_fence = not in_fence
             continue
         if in_fence:
             continue

@@ -283,6 +283,10 @@ def test_card_footer_disabled_customization_matches_default(monkeypatch: pytest.
         _make_session(StatusLineConfig(enabled=False, segments=["model"])), monkeypatch
     )
     assert disabled == stock
+    # The segments override must be ignored at render time, not just in the
+    # resolver: default segments (cwd/git) still show despite segments=["model"].
+    assert "~/proj" in disabled
+    assert "main" in disabled
 
 
 def test_card_footer_shows_external_command_line(monkeypatch: pytest.MonkeyPatch):

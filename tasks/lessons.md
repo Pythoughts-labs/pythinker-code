@@ -74,3 +74,11 @@ Format: trigger → rule.
 - **Never claim an artifact was persisted** ("report saved", "todo updated")
   without having made the Write call. Promise → tool call → claim, in that
   order. Use `/dep-audit` for dependency reports.
+
+## Layer discipline
+
+- **When asked to "enhance the agent" in this repo**, the target is the
+  pythinker product itself: `src/pythinker_code/` (prompts, agents/default/*,
+  soul/slash.py, tool hints) and `.pythinker/prompts/` for custom commands —
+  NOT `.claude/` config. Transcripts showing `~/.pythinker/sessions/` paths
+  are pythinker runs; behavioral fixes belong in the product.

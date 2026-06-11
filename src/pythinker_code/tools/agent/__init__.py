@@ -651,8 +651,9 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
                 approval_summary = (
                     f"Launch up to {len(params.agents)} child agent(s) for `{params.summary}` "
                     f"with isolation={params.isolation}, background={params.run_in_background}. "
-                    f"Currently {approved_count} slot(s) are available; overflow children will "
-                    "be reported as deferred."
+                    f"Currently {approved_count} slot(s) are available; any children "
+                    "beyond the capacity available at launch time will be reported "
+                    "as deferred."
                 )
             else:
                 approval_summary = (

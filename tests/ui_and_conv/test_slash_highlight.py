@@ -74,8 +74,12 @@ def test_case_insensitive_match():
     assert _highlighted(_lex_line("try /CLEAR now")) == ["/CLEAR"]
 
 
-def test_path_like_token_not_highlighted():
-    assert _highlighted(_lex_line("see src/clear and /clear/subdir")) == []
+def test_bare_word_with_slash_not_highlighted():
+    assert _highlighted(_lex_line("see src/clear here")) == []
+
+
+def test_command_followed_by_subpath_not_highlighted():
+    assert _highlighted(_lex_line("open /clear/subdir please")) == []
 
 
 def test_multiline_highlights_each_line():

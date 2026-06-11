@@ -92,6 +92,9 @@ async def test_statusline_command_set_and_clear(
     assert config_for_save.tui.statusline.command == "echo hello"
     assert "command" in config_for_save.tui.statusline.segments
 
+    # Guard against a trivially-true clear: the command must actually be set
+    # before "command none" is exercised.
+    assert config_for_save.tui.statusline.command is not None
     with pytest.raises(Reload):
         await _run_statusline(app, "command none")
     assert config_for_save.tui.statusline.command is None
@@ -246,5 +249,10 @@ async def test_statusline_bare_falls_back_to_table_during_task(
     await _run_statusline(app, "")
 
     menu_mock.assert_not_called()
-    printed = " ".join(str(call.args[0]) for call in print_mock.call_args_list)
-    assert "Usage" in printed
+    from rich.table import Table
+
+    tables = [call.args[0] for call in print_mock.call_args_list if isinstance(call.args[0], Table)]
+    assert tables, "expected the settings table to be printed during a running turn"
+    row_labels = list(tables[0].columns[0].cells)
+    assert "Enabled" in row_labels
+    assert "Segments" in row_labels
