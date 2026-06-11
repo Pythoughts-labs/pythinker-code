@@ -97,3 +97,51 @@ def test_split_zones_preserves_user_order():
 def test_split_zones_ignores_unknown_ids():
     zones = split_zones(["model", "hologram"])
     assert zones.line1 == ["model"]
+
+
+def _text(fragments):
+    return "".join(t for _, t in fragments)
+
+
+def test_spinner_working_vs_idle():
+    working = SEGMENT_REGISTRY["spinner"].render(make_ctx(working=True, frame=3))
+    idle = SEGMENT_REGISTRY["spinner"].render(make_ctx(working=False))
+    assert _text(working) == "⠸"  # frame 3 of the braille cycle
+    assert _text(idle) == "◇"
+
+
+def test_spinner_ascii_fallback():
+    frags = SEGMENT_REGISTRY["spinner"].render(make_ctx(working=True, frame=0, ascii_only=True))
+    assert _text(frags) in {"|", "/", "-", "\\"}
+
+
+def test_model_with_and_without_provider():
+    assert _text(SEGMENT_REGISTRY["model"].render(make_ctx())) == "claude-fable-5"
+    frags = SEGMENT_REGISTRY["model"].render(make_ctx(provider_label="anthropic"))
+    assert _text(frags) == "claude-fable-5 @anthropic"
+    assert SEGMENT_REGISTRY["model"].render(make_ctx(model_name=None)) is None
+
+
+def test_cost_hidden_at_zero_shown_with_budget():
+    assert SEGMENT_REGISTRY["cost"].render(make_ctx(session_cost_usd=0.0)) is None
+    assert _text(SEGMENT_REGISTRY["cost"].render(make_ctx(session_cost_usd=1.844))) == "$1.84"
+    frags = SEGMENT_REGISTRY["cost"].render(
+        make_ctx(session_cost_usd=10.2, cost_budget_usd=50.0)
+    )
+    assert _text(frags) == "$10.20/$50"
+
+
+def test_speed_requires_working_and_a_rate():
+    assert SEGMENT_REGISTRY["speed"].render(make_ctx(working=False, rate_out=80)) is None
+    assert SEGMENT_REGISTRY["speed"].render(make_ctx(working=True)) is None
+    frags = SEGMENT_REGISTRY["speed"].render(make_ctx(working=True, rate_in=92, rate_out=85))
+    assert _text(frags) == "in 92 out 85 t/s"
+    frags = SEGMENT_REGISTRY["speed"].render(make_ctx(working=True, rate_out=85))
+    assert _text(frags) == "out 85 t/s"
+
+
+def test_effort_badge_levels_and_hidden():
+    assert SEGMENT_REGISTRY["effort"].render(make_ctx(effort=None)) is None
+    assert _text(SEGMENT_REGISTRY["effort"].render(make_ctx(effort="high"))) == "▲ high"
+    assert _text(SEGMENT_REGISTRY["effort"].render(make_ctx(effort="medium"))) == "◆ med"
+    assert _text(SEGMENT_REGISTRY["effort"].render(make_ctx(effort="low"))) == "▽ low"

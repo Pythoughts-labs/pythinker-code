@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 
 from pythinker_code.config import StatusLineConfig
 from pythinker_code.ui.shell.components import sanitize_ansi
+from pythinker_code.ui.theme import get_statusline_colors
 from pythinker_code.utils.logging import logger
 
 _EIGHTHS = ("", "▏", "▎", "▍", "▌", "▋", "▊", "▉")
@@ -170,12 +171,83 @@ def _not_rendered(ctx: StatusLineContext) -> list[StyleFragment] | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Line-1 segment renderers
+# ---------------------------------------------------------------------------
+
+_SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+_SPINNER_FRAMES_ASCII = ("|", "/", "-", "\\")
+
+
+def _style(ctx: StatusLineContext, color: str) -> str:
+    return "" if ctx.style == "plain" else color
+
+
+def _render_spinner(ctx: StatusLineContext) -> list[StyleFragment] | None:
+    colors = get_statusline_colors()
+    if ctx.working:
+        frames = _SPINNER_FRAMES_ASCII if ctx.ascii_only else _SPINNER_FRAMES
+        return [(_style(ctx, colors.spinner), frames[ctx.frame % len(frames)])]
+    return [(_style(ctx, colors.spinner_idle), "*" if ctx.ascii_only else "◇")]
+
+
+def _render_model(ctx: StatusLineContext) -> list[StyleFragment] | None:
+    if not ctx.model_name:
+        return None
+    colors = get_statusline_colors()
+    frags: list[StyleFragment] = [(_style(ctx, colors.model), ctx.model_name)]
+    if ctx.provider_label:
+        frags.append((_style(ctx, colors.dim), f" @{ctx.provider_label}"))
+    return frags
+
+
+def _render_cost(ctx: StatusLineContext) -> list[StyleFragment] | None:
+    if ctx.session_cost_usd <= 0:
+        return None
+    colors = get_statusline_colors()
+    text = f"${ctx.session_cost_usd:.2f}"
+    if ctx.cost_budget_usd:
+        text += f"/${ctx.cost_budget_usd:g}"
+    return [(_style(ctx, colors.cost), text)]
+
+
+def _render_speed(ctx: StatusLineContext) -> list[StyleFragment] | None:
+    if not ctx.working:
+        return None
+    parts: list[str] = []
+    if ctx.rate_in and ctx.rate_in > 0:
+        parts.append(f"in {ctx.rate_in}")
+    if ctx.rate_out and ctx.rate_out > 0:
+        parts.append(f"out {ctx.rate_out}")
+    if not parts:
+        return None
+    colors = get_statusline_colors()
+    return [(_style(ctx, colors.speed), f"{' '.join(parts)} t/s")]
+
+
+_EFFORT_BADGES: dict[str, tuple[str, str, str, str]] = {
+    "high": ("▲", "^", "high", "effort_hi"),
+    "medium": ("◆", "#", "med", "effort_md"),
+    "low": ("▽", "v", "low", "effort_lo"),
+}
+
+
+def _render_effort(ctx: StatusLineContext) -> list[StyleFragment] | None:
+    badge = _EFFORT_BADGES.get((ctx.effort or "").lower())
+    if badge is None:
+        return None
+    glyph, ascii_glyph, label, color_attr = badge
+    colors = get_statusline_colors()
+    g = ascii_glyph if ctx.ascii_only else glyph
+    return [(_style(ctx, getattr(colors, color_attr)), f"{g} {label}")]
+
+
 SEGMENT_REGISTRY: dict[str, SegmentSpec] = {
-    "spinner": SegmentSpec("spinner", "line1", _not_rendered, drop_priority=0),
-    "model": SegmentSpec("model", "line1", _not_rendered, drop_priority=1),
-    "cost": SegmentSpec("cost", "line1", _not_rendered, drop_priority=5),
-    "speed": SegmentSpec("speed", "line1", _not_rendered, drop_priority=7),
-    "effort": SegmentSpec("effort", "line1", _not_rendered, drop_priority=4),
+    "spinner": SegmentSpec("spinner", "line1", _render_spinner, drop_priority=0),
+    "model": SegmentSpec("model", "line1", _render_model, drop_priority=1),
+    "cost": SegmentSpec("cost", "line1", _render_cost, drop_priority=5),
+    "speed": SegmentSpec("speed", "line1", _render_speed, drop_priority=7),
+    "effort": SegmentSpec("effort", "line1", _render_effort, drop_priority=4),
     "cwd": SegmentSpec("cwd", "line1", _not_rendered, drop_priority=1),
     "git": SegmentSpec("git", "line1", _not_rendered, drop_priority=2),
     "diff": SegmentSpec("diff", "line1", _not_rendered, drop_priority=6),
