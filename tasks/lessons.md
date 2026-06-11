@@ -83,6 +83,21 @@ Format: trigger → rule.
   NOT `.claude/` config. Transcripts showing `~/.pythinker/sessions/` paths
   are pythinker runs; behavioral fixes belong in the product.
 
+## Spec/profile consistency
+
+- **When adding or tightening a permission gate** (network, MCP, shell,
+  visibility), sweep EVERY agent spec under `agents/default/` for instructions
+  and `allowed_tools` entries that reference now-blocked tools — a spec that
+  mandates a denied tool wastes steps on rejected calls and silently disables
+  its own feature. The reverse holds too: a new spec must be written against
+  its actual `_SUBAGENT_PROFILES` entry (unmapped subagent types default to
+  offline `read_only`).
+- **When a user reports an identity/naming feature "not working"**, first
+  pin which surface they are looking at: subagent NAME (codenames),
+  subagent instance id (`a<hex8>`), and background TASK id (`agent-…`) are
+  three different identities; only the task id appears in TaskOutput/TaskStop
+  headers.
+
 ## Verification gates
 
 - **When running a gate command (make check, pytest, ruff) through a pipe or

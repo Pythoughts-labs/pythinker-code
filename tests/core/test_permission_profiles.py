@@ -65,6 +65,22 @@ def test_plan_mode_subagent_profile_resolution(runtime: Runtime) -> None:
     assert permission_profile_for_runtime(runtime).name == "read_only"
 
 
+def test_scout_profile_allows_network_research(runtime: Runtime) -> None:
+    """`scout` is the designated external-docs researcher: it must resolve to the
+    read-only-plus-network "ask" profile. An unmapped default to read_only would
+    hide and execution-deny SearchWeb/FetchURL — the agent's entire mission."""
+    from pythinker_code.soul.permission import permission_profile_for_runtime
+
+    runtime.role = "subagent"
+    runtime.subagent_type = "scout"
+
+    profile = permission_profile_for_runtime(runtime)
+    assert profile.name == "ask"
+    assert profile.allow_network
+    assert not profile.allow_file_mutation
+    assert not profile.allow_shell_mutation
+
+
 @pytest.mark.skipif(
     platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
 )
@@ -1087,12 +1103,17 @@ async def test_restricted_profile_blocks_repeated_failing_command(
         first = await shell(ShellParams(command="false"))
         second = await shell(ShellParams(command="false"))
         third = await shell(ShellParams(command="false"))
+        # Whitespace variants are the same command: padding must not mint a
+        # fresh failure counter and bypass the cap.
+        padded = await shell(ShellParams(command="  false   "))
         other = await shell(ShellParams(command="true"))
 
     assert first.is_error and "exit code" in first.message
     assert second.is_error and "exit code" in second.message
     assert third.is_error
     assert "repeating it verbatim is blocked" in third.message
+    assert padded.is_error
+    assert "repeating it verbatim is blocked" in padded.message
     assert not other.is_error
 
 
@@ -1182,6 +1203,56 @@ def test_shell_workspace_escape_classified(temp_work_dir: HostPath) -> None:
 @pytest.mark.skipif(
     platform.system() == "Windows", reason="Shell workspace jail examples use POSIX"
 )
+def test_shell_workspace_escape_variables_globs_and_cwd(temp_work_dir: HostPath) -> None:
+    """Close the jail-bypass family: unexpanded ``$VAR`` path arguments, absolute
+    or parent-climbing globs, and ``cd``-moved working directories. Patterns and
+    program arguments (regex ``$`` anchors, awk programs) are never path
+    candidates, so they stay unaffected."""
+    from pythinker_code.soul.permission import shell_workspace_escape_reason
+
+    def reason(cmd: str) -> str | None:
+        return shell_workspace_escape_reason(cmd, work_dir=temp_work_dir)
+
+    denied = (
+        "rg secret $HOME/",  # runtime expansion outside the jail
+        "cat $HOME/config.toml",  # $VAR is rejected uniformly: unverifiable
+        "grep -r key ${HOME}/dir",
+        "ls $PWD/..",
+        "rg x /etc/*",  # absolute glob: prefix escapes
+        "ls ../*",  # relative glob climbing out
+        "ls src/*/../..",  # glob followed by parent traversal
+        "cd .. && rg x .",  # later segment resolves against the moved cwd
+        "cd / && ls .",
+        "cd && ls .",  # bare cd targets the home directory
+        "cd - && ls .",  # previous-dir is untrackable
+        "popd && ls .",  # directory stack is untrackable
+        "pushd /tmp && ls .",
+        "cd src && rg x ../..",  # climb out from a moved in-workspace cwd
+        "(cd .. && rg x .)",  # grouping hides the cwd change
+        "{ cd ..; ls .; }",
+    )
+    for cmd in denied:
+        assert reason(cmd) is not None, f"expected escape: {cmd!r}"
+
+    allowed = (
+        "rg x src/**/*.py",  # in-workspace glob prefix
+        "rg TODO *",  # bare glob expands under the cwd
+        "find src -name '*.py'",  # -name value is not a path candidate
+        "cat /etc/*",  # ReadFile parity: absolute reads stay allowed
+        "cd src && rg x .",  # in-workspace cwd move, in-workspace search
+        "cd src && cat ../notes.txt",  # back inside the workspace root
+        "rg 'foo(bar)' src",  # parens in a pattern argument, not a group
+        "grep -e 'TODO$' src",  # regex anchor is a pattern, not a path
+        "awk '{print $1}' data.txt",  # awk program is excluded from candidates
+        "sed -n '/x$/p' notes.txt",
+    )
+    for cmd in allowed:
+        assert reason(cmd) is None, f"expected allowed: {cmd!r}"
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Shell workspace jail examples use POSIX"
+)
 @pytest.mark.parametrize("subagent_type", ["review", "security-reviewer", "judge", "explore"])
 async def test_read_only_subagent_shell_denies_workspace_escape(
     runtime: Runtime,
@@ -1199,6 +1270,9 @@ async def test_read_only_subagent_shell_denies_workspace_escape(
 
     assert result.is_error
     assert "resolves outside the workspace" in result.message
+    # The denial names the jail root so a blocked agent corrects the path
+    # instead of retrying blind variations.
+    assert str(runtime.session.work_dir) in result.message
 
 
 @pytest.mark.skipif(

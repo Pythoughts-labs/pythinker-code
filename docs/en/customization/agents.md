@@ -187,18 +187,20 @@ The default agent configuration includes focused built-in subagent types with di
 |------|---------|----------------|
 | `coder` | General software engineering with judgment: read/write files, run commands, search code | Read/search tools, `Shell`, write tools, web tools |
 | `implementer` | Scoped implementation with minimal edits and quick verification | Read/search tools, `Shell`, write tools, web tools |
-| `explore` | Fast read-only codebase exploration: search, read, summarize | Read/search tools, `Shell`, web tools; no write tools |
+| `explore` | Fast read-only codebase exploration: search, read, summarize | Read/search tools and `Shell`; no write tools |
 | `plan` | Implementation planning and architecture design | Read/search tools and web tools; no write tools |
 | `planner` | Read-only recon planner that decomposes broad work into parallel seeds | Read/search tools and `Shell`; no write tools |
 | `scout` | Read-only external docs, dependency-source, and API freshness researcher | Read/search tools, `Shell`, web tools; no write tools |
-| `review` | Read-only severity-scored code review | Read/search tools, `Shell`, web tools; no write tools |
-| `code-reviewer` | Diff-focused code review for the current branch | Read/search tools, `Shell`, web tools; no write tools |
-| `security-reviewer` | Diff-focused security review with validated findings | Read/search tools, `Shell`, web tools; no write tools |
+| `review` | Read-only severity-scored code review | Read/search tools and `Shell`; no write tools |
+| `code-reviewer` | Diff-focused code review for the current branch | Read/search tools and `Shell`; no write tools |
+| `security-reviewer` | Diff-focused security review with validated findings | Read/search tools and `Shell`; no write tools |
 | `debugger` | Root-cause analysis for failures, logs, and stack traces | Read/search tools and `Shell`; no write tools |
 | `verifier` | Read-only validation runner for tests, lint, type checks, and builds | Read/search tools and `Shell`; no write tools |
 | `judge` | Independent final quality gate for answers, reports, and code-change summaries | Read/search tools and `Shell`; no write tools |
 
 All subagent types are prohibited from nesting the `Agent` tool (subagents cannot create their own subagents). The `Agent` tool is only available to the root agent.
+
+Reviewer-class types (`review`, `code-reviewer`, `security-reviewer`, `debugger`, `judge`, `verifier`, `explore`) run offline by design: their permission profiles block network and external doc-lookup tools because the content they analyze is untrusted. Third-party claims they cannot verify from the repository come back under RISKS as `needs verification` items; the parent agent resolves those against live docs — directly or by dispatching `scout`, the online research type (`plan` also keeps web access for planning research).
 
 ## How subagents run
 

@@ -57,7 +57,9 @@ def _tool_status_for_view(view: TaskView) -> ToolResultStatus:
     return ToolResultStatus.error
 
 
-def _retrieval_hint_lines(retrieval_status: str, *, poll_count: int = 1) -> list[str]:
+def _retrieval_hint_lines(
+    retrieval_status: str, *, poll_count: int = 1, timeout_count: int = 1
+) -> list[str]:
     if retrieval_status == "not_ready":
         if poll_count >= 2:
             return [
@@ -72,10 +74,18 @@ def _retrieval_hint_lines(retrieval_status: str, *, poll_count: int = 1) -> list
             "on the completion notification. Avoid repeated non-blocking polls."
         ]
     if retrieval_status == "timeout":
+        if timeout_count >= 2:
+            return [
+                f"retrieval_hint: Wait timed out — this is blocking wait #{timeout_count} "
+                "to time out on this task. STOP waiting: return control and rely on the "
+                "completion notification (it arrives automatically); do not call "
+                "TaskOutput on this task again before it does."
+            ]
         return [
             "retrieval_hint: Wait timed out before the task reached a terminal "
-            "state. Retry with block=true and a longer timeout, or continue "
-            "other work until the completion notification arrives."
+            "state. Return control and rely on the completion notification — it "
+            "arrives automatically when the task finishes. Retry block=true with "
+            "a longer timeout only if you cannot proceed without this result."
         ]
     return []
 
@@ -86,6 +96,7 @@ def _format_task_output(
     tool_status: ToolResultStatus,
     retrieval_status: str,
     poll_count: int = 1,
+    timeout_count: int = 1,
     output: str,
     output_path: Path,
     full_output_available: bool,
@@ -101,7 +112,9 @@ def _format_task_output(
     lines = [
         tool_status_line(tool_status),
         f"retrieval_status: {retrieval_status}",
-        *_retrieval_hint_lines(retrieval_status, poll_count=poll_count),
+        *_retrieval_hint_lines(
+            retrieval_status, poll_count=poll_count, timeout_count=timeout_count
+        ),
         f"task_id: {view.spec.id}",
         f"kind: {view.spec.kind}",
         f"status: {view.runtime.status}",
@@ -327,8 +340,15 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
 
         if retrieval_status == "not_ready":
             poll_count = self._runtime.background_tasks.note_nonblocking_poll(params.task_id)
+            timeout_count = 1
+        elif retrieval_status == "timeout":
+            # A timed-out blocking wait is not progress: it gets its own
+            # escalation streak and does not absolve the polling streak.
+            poll_count = 1
+            timeout_count = self._runtime.background_tasks.note_blocking_timeout(params.task_id)
         else:
             poll_count = 1
+            timeout_count = 1
             self._runtime.background_tasks.reset_poll_escalation(params.task_id)
 
         (
@@ -360,6 +380,7 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
             tool_status=tool_status,
             retrieval_status=retrieval_status,
             poll_count=poll_count,
+            timeout_count=timeout_count,
             output=output,
             output_path=output_path,
             full_output_available=full_output_available,

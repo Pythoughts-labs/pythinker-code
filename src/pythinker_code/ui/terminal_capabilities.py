@@ -110,6 +110,20 @@ def ascii_glyphs_enabled(
     return bool(encoding and "utf" not in encoding and "65001" not in encoding)
 
 
+def synchronized_output_enabled(environ: Mapping[str, str] | None = None) -> bool:
+    """Return whether redraws should use DEC mode 2026 synchronized updates.
+
+    Supporting terminals apply a bracketed frame atomically, which removes
+    streaming flicker; terminals without the mode ignore the marks. ``TERM=dumb``
+    may echo unknown escapes raw, so it opts out, as does the explicit
+    ``PYTHINKER_NO_SYNC_OUTPUT`` kill switch.
+    """
+    env = _env(environ)
+    if env_flag("PYTHINKER_NO_SYNC_OUTPUT", environ=env):
+        return False
+    return _clean(env.get("TERM")) != "dumb"
+
+
 def motion_disabled(environ: Mapping[str, str] | None = None) -> bool:
     """Return whether animated terminal affordances should collapse to static."""
     env = _env(environ)

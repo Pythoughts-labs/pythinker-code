@@ -57,8 +57,13 @@ SCOPE_LOCKED_PATHS: frozenset[tuple[str, ...]] = frozenset(
         ("services",),  # contains api_key fields — must stay in user scope
         ("feedback", "api_key"),  # only the key, not the whole feedback section
         # Auto-executed when the shell starts — a repo-controlled project config
-        # must never be able to choose the binary that runs.
+        # must never be able to choose the binary that runs (`command`), nor to
+        # trigger or extend its execution (`enabled`/`segments` flip the command
+        # segment on; `command_timeout_ms` governs how long it may run).
         ("tui", "statusline", "command"),
+        ("tui", "statusline", "enabled"),
+        ("tui", "statusline", "segments"),
+        ("tui", "statusline", "command_timeout_ms"),
     }
 )
 
@@ -702,7 +707,8 @@ class StatusLineConfig(BaseModel):
     command_timeout_ms: int = Field(
         default=1000,
         gt=0,
-        description="Timeout in milliseconds for the external status command.",
+        le=60_000,
+        description="Timeout in milliseconds for the external status command (max 60s).",
     )
     style: Literal["fancy", "plain"] = Field(
         default="fancy",

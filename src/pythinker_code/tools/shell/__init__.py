@@ -27,7 +27,13 @@ MAX_FOREGROUND_TIMEOUT = 5 * 60
 MAX_BACKGROUND_TIMEOUT = 24 * 60 * 60
 # Review/read-only workflows must not flag-thrash: after a command has failed
 # this many times verbatim, re-running it is a hard denial, not a reminder.
+# The counter key is whitespace-normalized so trivial padding cannot mint a
+# fresh counter; semantic variations (quoting, flag order) stay distinct.
 MAX_IDENTICAL_FAILURES = 2
+
+
+def _failure_key(command: str) -> str:
+    return " ".join(command.split())
 
 
 def _default_background_description(*, auto_promoted: bool) -> str:
@@ -130,7 +136,7 @@ class Shell(CallableTool2[Params]):
 
         if (
             restricted_profile
-            and self._failed_attempts.get(params.command, 0) >= MAX_IDENTICAL_FAILURES
+            and self._failed_attempts.get(_failure_key(params.command), 0) >= MAX_IDENTICAL_FAILURES
         ):
             return builder.error(
                 f"This exact command already failed {MAX_IDENTICAL_FAILURES} times; repeating "
@@ -243,7 +249,8 @@ class Shell(CallableTool2[Params]):
             )
 
     def _record_failed_attempt(self, command: str) -> None:
-        self._failed_attempts[command] = self._failed_attempts.get(command, 0) + 1
+        key = _failure_key(command)
+        self._failed_attempts[key] = self._failed_attempts.get(key, 0) + 1
 
     async def _run_in_background(
         self, params: Params, *, scrub_secrets: bool = False

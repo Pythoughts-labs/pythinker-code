@@ -1037,11 +1037,18 @@ class _ToolCallBlock:
             parsed = json.loads(raw_args, strict=False)
         except json.JSONDecodeError:
             parsed = {}
-        if isinstance(parsed, dict):
-            self._tui_card.update_args(cast(dict[str, Any], parsed))
         # Args are complete once execution starts; before that we treat
         # complete_json output as best-effort.
-        if self._execution_started or self._result is not None:
+        args_complete = self._execution_started or self._result is not None
+        if isinstance(parsed, dict):
+            args = cast(dict[str, Any], parsed)
+            if not args_complete:
+                # While args stream in, a key whose value hasn't arrived yet is
+                # repaired to null; hide it so renderers show their pending
+                # state instead of flashing an <invalid> badge for a frame.
+                args = {k: v for k, v in args.items() if v is not None}
+            self._tui_card.update_args(args)
+        if args_complete:
             self._tui_card.set_args_complete()
         if self._result is not None:
             self._tui_card.set_result(

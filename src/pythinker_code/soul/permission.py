@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pythinker_core.tooling import ToolError
 
 from pythinker_code.execution_profiles import resolve_execution_policy
-from pythinker_code.utils.path import check_shell_path_argument
+from pythinker_code.utils.path import check_shell_path_argument, resolve_shell_path
 
 if TYPE_CHECKING:
     from pythinker_host.path import HostPath
@@ -94,6 +94,10 @@ _SUBAGENT_PROFILES: dict[str, PermissionProfileName] = {
     "security-reviewer": "review",
     "debugger": "verify",
     "judge": "verify",
+    # The external-docs researcher: read-only like explore, but its entire
+    # mission is live web research, so it gets the network-enabled "ask"
+    # profile instead of the offline read_only default.
+    "scout": "ask",
 }
 
 _STEP_PERMISSION_PROFILE: ContextVar[PermissionProfile | None] = ContextVar(
@@ -357,7 +361,8 @@ def check_shell_command_allowed(runtime: Runtime, command: str) -> ToolError | N
             message=(
                 f"The active {profile.description} permission profile blocks this shell command "
                 f"because {reason}. Use the Glob/Grep/ReadFile tools or restrict path arguments "
-                "to the workspace and approved additional directories."
+                f"to the workspace root ({runtime.session.work_dir}) and approved additional "
+                "directories."
             ),
             brief="Permission profile restriction",
         )
@@ -592,6 +597,10 @@ def _segment_mutation_reason(tokens: list[str]) -> str | None:
 
 # Directory-listing/traversal commands whose positional args are all paths.
 _TRAVERSAL_PATH_COMMANDS = {"ls", "du", "tree"}
+# Shell builtins that move the working directory for the rest of the command.
+# `cd`/`pushd` targets are tracked across segments; `popd` and `cd -` restore
+# state the static checker cannot model and are rejected fail-closed.
+_CWD_COMMANDS = {"cd", "pushd", "popd"}
 # Search commands whose first positional is the pattern, the rest are paths.
 _SEARCH_PATH_COMMANDS = {"rg", "grep", "egrep", "fgrep"}
 # File-read commands whose positional args are all file paths (ReadFile parity).
@@ -651,16 +660,21 @@ def shell_workspace_escape_reason(
     Runs only for profiles without shell mutation rights, after
     :func:`shell_mutation_reason` returned ``None`` — so hidden-command forms
     (substitution, glued operators) are already rejected and the plain segment
-    scan here sees every sub-command.
+    scan here sees every sub-command. ``cd``/``pushd`` moves are tracked across
+    segments so later relative paths are judged against the directory the shell
+    will actually be in.
     """
     try:
         tokens = shlex.split(command, posix=True)
     except ValueError:
         return "the command is unparsable"
     segment: list[str] = []
+    effective_dir = work_dir
     for token in [*tokens, ";"]:
         if token in _SHELL_SEGMENT_SEPARATORS:
-            reason = _segment_workspace_escape_reason(segment, work_dir, additional_dirs)
+            reason, effective_dir = _segment_workspace_escape_reason(
+                segment, work_dir, additional_dirs, effective_dir
+            )
             if reason is not None:
                 return reason
             segment = []
@@ -673,13 +687,26 @@ def _segment_workspace_escape_reason(
     tokens: list[str],
     work_dir: HostPath,
     additional_dirs: Sequence[HostPath],
-) -> str | None:
+    effective_dir: HostPath,
+) -> tuple[str | None, HostPath]:
+    """Escape reason for one command segment, plus the cwd the next segment sees."""
     if not tokens:
-        return None
+        return None, effective_dir
+    if tokens[0] == "{" or tokens[0].startswith("("):
+        # Brace groups and subshells re-nest commands the flat segment scan
+        # cannot attribute (a `cd` inside them moves or hides the cwd).
+        return (
+            f"command grouping `{tokens[0]}` prevents the boundary check from "
+            "tracking the working directory",
+            effective_dir,
+        )
     command, args = _unwrap_command(tokens)
     if command is None:
-        return None
+        return None, effective_dir
     base = _canonical_interpreter_name(command.rsplit("/", 1)[-1])
+
+    if base in _CWD_COMMANDS:
+        return _cwd_move_result(base, args, work_dir, additional_dirs, effective_dir)
 
     # (candidate, absolute_allowed): absolute_allowed marks ReadFile-parity
     # candidates where an absolute path outside the workspace stays permitted.
@@ -714,22 +741,101 @@ def _segment_workspace_escape_reason(
     for raw, absolute_allowed in candidates:
         if _skip_path_candidate(raw):
             continue
-        if absolute_allowed and Path(raw).expanduser().is_absolute():
+        if "$" in raw or "`" in raw:
+            # shlex strips quotes, so a quoted-literal `$` is indistinguishable
+            # from a runtime expansion the boundary check cannot resolve.
+            # Fail closed; the first-class file tools handle such paths.
+            return (
+                f"path argument `{raw}` contains an unexpanded shell expansion "
+                f"the boundary check cannot resolve ({base})",
+                effective_dir,
+            )
+        checkable, glob_remainder = _split_glob_candidate(raw)
+        if glob_remainder is not None and _has_parent_traversal(glob_remainder):
+            # `src/*/../..` expands inside the workspace, then climbs out.
+            return (
+                f"path argument `{raw}` combines a glob with parent-directory traversal ({base})",
+                effective_dir,
+            )
+        if glob_remainder is not None and not checkable:
+            continue  # bare glob (`*`, `?.py`) expands under the effective cwd
+        if absolute_allowed and Path(checkable).expanduser().is_absolute():
             continue
-        if not check_shell_path_argument(raw, work_dir, additional_dirs):
-            return f"path argument `{raw}` resolves outside the workspace ({base})"
-    return None
+        if not check_shell_path_argument(
+            checkable, work_dir, additional_dirs, base_dir=effective_dir
+        ):
+            return (
+                f"path argument `{raw}` resolves outside the workspace ({base})",
+                effective_dir,
+            )
+    return None, effective_dir
+
+
+def _cwd_move_result(
+    base: str,
+    args: list[str],
+    work_dir: HostPath,
+    additional_dirs: Sequence[HostPath],
+    effective_dir: HostPath,
+) -> tuple[str | None, HostPath]:
+    """Track a ``cd``/``pushd`` move, rejecting targets the checker cannot model."""
+    if base == "popd":
+        return (
+            "`popd` restores a directory-stack entry the boundary check cannot track",
+            effective_dir,
+        )
+    target: str | None = None
+    for arg in args:
+        if arg == "-":
+            return (
+                f"`{base} -` switches to a previous directory the boundary check cannot track",
+                effective_dir,
+            )
+        if arg == "--" or (arg.startswith("-") and len(arg) > 1):
+            continue  # -P/-L style flags
+        target = arg
+        break
+    if target is None:
+        return (
+            f"`{base}` without a target changes to the home directory; pass an "
+            "explicit in-workspace path",
+            effective_dir,
+        )
+    if "$" in target or "`" in target:
+        return (
+            f"`{base}` target `{target}` contains an unexpanded shell expansion "
+            "the boundary check cannot resolve",
+            effective_dir,
+        )
+    resolved = resolve_shell_path(target, effective_dir)
+    if not check_shell_path_argument(str(resolved), work_dir, additional_dirs):
+        return (
+            f"`{base} {target}` moves the working directory outside the workspace",
+            effective_dir,
+        )
+    return None, resolved
+
+
+def _split_glob_candidate(raw: str) -> tuple[str, str | None]:
+    """Split *raw* at its first glob character: ``(literal prefix, remainder)``.
+
+    The prefix bounds where the expansion can land, so it is what the boundary
+    check validates; ``remainder`` is ``None`` when *raw* has no glob characters.
+    """
+    indices = [raw.index(ch) for ch in _GLOB_CHARS if ch in raw]
+    if not indices:
+        return raw, None
+    split_at = min(indices)
+    return raw[:split_at], raw[split_at:]
+
+
+def _has_parent_traversal(fragment: str) -> bool:
+    return ".." in fragment.split("/")
 
 
 def _skip_path_candidate(raw: str) -> bool:
-    """Tokens that are not checkable paths: stdin, devices, URLs, glob patterns."""
-    return (
-        not raw
-        or raw == "-"
-        or raw in _DEVICE_PATH_ALLOW
-        or "://" in raw
-        or any(ch in raw for ch in _GLOB_CHARS)
-    )
+    """Tokens that are not checkable paths: stdin, devices, URLs."""
+    return not raw or raw == "-" or raw in _DEVICE_PATH_ALLOW or "://" in raw
 
 
 def _flag_values(args: list[str], flags: set[str]) -> list[str]:

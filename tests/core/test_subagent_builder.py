@@ -245,8 +245,11 @@ async def test_builder_attaches_shared_mcp_tools_from_allowlist(runtime):
         ),
     )
     judge_tools = [tool.name for tool in judge.toolset.tools]
-    assert "tavily_search" in judge_tools
-    assert "query-docs" in judge_tools
+    # Reviewer-class specs are offline by design and allowlist no MCP tools:
+    # none of the connected shared tools may attach.
+    assert "query-docs" not in judge_tools
+    assert "resolve-library-id" not in judge_tools
+    assert "tavily_search" not in judge_tools
     assert "tavily_crawl" not in judge_tools
 
 

@@ -238,21 +238,31 @@ def check_shell_path_argument(
     path_str: str,
     work_dir: HostPath,
     additional_dirs: Sequence[HostPath] = (),
+    *,
+    base_dir: HostPath | None = None,
 ) -> bool:
     """Whether a shell path-like argument resolves inside the workspace.
 
     Applies the same boundary the file tools enforce via :func:`is_within_workspace`
     to raw shell command arguments: ``~`` is expanded, relative paths resolve against
-    *work_dir* (the shell's cwd), and symlinks are followed on both sides so a link
-    cannot smuggle a path out of (or fake a path into) the workspace.
+    *base_dir* — the shell's effective cwd, defaulting to *work_dir* — and symlinks
+    are followed on both sides so a link cannot smuggle a path out of (or fake a
+    path into) the workspace. The boundary itself is always *work_dir* plus
+    *additional_dirs*, regardless of *base_dir*.
     """
-    candidate = Path(path_str).expanduser()
-    if not candidate.is_absolute():
-        candidate = Path(str(work_dir)) / candidate
-    resolved = HostPath(os.path.realpath(candidate))
+    resolved = resolve_shell_path(path_str, base_dir if base_dir is not None else work_dir)
     real_work = HostPath(os.path.realpath(str(work_dir)))
     real_add = [HostPath(os.path.realpath(str(d))) for d in additional_dirs]
     return is_within_workspace(resolved, real_work, real_add)
+
+
+def resolve_shell_path(path_str: str, base_dir: HostPath) -> HostPath:
+    """Resolve a shell path argument the way the shell will: ``~`` expanded,
+    relative paths joined onto *base_dir*, symlinks followed."""
+    candidate = Path(path_str).expanduser()
+    if not candidate.is_absolute():
+        candidate = Path(str(base_dir)) / candidate
+    return HostPath(os.path.realpath(candidate))
 
 
 async def find_project_root(work_dir: HostPath) -> HostPath:

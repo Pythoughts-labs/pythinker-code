@@ -888,9 +888,7 @@ def test_run_agents_rows_align_columns_and_drop_redundant_name():
         ),
         width=120,
     )
-    tree_lines = [
-        line for line in rendered.splitlines() if line.lstrip().startswith(("├─", "└─"))
-    ]
+    tree_lines = [line for line in rendered.splitlines() if line.lstrip().startswith(("├─", "└─"))]
     assert len(tree_lines) == 2
     # Variable-width subagent labels are padded so the status column aligns.
     status_cols = {line.index("running") for line in tree_lines}

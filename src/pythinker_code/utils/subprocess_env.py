@@ -69,7 +69,17 @@ def get_clean_env(base_env: dict[str, str] | None = None) -> dict[str, str]:
 # the long tail of provider keys (ANTHROPIC_API_KEY, GH_TOKEN, ...); the AWS_
 # prefix also drops non-secret AWS config, which restricted-profile commands
 # (git/rg/find/cat) never need.
-_SECRET_ENV_EXACT = {"API_KEY", "APIKEY", "TOKEN", "SECRET", "PASSWORD"}
+_SECRET_ENV_EXACT = {
+    "API_KEY",
+    "APIKEY",
+    "TOKEN",
+    "SECRET",
+    "PASSWORD",
+    "PRIVATE_KEY",
+    "JWT",
+    "COOKIE",
+    "BEARER",
+}
 _SECRET_ENV_SUFFIXES = (
     "_API_KEY",
     "_APIKEY",
@@ -82,6 +92,9 @@ _SECRET_ENV_SUFFIXES = (
     "_ACCESS_KEY",
     "_ACCESS_KEY_ID",
     "_PRIVATE_KEY",
+    "_JWT",
+    "_COOKIE",
+    "_BEARER",
 )
 _SECRET_ENV_PREFIXES = ("AWS_", "GOOGLE_APPLICATION_")
 

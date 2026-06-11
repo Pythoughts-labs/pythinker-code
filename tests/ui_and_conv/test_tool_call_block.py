@@ -7,6 +7,10 @@ from pythinker_core.message import ToolCall
 from pythinker_core.tooling import ToolError, ToolOk
 from rich.console import Console
 
+from pythinker_code.ui.shell.tool_renderers import (
+    clear_tool_renderers,
+    register_builtin_renderers,
+)
 from pythinker_code.ui.shell.visualize import _ToolCallBlock, _worklog
 from pythinker_code.wire.types import ToolResult
 
@@ -351,3 +355,49 @@ def test_finished_sub_tool_calls_not_shown_in_output_preview():
     block.finish_sub_tool_call(ToolResult(tool_call_id="sub-1", return_value=ToolOk(output="")))
     output = _plain(block.compose())
     assert "SHOULD_NOT_APPEAR" not in output
+
+
+@pytest.fixture
+def _card_style_with_builtin_renderers(monkeypatch):
+    monkeypatch.setenv("PYTHINKER_TUI_STYLE", "card")
+    clear_tool_renderers()
+    register_builtin_renderers()
+    yield
+    clear_tool_renderers()
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "full_args"),
+    [
+        ("Shell", '{"command": "ls -la", "description": "List files"}'),
+        ("Agent", '{"subagent_type": "coder", "description": "scan", "prompt": "scan repo"}'),
+        ("StrReplaceFile", '{"path": "src/app.py", "old_string": "a", "new_string": "b"}'),
+        ("WriteFile", '{"path": "src/app.py", "content": "x = 1"}'),
+    ],
+)
+def test_streaming_args_never_flash_invalid_badge(
+    _card_style_with_builtin_renderers, tool_name, full_args
+):
+    """The partial-JSON repair turns a key-without-value into null mid-stream;
+    that must render as the pending state, never as the red <invalid> badge."""
+    block = _ToolCallBlock(_tool_call(tool_name, ""))
+    for ch in full_args:
+        block.append_args_part(ch)
+        rendered = _plain(block.compose())
+        assert "<invalid>" not in rendered, f"flashed <invalid> after streaming {ch!r}"
+
+
+def test_finished_call_with_non_string_command_still_shows_invalid_badge(
+    _card_style_with_builtin_renderers,
+):
+    block = _ToolCallBlock(_tool_call("Shell", '{"command": 123}'))
+    block.finish(ToolOk(output=""))
+    assert "<invalid>" in _plain(block.compose())
+
+
+def test_finished_call_with_null_command_still_shows_invalid_badge(
+    _card_style_with_builtin_renderers,
+):
+    block = _ToolCallBlock(_tool_call("Shell", '{"command": null}'))
+    block.finish(ToolOk(output=""))
+    assert "<invalid>" in _plain(block.compose())

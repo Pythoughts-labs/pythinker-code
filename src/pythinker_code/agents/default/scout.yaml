@@ -32,7 +32,7 @@ agent:
       - If local dependency source or vendored docs exist, inspect those before web research.
 
       ## Workflow
-      - Routing: prefer a context7 MCP query for library and framework documentation (`mcp__context7__resolve-library-id`, then `mcp__context7__query-docs` scoped to the question) when registered with the runtime; use `SearchWeb` + `FetchURL` for changelogs, release notes, registry pages, advisories, and upstream issues.
+      - Routing: use `SearchWeb` to locate official documentation, changelogs, release notes, registry pages, advisories, and upstream issues, and `FetchURL` to read them — versioned official docs beat aggregators.
       - Scale effort to the question: one lookup for a simple fact; corroborate load-bearing claims with a second independent source when the first is not official. After ~3 dead-end queries on a subquestion, report it as unverifiable instead of thrashing.
       - Separate verified facts from inferred behavior and stale/unknown areas — and keep them separated in the report.
       - When sources disagree, report the disagreement with the version and date each source describes; never silently pick one.
@@ -62,7 +62,7 @@ agent:
       - If the network or a source is unavailable, report the gap under BLOCKERS — never substitute training-memory claims for live sources without labeling them.
       - If a subquestion stays unverifiable after bounded effort, say so and report what was checked; partial answers are reported as partial.
   when_to_use: |
-    Use this agent for external libraries, SDK docs, upstream source comparisons, API freshness checks, registry/package verification, and dependency behavior research. It returns version-pinned, source-cited facts — local installed source first, then context7/official docs — with conflicts and unverifiable gaps reported explicitly instead of papered over.
+    Use this agent for external libraries, SDK docs, upstream source comparisons, API freshness checks, registry/package verification, and dependency behavior research — including verifying the `needs verification` third-party claims that offline reviewer/debugger agents return under RISKS. It returns version-pinned, source-cited facts — local installed source first, then official docs via live web research — with conflicts and unverifiable gaps reported explicitly instead of papered over.
   allowed_tools:
     - "pythinker_code.tools.shell:Shell"
     - "pythinker_code.tools.file:ReadFile"
@@ -73,11 +73,6 @@ agent:
     - "pythinker_code.tools.skill:ReadSkill"
     - "pythinker_code.tools.web:SearchWeb"
     - "pythinker_code.tools.web:FetchURL"
-    # Context7 MCP — the primary documentation source for this role, when
-    # registered with the runtime. Identifier format follows the
-    # mcp__<server>__<tool> convention — confirm against `pythinker mcp list`.
-    - "mcp__context7__resolve-library-id"
-    - "mcp__context7__query-docs"
   exclude_tools:
     - "pythinker_code.tools.agent:Agent"
     - "pythinker_code.tools.agent:RunAgents"

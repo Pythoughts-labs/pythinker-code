@@ -74,6 +74,8 @@ class BackgroundTaskManager:
         self._completion_event: asyncio.Event = asyncio.Event()
         self._nonblocking_polls: dict[str, int] = {}
         """Consecutive non-blocking TaskOutput polls per still-running task."""
+        self._blocking_timeouts: dict[str, int] = {}
+        """Consecutive timed-out blocking TaskOutput waits per still-running task."""
 
     @property
     def completion_event(self) -> asyncio.Event:
@@ -108,6 +110,7 @@ class BackgroundTaskManager:
         manager._live_agent_tasks = self._live_agent_tasks
         manager._current_turn_task_ids = self._current_turn_task_ids
         manager._nonblocking_polls = self._nonblocking_polls
+        manager._blocking_timeouts = self._blocking_timeouts
         return manager
 
     def note_nonblocking_poll(self, task_id: str) -> int:
@@ -116,9 +119,21 @@ class BackgroundTaskManager:
         self._nonblocking_polls[task_id] = count
         return count
 
+    def note_blocking_timeout(self, task_id: str) -> int:
+        """Record a blocking wait that timed out on a still-running task; returns the streak."""
+        count = self._blocking_timeouts.get(task_id, 0) + 1
+        self._blocking_timeouts[task_id] = count
+        return count
+
     def reset_poll_escalation(self, task_id: str) -> None:
-        """Clear the poll streak after a blocking wait or terminal retrieval."""
+        """Clear both wait-escalation streaks after a terminal retrieval.
+
+        A timed-out blocking wait deliberately does NOT reset the non-blocking
+        streak: interleaving one blocking attempt between polls must not absolve
+        the "STOP polling" escalation.
+        """
         self._nonblocking_polls.pop(task_id, None)
+        self._blocking_timeouts.pop(task_id, None)
 
     def bind_runtime(self, runtime: Runtime) -> None:
         self._runtime = runtime
@@ -253,7 +268,7 @@ class BackgroundTaskManager:
         if self._active_task_count() >= self._config.max_running_tasks:
             raise RuntimeError("Too many background tasks are already running.")
 
-        task_id = generate_task_id("bash")
+        task_id = generate_task_id("bash", used=self._store.list_task_ids())
         spec = TaskSpec(
             id=task_id,
             kind="bash",
@@ -327,7 +342,7 @@ class BackgroundTaskManager:
         if self._active_task_count() >= self._config.max_running_tasks:
             raise RuntimeError("Too many background tasks are already running.")
 
-        task_id = generate_task_id("agent")
+        task_id = generate_task_id("agent", used=self._store.list_task_ids())
         # Explicit None check — the falsy idiom ``timeout_s or default``
         # would silently promote a caller-supplied ``0`` to the agent
         # default, matching the analogous fix in Print's wait-cap reader.

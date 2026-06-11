@@ -4,7 +4,10 @@ Parallel children launched with generic names (typically the model echoes the
 subagent type, yielding rows like ``code-reviewer:code-reviewer``) are
 indistinguishable in the TUI tree, task list, and notifications. A codename
 gives each instance a stable, human-friendly identity (``amber-falcon``)
-while the subagent type stays visible in its own column/field.
+while the subagent type stays visible in its own column/field. Background
+agent task ids reuse the same generator (``agent-tidal-wren``) so the id —
+the visible handle in TaskOutput headers and notifications — is
+distinguishable too.
 """
 
 from __future__ import annotations

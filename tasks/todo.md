@@ -2,192 +2,208 @@
 
 ## Active
 
-### Follow-ups from live-session observation (2026-06-11 afternoon)
+- [ ] Open the `mythos-enhancements` PR; CodeRabbit gate before merge.
 
-- [x] Investigate TaskOutput blocking-timeout retry loop + repeated "will be
-      notified" narration (session cffe7da6; report delivered — fix candidates:
-      reorder timeout retrieval_hint so "return control / rely on notification"
-      is the primary option; add escalation for consecutive blocking timeouts
-      per task, mirroring the non-blocking "STOP polling" counter, which today
-      RESETS on every blocking attempt).
-- [x] Distinctive subagent instance codenames (RunAgents generic/duplicate
-      names → generated `adjective-noun`; subagents/codenames.py).
-- [x] Slash-command inline ghost completion + Tab accept
-      (SlashCommandAutoSuggest in ui/shell/prompt.py, auto-suggestion theme
-      styles, Tab key binding).
+### Deferred (documented, not silently dropped)
 
-### CodeRabbit review triage (2026-06-11, 16 findings)
+- Read-only MCP doc-lookup carve-out for offline roles — today ALL MCP tools
+  are fail-closed below the implement profile (deliberate); reviewer specs
+  route doc needs to the parent/`scout` instead. Revisit only with a real
+  allowlist mechanism design.
+- Per-profile shell timeout caps: rejected — long `pythinker review`/`secscan`
+  runs are legitimate; spec-level timeout discipline shipped instead.
+- Codename polish: a background RunAgents child can show a name codename AND a
+  different task-id codename (each distinctive, mildly redundant); aligning
+  them needs a preferred-suffix param through `manager.launch_agent_task`.
+- Narrow race: a subagent launched while the parent's background MCP connect is
+  still in flight misses shared MCP tools (map populated later) — needs a
+  re-bind or wait at subagent build.
+- Test-design debt: test_learn_slash mocks soul._turn; test_soul_status_cost
+  asserts an import — black-boxing them is its own task.
+- From the review-safety plan: full ShellReadPolicy allowlist (would deny every
+  unclassified command — needs maintainer call); ReviewCapabilityRegistry +
+  scanner ladder (no external scanner subsystem exists yet); Phase 5
+  heartbeats/token budgets (own PR); Phase 6 full TaskEventStore renderer
+  rewrite (own PR); OS-level sandboxing (Seatbelt/Landlock).
+- Non-interactive Rich Live path forces `live.update(refresh=True)` on every
+  wire message in `_live_view.py`, bypassing its 10fps clock — separate
+  flicker contributor in that mode.
+- Provider compat: 400 "enable_thinking restricted to True" lives in
+  pythinker_core openai_legacy (external); Bugsink keeps reporting it (4xx
+  stays unexpected) until fixed upstream — desired.
+- Infra: edge OTLP collector accepts any bearer token; SigNoz SMTP may need
+  configuring for alert email delivery.
+
+## Recently completed
+
+### 2026-06-11 — Agent robustness arc (`mythos-enhancements`): spec/profile truth, jail hardening, orchestration discipline, codename task ids
+
+Source: live assessment of a review session (reviewers' mandated Context7/web
+freshness check was dead code under their own permission profiles) + verified
+triage of the follow-up deep-scan session ace53ad5.
+
+Decisions: reviewer-class agents (review/code-reviewer/security-reviewer,
+judge, verifier, debugger, explore) stay OFFLINE — untrusted-diff exfiltration
+posture wins; specs rewritten offline-honest with a structured
+`needs verification — <library> <version>: <claim>` RISKS contract for the
+parent to resolve (directly or via `scout`). `scout` was accidentally offline
+(unmapped → read_only): now `scout → ask` in `_SUBAGENT_PROFILES`. No MCP
+carve-out (fail-closed stands); dead `mcp__context7__*`/`mcp__tavily__*` and
+SearchWeb/FetchURL entries removed from non-implement specs; plan/scout route
+docs work through live web tools. verifier/planner/ask/debug/coder/implementer
+audited — already consistent, untouched.
+
+Landed (all TDD red→green):
+
+- Specs: code_reviewer/security_reviewer/review offline rewrite (+ timeout
+  discipline: narrow scope on timeout, never re-run bigger; decomposition
+  hint in when_to_use); judge → offline external-claims gate; debugger →
+  installed-source-first; explore offline text; plan/scout web-first routing.
+- system.md §5 "Review fan-out & finding verification": scope measured at the
+  merge base (committed + worktree — never the uncommitted-only stat);
+  >~1,500 lines / 25 files → one reviewer per subsystem + dedup; adversarial
+  verification (re-read cited lines, re-derive failure; drop or reject —
+  never severity-launder); re-anchor + recount; verify only third-party
+  needs-verification claims against live docs; query hygiene at the
+  network-holding layer. §8: findings reports are judge-gate triggers; child
+  severities reported as scored, never silently re-graded. `scout` added to
+  the §5 role enumeration. deep-scan.md playbook updated to match.
+- permission.py: `scout → ask`; escape denials name the workspace root;
+  workspace-jail bypass family closed — `$VAR`/backtick path args rejected
+  fail-closed (patterns/program args unaffected — extractors never emit them
+  as paths), glob args checked by literal prefix (`rg x /etc/*`, `ls ../*`,
+  glob-then-`..` denied; in-workspace globs + `cat /etc/*` parity preserved),
+  `cd`/`pushd` tracked across segments via effective_dir
+  (`check_shell_path_argument` gains `base_dir`; `resolve_shell_path`
+  helper); `popd`/`cd -`/bare `cd`/`(`/`{` grouping rejected as untrackable.
+- config.py: `tui.statusline.{enabled,segments,command_timeout_ms}` join
+  `command` in SCOPE_LOCKED_PATHS (cosmetics stay project-scope);
+  `command_timeout_ms` bounded `le=60_000`.
+- subprocess_env.py: scrub adds exact PRIVATE_KEY/JWT/COOKIE/BEARER +
+  `_JWT`/`_COOKIE`/`_BEARER` suffixes (CSRF_TOKEN already via `_TOKEN`).
+- shell: retry hard-stop keys on whitespace-normalized command
+  (`_failure_key`) so padding can't mint a fresh counter.
+- TaskOutput wait discipline (cffe7da6 follow-up): timeout hint reordered to
+  notification-first; consecutive blocking timeouts escalate via
+  `note_blocking_timeout` ("STOP waiting" at #2); a timed-out blocking
+  attempt no longer resets the non-blocking "STOP polling" streak
+  (deliberate contract change, test rewritten).
+- Background agent task ids are codenames (`agent-tidal-wren`): the task id is
+  the visible handle in TaskOutput/TaskStop headers, TaskList, and
+  notifications, and single background launches never got a codename.
+  `generate_task_id` mints codename ids unique against the store
+  (length-guarded vs `_VALID_TASK_ID`, random fallback); bash ids unchanged
+  but collision-checked.
+- Docs: agents.md tool table + offline-by-design note. CHANGELOG: 11 bullets.
+
+Deep-scan ace53ad5 triage verdicts (adversarially verified against code):
+$VAR jail bypass REAL for search/traversal (cat example was design-permitted
+ReadFile parity) — fixed above with the additionally-discovered absolute-glob
+gap; cd bypass REAL — fixed; statusline scope gap REAL (low) — fixed;
+timeout bound REAL — fixed; scrub gaps PARTIAL (overstated) — fixed; retry
+normalization by-design-nit — fixed. FALSE POSITIVES rejected: usage.py fence
+parsing (documented deliberate behavior, usage.py:123-126) and notification
+output_path "disclosure" (the documented resume contract). Orchestration
+gaps in that session (wrong scope measurement → no decomposition; no
+adversarial verify; silent re-scoring; judge skipped; double-block 300s)
+addressed via the §5/§8 prompt hardening + the TaskOutput contract above.
+
+Verified: full tests/ 5201 passed / 7 skipped / 1 xfailed + tests_e2e 65
+passed + make check-pythinker-code "All checks passed!" after the spec arc;
+post-hardening suites green per-slice (permission 56, config 77,
+subprocess_env 7, background tools+pkg 116, agent suites 100); final full
+gate re-run before commit (see session log). Memory + lessons.md updated
+(spec/profile consistency invariant; identity-surface triage).
+
+### 2026-06-11 — Deep-scan report validation + robust nitpicks (parallel pass)
+
+Validated .pythinker/reports/mythos-enhancements-deep-scan.md against the
+already-fixed working tree: High $VAR + Medium cd bypass already closed;
+statusline/timeout findings already locked; fence-parsing "fix" would regress
+the aggregator (by-design). Locked the two tightenings with extra tests:
+tests/tools/test_shell_retry_guard.py (4 tests — key normalization +
+_record_failed_attempt dedup) alongside the existing scrub false-positive
+guards. Verified: 35 passed (shell_bash + retry_guard + subprocess_env).
+
+### 2026-06-11 — TUI streaming polish (parallel sessions)
+
+- Transient red `<invalid>` flash on streaming tool calls: while args stream,
+  partial-JSON repair turns key-without-value into `null` and card renderers
+  flashed `<invalid>`. Central fix in `_blocks.py:_compose_card`: drop
+  None-valued keys while args are incomplete so renderers show their pending
+  state; finished calls with invalid args still show `<invalid>`.
+  Tests: test_tool_call_block.py char-by-char streaming guards (red→green).
+- Streaming redraw smoothness (macOS terminals): DEC mode 2026 synchronized
+  updates — `ui/shell/sync_output.py` brackets every frame in
+  `\x1b[?2026h…l` via a patched session-output flush (renderer frames +
+  patch_stdout prints), gated by
+  `terminal_capabilities.synchronized_output_enabled()` (TERM=dumb off;
+  kill switch `PYTHINKER_NO_SYNC_OUTPUT=1`). 8 new tests; ui_and_conv 1752
+  passed; PTY smoke shows BSU/ESU marks.
+
+### 2026-06-11 — Live-session follow-ups
+
+TaskOutput blocking-timeout retry-loop investigation (fix shipped in the
+robustness arc above); distinctive RunAgents instance codenames
+(subagents/codenames.py); slash-command inline ghost completion + Tab accept
+(SlashCommandAutoSuggest in ui/shell/prompt.py + theme styles + key binding).
+
+### 2026-06-11 — CodeRabbit review triage (16 findings)
 
 Fixed (7): RunMeta.requested_base_ref → `str | None`; constant.py catches
 TOMLDecodeError; prompt.py CwdLostError re-raises caught instance; prompt.py
 shortstat bare-except now debug-logs; otel.py error-log sink one-shot
-breadcrumb (stdlib logging, recursion-safe); usage.py `none observed`
-placeholders (+ regression test); symlink test skips when unsupported.
+breadcrumb; usage.py `none observed` placeholders (+ regression test); symlink
+test skips when unsupported.
 
-Declined as false positives (evidence):
-- 4× "subagents: null → []/{}": agentspec.py:60 types it `dict|None|Inherit`,
-  :128 resolves `or {}`; bare `subagents:` is the uniform 15-spec convention,
-  and the suggested `[]` would fail pydantic validation (dict expected).
-- agent.py add_shared_tools ordering: toolset.py:981 `_register_mcp_tools`
-  adds every connected MCP tool to the primary toolset anyway; bare-name
-  binding exists for subagents (parent map already populated). Proposed move
-  is a no-op for background loads.
-- CHANGELOG duplicate bullets: title-level scan finds zero duplicates.
+Declined as false positives (evidence): 4× "subagents: null → []/{}"
+(agentspec.py:60 types `dict|None|Inherit`, :128 resolves `or {}`; bare
+`subagents:` is the uniform 15-spec convention; `[]` would fail pydantic);
+agent.py add_shared_tools ordering (toolset.py:981 registers every connected
+MCP tool on the primary toolset anyway — proposed move is a no-op); CHANGELOG
+duplicate bullets (title-level scan finds zero).
 
-Out of scope / follow-ups:
-- test_learn_slash mocks soul._turn; test_soul_status_cost asserts an import —
-  pre-existing test design; black-boxing them is its own task.
-- add_shared_tools returning skipped names: no consumer today (YAGNI);
-  conflicts already log warnings.
-- Real narrow race: a subagent launched while the parent's background MCP
-  connect is still in flight misses shared MCP tools (map populated later).
-  Needs a re-bind or wait at subagent build; not addressed by any review
-  suggestion.
+### 2026-06-11 — Agent review safety + TUI hardening (`mythos-enhancements`)
 
-### Agent review safety + TUI hardening — branch `mythos-enhancements`
+Plan: docs/superpowers/plans/2026-06-11-agent-review-safety-tui-hardening-plan.md.
+Landed: workspace jail for shell path args (`check_shell_path_argument` +
+`shell_workspace_escape_reason` wired into `check_shell_command_allowed`,
+fg+bg shared); declarative profiles (`allow_network` on PermissionProfile,
+SearchWeb/FetchURL hidden AND execution-denied for review/verify/read-only,
+yolo non-escalation locked by tests); secret env scrubbing for
+restricted-profile shell (incl. background via TaskSpec.scrub_secrets);
+bounded retry (verbatim command after 2 failures ⇒ hard denial,
+review-scoped); ResolvedDiff/RunMeta `requested_base_ref`/`fallback_reason`
+(loud origin/main fallback); subagent todos normalized to single in_progress;
+monotonic _ToolCallBlock guards. Key decisions: jail mirrors file-tool
+semantics (Glob/Grep full jail; ReadFile parity) so Shell is never stricter
+than first-class tools; `_SUBAGENT_PROFILES` stays the single profile
+registry. Verified then: make check ✓, review pkg 170 ✓, tests/ 5170 ✓,
+tests_e2e 65 ✓; clean-code-guard pass deduplicated Shell failure-count
+increment (`_record_failed_attempt`) and todo note-rebuild.
 
-Plan: docs/superpowers/plans/2026-06-11-agent-review-safety-tui-hardening-plan.md
+### 2026-06-11 — Default best-practices adoption (`feat/agentic-orchestration`)
 
-Open-question decisions (autonomous defaults, reversible):
+`prompts/best_practices.md` upgraded to the enhanced 15-section profile (`/bp`
+section parsing intact) + condensed always-on `## Default Best Practices`
+baked into agents/default/system.md (inherited by all roles). Pins updated
+(test_best_practices_slash.py, test_default_agent.py); docs + CHANGELOG.
+Verified: targeted 46 passed, e2e wire snapshot + parity 5 passed, make check
+clean. Placement after `## Engineering Discipline`; condensed bullets cover
+only the delta; inline-comments rule deliberately excluded (would conflict
+with system.md code-quality defaults).
 
-1. Review/security subagents: zero network by default (`allow_network=False`);
-   SearchWeb/FetchURL hidden AND execution-denied. Plan/ask root profiles keep
-   network (planning research is a first-class use case).
-2. `find .` stays allowed in read-only shell; no command rewriting (prune
-   injection is brittle). Escape denials advise Glob/Grep instead.
-3. Missing `origin/main`: keep the existing fallback (CLI compat per the plan's
-   own rollout note) but make it loud via `requested_base_ref`/`fallback_reason`
-   metadata in ResolvedDiff + RunMeta. Strict-fail can be layered later.
-4. Profile registry: option (a) — keep `_SUBAGENT_PROFILES` in permission.py as
-   the single source of truth; no second registry in AgentTypeDefinition.
-5. Env scrubbing: scrub on Shell subprocess spawn for restricted profiles;
-   pattern-based (known names + *_API_KEY/_TOKEN/_SECRET/_PASSWORD/AWS_*/...).
-6. OS-level sandboxing (Seatbelt/Landlock): deferred (per plan note).
+### 2026-06-11 — Agentic UX enhancements (`feat/agentic-orchestration`)
 
-- [x] 1. Phase 1 — workspace jail for shell path args
-      (`check_shell_path_argument` next to `is_within_workspace`;
-      `shell_workspace_escape_reason` wired into `check_shell_command_allowed`,
-      shared by fg+bg shell) → verified: 12 new unit/integration tests (find ..
-      denied, find . allowed, rg/grep/git -C, symlink escape, additional_dirs)
-- [x] 2. Phase 2 — declarative profiles (`allow_network` on PermissionProfile;
-      execution gate + visibility for SearchWeb/FetchURL; env scrubbing for
-      restricted-profile shell subprocesses incl. background via
-      TaskSpec.scrub_secrets; yolo non-escalation tests)
-- [x] 3. Phase 3 (scoped) — bounded retry: per-agent failed-command tracker in
-      Shell; verbatim command after 2 failures => hard denial (review-scoped;
-      implement profile unaffected)
-- [x] 4. Phase 4 — ResolvedDiff/RunMeta requested_base_ref + fallback_reason;
-      pretty renderer warning; artifact metadata → diff_source unit tests
-- [x] 5. Phase 7 — subagent todo lists normalized to single in_progress
-- [x] 6. Phase 6 (scoped) — monotonic _ToolCallBlock guards + tests
-- [x] 7. Changelog entry (7 bullets under Unreleased)
-- [x] 8. Verify: make check-pythinker-code ✓, check-pythinker-review ✓,
-      review pkg pytest ✓ (170 passed), tests/ ✓ (5170 passed),
-      tests_e2e ✓ (65 passed)
-- [x] 9. /clean-code-guard — guard pass on the full diff: fixed two introduced
-      duplications (Shell failure-count increment → _record_failed_attempt;
-      todo note-rebuild → _with_appended_note); re-verified (79+24 tests, ruff
-      check+format clean). No other imperative violations.
-
-Review: enforcement landed at the single choke points the codebase already
-uses — `check_shell_command_allowed` (fg+bg shell share it via Shell.__call__),
-`check_tool_call_allowed` (network tools), `_is_tool_visible` (advisory layer),
-and `get_clean_env`-adjacent scrubbing. The shell jail deliberately mirrors
-file-tool semantics (Glob/Grep full jail for search/traversal; ReadFile parity
-for reads) so Shell is never stricter than the first-class tools. Deviations
-from the plan text: no full ShellReadPolicy allowlist (would break
-verifier/test workflows — every unclassified command would be denied), no
-ReviewCapabilityRegistry (pythinker-review invokes no external scanners; the
-agent-side retry cap addresses the actual flag-thrashing), origin/main fallback
-kept (CLI compat) but made loud via metadata, Phase 5 heartbeats + full Phase 6
-event-store rewrite deferred as own PRs.
-
-Deferred (documented, not silently dropped):
-
-- Phase 1 full ShellReadPolicy allowlist: would deny every unclassified command
-  (pytest, make, …) and break verifier/ci workflows; classifier+jail covers the
-  transcript risks. Needs maintainer call.
-- Phase 3 ReviewCapabilityRegistry + scanner ladder/coverage metadata: no
-  external scanner subsystem exists in pythinker-review yet (verified).
-- Phase 5 heartbeats/token budgets: cross-cutting runner+TUI feature, own PR.
-- Phase 6 full TaskEventStore renderer rewrite: blocks already flush exactly
-  once; scoped monotonic guards land here, rewrite is its own PR.
-
-### Default best-practices adoption — branch `feat/agentic-orchestration`
-
-Make the engineering best-practices profile a default, not just `/bp` opt-in:
-upgrade `prompts/best_practices.md` to the enhanced 15-section profile and bake
-a condensed always-on summary into `agents/default/system.md` (inherited by all
-roles incl. coder). All framing generic (no external product names).
-
-- [x] Rewrite `prompts/best_practices.md` to the enhanced profile (keep `/bp`
-      section parsing + pythinker tool names) — acceptance: section filter and
-      heading listing still work (15 sections; verified via
-      `_best_practices_section`/`_best_practices_headings`).
-- [x] Add condensed `## Default Best Practices` section to
-      `agents/default/system.md` (no `${...}`/template syntax) — acceptance:
-      delta-focused, no duplication of Non-Negotiables/Discipline/DoD.
-- [x] Update pins: `tests/core/test_best_practices_slash.py` headings+wording;
-      add pins in `tests/core/test_default_agent.py` for the new section.
-- [x] Docs (`slash-commands.md` `/best-practices`) + CHANGELOG entry.
-- [x] Verify: targeted pytest (46 passed), e2e wire snapshot + parity (5
-      passed), `make check-pythinker-code` (ruff/format/pyright clean), typos
-      clean.
-
-Review: condensed profile placed after `## Engineering Discipline` so every
-role (root + coder/implementer/etc. via shared system.md) inherits it; the
-condensed bullets cover only the delta vs. existing prompt sections. The
-inline-comments rule stays out of the condensed set (system.md's code-quality
-defaults already govern commenting and would conflict).
-
-### Agentic UX enhancements — branch `feat/agentic-orchestration`
-
-Scope confirmed: customizable status bar + two safe, net-new subagent extras.
-The planned loop/orchestration/subagent roadmap items are already merged; this
-branch adds only net-new, non-conflicting work. No DAG engine. All framing
-generic (no external product names in code/comments/commits/PR/docs).
-Design: `docs/superpowers/specs/2026-06-11-statusline-and-agentic-extras-design.md`.
-
-- [x] **Slice 1 — `/statusline` customizable status bar**
-  - [x] `StatusLineConfig` under `TUIConfig` (config.py) + `PYTHINKER_STATUSLINE` env
-        — acceptance: defaults reproduce today's footer exactly; round-trip + unknown-id
-        drop tested.
-  - [x] `ui/shell/statusline.py` — `resolve_segments()` (pure) + lifecycle-managed
-        async `StatusLineCommandRunner` (shlex argv, timeout, fail-closed, cached line).
-  - [x] Wire into both `bottom_toolbar` render paths via shared resolver (no drift);
-        `enabled=False` ⇒ byte-identical legacy footer.
-  - [x] `/statusline` command (show / interactive picker / on|off / command set|none)
-        + `ui/shell/selectors/statusline.py`.
-  - [x] Tests (config, resolver, command runner, command behavior) + `tests_e2e`
-        handshake snapshot refresh (`--inline-snapshot=fix`) + docs section.
-  - [x] `/clean-code-guard` checkpoint → `make check-pythinker-code` → CHANGELOG bullet.
-- [x] **Slice 2 — parallel foreground `RunAgents` fan-out**
-  - [x] Concurrent children via `asyncio.gather` bounded by existing capacity guard;
-        ordering preserved; one failure doesn't abort siblings; approval/overflow
-        contract unchanged. Audit shared `session.state` writes first.
-  - [x] Tests (concurrency, ordering, partial failure, capacity bound) + guard +
-        `/clean-code-guard` + check + CHANGELOG.
-- [x] **Slice 3 — structured `RunAgents` result synthesis**
-  - [x] Pure synthesis: per-child SUMMARY + deduped EVIDENCE/CHANGES/RISKS/BLOCKERS,
-        cost preserved, free-text children tolerated (never dropped).
-  - [x] Tests (well-formed + free-text + failed child) + `/clean-code-guard` + check
-        + CHANGELOG.
-
-Out of scope (logged): DAG/workflow engine; re-doing merged roadmap items; maintainer
-deferrals (mcpext-2(a), obs-eval-3/4 live wiring, `lexical_recall`).
-
-**Review (2026-06-11):** All three slices landed on `feat/agentic-orchestration`:
-`4302f457` (/statusline: StatusLineConfig + ui/shell/statusline.py + card-footer
-wiring + slash command + docs) and `fe165e59` (concurrent foreground RunAgents
-fan-out bounded by background.max_running_tasks + batch_risks/batch_blockers
-roll-up in subagents/usage.py). Verified: full unit suite 5005 passed,
-tests_e2e 65 passed, make check-pythinker-code green. Sub-checkbox statuses
-covered by the per-slice commits. Deviations: statusline interactive picker
-deferred — subcommands (`segments`, `on/off`, `command`) shipped instead;
-customization applies to the card footer style (legacy style keeps stock
-footer). Next session: open PR; CodeRabbit gate before merge.
-
-## Recently completed
+`4302f457` /statusline customizable status bar (StatusLineConfig +
+ui/shell/statusline.py + card-footer wiring + slash command + docs);
+`fe165e59` concurrent foreground RunAgents fan-out (bounded by
+background.max_running_tasks; ordering preserved; sibling-failure isolation)
++ batch_risks/batch_blockers roll-up in subagents/usage.py. Verified: full
+suite 5005, tests_e2e 65, make check green. Deviations: interactive picker
+deferred in favor of subcommands; customization applies to the card-footer
+style. Out of scope: DAG/workflow engine; maintainer deferrals (mcpext-2(a),
+obs-eval-3/4 live wiring, `lexical_recall`).
 
 ### 2026-06-11 — Clean-code-guard scan of feat/agentic-orchestration (full branch)
 
@@ -200,60 +216,43 @@ command `"s"` and reloaded — now exact-verb `partition` match (ui/shell/slash.
 (3) capped-output `proc.kill()` in `StatusLineCommandRunner._run_command` was
 the only kill not wrapped in `suppress(ProcessLookupError)` — race logged as a
 spurious refresh failure (statusline.py). Plus a docstring drift fix in
-`_intercept_shell_command` (output shows transiently in the live area, not
-above it). Regression tests added for (1) and (2). Verified non-issues:
-`is_terminal_status` swap deliberately includes "recoverable" (correct — won't
-progress unaided); `ToolReturnValue.output` isinstance guard is real
-(`str | list[ContentPart]`); `_rich_escape` is a local `(object) -> str` helper;
-RunAgents gather doesn't swallow CancelledError. Known minor non-bugs:
-`_nonblocking_polls` entries linger for never-re-polled tasks (bounded);
-mid-task shell-command tasks aren't cancelled at view teardown. Verified:
-full unit suite 5059 passed, targeted telemetry/grep/highlight suites green
-after concurrent expected-error-telemetry changes landed, make
-check-pythinker-code green.
+`_intercept_shell_command`. Regression tests added for (1) and (2). Verified
+non-issues: `is_terminal_status` includes "recoverable" deliberately;
+`ToolReturnValue.output` isinstance guard is real; `_rich_escape` is a local
+helper; RunAgents gather doesn't swallow CancelledError. Verified: full unit
+suite 5059 passed, make check-pythinker-code green.
 
 ### 2026-06-11 — Deep-scan report triage (statusline runner + findings roll-up)
 
-Confirmed & fixed (statusline.py): refresh-loop exception guard (#1), explicit
-interval clamped to a positive floor (#2), bounded 64KiB stdout read replaces
-communicate() (#3), sync cancel() also kills a live child process (#4),
-_warn_once dedupes per message instead of one-shot (#5). usage.py:
-_extract_section now skips fenced code blocks (#8). Rejected as not-issues:
-#6 (Reload from mid-task /statusline is caught by _run_slash_command_during_task),
-#7 (self-configured command, exec+shlex, by design), #9 (child output is
-same-tier LLM content, full reports already flow unwrapped), #11 (BaseException
-passthrough is correct). Regression tests added for every fix.
+Confirmed & fixed (statusline.py): refresh-loop exception guard, explicit
+interval clamped to a positive floor, bounded 64KiB stdout read replaces
+communicate(), sync cancel() also kills a live child process, _warn_once
+dedupes per message. usage.py: _extract_section now skips fenced code blocks.
+Rejected as not-issues: mid-task /statusline Reload (caught by
+_run_slash_command_during_task), self-configured command exec+shlex (by
+design), child output unwrapped (same-tier LLM content), BaseException
+passthrough (correct). Regression tests added for every fix.
 
 ### 2026-06-11 — Per-command during-task availability for shell slash commands
 
-- `utils/slashcmd.py`: `SlashCommand.available_during_task` flag (+ decorator kwarg).
-- Task-safe (read-only) commands flagged: /statusline, /usage(/status), /help,
-  /version, /agents, /changelog, /context, /tools.
-- `visualize/_interactive.py`: `_intercept_shell_command()` replaces the blanket
-  streaming block on both Enter-queue and Ctrl+S paths — flagged commands run
-  immediately via a `shell_command_runner` hook (output prints above the live
-  area); the rest toast "/x is disabled while a task is in progress".
-- `Shell._run_slash_command_during_task` swallows Reload/Switch mid-turn with a
-  "saved, applies later" notice so fire-and-forget tasks can't lose control flow.
-- Tests: tests/ui_and_conv/test_btw.py (blocked + run + no-runner paths); full
-  ui_and_conv, core, utils, tests_e2e green; ruff + pyright clean.
-- Follow-ups done same day: bare `/statusline` now opens a dismissable
-  settings-list menu at the idle prompt (Esc cancels; apply persists + reloads;
-  falls back to the table mid-run since a second prompt_toolkit app can't run
-  over the live view); the agent-mode completion popup annotates shell commands
-  that are blocked mid-run with "disabled while a task is in progress".
-  Tests: test_statusline_slash.py (menu open/apply/fallback),
-  test_slash_completer.py (annotation on/off).
+`SlashCommand.available_during_task` flag; task-safe read-only commands
+(/statusline, /usage, /help, /version, /agents, /changelog, /context, /tools)
+run immediately mid-task via `_intercept_shell_command()` +
+`shell_command_runner` hook; the rest toast "disabled while a task is in
+progress". `Shell._run_slash_command_during_task` swallows Reload/Switch
+mid-turn with a "saved, applies later" notice. Bare `/statusline` opens a
+dismissable settings-list menu at the idle prompt; completion popup annotates
+blocked-mid-run commands. Tests: test_btw.py, test_statusline_slash.py,
+test_slash_completer.py; full ui_and_conv, core, utils, tests_e2e green.
 
 ### 2026-06-11 — Port upstream tool-call dedup (kimi-cli #2242 + #2372)
 
-- `soul/toolset.py`: canonical args, same-step result sharing, cross-step sparse
-  reminders (streak 3/5/8), dedup telemetry.
-- `soul/pythinkersoul.py`: per-turn reset, `begin_step` inside the step-retry
-  wrapper, `end_step` after tool results, D-Mail revert clears the dedup seed.
-- `tests/core/test_toolset.py`: 9 upstream dedup tests ported (25 total green).
-- Verified: full suite minus PTY e2e 4852 passed; `make check-pythinker-code` green.
-- Skipped #2372 drive-bys (Kimi Code promo banner, /clear→/new alias change).
+soul/toolset.py: canonical args, same-step result sharing, cross-step sparse
+reminders (streak 3/5/8), dedup telemetry. soul/pythinkersoul.py: per-turn
+reset, `begin_step` inside the step-retry wrapper, `end_step` after tool
+results, D-Mail revert clears the dedup seed. 9 upstream dedup tests ported
+(25 total green). Verified: full suite minus PTY e2e 4852 passed; make check
+green. Skipped #2372 drive-bys (promo banner, /clear→/new alias).
 
 ### Dropped: `pythinker-cli` → `pythinker-code` rename plan (2026-05-07)
 
@@ -264,109 +263,39 @@ Obsolete — the rename is already fully realized: root `pyproject.toml` is
 ### 2026-06-11 — Bugsink noise: suppress expected user-environment errors
 
 Triaged all 16 open issues on errors.pythinker.com (raw events archived in
-tasks/bugsink_issues.json + tasks/bugsink_raw_events.json). Clusters: API
-401/403/429/400, OAuth flow timeout/state, offline DNS, MCP method-not-found,
-wrong-arch bundled rg, empty API response.
-
-- `telemetry/errors.py`: new `is_expected_error()` (cause-chain walk; expected =
-  401/403/408/429/5xx via duck-typed `status_code`, Timeout/Cancelled/Connection/
-  gaierror, pythinker_core connection/timeout/empty-response errors, OAuthError,
-  aiohttp ClientConnectionError, McpError METHOD_NOT_FOUND).
-  `report_handled_error()` now tags OTel events `expected=` and skips Sentry
-  capture for expected ones; ring buffer unchanged.
-- `telemetry/crash.py`: asyncio handler applies the same gate (covers the
-  unhandled McpError event); sys.excepthook intentionally NOT gated — an
-  expected error escaping to process death is still a missing-handler bug.
-- `tools/file/grep_local.py`: `OSError` at rg exec time ("Exec format error",
-  wrong arch) now reports handled + falls back to `_python_grep` instead of
-  failing the Grep tool.
-- Tests: expected-error matrix in tests/telemetry/test_errors.py, crash-gate in
-  test_crash.py, rg-exec fallback in tests/tools/test_grep.py.
-- Verified: full suite 5018 passed / 5 skipped; ruff + format + pyright clean.
-
-Out of scope (logged): 400 "enable_thinking restricted to True" is a provider
-compat issue in pythinker_core's openai_legacy (external package) — Bugsink
-will keep reporting it (4xx_client stays unexpected), which is desired until
-fixed upstream.
+tasks/bugsink_issues.json + tasks/bugsink_raw_events.json). telemetry/errors.py
+gains `is_expected_error()` (cause-chain walk; 401/403/408/429/5xx, timeouts,
+connection/DNS errors, OAuthError, McpError METHOD_NOT_FOUND);
+`report_handled_error()` tags OTel `expected=` and skips Sentry capture for
+expected ones. telemetry/crash.py asyncio handler applies the same gate;
+sys.excepthook deliberately NOT gated. grep_local.py rg exec OSError (wrong
+arch) now falls back to `_python_grep`. Tests: expected-error matrix,
+crash-gate, rg-exec fallback. Verified: full suite 5018 passed; checks clean.
+Out of scope: 400 "enable_thinking" is upstream pythinker_core compat.
 
 ### 2026-06-11 — Telemetry release sync + SigNoz pipeline & dashboard setup
 
-App-side (this repo):
-- `constant.py`: `get_version()` now prefers live pyproject.toml in a source
-  checkout (editable dist-info goes stale between uv syncs → events were
-  attributed to old releases, e.g. 0.40.0 while pyproject said 0.40.1).
-- `telemetry/config.py`: `detect_environment()` — PYTHINKER_ENV wins, source
-  checkout → "development", else "production". Wired into sentry.init AND
-  otel resource (deployment.environment was hardcoded "production").
-- Tests in test_sentry_filters.py; startup-imports test updated (metadata now
-  only the wheel/PyInstaller fallback). Full suite 5022 passed.
-
-Infra (Dokploy/SigNoz — not in this repo):
-- ROOT CAUSE: otel.pythinker.com had no Traefik route (404) — all client OTLP
-  was dropped since launch. Fixed by adding traefik labels for otel-collector
-  (port 4318) to the signoz compose + redeploy; domain record alone does not
-  generate routing. Verified logs/metrics/traces ingest 200 end-to-end; live
-  clients appeared immediately.
-- SigNoz now has: dashboard "Pythinker — Product Overview" (12 panels), 5
-  saved views (logs: all events / handled errors / crashes; traces: agent
-  turns / slow LLM calls), 3 alert rules (API error spike, tool failure
-  spike, ingest stalled) → channel pythinker-admin-email.
-
-Out of scope (logged): the edge collector does not validate the bearer token
-(any OTLP POST is accepted); SMTP for the email channel may need configuring
-in SigNoz for alert delivery.
+constant.py `get_version()` prefers live pyproject.toml in source checkouts;
+telemetry/config.py `detect_environment()` wired into sentry AND otel resource.
+Infra: otel.pythinker.com had no Traefik route (404) — all client OTLP dropped
+since launch; fixed with collector labels (port 4318) + redeploy, verified
+end-to-end. SigNoz: product dashboard (12 panels), 5 saved views, 3 alert
+rules → pythinker-admin-email. Out of scope: edge collector bearer validation;
+SMTP for alert delivery.
 
 ### 2026-06-11 — Bugsink release sync (seamless)
 
-- Bugsink project renamed pythinker-cli → pythinker-code; junk releases
-  (1.0.0-smoke, 1.0.0, manual-probe, 2.4.0) deleted via `ssh vps` +
-  `bugsink-manage shell` → "Resolved in latest" now shows 0.40.1.
-- `.github/workflows/release-pythinker-cli.yml`: new `register-bugsink-release`
-  job (needs validate+release) POSTs `pythinker-code@<version>` to the Bugsink
-  releases API at tag time — "resolved in next release" flips when the release
-  ships, not when its first error arrives. Idempotent (400 "already exists" is
-  success); failures are warnings, never release blockers.
-- Secret `BUGSINK_RELEASES_TOKEN` set on Pythoughts-labs/pythinker-code
-  (dedicated token "github-actions release sync" in Bugsink Tokens page).
+Bugsink project renamed pythinker-cli → pythinker-code; junk releases deleted.
+release workflow gains `register-bugsink-release` job POSTing
+`pythinker-code@<version>` at tag time (idempotent; failures are warnings).
+Secret `BUGSINK_RELEASES_TOKEN` set on the repo.
 
 ### 2026-06-11 — system.md harmonization + deep-scan fixes (`feat/agentic-orchestration`)
 
-Reviewed the uncommitted `agents/default/system.md` condensing pass against the
-codebase and resolved the deep-code-scan findings
-(`.pythinker/reports/deep-code-scan-feat-agentic-orchestration.md`).
-
-- [x] system.md diff review — internally consistent (`§N` style throughout,
-      §7→§6 security-hygiene move lossless, §3 absorbs the old escalation
-      list). Harmonized the one stale cross-reference:
-      `code_reviewer.yaml` "base Section 8" → "base §8".
-- [x] Updated the two stale prompt pins to the new wording:
-      `test_load_agent.py` ("Minimum packet before any codebase judgment"),
-      `test_default_agent.py` ("Never game it: no weakened or deleted
-      assertions"). All other pins still match.
-- [x] High fix: `("tui", "statusline", "command")` scope-locked in
-      `config.py` (+2 tests, red→green). `/statusline` unaffected (writes
-      user-scope `config.source_file`).
-- [x] High fix: OTel error-log forwarding now site-only
-      (module/function/line + exc_class, no message body) per the
-      `telemetry/errors.py` privacy posture; test rewritten to assert
-      wire-controlled content never reaches the exporter.
-- [x] Medium finding verified already resolved by 68fb92d0 (add_shared_tools
-      + turn-start MCP wait + existing focused test); resolution appended to
-      the scan report.
-- [x] Verify: make check-pythinker-code clean; focused suites green; full
-      tests/ run (see session summary). tests_e2e skipped — no e2e file
-      references the changed surfaces.
-
-Review: smallest-diff approach throughout; the system.md edit itself was the
-user's and is sound — observations: §5 no longer enumerates the `review` role
-and the judge-gate trigger list dropped ".pythinker/reports/ saved" (both
-benign: the Agent tool advertises all subagent types dynamically, and the
-remaining triggers cover findings reports). "code-reviewr" in specs is a real
-CLI name, not a typo — left untouched.
-- [x] make-check cleanup (pre-existing, statusline commits): import order/E402
-      in `test_soul_status_cost.py` + `test_statusline_render.py`; ruff format
-      drift in `config.py`, `test_config.py`, `test_statusline.py`,
-      `test_statusline_slash.py`; pyright errors in `test_statusline_render.py`
-      (typed `make_ctx` via `dataclasses.replace`, None-guards, raising segment
-      stub) and `test_config.py` (`model_validate` for invalid-literal case).
-      Final: `make check-pythinker-code` exit 0; full tests/ 5142 passed.
+system.md condensing pass reviewed and harmonized (one stale cross-reference
+fixed; two prompt pins updated). High fixes: `("tui","statusline","command")`
+scope-locked; OTel error-log forwarding now site-only (no message body) per
+the privacy posture. Medium finding already resolved by 68fb92d0. make-check
+cleanup of pre-existing statusline-commit failures (import order, format
+drift, pyright in test files). Final: make check exit 0; full tests/ 5142
+passed. "code-reviewr" in specs is a real CLI name, not a typo.

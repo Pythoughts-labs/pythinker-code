@@ -84,6 +84,8 @@ from pythinker_code.ui.shell.placeholders import (
 )
 from pythinker_code.ui.shell.spacing import ensure_prompt_newline
 from pythinker_code.ui.shell.spinner_words import spinner_message
+from pythinker_code.ui.shell.sync_output import install_synchronized_output
+from pythinker_code.ui.terminal_capabilities import synchronized_output_enabled
 from pythinker_code.ui.theme import get_prompt_style, get_toolbar_colors, thinking_dot_style
 from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
 from pythinker_code.ui.tui_config import is_card_style
@@ -2528,6 +2530,11 @@ class CustomPromptSession:
         # NB: max_render_postpone_time (not min_redraw_interval) — see the
         # constant's definition for why the coroutine-free path matters here.
         self._session.app.max_render_postpone_time = _MAX_RENDER_POSTPONE_S
+        # Deliver each redraw atomically (DEC mode 2026) so supporting
+        # terminals never paint a half-written frame — the remaining source
+        # of visible flicker once the frame rate above is already capped.
+        if synchronized_output_enabled():
+            install_synchronized_output(self._session.app.output)
         self._session.default_buffer.read_only = Condition(
             lambda: (
                 (delegate := self._active_prompt_delegate()) is not None

@@ -424,11 +424,31 @@ def test_scope_lock_statusline_command_in_project():
         )
 
 
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("enabled", True),
+        ("segments", ["cwd", "git", "command"]),
+        ("command_timeout_ms", 60000),
+    ],
+)
+def test_scope_lock_statusline_run_knobs_in_project(field, value):
+    """A repo-controlled config must not be able to CAUSE the user's status
+    command to run, only the user may: `command` chooses the binary, and
+    `enabled`/`segments`/`command_timeout_ms` are the knobs that trigger or
+    extend its execution."""
+    with pytest.raises(ConfigError, match=f"'tui.statusline.{field}'.*project scope"):
+        _check_scope_locks(
+            {"tui": {"statusline": {field: value}}},
+            ".pythinker/config.toml",
+        )
+
+
 def test_scope_lock_statusline_cosmetic_fields_allowed():
-    # Only `command` (auto-executed on shell start) is user-scope-only;
-    # cosmetic statusline fields stay project-configurable.
+    # Purely cosmetic statusline fields stay project-configurable; only the
+    # execution-relevant knobs are user-scope-only.
     _check_scope_locks(
-        {"tui": {"statusline": {"enabled": True, "segments": ["cwd", "git", "command"]}}},
+        {"tui": {"statusline": {"style": "plain", "bar_width": 8}}},
         ".pythinker/config.toml",
     )
 
@@ -743,3 +763,10 @@ def test_statusline_v2_field_validation():
         StatusLineConfig(cost_budget=-1.0)
     with pytest.raises(ValidationError):
         StatusLineConfig.model_validate({"style": "neon"})
+    # command_timeout_ms is bounded: a runaway value must not let the external
+    # status command hang for days before the kill fires.
+    assert StatusLineConfig(command_timeout_ms=60_000).command_timeout_ms == 60_000
+    with pytest.raises(ValidationError):
+        StatusLineConfig(command_timeout_ms=60_001)
+    with pytest.raises(ValidationError):
+        StatusLineConfig(command_timeout_ms=0)

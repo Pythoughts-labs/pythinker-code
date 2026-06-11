@@ -70,6 +70,11 @@ def test_scrub_removes_credential_shaped_vars():
             "MY_SERVICE_SECRET": "s",
             "api_key": "lowercase",
             "TOKEN": "bare",
+            "PRIVATE_KEY": "-----BEGIN",
+            "JWT": "eyJ",
+            "SERVICE_JWT": "eyJ",
+            "SESSION_COOKIE": "sid=x",
+            "AUTH_BEARER": "Bearer x",
         }
     )
     assert env == {}
@@ -85,5 +90,6 @@ def test_scrub_keeps_ordinary_vars():
         "TERM": "xterm-256color",
         "VIRTUAL_ENV": "/x/.venv",
         "TOKENIZERS_PARALLELISM": "false",  # contains TOKEN but is not a token
+        "COOKIE_JAR_PATH": "/tmp/jar",  # cookie-adjacent name, not a credential
     }
     assert scrub_secret_env(dict(base)) == base
