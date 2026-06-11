@@ -71,6 +71,8 @@ def test_default_config_dump():
                 "agent_task_timeout_s": 3600,
                 "print_wait_ceiling_s": 3600,
             },
+            "goal": {"auto_continue": False, "max_continuations": 3},
+            "compact_prompt": None,
             "notifications": {
                 "claim_stale_after_ms": 15000,
             },
@@ -643,3 +645,19 @@ def test_load_config_no_args_uses_scope_resolution(tmp_path, monkeypatch):
     config = load_config()
     assert config.theme == "light"
     assert "user" in config.source_scopes
+
+
+def test_goal_config_bounds():
+    """goal.max_continuations is clamped to 1-10 by validation."""
+    import pytest
+    from pydantic import ValidationError
+
+    from pythinker_code.config import GoalConfig
+
+    assert GoalConfig().max_continuations == 3
+    assert GoalConfig(max_continuations=1).max_continuations == 1
+    assert GoalConfig(max_continuations=10).max_continuations == 10
+    with pytest.raises(ValidationError):
+        GoalConfig(max_continuations=0)
+    with pytest.raises(ValidationError):
+        GoalConfig(max_continuations=11)

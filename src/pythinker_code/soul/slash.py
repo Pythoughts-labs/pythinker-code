@@ -214,6 +214,134 @@ async def plan(soul: PythinkerSoul, args: str):
         wire_send(StatusUpdate(plan_mode=soul.plan_mode))
 
 
+_GOAL_USAGE = "Usage: /goal <objective> | /goal view | /goal pause | /goal resume | /goal clear"
+
+
+@registry.command
+async def goal(soul: PythinkerSoul, args: str):
+    """Set a thread goal pursued across turns until verified. Usage: /goal <objective> | view | pause | resume | clear"""  # noqa: E501
+    from pythinker_code.session_state import GoalState
+
+    text = args.strip()
+    state = soul.runtime.session.state
+    subcmd = text.lower()
+
+    if subcmd in ("", "view"):
+        if state.goal is not None:
+            wire_send(
+                TextPart(
+                    text=f"Goal ({state.goal.status}):\n{state.goal.objective}\n\n"
+                    "Use /goal clear to remove it, /goal pause|resume to toggle it, "
+                    "or /goal <new objective> to replace it."
+                )
+            )
+        else:
+            wire_send(TextPart(text=f"No active goal. {_GOAL_USAGE}"))
+        return
+
+    if subcmd == "clear":
+        if state.goal is None:
+            wire_send(TextPart(text="No active goal."))
+            return
+        state.goal = None
+        soul.runtime.session.save_state()
+        logger.info("Goal cleared via /goal")
+        wire_send(TextPart(text="Goal cleared."))
+        return
+
+    if subcmd == "pause":
+        if state.goal is None:
+            wire_send(TextPart(text="No active goal."))
+            return
+        state.goal = GoalState(objective=state.goal.objective, status="paused")
+        soul.runtime.session.save_state()
+        wire_send(TextPart(text="Goal paused. Use /goal resume to pick it back up."))
+        return
+
+    if subcmd == "resume":
+        if state.goal is None:
+            wire_send(TextPart(text="No active goal."))
+            return
+        state.goal = GoalState(objective=state.goal.objective, status="active")
+        soul.runtime.session.save_state()
+        wire_send(TextPart(text="Goal resumed. The agent will pursue it again next turn."))
+        return
+
+    replaced = state.goal is not None
+    state.goal = GoalState(objective=text, status="active")
+    soul.runtime.session.save_state()
+    from pythinker_code.telemetry import track
+
+    track("goal_set", replaced=replaced)
+    logger.info("Goal set via /goal")
+    wire_send(
+        TextPart(
+            text=("Goal replaced: " if replaced else "Goal set: ")
+            + text
+            + "\nThe agent will pursue it across turns until verified or cleared "
+            "with /goal clear."
+        )
+    )
+    await soul._turn(  # pyright: ignore[reportPrivateUsage]
+        Message(role="user", content=prompts.GOAL_SET.format(objective=text))
+    )
+
+
+@registry.command(name="best-practices", aliases=["bp"])
+async def best_practices(soul: PythinkerSoul, args: str):
+    """Inject engineering best practices (code changes, testing, todos, debugging) into context"""
+    section = args.strip()
+    if section:
+        content = _best_practices_section(section)
+        if content is None:
+            headings = ", ".join(_best_practices_headings())
+            wire_send(
+                TextPart(
+                    text=f"Unknown section: {section}. Available sections: {headings}. "
+                    "Run /best-practices without arguments to inject all of them."
+                )
+            )
+            return
+    else:
+        content = prompts.BEST_PRACTICES
+
+    system_message = system(content)
+    await soul.context.append_message(Message(role="user", content=[system_message]))
+    scope = f"section '{section}'" if section else "full guidance"
+    wire_send(
+        TextPart(text=f"Best practices injected ({scope}) — applied for the rest of this session.")
+    )
+
+
+def _best_practices_headings() -> list[str]:
+    return [
+        line.removeprefix("## ").strip()
+        for line in prompts.BEST_PRACTICES.splitlines()
+        if line.startswith("## ")
+    ]
+
+
+def _best_practices_section(name: str) -> str | None:
+    """Return the preamble plus the single `## ` section matching ``name``, or None."""
+    lines = prompts.BEST_PRACTICES.splitlines()
+    preamble: list[str] = []
+    section: list[str] = []
+    in_section = False
+    matched = False
+    for line in lines:
+        if line.startswith("## "):
+            heading = line.removeprefix("## ").strip()
+            in_section = name.lower() in heading.lower()
+            matched = matched or in_section
+        elif not matched and not in_section:
+            preamble.append(line)
+        if in_section:
+            section.append(line)
+    if not matched:
+        return None
+    return "\n".join([*preamble, *section]).strip() + "\n"
+
+
 @registry.command(name="add-dir")
 async def add_dir(soul: PythinkerSoul, args: str):
     """Add a directory to the workspace. Usage: /add-dir <path>. Run without args to list added dirs"""  # noqa: E501

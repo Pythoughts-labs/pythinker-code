@@ -13,6 +13,8 @@ Once the todo list is set, it is the single source of truth for in-progress work
 
 Once you finish a subtask/milestone, update its status before moving to the next item.
 
+Keep at most one item in_progress at a time for your own sequential work — the only exception is parallel-subagent fan-out, where one in_progress sub-todo per running child is expected. Do not jump an item from `pending` to `done`: set it `in_progress` first, and do not batch-complete multiple items after the fact.
+
 **Do NOT use this tool:**
 
 - During the planning or exploration phase, before the user has confirmed the approach.

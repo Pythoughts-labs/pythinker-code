@@ -36,6 +36,17 @@ class TodoItemState(BaseModel):
     status: Literal["pending", "in_progress", "done", "cancelled"]
 
 
+class GoalState(BaseModel):
+    """Thread goal set via /goal; reinjected each turn until cleared.
+
+    ``complete``/``blocked`` are set by the UpdateGoal tool after its audits;
+    both stop reminders and auto-continuations until /goal resume or clear.
+    """
+
+    objective: str
+    status: Literal["active", "paused", "complete", "blocked"] = "active"
+
+
 class SessionState(BaseModel):
     version: int = 1
     approval: ApprovalStateData = Field(default_factory=ApprovalStateData)
@@ -48,6 +59,8 @@ class SessionState(BaseModel):
     plan_mode: bool = False
     plan_session_id: str | None = None
     plan_slug: str | None = None
+    # Thread goal set via /goal; reinjected by GoalModeInjectionProvider until cleared.
+    goal: GoalState | None = None
     # Archive state (previously in metadata.json)
     wire_mtime: float | None = None
     archived: bool = False
