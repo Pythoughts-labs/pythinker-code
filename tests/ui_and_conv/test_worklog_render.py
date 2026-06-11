@@ -164,6 +164,17 @@ def test_brief_display_block_renders_report_card_when_multiline():
     assert "Line two" in output
 
 
+def test_error_brief_renders_stderr_tail_as_plain_text():
+    # Error briefs now carry a trailing stderr tail. Rendering it as Markdown
+    # would mangle shell output — backticks, '#', '*' are Markdown syntax — so
+    # error briefs must render verbatim.
+    brief = "Failed with exit code: 1\nValueError: bad `config` value"
+    output = _plain(render_display_blocks([BriefDisplayBlock(text=brief)], is_error=True)[0])
+
+    assert "`config`" in output  # backticks preserved -> not parsed as Markdown
+    assert "Failed with exit code: 1" in output
+
+
 def test_consecutive_diff_blocks_for_same_file_render_one_card():
     cards = render_display_blocks(
         [

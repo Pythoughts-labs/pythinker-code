@@ -1,6 +1,6 @@
-"""Tests for /web and /vis slash commands and their exception propagation.
+"""Tests for /web and /reports slash commands and their exception propagation.
 
-Ensures that typing /web or /vis in the interactive shell cleanly switches
+Ensures that typing /web or /reports in the interactive shell cleanly switches
 to the corresponding server without hanging or corrupting terminal state.
 """
 
@@ -115,40 +115,40 @@ class TestWebCommandBehavior:
 
 
 # ---------------------------------------------------------------------------
-# /vis — registration
+# /reports — registration
 # ---------------------------------------------------------------------------
 
 
-class TestVisCommandRegistration:
-    """Verify /vis is registered in the correct registry."""
+class TestReportsCommandRegistration:
+    """Verify /reports is registered in the correct registry."""
 
     def test_registered_in_shell_registry(self) -> None:
-        cmd = shell_slash_registry.find_command("vis")
+        cmd = shell_slash_registry.find_command("reports")
         assert cmd is not None
-        assert cmd.name == "vis"
+        assert cmd.name == "reports"
         assert "Visualizer" in cmd.description
 
     def test_not_in_shell_mode_registry(self) -> None:
-        assert shell_mode_registry.find_command("vis") is None
+        assert shell_mode_registry.find_command("reports") is None
 
     def test_not_in_soul_registry(self) -> None:
         from pythinker_code.soul.slash import registry as soul_slash_registry
 
-        assert soul_slash_registry.find_command("vis") is None
+        assert soul_slash_registry.find_command("reports") is None
 
 
 # ---------------------------------------------------------------------------
-# /vis — behaviour
+# /reports — behaviour
 # ---------------------------------------------------------------------------
 
 
-class TestVisCommandBehavior:
-    """Verify /vis raises SwitchToVis with the current session ID."""
+class TestReportsCommandBehavior:
+    """Verify /reports raises SwitchToVis with the current session ID."""
 
     async def test_raises_switch_to_vis(self) -> None:
         shell = _mock_shell_with_soul("my-session-123")
 
-        cmd = shell_slash_registry.find_command("vis")
+        cmd = shell_slash_registry.find_command("reports")
         assert cmd is not None
 
         with pytest.raises(SwitchToVis) as exc_info:
@@ -159,7 +159,7 @@ class TestVisCommandBehavior:
     async def test_carries_session_id(self) -> None:
         shell = _mock_shell_with_soul("abc-def")
 
-        cmd = shell_slash_registry.find_command("vis")
+        cmd = shell_slash_registry.find_command("reports")
         assert cmd is not None
 
         with pytest.raises(SwitchToVis) as exc_info:
@@ -172,7 +172,7 @@ class TestVisCommandBehavior:
         shell = Mock()
         shell.soul = Mock()
 
-        cmd = shell_slash_registry.find_command("vis")
+        cmd = shell_slash_registry.find_command("reports")
         assert cmd is not None
 
         with pytest.raises(SwitchToVis) as exc_info:
@@ -181,10 +181,10 @@ class TestVisCommandBehavior:
         assert exc_info.value.session_id is None
 
     async def test_does_not_raise_switch_to_web(self) -> None:
-        """/vis must raise SwitchToVis, not SwitchToWeb."""
+        """/reports must raise SwitchToVis, not SwitchToWeb."""
         shell = _mock_shell_with_soul()
 
-        cmd = shell_slash_registry.find_command("vis")
+        cmd = shell_slash_registry.find_command("reports")
         assert cmd is not None
 
         with pytest.raises(SwitchToVis):
@@ -271,26 +271,26 @@ class TestShellExceptionPropagation:
 
 
 # ---------------------------------------------------------------------------
-# /web + /vis — coexistence
+# /web + /reports — coexistence
 # ---------------------------------------------------------------------------
 
 
-class TestWebAndVisCoexistence:
-    """Verify /web and /vis coexist without interference."""
+class TestWebAndReportsCoexistence:
+    """Verify /web and /reports coexist without interference."""
 
     def test_both_registered(self) -> None:
         web_cmd = shell_slash_registry.find_command("web")
-        vis_cmd = shell_slash_registry.find_command("vis")
+        vis_cmd = shell_slash_registry.find_command("reports")
         assert web_cmd is not None
         assert vis_cmd is not None
         assert web_cmd.name != vis_cmd.name
 
     async def test_same_shell_different_exceptions(self) -> None:
-        """Given the same shell, /web raises SwitchToWeb and /vis raises SwitchToVis."""
+        """Given the same shell, /web raises SwitchToWeb and /reports raises SwitchToVis."""
         shell = _mock_shell_with_soul("shared-session")
 
         web_cmd = shell_slash_registry.find_command("web")
-        vis_cmd = shell_slash_registry.find_command("vis")
+        vis_cmd = shell_slash_registry.find_command("reports")
         assert web_cmd is not None
         assert vis_cmd is not None
 

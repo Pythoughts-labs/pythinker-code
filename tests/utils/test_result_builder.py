@@ -157,6 +157,50 @@ def test_empty_write():
     assert not builder.is_full
 
 
+def test_tail_empty():
+    """tail() on an empty buffer returns an empty string."""
+    builder = ToolResultBuilder()
+    assert builder.tail() == ""
+
+
+def test_tail_basic():
+    """tail() returns the trailing lines, oldest-to-newest, no trailing newline."""
+    builder = ToolResultBuilder()
+    builder.write("first line\nsecond line\nthird line\n")
+    assert builder.tail() == "first line\nsecond line\nthird line"
+
+
+def test_tail_skips_blank_lines():
+    """Blank/whitespace-only lines are skipped so the tail carries real context."""
+    builder = ToolResultBuilder()
+    builder.write("real error\n\n   \n")
+    assert builder.tail() == "real error"
+
+
+def test_tail_respects_max_lines():
+    """tail() returns at most max_lines lines, taken from the end."""
+    builder = ToolResultBuilder()
+    builder.write("\n".join(f"line {i}" for i in range(10)) + "\n")
+    assert builder.tail(max_lines=3) == "line 7\nline 8\nline 9"
+
+
+def test_tail_truncates_long_line():
+    """Over-long lines are clipped to max_line_len and suffixed with an ellipsis."""
+    builder = ToolResultBuilder()
+    builder.write("x" * 500 + "\n")
+    tail = builder.tail(max_line_len=100)
+    assert tail.endswith("...")
+    assert len(tail) == 103
+
+
+def test_tail_handles_multiple_writes():
+    """tail() spans separate write() calls (e.g. interleaved stdout/stderr)."""
+    builder = ToolResultBuilder()
+    builder.write("stdout chunk\n")
+    builder.write("stderr: permission denied\n")
+    assert builder.tail(max_lines=2) == "stdout chunk\nstderr: permission denied"
+
+
 def test_spill_on_truncation_saves_full_output_and_hints(tmp_path):
     """tooldesc-2/ctxmgmt-1: truncated foreground output spills to disk with a
     recovery hint instead of being silently discarded."""

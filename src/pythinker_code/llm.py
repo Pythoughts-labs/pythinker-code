@@ -361,7 +361,7 @@ def create_llm(
     is_dashscope_legacy = provider.type == "openai_legacy" and _is_dashscope_endpoint(
         provider.base_url or ""
     )
-    # Kimi K2.x uses the provider-specific thinking.type field on Moonshot-style
+    # Moonshot K2.x models use the provider-specific thinking.type field on Moonshot-style
     # endpoints, but Alibaba's DashScope-compatible routes use enable_thinking.
     is_kimi_openai_legacy = (
         provider.type == "openai_legacy"
@@ -381,7 +381,7 @@ def create_llm(
         # null reasoning_effort field.
         chat_provider = chat_provider.with_thinking(effective_effort)
 
-    # Kimi K2.x on Moonshot-style endpoints and GLM use thinking.type.
+    # Moonshot K2.x and GLM use thinking.type on Moonshot-style endpoints.
     if (is_kimi_openai_legacy or is_glm_openai_legacy) and effective_effort is not None:
         thinking_body: dict[str, object] = {"type": "enabled" if thinking_on else "disabled"}
         if is_glm_openai_legacy and thinking_on:
@@ -466,14 +466,14 @@ def clone_llm_with_model_alias(
 def derive_model_capabilities(model: LLMModel) -> set[ModelCapability]:
     capabilities = set(model.capabilities or ())
     model_name = model.model.lower()
-    # Kimi K2.5/K2.6 support thinking, but it can be disabled via
+    # Moonshot K2.5/K2.6 support thinking, but it can be disabled via
     # `thinking.type`. Keep them out of always_thinking so --no-thinking and the
     # default_thinking=false config path can send the provider-specific disable
     # switch in create_llm().
     if _is_kimi_k2_model(model.model):
         capabilities.add("thinking")
-        # kimi-k2-thinking is Moonshot's thinking-only variant; unlike the
-        # hybrid K2.5/K2.6 it cannot be switched off.
+        # Moonshot's thinking-only K2 variant (its model name contains
+        # "thinking"); unlike the hybrid K2.5/K2.6 it cannot be switched off.
         if "thinking" in model_name:
             capabilities.add("always_thinking")
     # Models with "thinking" in their name are always-thinking models

@@ -346,9 +346,9 @@ Auto mode skips all approval confirmations and removes the clarifying-question s
 
 Switch to Web UI. Pythinker Code will start a Web UI server and open the current session in your browser, allowing you to continue the conversation in the Web UI. See [Web UI](./pythinker-web.md) for details.
 
-### `/vis`
+### `/reports`
 
-Switch to the Agent Tracing Visualizer. Pythinker Code will start the visualizer server and open the current session's tracing view in the browser, where you can inspect Wire event timelines, context messages, and usage statistics. See [Agent Tracing Visualizer](./pythinker-vis.md) for details.
+Open session reports in the Agent Tracing Visualizer. Pythinker Code will start the visualizer server and open the current session's tracing view in the browser, where you can inspect Wire event timelines, context messages, and usage statistics. See [Agent Tracing Visualizer](./pythinker-vis.md) for details.
 
 ## Command completion
 

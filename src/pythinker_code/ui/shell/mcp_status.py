@@ -10,10 +10,20 @@ from rich.text import Text
 from pythinker_code.ui.shell.components.render_utils import sanitize_ansi
 from pythinker_code.ui.shell.glyphs import LIST_BULLET, TRANSCRIPT_ACTIVE_MARKER
 from pythinker_code.ui.shell.motion import blink_visible
+from pythinker_code.ui.terminal_capabilities import colors_disabled
 from pythinker_code.ui.theme import get_mcp_prompt_colors, tui_rich_style
 from pythinker_code.wire.types import MCPServerSnapshot, MCPStatusSnapshot
 
 _STARTING_STATUSES = frozenset({"pending", "connecting"})
+
+# The blinking startup marker doubles as the robot's heartbeat: it carries the
+# welcome banner antenna ball's coral (see _LOGO_CORAL in ui/shell/__init__.py;
+# kept literal here because mcp_status is imported by that package).
+_HEARTBEAT_CORAL = "#EE9983"
+
+
+def _heartbeat_rich_style() -> Style:
+    return Style() if colors_disabled() else Style(color=_HEARTBEAT_CORAL, bold=True)
 
 
 def _safe_text(text: str) -> str:
@@ -57,7 +67,7 @@ def render_mcp_startup_text(snapshot: MCPStatusSnapshot, *, now: float | None = 
     """Render the animated MCP startup status used by live prompt/status areas."""
     t = time.monotonic() if now is None else now
     glyph = TRANSCRIPT_ACTIVE_MARKER if blink_visible(t) else " "
-    line = Text(f"{glyph} ", style=tui_rich_style("muted"))
+    line = Text(f"{glyph} ", style=_heartbeat_rich_style())
     line.append(
         mcp_startup_header(snapshot) or "Starting MCP servers",
         style=tui_rich_style("muted"),
@@ -102,7 +112,7 @@ def render_mcp_console(snapshot: MCPStatusSnapshot) -> RenderableType:
 def render_mcp_inventory_loading(*, now: float | None = None) -> RenderableType:
     t = time.monotonic() if now is None else now
     glyph = TRANSCRIPT_ACTIVE_MARKER if blink_visible(t) else " "
-    line = Text(f"{glyph} ", style=tui_rich_style("muted"))
+    line = Text(f"{glyph} ", style=_heartbeat_rich_style())
     line.append("Loading MCP inventory", style=tui_rich_style("tool_title") + Style(bold=True))
     line.append("…", style=tui_rich_style("muted"))
     return line
@@ -140,8 +150,8 @@ def render_mcp_prompt(snapshot: MCPStatusSnapshot, *, now: float | None = None) 
     colors = get_mcp_prompt_colors()
     t = time.monotonic() if now is None else now
     glyph = TRANSCRIPT_ACTIVE_MARKER if blink_visible(t) else " "
-    prefix = f"{glyph} "
-    return FormattedText([(colors.text, f"{prefix}{header}"), ("", "\n")])
+    prefix_style = colors.text if colors_disabled() else f"bold {_HEARTBEAT_CORAL}"
+    return FormattedText([(prefix_style, f"{glyph} "), (colors.text, header), ("", "\n")])
 
 
 def _status_color(status: str) -> Style:

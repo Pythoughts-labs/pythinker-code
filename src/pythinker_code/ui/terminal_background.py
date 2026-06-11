@@ -1,8 +1,7 @@
 """Terminal default-background probing for ``theme = "auto"``.
 
-Ported from the Codex TUI reference (``codex-rs/tui/src/terminal_probe.rs`` /
-``terminal_palette.rs``): query the terminal's default background color with
-OSC 11, classify it as light or dark via BT.601 luma, and cache the answer
+Queries the terminal's default background color with
+OSC 11, classifies it as light or dark via BT.601 luma, and caches the answer
 for the process lifetime. Probing is strictly best-effort — any failure
 (non-tty, Windows, dumb terminal, timeout, unparsable reply) returns ``None``
 so callers keep their configured fallback.

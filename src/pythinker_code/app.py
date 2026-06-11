@@ -789,7 +789,6 @@ class PythinkerCLI:
         branch_name = _safe_git_branch(work_dir)
         if branch_name:
             welcome_info.append(WelcomeInfoItem(name="Branch", value=branch_name))
-        welcome_info.append(WelcomeInfoItem(name="Session", value=self._runtime.session.id))
         if notice := _resumed_unsupervised_notice(
             resumed=self._runtime.resumed,
             yolo=self._runtime.approval.is_yolo(),
@@ -798,14 +797,6 @@ class PythinkerCLI:
             welcome_info.append(
                 WelcomeInfoItem(name="Mode", value=notice, level=WelcomeInfoItem.Level.WARN)
             )
-        try:
-            auto_save_path = str(
-                shorten_home(HostPath.unsafe_from_local_path(self._runtime.session.context_file))
-            )
-        except Exception:
-            auto_save_path = ""
-        if auto_save_path:
-            welcome_info.append(WelcomeInfoItem(name="Auto-save", value=auto_save_path))
         if base_url := self._env_overrides.get("PYTHINKER_BASE_URL"):
             welcome_info.append(
                 WelcomeInfoItem(
@@ -861,6 +852,18 @@ class PythinkerCLI:
                         level=WelcomeInfoItem.Level.WARN,
                     )
                 )
+        # Session persistence details come last — workspace and model identity
+        # read first, storage internals stay at the bottom of the facts block.
+        welcome_info.append(WelcomeInfoItem(name="Session", value=self._runtime.session.id))
+        try:
+            auto_save_path = str(
+                shorten_home(HostPath.unsafe_from_local_path(self._runtime.session.context_file))
+            )
+        except Exception:
+            logger.debug("Failed to compute auto-save display path", exc_info=True)
+            auto_save_path = ""
+        if auto_save_path:
+            welcome_info.append(WelcomeInfoItem(name="Auto-save", value=auto_save_path))
         welcome_info.append(
             WelcomeInfoItem(
                 name="Tip",

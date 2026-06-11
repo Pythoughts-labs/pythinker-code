@@ -438,7 +438,7 @@ class _BorderedCodeBlock(CodeBlock):
 
         lexer_name = self.lexer_name.strip()
         title = lexer_name if lexer_name and lexer_name != "text" else None
-        # Size guard (Codex parity): skip Pygments for very large blocks so a
+        # Size guard: skip Pygments for very large blocks so a
         # pathological fence cannot stall the renderer. ``len()`` counts
         # characters (a lower bound on UTF-8 bytes), which is enough for a
         # guard heuristic without paying for an encode of the whole block.

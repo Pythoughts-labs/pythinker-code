@@ -32,6 +32,12 @@ class PlanModeInjectionProvider(DynamicInjectionProvider):
         history: Sequence[Message],
         soul: PythinkerSoul,
     ) -> list[DynamicInjection]:
+        # Plan-mode workflow reminders are root-only. Subagents share the
+        # session's plan_mode flag (so persistence/resume work), but their YAMLs
+        # usually exclude EnterPlanMode/ExitPlanMode, so do not inject this
+        # workflow guidance into subagent contexts.
+        if soul.is_subagent:
+            return []
         if not soul.plan_mode:
             self._inject_count = 0
             return []

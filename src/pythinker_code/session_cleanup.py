@@ -1,9 +1,8 @@
 """Age-based cleanup for personal-scope session and plan state.
 
-Runs at agent startup to keep ~/.pythinker/ from growing unboundedly.
-Mirrors the design used by Claude Code (cleanupPeriodDays=30): on startup,
-directories/files older than the retention threshold are removed if they are
-safe to discard (archived sessions, old plan files).
+Runs at agent startup to keep ~/.pythinker/ from growing unboundedly: with a
+30-day retention period, directories/files older than the retention threshold
+are removed if they are safe to discard (archived sessions, old plan files).
 
 Never raises — every error is logged at DEBUG level and silently skipped.
 """

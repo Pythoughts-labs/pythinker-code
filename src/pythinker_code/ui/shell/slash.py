@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from prompt_toolkit.shortcuts.choice_input import ChoiceInput
 from rich.markup import escape
@@ -1649,11 +1649,11 @@ def web(app: Shell, args: str):
 
 
 @registry.command
-def vis(app: Shell, args: str):
-    """Open Pythinker Agent Tracing Visualizer in browser"""
+def reports(app: Shell, args: str) -> NoReturn:
+    """Open Pythinker session reports (Agent Tracing Visualizer) in browser"""
     from pythinker_code.telemetry import track
 
-    track("vis_opened")
+    track("reports_opened")
     soul = ensure_pythinker_soul(app)
     session_id = soul.runtime.session.id if soul else None
     raise SwitchToVis(session_id=session_id)

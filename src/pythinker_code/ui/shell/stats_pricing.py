@@ -51,7 +51,7 @@ _PRICE_TABLE: dict[str, tuple[float, float, float, float]] = {
     "glm-5-turbo": (0.5, 1.5, 0.1, 0.0),
     "glm-4.7": (0.5, 1.5, 0.1, 0.0),
     "glm-4.5-air": (0.3, 1.0, 0.06, 0.0),
-    # Kimi (opencode-go)
+    # Moonshot K2 (opencode-go)
     "kimi-k2.5": (0.6, 3.0, 0.08, 0.0),
     "kimi-k2.6": (0.95, 4.0, 0.16, 0.0),
     # MiniMax (opencode-go / anthropic shape)

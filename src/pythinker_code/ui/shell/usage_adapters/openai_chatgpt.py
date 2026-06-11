@@ -117,7 +117,7 @@ def parse_codex_usage_payload(payload: object) -> UsageReport:
     elif rate_map.get("allowed") is False:
         notes.append("Requests currently not allowed by the rate limiter.")
 
-    # Codex's wham/usage response carries up to two windows under
+    # The ChatGPT wham/usage response carries up to two windows under
     # `primary_window` / `secondary_window` (older releases used `five_hour` /
     # `weekly`). Accounts on some plans only return one of them — and the slot
     # name is NOT a reliable indicator of which window is shorter (e.g. free

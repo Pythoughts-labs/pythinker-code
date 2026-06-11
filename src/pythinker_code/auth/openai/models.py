@@ -175,7 +175,7 @@ def _parse_chatgpt_models_payload(payload: object) -> list[ModelInfo]:
     raw_models = payload_object.get("models")
     if not isinstance(raw_models, list):
         # Keep a small compatibility path in case OpenAI ever aligns this with
-        # the public /v1/models shape. ChatGPT Codex currently returns
+        # the public /v1/models shape. The ChatGPT endpoint currently returns
         # {"models": [{"slug": ...}]}.
         raw_models = payload_object.get("data")
     if not isinstance(raw_models, list):
