@@ -172,3 +172,71 @@ def test_flags_segment():
         make_ctx(flags=StatusFlags(yolo=True, auto=False, plan=True))
     )
     assert _text(frags) == "yolo plan"
+
+
+def test_context_segment_bar_and_gradient():
+    frags = SEGMENT_REGISTRY["context"].render(make_ctx())
+    text = _text(frags)
+    assert text.startswith("ctx 36k/200k ")
+    assert "18%" in text
+    assert "█" in text and "░" in text
+    assert SEGMENT_REGISTRY["context"].render(make_ctx(max_context_tokens=0)) is None
+
+
+def test_context_low_warning_blinks_on_frame():
+    ctx_hot = make_ctx(context_tokens=190_000, frame=0)
+    assert "CTX LOW" in _text(SEGMENT_REGISTRY["context"].render(ctx_hot))
+    s0 = SEGMENT_REGISTRY["context"].render(make_ctx(context_tokens=190_000, frame=0))
+    s1 = SEGMENT_REGISTRY["context"].render(make_ctx(context_tokens=190_000, frame=1))
+    assert [s for s, _ in s0] != [s for s, _ in s1]  # bold/dim alternation
+
+
+def test_elapsed_and_clock():
+    assert _text(SEGMENT_REGISTRY["elapsed"].render(make_ctx(elapsed_s=4325))) == "1h 12m elapsed"
+    assert _text(SEGMENT_REGISTRY["clock"].render(make_ctx())) == "14:32"
+
+
+def test_limits_hidden_without_data():
+    assert SEGMENT_REGISTRY["limits"].render(make_ctx(limits=None)) is None
+    from pythinker_code.ui.shell.statusline import ProviderLimits
+
+    lim = ProviderLimits(requests_pct=37, requests_reset_s=9960.0, tokens_pct=None, tokens_reset_s=None)
+    text = _text(SEGMENT_REGISTRY["limits"].render(make_ctx(limits=lim)))
+    assert "37%" in text and "2h 46m" in text
+
+
+def test_assemble_footer_two_lines_and_separators():
+    from pythinker_code.ui.shell.statusline import assemble_footer
+
+    cfg = StatusLineConfig()
+    lines = assemble_footer(make_ctx(), cfg.segments)
+    assert len(lines) == 2
+    line1 = _text(lines[0])
+    assert "claude-fable-5" in line1 and "pythinker-code-main" in line1
+    assert "│" in line1 or "·" in line1
+    line2 = _text(lines[1])
+    assert "ctx" in line2 and "14:32" in line2
+
+
+def test_assemble_footer_drops_segments_under_width_pressure():
+    from pythinker_code.ui.shell.statusline import assemble_footer
+
+    cfg = StatusLineConfig()
+    wide = make_ctx(working=True, rate_in=92, rate_out=85, session_cost_usd=1.5,
+                    effort="high", diff_added=54, diff_removed=13)
+    narrow = make_ctx(columns=60, working=True, rate_in=92, rate_out=85,
+                      session_cost_usd=1.5, effort="high", diff_added=54, diff_removed=13)
+    assert "in 92" in _text(assemble_footer(wide, cfg.segments)[0])
+    line1_narrow = _text(assemble_footer(narrow, cfg.segments)[0])
+    assert "in 92" not in line1_narrow          # speed dropped first
+    assert "claude-fable-5" in line1_narrow     # model survives
+
+
+def test_segment_exception_is_isolated(monkeypatch):
+    from pythinker_code.ui.shell import statusline as sl
+
+    boom = sl.SegmentSpec("cost", "line1", lambda ctx: 1 / 0, drop_priority=5)
+    monkeypatch.setitem(sl.SEGMENT_REGISTRY, "cost", boom)
+    cfg = StatusLineConfig()
+    lines = sl.assemble_footer(make_ctx(session_cost_usd=5.0), cfg.segments)
+    assert "claude-fable-5" in _text(lines[0])  # render survived

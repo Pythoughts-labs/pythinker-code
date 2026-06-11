@@ -14,9 +14,12 @@ import shlex
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
+from prompt_toolkit.utils import get_cwidth
+
 from pythinker_code.config import StatusLineConfig
-from pythinker_code.ui.shell.components import sanitize_ansi
+from pythinker_code.ui.shell.components import format_tokens, sanitize_ansi
 from pythinker_code.ui.theme import get_statusline_colors, get_toolbar_colors
+from pythinker_code.utils.datetime import format_duration
 from pythinker_code.utils.logging import logger
 
 _EIGHTHS = ("", "▏", "▎", "▍", "▌", "▋", "▊", "▉")
@@ -309,6 +312,159 @@ def _render_flags(ctx: StatusLineContext) -> list[StyleFragment] | None:
     return frags or None
 
 
+# ---------------------------------------------------------------------------
+# Line-2 segment renderers
+# ---------------------------------------------------------------------------
+
+
+def _render_context(ctx: StatusLineContext) -> list[StyleFragment] | None:
+    if ctx.max_context_tokens <= 0:
+        return None
+    colors = get_statusline_colors()
+    pct = min(100, ctx.context_tokens * 100 // ctx.max_context_tokens)
+    level_color = getattr(colors, f"usage_{usage_level(pct)}")
+    used = format_tokens(ctx.context_tokens)
+    total = format_tokens(ctx.max_context_tokens)
+    frags: list[StyleFragment] = [
+        (_style(ctx, colors.label), "ctx "),
+        (_style(ctx, level_color), f"{used}"),
+        (_style(ctx, colors.dim), "/"),
+        (_style(ctx, level_color), f"{total} "),
+    ]
+    if ctx.style != "plain":
+        frags.append((level_color, smooth_bar(pct, width=ctx.bar_width, ascii_only=ctx.ascii_only)))
+        frags.append(("", " "))
+    frags.append((_style(ctx, f"bold {level_color}".strip()), f"{pct}%"))
+    if pct >= 90:
+        blink = "bold" if ctx.frame % 2 == 0 else ""
+        warn_style = f"{blink} {colors.warn}".strip() if ctx.style != "plain" else blink
+        prefix = "! " if ctx.ascii_only else "⚠ "
+        frags.append(("", "  "))
+        frags.append((warn_style, f"{prefix}CTX LOW"))
+    return frags
+
+
+def _render_tokens(ctx: StatusLineContext) -> list[StyleFragment] | None:
+    if not ctx.max_context_tokens:
+        return None
+    colors = get_statusline_colors()
+    text = f"{format_tokens(ctx.context_tokens)}/{format_tokens(ctx.max_context_tokens)}"
+    return [(_style(ctx, colors.label), text)]
+
+
+def _render_elapsed(ctx: StatusLineContext) -> list[StyleFragment] | None:
+    colors = get_statusline_colors()
+    return [
+        (_style(ctx, colors.time), format_duration(int(ctx.elapsed_s))),
+        (_style(ctx, colors.dim), " elapsed"),
+    ]
+
+
+def _render_limits(ctx: StatusLineContext) -> list[StyleFragment] | None:
+    lim = ctx.limits
+    if lim is None or (lim.requests_pct is None and lim.tokens_pct is None):
+        return None
+    colors = get_statusline_colors()
+    frags: list[StyleFragment] = []
+    for label, pct, reset_s in (
+        ("req", lim.requests_pct, lim.requests_reset_s),
+        ("tok", lim.tokens_pct, lim.tokens_reset_s),
+    ):
+        if pct is None:
+            continue
+        if frags:
+            frags.append((_style(ctx, colors.dim), " - " if ctx.ascii_only else " · "))
+        level_color = getattr(colors, f"usage_{usage_level(pct)}")
+        frags.append((_style(ctx, colors.label), f"{label} "))
+        if ctx.style != "plain":
+            frags.append((level_color, smooth_bar(pct, width=6, ascii_only=ctx.ascii_only)))
+            frags.append(("", " "))
+        frags.append((_style(ctx, f"bold {level_color}".strip()), f"{pct}%"))
+        if reset_s and reset_s > 0:
+            arrow = "@" if ctx.ascii_only else "↻"
+            frags.append((_style(ctx, colors.dim), f" {arrow} {format_duration(int(reset_s))}"))
+    return frags or None
+
+
+def _render_clock(ctx: StatusLineContext) -> list[StyleFragment] | None:
+    colors = get_statusline_colors()
+    return [(_style(ctx, colors.time), ctx.clock)]
+
+
+# ---------------------------------------------------------------------------
+# Display-width helper + per-segment exception isolation + assembler
+# ---------------------------------------------------------------------------
+
+
+def _display_width(text: str) -> int:
+    return sum(get_cwidth(c) for c in text)
+
+
+_warned_segments: set[str] = set()
+
+
+def _warn_segment_once(seg_id: str) -> None:
+    if seg_id not in _warned_segments:
+        _warned_segments.add(seg_id)
+        logger.exception("statusline: segment {} render failed", seg_id)
+
+
+_LINE1_GROUP_BREAK_AFTER = {"effort"}  # identity group | location group
+
+
+def assemble_footer(
+    ctx: StatusLineContext, segments: Sequence[str]
+) -> tuple[list[StyleFragment], list[StyleFragment]]:
+    """Render both footer lines. Pure: no I/O, exceptions isolated per segment."""
+    colors = get_statusline_colors()
+    plainish = ctx.ascii_only or ctx.style == "plain"
+    sep_bar = "  |  " if plainish else "  │  "
+    sep_dot = " - " if plainish else " · "
+    zones = split_zones(segments)
+
+    def rendered(ids: list[str]) -> list[tuple[str, list[StyleFragment]]]:
+        out: list[tuple[str, list[StyleFragment]]] = []
+        for seg_id in ids:
+            spec = SEGMENT_REGISTRY[seg_id]
+            try:
+                frags = spec.render(ctx)
+            except Exception:
+                _warn_segment_once(seg_id)
+                continue
+            if frags:
+                out.append((seg_id, frags))
+        return out
+
+    def joined(parts: list[tuple[str, list[StyleFragment]]]) -> list[StyleFragment]:
+        frags: list[StyleFragment] = []
+        for i, (_, seg_frags) in enumerate(parts):
+            if i:
+                prev_id = parts[i - 1][0]
+                sep = sep_bar if prev_id in _LINE1_GROUP_BREAK_AFTER else sep_dot
+                frags.append((_style(ctx, colors.dim), sep))
+            frags.extend(seg_frags)
+        return frags
+
+    def width(frags: list[StyleFragment]) -> int:
+        return sum(_display_width(t) for _, t in frags)
+
+    line1_parts = rendered(zones.line1)
+    while width(joined(line1_parts)) > ctx.columns and len(line1_parts) > 1:
+        victim = max(line1_parts, key=lambda p: SEGMENT_REGISTRY[p[0]].drop_priority)
+        if SEGMENT_REGISTRY[victim[0]].drop_priority == 0:
+            break  # only priority-0 left; let prompt.py truncate
+        line1_parts.remove(victim)
+
+    line2_parts = rendered(zones.line2_right)
+    line2: list[StyleFragment] = []
+    for i, (_seg, seg_frags) in enumerate(line2_parts):
+        if i:
+            line2.append((_style(ctx, colors.dim), sep_bar))
+        line2.extend(seg_frags)
+
+    return joined(line1_parts), line2
+
+
 SEGMENT_REGISTRY: dict[str, SegmentSpec] = {
     "spinner": SegmentSpec("spinner", "line1", _render_spinner, drop_priority=0),
     "model": SegmentSpec("model", "line1", _render_model, drop_priority=1),
@@ -319,11 +475,11 @@ SEGMENT_REGISTRY: dict[str, SegmentSpec] = {
     "git": SegmentSpec("git", "line1", _render_git, drop_priority=2),
     "diff": SegmentSpec("diff", "line1", _render_diff, drop_priority=6),
     "flags": SegmentSpec("flags", "line1", _render_flags, drop_priority=0),
-    "context": SegmentSpec("context", "line2_right", _not_rendered, drop_priority=0),
-    "tokens": SegmentSpec("tokens", "line2_right", _not_rendered, drop_priority=2),
-    "elapsed": SegmentSpec("elapsed", "line2_right", _not_rendered, drop_priority=3),
-    "limits": SegmentSpec("limits", "line2_right", _not_rendered, drop_priority=1),
-    "clock": SegmentSpec("clock", "line2_right", _not_rendered, drop_priority=0),
+    "context": SegmentSpec("context", "line2_right", _render_context, drop_priority=0),
+    "tokens": SegmentSpec("tokens", "line2_right", _render_tokens, drop_priority=2),
+    "elapsed": SegmentSpec("elapsed", "line2_right", _render_elapsed, drop_priority=3),
+    "limits": SegmentSpec("limits", "line2_right", _render_limits, drop_priority=1),
+    "clock": SegmentSpec("clock", "line2_right", _render_clock, drop_priority=0),
     "command": SegmentSpec("command", "line2_left", _not_rendered, drop_priority=0),
 }
 
