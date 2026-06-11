@@ -334,6 +334,26 @@ async def test_task_output_poll_escalation_resets_after_blocking_call(runtime, t
 
 
 @pytest.mark.asyncio
+async def test_task_output_poll_escalation_survives_new_tool_instance(runtime, task_output_tool):
+    # The streak lives on the manager, not the tool: a fresh TaskOutput
+    # instance (e.g. a rebuilt toolset) must continue the escalation.
+    from pythinker_code.tools.background import TaskOutput
+
+    spec = _write_task(
+        runtime,
+        "b666666a",
+        status="running",
+        output="still working\n",
+    )
+
+    await task_output_tool(task_output_tool.params(task_id=spec.id, block=False, timeout=0))
+    fresh_tool = TaskOutput(runtime)
+    result = await fresh_tool(fresh_tool.params(task_id=spec.id, block=False, timeout=0))
+
+    assert "non-blocking poll #2" in result.output
+
+
+@pytest.mark.asyncio
 async def test_task_output_defaults_to_non_blocking_snapshot(runtime, task_output_tool):
     spec = _write_task(
         runtime,

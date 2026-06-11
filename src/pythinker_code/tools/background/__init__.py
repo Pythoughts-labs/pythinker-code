@@ -268,8 +268,6 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
     def __init__(self, runtime: Runtime):
         super().__init__()
         self._runtime = runtime
-        self._nonblocking_polls: dict[str, int] = {}
-        """Consecutive non-blocking polls per still-running task, to escalate the hint."""
 
     def _missing_task_error(self, task_id: str) -> ToolReturnValue:
         return tool_error(
@@ -328,11 +326,10 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
             retrieval_status = "success" if is_terminal_status(view.runtime.status) else "not_ready"
 
         if retrieval_status == "not_ready":
-            poll_count = self._nonblocking_polls.get(params.task_id, 0) + 1
-            self._nonblocking_polls[params.task_id] = poll_count
+            poll_count = self._runtime.background_tasks.note_nonblocking_poll(params.task_id)
         else:
             poll_count = 1
-            self._nonblocking_polls.pop(params.task_id, None)
+            self._runtime.background_tasks.reset_poll_escalation(params.task_id)
 
         (
             output,

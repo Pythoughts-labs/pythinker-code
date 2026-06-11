@@ -314,6 +314,15 @@ Usage:
 - `/best-practices <section>`: Inject a single section, e.g. `/best-practices testing` or `/best-practices debugging`
 - Alias: `/bp`
 
+### `/learn`
+
+Review the session for reusable lessons — user corrections, non-obvious error resolutions, workarounds, conventions discovered the hard way — and persist them to the per-project memory store (and the repo's lessons file when one exists). Lessons are distilled as trigger rules ("when X, do Y"), one pattern per entry; trivia and one-time issues are skipped.
+
+Usage:
+
+- `/learn`: Review the whole session
+- `/learn <focus>`: Steer extraction toward a specific mistake or topic, e.g. `/learn the polling mistake`
+
 ### `/task`
 
 Open the interactive task browser to view, monitor, and manage background tasks.

@@ -72,6 +72,8 @@ class BackgroundTaskManager:
         self._live_agent_tasks: dict[str, asyncio.Task[None]] = {}
         self._current_turn_task_ids: set[str] = set()
         self._completion_event: asyncio.Event = asyncio.Event()
+        self._nonblocking_polls: dict[str, int] = {}
+        """Consecutive non-blocking TaskOutput polls per still-running task."""
 
     @property
     def completion_event(self) -> asyncio.Event:
@@ -105,7 +107,18 @@ class BackgroundTaskManager:
         # recoverable — enabling a corrupting double-resume.
         manager._live_agent_tasks = self._live_agent_tasks
         manager._current_turn_task_ids = self._current_turn_task_ids
+        manager._nonblocking_polls = self._nonblocking_polls
         return manager
+
+    def note_nonblocking_poll(self, task_id: str) -> int:
+        """Record a non-blocking poll on a still-running task; returns the streak count."""
+        count = self._nonblocking_polls.get(task_id, 0) + 1
+        self._nonblocking_polls[task_id] = count
+        return count
+
+    def reset_poll_escalation(self, task_id: str) -> None:
+        """Clear the poll streak after a blocking wait or terminal retrieval."""
+        self._nonblocking_polls.pop(task_id, None)
 
     def bind_runtime(self, runtime: Runtime) -> None:
         self._runtime = runtime
