@@ -12,7 +12,6 @@ from pydantic import ValidationError
 
 from pythinker_code.config import Config, StatusLineConfig, TUIConfig
 from pythinker_code.ui.shell.statusline import (
-    DEFAULT_STATUSLINE_SEGMENTS,
     StatusLineCommandRunner,
     resolve_segments,
 )
