@@ -420,6 +420,10 @@ class PythinkerSoul:
 
         self._steer_queue: asyncio.Queue[str | list[ContentPart]] = asyncio.Queue()
         self._prompt_queue_lock = asyncio.Lock()
+        # Tool calls made in the previous step, fed to the toolset's dedup
+        # tracking at the start of each step (see PythinkerToolset.begin_step).
+        self._last_tool_calls: list[tuple[str, str]] = []
+        self._current_turn_id: str = ""
         self._plan_mode: bool = self._runtime.session.state.plan_mode
         self._plan_session_id: str | None = self._runtime.session.state.plan_session_id
         # Pre-warm slug cache so the persisted slug survives process restarts
@@ -1105,6 +1109,8 @@ class PythinkerSoul:
         if missing_caps := check_message(user_message, self._runtime.llm.capabilities):
             raise LLMNotSupported(self._runtime.llm, list(missing_caps))
 
+        self._current_turn_id = uuid.uuid4().hex
+        self._last_tool_calls = []
         self._sleep_inhibitor.set_turn_running(True)
         try:
             bus = shared_event_bus()
@@ -1451,6 +1457,9 @@ class PythinkerSoul:
 
             if back_to_the_future is not None:
                 await self._context.revert_to(back_to_the_future.checkpoint_id)
+                # The reverted history no longer contains the last step's calls,
+                # so they must not seed cross-step dedup for the next step.
+                self._last_tool_calls = []
                 await self._checkpoint()
                 await self._context.append_message(back_to_the_future.messages)
 
@@ -1529,6 +1538,14 @@ class PythinkerSoul:
             wire_send(tool_result)
 
         async def _run_step_once() -> StepResult:
+            # Reset per-step dedup state. Inside the retry wrapper on purpose: a
+            # retried step must not await tool tasks cancelled by the failed attempt.
+            if isinstance(self._agent.toolset, PythinkerToolset):
+                self._agent.toolset.begin_step(
+                    self._last_tool_calls,
+                    step_no=self._current_step_no,
+                    turn_id=self._current_turn_id,
+                )
             # run an LLM step (may be interrupted)
             from pythinker_code.telemetry import metrics as _m
             from pythinker_code.telemetry import otel as _otel
@@ -1714,6 +1731,10 @@ class PythinkerSoul:
                     await _settle_shielded(interrupted_grow_task)
                 raise
         logger.debug("Got tool results: {results}", results=results)
+
+        # Update dedup tracking for the next step
+        if isinstance(self._agent.toolset, PythinkerToolset):
+            self._last_tool_calls = self._agent.toolset.end_step()
 
         # If a tool (EnterPlanMode/ExitPlanMode) changed plan mode during execution,
         # send a corrected StatusUpdate so the client sees the up-to-date state.

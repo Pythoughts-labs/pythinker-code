@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import difflib
+import hashlib
 import importlib
 import inspect
 import json
@@ -13,7 +14,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 from pythinker_core.tooling import (
     CallableTool,
@@ -208,12 +209,90 @@ def _configure_mcp_client_stderr_log(client: Any, runtime: Runtime, server_name:
 
 
 type ToolType = CallableTool | CallableTool2[Any]
+type ToolCallKey = tuple[str, str]
 
 
 if TYPE_CHECKING:
 
     def type_check(pythinker_toolset: PythinkerToolset):
         _: Toolset = pythinker_toolset
+
+
+_REMINDER_TEXT_1 = (
+    "\n\n<system-reminder>\n"
+    "You are repeating the exact same tool call with identical parameters."
+    " Please carefully analyze the previous result. If the task is not yet complete,"
+    " try a different method or parameters instead of repeating the same call."
+    "\n</system-reminder>"
+)
+
+
+def _make_reminder_text_2(tool_name: str, repeat_count: int, canonical_args: str) -> str:
+    return (
+        "\n\n<system-reminder>\n"
+        "You have repeatedly called the same tool with identical parameters many times.\n"
+        "Repeated tool call detected:\n"
+        f"- tool: {tool_name}\n"
+        f"- repeated_times: {repeat_count}\n"
+        f"- arguments: {canonical_args}\n"
+        "The previous repeated calls did not make progress. Do not call this exact same tool "
+        "with the exact same arguments again.\n"
+        "Carefully inspect the latest tool result and choose a different next action, "
+        "different parameters, or finish the task if enough evidence has been gathered."
+        "\n</system-reminder>"
+    )
+
+
+def _sort_json_value(value: object) -> object:
+    if isinstance(value, list):
+        return [_sort_json_value(item) for item in cast("list[object]", value)]
+    if isinstance(value, dict):
+        value_dict = cast("dict[str, object]", value)
+        return {key: _sort_json_value(value_dict[key]) for key in sorted(value_dict)}
+    return value
+
+
+def _canonical_tool_arguments(arguments: Any) -> str:
+    try:
+        return json.dumps(
+            _sort_json_value(arguments),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+    except (TypeError, ValueError):
+        return str(arguments)
+
+
+def _canonical_tool_arguments_text(arguments: str) -> str:
+    try:
+        return _canonical_tool_arguments(json.loads(arguments, strict=False))
+    except json.JSONDecodeError:
+        return arguments
+
+
+def _normalize_call_key(tool_name: str, arguments: str) -> ToolCallKey:
+    return (tool_name, _canonical_tool_arguments_text(arguments))
+
+
+def _append_reminder_to_return_value(
+    return_value: Any, reminder_text: str = _REMINDER_TEXT_1
+) -> Any:
+    """Append dedup reminder text to a ToolReturnValue output."""
+    if not isinstance(return_value, ToolReturnValue):
+        return return_value
+
+    output = return_value.output
+
+    if isinstance(output, str):
+        new_output: str | list[ContentPart] = output + reminder_text
+    else:
+        new_output = list(output)
+        if new_output and isinstance(new_output[-1], TextPart):
+            new_output[-1] = TextPart(text=new_output[-1].text + reminder_text)
+        else:
+            new_output.append(TextPart(text=reminder_text))
+
+    return return_value.model_copy(update={"output": new_output})
 
 
 class PythinkerToolset:
@@ -225,6 +304,18 @@ class PythinkerToolset:
         self._mcp_loading_task: asyncio.Task[None] | None = None
         self._deferred_mcp_load: tuple[list[MCPConfig], Runtime] | None = None
         self._hook_engine: HookEngine = HookEngine()
+
+        # Deduplication state
+        self._previous_step_calls: list[ToolCallKey] = []
+        self._current_step_calls: list[ToolCallKey] = []
+        self._current_step_tasks: dict[ToolCallKey, asyncio.Task[ToolResult]] = {}
+        self._seen_call_keys: set[ToolCallKey] = set()
+        self._consecutive_key: ToolCallKey | None = None
+        self._consecutive_count: int = 0
+        self._step_closed: bool = False
+        self._dedup_triggered: bool = False
+        self._step_no: int = 0
+        self._turn_id: str = ""
 
     def set_hook_engine(self, engine: HookEngine) -> None:
         self._hook_engine = engine
@@ -332,6 +423,64 @@ class PythinkerToolset:
 
         return True
 
+    def begin_step(
+        self,
+        previous_calls: list[tuple[str, str]],
+        *,
+        step_no: int = 0,
+        turn_id: str = "",
+    ) -> None:
+        """Called before each step to set up deduplication state."""
+        self._previous_step_calls = [
+            _normalize_call_key(tool_name, arguments) for tool_name, arguments in previous_calls
+        ]
+        self._current_step_calls = []
+        self._current_step_tasks = {}
+        self._step_closed = False
+        self._dedup_triggered = False
+        self._step_no = step_no
+        self._turn_id = turn_id
+        if not self._previous_step_calls:
+            self._seen_call_keys = set()
+            self._consecutive_key = None
+            self._consecutive_count = 0
+        else:
+            self._seen_call_keys.update(self._previous_step_calls)
+            if self._consecutive_key is None and self._consecutive_count == 0:
+                self._advance_consecutive_streak(self._previous_step_calls)
+
+    def end_step(self) -> list[tuple[str, str]]:
+        """Called after each step to capture the calls made in this step."""
+        if not self._step_closed:
+            self._advance_consecutive_streak(self._current_step_calls)
+            self._seen_call_keys.update(self._current_step_calls)
+            self._step_closed = True
+        return list(self._current_step_calls)
+
+    def _advance_consecutive_streak(self, calls: list[ToolCallKey]) -> None:
+        for call_key in calls:
+            if call_key == self._consecutive_key:
+                self._consecutive_count += 1
+            else:
+                self._consecutive_key = call_key
+                self._consecutive_count = 1
+
+    def _projected_streak_for_call(self, call_index: int) -> int:
+        consecutive_key = self._consecutive_key
+        consecutive_count = self._consecutive_count
+        for call_key in self._current_step_calls[: call_index + 1]:
+            if call_key == consecutive_key:
+                consecutive_count += 1
+            else:
+                consecutive_key = call_key
+                consecutive_count = 1
+        return consecutive_count
+
+    @property
+    def dedup_triggered(self) -> bool:
+        """Whether a cross-step duplicate was blocked in the current step."""
+        return self._dedup_triggered
+
     def handle(self, tool_call: ToolCall) -> HandleResult:
         token = current_tool_call.set(tool_call)
         try:
@@ -360,6 +509,56 @@ class PythinkerToolset:
                     error=e,
                 )
                 return ToolResult(tool_call_id=tool_call.id, return_value=ToolParseError(str(e)))
+
+            canonical_args = _canonical_tool_arguments(arguments)
+            call_key = (tool_call.function.name, canonical_args)
+            call_index = len(self._current_step_calls)
+            self._current_step_calls.append(call_key)
+
+            # Same-step dedup: wait for the original task and copy its result.
+            if call_key in self._current_step_tasks:
+                from pythinker_code.telemetry import track
+
+                track(
+                    "tool_call_dedup_detected",
+                    turn_id=self._turn_id,
+                    step_no=self._step_no,
+                    tool_name=tool_call.function.name,
+                    dup_type="same_step",
+                    args_hash=hashlib.sha256(canonical_args.encode("utf-8")).hexdigest()[:8],
+                )
+                original_task = self._current_step_tasks[call_key]
+
+                async def _await_dup() -> ToolResult:
+                    original_result = await original_task
+                    return ToolResult(
+                        tool_call_id=tool_call.id,
+                        return_value=original_result.return_value,
+                    )
+
+                return asyncio.create_task(_await_dup())
+
+            is_cross_step_dup = call_key in self._seen_call_keys
+            reminder_text: str | None = None
+            if is_cross_step_dup:
+                from pythinker_code.telemetry import track
+
+                track(
+                    "tool_call_dedup_detected",
+                    turn_id=self._turn_id,
+                    step_no=self._step_no,
+                    tool_name=tool_call.function.name,
+                    dup_type="cross_step",
+                    args_hash=hashlib.sha256(canonical_args.encode("utf-8")).hexdigest()[:8],
+                )
+                self._dedup_triggered = True
+                repeat_count = self._projected_streak_for_call(call_index)
+                if repeat_count == 3:
+                    reminder_text = _REMINDER_TEXT_1
+                elif repeat_count in (5, 8):
+                    reminder_text = _make_reminder_text_2(
+                        tool_call.function.name, repeat_count, canonical_args
+                    )
 
             async def _call():
                 started_ids_token = _current_tool_execution_started_ids.set(set[str]())
@@ -472,6 +671,7 @@ class PythinkerToolset:
                         success=False,
                         duration_ms=int(tool_elapsed * 1000),
                         error_type=_error_type,
+                        dup_type="cross_step" if is_cross_step_dup else "normal",
                     )
                     return ToolResult(
                         tool_call_id=tool_call.id,
@@ -509,6 +709,7 @@ class PythinkerToolset:
                     tool_name=tool_call.function.name,
                     success=not isinstance(ret, ToolError),
                     duration_ms=int(tool_elapsed * 1000),
+                    dup_type="cross_step" if is_cross_step_dup else "normal",
                 )
 
                 # --- PostToolUse (fire-and-forget) ---
@@ -527,7 +728,23 @@ class PythinkerToolset:
 
                 return ToolResult(tool_call_id=tool_call.id, return_value=ret)
 
-            return asyncio.create_task(_call())
+            task = asyncio.create_task(_call())
+            if reminder_text is not None:
+
+                async def _wrap_with_reminder(
+                    inner_task: asyncio.Task[ToolResult],
+                    text: str,
+                ) -> ToolResult:
+                    tr = await inner_task
+                    return ToolResult(
+                        tool_call_id=tr.tool_call_id,
+                        return_value=_append_reminder_to_return_value(tr.return_value, text),
+                    )
+
+                task = asyncio.create_task(_wrap_with_reminder(task, reminder_text))
+
+            self._current_step_tasks[call_key] = task
+            return task
         finally:
             current_tool_call.reset(token)
 
