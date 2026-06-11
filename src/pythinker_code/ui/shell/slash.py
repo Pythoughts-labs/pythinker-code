@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from prompt_toolkit.shortcuts.choice_input import ChoiceInput
 from rich.markup import escape
@@ -1649,7 +1649,7 @@ def web(app: Shell, args: str):
 
 
 @registry.command
-def reports(app: Shell, args: str):
+def reports(app: Shell, args: str) -> NoReturn:
     """Open Pythinker session reports (Agent Tracing Visualizer) in browser"""
     from pythinker_code.telemetry import track
 

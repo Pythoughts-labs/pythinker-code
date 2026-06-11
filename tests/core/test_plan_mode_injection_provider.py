@@ -151,6 +151,7 @@ class TestPlanModeInjectionProvider:
         result = await provider.get_injections([], soul)
 
         assert result == []
+        assert provider._inject_count == 0
 
 
 class TestPlanModeVerificationClause:
