@@ -145,3 +145,30 @@ def test_effort_badge_levels_and_hidden():
     assert _text(SEGMENT_REGISTRY["effort"].render(make_ctx(effort="high"))) == "▲ high"
     assert _text(SEGMENT_REGISTRY["effort"].render(make_ctx(effort="medium"))) == "◆ med"
     assert _text(SEGMENT_REGISTRY["effort"].render(make_ctx(effort="low"))) == "▽ low"
+
+
+def test_cwd_and_git_segments():
+    assert _text(SEGMENT_REGISTRY["cwd"].render(make_ctx())) == "pythinker-code-main"
+    assert SEGMENT_REGISTRY["cwd"].render(make_ctx(cwd=None)) is None
+    git = GitInfo(branch="feat/x", dirty=True, ahead=2, behind=0)
+    text = _text(SEGMENT_REGISTRY["git"].render(make_ctx(git=git)))
+    assert "feat/x" in text
+    assert SEGMENT_REGISTRY["git"].render(make_ctx(git=None)) is None
+
+
+def test_diff_segment():
+    assert SEGMENT_REGISTRY["diff"].render(make_ctx()) is None
+    assert SEGMENT_REGISTRY["diff"].render(make_ctx(diff_added=0, diff_removed=0)) is None
+    frags = SEGMENT_REGISTRY["diff"].render(make_ctx(diff_added=54, diff_removed=13))
+    assert _text(frags) == "+54/-13"
+    styles = [s for s, _ in frags]
+    assert any("78dc8c" in s for s in styles)  # additions mint
+    assert any("ff6e6e" in s for s in styles)  # deletions red
+
+
+def test_flags_segment():
+    assert SEGMENT_REGISTRY["flags"].render(make_ctx()) is None
+    frags = SEGMENT_REGISTRY["flags"].render(
+        make_ctx(flags=StatusFlags(yolo=True, auto=False, plan=True))
+    )
+    assert _text(frags) == "yolo plan"

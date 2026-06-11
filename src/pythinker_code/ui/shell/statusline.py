@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 
 from pythinker_code.config import StatusLineConfig
 from pythinker_code.ui.shell.components import sanitize_ansi
-from pythinker_code.ui.theme import get_statusline_colors
+from pythinker_code.ui.theme import get_statusline_colors, get_toolbar_colors
 from pythinker_code.utils.logging import logger
 
 _EIGHTHS = ("", "▏", "▎", "▍", "▌", "▋", "▊", "▉")
@@ -242,16 +242,83 @@ def _render_effort(ctx: StatusLineContext) -> list[StyleFragment] | None:
     return [(_style(ctx, getattr(colors, color_attr)), f"{g} {label}")]
 
 
+def format_git_badge(info: GitInfo, *, ascii_only: bool) -> str:
+    """Branch name + optional status badge, e.g. ``main [± ↑3↓1]``.
+
+    Mirrors the legacy prompt.py badge; ASCII mode swaps the glyphs.
+    """
+    dirty_glyph = "*" if ascii_only else "±"
+    up = "+" if ascii_only else "↑"
+    down = "-" if ascii_only else "↓"
+    parts: list[str] = []
+    if info.dirty:
+        parts.append(dirty_glyph)
+    sync = ""
+    if info.ahead:
+        sync += f"{up}{info.ahead}"
+    if info.behind:
+        sync += f"{down}{info.behind}"
+    if sync:
+        parts.append(sync)
+    if not parts:
+        return info.branch
+    return f"{info.branch} [{' '.join(parts)}]"
+
+
+def _render_cwd(ctx: StatusLineContext) -> list[StyleFragment] | None:
+    if not ctx.cwd:
+        return None
+    colors = get_statusline_colors()
+    return [(_style(ctx, colors.dir), ctx.cwd)]
+
+
+def _render_git(ctx: StatusLineContext) -> list[StyleFragment] | None:
+    if ctx.git is None:
+        return None
+    colors = get_statusline_colors()
+    badge = format_git_badge(ctx.git, ascii_only=ctx.ascii_only)
+    return [(_style(ctx, colors.branch), badge)]
+
+
+def _render_diff(ctx: StatusLineContext) -> list[StyleFragment] | None:
+    added, removed = ctx.diff_added, ctx.diff_removed
+    if not added and not removed:
+        return None
+    colors = get_statusline_colors()
+    return [
+        (_style(ctx, colors.add), f"+{added or 0}"),
+        (_style(ctx, colors.dim), "/"),
+        (_style(ctx, colors.delete), f"-{removed or 0}"),
+    ]
+
+
+def _render_flags(ctx: StatusLineContext) -> list[StyleFragment] | None:
+    tc = get_toolbar_colors()
+    chips = [
+        (tc.yolo_label, "yolo", ctx.flags.yolo),
+        (tc.auto_label, "auto", ctx.flags.auto),
+        (tc.plan_label, "plan", ctx.flags.plan),
+    ]
+    frags: list[StyleFragment] = []
+    for style, label, on in chips:
+        if not on:
+            continue
+        if frags:
+            frags.append(("", " "))
+        frags.append((_style(ctx, style), label))
+    return frags or None
+
+
 SEGMENT_REGISTRY: dict[str, SegmentSpec] = {
     "spinner": SegmentSpec("spinner", "line1", _render_spinner, drop_priority=0),
     "model": SegmentSpec("model", "line1", _render_model, drop_priority=1),
     "cost": SegmentSpec("cost", "line1", _render_cost, drop_priority=5),
     "speed": SegmentSpec("speed", "line1", _render_speed, drop_priority=7),
     "effort": SegmentSpec("effort", "line1", _render_effort, drop_priority=4),
-    "cwd": SegmentSpec("cwd", "line1", _not_rendered, drop_priority=1),
-    "git": SegmentSpec("git", "line1", _not_rendered, drop_priority=2),
-    "diff": SegmentSpec("diff", "line1", _not_rendered, drop_priority=6),
-    "flags": SegmentSpec("flags", "line1", _not_rendered, drop_priority=0),
+    "cwd": SegmentSpec("cwd", "line1", _render_cwd, drop_priority=1),
+    "git": SegmentSpec("git", "line1", _render_git, drop_priority=2),
+    "diff": SegmentSpec("diff", "line1", _render_diff, drop_priority=6),
+    "flags": SegmentSpec("flags", "line1", _render_flags, drop_priority=0),
     "context": SegmentSpec("context", "line2_right", _not_rendered, drop_priority=0),
     "tokens": SegmentSpec("tokens", "line2_right", _not_rendered, drop_priority=2),
     "elapsed": SegmentSpec("elapsed", "line2_right", _not_rendered, drop_priority=3),
