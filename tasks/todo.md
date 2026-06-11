@@ -32,27 +32,45 @@ Scouted via 6-explorer workflow + synthesis; primary sources re-read before port
       (1311, incl. pyinstaller datas pin updated for 3 new prompt assets);
       make check-pythinker-code green (ruff, format, pyright 0 errors).
 
-## Next (P1, from synthesis — not yet implemented)
+## Done (session 2, P1 wave)
 
-- [ ] Approval-mode-adaptive validation guidance via auto_mode injection texts
-      (gpt_5_2_prompt.md:146-150) — avoids system.md snapshot churn.
-- [ ] Goal auto-continuation loop (config-gated `goal.auto_continue`, max 3/turn,
-      budget_limit-style wrap-up on final continuation; hard stops: cancel,
-      MaxStepsReached, turn error, usage limit). Codex goals/continuation.md:43-51.
-- [ ] Persistent compact-prompt override (`config.compact_prompt`, None = current
-      behavior byte-identical).
-- [ ] Progress-tool cadence (User Updates Spec, gpt_5_1_prompt.md:36-61) in
-      system.md — needs inline-snapshot review.
+- [x] `UpdateGoal` tool (codex update_goal port, root-only): complete/blocked with
+      summary; GoalState gains complete|blocked; provider + continuations stop on
+      non-active; /goal resume reactivates. tools/goal/ + update_goal.md, registered
+      in agents/default/agent.yaml. → tests/tools/test_update_goal.py (6).
+- [x] Goal auto-continuation loop: `_run_goal_continuations` in pythinkersoul.run
+      (non-slash turns only), config-gated `goal.auto_continue` (default off),
+      `goal.max_continuations` (3, 1-10), wrap-up note (prompts/goal_wrap_up.md)
+      on final continuation, stops on tool_rejected/stuck/non-active goal; hard
+      stops propagate. goal_continuation.md now carries codex's full UpdateGoal
+      completion contract + 3-strike blocked audit.
+      → tests/core/test_goal_auto_continuation.py (8).
+- [x] Approval-mode-adaptive validation guidance in auto_mode injection texts
+      (proactive tests/lint in auto/yolo; suggest+confirm when interactive except
+      test-related). → test_auto_injection.py pins.
+- [x] `compact_prompt` config override → SimpleCompaction(base_prompt=...);
+      None = byte-identical default. → test_simple_compaction.py (2).
+- [x] Progress cadence bullet (User Updates Spec) in system.md.
+- [x] Docs: config-files.md (goal table, compact_prompt), slash-commands.md
+      /goal updated for UpdateGoal + auto_continue. CHANGELOG: 4 new bullets.
+- [x] Snapshot pins refixed deliberately: default agent tool list, agent spec
+      tool lists, default config dump, pyinstaller datas/hiddenimports.
+
+## Next
+
 - [ ] Manual smoke in a scratch repo (goal set → criteria stated → sparse reminders
-      → compaction re-fire → pause stops injections).
+      → compaction re-fire → pause stops injections → UpdateGoal complete stops
+      continuations).
+- [ ] Push branch + PR (needs user-confirmed push; CHANGELOG Unreleased entry done;
+      remember CodeRabbit gate before merge).
 
 ## Out of scope (observed, logged)
 
 - Codex P0-P3 JSON review schema (pythinker has its own ```report contract).
 - Per-goal token budgets ({{ token_budget }} vars) — no per-goal usage meter yet.
-- Blocked-audit 3-strike rule — depends on auto-continuation counting (P1).
-- User prompt-template shadowing (a user `goal.md` template vs builtin) — verify
-  precedence in `_build_slash_commands` when implementing P1 wave.
+- User prompt-template shadowing (a user `goal.md` template vs builtin) — builtin
+  soul commands and prompt templates share the slash namespace; collision behavior
+  unverified, logged for follow-up.
 
 ---
 

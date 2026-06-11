@@ -37,6 +37,8 @@ The configuration file contains the following top-level configuration items:
 | `providers` | `table` | API provider configuration |
 | `models` | `table` | Model configuration |
 | `loop_control` | `table` | Agent loop control parameters |
+| `goal` | `table` | Thread-goal (`/goal`) behavior, including auto-continuation |
+| `compact_prompt` | `string` | Override the built-in compaction summarization prompt; unset keeps the default handoff-structured prompt (a `/compact` focus argument is still appended on top) |
 | `background` | `table` | Background task runtime parameters |
 | `services` | `table` | External service configuration (search, fetch) |
 | `mcp` | `table` | MCP client configuration |
@@ -71,6 +73,10 @@ max_retries_per_step = 3
 max_ralph_iterations = 0
 reserved_context_size = 50000
 compaction_trigger_ratio = 0.85
+
+[goal]
+auto_continue = false
+max_continuations = 3
 
 [background]
 max_running_tasks = 4
@@ -161,6 +167,15 @@ capabilities = ["thinking"]
 | `max_ralph_iterations` | `integer` | `0` | Extra iterations after each user message; `0` disables; `-1` is unlimited |
 | `reserved_context_size` | `integer` | `50000` | Reserved token count for LLM response generation; auto-compaction triggers when `context_tokens + reserved_context_size >= max_context_size` |
 | `compaction_trigger_ratio` | `float` | `0.85` | Context usage ratio threshold for auto-compaction (0.5–0.99); auto-compaction triggers when `context_tokens >= max_context_size * compaction_trigger_ratio`, whichever condition is met first with `reserved_context_size` |
+
+### `goal`
+
+`goal` controls thread-goal (`/goal`) behavior.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `auto_continue` | `boolean` | `false` | Automatically continue turns toward the active `/goal` after the primary turn ends, until the goal is marked complete/blocked (via the `UpdateGoal` tool), a continuation is rejected, or the cap is reached |
+| `max_continuations` | `integer` | `3` | Maximum automatic goal continuations per user submission (1–10); the final continuation carries a wrap-up instruction |
 
 ### `background`
 

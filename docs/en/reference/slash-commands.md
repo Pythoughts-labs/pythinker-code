@@ -278,15 +278,17 @@ When plan mode is enabled, the prompt changes to `📋` and a blue `plan` badge 
 
 ### `/goal`
 
-Set a thread goal the agent pursues across turns until it is verifiably complete. The objective persists in the session, is re-injected as a continuation reminder on later turns, and survives context compaction. The agent derives concrete success criteria up front, refuses to shrink scope to an easier task, and only claims completion after an evidence-based completion audit — at which point you confirm with `/goal clear`.
+Set a thread goal the agent pursues across turns until it is verifiably complete. The objective persists in the session, is re-injected as a continuation reminder on later turns, and survives context compaction. The agent derives concrete success criteria up front, refuses to shrink scope to an easier task, and only marks completion through the `UpdateGoal` tool after an evidence-based completion audit (or `blocked` after a strict blocked audit) — you then confirm with `/goal clear` or reactivate with `/goal resume`.
 
 Usage:
 
 - `/goal <objective>`: Set (or replace) the thread goal and start working toward it
 - `/goal` or `/goal view`: Show the current goal and its status
 - `/goal pause`: Keep the goal but stop pursuing it
-- `/goal resume`: Resume a paused goal
+- `/goal resume`: Resume a paused, completed, or blocked goal
 - `/goal clear`: Remove the goal (also how you confirm completion)
+
+With `goal.auto_continue = true` in the [config](../configuration/config-files.md#goal), the agent automatically starts follow-up turns toward the active goal after each of your messages (up to `goal.max_continuations`), stopping as soon as the goal is marked complete or blocked.
 
 ### `/best-practices`
 
