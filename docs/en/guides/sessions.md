@@ -137,7 +137,7 @@ You can also append custom instructions after the command to tell the AI what co
 Compacting preserves key information while reducing token consumption. This is useful when the conversation is long but you still want to retain some context.
 
 ::: tip
-The bottom status bar displays the current context usage with token counts (e.g., `context: 42.0% (4.2k/10.0k)`), helping you understand when you need to clear or compact.
+The bottom status bar displays the current context usage with token counts and a fill bar (e.g., `ctx 36k/200k ████▌░░░░░ 18%`), helping you understand when you need to clear or compact.
 :::
 
 ::: tip

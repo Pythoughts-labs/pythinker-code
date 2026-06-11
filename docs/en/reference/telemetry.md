@@ -79,12 +79,14 @@ Common `site` values (extend with care — these are dashboard query keys):
 | `tool.replace` | `tools/file/replace.py` |
 | `tool.glob` | `tools/file/glob.py` |
 | `tool.grep` | `tools/file/grep_local.py` |
+| `tool.grep.rg_exec` | `tools/file/grep_local.py` (ripgrep subprocess failure) |
 | `tool.shell.exec` | `tools/shell/__init__.py` (foreground command) |
 | `tool.shell.background_start` | `tools/shell/__init__.py` (background spawn) |
 | `tool.agent.foreground` | `tools/agent/__init__.py` |
 | `tool.ask_user` | `tools/ask_user/__init__.py` |
 | `tool.plan.enter` | `tools/plan/enter.py` |
 | `tool.plan.exit` | `tools/plan/__init__.py` |
+| `tool.plan.handoff` | `tools/plan/__init__.py` (`ExitPlanMode` handoff) |
 | `auth.keyring.read` | `auth/oauth.py` (`_load_from_keyring`) |
 | `auth.oauth.device_authorize` | `auth/oauth.py` (device-code request) |
 | `auth.oauth.device_poll` | `auth/oauth.py` (device-code poll loop) |
@@ -94,10 +96,10 @@ Common `site` values (extend with care — these are dashboard query keys):
 | `auth.platforms.refresh.pre_sync` | `auth/platforms.py` (pre-sync refresh) |
 | `auth.platforms.refresh.after_401` | `auth/platforms.py` (refresh-on-401) |
 | `auth.platforms.sync` | `auth/platforms.py` (model sync fallback) |
-| `auth.openai.discover_chatgpt_models` | `auth/openai.py` |
-| `auth.openai.browser_login` | `auth/openai.py` |
-| `auth.openai.device_start` | `auth/openai.py` |
-| `auth.openai.device_poll` | `auth/openai.py` |
+| `auth.openai.discover_chatgpt_models` | `auth/openai/login.py` |
+| `auth.openai.browser_login` | `auth/openai/login.py` |
+| `auth.openai.device_start` | `auth/openai/login.py` |
+| `auth.openai.device_poll` | `auth/openai/login.py` |
 | `soul.btw.execute` | `soul/btw.py` (side question) |
 | `soul.btw.run_wire` | `soul/btw.py` (wire-based side question) |
 | `soul.toolset.register_external` | `soul/toolset.py` (external tool registration) |
@@ -109,8 +111,10 @@ Common `site` values (extend with care — these are dashboard query keys):
 | `soul.injection.on_context_compacted` | `soul/pythinkersoul.py` |
 | `soul.injection.on_auto_changed` | `soul/pythinkersoul.py` |
 | `soul.context.compact` | `soul/pythinkersoul.py` (compaction inside step) |
+| `soul.context.prune` | `soul/pythinkersoul.py` (context prune failure) |
 | `soul.step.error` | `soul/pythinkersoul.py` (any step exception) |
 | `soul.chat.recover` | `soul/pythinkersoul.py` (provider recovery) |
+| `soul.deliberation.advisor` | `soul/deliberation.py` (advisor deliberation failure) |
 | `acp.session.prompt` | `acp/session.py` |
 | `acp.session.approval` | `acp/session.py` |
 | `acp.host.terminal` | `acp/host.py` |
@@ -209,7 +213,7 @@ Currently emitted (when traces are sampled):
 |---|---|---|
 | `pythinker.turn` | `soul/pythinkersoul.py` | `session.id`, `agent.role`, `model`, `plan_mode`, `turn.stop_reason`, `turn.step_count` |
 | `pythinker.llm` | `soul/pythinkersoul.py` | `gen_ai.system`, `gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.response.id`, `llm.tool_calls` |
-| `pythinker.tool_call` | `soul/toolset.py` | `tool.name`, `tool.success`, `tool.error_type` |
+| `pythinker.tool` | `soul/toolset.py` | `tool.name`, `tool.success`, `tool.error_type` |
 | `pythinker.mcp.call` | `soul/toolset.py` | `mcp.server`, `mcp.tool`, `mcp.timeout_ms`, `mcp.is_error` |
 
 ## What's *not* collected

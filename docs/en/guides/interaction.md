@@ -33,16 +33,15 @@ In plan mode, the AI can only use read-only tools (`Glob`, `Grep`, `ReadFile`) t
 
 ### Entering plan mode
 
-There are four ways to enter plan mode:
+There are three ways to enter plan mode:
 
 - **CLI flag**: Use `pythinker --plan` to start a new session directly in plan mode
-- **Keyboard shortcut**: Press `Shift-Tab` to toggle plan mode
 - **Slash command**: Enter `/plan` or `/plan on`
 - **AI-initiated**: When facing complex tasks, the AI may request to enter plan mode via the `EnterPlanMode` tool — you can accept or decline
 
 You can also set `default_plan_mode = true` in the config file to start every new session in plan mode by default. See [Configuration files](../configuration/config-files.md).
 
-In YOLO mode, AI-initiated entry into plan mode is auto-approved, but exiting plan mode with `ExitPlanMode` still asks you to approve the plan. In auto mode, both entering and exiting plan mode are auto-approved because no user is present.
+In an interactive YOLO session a user is still present, so AI-initiated entry into plan mode (and exiting it with `ExitPlanMode`) still asks for your confirmation — the plan-review checkpoint is preserved. In auto mode, both entering and exiting plan mode are auto-approved because no user is present.
 
 When plan mode is active, the prompt changes to `📋` and a blue `plan` badge appears in the status bar.
 
@@ -85,7 +84,7 @@ Thinking mode requires support from the current model. Some models (like `pythin
 
 While the AI is executing a task, you can send follow-up messages in two ways without waiting for the current turn to finish:
 
-- **Queue (Enter)**: Press `Enter` to queue your message for delivery after the current turn completes. The queued message count is shown in the input area title (e.g. `── input · 2 queued ──`). Press `↑` in an empty input box to recall the last queued message for editing.
+- **Queue (Enter)**: Press `Enter` to queue your message for delivery after the current turn completes. Queued messages are listed above the input (each shown as `❯ <message>`) with the hint `↑ to edit · ctrl-s to send immediately`. Press `↑` in an empty input box to recall the last queued message for editing.
 - **Inject immediately (Ctrl+S)**: Press `Ctrl+S` to inject your message directly into the running turn context — the model sees it right away.
 
 Approval requests and question panels are also handled inline with keyboard navigation during agent execution.
@@ -215,10 +214,10 @@ pythinker --auto
 /auto
 ```
 
-Auto mode also auto-approves all tool calls, and additionally auto-dismisses any `AskUserQuestion` the model tries to send — so the agent makes its own best judgment instead of waiting for an answer that will never come. `--print` implicitly enables auto mode for the same reason.
+Auto mode auto-dismisses any `AskUserQuestion` the model tries to send — so the agent makes its own best judgment instead of waiting for an answer that will never come. Tool calls are auto-approved only when the current trust/safe-mode policy permits; an action that still needs approval is denied with guidance (it fails closed) rather than waiting indefinitely for an absent user, and writes outside the workspace are never auto-approved. `--print` mode applies the same invocation-only auto behavior for non-interactive runs.
 
 When auto mode is active, an orange `auto` badge appears in the status bar, independent of the YOLO badge. Enter `/auto` again to disable it.
 
 ::: warning Note
-Auto mode skips all approval confirmations and removes the safety net of clarifying questions. Only use when you genuinely cannot be at the terminal and trust the current scope.
+Auto mode removes the safety net of clarifying questions and runs unattended. Only use when you genuinely cannot be at the terminal and trust the current scope. Combine with `--yolo` to also skip the remaining approval prompts.
 :::

@@ -1,20 +1,9 @@
 ---
-layout: home
-hero:
-  name: Pythinker Code
-  text: ' '
-  actions:
-    - theme: brand
-      text: English
-      link: /en/
+layout: page
+title: Pythinker Code Docs
+aside: false
 ---
 
-<script setup>
-import { onMounted } from 'vue'
-import { useRouter } from 'vitepress'
-
-onMounted(() => {
-  const router = useRouter()
-  router.go('/en/')
-})
-</script>
+<div style="text-align: center; padding: 6rem 1rem;">
+  Redirecting to the <a href="./en/">documentation</a>…
+</div>

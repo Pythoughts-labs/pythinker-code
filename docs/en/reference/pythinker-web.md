@@ -20,7 +20,7 @@ If the default port is occupied, the server will automatically try the next avai
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--host TEXT` | `-h` | Bind to specific IP address |
+| `--host TEXT` | `-H` | Bind to specific IP address |
 | `--network` | `-n` | Enable network access (bind to `0.0.0.0`) |
 | `--port INTEGER` | `-p` | Specify port number (default: `5494`) |
 

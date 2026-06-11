@@ -24,7 +24,7 @@ You can also type `/reports` in the interactive shell to switch directly from th
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--host TEXT` | `-h` | Bind to a specific IP address |
+| `--host TEXT` | `-H` | Bind to a specific IP address |
 | `--network` | `-n` | Enable network access (bind to `0.0.0.0`), auto-detects and displays LAN IP |
 | `--port INTEGER` | `-p` | Port number to bind to (default: `5495`) |
 | `--open / --no-open` | | Automatically open browser (default: `--open`) |

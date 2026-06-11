@@ -119,8 +119,17 @@ Skills paths are independent of [`PYTHINKER_SHARE_DIR`](../configuration/env-var
 
 Pythinker Code includes the following built-in skills:
 
-- **pythinker-code-help**: Pythinker Code help. Answers questions about Pythinker Code installation, configuration, slash commands, keyboard shortcuts, MCP integration, providers, environment variables, and more.
-- **skill-creator**: Guide for creating skills. When you need to create a new skill (or update an existing skill) to extend Pythinker's capabilities, you can use this skill to get detailed creation guidance and best practices.
+- **pythinker-code-help**: Answers questions about Pythinker Code installation, configuration, slash commands, keyboard shortcuts, MCP integration, providers, environment variables, and how things work internally.
+- **agent-creator**: Author a new project-specific subagent with a correct spec, persona-rich system prompt, and structured output contract.
+- **skill-creator**: Guidance and best practices for creating or updating a skill to extend Pythinker's capabilities.
+- **customize-pythinker**: Edit Pythinker's own configuration — agent YAML specs and extend-inheritance, permission profiles, `plugin.json`, and hook lifecycle events.
+- **write-product-spec** / **write-tech-spec**: Draft a product spec or technical implementation spec with goals, requirements, and acceptance criteria.
+- **implement-specs** / **spec-driven-implementation**: Implement checked-in specs using a scout-plan-implement-verify workflow, validating code against requirements.
+- **check-impl-against-spec**: Compare an implementation against a spec and report gaps with evidence.
+- **fix-errors** / **diagnose-ci-failures**: Fix concrete errors or failing CI/lint/typecheck/build/test logs with root-cause-first discipline.
+- **reproduce-bug-report**: Reproduce a bug report with evidence-first investigation and a clear repro/non-repro verdict.
+- **resolve-merge-conflicts**: Resolve git merge/rebase conflicts while preserving both sides' intent and validating the result.
+- **create-pr** / **pr-walkthrough** / **review-pr**: Prepare a pull request, produce a reviewer-friendly walkthrough, or review a PR/diff with severity-scored findings.
 
 ## Creating a skill
 
@@ -169,6 +178,7 @@ In this project, please follow these conventions:
 |-------|-------------|----------|
 | `name` | Skill name, 1-64 characters, only lowercase letters, numbers, and hyphens allowed; defaults to directory name if omitted | No |
 | `description` | Skill description, 1-1024 characters, explaining the skill's purpose and use cases; shows "No description provided." if omitted | No |
+| `type` | Skill type: `standard` (default) or `flow`. See [Flow skills](#flow-skills) | No |
 | `license` | License name or file reference | No |
 | `compatibility` | Environment requirements, up to 500 characters | No |
 | `metadata` | Additional key-value attributes | No |

@@ -17,8 +17,12 @@ After configuration, Pythinker Code will automatically save settings to `~/.pyth
 | Platform | Description |
 | --- | --- |
 | Pythinker | Pythinker platform, supports search and fetch services |
+| OpenAI API | Official OpenAI API |
+| OpenAI ChatGPT Codex | OpenAI managed account login |
 | Pythinker AI Open Platform (pythinker-ai.cn) | China region API endpoint |
 | Pythinker AI Open Platform (pythinker-ai.ai) | Global region API endpoint |
+| LM Studio | Local models served via LM Studio |
+| Ollama | Local models served via Ollama |
 
 For other platforms, please manually edit the configuration file.
 
@@ -31,6 +35,7 @@ The `type` field in `providers` configuration specifies the API provider type. D
 | `pythinker` | Pythinker API |
 | `openai_legacy` | OpenAI Chat Completions API |
 | `openai_responses` | OpenAI Responses API |
+| `openai_codex` | OpenAI Responses API with managed account login (configured via `/login`, not by hand) |
 | `anthropic` | Anthropic Claude API |
 | `gemini` | Google Gemini API |
 | `vertexai` | Google Vertex AI |

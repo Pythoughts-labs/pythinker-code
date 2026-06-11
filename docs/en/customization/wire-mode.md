@@ -233,6 +233,7 @@ interface PromptResult {
 | `-32001` | LLM not configured |
 | `-32002` | Specified LLM not supported |
 | `-32003` | LLM service error |
+| `-32004` | Authentication expired (OAuth session received a 401); user should re-login |
 
 ### `replay`
 
@@ -489,9 +490,15 @@ type Event =
   | TurnEnd
   | StepBegin
   | StepInterrupted
+  | StepRetry
+  | ToolExecutionStarted
+  | ToolOutputPart
   | CompactionBegin
   | CompactionEnd
+  | MCPLoadingBegin
+  | MCPLoadingEnd
   | StatusUpdate
+  | Notification
   | ContentPart
   | ToolCall
   | ToolCallPart
@@ -499,6 +506,7 @@ type Event =
   | ApprovalResponse
   | QuestionAnswered
   | ProgressNote
+  | Suggestion
   | SubagentEvent
   | BtwBegin
   | BtwEnd
@@ -575,8 +583,14 @@ interface StatusUpdate {
   token_usage?: TokenUsage | null
   /** Message ID for current step, may be absent in JSON */
   message_id?: string | null
+  /** Model ID that produced this step (e.g. "claude-sonnet-4-5"), may be absent in JSON */
+  model_name?: string | null
+  /** Provider config key for this step (e.g. "managed:openai-chatgpt"), may be absent in JSON */
+  provider_key?: string | null
   /** Whether plan mode (read-only) is active, null means no change, may be absent in JSON */
   plan_mode?: boolean | null
+  /** Current MCP startup snapshot, null means no change, may be absent in JSON */
+  mcp_status?: MCPStatusSnapshot | null
 }
 
 interface TokenUsage {
@@ -727,7 +741,7 @@ interface ApprovalResponse {
 ### `QuestionAnswered`
 
 ::: info Added
-Added in Wire 1.10.
+Added in Wire 1.9.
 :::
 
 Transcript event emitted after a `QuestionRequest` is resolved, so clients can show the user's choice in the conversation flow.
@@ -748,7 +762,7 @@ interface QuestionAnswered {
 ### `ProgressNote`
 
 ::: info Added
-Added in Wire 1.10.
+Added in Wire 1.9.
 :::
 
 Compact checkpoint/progress note for transcript UIs.
@@ -1006,6 +1020,12 @@ interface QuestionItem {
   options: QuestionOption[]
   /** Whether multiple options can be selected */
   multi_select?: boolean
+  /** Optional markdown body displayed above the options, may be absent in JSON */
+  body?: string
+  /** Custom label for the synthetic "Other" free-text option; empty uses default */
+  other_label?: string
+  /** Custom description for the synthetic "Other" option; empty uses default */
+  other_description?: string
 }
 
 interface QuestionOption {

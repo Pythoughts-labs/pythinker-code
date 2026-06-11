@@ -140,8 +140,8 @@ export OPENAI_ADMIN_KEY="sk-admin-xxx"
 | --- | --- |
 | `PYTHINKER_SHARE_DIR` | Customize the share directory path (default: `~/.pythinker`) |
 | `PYTHINKER_CLI_NO_AUTO_UPDATE` | Disable proactive update checks and startup update notices |
-| `PYTHINKER_CLI_PASTE_CHAR_THRESHOLD` | Character threshold for folding pasted text (default: `1000`) |
-| `PYTHINKER_CLI_PASTE_LINE_THRESHOLD` | Line threshold for folding pasted text (default: `15`) |
+| `PYTHINKER_CLI_PASTE_CHAR_THRESHOLD` | Character threshold for folding pasted text (default: `200`) |
+| `PYTHINKER_CLI_PASTE_LINE_THRESHOLD` | Line threshold for folding pasted text (default: `5`) |
 
 ### `PYTHINKER_SHARE_DIR`
 
@@ -171,18 +171,18 @@ If you installed Pythinker Code via Nix or other package managers, this environm
 
 ### `PYTHINKER_CLI_PASTE_CHAR_THRESHOLD`
 
-In Agent mode, when pasted text exceeds this character count, it is folded into a placeholder (e.g., `[Pasted text #1 +10 lines]`) and expanded to full content on submit. Default: `1000`.
+In Agent mode, when pasted text exceeds this character count, it is folded into a placeholder (e.g., `[Pasted text #1 +10 lines]`) and expanded to full content on submit. Default: `200`.
 
 ```sh
-export PYTHINKER_CLI_PASTE_CHAR_THRESHOLD="1000"
+export PYTHINKER_CLI_PASTE_CHAR_THRESHOLD="200"
 ```
 
 ### `PYTHINKER_CLI_PASTE_LINE_THRESHOLD`
 
-In Agent mode, when pasted text reaches this line count, it is folded into a placeholder. Default: `15`.
+In Agent mode, when pasted text reaches this line count, it is folded into a placeholder. Default: `5`.
 
 ```sh
-export PYTHINKER_CLI_PASTE_LINE_THRESHOLD="15"
+export PYTHINKER_CLI_PASTE_LINE_THRESHOLD="5"
 ```
 
 ::: tip

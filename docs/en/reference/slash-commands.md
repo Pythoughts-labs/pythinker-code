@@ -3,7 +3,7 @@
 Slash commands are built-in commands for Pythinker Code, used to control sessions, configuration, and debugging. Enter a command starting with `/` in the input box to trigger.
 
 ::: tip Shell mode
-Some slash commands are also available in shell mode, including `/help`, `/exit`, `/version`, `/editor`, `/theme`, `/changelog`, `/feedback`, `/export`, `/import`, and `/task`.
+Many slash commands are also available in shell mode, including `/help`, `/exit`, `/version`, `/agents`, `/editor`, `/theme`, `/changelog`, `/feedback`, `/report-error`, `/export`, `/import`, `/task`, `/settings`, `/statusline`, `/restore`, `/trust`, `/worklog`, `/context`, `/tools`, `/accessibility`, `/keys`, `/tui`, `/thinking`, and `/hooks`.
 :::
 
 ## Help and info
@@ -27,6 +27,16 @@ Alias: `/release-notes`
 ### `/feedback`
 
 Submit feedback to help improve Pythinker Code. You will be prompted to enter your feedback and submit it. If the network request fails or times out, the command automatically falls back to opening the GitHub Issues page.
+
+### `/report-error`
+
+Submit a report about an error you hit, with a snapshot of recent failures. The runtime keeps a process-local ring buffer of the last 10 handled errors; this command prints them, lets you add a free-form comment, and submits both to the feedback endpoint. If submission fails, it falls back to opening the GitHub Issues page. See [Telemetry & error reporting](./telemetry.md#report-error-slash-command) for details.
+
+Aliases: `/report`
+
+### `/agents`
+
+List the available subagent types, showing each agent's name, when to use it, its default model, and its tool posture.
 
 ## Account and configuration
 
@@ -77,19 +87,94 @@ Usage:
 
 After switching, the configuration is saved to `config.toml` and the shell reloads automatically. The light theme adjusts colors for diff highlights, the task browser, the prompt completion menu, the bottom toolbar, and MCP status indicators to work well on light terminal backgrounds. You can also set `theme = "light"` directly in your config file — see [Config files](../configuration/config-files.md).
 
+Alias: `/color`
+
 ### `/statusline`
 
-Customize the status line (the footer under the prompt): choose which segments are shown and optionally add an external status command.
+Customize the status line (the footer under the prompt): choose which segments are shown, adjust the footer's visual style, and optionally add an external status command.
 
 Usage:
 
-- `/statusline`: Show the current status line configuration
-- `/statusline on` / `/statusline off`: Enable or disable customization (off renders the stock footer)
-- `/statusline segments <id,...>`: Choose the segments to show, e.g. `/statusline segments cwd,git,model`
-- `/statusline command <argv...>`: Set an external command whose first stdout line is shown in the footer (refreshed periodically; run without a shell; killed after `command_timeout_ms`)
+- `/statusline`: Open the interactive status line settings menu (falls back to the static configuration table while a turn is streaming)
+- `/statusline show` (aliases `list`, `view`): Show the current status line configuration table
+- `/statusline on` / `/statusline off`: Enable or disable the customizable status line (off renders the stock footer)
+- `/statusline segments <id,...>`: Choose the segments to show, e.g. `/statusline segments cwd,git,model`. Run `/statusline segments` with no ids to list every segment id, its zone, and its current state
+- `/statusline style fancy` / `/statusline style plain`: Set the footer visual style — `fancy` renders colors, separators, and the context bar; `plain` keeps a monochrome text-only footer
+- `/statusline bar-width <4-20>`: Set the width (in cells) of the context progress bar
+- `/statusline budget <usd>` / `/statusline budget none`: Set or clear an optional session cost budget in USD; when set, the cost segment renders `$spent/$budget`
+- `/statusline command <argv...>`: Set an external command whose first stdout line is shown in the footer (refreshed periodically; run without a shell; killed after `command_timeout_ms`). Setting a command also adds the `command` segment if not already shown
 - `/statusline command none`: Clear the external command
 
-Available segment ids: `cwd`, `git`, `flags`, `context`, `tokens`, `model`, `command`. Settings persist under `[tui.statusline]` in `config.toml`; `PYTHINKER_STATUSLINE=0` disables customization for a session. Customization applies to the default `card` footer style.
+Available segment ids: `spinner`, `model`, `cost`, `speed`, `effort`, `cwd`, `git`, `diff`, `flags`, `context`, `tokens`, `elapsed`, `limits`, `clock`, `command`. Settings persist under `[tui.statusline]` in `config.toml`; `PYTHINKER_STATUSLINE=0` disables the status line for a session. The footer style defaults to `fancy`.
+
+### `/settings`
+
+Open the interactive settings panel. Without arguments it opens the panel; the read-only and quick-toggle forms are also available.
+
+Usage:
+
+- `/settings`: Open the interactive settings panel
+- `/settings show` (aliases `list`, `view`): Print a read-only settings table (theme, TUI style, default model, telemetry, default thinking, turn recaps, default YOLO/plan mode, config file path)
+- `/settings recaps on` / `/settings recaps off`: Toggle per-turn recaps
+
+Alias: `/config`
+
+### `/tui`
+
+Show or set the TUI rendering style.
+
+Usage:
+
+- `/tui`: Show the current TUI style
+- `/tui card`: Use the `card` style (highlighted user messages and bordered tool cards)
+- `/tui pythinker`: Use the legacy worklog-based rendering
+
+The setting is persisted to `config.toml` (under `[tui]`) and the shell reloads. You can also override at runtime with `PYTHINKER_TUI_STYLE=pythinker`.
+
+### `/thinking`
+
+Switch the thinking effort level via an interactive picker.
+
+### `/keys`
+
+List the keyboard shortcuts from the active semantic keymap. See [Keyboard shortcuts](./keyboard.md) for the full reference.
+
+Alias: `/keybindings`
+
+### `/accessibility`
+
+Show or update accessibility and plain-output preferences. Settings persist with the session state.
+
+Usage:
+
+- `/accessibility`: Show the current preferences
+- `/accessibility plain` / `/accessibility rich`: Toggle plain (text-only) output (`on` / `off` are accepted aliases)
+- `/accessibility no-animation` / `/accessibility animation`: Disable or enable animations
+- `/accessibility ascii` / `/accessibility unicode`: Choose ASCII or Unicode symbols
+
+Alias: `/a11y`
+
+### `/trust`
+
+Show or update the workspace trust safe mode for the current session.
+
+Usage:
+
+- `/trust`: Show the current trust and safe-mode state
+- `/trust on`: Trust the workspace and disable safe mode (aliases `yes`, `trust`)
+- `/trust off`: Untrust the workspace, enable safe mode, and disable auto-approval (aliases `no`, `untrust`, `safe`)
+
+### `/stats`
+
+Show the usage statistics dashboard (tokens and cost by provider/model), read from `~/.pythinker/sessions/`.
+
+Alias: `/history`
+
+### `/update`
+
+Check for and optionally install the latest Pythinker Code version.
+
+Alias: `/upgrade`
 
 ### `/reload`
 
@@ -106,13 +191,16 @@ Debug information is displayed in a pager, press `q` to exit.
 
 ### `/usage`
 
-Display API usage and quota information, showing quota usage with progress bars and remaining percentages.
+Display API usage and quota information for the current model's provider, showing usage with progress bars and remaining percentages.
 
-Alias: `/status`
+Usage:
 
-::: tip
-This command only works with the Pythinker platform.
-:::
+- `/usage`: Show usage for the active model's provider (falls back to all providers when no model is active)
+- `/usage all`: Show usage for every configured provider
+- `/usage <provider-key>`: Show usage for a specific provider
+- `/usage --json`: Output the report as JSON
+
+Aliases: `/status`, `/cost`
 
 ### `/mcp`
 
@@ -130,6 +218,14 @@ Output includes:
 - Event types and counts of configured hooks
 - Help message (if no hooks are configured)
 
+### `/context`
+
+Show the current context, checkpoint, and compaction status: context tokens, context window size, usage percentage, number of checkpoints, plan-mode state, and the context file path.
+
+### `/tools`
+
+List the tools available to the agent along with the active permission posture (the permission profile name, whether file and shell mutations are allowed, and each tool's description). Append `audit` (`/tools audit`) for a note on how external MCP/wire/plugin tools are gated in read-only, plan, review, and verify profiles.
+
 ## Session management
 
 ### `/new`
@@ -140,7 +236,7 @@ Create a new session and switch to it immediately, without exiting Pythinker Cod
 
 List all sessions in the current working directory, allowing switching to other sessions.
 
-Alias: `/resume`
+Aliases: `/resume`, `/session`
 
 Use arrow keys to select a session, press `Enter` to confirm switch, press `Ctrl-C` to cancel. Press `Ctrl-A` to toggle between showing sessions for the current directory only or across all directories.
 
@@ -205,6 +301,45 @@ Alias: `/reset`
 Manually compact the context to reduce token usage. You can append custom instructions after the command to tell the AI which information to prioritize preserving during compaction, e.g., `/compact preserve database-related discussions`.
 
 When the context is too long, Pythinker Code will automatically trigger compaction. This command allows manually triggering the compaction process.
+
+### `/restore`
+
+List or restore file mutation checkpoints recorded during the session. Each checkpoint captures a file before a tool modified or created it.
+
+Usage:
+
+- `/restore`: List recent restore points (ID, tool, path, and whether the file was modified or created)
+- `/restore <id>`: Restore the file captured by the given restore point
+- `/restore latest`: Restore the most recent restore point
+
+Alias: `/rewind-files`
+
+### `/worklog`
+
+Show a compact session activity timeline: a count of wire signal types seen this session, the most recent signals, and recent file restore points.
+
+### `/recap`
+
+Recap recent Pythinker sessions.
+
+Usage:
+
+- `/recap`: Recap recent sessions
+- `/recap <period>`: Recap a specific period — `today`, `yesterday`, `week`, or a `YYYY-MM-DD` date
+
+### `/memory`
+
+Show the project memory, or manage the approval-gated memory inbox.
+
+Usage:
+
+- `/memory`: Print the current project memory snapshot
+- `/memory inbox`: List staged memory inbox candidates (requires `memory.consolidation = true` in your config)
+- `/memory inbox scan`: Generate inbox candidates from the session
+- `/memory inbox approve <id>`: Approve a staged candidate
+- `/memory inbox reject <id>`: Reject a staged candidate
+
+Alias: `/mem`
 
 ## Skills
 
@@ -328,6 +463,8 @@ Usage:
 ### `/task`
 
 Open the interactive task browser to view, monitor, and manage background tasks.
+
+Alias: `/tasks`
 
 The task browser is a three-column TUI:
 
