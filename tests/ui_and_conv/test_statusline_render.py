@@ -38,3 +38,62 @@ def test_smooth_bar_eighth_blocks():
 def test_smooth_bar_ascii_fallback():
     assert smooth_bar(50, width=8, ascii_only=True) == "####----"
     assert smooth_bar(0, width=8, ascii_only=True) == "--------"
+
+
+from pythinker_code.config import StatusLineConfig
+from pythinker_code.ui.shell.statusline import (
+    SEGMENT_REGISTRY,
+    GitInfo,
+    StatusFlags,
+    StatusLineContext,
+    split_zones,
+)
+
+
+def make_ctx(**overrides):
+    """A minimal idle context; tests override what they exercise."""
+    defaults = dict(
+        columns=120,
+        working=False,
+        frame=0,
+        model_name="claude-fable-5",
+        provider_label=None,
+        effort=None,
+        rate_in=None,
+        rate_out=None,
+        session_cost_usd=0.0,
+        cost_budget_usd=None,
+        context_tokens=36_000,
+        max_context_tokens=200_000,
+        elapsed_s=72.0,
+        clock="14:32",
+        cwd="pythinker-code-main",
+        git=None,
+        diff_added=None,
+        diff_removed=None,
+        flags=StatusFlags(yolo=False, auto=False, plan=False),
+        limits=None,
+        ascii_only=False,
+        style="fancy",
+        bar_width=10,
+    )
+    defaults.update(overrides)
+    return StatusLineContext(**defaults)
+
+
+def test_registry_covers_all_config_ids():
+    from pythinker_code.config import STATUSLINE_SEGMENT_IDS
+
+    assert set(SEGMENT_REGISTRY) == set(STATUSLINE_SEGMENT_IDS)
+
+
+def test_split_zones_preserves_user_order():
+    cfg = StatusLineConfig(segments=["clock", "model", "spinner", "context"])
+    zones = split_zones(cfg.segments)
+    assert zones.line1 == ["model", "spinner"]
+    assert zones.line2_right == ["clock", "context"]
+
+
+def test_split_zones_ignores_unknown_ids():
+    zones = split_zones(["model", "hologram"])
+    assert zones.line1 == ["model"]

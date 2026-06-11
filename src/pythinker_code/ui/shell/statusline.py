@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import shlex
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 from pythinker_code.config import StatusLineConfig
@@ -92,6 +93,111 @@ def resolve_segments(cfg: StatusLineConfig) -> StatusLineLayout:
         line2_right=[s for s in segments if s in _LINE2_RIGHT_SEGMENTS],
         show_command=show_command,
     )
+
+
+StyleFragment = tuple[str, str]  # (prompt_toolkit style string, text)
+
+
+@dataclass(frozen=True, slots=True)
+class GitInfo:
+    branch: str
+    dirty: bool
+    ahead: int
+    behind: int
+
+
+@dataclass(frozen=True, slots=True)
+class StatusFlags:
+    yolo: bool
+    auto: bool
+    plan: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderLimits:
+    """Pre-digested rate-limit view for the footer (built in prompt.py)."""
+
+    requests_pct: int | None
+    requests_reset_s: float | None
+    tokens_pct: int | None
+    tokens_reset_s: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class StatusLineContext:
+    columns: int
+    working: bool
+    frame: int
+    model_name: str | None
+    provider_label: str | None
+    effort: str | None
+    rate_in: int | None
+    rate_out: int | None
+    session_cost_usd: float
+    cost_budget_usd: float | None
+    context_tokens: int
+    max_context_tokens: int
+    elapsed_s: float
+    clock: str
+    cwd: str | None
+    git: GitInfo | None
+    diff_added: int | None
+    diff_removed: int | None
+    flags: StatusFlags
+    limits: ProviderLimits | None
+    ascii_only: bool
+    style: str  # "fancy" | "plain"
+    bar_width: int
+
+
+@dataclass(frozen=True, slots=True)
+class SegmentSpec:
+    id: str
+    zone: str  # "line1" | "line2_right" | "line2_left"
+    render: Callable[[StatusLineContext], list[StyleFragment] | None]
+    drop_priority: int  # higher = dropped sooner under width pressure
+
+
+@dataclass(frozen=True, slots=True)
+class ZoneSplit:
+    line1: list[str]
+    line2_right: list[str]
+    line2_left: list[str]
+
+
+def _not_rendered(ctx: StatusLineContext) -> list[StyleFragment] | None:
+    """Placeholder renderer; replaced by real renderers in later tasks."""
+    return None
+
+
+SEGMENT_REGISTRY: dict[str, SegmentSpec] = {
+    "spinner": SegmentSpec("spinner", "line1", _not_rendered, drop_priority=0),
+    "model": SegmentSpec("model", "line1", _not_rendered, drop_priority=1),
+    "cost": SegmentSpec("cost", "line1", _not_rendered, drop_priority=5),
+    "speed": SegmentSpec("speed", "line1", _not_rendered, drop_priority=7),
+    "effort": SegmentSpec("effort", "line1", _not_rendered, drop_priority=4),
+    "cwd": SegmentSpec("cwd", "line1", _not_rendered, drop_priority=1),
+    "git": SegmentSpec("git", "line1", _not_rendered, drop_priority=2),
+    "diff": SegmentSpec("diff", "line1", _not_rendered, drop_priority=6),
+    "flags": SegmentSpec("flags", "line1", _not_rendered, drop_priority=0),
+    "context": SegmentSpec("context", "line2_right", _not_rendered, drop_priority=0),
+    "tokens": SegmentSpec("tokens", "line2_right", _not_rendered, drop_priority=2),
+    "elapsed": SegmentSpec("elapsed", "line2_right", _not_rendered, drop_priority=3),
+    "limits": SegmentSpec("limits", "line2_right", _not_rendered, drop_priority=1),
+    "clock": SegmentSpec("clock", "line2_right", _not_rendered, drop_priority=0),
+    "command": SegmentSpec("command", "line2_left", _not_rendered, drop_priority=0),
+}
+
+
+def split_zones(segments: Sequence[str]) -> ZoneSplit:
+    """Partition the user's ordered segment list by registry zone."""
+    z = ZoneSplit(line1=[], line2_right=[], line2_left=[])
+    for seg in segments:
+        spec = SEGMENT_REGISTRY.get(seg)
+        if spec is None:
+            continue  # unknown ids stay ignored for forward compat
+        getattr(z, spec.zone).append(seg)
+    return z
 
 
 class StatusLineCommandRunner:
