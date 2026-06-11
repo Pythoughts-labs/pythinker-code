@@ -636,22 +636,24 @@ class StatusLineCommandRunner:
             )
             capped = len(stdout) >= _MAX_COMMAND_OUTPUT_BYTES
             if capped:
-                with contextlib.suppress(ProcessLookupError):
-                    proc.kill()
-            with contextlib.suppress(ProcessLookupError):
-                await asyncio.wait_for(proc.wait(), self._timeout_s)
+                await self._kill_and_reap(proc)
+            else:
+                try:
+                    await asyncio.wait_for(proc.wait(), self._timeout_s)
+                except TimeoutError:
+                    # Output below the cap but the command keeps running (a
+                    # streamer between buffer flushes): keep the captured
+                    # first line instead of failing closed.
+                    capped = True
+                    await self._kill_and_reap(proc)
         except TimeoutError:
-            with contextlib.suppress(ProcessLookupError):
-                proc.kill()
-                await proc.wait()
+            await self._kill_and_reap(proc)
             self._warn_once("status command timed out")
             return ""
         except asyncio.CancelledError:
             # Session shutdown cancels the refresh task mid-read();
             # without this the user's command keeps running as an orphan.
-            with contextlib.suppress(ProcessLookupError):
-                proc.kill()
-                await proc.wait()
+            await self._kill_and_reap(proc)
             raise
         finally:
             self._proc = None
@@ -660,6 +662,26 @@ class StatusLineCommandRunner:
             return ""
         first_line = stdout.decode("utf-8", errors="replace").split("\n", 1)[0].strip()
         return sanitize_ansi(first_line)[:_MAX_COMMAND_LINE_CHARS]
+
+    async def _kill_and_reap(self, proc: asyncio.subprocess.Process) -> None:
+        """Kill the child, then drain stdout so ``proc.wait()`` can finish.
+
+        asyncio resolves ``wait()`` only once the exit status is known AND
+        every pipe has reached EOF. The bounded read can leave the stdout
+        transport flow-control-paused on a full buffer; without draining it
+        the pipe never disconnects and ``wait()`` deadlocks — even after
+        SIGKILL.
+        """
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        if proc.stdout is not None:
+            with contextlib.suppress(Exception):
+                while await asyncio.wait_for(
+                    proc.stdout.read(_MAX_COMMAND_OUTPUT_BYTES), self._timeout_s
+                ):
+                    pass
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(proc.wait(), self._timeout_s)
 
     def _warn_once(self, message: str) -> None:
         """Log each distinct failure once so changing errors stay visible
