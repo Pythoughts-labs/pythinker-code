@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 import shlex
+from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
@@ -23,6 +25,44 @@ from pythinker_code.utils.datetime import format_duration
 from pythinker_code.utils.logging import logger
 
 _EIGHTHS = ("", "▏", "▎", "▍", "▌", "▋", "▊", "▉")
+
+
+class RateSampler:
+    """Sliding-window tokens/sec over a monotonically growing counter."""
+
+    def __init__(self, window_s: float = 1.5, min_samples: int = 3) -> None:
+        self._window_s = window_s
+        self._min_samples = min_samples
+        self._samples: deque[tuple[float, int]] = deque()
+
+    def update(self, now: float, total: int) -> int | None:
+        self._samples.append((now, total))
+        while len(self._samples) > 1 and now - self._samples[0][0] > self._window_s:
+            self._samples.popleft()
+        if len(self._samples) < self._min_samples:
+            return None
+        span = self._samples[-1][0] - self._samples[0][0]
+        delta = self._samples[-1][1] - self._samples[0][1]
+        if span <= 0 or delta <= 0:
+            return None
+        return int(delta / span)
+
+    def reset(self) -> None:
+        self._samples.clear()
+
+
+_SHORTSTAT_RE = re.compile(r"(?:(\d+) insertion)|(?:(\d+) deletion)")
+
+
+def parse_shortstat(out: str) -> tuple[int, int]:
+    """Parse ``git diff --shortstat`` output into (added, removed)."""
+    added = removed = 0
+    for m in _SHORTSTAT_RE.finditer(out):
+        if m.group(1):
+            added = int(m.group(1))
+        if m.group(2):
+            removed = int(m.group(2))
+    return added, removed
 
 
 def usage_level(pct: int) -> str:

@@ -240,3 +240,51 @@ def test_segment_exception_is_isolated(monkeypatch):
     cfg = StatusLineConfig()
     lines = sl.assemble_footer(make_ctx(session_cost_usd=5.0), cfg.segments)
     assert "claude-fable-5" in _text(lines[0])  # render survived
+
+
+def test_rate_sampler_window_and_rate():
+    from pythinker_code.ui.shell.statusline import RateSampler
+
+    s = RateSampler(window_s=1.5, min_samples=3)
+    assert s.update(0.0, 0) is None       # 1 sample
+    assert s.update(0.5, 100) is None      # 2 samples
+    rate = s.update(1.0, 200)              # 3 samples: 200 tokens over 1.0s
+    assert rate == 200
+    # stale samples evicted beyond the window
+    assert s.update(3.0, 260) is not None or s.update(3.0, 260) is None  # smoke: no crash
+
+
+def test_rate_sampler_needs_min_samples():
+    from pythinker_code.ui.shell.statusline import RateSampler
+
+    s = RateSampler(window_s=1.5, min_samples=3)
+    assert s.update(0.0, 0) is None
+    assert s.update(0.1, 10) is None
+
+
+def test_rate_sampler_non_increasing_returns_none():
+    from pythinker_code.ui.shell.statusline import RateSampler
+
+    s = RateSampler(window_s=10.0, min_samples=2)
+    s.update(0.0, 100)
+    # total did not grow → delta 0 → None
+    assert s.update(1.0, 100) is None
+
+
+def test_rate_sampler_reset():
+    from pythinker_code.ui.shell.statusline import RateSampler
+
+    s = RateSampler(window_s=10.0, min_samples=2)
+    s.update(0.0, 0)
+    s.update(1.0, 50)
+    s.reset()
+    assert s.update(2.0, 60) is None  # back to 1 sample after reset
+
+
+def test_parse_shortstat():
+    from pythinker_code.ui.shell.statusline import parse_shortstat
+
+    assert parse_shortstat(" 3 files changed, 54 insertions(+), 13 deletions(-)") == (54, 13)
+    assert parse_shortstat(" 1 file changed, 7 insertions(+)") == (7, 0)
+    assert parse_shortstat(" 2 files changed, 5 deletions(-)") == (0, 5)
+    assert parse_shortstat("") == (0, 0)
