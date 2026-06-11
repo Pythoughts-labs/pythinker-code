@@ -2,6 +2,33 @@
 
 ## Active
 
+### Default best-practices adoption — branch `feat/agentic-orchestration`
+
+Make the engineering best-practices profile a default, not just `/bp` opt-in:
+upgrade `prompts/best_practices.md` to the enhanced 15-section profile and bake
+a condensed always-on summary into `agents/default/system.md` (inherited by all
+roles incl. coder). All framing generic (no external product names).
+
+- [x] Rewrite `prompts/best_practices.md` to the enhanced profile (keep `/bp`
+      section parsing + pythinker tool names) — acceptance: section filter and
+      heading listing still work (15 sections; verified via
+      `_best_practices_section`/`_best_practices_headings`).
+- [x] Add condensed `## Default Best Practices` section to
+      `agents/default/system.md` (no `${...}`/template syntax) — acceptance:
+      delta-focused, no duplication of Non-Negotiables/Discipline/DoD.
+- [x] Update pins: `tests/core/test_best_practices_slash.py` headings+wording;
+      add pins in `tests/core/test_default_agent.py` for the new section.
+- [x] Docs (`slash-commands.md` `/best-practices`) + CHANGELOG entry.
+- [x] Verify: targeted pytest (46 passed), e2e wire snapshot + parity (5
+      passed), `make check-pythinker-code` (ruff/format/pyright clean), typos
+      clean.
+
+Review: condensed profile placed after `## Engineering Discipline` so every
+role (root + coder/implementer/etc. via shared system.md) inherits it; the
+condensed bullets cover only the delta vs. existing prompt sections. The
+inline-comments rule stays out of the condensed set (system.md's code-quality
+defaults already govern commenting and would conflict).
+
 ### Agentic UX enhancements — branch `feat/agentic-orchestration`
 
 Scope confirmed: customizable status bar + two safe, net-new subagent extras.
@@ -51,6 +78,29 @@ footer). Next session: open PR; CodeRabbit gate before merge.
 
 ## Recently completed
 
+### 2026-06-11 — Clean-code-guard scan of feat/agentic-orchestration (full branch)
+
+Scope: `git diff main` against the worktree (committed + uncommitted), ~3000
+lines across 51 files. Fixed three bugs: (1) `_extract_section` stripped a
+leading `-`/`*` from NON-bulleted finding lines, mangling bare `--force`/`*args`
+findings — now only `- `/`* ` bullet markers strip (usage.py); (2) `/statusline`
+verb parsing used `startswith`, so `/statusline commands` persisted external
+command `"s"` and reloaded — now exact-verb `partition` match (ui/shell/slash.py);
+(3) capped-output `proc.kill()` in `StatusLineCommandRunner._run_command` was
+the only kill not wrapped in `suppress(ProcessLookupError)` — race logged as a
+spurious refresh failure (statusline.py). Plus a docstring drift fix in
+`_intercept_shell_command` (output shows transiently in the live area, not
+above it). Regression tests added for (1) and (2). Verified non-issues:
+`is_terminal_status` swap deliberately includes "recoverable" (correct — won't
+progress unaided); `ToolReturnValue.output` isinstance guard is real
+(`str | list[ContentPart]`); `_rich_escape` is a local `(object) -> str` helper;
+RunAgents gather doesn't swallow CancelledError. Known minor non-bugs:
+`_nonblocking_polls` entries linger for never-re-polled tasks (bounded);
+mid-task shell-command tasks aren't cancelled at view teardown. Verified:
+full unit suite 5059 passed, targeted telemetry/grep/highlight suites green
+after concurrent expected-error-telemetry changes landed, make
+check-pythinker-code green.
+
 ### 2026-06-11 — Deep-scan report triage (statusline runner + findings roll-up)
 
 Confirmed & fixed (statusline.py): refresh-loop exception guard (#1), explicit
@@ -99,3 +149,31 @@ passthrough is correct). Regression tests added for every fix.
 Obsolete — the rename is already fully realized: root `pyproject.toml` is
 `name = "pythinker-code"`, the module is `src/pythinker_code/`, and zero
 `pythinker_cli` references remain in source.
+
+### 2026-06-11 — Bugsink noise: suppress expected user-environment errors
+
+Triaged all 16 open issues on errors.pythinker.com (raw events archived in
+tasks/bugsink_issues.json + tasks/bugsink_raw_events.json). Clusters: API
+401/403/429/400, OAuth flow timeout/state, offline DNS, MCP method-not-found,
+wrong-arch bundled rg, empty API response.
+
+- `telemetry/errors.py`: new `is_expected_error()` (cause-chain walk; expected =
+  401/403/408/429/5xx via duck-typed `status_code`, Timeout/Cancelled/Connection/
+  gaierror, pythinker_core connection/timeout/empty-response errors, OAuthError,
+  aiohttp ClientConnectionError, McpError METHOD_NOT_FOUND).
+  `report_handled_error()` now tags OTel events `expected=` and skips Sentry
+  capture for expected ones; ring buffer unchanged.
+- `telemetry/crash.py`: asyncio handler applies the same gate (covers the
+  unhandled McpError event); sys.excepthook intentionally NOT gated — an
+  expected error escaping to process death is still a missing-handler bug.
+- `tools/file/grep_local.py`: `OSError` at rg exec time ("Exec format error",
+  wrong arch) now reports handled + falls back to `_python_grep` instead of
+  failing the Grep tool.
+- Tests: expected-error matrix in tests/telemetry/test_errors.py, crash-gate in
+  test_crash.py, rg-exec fallback in tests/tools/test_grep.py.
+- Verified: full suite 5018 passed / 5 skipped; ruff + format + pyright clean.
+
+Out of scope (logged): 400 "enable_thinking restricted to True" is a provider
+compat issue in pythinker_core's openai_legacy (external package) — Bugsink
+will keep reporting it (4xx_client stays unexpected), which is desired until
+fixed upstream.
