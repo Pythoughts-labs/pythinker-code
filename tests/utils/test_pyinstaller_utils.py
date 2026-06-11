@@ -105,7 +105,10 @@ def test_pyinstaller_datas():
         ("src/pythinker_code/agents/default/system.md", "pythinker_code/agents/default"),
         ("src/pythinker_code/agents/default/verifier.yaml", "pythinker_code/agents/default"),
         ("src/pythinker_code/agents/okabe/agent.yaml", "pythinker_code/agents/okabe"),
+        ("src/pythinker_code/prompts/best_practices.md", "pythinker_code/prompts"),
         ("src/pythinker_code/prompts/compact.md", "pythinker_code/prompts"),
+        ("src/pythinker_code/prompts/goal_continuation.md", "pythinker_code/prompts"),
+        ("src/pythinker_code/prompts/goal_set.md", "pythinker_code/prompts"),
         ("src/pythinker_code/prompts/init.md", "pythinker_code/prompts"),
         (
             "src/pythinker_code/skills/agent-creator/SKILL.md",

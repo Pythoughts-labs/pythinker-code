@@ -76,6 +76,7 @@ from pythinker_code.soul.dynamic_injection import (
     normalize_history,
 )
 from pythinker_code.soul.dynamic_injections.auto_mode import AutoModeInjectionProvider
+from pythinker_code.soul.dynamic_injections.goal_mode import GoalModeInjectionProvider
 from pythinker_code.soul.dynamic_injections.model_defense import ModelDefenseInjectionProvider
 from pythinker_code.soul.dynamic_injections.plan_mode import PlanModeInjectionProvider
 from pythinker_code.soul.flow_runner import FLOW_COMMAND_PREFIX, FlowRunner
@@ -432,6 +433,8 @@ class PythinkerSoul:
             self._ensure_plan_session_id()
         self._injection_providers: list[DynamicInjectionProvider] = [
             PlanModeInjectionProvider(),
+            # Self-filtering: injects only while session state holds a /goal contract.
+            GoalModeInjectionProvider(),
             # Self-filtering: emits a fragment only when the active model matches a
             # known-quirk family, so it is safe to register unconditionally.
             ModelDefenseInjectionProvider(),

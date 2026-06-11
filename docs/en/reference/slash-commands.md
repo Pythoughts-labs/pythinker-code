@@ -276,6 +276,28 @@ Usage:
 
 When plan mode is enabled, the prompt changes to `📋` and a blue `plan` badge appears in the status bar.
 
+### `/goal`
+
+Set a thread goal the agent pursues across turns until it is verifiably complete. The objective persists in the session, is re-injected as a continuation reminder on later turns, and survives context compaction. The agent derives concrete success criteria up front, refuses to shrink scope to an easier task, and only claims completion after an evidence-based completion audit — at which point you confirm with `/goal clear`.
+
+Usage:
+
+- `/goal <objective>`: Set (or replace) the thread goal and start working toward it
+- `/goal` or `/goal view`: Show the current goal and its status
+- `/goal pause`: Keep the goal but stop pursuing it
+- `/goal resume`: Resume a paused goal
+- `/goal clear`: Remove the goal (also how you confirm completion)
+
+### `/best-practices`
+
+Inject engineering best-practice guidance (code-change discipline, dirty-worktree safety, testing strategy, todo hygiene, progress updates, debugging methodology, final-answer style) into the session context. The guidance applies for the rest of the session without consuming a turn.
+
+Usage:
+
+- `/best-practices`: Inject the full guidance
+- `/best-practices <section>`: Inject a single section, e.g. `/best-practices testing` or `/best-practices debugging`
+- Alias: `/bp`
+
 ### `/task`
 
 Open the interactive task browser to view, monitor, and manage background tasks.
