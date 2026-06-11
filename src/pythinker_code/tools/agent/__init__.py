@@ -17,7 +17,7 @@ from pythinker_code.subagents.runner import (
     ForegroundSubagentRunner,
     busy_resume_message,
 )
-from pythinker_code.subagents.usage import summarize_batch
+from pythinker_code.subagents.usage import aggregate_findings, summarize_batch
 from pythinker_code.tools.utils import ToolResultStatus, load_desc, tool_status_line
 from pythinker_code.utils.logging import logger
 
@@ -552,6 +552,10 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
         self._runtime = runtime
         self._agent_tool = AgentTool(runtime)
 
+    def _child_concurrency_limit(self) -> int:
+        """How many children may execute at once (execution-capacity guard)."""
+        return max(1, self._runtime.config.background.max_running_tasks)
+
     def _background_capacity(self, params: RunAgentsParams) -> _BackgroundCapacity | None:
         if not params.run_in_background:
             return None
@@ -685,8 +689,13 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
             ],
         )
 
-        results: list[tuple[AgentRunConfig, ToolReturnValue]] = []
-        for child in agents_to_launch:
+        # Children run concurrently (background launches are quick; foreground
+        # children genuinely overlap), bounded so a large batch cannot fork-bomb
+        # the session. Results keep the request order, and one failing child
+        # surfaces as its own error entry instead of aborting its siblings.
+        concurrency = asyncio.Semaphore(self._child_concurrency_limit())
+
+        async def run_child(child: AgentRunConfig) -> ToolReturnValue:
             child_params = Params(
                 description=(child.title or child.name).strip(),
                 prompt=self._child_prompt(params.base_prompt, child.prompt),
@@ -696,8 +705,15 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
                 timeout=params.timeout,
                 isolation=params.isolation,
             )
-            result = await self._agent_tool(child_params)
-            results.append((child, result))
+            async with concurrency:
+                try:
+                    return await self._agent_tool(child_params)
+                except Exception as exc:  # noqa: BLE001 — isolate child crash from siblings
+                    logger.exception("RunAgents child {} failed", child.name)
+                    return ToolError(message=f"Failed to run agent: {exc}", brief="Agent failed")
+
+        child_results = await asyncio.gather(*(run_child(child) for child in agents_to_launch))
+        results = list(zip(agents_to_launch, child_results, strict=True))
 
         any_error = any(result.is_error for _, result in results)
         tool_status = (
@@ -722,6 +738,16 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
         # Aggregate child spend so an N-child fan-out reports total tokens/cost in
         # one place (foreground completions only; background children report later).
         lines.extend(summarize_batch([result for _, result in results]))
+        # Roll up RISKS/BLOCKERS from completed child reports so the orchestrator
+        # sees cross-child findings without re-parsing every result body.
+        if not params.run_in_background:
+            lines.extend(
+                aggregate_findings(
+                    (child.name, result.output if isinstance(result.output, str) else "")
+                    for child, result in results
+                    if not result.is_error
+                )
+            )
         if capacity is not None:
             lines.extend(
                 [

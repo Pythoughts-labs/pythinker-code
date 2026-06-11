@@ -114,3 +114,60 @@ def test_fail_with_usage_reports_spend_on_error() -> None:
     assert err.extras is not None
     assert err.extras[EXTRA_INPUT_TOKENS] == 100
     assert err.extras[EXTRA_OUTPUT_TOKENS] == 40
+
+
+# ---------------------------------------------------------------------------
+# aggregate_findings — batch-level RISKS/BLOCKERS roll-up
+# ---------------------------------------------------------------------------
+
+from pythinker_code.subagents.usage import aggregate_findings  # noqa: E402
+
+_CHILD_A = """status: completed
+
+### SUMMARY
+Implemented the parser.
+
+### RISKS
+- Parser assumes UTF-8 input.
+
+### BLOCKERS
+None
+"""
+
+_CHILD_B = """status: completed
+
+### SUMMARY
+Wired the CLI flag.
+
+### RISKS
+- Parser assumes UTF-8 input.
+- Flag collides with legacy alias.
+
+### BLOCKERS
+- Needs the new config key merged first.
+"""
+
+
+def test_aggregate_findings_collects_and_dedupes_risks_and_blockers() -> None:
+    lines = aggregate_findings([("child-a", _CHILD_A), ("child-b", _CHILD_B)])
+    text = "\n".join(lines)
+    assert text.count("Parser assumes UTF-8 input.") == 1
+    assert "Flag collides with legacy alias." in text
+    assert "Needs the new config key merged first." in text
+    assert "child-b" in text  # attribution for the blocker
+
+
+def test_aggregate_findings_tolerates_free_text_children() -> None:
+    lines = aggregate_findings([("child-a", "I just did the thing, no sections here.")])
+    assert lines == []
+
+
+def test_aggregate_findings_ignores_none_placeholders() -> None:
+    lines = aggregate_findings([("child-a", _CHILD_A)])
+    text = "\n".join(lines)
+    assert "blockers" not in text.lower()
+    assert "Parser assumes UTF-8 input." in text
+
+
+def test_aggregate_findings_empty_batch() -> None:
+    assert aggregate_findings([]) == []

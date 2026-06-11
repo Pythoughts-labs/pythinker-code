@@ -2331,3 +2331,154 @@ def test_run_agents_fingerprint_differs_when_child_prompts_differ():
         ],
     )
     assert _run_agents_fingerprint(params_a) != _run_agents_fingerprint(params_c)
+
+
+async def test_run_agents_foreground_children_run_concurrently(runtime):
+    runtime.labor_market.add_builtin_type(
+        AgentTypeDefinition(
+            name="code-reviewer",
+            description="Reviews diffs.",
+            agent_file=runtime.subagent_store.root / "code-reviewer.yaml",
+            tool_policy=ToolPolicy(mode="inherit"),
+        )
+    )
+    active = 0
+    max_active = 0
+
+    class SlowAgentTool:
+        def check_execution_policy(self, subagent_type):
+            return None
+
+        async def __call__(self, params):
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0.05)
+            active -= 1
+            return ToolOk(output=f"status: completed\n\n[summary]\nDone {params.description}.")
+
+    tool = RunAgents(runtime)
+    tool._agent_tool = SlowAgentTool()  # type: ignore[assignment]
+
+    children = [
+        AgentRunConfig(
+            name=f"reviewer-{i}",
+            title=f"Reviewer {i}",
+            subagent_type="code-reviewer",
+            prompt=f"Review part {i}",
+        )
+        for i in range(3)
+    ]
+    with tool_call_context("RunAgents"):
+        result = await tool(
+            tool.params(summary="parallel review", agents=children, run_in_background=False)
+        )
+
+    assert not result.is_error
+    assert max_active > 1, "foreground children should overlap in time"
+    # Result ordering matches the request order regardless of completion order.
+    assert isinstance(result.output, str)
+    order = [
+        line.removeprefix("- name: ").strip()
+        for line in result.output.splitlines()
+        if line.startswith("- name: ")
+    ]
+    assert order == ["reviewer-0", "reviewer-1", "reviewer-2"]
+
+
+async def test_run_agents_foreground_one_failure_does_not_abort_siblings(runtime):
+    runtime.labor_market.add_builtin_type(
+        AgentTypeDefinition(
+            name="code-reviewer",
+            description="Reviews diffs.",
+            agent_file=runtime.subagent_store.root / "code-reviewer.yaml",
+            tool_policy=ToolPolicy(mode="inherit"),
+        )
+    )
+
+    class FlakyAgentTool:
+        def check_execution_policy(self, subagent_type):
+            return None
+
+        async def __call__(self, params):
+            await asyncio.sleep(0.01)
+            if "1" in params.description:
+                raise RuntimeError("child exploded")
+            return ToolOk(output=f"status: completed\n\n[summary]\nDone {params.description}.")
+
+    tool = RunAgents(runtime)
+    tool._agent_tool = FlakyAgentTool()  # type: ignore[assignment]
+
+    children = [
+        AgentRunConfig(
+            name=f"reviewer-{i}",
+            title=f"Reviewer {i}",
+            subagent_type="code-reviewer",
+            prompt=f"Review part {i}",
+        )
+        for i in range(3)
+    ]
+    with tool_call_context("RunAgents"):
+        result = await tool(
+            tool.params(summary="flaky batch", agents=children, run_in_background=False)
+        )
+
+    assert result.is_error  # batch reports failure overall
+    # But both healthy siblings completed and are present in the report
+    # (child entry status lines are indented two spaces).
+    assert isinstance(result.output, str)
+    child_statuses = [
+        line.strip() for line in result.output.splitlines() if line.startswith("  status: ")
+    ]
+    assert child_statuses.count("status: completed") == 2
+    assert child_statuses.count("status: error") == 1
+    assert "child exploded" in result.output
+
+
+async def test_run_agents_foreground_aggregates_child_risks_and_blockers(runtime):
+    runtime.labor_market.add_builtin_type(
+        AgentTypeDefinition(
+            name="code-reviewer",
+            description="Reviews diffs.",
+            agent_file=runtime.subagent_store.root / "code-reviewer.yaml",
+            tool_policy=ToolPolicy(mode="inherit"),
+        )
+    )
+
+    class ReportingAgentTool:
+        def check_execution_policy(self, subagent_type):
+            return None
+
+        async def __call__(self, params):
+            return ToolOk(
+                output=(
+                    "status: completed\n\n"
+                    "### SUMMARY\nDone.\n\n"
+                    "### RISKS\n- Shared cache key may collide.\n\n"
+                    "### BLOCKERS\nNone\n"
+                )
+            )
+
+    tool = RunAgents(runtime)
+    tool._agent_tool = ReportingAgentTool()  # type: ignore[assignment]
+
+    children = [
+        AgentRunConfig(
+            name=f"reviewer-{i}",
+            title=f"Reviewer {i}",
+            subagent_type="code-reviewer",
+            prompt=f"Review part {i}",
+        )
+        for i in range(2)
+    ]
+    with tool_call_context("RunAgents"):
+        result = await tool(
+            tool.params(summary="risk batch", agents=children, run_in_background=False)
+        )
+
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    assert "batch_risks:" in result.output
+    assert result.output.count("Shared cache key may collide.") >= 1
+    assert "reviewer-0, reviewer-1" in result.output
+    assert "batch_blockers:" not in result.output
