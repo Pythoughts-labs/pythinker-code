@@ -137,6 +137,19 @@ class TestGoalSlashCommand:
         assert state_goal is not None and state_goal.status == "active"
         assert any("resum" in s.text.lower() for s in sent)
 
+    async def test_resume_reactivates_completed_goal(
+        self, runtime: Runtime, tmp_path: Path, sent: list[TextPart]
+    ) -> None:
+        from pythinker_code.session_state import GoalState
+
+        soul = _make_soul(runtime, tmp_path)
+        runtime.session.state.goal = GoalState(objective="ship it", status="complete")
+
+        await _run_goal(soul, "resume")
+
+        state_goal = runtime.session.state.goal
+        assert state_goal is not None and state_goal.status == "active"
+
     async def test_pause_without_goal(
         self, runtime: Runtime, tmp_path: Path, sent: list[TextPart]
     ) -> None:

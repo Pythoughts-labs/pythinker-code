@@ -37,10 +37,14 @@ class TodoItemState(BaseModel):
 
 
 class GoalState(BaseModel):
-    """Thread goal set via /goal; reinjected each turn until cleared."""
+    """Thread goal set via /goal; reinjected each turn until cleared.
+
+    ``complete``/``blocked`` are set by the UpdateGoal tool after its audits;
+    both stop reminders and auto-continuations until /goal resume or clear.
+    """
 
     objective: str
-    status: Literal["active", "paused"] = "active"
+    status: Literal["active", "paused", "complete", "blocked"] = "active"
 
 
 class SessionState(BaseModel):

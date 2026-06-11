@@ -1,0 +1,1 @@
+This is the final automatic goal continuation for this user submission. Do not start new substantive work for this goal; wrap up this turn soon: summarize useful progress, identify remaining work or blockers, and leave the user with a clear next step. Do not call UpdateGoal unless the goal is actually complete.

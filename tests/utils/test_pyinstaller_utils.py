@@ -109,6 +109,7 @@ def test_pyinstaller_datas():
         ("src/pythinker_code/prompts/compact.md", "pythinker_code/prompts"),
         ("src/pythinker_code/prompts/goal_continuation.md", "pythinker_code/prompts"),
         ("src/pythinker_code/prompts/goal_set.md", "pythinker_code/prompts"),
+        ("src/pythinker_code/prompts/goal_wrap_up.md", "pythinker_code/prompts"),
         ("src/pythinker_code/prompts/init.md", "pythinker_code/prompts"),
         (
             "src/pythinker_code/skills/agent-creator/SKILL.md",
@@ -210,6 +211,10 @@ def test_pyinstaller_datas():
             "pythinker_code/tools/file",
         ),
         (
+            "src/pythinker_code/tools/goal/update_goal.md",
+            "pythinker_code/tools/goal",
+        ),
+        (
             "src/pythinker_code/tools/mcp_resource/list_description.md",
             "pythinker_code/tools/mcp_resource",
         ),
@@ -301,6 +306,7 @@ def test_pyinstaller_hiddenimports():
             "pythinker_code.tools.file.replace",
             "pythinker_code.tools.file.utils",
             "pythinker_code.tools.file.write",
+            "pythinker_code.tools.goal",
             "pythinker_code.tools.mcp_resource",
             "pythinker_code.tools.memory",
             "pythinker_code.tools.plan",

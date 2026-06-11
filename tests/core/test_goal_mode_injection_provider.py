@@ -62,6 +62,12 @@ class TestGoalModeInjectionProvider:
 
         assert result == []
 
+    async def test_returns_empty_when_complete_or_blocked(self) -> None:
+        provider = GoalModeInjectionProvider()
+        for status in ("complete", "blocked"):
+            soul = _make_soul_mock(status=status)
+            assert await provider.get_injections([], soul) == []
+
     async def test_returns_empty_for_subagent(self) -> None:
         provider = GoalModeInjectionProvider()
         soul = _make_soul_mock(is_subagent=True)

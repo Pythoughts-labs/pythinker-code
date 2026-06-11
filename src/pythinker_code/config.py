@@ -361,6 +361,25 @@ class LLMModel(BaseModel):
     """Human-readable model name (sourced from the provider's models API when available)"""
 
 
+class GoalConfig(BaseModel):
+    """Thread-goal (/goal) behavior."""
+
+    auto_continue: bool = Field(
+        default=False,
+        description=(
+            "Automatically continue turns toward the active /goal after the primary "
+            "turn ends, until the goal is marked complete/blocked, a continuation is "
+            "rejected, or max_continuations is reached."
+        ),
+    )
+    max_continuations: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum automatic goal continuations per user submission.",
+    )
+
+
 class LoopControl(BaseModel):
     """Agent loop control configuration."""
 
@@ -782,6 +801,17 @@ class Config(BaseModel):
         default_factory=dict, description="List of LLM providers"
     )
     loop_control: LoopControl = Field(default_factory=LoopControl, description="Agent loop control")
+    goal: GoalConfig = Field(
+        default_factory=GoalConfig, description="Thread-goal (/goal) configuration"
+    )
+    compact_prompt: str | None = Field(
+        default=None,
+        description=(
+            "Override the built-in compaction summarization prompt. None keeps the "
+            "default handoff-structured prompt; a per-invocation /compact focus is "
+            "still appended on top."
+        ),
+    )
     background: BackgroundConfig = Field(
         default_factory=BackgroundConfig, description="Background task configuration"
     )

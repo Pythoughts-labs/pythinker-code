@@ -41,7 +41,7 @@ class GoalModeInjectionProvider(DynamicInjectionProvider):
         if goal is None or not goal.objective:
             self._inject_count = 0
             return []
-        if soul.is_subagent or goal.status == "paused":
+        if soul.is_subagent or goal.status != "active":
             return []
 
         # Scan history backwards to find the last reminder for this objective.
@@ -114,7 +114,7 @@ def _sparse_reminder(objective: str) -> str:
         "Goal contract still active (see the earlier goal continuation instructions). "
         f"Objective: {_objective_headline(objective)}. "
         "Make concrete progress toward the requested end state; do not shrink scope "
-        "or substitute an easier-to-test solution. Claim completion only after the "
-        "completion audit proves every requirement with current evidence, then "
-        "suggest /goal clear; report specific blockers instead of stalling."
+        "or substitute an easier-to-test solution. Mark completion only via UpdateGoal "
+        "after the completion audit proves every requirement with current evidence; "
+        "report specific blockers instead of stalling."
     )

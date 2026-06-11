@@ -7,3 +7,5 @@ The user set a thread goal via `/goal`. The objective below supersedes any previ
 Before starting work, derive concrete success criteria from the objective and any referenced files, plans, specifications, issues, or user instructions: every explicit requirement, named artifact, command, test, gate, invariant, and deliverable — and for each, the smallest verification command or check that would prove it. State these criteria, then pursue the goal.
 
 Avoid continuing work that only served a previous objective unless it also helps this one.
+
+Do not call UpdateGoal unless the goal is actually complete.

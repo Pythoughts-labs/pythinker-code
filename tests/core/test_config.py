@@ -71,6 +71,8 @@ def test_default_config_dump():
                 "agent_task_timeout_s": 3600,
                 "print_wait_ceiling_s": 3600,
             },
+            "goal": {"auto_continue": False, "max_continuations": 3},
+            "compact_prompt": None,
             "notifications": {
                 "claim_stale_after_ms": 15000,
             },

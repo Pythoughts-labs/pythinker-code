@@ -410,7 +410,7 @@ class PythinkerSoul:
         )
         self._deliberation_generation = 0
         self._sleep_inhibitor = SleepInhibitor(enabled=agent.runtime.config.prevent_idle_sleep)
-        self._compaction = SimpleCompaction()  # TODO: maybe configurable and composable
+        self._compaction = SimpleCompaction(base_prompt=self._runtime.config.compact_prompt)
 
         for tool in agent.toolset.tools:
             if tool.name == SendDMail_NAME:
@@ -1039,6 +1039,9 @@ class PythinkerSoul:
                             self._stop_hook_active = False
                         break
 
+            if command_call is None:
+                await self._run_goal_continuations()
+
             wire_send(TurnEnd())
             turn_finished = True
 
@@ -1096,6 +1099,32 @@ class PythinkerSoul:
             if approval_source_token is not None:
                 reset_current_approval_source(approval_source_token)
             self._prompt_queue_lock.release()
+
+    async def _run_goal_continuations(self) -> None:
+        """Auto-continue toward the active /goal after the primary turn.
+
+        Ported from Codex CLI's automatic goal continuations, bounded per user
+        submission by ``goal.max_continuations``. Hard stops (cancellation,
+        MaxStepsReached, provider errors) propagate out of ``_turn`` and end
+        the loop together with the run; a rejected tool call or a goal marked
+        complete/blocked (via UpdateGoal) ends it gracefully.
+        """
+        goal_config = self._runtime.config.goal
+        if not goal_config.auto_continue or self.is_subagent or self.plan_mode:
+            return
+
+        import pythinker_code.prompts as prompts
+
+        for i in range(goal_config.max_continuations):
+            goal = self._runtime.session.state.goal
+            if goal is None or goal.status != "active":
+                return
+            content = prompts.GOAL_CONTINUATION.format(objective=goal.objective)
+            if i == goal_config.max_continuations - 1:
+                content += "\n\n" + prompts.GOAL_WRAP_UP
+            outcome = await self._turn(Message(role="user", content=content))
+            if outcome.stop_reason != "no_tool_calls":
+                return
 
     async def _turn(self, user_message: Message) -> TurnOutcome:
         from pythinker_code.extensions import shared_event_bus
