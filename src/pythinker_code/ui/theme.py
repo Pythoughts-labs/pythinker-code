@@ -290,6 +290,91 @@ _TOOLBAR_LIGHT = ToolbarColors(
 
 
 # ---------------------------------------------------------------------------
+# Statusline v2 palette (used by ui/shell/statusline.py)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class StatusLineColors:
+    """Statusline v2 palette (prompt_toolkit style strings)."""
+
+    model: str
+    cost: str
+    speed: str
+    effort_hi: str
+    effort_md: str
+    effort_lo: str
+    dir: str
+    branch: str
+    add: str
+    delete: str
+    label: str
+    dim: str
+    warn: str
+    spinner: str
+    spinner_idle: str
+    time: str
+    usage_ok: str
+    usage_mid: str
+    usage_high: str
+    usage_crit: str
+
+
+_STATUSLINE_DARK = StatusLineColors(
+    model="bold fg:#dcb4ff",
+    cost="fg:#ffc850",
+    speed="fg:#78c8ff",
+    effort_hi="fg:#78dc8c",
+    effort_md="fg:#f0c850",
+    effort_lo="fg:#8ca0b4",
+    dir="fg:#82bef0",
+    branch="fg:#64d2c8",
+    add="fg:#78dc8c",
+    delete="fg:#ff6e6e",
+    label="fg:#a0a5b4",
+    dim="fg:#505564",
+    warn="bold fg:#ff5050",
+    spinner="fg:#64b4ff",
+    spinner_idle="fg:#505564",
+    time="fg:#b4d2f0",
+    usage_ok="fg:#64d2a0",
+    usage_mid="fg:#f0c850",
+    usage_high="fg:#ffa046",
+    usage_crit="fg:#ff5050",
+)
+
+# Light variant: same hues darkened for contrast on light backgrounds.
+_STATUSLINE_LIGHT = StatusLineColors(
+    model="bold fg:#7a3fb0",
+    cost="fg:#9a6b18",
+    speed="fg:#1a6fb0",
+    effort_hi="fg:#2c7a39",
+    effort_md="fg:#9a6b18",
+    effort_lo="fg:#5c6b7a",
+    dir="fg:#2a6cb0",
+    branch="fg:#17776b",
+    add="fg:#2c7a39",
+    delete="fg:#b03030",
+    label="fg:#5c6370",
+    dim="fg:#9aa0ac",
+    warn="bold fg:#c01818",
+    spinner="fg:#1a6fb0",
+    spinner_idle="fg:#9aa0ac",
+    time="fg:#3a5a80",
+    usage_ok="fg:#2c7a39",
+    usage_mid="fg:#9a6b18",
+    usage_high="fg:#b05a10",
+    usage_crit="fg:#c01818",
+)
+
+
+def get_statusline_colors() -> StatusLineColors:
+    """Statusline palette for the active theme (dark default, light variant)."""
+    colors = _STATUSLINE_LIGHT if _active_theme == "light" else _STATUSLINE_DARK
+    return _strip_color_dataclass(colors) if colors_disabled() else colors
+
+
+# ---------------------------------------------------------------------------
 # Markdown / spinner palette (used by ui/shell markdown renderer and the
 # turn-execution spinner). Foreground colors only; resolved to Rich styles
 # by ``markdown_rich_style``. Values are Rich color names so they degrade
