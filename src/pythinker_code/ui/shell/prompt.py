@@ -1689,6 +1689,57 @@ def _format_git_badge(branch: str, dirty: bool, ahead: int, behind: int) -> str:
     return f"{branch} [{' '.join(parts)}]"
 
 
+_GIT_DIFFSTAT_TTL = 15.0
+
+
+@dataclass
+class _GitDiffStatState:
+    timestamp: float = 0.0
+    added: int = 0
+    removed: int = 0
+    proc: subprocess.Popen[str] | None = None
+
+
+_git_diffstat_state = _GitDiffStatState()
+
+
+def _get_git_diffstat() -> tuple[int, int] | None:
+    """Return (added, removed) working-tree line counts via a non-blocking cached
+    subprocess. None when not a repo / no changes."""
+    from pythinker_code.ui.shell.statusline import parse_shortstat
+
+    state = _git_diffstat_state
+    now = time.monotonic()
+    if state.proc is not None:
+        returncode = state.proc.poll()
+        if returncode is not None:
+            try:
+                stdout, _ = state.proc.communicate()
+                state.added, state.removed = parse_shortstat(stdout)
+            except Exception:
+                pass
+            state.proc = None
+        elif now - state.timestamp > _GIT_DIFFSTAT_TTL:
+            with contextlib.suppress(Exception):
+                state.proc.terminate()
+            state.proc = None
+            state.timestamp = now
+    if state.timestamp + _GIT_DIFFSTAT_TTL <= now and state.proc is None:
+        state.timestamp = now
+        with contextlib.suppress(Exception):
+            state.proc = subprocess.Popen(
+                ["git", "--no-optional-locks", "diff", "--shortstat"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+    if state.added == 0 and state.removed == 0:
+        return None
+    return state.added, state.removed
+
+
 def _shorten_cwd(path: str) -> str:
     """Replace the home directory prefix in *path* with ``~``."""
     home = str(Path.home())
