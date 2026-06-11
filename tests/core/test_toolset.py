@@ -458,7 +458,11 @@ async def test_begin_end_step():
 
     # A fresh (non-duplicate) call this step is captured by end_step() and does
     # not trip cross-step dedup, since only ToolA was seen previously.
-    await ts.handle(ToolCall(id="b1", function=ToolCall.FunctionBody(name="ToolB", arguments="{}")))
+    result = ts.handle(
+        ToolCall(id="b1", function=ToolCall.FunctionBody(name="ToolB", arguments="{}"))
+    )
+    assert isinstance(result, asyncio.Task)
+    await result
     assert ts.end_step() == [("ToolB", "{}")]
     assert ts.dedup_triggered is False
 
