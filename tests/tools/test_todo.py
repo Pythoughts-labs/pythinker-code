@@ -344,10 +344,12 @@ class TestSetTodoListSubagent:
 
 
 class TestSingleInProgressInvariant:
-    """Ported from Codex CLI's plan tool contract (plan_spec.rs):
-    at most one step can be in_progress at a time."""
+    """Ported from Codex CLI's plan tool contract (plan_spec.rs): at most one
+    step in_progress at a time — softened to a notice because pythinker's
+    parallel-subagent fan-out legitimately tracks one in_progress sub-todo
+    per running child (system.md orchestration rules)."""
 
-    async def test_two_in_progress_items_rejected(
+    async def test_multiple_in_progress_accepted_with_notice(
         self, set_todo_list_tool: SetTodoList, runtime: Runtime
     ):
         result = await set_todo_list_tool(
@@ -358,10 +360,10 @@ class TestSingleInProgressInvariant:
                 ]
             )
         )
-        assert result.is_error
+        assert not result.is_error
         assert "at most one" in result.output
-        # The invalid list must not be persisted.
-        assert runtime.session.state.todos == []
+        # The list is persisted despite the notice (parallel fan-out is legal).
+        assert len(runtime.session.state.todos) == 2
 
     async def test_exactly_one_in_progress_accepted(self, set_todo_list_tool: SetTodoList):
         result = await set_todo_list_tool(

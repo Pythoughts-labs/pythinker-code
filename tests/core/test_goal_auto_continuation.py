@@ -157,3 +157,36 @@ class TestGoalAutoContinuation:
         turn_mock = soul._turn
         assert isinstance(turn_mock, AsyncMock)
         assert turn_mock.await_count == 1
+
+    async def test_no_continuation_when_primary_turn_rejected(
+        self, runtime: Runtime, tmp_path: Path
+    ) -> None:
+        """A tool rejection in the primary turn must not trigger continuations."""
+        runtime.config.goal.auto_continue = True
+        runtime.session.state.goal = GoalState(objective="ship it", status="active")
+        soul = _make_soul(runtime, tmp_path)
+
+        turn_mock = soul._turn
+        assert isinstance(turn_mock, AsyncMock)
+        turn_mock.return_value = TurnOutcome(
+            stop_reason="tool_rejected", final_message=None, step_count=1
+        )
+
+        await soul.run("do the thing")
+
+        assert turn_mock.await_count == 1
+
+    async def test_no_continuation_when_primary_turn_stuck(
+        self, runtime: Runtime, tmp_path: Path
+    ) -> None:
+        runtime.config.goal.auto_continue = True
+        runtime.session.state.goal = GoalState(objective="ship it", status="active")
+        soul = _make_soul(runtime, tmp_path)
+
+        turn_mock = soul._turn
+        assert isinstance(turn_mock, AsyncMock)
+        turn_mock.return_value = TurnOutcome(stop_reason="stuck", final_message=None, step_count=1)
+
+        await soul.run("do the thing")
+
+        assert turn_mock.await_count == 1

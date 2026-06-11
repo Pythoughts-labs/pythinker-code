@@ -68,7 +68,7 @@ Scouted via 6-explorer workflow + synthesis; primary sources re-read before port
 
 ## Out of scope (observed, logged)
 
-- Codex P0-P3 JSON review schema (pythinker has its own ```report contract).
+- Codex P0-P3 JSON review schema (pythinker has its own `report` fenced-block contract).
 - Per-goal token budgets ({{ token_budget }} vars) — no per-goal usage meter yet.
 - User prompt-template shadowing (a user `goal.md` template vs builtin) — builtin
   soul commands and prompt templates share the slash namespace; collision behavior

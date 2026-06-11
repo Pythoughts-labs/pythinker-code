@@ -38,7 +38,7 @@ The configuration file contains the following top-level configuration items:
 | `models` | `table` | Model configuration |
 | `loop_control` | `table` | Agent loop control parameters |
 | `goal` | `table` | Thread-goal (`/goal`) behavior, including auto-continuation |
-| `compact_prompt` | `string` | Override the built-in compaction summarization prompt; unset keeps the default handoff-structured prompt (a `/compact` focus argument is still appended on top) |
+| `compact_prompt` | `string \| null` | Override the built-in compaction summarization prompt; `null`/unset keeps the default handoff-structured prompt (a `/compact` focus argument is still appended on top) |
 | `background` | `table` | Background task runtime parameters |
 | `services` | `table` | External service configuration (search, fetch) |
 | `mcp` | `table` | MCP client configuration |

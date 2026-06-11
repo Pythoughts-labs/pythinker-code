@@ -67,18 +67,21 @@ class SetTodoList(CallableTool2[Params]):
     async def __call__(self, params: Params) -> ToolReturnValue:
         if params.todos is None:
             return self._read_todos()
+        result = self._write_todos(params.todos)
         in_progress = sum(1 for todo in params.todos if todo.status == "in_progress")
         if in_progress > 1:
-            return ToolReturnValue(
-                is_error=True,
-                output=(
-                    "Invalid todo list: at most one item can be in_progress at a time. "
-                    "Resubmit with exactly one in_progress item."
-                ),
-                message="Invalid todo list",
-                display=[],
+            # Codex plan-tool contract, softened: parallel-subagent fan-out
+            # legitimately tracks one in_progress sub-todo per running child.
+            base_output = result.output if isinstance(result.output, str) else ""
+            result = ToolReturnValue(
+                is_error=False,
+                output=base_output
+                + "\nNote: keep at most one item in_progress at a time for your own "
+                "sequential work; multiple in_progress items are expected only while "
+                "tracking parallel subagents (one sub-todo per running child).",
+                message=result.message,
+                display=result.display,
             )
-        result = self._write_todos(params.todos)
         if self._runtime.role == "root" and len(params.todos) >= 3:
             await self._journal_todo_update(params.todos)
         return result

@@ -1002,6 +1002,7 @@ class PythinkerSoul:
             user_message = Message(role="user", content=user_input)
             text_input = user_message.extract_text(" ").strip()
 
+            primary_outcome: TurnOutcome | None = None
             if command_call := parse_slash_command_call(text_input):
                 command = self._find_slash_command(command_call.name)
                 if command is None:
@@ -1018,7 +1019,7 @@ class PythinkerSoul:
                 )
                 await runner.run(self, "")
             else:
-                await self._turn(user_message)
+                primary_outcome = await self._turn(user_message)
 
             # --- Stop hook (max 1 re-trigger to prevent infinite loop) ---
             if not self._stop_hook_active:
@@ -1039,8 +1040,8 @@ class PythinkerSoul:
                             self._stop_hook_active = False
                         break
 
-            if command_call is None:
-                await self._run_goal_continuations()
+            if primary_outcome is not None:
+                await self._run_goal_continuations(primary_outcome)
 
             wire_send(TurnEnd())
             turn_finished = True
@@ -1100,15 +1101,17 @@ class PythinkerSoul:
                 reset_current_approval_source(approval_source_token)
             self._prompt_queue_lock.release()
 
-    async def _run_goal_continuations(self) -> None:
+    async def _run_goal_continuations(self, primary_outcome: TurnOutcome) -> None:
         """Auto-continue toward the active /goal after the primary turn.
 
         Ported from Codex CLI's automatic goal continuations, bounded per user
         submission by ``goal.max_continuations``. Hard stops (cancellation,
         MaxStepsReached, provider errors) propagate out of ``_turn`` and end
-        the loop together with the run; a rejected tool call or a goal marked
-        complete/blocked (via UpdateGoal) ends it gracefully.
+        the loop together with the run; a rejected tool call, a stuck turn, or
+        a goal marked complete/blocked (via UpdateGoal) ends it gracefully.
         """
+        if primary_outcome.stop_reason != "no_tool_calls":
+            return
         goal_config = self._runtime.config.goal
         if not goal_config.auto_continue or self.is_subagent or self.plan_mode:
             return
