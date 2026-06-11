@@ -1,3 +1,86 @@
+# Codex best-practices adoption — /goal, /best-practices, loop discipline (2026-06-11)
+
+Branch: `feat/codex-goal-best-practices` (worktree from main @ 0b99d2c5).
+Source of truth: `blackbox/codex-main` (slash_dispatch.rs goals, prompts/templates/goals/*,
+prompts/templates/review/rubric.md, gpt_5_2_prompt.md, gpt-5.1-codex-max_prompt.md).
+Scouted via 6-explorer workflow + synthesis; primary sources re-read before porting.
+
+## Done (this session)
+
+- [x] `/goal` thread-goal command (codex goals port): `GoalState` in session state,
+      `prompts/goal_set.md` + `prompts/goal_continuation.md` (objective as untrusted
+      data in `<objective>` tags; fidelity rules; evidence-based completion audit),
+      set kicks off a turn via `soul._turn`, subcommands view/pause/resume/clear.
+      → verified: tests/core/test_goal_slash.py (13 tests).
+- [x] `GoalModeInjectionProvider`: plan-mode-style throttled full/sparse continuation
+      reminders, goal-change announces immediately, root-only, paused skip,
+      on_context_compacted reset.
+      → verified: tests/core/test_goal_mode_injection_provider.py (13 tests).
+- [x] `/best-practices` (alias `/bp`): opt-in injection of codex prompt guidance
+      (code changes, dirty worktree, testing, todo hygiene, progress updates,
+      debugging, final answers) with optional section filter.
+      → verified: tests/core/test_best_practices_slash.py (6 tests).
+- [x] SetTodoList single-`in_progress` invariant (codex plan_spec contract) +
+      tool-description + system.md status-discipline bullet.
+      → verified: tests/tools/test_todo.py (+4), description snapshot refixed.
+- [x] Review rubric port into `review.yaml` + `code_reviewer.yaml` ROLE_ADDITIONAL:
+      finding bar, comment construction, overall-correctness verdict.
+      → verified: test_agent_spec.py green (phrase pins unaffected).
+- [x] Docs: `docs/en/reference/slash-commands.md` /goal + /best-practices entries.
+- [x] CHANGELOG.md Unreleased entries (4 bullets).
+- [x] Gates: tests/core+tools (1798), ui_and_conv+ui (1763), rest minus PTY e2e
+      (1311, incl. pyinstaller datas pin updated for 3 new prompt assets);
+      make check-pythinker-code green (ruff, format, pyright 0 errors).
+
+## Done (session 2, P1 wave)
+
+- [x] `UpdateGoal` tool (codex update_goal port, root-only): complete/blocked with
+      summary; GoalState gains complete|blocked; provider + continuations stop on
+      non-active; /goal resume reactivates. tools/goal/ + update_goal.md, registered
+      in agents/default/agent.yaml. → tests/tools/test_update_goal.py (6).
+- [x] Goal auto-continuation loop: `_run_goal_continuations` in pythinkersoul.run
+      (non-slash turns only), config-gated `goal.auto_continue` (default off),
+      `goal.max_continuations` (3, 1-10), wrap-up note (prompts/goal_wrap_up.md)
+      on final continuation, stops on tool_rejected/stuck/non-active goal; hard
+      stops propagate. goal_continuation.md now carries codex's full UpdateGoal
+      completion contract + 3-strike blocked audit.
+      → tests/core/test_goal_auto_continuation.py (8).
+- [x] Approval-mode-adaptive validation guidance in auto_mode injection texts
+      (proactive tests/lint in auto/yolo; suggest+confirm when interactive except
+      test-related). → test_auto_injection.py pins.
+- [x] `compact_prompt` config override → SimpleCompaction(base_prompt=...);
+      None = byte-identical default. → test_simple_compaction.py (2).
+- [x] Progress cadence bullet (User Updates Spec) in system.md.
+- [x] Docs: config-files.md (goal table, compact_prompt), slash-commands.md
+      /goal updated for UpdateGoal + auto_continue. CHANGELOG: 4 new bullets.
+- [x] Snapshot pins refixed deliberately: default agent tool list, agent spec
+      tool lists, default config dump, pyinstaller datas/hiddenimports.
+
+## Next
+
+- [x] E2E smoke: PTY e2e suite isolated — 59 passed, 2 skipped, 1 xfailed (157s).
+      (Full interactive smoke with a live LLM left to the user.)
+- [x] Pushed branch; PR #117 open. Full suite 4884 passed / 7 skipped; the one
+      hung run was a load/ordering flake (0% CPU in kqueue select at ~2%,
+      clean re-run green in 102s) — consistent with the repo's load-sensitivity.
+- [x] PR #117 fully green on head 555107e5: all checks pass (test matrix,
+      builds, nix, CodeQL, changelog, typos) and CodeRabbit review completed.
+      Its 7 findings: 5 fixed (continuation gate on primary-turn outcome,
+      softened todo invariant + prose reconciliation, nullable docs type,
+      fence nit, config boundary tests), 2 declined with rationale on the PR
+      (mechanical blocked-audit enforcement; prompt-file H1s).
+- [ ] Merge PR #117 — user's call (CodeRabbit gate satisfied).
+
+## Out of scope (observed, logged)
+
+- Codex P0-P3 JSON review schema (pythinker has its own `report` fenced-block contract).
+- Per-goal token budgets ({{ token_budget }} vars) — no per-goal usage meter yet.
+- User prompt-template shadowing (a user `goal.md` template vs builtin) — builtin
+  soul commands and prompt templates share the slash namespace; collision behavior
+  unverified, logged for follow-up.
+
+---
+
 # Task: Windows web 404 + PowerShell banner rendering (2026-06-10)
 
 ## Diagnosis (verified)

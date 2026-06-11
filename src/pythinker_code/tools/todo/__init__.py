@@ -68,6 +68,20 @@ class SetTodoList(CallableTool2[Params]):
         if params.todos is None:
             return self._read_todos()
         result = self._write_todos(params.todos)
+        in_progress = sum(1 for todo in params.todos if todo.status == "in_progress")
+        if in_progress > 1:
+            # Codex plan-tool contract, softened: parallel-subagent fan-out
+            # legitimately tracks one in_progress sub-todo per running child.
+            base_output = result.output if isinstance(result.output, str) else ""
+            result = ToolReturnValue(
+                is_error=False,
+                output=base_output
+                + "\nNote: keep at most one item in_progress at a time for your own "
+                "sequential work; multiple in_progress items are expected only while "
+                "tracking parallel subagents (one sub-todo per running child).",
+                message=result.message,
+                display=result.display,
+            )
         if self._runtime.role == "root" and len(params.todos) >= 3:
             await self._journal_todo_update(params.todos)
         return result
