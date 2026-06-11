@@ -635,13 +635,26 @@ class MCPClientConfig(BaseModel):
 
 
 STATUSLINE_SEGMENT_IDS: tuple[str, ...] = (
+    "spinner",
+    "model",
+    "cost",
+    "speed",
+    "effort",
     "cwd",
     "git",
+    "diff",
     "flags",
     "context",
     "tokens",
-    "model",
+    "elapsed",
+    "limits",
+    "clock",
     "command",
+)
+
+_DEFAULT_STATUSLINE_SEGMENTS: tuple[str, ...] = (
+    "spinner", "model", "cost", "speed", "effort", "cwd", "git",
+    "diff", "flags", "context", "elapsed", "clock",
 )
 
 
@@ -656,10 +669,11 @@ class StatusLineConfig(BaseModel):
         ),
     )
     segments: list[str] = Field(
-        default_factory=lambda: [s for s in STATUSLINE_SEGMENT_IDS if s != "command"],
+        default_factory=lambda: list(_DEFAULT_STATUSLINE_SEGMENTS),
         description=(
             "Footer segments to display, in order. Known ids: cwd, git, flags, "
-            "context, tokens, model, command. Unknown ids are ignored so configs "
+            "context, tokens, model, spinner, cost, speed, effort, diff, elapsed, "
+            "limits, clock, command. Unknown ids are ignored so configs "
             "stay forward-compatible."
         ),
     )
@@ -675,6 +689,27 @@ class StatusLineConfig(BaseModel):
         default=1000,
         gt=0,
         description="Timeout in milliseconds for the external status command.",
+    )
+    style: Literal["fancy", "plain"] = Field(
+        default="fancy",
+        description=(
+            "Footer visual style. 'fancy' renders colors, separators, and the "
+            "context bar; 'plain' keeps the monochrome text-only footer."
+        ),
+    )
+    bar_width: int = Field(
+        default=10,
+        ge=4,
+        le=20,
+        description="Width in cells of the context progress bar.",
+    )
+    cost_budget: float | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Optional session budget in USD; when set the cost segment renders "
+            "'$spent/$budget'."
+        ),
     )
 
     @field_validator("segments")

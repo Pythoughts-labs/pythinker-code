@@ -108,9 +108,15 @@ def test_default_config_dump():
                 "code_theme": "catppuccin-adaptive",
                 "statusline": {
                     "enabled": True,
-                    "segments": ["cwd", "git", "flags", "context", "tokens", "model"],
+                    "segments": [
+                        "spinner", "model", "cost", "speed", "effort", "cwd", "git",
+                        "diff", "flags", "context", "elapsed", "clock",
+                    ],
                     "command": None,
                     "command_timeout_ms": 1000,
+                    "style": "fancy",
+                    "bar_width": 10,
+                    "cost_budget": None,
                 },
                 "smooth_streaming": True,
             },
@@ -667,3 +673,34 @@ def test_goal_config_bounds():
         GoalConfig(max_continuations=0)
     with pytest.raises(ValidationError):
         GoalConfig(max_continuations=11)
+
+
+def test_statusline_v2_segment_ids_and_defaults():
+    from pythinker_code.config import STATUSLINE_SEGMENT_IDS, StatusLineConfig
+
+    for seg in ("spinner", "speed", "effort", "cost", "diff", "elapsed", "limits", "clock"):
+        assert seg in STATUSLINE_SEGMENT_IDS
+    cfg = StatusLineConfig()
+    assert cfg.segments == [
+        "spinner", "model", "cost", "speed", "effort", "cwd", "git",
+        "diff", "flags", "context", "elapsed", "clock",
+    ]
+    assert cfg.style == "fancy"
+    assert cfg.bar_width == 10
+    assert cfg.cost_budget is None
+
+
+def test_statusline_v2_field_validation():
+    import pytest
+    from pydantic import ValidationError
+
+    from pythinker_code.config import StatusLineConfig
+
+    with pytest.raises(ValidationError):
+        StatusLineConfig(bar_width=3)
+    with pytest.raises(ValidationError):
+        StatusLineConfig(bar_width=21)
+    with pytest.raises(ValidationError):
+        StatusLineConfig(cost_budget=-1.0)
+    with pytest.raises(ValidationError):
+        StatusLineConfig(style="neon")
