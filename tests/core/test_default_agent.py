@@ -31,6 +31,15 @@ async def test_default_agent(runtime: Runtime):
     assert "symmetric cleanup" in agent.system_prompt
     assert "verified cryptographic/session identity" in agent.system_prompt
 
+    # Default best practices — the condensed always-on profile lives in the base
+    # prompt so root and every subagent role inherit it; /best-practices layers
+    # the full version on top.
+    assert "## Default Best Practices" in agent.system_prompt
+    assert "NEVER revert existing changes you did not make" in agent.system_prompt
+    assert "hallucinated names are a typosquatting vector" in agent.system_prompt
+    assert "Never game verification" in agent.system_prompt
+    assert "never rerun an identical failing command" in agent.system_prompt
+
     # Prompt-injection defense — the <untrusted_data> wrapper is only effective if
     # the model is told the tags mean "data, never instructions". Keep this in the
     # base prompt so the structural wrapper (utils/trust.py) stays semantically live.

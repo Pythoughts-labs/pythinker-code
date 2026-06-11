@@ -306,7 +306,9 @@ With `goal.auto_continue = true` in the [config](../configuration/config-files.m
 
 ### `/best-practices`
 
-Inject engineering best-practice guidance (scoping and assumptions, code-change discipline, dirty-worktree safety, testing strategy, todo hygiene, progress updates, subagent orchestration, security and secrets, verification before done, debugging methodology, final-answer style) into the session context. The guidance applies for the rest of the session without consuming a turn.
+Inject the full engineering best-practices profile (operating principles, context gathering, scoping and assumptions, design and implementation, code-change discipline, version-control safety, testing strategy, debugging methodology, security and secrets, agent operational discipline, subagent orchestration, todo hygiene, progress updates, verification before done, final-answer style) into the session context. The guidance applies for the rest of the session without consuming a turn.
+
+A condensed subset of this profile is always active in the default system prompt — every agent role inherits it without running the command. `/best-practices` layers the full, expanded rules on top for sessions that need the complete profile.
 
 Usage:
 
