@@ -10,7 +10,7 @@ branch adds only net-new, non-conflicting work. No DAG engine. All framing
 generic (no external product names in code/comments/commits/PR/docs).
 Design: `docs/superpowers/specs/2026-06-11-statusline-and-agentic-extras-design.md`.
 
-- [ ] **Slice 1 — `/statusline` customizable status bar**
+- [x] **Slice 1 — `/statusline` customizable status bar**
   - [ ] `StatusLineConfig` under `TUIConfig` (config.py) + `PYTHINKER_STATUSLINE` env
         — acceptance: defaults reproduce today's footer exactly; round-trip + unknown-id
         drop tested.
@@ -23,13 +23,13 @@ Design: `docs/superpowers/specs/2026-06-11-statusline-and-agentic-extras-design.
   - [ ] Tests (config, resolver, command runner, command behavior) + `tests_e2e`
         handshake snapshot refresh (`--inline-snapshot=fix`) + docs section.
   - [ ] `/clean-code-guard` checkpoint → `make check-pythinker-code` → CHANGELOG bullet.
-- [ ] **Slice 2 — parallel foreground `RunAgents` fan-out**
+- [x] **Slice 2 — parallel foreground `RunAgents` fan-out**
   - [ ] Concurrent children via `asyncio.gather` bounded by existing capacity guard;
         ordering preserved; one failure doesn't abort siblings; approval/overflow
         contract unchanged. Audit shared `session.state` writes first.
   - [ ] Tests (concurrency, ordering, partial failure, capacity bound) + guard +
         `/clean-code-guard` + check + CHANGELOG.
-- [ ] **Slice 3 — structured `RunAgents` result synthesis**
+- [x] **Slice 3 — structured `RunAgents` result synthesis**
   - [ ] Pure synthesis: per-child SUMMARY + deduped EVIDENCE/CHANGES/RISKS/BLOCKERS,
         cost preserved, free-text children tolerated (never dropped).
   - [ ] Tests (well-formed + free-text + failed child) + `/clean-code-guard` + check
@@ -37,6 +37,17 @@ Design: `docs/superpowers/specs/2026-06-11-statusline-and-agentic-extras-design.
 
 Out of scope (logged): DAG/workflow engine; re-doing merged roadmap items; maintainer
 deferrals (mcpext-2(a), obs-eval-3/4 live wiring, `lexical_recall`).
+
+**Review (2026-06-11):** All three slices landed on `feat/agentic-orchestration`:
+`4302f457` (/statusline: StatusLineConfig + ui/shell/statusline.py + card-footer
+wiring + slash command + docs) and `fe165e59` (concurrent foreground RunAgents
+fan-out bounded by background.max_running_tasks + batch_risks/batch_blockers
+roll-up in subagents/usage.py). Verified: full unit suite 5005 passed,
+tests_e2e 65 passed, make check-pythinker-code green. Sub-checkbox statuses
+covered by the per-slice commits. Deviations: statusline interactive picker
+deferred — subcommands (`segments`, `on/off`, `command`) shipped instead;
+customization applies to the card footer style (legacy style keeps stock
+footer). Next session: open PR; CodeRabbit gate before merge.
 
 ## Recently completed
 
