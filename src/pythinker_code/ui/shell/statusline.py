@@ -139,7 +139,7 @@ class StatusLineCommandRunner:
 
     async def _run_command(self) -> str:
         if not self._argv:
-            self._warn_once("status command is empty or unparseable")
+            self._warn_once("status command is empty or unparsable")
             return ""
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -163,7 +163,8 @@ class StatusLineCommandRunner:
             )
             capped = len(stdout) >= _MAX_COMMAND_OUTPUT_BYTES
             if capped:
-                proc.kill()
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()
             with contextlib.suppress(ProcessLookupError):
                 await asyncio.wait_for(proc.wait(), self._timeout_s)
         except TimeoutError:

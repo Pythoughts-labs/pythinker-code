@@ -138,9 +138,10 @@ def _extract_section(output: str, section: str) -> list[str]:
             continue
         if line.lower() in _NONE_PLACEHOLDERS:
             continue
-        # Strip a single leading bullet only; lstrip("-*") would eat
-        # leading CLI flags like "--force" out of the finding text.
-        collected.append(line[1:].strip() if line[:1] in "-*" else line)
+        # Strip a single leading bullet marker only ("- " / "* "); matching a
+        # bare leading "-" or "*" would eat CLI flags ("--force") or star text
+        # ("*args") out of non-bulleted finding lines.
+        collected.append(line[2:].strip() if line[:2] in ("- ", "* ") else line)
     return collected
 
 

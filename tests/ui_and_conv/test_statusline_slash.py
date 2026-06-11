@@ -166,6 +166,28 @@ async def test_statusline_invalid_subcommand_shows_usage(
 
 
 @pytest.mark.asyncio
+async def test_statusline_glued_verb_shows_usage_instead_of_misparsing(
+    runtime: Runtime, tmp_path: Path, monkeypatch
+) -> None:
+    """ "/statusline commands" must not parse as `command` with argument "s"
+    (persisting a junk external command); same for "segmentscwd"."""
+    config_path = (tmp_path / "config.toml").resolve()
+    runtime.config.source_file = config_path
+    app = _make_shell_app(runtime, tmp_path)
+    print_mock = Mock()
+    save_mock = Mock()
+    monkeypatch.setattr(shell_slash, "save_config", save_mock)
+    monkeypatch.setattr(shell_slash.console, "print", print_mock)
+
+    await _run_statusline(app, "commands")
+    await _run_statusline(app, "segmentscwd")
+
+    save_mock.assert_not_called()
+    printed = " ".join(str(call.args[0]) for call in print_mock.call_args_list)
+    assert "Usage" in printed
+
+
+@pytest.mark.asyncio
 async def test_statusline_bare_opens_menu_and_esc_dismisses(
     runtime: Runtime, tmp_path: Path, monkeypatch
 ) -> None:

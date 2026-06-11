@@ -62,7 +62,7 @@ def test_unknown_command_not_highlighted():
 
 
 def test_partial_name_not_highlighted():
-    assert _highlighted(_lex_line("/clea")) == []
+    assert _highlighted(_lex_line("/cle")) == []
 
 
 def test_alias_and_namespaced_command_highlighted():

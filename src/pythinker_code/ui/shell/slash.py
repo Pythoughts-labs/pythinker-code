@@ -1505,8 +1505,11 @@ async def statusline(app: Shell, args: str) -> None:
 
         persist(_set_enabled, f"Status line customization {mode}.")
         return
-    if mode.startswith("segments"):
-        raw = mode.removeprefix("segments").strip()
+    # Exact-verb match: "/statusline commands" must not parse as
+    # `command` with argument "s" and silently persist a junk command.
+    verb, _, verb_args = mode.partition(" ")
+    if verb == "segments":
+        raw = verb_args.strip()
         wanted = [s.strip() for s in raw.split(",") if s.strip()]
         unknown = [s for s in wanted if s not in STATUSLINE_SEGMENT_IDS]
         if not wanted or unknown:
@@ -1519,8 +1522,8 @@ async def statusline(app: Shell, args: str) -> None:
 
         persist(_set_segments, f"Status line segments set to {', '.join(wanted)}.")
         return
-    if mode.startswith("command"):
-        raw = mode.removeprefix("command").strip()
+    if verb == "command":
+        raw = verb_args.strip()
         if not raw:
             console.print(f"[{_t.warning}]{usage_text}[/]")
             return

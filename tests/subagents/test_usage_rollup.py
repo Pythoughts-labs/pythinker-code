@@ -203,6 +203,19 @@ def test_aggregate_findings_preserves_leading_cli_flags() -> None:
     assert "*args handling is fragile." in text
 
 
+def test_aggregate_findings_keeps_non_bulleted_marker_lines_intact() -> None:
+    # Lines that merely START with "-"/"*" are content, not bullets: a bare
+    # "--force ..." finding must not lose its first dash.
+    report = """### RISKS
+--force flag bypasses validation.
+*args handling is fragile.
+"""
+    lines = aggregate_findings([("child-a", report)])
+    text = "\n".join(lines)
+    assert "--force flag bypasses validation." in text
+    assert "*args handling is fragile." in text
+
+
 def test_extract_section_ignores_headers_inside_code_fences():
     output = (
         "### RISKS\n"

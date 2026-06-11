@@ -350,9 +350,9 @@ class _PromptLiveView(_LiveView):
         """Intercept shell-level slash commands typed during a running task.
 
         Returns True when the input was consumed: commands flagged
-        ``available_during_task`` run immediately (output prints above the
-        live area); the rest are rejected with a toast. Returns False for
-        non-shell input so callers can queue/steer it normally.
+        ``available_during_task`` run immediately (output shows transiently
+        in the live area); the rest are rejected with a toast. Returns False
+        for non-shell input so callers can queue/steer it normally.
         """
         from pythinker_code.utils.slashcmd import parse_slash_command_call
 
