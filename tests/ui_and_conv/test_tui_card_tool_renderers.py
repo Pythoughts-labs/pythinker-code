@@ -861,6 +861,47 @@ def test_run_agents_renders_compact_professional_summary():
     assert "agent_id:" not in rendered
 
 
+def test_run_agents_rows_align_columns_and_drop_redundant_name():
+    rendered = _render(
+        "RunAgents",
+        {
+            "summary": "Parallel deep review",
+            "run_in_background": True,
+            "agents": [
+                {"name": "code-reviewer", "subagent_type": "code-reviewer"},
+                {"name": "qa", "subagent_type": "qa"},
+            ],
+        },
+        output=(
+            "tool_status: success\n"
+            "mode: background\n"
+            "agent_count: 2\n"
+            "agents:\n"
+            "- name: code-reviewer\n"
+            "  subagent_type: code-reviewer\n"
+            "  status: running\n"
+            "  task_id: agent-aaaa\n"
+            "- name: qa\n"
+            "  subagent_type: qa\n"
+            "  status: running\n"
+            "  task_id: agent-bbbb\n"
+        ),
+        width=120,
+    )
+    tree_lines = [
+        line for line in rendered.splitlines() if line.lstrip().startswith(("├─", "└─"))
+    ]
+    assert len(tree_lines) == 2
+    # Variable-width subagent labels are padded so the status column aligns.
+    status_cols = {line.index("running") for line in tree_lines}
+    assert len(status_cols) == 1, tree_lines
+    # And the trailing task_id column aligns too.
+    task_cols = {line.index("agent-") for line in tree_lines}
+    assert len(task_cols) == 1, tree_lines
+    # A name identical to the subagent_type is not echoed twice in its tree row.
+    assert tree_lines[0].count("code-reviewer") == 1
+
+
 # ---------------------------------------------------------------------------
 # AskUserQuestion
 # ---------------------------------------------------------------------------

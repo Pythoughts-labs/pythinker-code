@@ -407,29 +407,66 @@ def _render_run_agents_result(
     if approval:
         summary.append(f" · approval {approval}", style=tui_rich_style("dim"))
 
-    rows: list[RenderableType] = [summary]
+    # Pre-compute per-agent fields so the variable-width label and status columns
+    # can be padded to a shared width — sibling rows then line up their "· status"
+    # and "· task_id" separators instead of stair-stepping with each name length.
+    entries: list[dict[str, str]] = []
     for index, agent in enumerate(agents):
-        is_last = index == len(agents) - 1
-        branch = "└─" if is_last else "├─"
-        name = agent.get("name") or f"agent-{index + 1}"
         subagent_type = agent.get("subagent_type") or agent.get("actual_subagent_type") or "coder"
-        agent_status = agent.get("detail_status") or agent.get("status") or "unknown"
-        task_id = agent.get("task_id")
+        name = agent.get("name") or f"agent-{index + 1}"
+        # A name identical to the subagent_type is redundant; show it only when it
+        # carries information the type doesn't (e.g. "code_scan" vs "code-reviewer").
+        extra = "" if name == subagent_type else name
+        # Display width of "type" or "type · name" — drives the shared label column.
+        label_width = len(subagent_type) + (len(f" · {extra}") if extra else 0)
+        entries.append(
+            {
+                "subagent_type": subagent_type,
+                "name_extra": extra,
+                "label_width": str(label_width),
+                "status": agent.get("detail_status") or agent.get("status") or "unknown",
+                "task_id": agent.get("task_id") or "",
+                "summary_preview": agent.get("summary_preview") or "",
+                "message": agent.get("message") or "",
+                "brief": agent.get("brief") or "",
+            }
+        )
+
+    label_col = max(int(entry["label_width"]) for entry in entries)
+    # Only pad the status column when a later task_id column needs to align under it.
+    status_col = max(
+        (len(entry["status"]) for entry in entries if entry["task_id"]),
+        default=0,
+    )
+
+    dim_style = tui_rich_style("dim")
+    rows: list[RenderableType] = [summary]
+    for index, entry in enumerate(entries):
+        is_last = index == len(entries) - 1
+        branch = "└─" if is_last else "├─"
+        agent_status = entry["status"]
         status_token = _status_style_token(agent_status)
 
         row = Text(f"{branch} ", style=tui_rich_style("muted"))
         row.append(_status_glyph(agent_status), style=tui_rich_style(status_token))
         row.append(" ")
-        row.append(subagent_type, style=tui_rich_style("tool_title") + RichStyle(bold=True))
-        row.append(f" · {name}", style=tui_rich_style("dim"))
-        row.append(f" · {agent_status}", style=tui_rich_style(status_token))
-        if task_id:
-            row.append(f" · {task_id}", style=tui_rich_style("dim"))
+        row.append(
+            entry["subagent_type"], style=tui_rich_style("tool_title") + RichStyle(bold=True)
+        )
+        if entry["name_extra"]:
+            row.append(f" · {entry['name_extra']}", style=dim_style)
+        # Pad the label region so every "· status" separator starts at one column.
+        row.append(" " * (label_col - int(entry["label_width"])))
+        row.append(" · ", style=dim_style)
+        status_text = agent_status.ljust(status_col) if entry["task_id"] else agent_status
+        row.append(status_text, style=tui_rich_style(status_token))
+        if entry["task_id"]:
+            row.append(f" · {entry['task_id']}", style=dim_style)
         rows.append(row)
 
-        preview = agent.get("summary_preview")
+        preview = entry["summary_preview"]
         if agent_status in {"error", "failed", "failure"}:
-            preview = agent.get("message") or agent.get("brief") or preview
+            preview = entry["message"] or entry["brief"] or preview
         if preview:
             prefix = "   " if is_last else "│  "
             rows.append(fg("dim", f"{prefix}{_compact_inline(preview, max_chars=100)}"))
