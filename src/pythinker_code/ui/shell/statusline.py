@@ -24,8 +24,6 @@ from pythinker_code.ui.theme import get_statusline_colors, get_toolbar_colors
 from pythinker_code.utils.datetime import format_duration
 from pythinker_code.utils.logging import logger
 
-_EIGHTHS = ("", "▏", "▎", "▍", "▌", "▋", "▊", "▉")
-
 
 class RateSampler:
     """Sliding-window tokens/sec over a monotonically growing counter."""
@@ -77,21 +75,18 @@ def usage_level(pct: int) -> str:
 
 
 def smooth_bar(pct: int, *, width: int, ascii_only: bool = False) -> str:
-    """Render a progress bar with eighth-block sub-cell resolution.
+    """Render a progress bar using the compaction view's ``▰``/``▱`` cells.
 
-    ``pct`` is clamped to [0, 100]. ASCII mode degrades to '#'/'-' cells.
+    ``pct`` is clamped to [0, 100]. The glyphs are East-Asian-width *neutral*
+    (always one column), so the bar measures the same as it renders on every
+    terminal. ASCII mode degrades to '#'/'-' cells.
     """
     pct = max(0, min(100, pct))
     if ascii_only:
         filled = pct * width // 100
         return "#" * filled + "-" * (width - filled)
-    total_eighths = pct * width * 8 // 100
-    full, rem = divmod(total_eighths, 8)
-    full = min(full, width)
-    bar = "█" * full
-    if rem and full < width:
-        bar += _EIGHTHS[rem]
-    return bar + "░" * (width - len(bar))
+    filled = max(0, min(width, round(pct * width / 100)))
+    return "▰" * filled + "▱" * (width - filled)
 
 
 DEFAULT_STATUSLINE_SEGMENTS: tuple[str, ...] = (
@@ -99,7 +94,6 @@ DEFAULT_STATUSLINE_SEGMENTS: tuple[str, ...] = (
     "git",
     "flags",
     "context",
-    "tokens",
     "model",
 )
 
@@ -495,7 +489,13 @@ def assemble_footer(
             break  # only priority-0 left; let prompt.py truncate
         line1_parts.remove(victim)
 
-    line2_parts = rendered(zones.line2_right)
+    line2_ids = zones.line2_right
+    # The "context" segment already prints the used/total token ratio, so a
+    # standalone "tokens" segment alongside it is pure duplication ("ctx
+    # 78k/262k … │ 78k/262k"). Drop the redundant one when both are configured.
+    if "context" in line2_ids and "tokens" in line2_ids:
+        line2_ids = [seg for seg in line2_ids if seg != "tokens"]
+    line2_parts = rendered(line2_ids)
     line2: list[StyleFragment] = []
     for i, (_seg, seg_frags) in enumerate(line2_parts):
         if i:

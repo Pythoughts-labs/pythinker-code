@@ -186,6 +186,25 @@ def _slash_command_token_before_cursor(document: Document) -> str | None:
     return token
 
 
+def _slash_suggest_token_before_cursor(document: Document) -> str | None:
+    """Return the active slash token for inline ghost-text suggestion.
+
+    Unlike :func:`_slash_command_token_before_cursor` (which gates the dropdown
+    menu and only fires when the slash command starts the line), this accepts a
+    ``/name`` token anywhere on the current line, so mid-sentence references such
+    as ``use /desi`` still ghost-complete. Ghost text only renders at the end of
+    the buffer, so we still require nothing typed after the cursor.
+    """
+    if document.text_after_cursor.strip():
+        return None
+    line = document.current_line_before_cursor
+    last_space = line.rfind(" ")
+    token = line[last_space + 1 :]
+    if not token.startswith("/"):
+        return None
+    return token
+
+
 def _discard_slash_command(buffer: Buffer) -> bool:
     """Cancel slash completion and remove the in-progress root slash command."""
     document = buffer.document
@@ -210,22 +229,69 @@ def _discard_slash_command(buffer: Buffer) -> bool:
 # A "/name" token that starts the input or follows whitespace. The name charset
 # matches registered command names and aliases (including "skill:x" / "flow:x").
 _SLASH_TOKEN_RE = re.compile(r"(?<!\S)/([A-Za-z0-9][A-Za-z0-9_:.-]*)")
+# An "@path" mention: "@" followed by a non-space fragment. The word boundary
+# before "@" is validated separately to mirror LocalFileMentionCompleter.
+_MENTION_TOKEN_RE = re.compile(r"@[^\s@]+")
+# Characters that, immediately before "@", disqualify it as a mention boundary
+# (so emails like "foo@bar" don't trigger). Shared by the lexer and completer.
+_MENTION_TRIGGER_GUARDS = frozenset((".", "-", "_", "`", "'", '"', ":", "@", "#", "~"))
 
 
-class SlashCommandHighlightLexer(Lexer):
-    """Highlight tokens that name an existing slash command anywhere in the input.
+class InputHighlightLexer(Lexer):
+    """Highlight recognized input tokens in the prompt buffer.
 
-    Only exact matches against the registered command names/aliases are styled,
-    so partial or made-up tokens render as plain text.
+    Three token kinds are styled, composing on the same line:
+
+    - **Slash commands** (``class:slash-command``) -- only exact matches against
+      the registered command names/aliases, anywhere on the line. Partial or
+      made-up tokens render as plain text.
+    - **``@file`` mentions** (``class:file-mention``) -- agent mode only, styled
+      syntactically at a word boundary. The lexer runs on every keystroke and
+      cannot touch the filesystem, so mentions are not resolution-checked.
+    - **Leading ``!`` bash prefix** (``class:bash-prefix``) -- agent mode only,
+      the first character when the input is a one-shot shell command (mirrors
+      ``_build_user_input``).
     """
 
-    def __init__(self, known_names: Callable[[], frozenset[str]]) -> None:
+    def __init__(
+        self,
+        known_names: Callable[[], frozenset[str]],
+        *,
+        agent_mode: Callable[[], bool],
+    ) -> None:
         self._known_names = known_names
+        self._agent_mode = agent_mode
 
     @override
     def lex_document(self, document: Document) -> Callable[[int], StyleAndTextTuples]:
         known = self._known_names()
+        agent_mode = self._agent_mode()
         lines = document.lines
+
+        def spans(line: str, lineno: int) -> list[tuple[int, int, str]]:
+            out: list[tuple[int, int, str]] = []
+            # Leading "!" bash prefix: first line, agent mode, command after it.
+            if agent_mode and lineno == 0 and line.startswith("!") and line[1:].strip():
+                out.append((0, 1, "class:bash-prefix"))
+            # Slash commands anywhere on the line (exact registered matches only).
+            for match in _SLASH_TOKEN_RE.finditer(line):
+                if match.group(1).lower() not in known:
+                    continue
+                # Path-like tokens ("/clear/subdir") are not commands.
+                if match.end() < len(line) and line[match.end()] == "/":
+                    continue
+                out.append((match.start(), match.end(), "class:slash-command"))
+            # "@path" file mentions at a word boundary (agent mode only).
+            if agent_mode:
+                for match in _MENTION_TOKEN_RE.finditer(line):
+                    start = match.start()
+                    if start > 0:
+                        prev = line[start - 1]
+                        if prev.isalnum() or prev in _MENTION_TRIGGER_GUARDS:
+                            continue
+                    out.append((start, match.end(), "class:file-mention"))
+            out.sort(key=lambda span: span[0])
+            return out
 
         def get_line(lineno: int) -> StyleAndTextTuples:
             try:
@@ -234,16 +300,13 @@ class SlashCommandHighlightLexer(Lexer):
                 return []
             fragments: StyleAndTextTuples = []
             pos = 0
-            for match in _SLASH_TOKEN_RE.finditer(line):
-                if match.group(1).lower() not in known:
-                    continue
-                # Path-like tokens ("/clear/subdir") are not commands.
-                if match.end() < len(line) and line[match.end()] == "/":
-                    continue
-                if match.start() > pos:
-                    fragments.append(("", line[pos : match.start()]))
-                fragments.append(("class:slash-command", match.group(0)))
-                pos = match.end()
+            for start, end, style in spans(line, lineno):
+                if start < pos:
+                    continue  # defensive: drop overlapping spans
+                if start > pos:
+                    fragments.append(("", line[pos:start]))
+                fragments.append((style, line[start:end]))
+                pos = end
             if pos < len(line):
                 fragments.append(("", line[pos:]))
             return fragments
@@ -254,10 +317,12 @@ class SlashCommandHighlightLexer(Lexer):
 class SlashCommandAutoSuggest(AutoSuggest):
     """Inline ghost-text completion for a partially typed slash command.
 
-    While the user types a root ``/name`` token, the remainder of the best
-    (alphabetically first) matching command renders as dim ghost text after the
-    cursor; Tab accepts it word-for-word. Rendering and the standard accept
-    bindings (right-arrow / ctrl-e) come from prompt_toolkit's auto-suggest
+    While the user types a ``/name`` token -- at the start of the line *or*
+    mid-sentence (e.g. ``use /desi``) -- the remainder of the best (alphabetically
+    first) matching command renders as dim ghost text after the cursor; Tab
+    accepts it word-for-word. The dropdown menu stays line-start-only, so
+    mid-sentence typing never pops a completion list. Rendering and the standard
+    accept bindings (right-arrow / ctrl-e) come from prompt_toolkit's auto-suggest
     plumbing; the Tab binding is added in CustomPromptSession.
     """
 
@@ -266,7 +331,7 @@ class SlashCommandAutoSuggest(AutoSuggest):
 
     @override
     def get_suggestion(self, buffer: Buffer, document: Document) -> Suggestion | None:
-        token = _slash_command_token_before_cursor(document)
+        token = _slash_suggest_token_before_cursor(document)
         if token is None or len(token) < 2:
             return None
         typed = token[1:]
@@ -1280,7 +1345,7 @@ class LocalFileMentionCompleter(Completer):
     """
 
     _FRAGMENT_PATTERN = re.compile(r"[^\s@]+")
-    _TRIGGER_GUARDS = frozenset((".", "-", "_", "`", "'", '"', ":", "@", "#", "~"))
+    _TRIGGER_GUARDS = _MENTION_TRIGGER_GUARDS
 
     def __init__(
         self,
@@ -2091,12 +2156,13 @@ class CustomPromptSession:
         )
         self._agent_command_names = _command_name_set(agent_mode_slash_commands)
         self._shell_command_names = _command_name_set(shell_mode_slash_commands)
-        self._slash_highlight_lexer = SlashCommandHighlightLexer(
+        self._input_highlight_lexer = InputHighlightLexer(
             lambda: (
                 self._shell_command_names
                 if self._mode == PromptMode.SHELL
                 else self._agent_command_names
-            )
+            ),
+            agent_mode=lambda: self._mode == PromptMode.AGENT,
         )
         self._slash_auto_suggest = SlashCommandAutoSuggest(
             lambda: (
@@ -2453,7 +2519,7 @@ class CustomPromptSession:
             prompt_continuation=self._render_prompt_continuation,
             bottom_toolbar=self._render_bottom_toolbar,
             style=get_prompt_style(),
-            lexer=self._slash_highlight_lexer,
+            lexer=self._input_highlight_lexer,
         )
         # Throttle redraws so the fast streaming-reveal cadence can't overwhelm
         # slower terminals (best practice for "invalidate is called a lot").
@@ -3809,14 +3875,18 @@ class CustomPromptSession:
         fragments.extend(line1)
         fragments.append(("", "\n"))
 
+        # Reserve the last column (like _prompt_rule) so writing the final cell
+        # can't wrap the line on terminals such as Windows conhost / PowerShell.
+        usable = max(0, columns - 1)
+
         right_text = "".join(t for _, t in line2_right)
         right_width = _display_width(right_text)
-        if right_width > columns:
-            right_text = _truncate_left(right_text, max(0, columns))
+        if right_width > usable:
+            right_text = _truncate_left(right_text, usable)
             line2_right = [(secondary_style, right_text)]
             right_width = _display_width(right_text)
 
-        max_left_width = max(0, columns - right_width - 2)
+        max_left_width = max(0, usable - right_width - 1)
         command_line = ""
         runner = getattr(self, "_statusline_runner", None)
         if cfg.enabled and "command" in segments and runner is not None:
@@ -3851,7 +3921,7 @@ class CustomPromptSession:
             else:
                 left_width = 0
 
-        fragments.append(("", " " * max(0, columns - left_width - right_width)))
+        fragments.append(("", " " * max(0, usable - left_width - right_width)))
         fragments.extend(line2_right)
         return FormattedText(fragments)
 

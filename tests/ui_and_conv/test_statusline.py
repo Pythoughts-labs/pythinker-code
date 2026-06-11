@@ -88,7 +88,7 @@ def test_resolve_segments_disabled_master_switch_keeps_everything():
     # enabled=False means "render the stock footer"; resolver reports defaults.
     layout = resolve_segments(StatusLineConfig(enabled=False, segments=["model"]))
     assert layout.line1 == ["cwd", "git", "flags"]
-    assert layout.line2_right == ["context", "tokens", "model"]
+    assert layout.line2_right == ["context", "model"]
     assert layout.show_command is False
 
 

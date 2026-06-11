@@ -35,13 +35,14 @@ def test_usage_level_thresholds():
     assert usage_level(200) == "crit"
 
 
-def test_smooth_bar_eighth_blocks():
-    assert smooth_bar(0, width=8) == "░" * 8
-    assert smooth_bar(100, width=8) == "█" * 8
-    # 18% of 10 cells = 1.8 cells = 1 full block + 6/8 partial + 8 empty
-    assert smooth_bar(18, width=10) == "█▊" + "░" * 8
+def test_smooth_bar_filled_cells():
+    assert smooth_bar(0, width=8) == "▱" * 8
+    assert smooth_bar(100, width=8) == "▰" * 8
+    # 18% of 10 cells rounds to 2 filled cells.
+    assert smooth_bar(18, width=10) == "▰▰" + "▱" * 8
     # never exceeds width
     assert len(smooth_bar(99, width=10)) == 10
+    assert smooth_bar(99, width=10) == "▰" * 10
 
 
 def test_smooth_bar_ascii_fallback():
@@ -176,7 +177,7 @@ def test_context_segment_bar_and_gradient():
     text = _text(frags)
     assert text.startswith("ctx 36k/200k ")
     assert "18%" in text
-    assert "█" in text and "░" in text
+    assert "▰" in text and "▱" in text
     assert SEGMENT_REGISTRY["context"].render(make_ctx(max_context_tokens=0)) is None
 
 
@@ -216,6 +217,22 @@ def test_assemble_footer_two_lines_and_separators():
     assert "│" in line1 or "·" in line1
     line2 = _text(lines[1])
     assert "ctx" in line2 and "14:32" in line2
+
+
+def test_assemble_footer_drops_redundant_tokens_when_context_present():
+    from pythinker_code.ui.shell.statusline import assemble_footer
+
+    # "context" already prints the used/total ratio; a standalone "tokens"
+    # segment next to it is pure duplication and must be dropped.
+    segments = ["cwd", "context", "tokens", "model"]
+    line2 = _text(assemble_footer(make_ctx(), segments)[1])
+    assert "ctx 36k/200k" in line2
+    # The ratio appears exactly once (no "… │ 36k/200k" repeat).
+    assert line2.count("36k/200k") == 1
+
+    # With only "tokens" (no "context"), the ratio still renders.
+    only_tokens = _text(assemble_footer(make_ctx(), ["tokens"])[1])
+    assert only_tokens.strip() == "36k/200k"
 
 
 def test_assemble_footer_drops_segments_under_width_pressure():

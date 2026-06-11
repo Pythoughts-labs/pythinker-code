@@ -105,12 +105,25 @@ def test_auto_suggest_completes_best_prefix_match():
     assert _suggestion_text(names, "/h") == "elp"
 
 
+def test_auto_suggest_completes_mid_line_slash_token():
+    """A slash token after other words still ghost-completes (Tab fills it in),
+    while the dropdown menu stays line-start-only."""
+    names = frozenset({"designer-skill:designer-skill", "help"})
+    assert _suggestion_text(names, "use /designer") == "-skill:designer-skill"
+    assert _suggestion_text(names, "please run /he") == "lp"
+    # The completion *menu* must not open mid-line.
+    assert not SlashCommandCompleter.should_complete(
+        Document(text="use /designer", cursor_position=len("use /designer"))
+    )
+
+
 def test_auto_suggest_inactive_outside_root_slash_token():
     names = frozenset({"help"})
     assert _suggestion_text(names, "/") is None  # bare slash: menu handles discovery
     assert _suggestion_text(names, "/zzz") is None  # no match
     assert _suggestion_text(names, "/help") is None  # already complete
-    assert _suggestion_text(names, "say /he") is None  # not a root command token
+    assert _suggestion_text(names, "path/he") is None  # glued, not a slash token
+    assert _suggestion_text(names, "/he next") is None  # slash token isn't last
     assert _suggestion_text(names, "plain text") is None
 
 

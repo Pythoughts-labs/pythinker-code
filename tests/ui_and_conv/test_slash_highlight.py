@@ -1,4 +1,4 @@
-"""Tests for inline slash-command highlighting in the input area."""
+"""Tests for inline input highlighting (slash commands, @mentions, ! prefix)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from prompt_toolkit.document import Document
 from prompt_toolkit.formatted_text import StyleAndTextTuples
 
 from pythinker_code.ui.shell.prompt import (
-    SlashCommandHighlightLexer,
+    InputHighlightLexer,
     _command_name_set,
 )
 from pythinker_code.utils.slashcmd import SlashCommand
@@ -38,13 +38,17 @@ _KNOWN = _command_name_set(
 )
 
 
-def _lex_line(text: str, lineno: int = 0) -> StyleAndTextTuples:
-    lexer = SlashCommandHighlightLexer(lambda: _KNOWN)
+def _lex_line(text: str, lineno: int = 0, *, agent_mode: bool = True) -> StyleAndTextTuples:
+    lexer = InputHighlightLexer(lambda: _KNOWN, agent_mode=lambda: agent_mode)
     return list(lexer.lex_document(Document(text))(lineno))
 
 
+def _styled(fragments: StyleAndTextTuples, style: str) -> list[str]:
+    return [frag[1] for frag in fragments if frag[0] == style]
+
+
 def _highlighted(fragments: StyleAndTextTuples) -> list[str]:
-    return [frag[1] for frag in fragments if frag[0] == "class:slash-command"]
+    return _styled(fragments, "class:slash-command")
 
 
 def test_known_command_highlighted_mid_text():
@@ -94,3 +98,63 @@ def test_out_of_range_line_returns_empty():
 
 def test_trailing_punctuation_keeps_highlight():
     assert _highlighted(_lex_line("use /clear, then continue")) == ["/clear"]
+
+
+def _mentions(fragments: StyleAndTextTuples) -> list[str]:
+    return _styled(fragments, "class:file-mention")
+
+
+def test_at_mention_highlighted_at_boundary():
+    fragments = _lex_line("please read @src/main.py now")
+    assert _mentions(fragments) == ["@src/main.py"]
+    assert "".join(frag[1] for frag in fragments) == "please read @src/main.py now"
+
+
+def test_at_mention_at_start_highlighted():
+    assert _mentions(_lex_line("@README.md")) == ["@README.md"]
+
+
+def test_email_like_at_not_highlighted():
+    # "@" glued to an alphanumeric is not a mention boundary.
+    assert _mentions(_lex_line("ping foo@bar.com")) == []
+
+
+def test_mention_suppressed_outside_agent_mode():
+    assert _mentions(_lex_line("read @src/main.py", agent_mode=False)) == []
+
+
+def test_slash_and_mention_compose_on_one_line():
+    fragments = _lex_line("/clear then read @src/app.py")
+    assert _highlighted(fragments) == ["/clear"]
+    assert _mentions(fragments) == ["@src/app.py"]
+
+
+def _bash(fragments: StyleAndTextTuples) -> list[str]:
+    return _styled(fragments, "class:bash-prefix")
+
+
+def test_leading_bang_highlighted():
+    fragments = _lex_line("!ls -la")
+    assert _bash(fragments) == ["!"]
+    assert "".join(frag[1] for frag in fragments) == "!ls -la"
+
+
+def test_bang_without_command_not_highlighted():
+    assert _bash(_lex_line("!")) == []
+    assert _bash(_lex_line("!   ")) == []
+
+
+def test_bang_only_at_buffer_start():
+    # Leading whitespace means it is not a one-shot shell command.
+    assert _bash(_lex_line(" !ls")) == []
+    # A "!" later in the line is not a prefix.
+    assert _bash(_lex_line("echo !ls")) == []
+
+
+def test_bang_suppressed_outside_agent_mode():
+    assert _bash(_lex_line("!ls", agent_mode=False)) == []
+
+
+def test_bang_only_on_first_line():
+    text = "first line\n!ls"
+    assert _bash(_lex_line(text, lineno=1)) == []
