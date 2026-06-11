@@ -1,3 +1,61 @@
+# Codex best-practices adoption — /goal, /best-practices, loop discipline (2026-06-11)
+
+Branch: `feat/codex-goal-best-practices` (worktree from main @ 0b99d2c5).
+Source of truth: `blackbox/codex-main` (slash_dispatch.rs goals, prompts/templates/goals/*,
+prompts/templates/review/rubric.md, gpt_5_2_prompt.md, gpt-5.1-codex-max_prompt.md).
+Scouted via 6-explorer workflow + synthesis; primary sources re-read before porting.
+
+## Done (this session)
+
+- [x] `/goal` thread-goal command (codex goals port): `GoalState` in session state,
+      `prompts/goal_set.md` + `prompts/goal_continuation.md` (objective as untrusted
+      data in `<objective>` tags; fidelity rules; evidence-based completion audit),
+      set kicks off a turn via `soul._turn`, subcommands view/pause/resume/clear.
+      → verified: tests/core/test_goal_slash.py (13 tests).
+- [x] `GoalModeInjectionProvider`: plan-mode-style throttled full/sparse continuation
+      reminders, goal-change announces immediately, root-only, paused skip,
+      on_context_compacted reset.
+      → verified: tests/core/test_goal_mode_injection_provider.py (13 tests).
+- [x] `/best-practices` (alias `/bp`): opt-in injection of codex prompt guidance
+      (code changes, dirty worktree, testing, todo hygiene, progress updates,
+      debugging, final answers) with optional section filter.
+      → verified: tests/core/test_best_practices_slash.py (6 tests).
+- [x] SetTodoList single-`in_progress` invariant (codex plan_spec contract) +
+      tool-description + system.md status-discipline bullet.
+      → verified: tests/tools/test_todo.py (+4), description snapshot refixed.
+- [x] Review rubric port into `review.yaml` + `code_reviewer.yaml` ROLE_ADDITIONAL:
+      finding bar, comment construction, overall-correctness verdict.
+      → verified: test_agent_spec.py green (phrase pins unaffected).
+- [x] Docs: `docs/en/reference/slash-commands.md` /goal + /best-practices entries.
+- [x] CHANGELOG.md Unreleased entries (4 bullets).
+- [x] Gates: tests/core+tools (1798), ui_and_conv+ui (1763), rest minus PTY e2e
+      (1311, incl. pyinstaller datas pin updated for 3 new prompt assets);
+      make check-pythinker-code green (ruff, format, pyright 0 errors).
+
+## Next (P1, from synthesis — not yet implemented)
+
+- [ ] Approval-mode-adaptive validation guidance via auto_mode injection texts
+      (gpt_5_2_prompt.md:146-150) — avoids system.md snapshot churn.
+- [ ] Goal auto-continuation loop (config-gated `goal.auto_continue`, max 3/turn,
+      budget_limit-style wrap-up on final continuation; hard stops: cancel,
+      MaxStepsReached, turn error, usage limit). Codex goals/continuation.md:43-51.
+- [ ] Persistent compact-prompt override (`config.compact_prompt`, None = current
+      behavior byte-identical).
+- [ ] Progress-tool cadence (User Updates Spec, gpt_5_1_prompt.md:36-61) in
+      system.md — needs inline-snapshot review.
+- [ ] Manual smoke in a scratch repo (goal set → criteria stated → sparse reminders
+      → compaction re-fire → pause stops injections).
+
+## Out of scope (observed, logged)
+
+- Codex P0-P3 JSON review schema (pythinker has its own ```report contract).
+- Per-goal token budgets ({{ token_budget }} vars) — no per-goal usage meter yet.
+- Blocked-audit 3-strike rule — depends on auto-continuation counting (P1).
+- User prompt-template shadowing (a user `goal.md` template vs builtin) — verify
+  precedence in `_build_slash_commands` when implementing P1 wave.
+
+---
+
 # Task: Windows web 404 + PowerShell banner rendering (2026-06-10)
 
 ## Diagnosis (verified)
