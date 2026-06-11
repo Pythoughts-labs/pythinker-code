@@ -109,8 +109,18 @@ def test_default_config_dump():
                 "statusline": {
                     "enabled": True,
                     "segments": [
-                        "spinner", "model", "cost", "speed", "effort", "cwd", "git",
-                        "diff", "flags", "context", "elapsed", "clock",
+                        "spinner",
+                        "model",
+                        "cost",
+                        "speed",
+                        "effort",
+                        "cwd",
+                        "git",
+                        "diff",
+                        "flags",
+                        "context",
+                        "elapsed",
+                        "clock",
                     ],
                     "command": None,
                     "command_timeout_ms": 1000,
@@ -406,6 +416,23 @@ def test_scope_lock_feedback_url_allowed():
     )
 
 
+def test_scope_lock_statusline_command_in_project():
+    with pytest.raises(ConfigError, match="'tui.statusline.command'.*project scope"):
+        _check_scope_locks(
+            {"tui": {"statusline": {"command": "/tmp/evil-binary"}}},
+            ".pythinker/config.toml",
+        )
+
+
+def test_scope_lock_statusline_cosmetic_fields_allowed():
+    # Only `command` (auto-executed on shell start) is user-scope-only;
+    # cosmetic statusline fields stay project-configurable.
+    _check_scope_locks(
+        {"tui": {"statusline": {"enabled": True, "segments": ["cwd", "git", "command"]}}},
+        ".pythinker/config.toml",
+    )
+
+
 def test_scope_lock_clean_dict():
     _check_scope_locks({"theme": "light", "default_model": "gpt-4"}, ".pythinker/config.toml")
 
@@ -682,8 +709,18 @@ def test_statusline_v2_segment_ids_and_defaults():
         assert seg in STATUSLINE_SEGMENT_IDS
     cfg = StatusLineConfig()
     assert cfg.segments == [
-        "spinner", "model", "cost", "speed", "effort", "cwd", "git",
-        "diff", "flags", "context", "elapsed", "clock",
+        "spinner",
+        "model",
+        "cost",
+        "speed",
+        "effort",
+        "cwd",
+        "git",
+        "diff",
+        "flags",
+        "context",
+        "elapsed",
+        "clock",
     ]
     assert cfg.style == "fancy"
     assert cfg.bar_width == 10
@@ -703,4 +740,4 @@ def test_statusline_v2_field_validation():
     with pytest.raises(ValidationError):
         StatusLineConfig(cost_budget=-1.0)
     with pytest.raises(ValidationError):
-        StatusLineConfig(style="neon")
+        StatusLineConfig.model_validate({"style": "neon"})

@@ -136,7 +136,7 @@ def test_system_prompt_enforces_context_first_orchestration(
 
     assert "## 3. Operating Loop" in prompt
     assert "Gather — no context, no judgment" in prompt
-    assert "Minimum context packet before any codebase judgment" in prompt
+    assert "Minimum packet before any codebase judgment" in prompt
     assert "Plan from evidence" in prompt
     assert "Treat subagent claims as leads, not proof" in prompt
 

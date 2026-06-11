@@ -82,3 +82,11 @@ Format: trigger → rule.
   soul/slash.py, tool hints) and `.pythinker/prompts/` for custom commands —
   NOT `.claude/` config. Transcripts showing `~/.pythinker/sessions/` paths
   are pythinker runs; behavioral fixes belong in the product.
+
+## Verification gates
+
+- **When running a gate command (make check, pytest, ruff) through a pipe or
+  in the background**, the pipeline exit code is the LAST command's (e.g.
+  `tail`), and background notifications report that masked code. Never claim
+  a gate passed from a notification summary — read the gate's own output for
+  its verdict line, or run it unpiped with `; echo "EXIT=$?"`.

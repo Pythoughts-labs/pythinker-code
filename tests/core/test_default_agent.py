@@ -37,7 +37,7 @@ async def test_default_agent(runtime: Runtime):
     assert "## 6. Code Standards" in agent.system_prompt
     assert "NEVER revert worktree changes you did not make" in agent.system_prompt
     assert "hallucinated package names are a typosquatting vector" in agent.system_prompt
-    assert "Never game verification" in agent.system_prompt
+    assert "Never game it: no weakened or deleted assertions" in agent.system_prompt
     assert "never rerun an identical failing command" in agent.system_prompt
 
     # Prompt-injection defense — the <untrusted_data> wrapper is only effective if

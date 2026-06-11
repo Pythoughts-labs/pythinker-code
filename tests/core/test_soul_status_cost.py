@@ -1,7 +1,6 @@
 """Session cost + cumulative token totals surface in StatusSnapshot."""
 
 import pythinker_code.soul.pythinkersoul as _soul_mod
-
 from pythinker_code.soul import StatusSnapshot
 
 

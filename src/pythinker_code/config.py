@@ -56,6 +56,9 @@ SCOPE_LOCKED_PATHS: frozenset[tuple[str, ...]] = frozenset(
         ("providers",),  # contains api_key per provider — must stay in user scope
         ("services",),  # contains api_key fields — must stay in user scope
         ("feedback", "api_key"),  # only the key, not the whole feedback section
+        # Auto-executed when the shell starts — a repo-controlled project config
+        # must never be able to choose the binary that runs.
+        ("tui", "statusline", "command"),
     }
 )
 
@@ -653,8 +656,18 @@ STATUSLINE_SEGMENT_IDS: tuple[str, ...] = (
 )
 
 _DEFAULT_STATUSLINE_SEGMENTS: tuple[str, ...] = (
-    "spinner", "model", "cost", "speed", "effort", "cwd", "git",
-    "diff", "flags", "context", "elapsed", "clock",
+    "spinner",
+    "model",
+    "cost",
+    "speed",
+    "effort",
+    "cwd",
+    "git",
+    "diff",
+    "flags",
+    "context",
+    "elapsed",
+    "clock",
 )
 
 
@@ -707,8 +720,7 @@ class StatusLineConfig(BaseModel):
         default=None,
         ge=0,
         description=(
-            "Optional session budget in USD; when set the cost segment renders "
-            "'$spent/$budget'."
+            "Optional session budget in USD; when set the cost segment renders '$spent/$budget'."
         ),
     )
 

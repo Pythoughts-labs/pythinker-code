@@ -1,5 +1,17 @@
 """Tests for statusline v2 rendering: theme tokens, bar, segments."""
 
+from dataclasses import replace
+
+from pythinker_code.config import StatusLineConfig
+from pythinker_code.ui.shell.statusline import (
+    SEGMENT_REGISTRY,
+    GitInfo,
+    StatusFlags,
+    StatusLineContext,
+    smooth_bar,
+    split_zones,
+    usage_level,
+)
 from pythinker_code.ui.theme import StatusLineColors, get_statusline_colors
 
 
@@ -10,9 +22,6 @@ def test_statusline_colors_dark_palette():
     assert colors.usage_ok == "fg:#64d2a0"
     assert colors.usage_crit == "fg:#ff5050"
     assert colors.dim == "fg:#505564"
-
-
-from pythinker_code.ui.shell.statusline import smooth_bar, usage_level
 
 
 def test_usage_level_thresholds():
@@ -40,19 +49,9 @@ def test_smooth_bar_ascii_fallback():
     assert smooth_bar(0, width=8, ascii_only=True) == "--------"
 
 
-from pythinker_code.config import StatusLineConfig
-from pythinker_code.ui.shell.statusline import (
-    SEGMENT_REGISTRY,
-    GitInfo,
-    StatusFlags,
-    StatusLineContext,
-    split_zones,
-)
-
-
 def make_ctx(**overrides):
     """A minimal idle context; tests override what they exercise."""
-    defaults = dict(
+    base = StatusLineContext(
         columns=120,
         working=False,
         frame=0,
@@ -77,8 +76,7 @@ def make_ctx(**overrides):
         style="fancy",
         bar_width=10,
     )
-    defaults.update(overrides)
-    return StatusLineContext(**defaults)
+    return replace(base, **overrides)
 
 
 def test_registry_covers_all_config_ids():
@@ -125,9 +123,7 @@ def test_model_with_and_without_provider():
 def test_cost_hidden_at_zero_shown_with_budget():
     assert SEGMENT_REGISTRY["cost"].render(make_ctx(session_cost_usd=0.0)) is None
     assert _text(SEGMENT_REGISTRY["cost"].render(make_ctx(session_cost_usd=1.844))) == "$1.84"
-    frags = SEGMENT_REGISTRY["cost"].render(
-        make_ctx(session_cost_usd=10.2, cost_budget_usd=50.0)
-    )
+    frags = SEGMENT_REGISTRY["cost"].render(make_ctx(session_cost_usd=10.2, cost_budget_usd=50.0))
     assert _text(frags) == "$10.20/$50"
 
 
@@ -160,6 +156,7 @@ def test_diff_segment():
     assert SEGMENT_REGISTRY["diff"].render(make_ctx()) is None
     assert SEGMENT_REGISTRY["diff"].render(make_ctx(diff_added=0, diff_removed=0)) is None
     frags = SEGMENT_REGISTRY["diff"].render(make_ctx(diff_added=54, diff_removed=13))
+    assert frags is not None
     assert _text(frags) == "+54/-13"
     styles = [s for s, _ in frags]
     assert any("78dc8c" in s for s in styles)  # additions mint
@@ -188,6 +185,7 @@ def test_context_low_warning_blinks_on_frame():
     assert "CTX LOW" in _text(SEGMENT_REGISTRY["context"].render(ctx_hot))
     s0 = SEGMENT_REGISTRY["context"].render(make_ctx(context_tokens=190_000, frame=0))
     s1 = SEGMENT_REGISTRY["context"].render(make_ctx(context_tokens=190_000, frame=1))
+    assert s0 is not None and s1 is not None
     assert [s for s, _ in s0] != [s for s, _ in s1]  # bold/dim alternation
 
 
@@ -200,7 +198,9 @@ def test_limits_hidden_without_data():
     assert SEGMENT_REGISTRY["limits"].render(make_ctx(limits=None)) is None
     from pythinker_code.ui.shell.statusline import ProviderLimits
 
-    lim = ProviderLimits(requests_pct=37, requests_reset_s=9960.0, tokens_pct=None, tokens_reset_s=None)
+    lim = ProviderLimits(
+        requests_pct=37, requests_reset_s=9960.0, tokens_pct=None, tokens_reset_s=None
+    )
     text = _text(SEGMENT_REGISTRY["limits"].render(make_ctx(limits=lim)))
     assert "37%" in text and "2h 46m" in text
 
@@ -222,20 +222,38 @@ def test_assemble_footer_drops_segments_under_width_pressure():
     from pythinker_code.ui.shell.statusline import assemble_footer
 
     cfg = StatusLineConfig()
-    wide = make_ctx(working=True, rate_in=92, rate_out=85, session_cost_usd=1.5,
-                    effort="high", diff_added=54, diff_removed=13)
-    narrow = make_ctx(columns=60, working=True, rate_in=92, rate_out=85,
-                      session_cost_usd=1.5, effort="high", diff_added=54, diff_removed=13)
+    wide = make_ctx(
+        working=True,
+        rate_in=92,
+        rate_out=85,
+        session_cost_usd=1.5,
+        effort="high",
+        diff_added=54,
+        diff_removed=13,
+    )
+    narrow = make_ctx(
+        columns=60,
+        working=True,
+        rate_in=92,
+        rate_out=85,
+        session_cost_usd=1.5,
+        effort="high",
+        diff_added=54,
+        diff_removed=13,
+    )
     assert "in 92" in _text(assemble_footer(wide, cfg.segments)[0])
     line1_narrow = _text(assemble_footer(narrow, cfg.segments)[0])
-    assert "in 92" not in line1_narrow          # speed dropped first
-    assert "claude-fable-5" in line1_narrow     # model survives
+    assert "in 92" not in line1_narrow  # speed dropped first
+    assert "claude-fable-5" in line1_narrow  # model survives
 
 
 def test_segment_exception_is_isolated(monkeypatch):
     from pythinker_code.ui.shell import statusline as sl
 
-    boom = sl.SegmentSpec("cost", "line1", lambda ctx: 1 / 0, drop_priority=5)
+    def _boom(ctx):
+        raise ZeroDivisionError
+
+    boom = sl.SegmentSpec("cost", "line1", _boom, drop_priority=5)
     monkeypatch.setitem(sl.SEGMENT_REGISTRY, "cost", boom)
     cfg = StatusLineConfig()
     lines = sl.assemble_footer(make_ctx(session_cost_usd=5.0), cfg.segments)
@@ -246,9 +264,9 @@ def test_rate_sampler_window_and_rate():
     from pythinker_code.ui.shell.statusline import RateSampler
 
     s = RateSampler(window_s=1.5, min_samples=3)
-    assert s.update(0.0, 0) is None       # 1 sample
-    assert s.update(0.5, 100) is None      # 2 samples
-    rate = s.update(1.0, 200)              # 3 samples: 200 tokens over 1.0s
+    assert s.update(0.0, 0) is None  # 1 sample
+    assert s.update(0.5, 100) is None  # 2 samples
+    rate = s.update(1.0, 200)  # 3 samples: 200 tokens over 1.0s
     assert rate == 200
     # stale samples evicted beyond the window
     assert s.update(3.0, 260) is not None or s.update(3.0, 260) is None  # smoke: no crash

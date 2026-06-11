@@ -27,8 +27,18 @@ def test_config_has_statusline_section_with_defaults():
     assert isinstance(sl, StatusLineConfig)
     assert sl.enabled is True
     assert sl.segments == [
-        "spinner", "model", "cost", "speed", "effort", "cwd", "git",
-        "diff", "flags", "context", "elapsed", "clock",
+        "spinner",
+        "model",
+        "cost",
+        "speed",
+        "effort",
+        "cwd",
+        "git",
+        "diff",
+        "flags",
+        "context",
+        "elapsed",
+        "clock",
     ]
     assert sl.command is None
     assert sl.command_timeout_ms == 1000

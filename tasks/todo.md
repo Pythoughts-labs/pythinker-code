@@ -217,3 +217,45 @@ in SigNoz for alert delivery.
   success); failures are warnings, never release blockers.
 - Secret `BUGSINK_RELEASES_TOKEN` set on Pythoughts-labs/pythinker-code
   (dedicated token "github-actions release sync" in Bugsink Tokens page).
+
+### 2026-06-11 — system.md harmonization + deep-scan fixes (`feat/agentic-orchestration`)
+
+Reviewed the uncommitted `agents/default/system.md` condensing pass against the
+codebase and resolved the deep-code-scan findings
+(`.pythinker/reports/deep-code-scan-feat-agentic-orchestration.md`).
+
+- [x] system.md diff review — internally consistent (`§N` style throughout,
+      §7→§6 security-hygiene move lossless, §3 absorbs the old escalation
+      list). Harmonized the one stale cross-reference:
+      `code_reviewer.yaml` "base Section 8" → "base §8".
+- [x] Updated the two stale prompt pins to the new wording:
+      `test_load_agent.py` ("Minimum packet before any codebase judgment"),
+      `test_default_agent.py` ("Never game it: no weakened or deleted
+      assertions"). All other pins still match.
+- [x] High fix: `("tui", "statusline", "command")` scope-locked in
+      `config.py` (+2 tests, red→green). `/statusline` unaffected (writes
+      user-scope `config.source_file`).
+- [x] High fix: OTel error-log forwarding now site-only
+      (module/function/line + exc_class, no message body) per the
+      `telemetry/errors.py` privacy posture; test rewritten to assert
+      wire-controlled content never reaches the exporter.
+- [x] Medium finding verified already resolved by 68fb92d0 (add_shared_tools
+      + turn-start MCP wait + existing focused test); resolution appended to
+      the scan report.
+- [x] Verify: make check-pythinker-code clean; focused suites green; full
+      tests/ run (see session summary). tests_e2e skipped — no e2e file
+      references the changed surfaces.
+
+Review: smallest-diff approach throughout; the system.md edit itself was the
+user's and is sound — observations: §5 no longer enumerates the `review` role
+and the judge-gate trigger list dropped ".pythinker/reports/ saved" (both
+benign: the Agent tool advertises all subagent types dynamically, and the
+remaining triggers cover findings reports). "code-reviewr" in specs is a real
+CLI name, not a typo — left untouched.
+- [x] make-check cleanup (pre-existing, statusline commits): import order/E402
+      in `test_soul_status_cost.py` + `test_statusline_render.py`; ruff format
+      drift in `config.py`, `test_config.py`, `test_statusline.py`,
+      `test_statusline_slash.py`; pyright errors in `test_statusline_render.py`
+      (typed `make_ctx` via `dataclasses.replace`, None-guards, raising segment
+      stub) and `test_config.py` (`model_validate` for invalid-literal case).
+      Final: `make check-pythinker-code` exit 0; full tests/ 5142 passed.

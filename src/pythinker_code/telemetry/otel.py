@@ -186,25 +186,28 @@ def init(
 
 
 def _install_error_log_forwarding() -> int | None:
-    """Forward loguru ERROR/CRITICAL records to OTel logs.
+    """Forward loguru ERROR/CRITICAL records to OTel logs as site-only events.
 
     ``logger.error``/``logger.exception`` sites without a paired
     ``report_handled_error`` are otherwise invisible fleet-wide, which makes
-    agent failures undiagnosable. Same privacy posture as Sentry: absolute
-    paths scrubbed, message truncated, nothing below ERROR ever leaves the
-    host. Called once from :func:`init`, so the kill switch and pytest guard
-    apply. Returns the loguru sink id (tests remove it), or None on failure.
+    agent failures undiagnosable. Only the logging site (module/function/line)
+    and the exception class are exported — never the formatted message, which
+    routinely embeds user-, repo-, or wire-controlled content (raw wire lines,
+    payloads, file fragments). The message template is recoverable from source
+    given the site and ``service.version``, and nothing below ERROR ever
+    leaves the host. Called once from :func:`init`, so the kill switch and
+    pytest guard apply. Returns the loguru sink id (tests remove it), or None
+    on failure.
     """
-    from pythinker_code.telemetry.errors import ABSOLUTE_PATH_RE
 
     def _sink(message: Any) -> None:
         try:
             record = message.record
-            text = ABSOLUTE_PATH_RE.sub("<path>", record["message"])[:500]
             attrs: dict[str, Any] = {
                 "log.level": record["level"].name,
                 "log.module": record["name"] or "",
-                "message": text,
+                "log.function": record["function"] or "",
+                "log.line": record["line"] or 0,
             }
             exc = record["exception"]
             if exc is not None and exc.type is not None:

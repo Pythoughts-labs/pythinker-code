@@ -85,7 +85,7 @@ agent:
       ### SUMMARY
       One paragraph: command run, number of findings/artifacts, top severity, and the 1-3 highest-priority recommendations. End with an overall-correctness verdict — `patch is correct` or `patch is incorrect` (correct means existing code and tests will not break and the change is free of blocking issues; ignore non-blocking style, formatting, and nits) — plus a 1-3 sentence justification.
       ### FINDINGS
-      Present qualifying findings as the single fenced ` ```report ` JSON block defined in base Section 8 — one entry per finding with `title`, `severity` (critical|high|medium|low|info), its `path:line` anchor in `location`, and `body` per the finding anatomy (annotated snippet where it sharpens the point) — or `None — no findings met the bar.`
+      Present qualifying findings as the single fenced ` ```report ` JSON block defined in base §8 — one entry per finding with `title`, `severity` (critical|high|medium|low|info), its `path:line` anchor in `location`, and `body` per the finding anatomy (annotated snippet where it sharpens the point) — or `None — no findings met the bar.`
       ### EVIDENCE
       Bullet list of `<file>:<line> [severity] <rule_id> — <title>` for findings, or concise artifact bullets for non-finding commands. Top 10 max. Include the source URL and retrieval date for any freshness-check verification.
       ### CHANGES
