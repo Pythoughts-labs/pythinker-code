@@ -58,11 +58,13 @@ Scouted via 6-explorer workflow + synthesis; primary sources re-read before port
 
 ## Next
 
-- [ ] Manual smoke in a scratch repo (goal set → criteria stated → sparse reminders
-      → compaction re-fire → pause stops injections → UpdateGoal complete stops
-      continuations).
-- [ ] Push branch + PR (needs user-confirmed push; CHANGELOG Unreleased entry done;
-      remember CodeRabbit gate before merge).
+- [x] E2E smoke: PTY e2e suite isolated — 59 passed, 2 skipped, 1 xfailed (157s).
+      (Full interactive smoke with a live LLM left to the user.)
+- [x] Pushed branch; PR #117 open. Full suite 4884 passed / 7 skipped; the one
+      hung run was a load/ordering flake (0% CPU in kqueue select at ~2%,
+      clean re-run green in 102s) — consistent with the repo's load-sensitivity.
+- [ ] Babysit PR #117: CI green + CodeRabbit review finished (success status on
+      head commit) before merge; merge itself is the user's call.
 
 ## Out of scope (observed, logged)
 
