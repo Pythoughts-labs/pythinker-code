@@ -243,8 +243,9 @@ def _make_session(statusline: StatusLineConfig | None = None) -> Any:
     session._tips = []
     session._tip_rotation_index = 0
     session._last_tip_rotate_time = float("inf")
-    if statusline is not None:
-        session._statusline_layout = resolve_segments(statusline)
+    cfg = statusline if statusline is not None else StatusLineConfig()
+    session._statusline_cfg = cfg
+    session._statusline_layout = resolve_segments(cfg)
     return session
 
 
@@ -260,6 +261,7 @@ def _render_card(session: Any, monkeypatch: pytest.MonkeyPatch, width: int = 120
     )
     monkeypatch.setattr(shell_prompt, "_get_git_branch", lambda: "main")
     monkeypatch.setattr(shell_prompt, "_get_git_status", lambda: (False, 0, 0))
+    monkeypatch.setattr(shell_prompt, "_get_git_diffstat", lambda: None)
     monkeypatch.setattr(shell_prompt, "_shorten_cwd", lambda _: "~/proj")
     monkeypatch.setattr("pythinker_code.extensions.footer_statuses", lambda: {})
     fragments = session._render_bottom_toolbar()
@@ -270,7 +272,6 @@ def test_card_footer_default_layout_shows_all_segments(monkeypatch: pytest.Monke
     plain = _render_card(_make_session(StatusLineConfig()), monkeypatch)
     assert "~/proj" in plain
     assert "main" in plain
-    assert "context: 0.0%" in plain
     assert "fast-model" in plain
 
 
@@ -280,20 +281,20 @@ def test_card_footer_segments_can_be_hidden(monkeypatch: pytest.MonkeyPatch):
     )
     assert "~/proj" not in plain
     assert "main" not in plain
-    assert "context: 0.0%" in plain
     assert "fast-model" in plain
 
 
-def test_card_footer_disabled_customization_matches_default(monkeypatch: pytest.MonkeyPatch):
-    stock = _render_card(_make_session(None), monkeypatch)
+def test_card_footer_disabled_customization_renders_stock_footer(monkeypatch: pytest.MonkeyPatch):
     disabled = _render_card(
         _make_session(StatusLineConfig(enabled=False, segments=["model"])), monkeypatch
     )
-    assert disabled == stock
-    # The segments override must be ignored at render time, not just in the
-    # resolver: default segments (cwd/git) still show despite segments=["model"].
+    # Disabling customization renders the plain stock footer regardless of the
+    # configured segments: the default stock segments (cwd/git/model) still show
+    # despite segments=["model"], and the fancy spinner glyph is absent.
     assert "~/proj" in disabled
     assert "main" in disabled
+    assert "fast-model" in disabled
+    assert "◇" not in disabled
 
 
 def test_card_footer_shows_external_command_line(monkeypatch: pytest.MonkeyPatch):

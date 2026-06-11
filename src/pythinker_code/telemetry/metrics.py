@@ -183,6 +183,40 @@ def record_turn(*, duration_seconds: float, step_count: int, stop_reason: str) -
     turn_step_count.record(step_count, attrs)
 
 
+# Model-name → family table. ``gen_ai.system`` only reflects the transport
+# provider class, so every OpenAI-compatible endpoint (Alibaba DashScope,
+# Moonshot, Zhipu, …) collapses into "openai" — the family attribute keeps the
+# actual model lineage as a low-cardinality dashboard dimension. Order matters:
+# first substring match wins (e.g. "codex" before "gpt").
+_MODEL_FAMILY_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("claude", "claude"),
+    ("codex", "codex"),
+    ("gpt", "gpt"),
+    ("gemini", "gemini"),
+    ("qwen", "qwen"),
+    ("qwq", "qwen"),
+    ("deepseek", "deepseek"),
+    ("kimi", "kimi"),
+    ("moonshot", "kimi"),
+    ("minimax", "minimax"),
+    ("abab", "minimax"),
+    ("glm", "glm"),
+    ("zhipu", "glm"),
+    ("llama", "llama"),
+    ("mistral", "mistral"),
+    ("grok", "grok"),
+)
+
+
+def classify_model_family(model: str | None) -> str:
+    """Classify a model name into a stable ``gen_ai.model.family`` value."""
+    name = (model or "").lower()
+    for needle, family in _MODEL_FAMILY_PATTERNS:
+        if needle in name:
+            return family
+    return "other"
+
+
 def record_llm_call(
     *,
     duration_seconds: float,
@@ -198,6 +232,7 @@ def record_llm_call(
     attrs: dict[str, Any] = {
         "gen_ai.system": system,
         "gen_ai.request.model": model,
+        "gen_ai.model.family": classify_model_family(model),
         "success": success,
     }
     llm_calls_total.add(1, attrs)

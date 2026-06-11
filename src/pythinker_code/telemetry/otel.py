@@ -180,8 +180,46 @@ def init(
     _m.bind(_meter)
 
     _initialized = True
+    _install_error_log_forwarding()
     _log.debug("OTel SDK initialized at %s", endpoint)
     return True
+
+
+def _install_error_log_forwarding() -> int | None:
+    """Forward loguru ERROR/CRITICAL records to OTel logs.
+
+    ``logger.error``/``logger.exception`` sites without a paired
+    ``report_handled_error`` are otherwise invisible fleet-wide, which makes
+    agent failures undiagnosable. Same privacy posture as Sentry: absolute
+    paths scrubbed, message truncated, nothing below ERROR ever leaves the
+    host. Called once from :func:`init`, so the kill switch and pytest guard
+    apply. Returns the loguru sink id (tests remove it), or None on failure.
+    """
+    from pythinker_code.telemetry.errors import ABSOLUTE_PATH_RE
+
+    def _sink(message: Any) -> None:
+        try:
+            record = message.record
+            text = ABSOLUTE_PATH_RE.sub("<path>", record["message"])[:500]
+            attrs: dict[str, Any] = {
+                "log.level": record["level"].name,
+                "log.module": record["name"] or "",
+                "message": text,
+            }
+            exc = record["exception"]
+            if exc is not None and exc.type is not None:
+                attrs["exc_class"] = exc.type.__name__
+            emit_log(name="app_error_log", attributes=attrs, severity="error")
+        except Exception:  # noqa: BLE001 — telemetry must never break logging
+            pass
+
+    try:
+        from pythinker_code.utils.logging import logger as app_logger
+
+        return app_logger.add(_sink, level="ERROR")
+    except Exception:
+        _log.debug("Failed to install error-log forwarding", exc_info=True)
+        return None
 
 
 def get_tracer() -> Tracer:

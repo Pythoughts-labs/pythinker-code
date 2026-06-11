@@ -177,3 +177,43 @@ Out of scope (logged): 400 "enable_thinking restricted to True" is a provider
 compat issue in pythinker_core's openai_legacy (external package) — Bugsink
 will keep reporting it (4xx_client stays unexpected), which is desired until
 fixed upstream.
+
+### 2026-06-11 — Telemetry release sync + SigNoz pipeline & dashboard setup
+
+App-side (this repo):
+- `constant.py`: `get_version()` now prefers live pyproject.toml in a source
+  checkout (editable dist-info goes stale between uv syncs → events were
+  attributed to old releases, e.g. 0.40.0 while pyproject said 0.40.1).
+- `telemetry/config.py`: `detect_environment()` — PYTHINKER_ENV wins, source
+  checkout → "development", else "production". Wired into sentry.init AND
+  otel resource (deployment.environment was hardcoded "production").
+- Tests in test_sentry_filters.py; startup-imports test updated (metadata now
+  only the wheel/PyInstaller fallback). Full suite 5022 passed.
+
+Infra (Dokploy/SigNoz — not in this repo):
+- ROOT CAUSE: otel.pythinker.com had no Traefik route (404) — all client OTLP
+  was dropped since launch. Fixed by adding traefik labels for otel-collector
+  (port 4318) to the signoz compose + redeploy; domain record alone does not
+  generate routing. Verified logs/metrics/traces ingest 200 end-to-end; live
+  clients appeared immediately.
+- SigNoz now has: dashboard "Pythinker — Product Overview" (12 panels), 5
+  saved views (logs: all events / handled errors / crashes; traces: agent
+  turns / slow LLM calls), 3 alert rules (API error spike, tool failure
+  spike, ingest stalled) → channel pythinker-admin-email.
+
+Out of scope (logged): the edge collector does not validate the bearer token
+(any OTLP POST is accepted); SMTP for the email channel may need configuring
+in SigNoz for alert delivery.
+
+### 2026-06-11 — Bugsink release sync (seamless)
+
+- Bugsink project renamed pythinker-cli → pythinker-code; junk releases
+  (1.0.0-smoke, 1.0.0, manual-probe, 2.4.0) deleted via `ssh vps` +
+  `bugsink-manage shell` → "Resolved in latest" now shows 0.40.1.
+- `.github/workflows/release-pythinker-cli.yml`: new `register-bugsink-release`
+  job (needs validate+release) POSTs `pythinker-code@<version>` to the Bugsink
+  releases API at tag time — "resolved in next release" flips when the release
+  ships, not when its first error arrives. Idempotent (400 "already exists" is
+  success); failures are warnings, never release blockers.
+- Secret `BUGSINK_RELEASES_TOKEN` set on Pythoughts-labs/pythinker-code
+  (dedicated token "github-actions release sync" in Bugsink Tokens page).

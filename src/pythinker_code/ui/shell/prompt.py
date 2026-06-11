@@ -3639,6 +3639,7 @@ class CustomPromptSession:
     def _build_statusline_context(self, columns: int) -> StatusLineContext:
         from pythinker_code.ui.shell.statusline import (
             GitInfo,
+            RateSampler,
             StatusFlags,
             StatusLineContext,
         )
@@ -3651,14 +3652,21 @@ class CustomPromptSession:
         self._statusline_frame = getattr(self, "_statusline_frame", 0) + 1
         working = self._has_background_tasks()
 
+        # Samplers may be missing when a session is constructed without __init__
+        # (test helpers do this); fall back to fresh ones so rendering is robust.
+        rate_in_sampler = getattr(self, "_rate_in_sampler", None) or RateSampler()
+        self._rate_in_sampler = rate_in_sampler
+        rate_out_sampler = getattr(self, "_rate_out_sampler", None) or RateSampler()
+        self._rate_out_sampler = rate_out_sampler
+
         rate_in: int | None = None
         rate_out: int | None = None
         if working:
-            rate_in = self._rate_in_sampler.update(now, status.total_input_tokens)
-            rate_out = self._rate_out_sampler.update(now, status.total_output_tokens)
+            rate_in = rate_in_sampler.update(now, status.total_input_tokens)
+            rate_out = rate_out_sampler.update(now, status.total_output_tokens)
         else:
-            self._rate_in_sampler.reset()
-            self._rate_out_sampler.reset()
+            rate_in_sampler.reset()
+            rate_out_sampler.reset()
 
         try:
             cwd_text = _truncate_left(_shorten_cwd(str(HostPath.cwd())), _MAX_CWD_COLS)
@@ -3679,11 +3687,8 @@ class CustomPromptSession:
         diff = _get_git_diffstat()
         diff_added, diff_removed = diff if diff is not None else (None, None)
 
-        effort = (
-            self._thinking_effort
-            if self._thinking_effort in ("high", "medium", "low")
-            else None
-        )
+        thinking_effort = getattr(self, "_thinking_effort", None)
+        effort = thinking_effort if thinking_effort in ("high", "medium", "low") else None
 
         started = getattr(self, "_statusline_started_at", None)
         elapsed_s = (now - started) if started is not None else 0.0
