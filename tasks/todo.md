@@ -51,6 +51,39 @@ footer). Next session: open PR; CodeRabbit gate before merge.
 
 ## Recently completed
 
+### 2026-06-11 — Deep-scan report triage (statusline runner + findings roll-up)
+
+Confirmed & fixed (statusline.py): refresh-loop exception guard (#1), explicit
+interval clamped to a positive floor (#2), bounded 64KiB stdout read replaces
+communicate() (#3), sync cancel() also kills a live child process (#4),
+_warn_once dedupes per message instead of one-shot (#5). usage.py:
+_extract_section now skips fenced code blocks (#8). Rejected as not-issues:
+#6 (Reload from mid-task /statusline is caught by _run_slash_command_during_task),
+#7 (self-configured command, exec+shlex, by design), #9 (child output is
+same-tier LLM content, full reports already flow unwrapped), #11 (BaseException
+passthrough is correct). Regression tests added for every fix.
+
+### 2026-06-11 — Per-command during-task availability for shell slash commands
+
+- `utils/slashcmd.py`: `SlashCommand.available_during_task` flag (+ decorator kwarg).
+- Task-safe (read-only) commands flagged: /statusline, /usage(/status), /help,
+  /version, /agents, /changelog, /context, /tools.
+- `visualize/_interactive.py`: `_intercept_shell_command()` replaces the blanket
+  streaming block on both Enter-queue and Ctrl+S paths — flagged commands run
+  immediately via a `shell_command_runner` hook (output prints above the live
+  area); the rest toast "/x is disabled while a task is in progress".
+- `Shell._run_slash_command_during_task` swallows Reload/Switch mid-turn with a
+  "saved, applies later" notice so fire-and-forget tasks can't lose control flow.
+- Tests: tests/ui_and_conv/test_btw.py (blocked + run + no-runner paths); full
+  ui_and_conv, core, utils, tests_e2e green; ruff + pyright clean.
+- Follow-ups done same day: bare `/statusline` now opens a dismissable
+  settings-list menu at the idle prompt (Esc cancels; apply persists + reloads;
+  falls back to the table mid-run since a second prompt_toolkit app can't run
+  over the live view); the agent-mode completion popup annotates shell commands
+  that are blocked mid-run with "disabled while a task is in progress".
+  Tests: test_statusline_slash.py (menu open/apply/fallback),
+  test_slash_completer.py (annotation on/off).
+
 ### 2026-06-11 — Port upstream tool-call dedup (kimi-cli #2242 + #2372)
 
 - `soul/toolset.py`: canonical args, same-step result sharing, cross-step sparse

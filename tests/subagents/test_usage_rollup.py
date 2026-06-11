@@ -171,3 +171,36 @@ def test_aggregate_findings_ignores_none_placeholders() -> None:
 
 def test_aggregate_findings_empty_batch() -> None:
     assert aggregate_findings([]) == []
+
+
+def test_aggregate_findings_preserves_leading_cli_flags() -> None:
+    report = """### RISKS
+- --force flag bypasses validation.
+* *args handling is fragile.
+"""
+    lines = aggregate_findings([("child-a", report)])
+    text = "\n".join(lines)
+    assert "--force flag bypasses validation." in text
+    assert "*args handling is fragile." in text
+
+
+def test_extract_section_ignores_headers_inside_code_fences():
+    output = (
+        "### RISKS\n"
+        "- real risk\n"
+        "```bash\n"
+        "# BLOCKERS\n"
+        "- not a finding, just a shell comment\n"
+        "```\n"
+        "- second real risk\n"
+        "### BLOCKERS\n"
+        "- real blocker\n"
+    )
+    from pythinker_code.subagents.usage import aggregate_findings
+
+    lines = aggregate_findings([("child", output)])
+    joined = "\n".join(lines)
+    assert "real risk" in joined
+    assert "second real risk" in joined
+    assert "real blocker" in joined
+    assert "shell comment" not in joined

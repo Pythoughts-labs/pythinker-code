@@ -17,6 +17,8 @@ FEATURE_TIPS: Final = (
     "/theme switches between dark and light",
     "Ctrl+O expands truncated output",
     "Use /resume to pick up a previous session",
+    "/best-practices (or /bp) injects engineering guardrails for the session",
+    "/best-practices testing injects just one guidance section",
 )
 
 #: Seconds a single tip stays on screen before rotating to the next.

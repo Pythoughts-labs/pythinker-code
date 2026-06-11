@@ -308,3 +308,25 @@ def test_find_prompt_float_container_supports_direct_float_container_shape():
     root = HSplit([float_container])
 
     assert _find_prompt_float_container(root) is float_container
+
+
+def test_task_unavailable_commands_annotated_during_run():
+    """Shell commands not flagged task-safe show a disabled meta while a turn runs."""
+    completer = SlashCommandCompleter(
+        [_make_command("settings"), _make_command("statusline")],
+        annotate_meta=True,
+        is_task_running=lambda: True,
+    )
+    metas = {c.text: c.display_meta_text for c in _completions(completer, "/")}
+    assert metas["/settings"] == "disabled while a task is in progress"
+    assert metas["/statusline"] != "disabled while a task is in progress"
+
+
+def test_no_disabled_annotation_when_idle():
+    completer = SlashCommandCompleter(
+        [_make_command("settings")],
+        annotate_meta=True,
+        is_task_running=lambda: False,
+    )
+    metas = {c.text: c.display_meta_text for c in _completions(completer, "/")}
+    assert "disabled" not in metas["/settings"]

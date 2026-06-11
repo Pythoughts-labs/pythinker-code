@@ -223,3 +223,48 @@ class TestRenderToAnsiColorSystem:
         assert _TRUECOLOR_BG_RE.search(result), (
             "render_to_ansi should emit truecolor SGR when terminal supports it"
         )
+
+
+class TestRedirectConsolePrints:
+    """redirect_console_prints captures the current async context's prints only."""
+
+    def test_prints_inside_context_go_to_buffer(self, capsys: pytest.CaptureFixture[str]):
+        from pythinker_code.ui.shell.console import console, redirect_console_prints
+
+        with redirect_console_prints(columns=80) as buf:
+            console.print("captured-menu [a|b|c]")
+        assert "captured-menu" in buf.getvalue()
+        assert "captured-menu" not in capsys.readouterr().out
+
+    def test_prints_outside_context_unaffected(self, capsys: pytest.CaptureFixture[str]):
+        from pythinker_code.ui.shell.console import console, redirect_console_prints
+
+        with redirect_console_prints(columns=80):
+            pass
+        console.print("normal-output")
+        assert "normal-output" in capsys.readouterr().out
+
+    @pytest.mark.asyncio
+    async def test_concurrent_task_prints_are_not_captured(self):
+        import asyncio
+
+        from pythinker_code.ui.shell.console import console, redirect_console_prints
+
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def captured_task() -> str:
+            with redirect_console_prints(columns=80) as buf:
+                console.print("from-captured")
+                started.set()
+                await release.wait()
+            return buf.getvalue()
+
+        async def bystander_task() -> None:
+            await started.wait()
+            console.print("from-bystander")
+            release.set()
+
+        captured, _ = await asyncio.gather(captured_task(), bystander_task())
+        assert "from-captured" in captured
+        assert "from-bystander" not in captured

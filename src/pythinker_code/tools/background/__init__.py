@@ -6,7 +6,13 @@ from typing import override
 from pydantic import BaseModel, Field
 from pythinker_core.tooling import CallableTool2, ToolError, ToolReturnValue
 
-from pythinker_code.background import TaskView, format_task, format_task_list, list_task_views
+from pythinker_code.background import (
+    TaskView,
+    format_task,
+    format_task_list,
+    is_terminal_status,
+    list_task_views,
+)
 from pythinker_code.soul.agent import Runtime
 from pythinker_code.soul.approval import Approval
 from pythinker_code.tools.display import BackgroundTaskDisplayBlock
@@ -46,9 +52,25 @@ def _tool_status_for_view(view: TaskView) -> ToolResultStatus:
         return ToolResultStatus.success
     if view.runtime.status == "killed":
         return ToolResultStatus.cancelled
-    if view.runtime.status in {"failed", "lost"}:
+    if view.runtime.status in {"failed", "lost", "recoverable"}:
         return ToolResultStatus.failure
     return ToolResultStatus.error
+
+
+def _retrieval_hint_lines(retrieval_status: str) -> list[str]:
+    if retrieval_status == "not_ready":
+        return [
+            "retrieval_hint: Task is still running. Call TaskOutput again with "
+            "block=true to wait for completion, or continue other work and rely "
+            "on the completion notification. Avoid repeated non-blocking polls."
+        ]
+    if retrieval_status == "timeout":
+        return [
+            "retrieval_hint: Wait timed out before the task reached a terminal "
+            "state. Retry with block=true and a longer timeout, or continue "
+            "other work until the completion notification arrives."
+        ]
+    return []
 
 
 def _format_task_output(
@@ -71,6 +93,7 @@ def _format_task_output(
     lines = [
         tool_status_line(tool_status),
         f"retrieval_status: {retrieval_status}",
+        *_retrieval_hint_lines(retrieval_status),
         f"task_id: {view.spec.id}",
         f"kind: {view.spec.kind}",
         f"status: {view.runtime.status}",
@@ -290,17 +313,9 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
                 params.task_id,
                 timeout_s=params.timeout,
             )
-            retrieval_status = (
-                "success"
-                if view.runtime.status in {"completed", "failed", "killed", "lost"}
-                else "timeout"
-            )
+            retrieval_status = "success" if is_terminal_status(view.runtime.status) else "timeout"
         else:
-            retrieval_status = (
-                "success"
-                if view.runtime.status in {"completed", "failed", "killed", "lost"}
-                else "not_ready"
-            )
+            retrieval_status = "success" if is_terminal_status(view.runtime.status) else "not_ready"
 
         (
             output,

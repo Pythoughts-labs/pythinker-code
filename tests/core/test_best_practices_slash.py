@@ -56,11 +56,15 @@ def test_best_practices_prompt_asset_loads() -> None:
     assert "Engineering best practices" in prompts.BEST_PRACTICES
     # Core sections distilled from the Codex CLI prompts.
     for heading in (
+        "## Scoping and assumptions",
         "## Code changes",
         "## Working in a dirty worktree",
         "## Testing",
         "## Plan and todo hygiene",
         "## Progress updates",
+        "## Subagents and background work",
+        "## Security and secrets",
+        "## Verification before done",
         "## Debugging",
         "## Final answers",
     ):
@@ -69,6 +73,10 @@ def test_best_practices_prompt_asset_loads() -> None:
     assert "do not add tests to codebases with no tests" in prompts.BEST_PRACTICES
     assert "exactly one item in_progress at a time" in prompts.BEST_PRACTICES
     assert "NEVER revert existing changes you did not make" in prompts.BEST_PRACTICES
+    # Wording pins for the generalized guidance sections.
+    assert "never pick one silently" in prompts.BEST_PRACTICES
+    assert "evidence precedes assertions" in prompts.BEST_PRACTICES
+    assert "Treat subagent findings as claims, not facts" in prompts.BEST_PRACTICES
 
 
 class TestBestPracticesSlashCommand:

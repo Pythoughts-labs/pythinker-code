@@ -581,36 +581,36 @@ def _render_with_color(renderable) -> str:
 
 
 class TestDiffMarkerReferenceColors:
-    def test_panel_markers_use_reference_ansi_green_red(self) -> None:
-        """Full diff markers must keep reference-style ANSI green/red, even in panels."""
+    def test_panel_markers_use_theme_diff_tokens(self) -> None:
+        """Full diff markers must use the standardized theme diff green/red."""
         from pythinker_code.ui.theme import set_active_theme
 
         set_active_theme("dark")
         hunks, a, r = _collect("old_line", "new_line")
         ansi_out = _render_with_color(render_diff_panel("test.py", hunks, a, r))
-        assert "\x1b[32;" in ansi_out
-        assert "\x1b[31;" in ansi_out
+        assert "38;2;129;199;132" in ansi_out  # tool_diff_added #81C784
+        assert "38;2;229;115;115" in ansi_out  # tool_diff_removed #E57373
 
-    def test_header_stats_use_bold_reference_ansi_colors(self) -> None:
-        """Header +N/-N stats match Rich's bold green/red reference styling."""
+    def test_header_stats_use_bold_theme_diff_tokens(self) -> None:
+        """Header +N/-N stats use the bold standardized theme diff green/red."""
         from pythinker_code.ui.theme import set_active_theme
 
         set_active_theme("dark")
         hunks, a, r = _collect("old_line", "new_line")
         ansi_out = _render_with_color(render_diff_panel("test.py", hunks, a, r))
-        assert "\x1b[1;32m" in ansi_out
-        assert "\x1b[1;31m" in ansi_out
+        assert "\x1b[1;38;2;129;199;132m" in ansi_out
+        assert "\x1b[1;38;2;229;115;115m" in ansi_out
 
-    def test_preview_markers_use_reference_ansi_colors(self) -> None:
-        """render_diff_preview markers must use the same ANSI colors as the full panel."""
+    def test_preview_markers_use_theme_diff_tokens(self) -> None:
+        """render_diff_preview markers must use the same colors as the full panel."""
         from pythinker_code.ui.theme import set_active_theme
 
         set_active_theme("dark")
         hunks, a, r = _collect("old_line", "new_line")
         renderables, _ = render_diff_preview("test.py", hunks, a, r)
         ansi_out = "".join(_render_with_color(renderable) for renderable in renderables)
-        assert "\x1b[32m" in ansi_out
-        assert "\x1b[31m" in ansi_out
+        assert "38;2;129;199;132" in ansi_out
+        assert "38;2;229;115;115" in ansi_out
 
 
 # ---------------------------------------------------------------------------

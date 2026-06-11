@@ -160,3 +160,91 @@ async def test_statusline_invalid_subcommand_shows_usage(
     await _run_statusline(app, "frobnicate")
 
     assert "Usage" in str(print_mock.call_args.args[0])
+
+
+@pytest.mark.asyncio
+async def test_statusline_bare_opens_menu_and_esc_dismisses(
+    runtime: Runtime, tmp_path: Path, monkeypatch
+) -> None:
+    """Bare /statusline at the idle prompt opens the interactive menu; cancel saves nothing."""
+    app = _make_shell_app(runtime, tmp_path)
+    save_mock = Mock()
+    monkeypatch.setattr(shell_slash, "save_config", save_mock)
+    monkeypatch.setattr(shell_slash.console, "print", Mock())
+
+    seen_configs = []
+
+    async def fake_menu(config):
+        seen_configs.append(config)
+        return None  # Esc / cancel
+
+    monkeypatch.setattr(
+        "pythinker_code.ui.shell.components.settings_list.run_settings_list", fake_menu
+    )
+
+    await _run_statusline(app, "")
+
+    save_mock.assert_not_called()
+    item_ids = [item.id for item in seen_configs[0].items]
+    assert "enabled" in item_ids
+    assert "segment:git" in item_ids
+    assert "command_timeout_ms" in item_ids
+
+
+@pytest.mark.asyncio
+async def test_statusline_menu_apply_persists_changes(
+    runtime: Runtime, tmp_path: Path, monkeypatch
+) -> None:
+    from pythinker_code.ui.shell.components.settings_list import SettingsListResult
+
+    config_path = (tmp_path / "config.toml").resolve()
+    runtime.config.source_file = config_path
+    app = _make_shell_app(runtime, tmp_path)
+
+    config_for_save = get_default_config()
+    monkeypatch.setattr(shell_slash, "load_config", Mock(return_value=config_for_save))
+    monkeypatch.setattr(shell_slash, "save_config", Mock())
+    monkeypatch.setattr(shell_slash.console, "print", Mock())
+
+    async def fake_menu(config):
+        return SettingsListResult(
+            changes={
+                "enabled": "off",
+                "segment:git": "off",
+                "command_timeout_ms": "2000",
+            }
+        )
+
+    monkeypatch.setattr(
+        "pythinker_code.ui.shell.components.settings_list.run_settings_list", fake_menu
+    )
+
+    with pytest.raises(Reload):
+        await _run_statusline(app, "")
+
+    sl = config_for_save.tui.statusline
+    assert sl.enabled is False
+    assert "git" not in sl.segments
+    assert sl.command_timeout_ms == 2000
+
+
+@pytest.mark.asyncio
+async def test_statusline_bare_falls_back_to_table_during_task(
+    runtime: Runtime, tmp_path: Path, monkeypatch
+) -> None:
+    """While a turn is streaming, bare /statusline prints the table instead of a menu."""
+    app = _make_shell_app(runtime, tmp_path)
+    app._active_view = object()  # simulate a running turn
+    print_mock = Mock()
+    monkeypatch.setattr(shell_slash.console, "print", print_mock)
+
+    menu_mock = Mock()
+    monkeypatch.setattr(
+        "pythinker_code.ui.shell.components.settings_list.run_settings_list", menu_mock
+    )
+
+    await _run_statusline(app, "")
+
+    menu_mock.assert_not_called()
+    printed = " ".join(str(call.args[0]) for call in print_mock.call_args_list)
+    assert "Usage" in printed

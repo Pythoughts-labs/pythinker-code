@@ -114,8 +114,16 @@ def _extract_section(output: str, section: str) -> list[str]:
     """Collect non-empty content lines under a ``### <section>`` style header."""
     collected: list[str] = []
     in_section = False
+    in_fence = False
     for raw_line in output.splitlines():
         line = raw_line.strip()
+        if line.startswith("```"):
+            # Lines inside fenced code blocks (e.g. `# comment` in a shell
+            # snippet) must not be mistaken for section headers or findings.
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
         header = line.lstrip("#").strip().upper()
         if line.startswith("#"):
             in_section = header == section
@@ -124,7 +132,9 @@ def _extract_section(output: str, section: str) -> list[str]:
             continue
         if line.lower() in _NONE_PLACEHOLDERS:
             continue
-        collected.append(line.lstrip("-*").strip())
+        # Strip a single leading bullet only; lstrip("-*") would eat
+        # leading CLI flags like "--force" out of the finding text.
+        collected.append(line[1:].strip() if line[:1] in "-*" else line)
     return collected
 
 

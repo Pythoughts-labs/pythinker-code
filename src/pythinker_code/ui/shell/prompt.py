@@ -55,6 +55,7 @@ from prompt_toolkit.layout.controls import BufferControl, UIContent, UIControl
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.layout.margins import Margin
 from prompt_toolkit.layout.menus import CompletionsMenu
+from prompt_toolkit.lexers import Lexer
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.utils import get_cwidth
 from pydantic import BaseModel, ValidationError
@@ -155,6 +156,15 @@ class CwdLostError(OSError):
     """Raised when the working directory no longer exists (e.g. external drive unplugged)."""
 
 
+def _command_name_set(commands: Sequence[SlashCommand[Any]]) -> frozenset[str]:
+    """Lowercased names and aliases for exact-match slash highlighting."""
+    names: set[str] = set()
+    for cmd in commands:
+        names.add(cmd.name.lower())
+        names.update(alias.lower() for alias in cmd.aliases)
+    return frozenset(names)
+
+
 def _slash_command_token_before_cursor(document: Document) -> str | None:
     """Return the active slash-command token, or ``None`` when completion should stay hidden."""
     text = document.text_before_cursor
@@ -192,6 +202,50 @@ def _discard_slash_command(buffer: Buffer) -> bool:
     return True
 
 
+# A "/name" token that starts the input or follows whitespace. The name charset
+# matches registered command names and aliases (including "skill:x" / "flow:x").
+_SLASH_TOKEN_RE = re.compile(r"(?<!\S)/([A-Za-z0-9][A-Za-z0-9_:.-]*)")
+
+
+class SlashCommandHighlightLexer(Lexer):
+    """Highlight tokens that name an existing slash command anywhere in the input.
+
+    Only exact matches against the registered command names/aliases are styled,
+    so partial or made-up tokens render as plain text.
+    """
+
+    def __init__(self, known_names: Callable[[], frozenset[str]]) -> None:
+        self._known_names = known_names
+
+    @override
+    def lex_document(self, document: Document) -> Callable[[int], StyleAndTextTuples]:
+        known = self._known_names()
+        lines = document.lines
+
+        def get_line(lineno: int) -> StyleAndTextTuples:
+            try:
+                line = lines[lineno]
+            except IndexError:
+                return []
+            fragments: StyleAndTextTuples = []
+            pos = 0
+            for match in _SLASH_TOKEN_RE.finditer(line):
+                if match.group(1).lower() not in known:
+                    continue
+                # Path-like tokens ("/clear/subdir") are not commands.
+                if match.end() < len(line) and line[match.end()] == "/":
+                    continue
+                if match.start() > pos:
+                    fragments.append(("", line[pos : match.start()]))
+                fragments.append(("class:slash-command", match.group(0)))
+                pos = match.end()
+            if pos < len(line):
+                fragments.append(("", line[pos:]))
+            return fragments
+
+        return get_line
+
+
 class SlashCommandCompleter(Completer):
     """
     A completer that:
@@ -206,11 +260,13 @@ class SlashCommandCompleter(Completer):
         *,
         annotate_meta: bool = False,
         command_scope: str = "command",
+        is_task_running: Callable[[], bool] | None = None,
     ) -> None:
         super().__init__()
         self._available_commands = sorted(available_commands, key=lambda c: c.name)
         self._annotate_meta = annotate_meta
         self._command_scope = command_scope
+        self._is_task_running = is_task_running
         self._command_lookup: dict[str, list[SlashCommand[Any]]] = {}
 
         for cmd in self._available_commands:
@@ -267,7 +323,18 @@ class SlashCommandCompleter(Completer):
         for cmd in prefix:
             yield from emit(cmd)
 
+    def _disabled_during_task(self, cmd: SlashCommand[Any]) -> bool:
+        """True when a running turn blocks this shell-level command."""
+        if self._is_task_running is None or not self._is_task_running():
+            return False
+        from pythinker_code.ui.shell.slash import registry as shell_registry
+
+        shell_cmd = shell_registry.find_command(cmd.name)
+        return shell_cmd is not None and not shell_cmd.available_during_task
+
     def _display_meta(self, cmd: SlashCommand[Any]) -> str:
+        if self._disabled_during_task(cmd):
+            return "disabled while a task is in progress"
         if not self._annotate_meta:
             return cmd.description
 
@@ -1915,6 +1982,7 @@ class CustomPromptSession:
                     agent_mode_slash_commands,
                     annotate_meta=True,
                     command_scope="command",
+                    is_task_running=lambda: self._running_prompt_delegate is not None,
                 ),
                 # TODO(host): we need an async HostFileMentionCompleter
                 LocalFileMentionCompleter(HostPath.cwd().unsafe_to_local_path()),
@@ -1925,6 +1993,15 @@ class CustomPromptSession:
             shell_mode_slash_commands,
             annotate_meta=True,
             command_scope="shell",
+        )
+        self._agent_command_names = _command_name_set(agent_mode_slash_commands)
+        self._shell_command_names = _command_name_set(shell_mode_slash_commands)
+        self._slash_highlight_lexer = SlashCommandHighlightLexer(
+            lambda: (
+                self._shell_command_names
+                if self._mode == PromptMode.SHELL
+                else self._agent_command_names
+            )
         )
 
         # Build key bindings
@@ -2262,6 +2339,7 @@ class CustomPromptSession:
             prompt_continuation=self._render_prompt_continuation,
             bottom_toolbar=self._render_bottom_toolbar,
             style=get_prompt_style(),
+            lexer=self._slash_highlight_lexer,
         )
         # Throttle redraws so the fast streaming-reveal cadence can't overwhelm
         # slower terminals (best practice for "invalidate is called a lot").

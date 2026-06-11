@@ -1323,6 +1323,30 @@ class Shell:
             console.print(f"[{_get_tui_tokens().error}]Unknown error: {escape(str(e))}[/]")
             raise  # re-raise unknown error
 
+    async def _run_slash_command_during_task(self, command_call: SlashCommandCall) -> None:
+        """Run a task-safe shell command typed while a turn is streaming.
+
+        Reload/mode-switch control flow cannot be honored mid-turn; any config
+        change is already saved, so report that it applies later instead of
+        letting the exception escape the fire-and-forget task.
+        """
+        from pythinker_code.cli import Reload, SwitchToVis, SwitchToWeb
+
+        _t = _get_tui_tokens()
+        try:
+            await self._run_slash_command(command_call)
+        except Reload:
+            console.print(
+                f"[{_t.warning}]Settings saved — restart pythinker after the "
+                f"current task to apply them.[/]"
+            )
+        except (SwitchToWeb, SwitchToVis):
+            console.print(
+                f"[{_t.warning}]Mode switches are unavailable while a task is in progress.[/]"
+            )
+        except Exception:
+            logger.exception("Error running /{command} during task", command=command_call.name)
+
     async def run_soul_command(self, user_input: str | list[ContentPart]) -> bool:
         """
         Run the soul and handle any known exceptions.
@@ -1381,6 +1405,7 @@ class Shell:
                     prompt_session=self._prompt_session,
                     steer=self.soul.steer if isinstance(self.soul, PythinkerSoul) else None,
                     btw_runner=self._make_btw_runner(),
+                    shell_command_runner=self._run_slash_command_during_task,
                     bind_running_input=self._bind_running_input,
                     unbind_running_input=self._unbind_running_input,
                     on_view_ready=_on_view_ready,
@@ -1436,6 +1461,7 @@ class Shell:
                         prompt_session=self._prompt_session,
                         steer=self.soul.steer if isinstance(self.soul, PythinkerSoul) else None,
                         btw_runner=self._make_btw_runner(),
+                        shell_command_runner=self._run_slash_command_during_task,
                         bind_running_input=self._bind_running_input,
                         unbind_running_input=self._unbind_running_input,
                         on_view_ready=_on_view_ready,

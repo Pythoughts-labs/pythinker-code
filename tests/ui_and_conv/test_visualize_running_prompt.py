@@ -51,6 +51,7 @@ async def test_visualize_uses_prompt_live_view_when_prompt_session_and_steer_are
             prompt_session,
             steer,
             btw_runner=None,
+            shell_command_runner=None,
             cancel_event,
             show_thinking_stream=False,
             show_turn_recaps=False,
@@ -1586,3 +1587,116 @@ def test_background_status_shows_elapsed_tokens_and_rate(monkeypatch) -> None:
     session._background_task_count_provider = lambda: BgTaskCounts()
     assert render() == ""
     assert session._bg_status_started_at is None
+
+
+# ---------------------------------------------------------------------------
+# Transient slash-command output panel (mid-task menus appear and disappear)
+# ---------------------------------------------------------------------------
+
+
+class _InvalidatingPromptSession:
+    def __init__(self) -> None:
+        self.invalidations = 0
+
+    def invalidate(self) -> None:
+        self.invalidations += 1
+
+
+def _make_prompt_live_view(**kwargs) -> Any:
+    return _PromptLiveView(
+        StatusUpdate(),
+        prompt_session=cast(Any, _InvalidatingPromptSession()),
+        steer=lambda _content: None,
+        **kwargs,
+    )
+
+
+def test_transient_command_output_appears_then_expires(monkeypatch) -> None:
+    view = _make_prompt_live_view()
+    clock = {"now": 100.0}
+    monkeypatch.setattr(_interactive_mod.time, "monotonic", lambda: clock["now"])
+
+    view._show_transient_command_output("Enabled  on")
+    body = view.render_running_prompt_body(80).value
+    assert "Enabled  on" in body
+
+    clock["now"] += _interactive_mod._TRANSIENT_COMMAND_PANEL_S + 0.1
+    assert view.render_running_prompt_body(80).value == ""
+
+
+def test_transient_command_output_dismissed_by_new_input() -> None:
+    view = _make_prompt_live_view()
+    view._show_transient_command_output("menu line")
+    assert "menu line" in view.render_running_prompt_body(80).value
+
+    view.handle_local_input(
+        UserInput(
+            mode=PromptMode.AGENT,
+            command="continue please",
+            resolved_command="continue please",
+            content=[TextPart(text="continue please")],
+        )
+    )
+    assert "menu line" not in view.render_running_prompt_body(80).value
+    # The new input itself still queued normally.
+    assert len(view._queued_messages) == 1
+
+
+def test_transient_command_output_truncates_verbose_commands() -> None:
+    view = _make_prompt_live_view()
+    view._show_transient_command_output(
+        "\n".join(f"line-{i}" for i in range(100)),
+    )
+    panel = view._current_transient_command_output()
+    assert panel is not None
+    lines = panel.splitlines()
+    assert len(lines) == _interactive_mod._TRANSIENT_COMMAND_PANEL_MAX_LINES + 1
+    assert lines[-1].startswith("… +")
+
+
+def test_transient_panel_renders_alongside_queued_messages() -> None:
+    view = _make_prompt_live_view()
+    view._show_transient_command_output("panel content")
+    view._queued_messages.append(
+        UserInput(
+            mode=PromptMode.AGENT,
+            command="queued msg",
+            resolved_command="queued msg",
+            content=[TextPart(text="queued msg")],
+        )
+    )
+    body = view.render_running_prompt_body(80).value
+    assert "panel content" in body
+    assert "queued msg" in body
+
+
+@pytest.mark.asyncio
+async def test_intercepted_shell_command_output_is_captured_not_printed(capsys) -> None:
+    """Mid-task slash output must land in the transient panel, not scrollback."""
+    import pythinker_code.ui.shell.slash  # noqa: F401  — registers /version
+    from pythinker_code.ui.shell.console import console as real_console
+
+    async def runner(call) -> None:
+        real_console.print(f"menu for /{call.name} [with|brackets]")
+
+    view = _make_prompt_live_view(shell_command_runner=runner)
+    view._turn_ended = False
+    consumed = view._intercept_shell_command(
+        UserInput(
+            mode=PromptMode.AGENT,
+            command="/version",
+            resolved_command="/version",
+            content=[TextPart(text="/version")],
+        )
+    )
+    assert consumed is True
+    for _ in range(100):
+        if not view._shell_command_tasks:
+            break
+        await asyncio.sleep(0.01)
+    import re
+
+    visible = re.sub(r"\x1b\[[0-9;]*m", "", view.render_running_prompt_body(120).value)
+    assert "menu for /version" in visible
+    assert "❯ /version" in visible  # echo lives inside the panel too
+    assert "menu for /version" not in capsys.readouterr().out

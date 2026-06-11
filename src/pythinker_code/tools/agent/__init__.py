@@ -142,8 +142,10 @@ class RunAgentsParams(BaseModel):
     run_in_background: bool = Field(
         default=True,
         description=(
-            "Launch children as background tasks by default so independent work can run in "
-            "parallel. Set false only when sequential foreground results are needed immediately."
+            "Foreground (false) runs children concurrently and returns all results inline — "
+            "prefer it when your only next step is to synthesize the results. Background "
+            "(true) returns immediately with task ids; use it only when you have other work "
+            "to do while children run."
         ),
     )
     timeout: int | None = Field(
@@ -543,7 +545,8 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
                 "scope, and output requirements. Each child receives base_prompt, then "
                 "its own single-objective prompt with scope and verification criteria. "
                 "Background mode returns task IDs immediately; foreground mode runs children "
-                "sequentially and returns their summaries. Background batches share the session "
+                "concurrently (bounded by the session background-task limit) and returns their "
+                "summaries. Background batches share the session "
                 f"background-task limit ({max_background} total slots, including running "
                 "shell/background tasks); oversized background batches launch what fits now "
                 "and report the deferred children."
@@ -553,7 +556,12 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
         self._agent_tool = AgentTool(runtime)
 
     def _child_concurrency_limit(self) -> int:
-        """How many children may execute at once (execution-capacity guard)."""
+        """How many children may execute at once (execution-capacity guard).
+
+        Deliberately reuses ``background.max_running_tasks`` so one config knob
+        bounds total child execution; setting it to 1 also serializes
+        foreground fan-out.
+        """
         return max(1, self._runtime.config.background.max_running_tasks)
 
     def _background_capacity(self, params: RunAgentsParams) -> _BackgroundCapacity | None:
@@ -578,7 +586,7 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
         message = (
             f"RunAgents requested {capacity.requested} background agent(s), but no background "
             f"task slots are available (active={capacity.active}, max={capacity.max_running}). "
-            "Wait for existing tasks to finish, or set run_in_background=false for sequential "
+            "Wait for existing tasks to finish, or set run_in_background=false for "
             "foreground execution."
         )
         output = "\n".join(
@@ -591,7 +599,7 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
                 f"available_background_slots: {capacity.available}",
                 (
                     "next_step: Wait for active tasks to finish, or use run_in_background=false "
-                    "to run children sequentially."
+                    "to run children in the foreground."
                 ),
             ]
         )

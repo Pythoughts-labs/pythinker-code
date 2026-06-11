@@ -73,7 +73,7 @@ _KEYBOARD_SHORTCUTS = [
 ]
 
 
-@registry.command(aliases=["h", "?"])
+@registry.command(aliases=["h", "?"], available_during_task=True)
 @shell_mode_registry.command(aliases=["h", "?"])
 def help(app: Shell, args: str):
     """Show help information"""
@@ -149,7 +149,7 @@ def help(app: Shell, args: str):
         console.print(Group(*renderables))
 
 
-@registry.command
+@registry.command(available_during_task=True)
 @shell_mode_registry.command
 def version(app: Shell, args: str):
     """Show version information"""
@@ -158,7 +158,7 @@ def version(app: Shell, args: str):
     console.print(f"pythinker, version {VERSION}")
 
 
-@registry.command
+@registry.command(available_during_task=True)
 @shell_mode_registry.command
 def agents(app: Shell, args: str):
     """List available subagent types"""
@@ -520,7 +520,7 @@ async def editor(app: Shell, args: str):
         )
 
 
-@registry.command(aliases=["release-notes"])
+@registry.command(aliases=["release-notes"], available_during_task=True)
 @shell_mode_registry.command(aliases=["release-notes"])
 def changelog(app: Shell, args: str):
     """Show release notes"""
@@ -846,7 +846,7 @@ async def clear(app: Shell, args: str):
 
     track("clear")
     await app.run_soul_command("/clear")
-    raise Reload()
+    raise Reload(clear_screen=True)
 
 
 @registry.command
@@ -1361,7 +1361,7 @@ async def settings(app: Shell, args: str):
     raise Reload(session_id=soul.runtime.session.id)
 
 
-@registry.command
+@registry.command(available_during_task=True)
 async def statusline(app: Shell, args: str) -> None:
     """Customize the status line (footer): segments, on/off, external command"""
     from rich.table import Table
@@ -1376,7 +1376,9 @@ async def statusline(app: Shell, args: str) -> None:
     config = soul.runtime.config
     current = config.tui.statusline
 
-    usage_text = (
+    # Pre-escaped: the [show|on|off|...] brackets would otherwise be parsed
+    # (and swallowed) as Rich markup when interpolated into styled prints.
+    usage_text = _rich_escape(
         "Usage: /statusline [show|on|off|segments <id,...>|command <argv...>|command none]"
         f" — segment ids: {', '.join(STATUSLINE_SEGMENT_IDS)}"
     )
@@ -1385,7 +1387,7 @@ async def statusline(app: Shell, args: str) -> None:
         table = Table(show_header=False, box=None, pad_edge=False)
         table.add_row("Enabled", "on" if current.enabled else "off")
         table.add_row("Segments", ", ".join(current.segments) or "(none)")
-        table.add_row("Command", current.command or "(none)")
+        table.add_row("Command", _rich_escape(current.command) if current.command else "(none)")
         table.add_row("Command timeout", f"{current.command_timeout_ms} ms")
         console.print(table)
         console.print(f"[{_t.muted}]{usage_text}[/]")
@@ -1411,8 +1413,88 @@ async def statusline(app: Shell, args: str) -> None:
         console.print(f"[{_t.success}]{message} Reloading...[/]")
         raise Reload(session_id=soul.runtime.session.id)
 
+    async def run_menu() -> None:
+        from pythinker_code.ui.shell.components.settings_list import (
+            SettingItem,
+            SettingsListConfig,
+            run_settings_list,
+        )
+
+        items = [
+            SettingItem(
+                id="enabled",
+                label="Enabled",
+                current_value="on" if current.enabled else "off",
+                description="Show the customizable status line below the prompt.",
+                values=("on", "off"),
+            )
+        ]
+        for seg in STATUSLINE_SEGMENT_IDS:
+            items.append(
+                SettingItem(
+                    id=f"segment:{seg}",
+                    label=f"Segment: {seg}",
+                    current_value="on" if seg in current.segments else "off",
+                    description=f"Show the {seg} segment.",
+                    values=("on", "off"),
+                )
+            )
+        timeout_values = sorted({current.command_timeout_ms, 500, 1000, 2000, 5000})
+        items.append(
+            SettingItem(
+                id="command_timeout_ms",
+                label="Command timeout (ms)",
+                current_value=str(current.command_timeout_ms),
+                description="Timeout for the external status command.",
+                values=[str(v) for v in timeout_values],
+            )
+        )
+        items.append(
+            SettingItem(
+                id="command",
+                label="Command",
+                current_value=current.command or "(none)",
+                description="External command; change via /statusline command <argv...>.",
+            )
+        )
+
+        result = await run_settings_list(SettingsListConfig(title="Status line", items=items))
+        if result is None:
+            return
+        changes = result.changes
+        if not changes:
+            console.print(f"[{_t.warning}]Status line unchanged.[/]")
+            return
+
+        def _apply(sl: Any) -> None:
+            if "enabled" in changes:
+                sl.enabled = changes["enabled"] == "on"
+            if "command_timeout_ms" in changes:
+                sl.command_timeout_ms = int(changes["command_timeout_ms"])
+            segment_changes = {
+                key.removeprefix("segment:"): value == "on"
+                for key, value in changes.items()
+                if key.startswith("segment:")
+            }
+            if segment_changes:
+                wanted = set(sl.segments)
+                for seg, on in segment_changes.items():
+                    (wanted.add if on else wanted.discard)(seg)
+                sl.segments = [s for s in STATUSLINE_SEGMENT_IDS if s in wanted]
+
+        persist(_apply, "Status line updated.")
+
     mode = args.strip()
-    if mode in {"", "show", "list", "view"}:
+    if mode == "":
+        # Bare /statusline opens the interactive menu (Esc to dismiss). Fall
+        # back to the static table while a turn is streaming — a second
+        # prompt_toolkit application cannot run on top of the live view.
+        if getattr(app, "_active_view", None) is None:
+            await run_menu()
+        else:
+            print_table()
+        return
+    if mode in {"show", "list", "view"}:
         print_table()
         return
     if mode in {"on", "off"}:
@@ -1455,7 +1537,7 @@ async def statusline(app: Shell, args: str) -> None:
             if "command" not in sl.segments:
                 sl.segments = [*sl.segments, "command"]
 
-        persist(_set_command, f"Status line command set to {raw!r}.")
+        persist(_set_command, f"Status line command set to {_rich_escape(repr(raw))}.")
         return
     console.print(f"[{_t.warning}]{usage_text}[/]")
 
@@ -1623,7 +1705,7 @@ async def worklog(app: Shell, args: str) -> None:
             )
 
 
-@registry.command
+@registry.command(available_during_task=True)
 @shell_mode_registry.command
 def context(app: Shell, args: str) -> None:
     """Show context, checkpoint, and compaction status"""
@@ -1652,7 +1734,7 @@ def context(app: Shell, args: str) -> None:
     console.print(f"[{_tok.muted}]Use /compact [focus] to summarize old context.[/]")
 
 
-@registry.command
+@registry.command(available_during_task=True)
 @shell_mode_registry.command
 def tools(app: Shell, args: str) -> None:
     """List available tools and permission posture"""

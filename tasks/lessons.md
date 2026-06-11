@@ -1,0 +1,76 @@
+# Lessons
+
+Repo-specific rules accumulated from corrections and post-session reviews.
+Format: trigger → rule.
+
+## Subagent orchestration
+
+- **When dispatching subagents whose results you will immediately synthesize**
+  (review + report, parallel analysis with no interleaved work), use
+  **foreground fan-out** (`RunAgents` foreground mode) — results return inline,
+  no polling or notification parsing. Reserve background mode for when the
+  orchestrator has other work to do while children run.
+- **When a non-blocking `TaskOutput` returns `retrieval_status: not_ready`**,
+  do not snapshot-poll again. Either call `TaskOutput` with `block=true` and a
+  realistic timeout, or continue other work until the completion notification
+  arrives. Repeated non-blocking polls waste turns and tokens.
+- **When deciding whether a background task is done**, trust only
+  `status`/`retrieval_status` from a tool result. Notifications are a wake
+  signal, not a state assertion — never claim "both agents completed" from a
+  glimpsed notification.
+- **When tempted to read a subagent's live output file mid-run**, don't. The
+  `tasks/agent-*.md` log is only authoritative after the task is terminal;
+  reading it early yields truncated content and wasted reasoning. Completion
+  notifications now carry `output_path` + `output_size_bytes` — read the file
+  after `terminal_reason: completed`.
+
+## Review scoping
+
+- **When asked to review/scan "the branch" and `git status` shows a dirty
+  tree**, scope the diff as committed work PLUS the working tree
+  (`git diff main` against the worktree, or `main...HEAD` + `git diff HEAD`),
+  or explicitly state that uncommitted changes are excluded. `git diff
+  main...HEAD` alone silently skips the newest code.
+- **When writing a report to a path that already exists**, check it first —
+  date-stamp the filename or append a run section instead of silently
+  overwriting prior results.
+
+## Bookkeeping honesty
+
+- **Never narrate a bookkeeping action** ("let me update the todo list",
+  "saving a note") without the corresponding tool call in the same turn.
+  Narrated intentions that never execute are phantom state.
+
+## Shell hygiene
+
+- **When running repo commands**, the working directory persists between Bash
+  calls — don't prefix every command with `cd <repo>`. Batch related read-only
+  recon (e.g. `git log` + `git diff --stat`) into one call.
+
+## Review orchestration
+
+- **When running review/security subagents**, use the project-scoped agents in
+  `.claude/agents/` (global `~/.claude/agents/security-reviewer.md` and
+  `planner.md` describe the *other* Pythinker project — FastAPI/Vue/Mongo —
+  and produce phantom attack-surface analysis here).
+- **When waiting on background agents**, make exactly one blocking
+  `TaskOutput(block=true, timeout=600s)` call per agent — never interleave
+  non-blocking polls or read prior sessions' task logs.
+- **When deep-scanning**, run `/deep-scan`: pin the base SHA via
+  `git merge-base`, launch both reviewers in one parallel block, verify every
+  High/Medium finding against the real code before reporting, and write the
+  report to a dated, sha-suffixed file (never overwrite).
+
+## Dependency & docs research
+
+- **When checking library versions**, registries (PyPI JSON API / `npm view`)
+  are the only source of truth; docs MCPs are for migration notes and API
+  usage only, after the delta is established. Verify "feature X added in
+  version Y" claims against release notes before asserting them.
+- **When recommending an upgrade**, first grep direct imports with
+  `--include="*.py"` (excluding `blackbox/` and `__pycache__`) — a dep with
+  zero direct imports gets no API-migration advice — and read pin-reason
+  comments / git blame before calling a pin an "upgrade opportunity".
+- **Never claim an artifact was persisted** ("report saved", "todo updated")
+  without having made the Write call. Promise → tool call → claim, in that
+  order. Use `/dep-audit` for dependency reports.

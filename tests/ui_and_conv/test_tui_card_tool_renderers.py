@@ -240,7 +240,7 @@ def test_write_existing_file_renders_diff_for_add_only_change():
     )
 
     assert "Added 1 line" in rendered
-    assert "+ 2 new section" in rendered
+    assert " 2 + new section" in rendered
     assert "Wrote 2 lines" not in rendered
 
 
@@ -315,8 +315,8 @@ def test_edit_renders_inline_diff():
     assert "Added 1 line" in rendered
     assert "return 1" in rendered
     assert "return 2" in rendered
-    assert "- 1 return 1" in rendered
-    assert "+ 1 return 2" in rendered
+    assert " 1 - return 1" in rendered
+    assert " 1 + return 2" in rendered
 
 
 def test_edit_multi_count_in_header():
@@ -360,8 +360,8 @@ def test_edit_prefers_structured_result_diff_blocks():
     rendered = render_plain(comp.render(), width=100)
     assert "removed 1 line" in rendered
     assert "Added 1 line" in rendered
-    assert "-41 old" in rendered
-    assert "+41 new" in rendered
+    assert "41 - old" in rendered
+    assert "41 + new" in rendered
 
 
 def test_summary_diff_blocks_count_each_line():

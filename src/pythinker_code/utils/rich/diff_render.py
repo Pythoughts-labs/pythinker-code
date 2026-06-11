@@ -14,6 +14,7 @@ from enum import Enum, auto
 
 from rich.console import RenderableType
 from rich.panel import Panel
+from rich.style import Style as RichStyle
 from rich.table import Table
 from rich.text import Text
 
@@ -265,9 +266,11 @@ def _build_diff_header(path: str, added: int, removed: int) -> Text:
     """Build the file header text: stats + path."""
     header = Text()
     if added > 0:
-        header.append(f"+{added} ", style="bold green")
+        header.append(f"+{added} ", style=tui_rich_style("tool_diff_added") + RichStyle(bold=True))
     if removed > 0:
-        header.append(f"-{removed} ", style="bold red")
+        header.append(
+            f"-{removed} ", style=tui_rich_style("tool_diff_removed") + RichStyle(bold=True)
+        )
     header.append(path)
     return header
 
@@ -355,14 +358,14 @@ def render_diff_panel(
             if dl.kind == DiffLineKind.ADD:
                 table.add_row(
                     Text(str(dl.new_num)),
-                    Text(" + ", style="green"),
+                    Text(" + ", style=tui_rich_style("tool_diff_added")),
                     dl.content,
                     style=colors.add_bg,
                 )
             elif dl.kind == DiffLineKind.DELETE:
                 table.add_row(
                     Text(str(dl.old_num)),
-                    Text(" - ", style="red"),
+                    Text(" - ", style=tui_rich_style("tool_diff_removed")),
                     dl.content,
                     style=colors.del_bg,
                 )
@@ -429,7 +432,9 @@ def render_diff_preview(
         line = Text()
         ln = dl.old_num if dl.kind == DiffLineKind.DELETE else dl.new_num
         line.append(str(ln).rjust(num_width), style="dim")
-        marker_style = "green" if dl.kind == DiffLineKind.ADD else "red"
+        marker_style = tui_rich_style(
+            "tool_diff_added" if dl.kind == DiffLineKind.ADD else "tool_diff_removed"
+        )
         marker_char = "+" if dl.kind == DiffLineKind.ADD else "-"
         line.append(f" {marker_char} ", style=marker_style)
         line.append_text(dl.content)

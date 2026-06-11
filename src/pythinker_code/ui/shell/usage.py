@@ -260,7 +260,7 @@ async def _maybe_print_cost_panel() -> None:
         logger.debug("cost panel failed to render: {error}", error=e, exc_info=True)
 
 
-@registry.command(aliases=["status", "cost", "/status"])
+@registry.command(aliases=["status", "cost", "/status"], available_during_task=True)
 async def usage(app: Shell, args: str):
     """Display usage for the current model's provider.
 

@@ -4,6 +4,7 @@ and the external status command runner."""
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 
 import pytest
@@ -148,6 +149,52 @@ async def test_command_runner_output_is_capped():
 
 
 @pytest.mark.asyncio
+async def test_command_runner_strips_ansi_sequences():
+    runner = StatusLineCommandRunner(
+        command=f"{sys.executable} -c \"print('\\x1b[31mred\\x1b[0m \\x1b]0;title\\x07done')\"",
+        timeout_ms=5000,
+    )
+    await runner.refresh_once()
+    assert runner.current_line == "red done"
+
+
+@pytest.mark.asyncio
+async def test_command_runner_cancellation_kills_subprocess(tmp_path):
+    # The child writes its pid then sleeps; cancelling the in-flight refresh
+    # must kill it rather than leaving an orphan behind.
+    pid_file = tmp_path / "pid"
+    runner = StatusLineCommandRunner(
+        command=(
+            f'{sys.executable} -c "import os, pathlib, time; '
+            f"pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid())); "
+            'time.sleep(30)"'
+        ),
+        timeout_ms=60_000,
+    )
+    task = asyncio.get_running_loop().create_task(runner.refresh_once())
+    for _ in range(200):
+        if pid_file.exists() and pid_file.read_text():
+            break
+        await asyncio.sleep(0.02)
+    else:
+        task.cancel()
+        pytest.fail("status command subprocess never wrote its pid")
+    pid = int(pid_file.read_text())
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    for _ in range(100):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        await asyncio.sleep(0.02)
+    else:
+        os.kill(pid, 9)
+        pytest.fail("status command subprocess survived cancellation")
+
+
+@pytest.mark.asyncio
 async def test_command_runner_lifecycle_start_stop():
     runner = StatusLineCommandRunner(
         command=f"{sys.executable} -c \"print('tick')\"",
@@ -249,3 +296,64 @@ def test_card_footer_shows_external_command_line(monkeypatch: pytest.MonkeyPatch
     session._statusline_runner = runner
     plain = _render_card(session, monkeypatch)
     assert "build: green" in plain
+
+
+@pytest.mark.asyncio
+async def test_refresh_loop_survives_refresh_exception(monkeypatch):
+    """One bad refresh must not kill the loop — the next tick still runs."""
+    runner = StatusLineCommandRunner(command="echo hi", timeout_ms=5000, interval_s=0.01)
+    calls: list[int] = []
+
+    async def flaky_refresh():
+        calls.append(1)
+        if len(calls) == 1:
+            raise ValueError("boom")
+        runner.current_line = "recovered"
+
+    monkeypatch.setattr(runner, "refresh_once", flaky_refresh)
+    runner.start()
+    try:
+        for _ in range(200):
+            if runner.current_line == "recovered":
+                break
+            await asyncio.sleep(0.01)
+        assert runner.current_line == "recovered"
+        assert len(calls) >= 2
+    finally:
+        await runner.stop()
+
+
+def test_explicit_interval_is_clamped_to_positive_floor():
+    runner = StatusLineCommandRunner(command="echo hi", timeout_ms=5000, interval_s=0.0)
+    assert runner._interval_s > 0
+    negative = StatusLineCommandRunner(command="echo hi", timeout_ms=5000, interval_s=-5.0)
+    assert negative._interval_s > 0
+
+
+@pytest.mark.asyncio
+async def test_command_output_is_capped_not_buffered_unbounded():
+    """A command spewing endless output still yields its first line promptly."""
+    runner = StatusLineCommandRunner(
+        command=(
+            f'{sys.executable} -c "import sys\n'
+            "print('first line')\n"
+            "while True: sys.stdout.write('x' * 8192)\""
+        ),
+        timeout_ms=5000,
+    )
+    await asyncio.wait_for(runner.refresh_once(), 10)
+    assert runner.current_line == "first line"
+
+
+def test_warn_once_logs_each_distinct_message(monkeypatch):
+    from pythinker_code.ui.shell import statusline as statusline_mod
+
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        statusline_mod.logger, "warning", lambda msg, *a, **kw: warnings.append(str(a[0]))
+    )
+    runner = StatusLineCommandRunner(command="echo hi", timeout_ms=5000)
+    runner._warn_once("first failure")
+    runner._warn_once("first failure")
+    runner._warn_once("second failure")
+    assert warnings == ["first failure", "second failure"]

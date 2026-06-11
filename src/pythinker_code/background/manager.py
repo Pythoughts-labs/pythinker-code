@@ -347,10 +347,15 @@ class BackgroundTaskManager:
             },
         )
         self._store.create_task(spec)
-        runtime = self._store.read_runtime(task_id)
-        runtime.status = "starting"
-        runtime.updated_at = time.time()
-        self._store.write_runtime(task_id, runtime)
+
+        def mark_agent_starting(runtime: TaskRuntime) -> bool:
+            if is_terminal_status(runtime.status):
+                return False
+            runtime.status = "starting"
+            runtime.updated_at = time.time()
+            return True
+
+        self._store.update_runtime(task_id, mark_agent_starting)
         task = asyncio.create_task(
             BackgroundAgentRunner(
                 runtime=self._runtime,
@@ -832,6 +837,14 @@ class BackgroundTaskManager:
                 body_lines.append(f"Exit code: {view.runtime.exit_code}")
             if view.runtime.failure_reason:
                 body_lines.append(f"Failure reason: {view.runtime.failure_reason}")
+            output_path = self._store.output_path(view.spec.id)
+            try:
+                output_size = output_path.stat().st_size
+            except OSError:
+                output_size = 0
+            if output_size > 0:
+                body_lines.append(f"Output path: {output_path.resolve()}")
+                body_lines.append(f"Output size bytes: {output_size}")
 
             event = NotificationEvent(
                 id=self._notifications.new_id(),
@@ -852,6 +865,8 @@ class BackgroundTaskManager:
                     "timed_out": view.runtime.timed_out,
                     "terminal_reason": terminal_reason,
                     "failure_reason": view.runtime.failure_reason,
+                    "output_path": str(output_path.resolve()) if output_size > 0 else None,
+                    "output_size_bytes": output_size,
                 },
                 dedupe_key=f"background_task:{view.spec.id}:{terminal_reason}",
             )

@@ -740,12 +740,14 @@ class TestHandleLocalInput:
         assert started == []
 
     def test_shell_command_blocked_from_queue(self, monkeypatch):
-        """Shell-only commands like /help should be rejected, not queued."""
+        """Shell-only commands not flagged task-safe should be rejected, not queued."""
         view = object.__new__(_PromptLiveView)
         view._turn_ended = False
         view._queued_messages = []
         view._btw_modal = None
         view._prompt_session = MagicMock()
+        view._shell_command_runner = None
+        view._shell_command_tasks = set()
 
         toasted = []
         monkeypatch.setattr(
@@ -756,15 +758,75 @@ class TestHandleLocalInput:
         view.handle_local_input(
             UserInput(
                 mode=PromptMode.AGENT,
-                command="/help",
-                resolved_command="/help",
-                content=[TextPart(text="/help")],
+                command="/settings",
+                resolved_command="/settings",
+                content=[TextPart(text="/settings")],
             )
         )
         # Should NOT be queued
         assert view._queued_messages == []
         # Should show toast warning
-        assert any("not available" in t for t in toasted)
+        assert any("disabled while a task is in progress" in t for t in toasted)
+
+    @pytest.mark.asyncio
+    async def test_task_safe_shell_command_runs_immediately(self, monkeypatch):
+        """Commands flagged available_during_task run via the shell runner."""
+        from pythinker_code.ui.shell.console import console
+
+        view = object.__new__(_PromptLiveView)
+        view._turn_ended = False
+        view._queued_messages = []
+        view._btw_modal = None
+        view._prompt_session = MagicMock()
+        view._shell_command_tasks = set()
+
+        ran = []
+
+        async def runner(call):
+            ran.append((call.name, call.args))
+
+        view._shell_command_runner = runner
+        monkeypatch.setattr(console, "print", lambda *a, **kw: None)
+
+        view.handle_local_input(
+            UserInput(
+                mode=PromptMode.AGENT,
+                command="/statusline",
+                resolved_command="/statusline",
+                content=[TextPart(text="/statusline")],
+            )
+        )
+        # Not queued; executed through the runner instead.
+        assert view._queued_messages == []
+        await asyncio.gather(*view._shell_command_tasks)
+        assert ran == [("statusline", "")]
+
+    def test_task_safe_command_without_runner_is_blocked(self, monkeypatch):
+        """Without a runner hook, even task-safe commands are rejected."""
+        view = object.__new__(_PromptLiveView)
+        view._turn_ended = False
+        view._queued_messages = []
+        view._btw_modal = None
+        view._prompt_session = MagicMock()
+        view._shell_command_runner = None
+        view._shell_command_tasks = set()
+
+        toasted = []
+        monkeypatch.setattr(
+            "pythinker_code.ui.shell.prompt.toast",
+            lambda msg, **kw: toasted.append(msg),
+        )
+
+        view.handle_local_input(
+            UserInput(
+                mode=PromptMode.AGENT,
+                command="/statusline",
+                resolved_command="/statusline",
+                content=[TextPart(text="/statusline")],
+            )
+        )
+        assert view._queued_messages == []
+        assert any("disabled while a task is in progress" in t for t in toasted)
 
     def test_soul_command_allowed_in_queue(self):
         """Soul-level commands like /compact should be queued normally."""
@@ -873,6 +935,8 @@ class TestHandleImmediateSteer:
         view = object.__new__(_PromptLiveView)
         view._turn_ended = False
         view._btw_modal = None
+        view._shell_command_runner = None
+        view._shell_command_tasks = set()
         view._btw_runner = lambda q, cb=None: None  # pyright: ignore[reportAttributeAccessIssue]
         view._flush_prompt_refresh = lambda: None
         view._pending_local_steer_count = 0
@@ -889,14 +953,14 @@ class TestHandleImmediateSteer:
         view.handle_immediate_steer(
             UserInput(
                 mode=PromptMode.AGENT,
-                command="/help",
-                resolved_command="/help",
-                content=[TextPart(text="/help")],
+                command="/settings",
+                resolved_command="/settings",
+                content=[TextPart(text="/settings")],
             )
         )
         assert steered == []  # NOT steered into agent context
         assert view._pending_local_steer_count == 0
-        assert any("not available" in t for t in toasted)
+        assert any("disabled while a task is in progress" in t for t in toasted)
 
 
 # ---------------------------------------------------------------------------

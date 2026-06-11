@@ -14,6 +14,7 @@ import shlex
 from dataclasses import dataclass, field
 
 from pythinker_code.config import StatusLineConfig
+from pythinker_code.ui.shell.components import sanitize_ansi
 from pythinker_code.utils.logging import logger
 
 DEFAULT_STATUSLINE_SEGMENTS: tuple[str, ...] = (
@@ -30,6 +31,10 @@ _LINE2_RIGHT_SEGMENTS: frozenset[str] = frozenset({"context", "tokens", "model"}
 
 _MAX_COMMAND_LINE_CHARS = 200
 _MIN_REFRESH_INTERVAL_S = 0.5
+# Floor for explicitly-passed intervals: keeps tests fast while preventing a
+# zero/negative interval from busy-looping subprocess spawns.
+_MIN_EXPLICIT_INTERVAL_S = 0.01
+_MAX_COMMAND_OUTPUT_BYTES = 64 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,12 +74,13 @@ class StatusLineCommandRunner:
     def __init__(self, command: str, timeout_ms: int, interval_s: float | None = None):
         self._argv = self._parse_argv(command)
         self._timeout_s = max(timeout_ms, 1) / 1000
-        self._interval_s = max(
-            interval_s if interval_s is not None else self._timeout_s,
-            _MIN_REFRESH_INTERVAL_S if interval_s is None else interval_s,
-        )
+        if interval_s is None:
+            self._interval_s = max(self._timeout_s, _MIN_REFRESH_INTERVAL_S)
+        else:
+            self._interval_s = max(interval_s, _MIN_EXPLICIT_INTERVAL_S)
         self._task: asyncio.Task[None] | None = None
-        self._warned = False
+        self._proc: asyncio.subprocess.Process | None = None
+        self._warned: set[str] = set()
         self.current_line: str = ""
 
     @staticmethod
@@ -98,6 +104,13 @@ class StatusLineCommandRunner:
         if self._task is not None and not self._task.done():
             self._task.cancel()
         self._task = None
+        # Sync shutdown may never re-enter the event loop, so the
+        # CancelledError handler in _run_command can't kill the child —
+        # do it here as well to avoid orphaning the user's command.
+        proc = self._proc
+        if proc is not None and proc.returncode is None:
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
 
     async def stop(self) -> None:
         if self._task is None:
@@ -109,7 +122,15 @@ class StatusLineCommandRunner:
 
     async def _refresh_loop(self) -> None:
         while True:
-            await self.refresh_once()
+            try:
+                await self.refresh_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # One bad refresh must not silently kill the loop — the
+                # footer would freeze with no indication of failure.
+                logger.exception("statusline: refresh failed (argv={})", self._argv)
+                self.current_line = ""
             await asyncio.sleep(self._interval_s)
 
     async def refresh_once(self) -> None:
@@ -130,20 +151,45 @@ class StatusLineCommandRunner:
         except OSError as exc:
             self._warn_once(f"status command failed to start: {exc}")
             return ""
+        self._proc = proc
+        capped = False
         try:
-            stdout, _ = await asyncio.wait_for(proc.communicate(), self._timeout_s)
+            assert proc.stdout is not None
+            # Bounded read instead of communicate(): a command that streams
+            # endlessly can't grow the buffer past the cap. We only need the
+            # first line anyway.
+            stdout = await asyncio.wait_for(
+                proc.stdout.read(_MAX_COMMAND_OUTPUT_BYTES), self._timeout_s
+            )
+            capped = len(stdout) >= _MAX_COMMAND_OUTPUT_BYTES
+            if capped:
+                proc.kill()
+            with contextlib.suppress(ProcessLookupError):
+                await asyncio.wait_for(proc.wait(), self._timeout_s)
         except TimeoutError:
-            proc.kill()
-            await proc.wait()
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+                await proc.wait()
             self._warn_once("status command timed out")
             return ""
-        if proc.returncode != 0:
+        except asyncio.CancelledError:
+            # Session shutdown cancels the refresh task mid-read();
+            # without this the user's command keeps running as an orphan.
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+                await proc.wait()
+            raise
+        finally:
+            self._proc = None
+        if proc.returncode != 0 and not capped:
             self._warn_once(f"status command exited with {proc.returncode}")
             return ""
         first_line = stdout.decode("utf-8", errors="replace").split("\n", 1)[0].strip()
-        return first_line[:_MAX_COMMAND_LINE_CHARS]
+        return sanitize_ansi(first_line)[:_MAX_COMMAND_LINE_CHARS]
 
     def _warn_once(self, message: str) -> None:
-        if not self._warned:
-            self._warned = True
+        """Log each distinct failure once so changing errors stay visible
+        without spamming the log on every refresh."""
+        if message not in self._warned:
+            self._warned.add(message)
             logger.warning("statusline: {} (argv={})", message, self._argv)

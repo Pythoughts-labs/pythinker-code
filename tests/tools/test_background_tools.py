@@ -125,6 +125,7 @@ async def test_task_output_returns_completed_output(
     assert "tool_status: success" in result.output
     assert result.extras == {"status": "success"}
     assert "retrieval_status: success" in result.output
+    assert "retrieval_hint:" not in result.output
     assert "status: completed" in result.output
     assert f"output_path: {output_path}" in result.output
     assert "output_truncated: false" in result.output
@@ -284,6 +285,8 @@ async def test_task_output_returns_not_ready_for_running_task(runtime, task_outp
     assert "tool_status: long_running_snapshot" in result.output
     assert result.extras == {"status": "long_running_snapshot"}
     assert "retrieval_status: not_ready" in result.output
+    assert "retrieval_hint: Task is still running" in result.output
+    assert "block=true" in result.output
     assert "status: running" in result.output
     assert "output_truncated: false" in result.output
     assert "still working" in result.output
@@ -322,6 +325,7 @@ async def test_task_output_blocking_timeout_surfaces_timeout_retrieval_status(
 
     assert not result.is_error
     assert "retrieval_status: timeout" in result.output
+    assert "retrieval_hint: Wait timed out" in result.output
     assert "status: running" in result.output
 
 

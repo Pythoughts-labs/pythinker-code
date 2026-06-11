@@ -306,7 +306,7 @@ With `goal.auto_continue = true` in the [config](../configuration/config-files.m
 
 ### `/best-practices`
 
-Inject engineering best-practice guidance (code-change discipline, dirty-worktree safety, testing strategy, todo hygiene, progress updates, debugging methodology, final-answer style) into the session context. The guidance applies for the rest of the session without consuming a turn.
+Inject engineering best-practice guidance (scoping and assumptions, code-change discipline, dirty-worktree safety, testing strategy, todo hygiene, progress updates, subagent orchestration, security and secrets, verification before done, debugging methodology, final-answer style) into the session context. The guidance applies for the rest of the session without consuming a turn.
 
 Usage:
 
