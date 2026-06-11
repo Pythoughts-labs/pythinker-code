@@ -111,6 +111,7 @@ def test_pyinstaller_datas():
         ("src/pythinker_code/prompts/goal_set.md", "pythinker_code/prompts"),
         ("src/pythinker_code/prompts/goal_wrap_up.md", "pythinker_code/prompts"),
         ("src/pythinker_code/prompts/init.md", "pythinker_code/prompts"),
+        ("src/pythinker_code/prompts/learn.md", "pythinker_code/prompts"),
         (
             "src/pythinker_code/skills/agent-creator/SKILL.md",
             "pythinker_code/skills/agent-creator",
