@@ -68,6 +68,9 @@ def _is_source_checkout() -> bool:
 
         return source_checkout_version() is not None
     except Exception:
+        from pythinker_code.utils.logging import logger
+
+        logger.opt(exception=True).debug("Source checkout detection failed")
         return False
 
 

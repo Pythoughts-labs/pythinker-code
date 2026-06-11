@@ -417,13 +417,10 @@ def _render_run_agents_result(
         # A name identical to the subagent_type is redundant; show it only when it
         # carries information the type doesn't (e.g. "code_scan" vs "code-reviewer").
         extra = "" if name == subagent_type else name
-        # Display width of "type" or "type · name" — drives the shared label column.
-        label_width = len(subagent_type) + (len(f" · {extra}") if extra else 0)
         entries.append(
             {
                 "subagent_type": subagent_type,
                 "name_extra": extra,
-                "label_width": str(label_width),
                 "status": agent.get("detail_status") or agent.get("status") or "unknown",
                 "task_id": agent.get("task_id") or "",
                 "summary_preview": agent.get("summary_preview") or "",
@@ -432,7 +429,12 @@ def _render_run_agents_result(
             }
         )
 
-    label_col = max(int(entry["label_width"]) for entry in entries)
+    def label_width(entry: dict[str, str]) -> int:
+        # Display width of "type" or "type · name" — drives the shared label column.
+        extra = entry["name_extra"]
+        return len(entry["subagent_type"]) + (len(f" · {extra}") if extra else 0)
+
+    label_col = max(label_width(entry) for entry in entries)
     # Only pad the status column when a later task_id column needs to align under it.
     status_col = max(
         (len(entry["status"]) for entry in entries if entry["task_id"]),
@@ -456,7 +458,7 @@ def _render_run_agents_result(
         if entry["name_extra"]:
             row.append(f" · {entry['name_extra']}", style=dim_style)
         # Pad the label region so every "· status" separator starts at one column.
-        row.append(" " * (label_col - int(entry["label_width"])))
+        row.append(" " * (label_col - label_width(entry)))
         row.append(" · ", style=dim_style)
         status_text = agent_status.ljust(status_col) if entry["task_id"] else agent_status
         row.append(status_text, style=tui_rich_style(status_token))

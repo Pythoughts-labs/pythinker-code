@@ -123,6 +123,10 @@ def _extract_section(output: str, section: str) -> list[str]:
     fence_indices = [i for i, raw in enumerate(lines) if raw.strip().startswith("```")]
     # An odd fence count means the last opener never closes; ignore it so a
     # malformed child report can't swallow every section that follows it.
+    # Deliberate tradeoff: loose lines after the unclosed opener may be code
+    # that gets extracted as findings (noise), but the alternative — treating
+    # the rest of the report as fenced — silently drops every later RISKS/
+    # BLOCKERS entry. Noise is visible; loss is not.
     unclosed_fence_index = fence_indices[-1] if len(fence_indices) % 2 else None
     for index, raw_line in enumerate(lines):
         line = raw_line.strip()

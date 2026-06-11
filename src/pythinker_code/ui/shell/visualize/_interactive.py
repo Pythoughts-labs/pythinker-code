@@ -391,12 +391,19 @@ class _PromptLiveView(_LiveView):
             # Capture the command's output (this task's prints only) and show
             # it transiently in the live area instead of polluting scrollback
             # above the streaming agent output.
-            with redirect_console_prints(columns=current_console_width()) as buf:
-                console.print(echo)
-                try:
-                    await runner(cmd)
-                finally:
-                    self._show_transient_command_output(buf.getvalue().rstrip("\n"))
+            try:
+                with redirect_console_prints(columns=current_console_width()) as buf:
+                    console.print(echo)
+                    try:
+                        await runner(cmd)
+                    finally:
+                        self._show_transient_command_output(buf.getvalue().rstrip("\n"))
+            except Exception:
+                # The task object is discarded on completion; without this the
+                # crash would vanish with it.
+                from pythinker_code.utils.logging import logger
+
+                logger.exception("Mid-task slash command /{} failed", cmd.name)
 
         task = asyncio.create_task(_run())
         self._shell_command_tasks.add(task)

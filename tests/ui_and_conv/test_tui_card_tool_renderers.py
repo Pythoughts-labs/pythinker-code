@@ -897,7 +897,8 @@ def test_run_agents_rows_align_columns_and_drop_redundant_name():
     task_cols = {line.index("agent-") for line in tree_lines}
     assert len(task_cols) == 1, tree_lines
     # A name identical to the subagent_type is not echoed twice in its tree row.
-    assert tree_lines[0].count("code-reviewer") == 1
+    code_reviewer_line = next(line for line in tree_lines if "code-reviewer" in line)
+    assert code_reviewer_line.count("code-reviewer") == 1
 
 
 # ---------------------------------------------------------------------------

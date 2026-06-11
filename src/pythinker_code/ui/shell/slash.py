@@ -10,7 +10,7 @@ from rich.markup import escape
 
 from pythinker_code.auth.platforms import get_platform_name_for_provider, refresh_managed_models
 from pythinker_code.cli import Reload, SwitchToVis, SwitchToWeb
-from pythinker_code.config import load_config, save_config
+from pythinker_code.config import StatusLineConfig, load_config, save_config
 from pythinker_code.exception import ConfigError
 from pythinker_code.session import Session
 from pythinker_code.soul.pythinkersoul import PythinkerSoul
@@ -1400,7 +1400,7 @@ async def statusline(app: Shell, args: str) -> None:
         console.print(table)
         console.print(f"[{_t.muted}]{usage_text}[/]")
 
-    def persist(mutate: Callable[[Any], None], message: str) -> NoReturn | None:
+    def persist(mutate: Callable[[StatusLineConfig], None], message: str) -> NoReturn | None:
         config_file = config.source_file
         if config_file is None:
             console.print(

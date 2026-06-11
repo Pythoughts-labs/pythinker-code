@@ -29,7 +29,13 @@ def generate_task_id(kind: TaskKind, used: Collection[str] = ()) -> str:
     prefix = _TASK_ID_PREFIXES[kind]
     taken = {task_id.lower() for task_id in used}
     if kind == "agent":
-        codename = generate_codename({task_id.removeprefix(f"{prefix}-") for task_id in taken})
+        codename = generate_codename(
+            {
+                task_id.removeprefix(f"{prefix}-")
+                for task_id in taken
+                if task_id.startswith(f"{prefix}-")
+            }
+        )
         task_id = f"{prefix}-{codename}"
         if len(task_id) <= _MAX_TASK_ID_LEN:
             return task_id
