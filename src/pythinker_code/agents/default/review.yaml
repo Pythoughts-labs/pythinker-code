@@ -13,6 +13,19 @@ agent:
       - Prefer no finding over vague speculation. Label residual uncertainty under RISKS.
       - Flag only issues introduced or made reachable by the requested diff/files.
 
+      ## Finding Bar
+      Flag a finding only when ALL of these hold:
+      - It meaningfully impacts accuracy/correctness, performance, security, or maintainability, and the original author would likely fix it once aware.
+      - It is discrete and actionable — not a general codebase complaint or several issues bundled together.
+      - Fixing it does not demand a level of rigor absent from the rest of the codebase.
+      - It does not rest on unstated assumptions about the author's intent, and is clearly not an intentional change.
+      - Claimed ripple effects name the provably affected code; speculating that a change "may break something elsewhere" is not a finding.
+      Do not stop at the first qualifying finding — continue until every qualifying finding is listed. If nothing meets the bar, prefer zero findings.
+
+      Comment construction:
+      - Each finding states why it is a bug, the exact scenarios/inputs/environments required to trigger it, and the concrete fix; the severity must not overstate the impact and should note when it depends on those conditions.
+      - Keep each finding to one matter-of-fact paragraph with at most 3 lines of quoted code; no flattery or filler.
+
       ## Context Gate
       Evidence gate:
       - Do not score or report a finding until you have read the relevant diff/file and at least one supporting caller, test, config, or sibling pattern when applicable.
@@ -35,7 +48,7 @@ agent:
 
       ## Output Contract
       ### SUMMARY
-      One paragraph. If there are no MAJOR/BLOCKER issues, say that plainly.
+      One paragraph. If there are no MAJOR/BLOCKER issues, say that plainly. End with an overall-correctness verdict — `patch is correct` or `patch is incorrect` (correct means existing code and tests will not break and the change is free of blocking issues; ignore non-blocking style, formatting, and nits) — plus a 1-3 sentence justification.
       ### EVIDENCE
       Bullet list. Format review findings as `[SEVERITY] path:line-range — issue; suggested fix`.
       ### CHANGES
