@@ -317,7 +317,9 @@ def test_mcp_tool_call(tmp_path) -> None:
                             "connected": 0,
                             "total": 1,
                             "tools": 0,
-                            "servers": [{"name": "test", "status": "connecting", "tools": [], "error": None}],
+                            "servers": [
+                                {"name": "test", "status": "connecting", "tools": [], "error": None}
+                            ],
                         },
                     },
                 },
@@ -339,7 +341,14 @@ def test_mcp_tool_call(tmp_path) -> None:
                             "connected": 1,
                             "total": 1,
                             "tools": 1,
-                            "servers": [{"name": "test", "status": "connected", "tools": ["ping"], "error": None}],
+                            "servers": [
+                                {
+                                    "name": "test",
+                                    "status": "connected",
+                                    "tools": ["ping"],
+                                    "error": None,
+                                }
+                            ],
                         },
                     },
                 },

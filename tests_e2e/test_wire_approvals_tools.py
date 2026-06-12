@@ -138,7 +138,9 @@ def test_shell_approval_approve(tmp_path) -> None:
                         "agent_id": None,
                         "subagent_type": None,
                         "source_description": None,
-                        "display": [{"type": "shell", "language": "bash", "command": "env echo ok"}],
+                        "display": [
+                            {"type": "shell", "language": "bash", "command": "env echo ok"}
+                        ],
                     },
                 },
                 {
@@ -288,7 +290,9 @@ def test_shell_approval_reject(tmp_path) -> None:
                         "agent_id": None,
                         "subagent_type": None,
                         "source_description": None,
-                        "display": [{"type": "shell", "language": "bash", "command": "env echo ok"}],
+                        "display": [
+                            {"type": "shell", "language": "bash", "command": "env echo ok"}
+                        ],
                     },
                 },
                 {
@@ -421,7 +425,9 @@ def test_approve_for_session(tmp_path) -> None:
                         "agent_id": None,
                         "subagent_type": None,
                         "source_description": None,
-                        "display": [{"type": "shell", "language": "bash", "command": "env echo first"}],
+                        "display": [
+                            {"type": "shell", "language": "bash", "command": "env echo first"}
+                        ],
                     },
                 },
                 {
@@ -501,7 +507,10 @@ first
                     "payload": {
                         "type": "function",
                         "id": "tc-2",
-                        "function": {"name": "Shell", "arguments": '{"command": "env echo second"}'},
+                        "function": {
+                            "name": "Shell",
+                            "arguments": '{"command": "env echo second"}',
+                        },
                         "extras": None,
                     },
                 },
