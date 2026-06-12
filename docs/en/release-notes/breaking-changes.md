@@ -4,6 +4,13 @@ This page documents breaking changes in Pythinker Code releases and provides mig
 
 ## Unreleased
 
+## 0.42.0 (2026-06-12)
+
+No configuration or session-data breaking changes. Two behavior changes may affect scripted or automated use:
+
+- **Text-mode error diagnostics now go to stderr.** Previously they were interleaved on stdout. If you scrape `pythinker` stdout in text mode for error text, capture `2>&1` or switch to `--output-format stream-json`.
+- **Project- and local-scope hooks now require trusting the project.** A cloned repo's `.pythinker/config.toml` hooks no longer auto-run at session start — run `/trust` once per project to record a durable decision (stored user-side in `trusted_projects.json`). Until then, those hooks are stripped with a warning naming the fix.
+
 ## 0.41.0 (2026-06-11)
 
 No breaking changes. This release is compatible with 0.40.1 user configuration, native installs, and session data.
