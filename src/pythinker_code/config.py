@@ -4,7 +4,8 @@ import contextlib
 import json
 import os
 from pathlib import Path
-from typing import Any, Literal, Self, cast
+from types import UnionType
+from typing import Any, Literal, Self, Union, cast, get_args, get_origin
 
 import tomlkit
 from pydantic import (
@@ -93,6 +94,110 @@ ENV_FIELD_MAP: dict[str, tuple[str, ...]] = {
 # ---------------------------------------------------------------------------
 # Pipeline helpers
 # ---------------------------------------------------------------------------
+
+
+def unknown_config_key_paths(
+    model_cls: type[BaseModel], data: dict[str, Any], _prefix: tuple[str, ...] = ()
+) -> list[tuple[str, ...]]:
+    """Dotted paths in *data* that no model field will consume.
+
+    Pydantic's extra='ignore' makes a typo'd key silently vanish and change
+    behavior with no signal. Conservative by design: recursion only follows
+    shapes it can prove (nested models, dict-of-model maps, lists of models),
+    so an unmodellable value is never reported — a false positive here would
+    teach users to ignore the diagnostics.
+    """
+    if model_cls.model_config.get("extra") == "allow":
+        return []
+    known: dict[str, Any] = {}
+    for name, field in model_cls.model_fields.items():
+        known[name] = field
+        if field.alias:
+            known[field.alias] = field
+        if isinstance(field.validation_alias, str):
+            known[field.validation_alias] = field
+        elif isinstance(field.validation_alias, AliasChoices):
+            for choice in field.validation_alias.choices:
+                if isinstance(choice, str):
+                    known[choice] = field
+
+    unknown: list[tuple[str, ...]] = []
+    for key, value in data.items():
+        path = (*_prefix, key)
+        field = known.get(key)
+        if field is None:
+            unknown.append(path)
+            continue
+        unknown.extend(_nested_unknown_paths(field.annotation, value, path))
+    return unknown
+
+
+def _nested_unknown_paths(
+    annotation: Any, value: Any, path: tuple[str, ...]
+) -> list[tuple[str, ...]]:
+    annotation = _sole_non_none_type(annotation)
+    origin = get_origin(annotation)
+    if origin is dict:
+        args = get_args(annotation)
+        if len(args) == 2 and isinstance(value, dict):
+            item_type = _sole_non_none_type(args[1])
+            if isinstance(item_type, type) and issubclass(item_type, BaseModel):
+                nested: list[tuple[str, ...]] = []
+                for map_key, item in cast(dict[str, Any], value).items():
+                    if isinstance(item, dict):
+                        nested.extend(
+                            unknown_config_key_paths(
+                                item_type, cast(dict[str, Any], item), (*path, str(map_key))
+                            )
+                        )
+                return nested
+        return []
+    if origin in (list, tuple, set):
+        args = get_args(annotation)
+        if args and isinstance(value, list):
+            item_type = _sole_non_none_type(args[0])
+            if isinstance(item_type, type) and issubclass(item_type, BaseModel):
+                nested = []
+                for item in cast(list[Any], value):
+                    if isinstance(item, dict):
+                        # Item paths omit the index: the field name plus the
+                        # offending key is what a user greps their TOML for.
+                        nested.extend(
+                            unknown_config_key_paths(item_type, cast(dict[str, Any], item), path)
+                        )
+                return nested
+        return []
+    if (
+        isinstance(annotation, type)
+        and issubclass(annotation, BaseModel)
+        and isinstance(value, dict)
+    ):
+        return unknown_config_key_paths(annotation, cast(dict[str, Any], value), path)
+    return []
+
+
+def _sole_non_none_type(annotation: Any) -> Any:
+    """Unwrap ``X | None`` to ``X``; ambiguous unions return unchanged."""
+    if get_origin(annotation) in (Union, UnionType):
+        non_none = [arg for arg in get_args(annotation) if arg is not type(None)]
+        if len(non_none) == 1:
+            return non_none[0]
+    return annotation
+
+
+def _report_unknown_config_keys(merged: dict[str, Any], provenance: dict[str, Any]) -> None:
+    """Warn (or raise under PYTHINKER_STRICT_CONFIG) for unconsumed keys."""
+    unknown_paths = unknown_config_key_paths(Config, merged)
+    if not unknown_paths:
+        return
+    findings = [
+        f"{'.'.join(path)} (from {_lookup_provenance(provenance, path)})"
+        for path in sorted(unknown_paths)
+    ]
+    if os.environ.get("PYTHINKER_STRICT_CONFIG"):
+        raise ConfigError("Unknown configuration keys:\n  " + "\n  ".join(findings))
+    for finding in findings:
+        logger.warning("Unknown config key ignored: {finding}", finding=finding)
 
 
 def _set_nested(d: dict[str, Any], path: tuple[str, ...], value: object) -> None:
@@ -308,6 +413,9 @@ def _load_scoped(project_root: Path | None) -> Config:
 
     # ── ENV OVERLAY ───────────────────────────────────────────────────────
     _apply_env_vars(merged, provenance)
+
+    # ── DIAGNOSE ──────────────────────────────────────────────────────────
+    _report_unknown_config_keys(merged, provenance)
 
     # ── VALIDATE ──────────────────────────────────────────────────────────
     try:
