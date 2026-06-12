@@ -125,6 +125,13 @@ def _server_inventory_lines(server: MCPServerSnapshot) -> list[RenderableType]:
     lines: list[RenderableType] = [Text.assemble(f"  {LIST_BULLET} ", (server_name, status_style))]
     lines.append(Text.assemble(f"    {LIST_BULLET} Status: ", (status, status_style)))
 
+    if server.status == "failed" and server.error:
+        lines.append(
+            Text(
+                f"    {LIST_BULLET} Error: {_safe_text(server.error)}",
+                style=tui_rich_style("muted"),
+            )
+        )
     if server.status == "unauthorized":
         lines.append(
             Text(

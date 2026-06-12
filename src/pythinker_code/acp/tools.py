@@ -10,6 +10,7 @@ from pythinker_code.soul.agent import Runtime
 from pythinker_code.soul.approval import Approval
 from pythinker_code.soul.permission import check_shell_command_allowed
 from pythinker_code.soul.toolset import PythinkerToolset
+from pythinker_code.tools.ask_user import AskUserQuestion
 from pythinker_code.tools.shell import Params as ShellParams
 from pythinker_code.tools.shell import Shell
 from pythinker_code.tools.utils import ToolResultBuilder
@@ -27,6 +28,11 @@ def replace_tools(
     if current_host not in (local_host.name, "acp"):
         # Only replace tools when running locally or under ACPHost.
         return
+
+    # ACP clients get no interactive question UI (the session loop signals
+    # QuestionNotSupported), so don't advertise the tool — a hallucinated call
+    # still resolves through the registered tool's graceful fallback.
+    toolset.hide(AskUserQuestion.name)
 
     if client_capabilities.terminal and (shell_tool := toolset.find(Shell)):
         # Replace the Shell tool with the ACP Terminal tool if supported.
@@ -48,6 +54,8 @@ class HideOutputDisplayBlock(DisplayBlock):
 
 
 class Terminal(CallableTool2[ShellParams]):
+    emits_tool_execution_started_after_approval = True
+
     def __init__(
         self,
         shell_tool: Shell,

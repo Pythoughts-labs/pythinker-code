@@ -3,7 +3,7 @@ from __future__ import annotations
 from pythinker_core.chat_provider import TokenUsage
 
 # Prices in USD per million tokens.
-# Source: Pi's models.generated.ts (blackbox/pi-main/packages/ai/src/models.generated.ts)
+# Pricing snapshot from a public multi-provider model catalog; refresh manually when prices change.
 # Format: {model_id: (input, output, cache_read, cache_write)}
 _PRICE_TABLE: dict[str, tuple[float, float, float, float]] = {
     # Anthropic — direct API

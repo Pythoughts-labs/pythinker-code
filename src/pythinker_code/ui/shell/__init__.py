@@ -601,7 +601,7 @@ class Shell:
         """Print a crash report when the working directory is no longer accessible."""
         runtime = self.soul.runtime if isinstance(self.soul, PythinkerSoul) else None
         session_id = runtime.session.id if runtime else "unknown"
-        work_dir = str(runtime.session.work_dir) if runtime else "unknown"
+        work_dir = str(runtime.work_dir) if runtime else "unknown"
 
         info = Table.grid(padding=(0, 1))
         info.add_row("Session:", session_id)

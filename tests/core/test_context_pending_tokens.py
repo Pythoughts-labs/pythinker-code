@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 import pytest
-from pythinker_core.message import Message, Role
+from pythinker_core.message import Message, Role, ToolCall
 
 from pythinker_code.soul.compaction import estimate_text_tokens, should_auto_compact
 from pythinker_code.soul.context import Context
@@ -20,6 +20,26 @@ from pythinker_code.wire.types import TextPart
 
 def _msg(role: Role, text: str) -> Message:
     return Message(role=role, content=[TextPart(text=text)])
+
+
+def _assistant_call(text: str, call_id: str) -> Message:
+    """A well-formed assistant message that opens a tool call (id ``call_id``)."""
+    return Message(
+        role="assistant",
+        content=[TextPart(text=text)],
+        tool_calls=[
+            ToolCall(id=call_id, function=ToolCall.FunctionBody(name="ReadFile", arguments="{}"))
+        ],
+    )
+
+
+def _tool_result(text: str, call_id: str) -> Message:
+    """A well-formed tool result paired to ``call_id`` (survives pairing repair)."""
+    return Message(role="tool", content=[TextPart(text=text)], tool_call_id=call_id)
+
+
+def _dict(msg: Message) -> dict:
+    return json.loads(msg.model_dump_json(exclude_none=True))
 
 
 def _write_lines(path: Path, lines: list[dict]) -> None:
@@ -169,8 +189,8 @@ async def test_revert_to_rebuilds_pending_from_messages_after_usage(tmp_path: Pa
         [
             _message_dict("user", "question"),
             {"role": "_usage", "token_count": 5000},
-            _message_dict("assistant", "let me check"),
-            _message_dict("tool", tool_text),
+            _dict(_assistant_call("let me check", "tc0")),
+            _dict(_tool_result(tool_text, "tc0")),
             {"role": "_checkpoint", "id": 0},
             _message_dict("user", "follow up"),
             {"role": "_checkpoint", "id": 1},
@@ -184,8 +204,8 @@ async def test_revert_to_rebuilds_pending_from_messages_after_usage(tmp_path: Pa
     # After revert to checkpoint 1: assistant, tool, and "follow up" are all after _usage
     expected_pending = estimate_text_tokens(
         [
-            _msg("assistant", "let me check"),
-            _msg("tool", tool_text),
+            _assistant_call("let me check", "tc0"),
+            _tool_result(tool_text, "tc0"),
             _msg("user", "follow up"),
         ]
     )
@@ -248,8 +268,8 @@ async def test_restore_rebuilds_pending_for_messages_after_usage(tmp_path: Path)
         [
             _message_dict("user", "hello"),
             {"role": "_usage", "token_count": 10000},
-            _message_dict("assistant", "let me read that file"),
-            _message_dict("tool", tool_text),
+            _dict(_assistant_call("let me read that file", "tc0")),
+            _dict(_tool_result(tool_text, "tc0")),
         ],
     )
 
@@ -258,8 +278,8 @@ async def test_restore_rebuilds_pending_for_messages_after_usage(tmp_path: Path)
 
     expected_pending = estimate_text_tokens(
         [
-            _msg("assistant", "let me read that file"),
-            _msg("tool", tool_text),
+            _assistant_call("let me read that file", "tc0"),
+            _tool_result(tool_text, "tc0"),
         ]
     )
     assert ctx.token_count == 10000
@@ -383,11 +403,13 @@ async def test_pending_rebuilt_on_restore(tmp_path: Path) -> None:
     path = tmp_path / "ctx.jsonl"
     path.touch()
 
-    tool_msg = _msg("tool", "b" * 800)
+    assistant_msg = _assistant_call("let me check", "tc0")
+    tool_msg = _tool_result("b" * 800, "tc0")
 
     ctx1 = Context(file_backend=path)
     await ctx1.append_message(_msg("user", "a" * 400))
     await ctx1.update_token_count(1000)
+    await ctx1.append_message(assistant_msg)
     await ctx1.append_message(tool_msg)
     assert ctx1.token_count_with_pending > 1000
 
@@ -395,7 +417,7 @@ async def test_pending_rebuilt_on_restore(tmp_path: Path) -> None:
     ctx2 = Context(file_backend=path)
     await ctx2.restore()
     assert ctx2.token_count == 1000
-    expected_pending = estimate_text_tokens([tool_msg])
+    expected_pending = estimate_text_tokens([assistant_msg, tool_msg])
     assert ctx2.token_count_with_pending == 1000 + expected_pending
 
 

@@ -542,3 +542,57 @@ async def test_cross_step_dedup_not_triggered_after_back_to_the_future():
     # Should NOT have the cross-step reminder appended
     assert tr.return_value.output == "a"
     assert ts.dedup_triggered is False
+
+
+# --- execution-started deferral ---
+
+
+def test_approval_gated_tools_declare_deferred_execution_started() -> None:
+    """Every tool that requests approval mid-call must carry the explicit flag.
+
+    ``_tool_defers_execution_started`` used to duck-type on the private
+    ``_approval`` attribute; the explicit
+    ``emits_tool_execution_started_after_approval`` flag is now the only
+    signal, so each approval-gated tool class must declare it or
+    ``ToolExecutionStarted`` fires before approval resolves.
+    """
+    from pythinker_code.acp.tools import Terminal
+    from pythinker_code.plugin.tool import PluginTool
+    from pythinker_code.soul.toolset import MCPTool
+    from pythinker_code.tools.agent import RunAgents
+    from pythinker_code.tools.background import TaskInput, TaskStop
+    from pythinker_code.tools.file.replace import StrReplaceFile
+    from pythinker_code.tools.file.write import WriteFile
+    from pythinker_code.tools.shell import Shell
+
+    approval_gated = (
+        Shell,
+        WriteFile,
+        StrReplaceFile,
+        TaskInput,
+        TaskStop,
+        Terminal,
+        PluginTool,
+        RunAgents,
+        # MCPTool requests approval via runtime.approval (not _approval) as the
+        # first step of __call__; the flag defers ToolExecutionStarted until
+        # that approval resolves, matching every other approval-gated tool.
+        MCPTool,
+    )
+    for tool_class in approval_gated:
+        assert tool_class.emits_tool_execution_started_after_approval is True, tool_class
+
+
+def test_tool_defers_execution_started_reads_flag_only() -> None:
+    from pythinker_code.soul.toolset import _tool_defers_execution_started
+
+    flagged = SimpleNamespace(emits_tool_execution_started_after_approval=True)
+    assert _tool_defers_execution_started(cast(Any, flagged)) is True
+
+    unflagged = SimpleNamespace()
+    assert _tool_defers_execution_started(cast(Any, unflagged)) is False
+
+    # A private `_approval` attribute alone must no longer defer the event;
+    # the explicit flag is the single contract.
+    approval_only = SimpleNamespace(_approval=object())
+    assert _tool_defers_execution_started(cast(Any, approval_only)) is False

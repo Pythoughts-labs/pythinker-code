@@ -652,6 +652,83 @@ async def test_toolset_denies_plugin_tool_in_read_only_profile(
     assert "permission profile blocks external tool" in result.return_value.message
 
 
+def test_external_adapters_declare_side_effect_flag() -> None:
+    """Security contract: ``check_tool_call_allowed`` identifies external tool
+    adapters via the ``external_side_effect_tool`` class flag. If a future
+    move/rename drops the flag, the permission gate FAILS OPEN — these pins turn
+    that into a test failure instead of a silent bypass."""
+    from pythinker_code.plugin.tool import PluginTool
+    from pythinker_code.soul.toolset import MCPTool, WireExternalTool
+
+    assert MCPTool.external_side_effect_tool is True
+    assert WireExternalTool.external_side_effect_tool is True
+    assert PluginTool.external_side_effect_tool is True
+
+
+async def test_check_tool_call_allowed_routes_external_adapters(
+    runtime: Runtime,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each external adapter (plugin/MCP/wire) must be routed through
+    ``check_external_tool_allowed``; unflagged builtins must not be."""
+    from types import SimpleNamespace
+    from typing import Any, cast
+
+    import mcp
+
+    from pythinker_code.plugin import PluginToolSpec
+    from pythinker_code.plugin.tool import PluginTool
+    from pythinker_code.soul import permission
+    from pythinker_code.soul.toolset import MCPTool, WireExternalTool
+
+    sentinel = permission.ToolError(message="external gate consulted", brief="sentinel")
+    consulted: list[str] = []
+
+    def fake_external_gate(rt: Runtime, tool_name: str) -> permission.ToolError:
+        consulted.append(tool_name)
+        return sentinel
+
+    monkeypatch.setattr(permission, "check_external_tool_allowed", fake_external_gate)
+
+    plugin_dir = tmp_path / "plugin"
+    plugin_dir.mkdir()
+    plugin_tool = PluginTool(
+        PluginToolSpec(name="plugin_tool", description="test", command=["true"]),
+        plugin_dir=plugin_dir,
+        inject={},
+        config=runtime.config,
+    )
+    wire_tool = WireExternalTool(name="wire_tool", description="test", parameters={})
+    mcp_tool = MCPTool(
+        "srv",
+        mcp.Tool(
+            name="mcp_tool", description="x", inputSchema={"type": "object", "properties": {}}
+        ),
+        cast(Any, SimpleNamespace()),
+        runtime=runtime,
+    )
+
+    for tool in (plugin_tool, wire_tool, mcp_tool):
+        assert permission.check_tool_call_allowed(runtime, tool.name, {}, tool=tool) is sentinel
+    assert consulted == ["plugin_tool", "wire_tool", "mcp_tool"]
+
+    # Negative control: an unflagged builtin must NOT consult the external gate.
+    consulted.clear()
+    write_file = WriteFile(runtime, Approval(yolo=True))
+    assert permission.check_tool_call_allowed(runtime, write_file.name, {}, tool=write_file) is None
+    assert consulted == []
+
+    # Ordering pin: the Shell branch stays first — a Shell call is classified by
+    # the shell gate even if the tool object carries the external flag.
+    flagged_shell_stub = SimpleNamespace(external_side_effect_tool=True)
+    result = permission.check_tool_call_allowed(
+        runtime, "Shell", {"command": "ls"}, tool=flagged_shell_stub
+    )
+    assert result is not sentinel
+    assert consulted == []
+
+
 @pytest.mark.skipif(
     platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
 )
@@ -845,11 +922,12 @@ async def test_subagent_shell_python_runtime_blocked_by_profile(
 @pytest.mark.skipif(
     platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
 )
-async def test_read_only_shell_in_root_agent_still_requests_approval(
+async def test_root_agent_elides_approval_for_known_safe_commands(
     runtime: Runtime,
     environment: Environment,
 ) -> None:
-    """In the root (non-subagent) context, even read-only commands still go through approval."""
+    """Root context: provably read-only commands skip the prompt; anything
+    outside the positive allowlist still goes through approval."""
     approval_requested: list[str] = []
 
     class TrackingApproval(Approval):
@@ -858,14 +936,18 @@ async def test_read_only_shell_in_root_agent_still_requests_approval(
             return await super().request(sender, action, description, display)
 
     runtime.role = "root"
-    tracking = TrackingApproval(yolo=True)  # yolo so the approval auto-passes
+    tracking = TrackingApproval(yolo=True)  # yolo so any request auto-passes
 
     with tool_call_context("Shell"):
         shell = Shell(tracking, environment, runtime)
         result = await shell(ShellParams(command="echo hello"))
+        unlisted = await shell(ShellParams(command="true && python3 -c 'pass'"))
 
     assert not result.is_error
-    assert "run command" in approval_requested, "root agent should still request approval"
+    assert approval_requested == ["run command"], (
+        "safe command must elide; the unlisted one must still request"
+    )
+    assert not unlisted.is_error
 
 
 @pytest.mark.skipif(

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pythinker_core.chat_provider import APIStatusError, ChatProviderError
+from pythinker_core.message import Message
 from pythinker_core.tooling import ToolError, ToolOk, ToolReturnValue
 
 from pythinker_code.approval_runtime import (
@@ -259,6 +260,7 @@ class ForegroundRunRequest:
     requested_type: str
     model: str | None
     resume: str | None
+    fork_context: bool = False
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -274,6 +276,28 @@ class ForegroundSubagentRunner:
         assert runtime.subagent_store is not None
         self._store: SubagentStore = runtime.subagent_store
         self._builder = SubagentBuilder(runtime)
+
+    async def _load_fork_history(self) -> list[Message] | None:
+        """Read and filter the parent transcript for a context-forked child.
+
+        Reads the persisted parent context file rather than live soul state,
+        so the fork inherits exactly what would survive a parent restore
+        (including the restore-time pairing repair). An explicit fork must not
+        silently degrade to a blank child: read failures abort the spawn.
+        """
+        from pythinker_code.soul.context import Context
+        from pythinker_code.subagents.core import filter_history_for_fork
+
+        try:
+            parent_context = Context(file_backend=self._runtime.session.context_file)
+            await parent_context.restore()
+        except Exception as exc:
+            logger.warning("Context fork: failed to read parent history", exc_info=True)
+            raise RuntimeError(
+                "Context fork requested, but the parent history could not be restored."
+            ) from exc
+        forked = filter_history_for_fork(parent_context.history)
+        return forked or None
 
     async def run(self, req: ForegroundRunRequest) -> ToolReturnValue:
         prepared = await self._prepare_instance(req)
@@ -293,12 +317,16 @@ class ForegroundSubagentRunner:
         output_writer = SubagentOutputWriter(self._store.output_path(agent_id))
         output_writer.stage("runner_started")
 
+        fork_history = None
+        if req.fork_context and not resumed:
+            fork_history = await self._load_fork_history()
         spec = SubagentRunSpec(
             agent_id=agent_id,
             type_def=type_def,
             launch_spec=launch_spec,
             prompt=req.prompt,
             resumed=resumed,
+            fork_history=fork_history,
         )
         self._store.update_instance(
             agent_id,

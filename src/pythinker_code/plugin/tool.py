@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from loguru import logger
 from pythinker_core.tooling import CallableTool, ToolError, ToolOk
@@ -42,6 +42,18 @@ class PluginTool(CallableTool):
     Host credentials are injected as environment variables at runtime
     (not baked into config files) to handle OAuth token refresh.
     """
+
+    external_side_effect_tool: ClassVar[bool] = True
+    """Marks tool adapters whose side effects cannot be statically classified.
+
+    Consumed by the permission guard in ``permission.check_tool_call_allowed``
+    — which routes flagged tools through ``check_external_tool_allowed`` — and
+    by profile-gated tool visibility filtering
+    (``PythinkerToolset._is_tool_visible``). Removing or failing to set this
+    flag on an external adapter disables its permission gating.
+    """
+
+    emits_tool_execution_started_after_approval: ClassVar[bool] = True
 
     def __init__(
         self,

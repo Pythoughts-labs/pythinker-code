@@ -84,7 +84,7 @@ def truncate_middle_to_visual_lines(
     *,
     hint: str = "ctrl+o to expand",
 ) -> VisualTruncateResult:
-    """Truncate visual lines with a Codex-style head/tail ellipsis in the middle.
+    """Truncate visual lines with a head/tail ellipsis in the middle.
 
     Unlike :func:`truncate_to_visual_lines`, this preserves both early context
     and the most recent tail. This is better for terminal/tool output where the

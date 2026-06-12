@@ -247,7 +247,7 @@ def test_tui_component_protocol_rejects_missing_methods():
 # ---------------------------------------------------------------------------
 
 
-def test_bash_execution_uses_codex_style_compact_layout():
+def test_bash_execution_uses_compact_execution_cell_layout():
     out = render_plain(
         render_bash_execution(
             BashExecutionState(

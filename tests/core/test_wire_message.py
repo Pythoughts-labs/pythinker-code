@@ -182,17 +182,32 @@ async def test_wire_message_serde():
                     "total": 1,
                     "tools": 0,
                     "servers": [
-                        {
-                            "name": "context7",
-                            "status": "connecting",
-                            "tools": [],
-                        }
+                        {"name": "context7", "status": "connecting", "tools": [], "error": None}
                     ],
                 },
             },
         }
     )
     _test_serde(msg)
+
+    legacy_status = deserialize_wire_message(
+        {
+            "type": "StatusUpdate",
+            "payload": {
+                "context_usage": 0.5,
+                "mcp_status": {
+                    "loading": True,
+                    "connected": 0,
+                    "total": 1,
+                    "tools": 0,
+                    "servers": [{"name": "context7", "status": "connecting", "tools": []}],
+                },
+            },
+        }
+    )
+    assert isinstance(legacy_status, StatusUpdate)
+    assert legacy_status.mcp_status is not None
+    assert legacy_status.mcp_status.servers[0].error is None
 
     msg = Notification(
         id="n1234567",

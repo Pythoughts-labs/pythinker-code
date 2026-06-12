@@ -4,7 +4,8 @@ import contextlib
 import json
 import os
 from pathlib import Path
-from typing import Any, Literal, Self, cast
+from types import UnionType
+from typing import Any, Literal, Self, Union, cast, get_args, get_origin
 
 import tomlkit
 from pydantic import (
@@ -31,7 +32,7 @@ from pythinker_code.share import get_share_dir
 from pythinker_code.utils.logging import logger
 
 
-def _find_project_root(cwd: Path) -> Path | None:
+def find_project_root(cwd: Path) -> Path | None:
     """Walk up from cwd to find the nearest directory containing .git/.
 
     Returns None when no .git marker is found before reaching the filesystem
@@ -93,6 +94,125 @@ ENV_FIELD_MAP: dict[str, tuple[str, ...]] = {
 # ---------------------------------------------------------------------------
 # Pipeline helpers
 # ---------------------------------------------------------------------------
+
+
+def unknown_config_key_paths(
+    model_cls: type[BaseModel], data: dict[str, Any], _prefix: tuple[str, ...] = ()
+) -> list[tuple[str, ...]]:
+    """Dotted paths in *data* that no model field will consume.
+
+    Pydantic's extra='ignore' makes a typo'd key silently vanish and change
+    behavior with no signal. Conservative by design: recursion only follows
+    shapes it can prove (nested models, dict-of-model maps, lists of models),
+    so an unmodellable value is never reported — a false positive here would
+    teach users to ignore the diagnostics.
+    """
+    if model_cls.model_config.get("extra") == "allow":
+        return []
+    known: dict[str, Any] = {}
+    for name, field in model_cls.model_fields.items():
+        known[name] = field
+        if field.alias:
+            known[field.alias] = field
+        if isinstance(field.validation_alias, str):
+            known[field.validation_alias] = field
+        elif isinstance(field.validation_alias, AliasChoices):
+            for choice in field.validation_alias.choices:
+                if isinstance(choice, str):
+                    known[choice] = field
+
+    unknown: list[tuple[str, ...]] = []
+    for key, value in data.items():
+        path = (*_prefix, key)
+        field = known.get(key)
+        if field is None:
+            unknown.append(path)
+            continue
+        unknown.extend(_nested_unknown_paths(field.annotation, value, path))
+    return unknown
+
+
+def _nested_unknown_paths(
+    annotation: Any, value: Any, path: tuple[str, ...]
+) -> list[tuple[str, ...]]:
+    annotation = _sole_non_none_type(annotation)
+    origin = get_origin(annotation)
+    if origin is dict:
+        args = get_args(annotation)
+        if len(args) == 2 and isinstance(value, dict):
+            item_type = _sole_non_none_type(args[1])
+            if isinstance(item_type, type) and issubclass(item_type, BaseModel):
+                nested: list[tuple[str, ...]] = []
+                for map_key, item in cast(dict[str, Any], value).items():
+                    if isinstance(item, dict):
+                        nested.extend(
+                            unknown_config_key_paths(
+                                item_type, cast(dict[str, Any], item), (*path, str(map_key))
+                            )
+                        )
+                return nested
+        return []
+    if origin in (list, tuple, set):
+        args = get_args(annotation)
+        if args and isinstance(value, list):
+            item_type = _sole_non_none_type(args[0])
+            if isinstance(item_type, type) and issubclass(item_type, BaseModel):
+                nested = []
+                for item in cast(list[Any], value):
+                    if isinstance(item, dict):
+                        # Item paths omit the index: the field name plus the
+                        # offending key is what a user greps their TOML for.
+                        nested.extend(
+                            unknown_config_key_paths(item_type, cast(dict[str, Any], item), path)
+                        )
+                return nested
+        return []
+    if (
+        isinstance(annotation, type)
+        and issubclass(annotation, BaseModel)
+        and isinstance(value, dict)
+    ):
+        return unknown_config_key_paths(annotation, cast(dict[str, Any], value), path)
+    return []
+
+
+def _sole_non_none_type(annotation: Any) -> Any:
+    """Unwrap ``X | None`` to ``X``; ambiguous unions return unchanged."""
+    if get_origin(annotation) in (Union, UnionType):
+        non_none = [arg for arg in get_args(annotation) if arg is not type(None)]
+        if len(non_none) == 1:
+            return non_none[0]
+    return annotation
+
+
+def _report_unknown_keys_single_source(data: Any, source: str) -> None:
+    """Unknown-key diagnostics for single-source loads (--config/--config-file).
+
+    The scoped pipeline reports through its merge provenance; explicit loads
+    bypass the merge, so build a one-source provenance here. Non-dict payloads
+    are left for Config.model_validate to reject with its own error.
+    """
+    if not isinstance(data, dict):
+        return
+    plain = {str(key): value for key, value in cast(dict[Any, Any], data).items()}
+    provenance: dict[str, Any] = {}
+    merged = _type_based_merge({}, plain, provenance, source)
+    _report_unknown_config_keys(merged, provenance)
+
+
+def _report_unknown_config_keys(merged: dict[str, Any], provenance: dict[str, Any]) -> None:
+    """Warn (or raise under PYTHINKER_STRICT_CONFIG) for unconsumed keys."""
+    unknown_paths = unknown_config_key_paths(Config, merged)
+    if not unknown_paths:
+        return
+    findings = [
+        f"{'.'.join(path)} (from {_lookup_provenance(provenance, path)})"
+        for path in sorted(unknown_paths)
+    ]
+    if os.environ.get("PYTHINKER_STRICT_CONFIG"):
+        raise ConfigError("Unknown configuration keys:\n  " + "\n  ".join(findings))
+    for finding in findings:
+        logger.warning("Unknown config key ignored: {finding}", finding=finding)
 
 
 def _set_nested(d: dict[str, Any], path: tuple[str, ...], value: object) -> None:
@@ -259,12 +379,47 @@ def _load_scoped(project_root: Path | None) -> Config:
     local_file: Path | None = None
     project_dict: dict[str, Any] = {}
     local_dict: dict[str, Any] = {}
+    project_trusted = True
+    stripped_hook_files: list[str] = []
 
     if project_root is not None:
+        from pythinker_code.project_trust import is_project_trusted
+
+        project_trusted = is_project_trusted(project_root)
         project_file = project_root / ".pythinker" / "config.toml"
         local_file = project_root / ".pythinker" / "config.local.toml"
-        project_dict = _read_toml(project_file)
-        local_dict = _read_toml(local_file)
+        if project_trusted:
+            project_dict = _read_toml(project_file)
+            local_dict = _read_toml(local_file)
+        else:
+            # An untrusted (e.g. freshly cloned) project must not brick startup
+            # with broken TOML, and must not auto-execute anything: hooks are
+            # shell commands run on lifecycle events, so they load only after
+            # the user records trust (/trust).
+            try:
+                project_dict = _read_toml(project_file)
+            except ConfigError as exc:
+                logger.warning(
+                    "Ignoring unreadable project config in untrusted project: {error}",
+                    error=exc,
+                )
+                project_dict = {}
+            try:
+                local_dict = _read_toml(local_file)
+            except ConfigError as exc:
+                logger.warning(
+                    "Ignoring unreadable project config in untrusted project: {error}",
+                    error=exc,
+                )
+                local_dict = {}
+            for scope_dict, scope_file in ((project_dict, project_file), (local_dict, local_file)):
+                if scope_dict.pop("hooks", None) is not None:
+                    stripped_hook_files.append(str(scope_file))
+                    logger.warning(
+                        "Project hooks in {file} are disabled until the project is "
+                        "trusted; run /trust to enable them",
+                        file=scope_file,
+                    )
 
     # ── GUARD ─────────────────────────────────────────────────────────────
     if project_file is not None:
@@ -283,6 +438,9 @@ def _load_scoped(project_root: Path | None) -> Config:
     # ── ENV OVERLAY ───────────────────────────────────────────────────────
     _apply_env_vars(merged, provenance)
 
+    # ── DIAGNOSE ──────────────────────────────────────────────────────────
+    _report_unknown_config_keys(merged, provenance)
+
     # ── VALIDATE ──────────────────────────────────────────────────────────
     try:
         config = Config.model_validate(merged)
@@ -295,6 +453,8 @@ def _load_scoped(project_root: Path | None) -> Config:
         raise ConfigError("Invalid configuration:\n" + "\n".join(enriched)) from exc
 
     # ── METADATA ──────────────────────────────────────────────────────────
+    if project_root is not None and not project_trusted:
+        config.disabled_project_hooks = stripped_hook_files
     config.is_from_default_location = True
     config.source_file = user_file
     if user_file.exists():
@@ -642,6 +802,10 @@ class MCPClientConfig(BaseModel):
     tool_call_timeout_ms: int = 60000
     """Timeout for tool calls in milliseconds."""
 
+    startup_timeout_ms: int = 30000
+    """Per-server connect/inventory timeout. A hung connect would otherwise
+    block every agent turn, since the loop awaits MCP loading."""
+
 
 STATUSLINE_SEGMENT_IDS: tuple[str, ...] = (
     "spinner",
@@ -926,6 +1090,14 @@ class Config(BaseModel):
             "still appended on top."
         ),
     )
+    model_switch_carryover: bool = Field(
+        default=True,
+        description=(
+            "On /model switches, seed the new session with a plain-text summary "
+            "of the conversation produced by the outgoing model. False keeps the "
+            "previous start-fresh behavior."
+        ),
+    )
     background: BackgroundConfig = Field(
         default_factory=BackgroundConfig, description="Background task configuration"
     )
@@ -942,6 +1114,15 @@ class Config(BaseModel):
     mcp: MCPConfig = Field(default_factory=MCPConfig, description="MCP configuration")
     tui: TUIConfig = Field(default_factory=TUIConfig, description="TUI rendering configuration")
     hooks: list[HookDef] = Field(default_factory=list, description="Hook definitions")  # pyright: ignore[reportUnknownVariableType]
+    disabled_project_hooks: list[str] = Field(
+        default_factory=list,
+        exclude=True,
+        description=(
+            "Config files whose project-scope hooks were stripped because the "
+            "project is untrusted. Populated at load; surfaced as a "
+            "notification so non-shell frontends see it too."
+        ),
+    )
     merge_all_available_skills: bool = Field(
         default=True,
         description=(
@@ -1039,7 +1220,7 @@ def load_config(config_file: Path | None = None) -> Config:
     behaviour used by tests and the CLI --config flag.
     """
     if config_file is None:
-        project_root = _find_project_root(Path.cwd())
+        project_root = find_project_root(Path.cwd())
         return _load_scoped(project_root)
 
     # ── Explicit path: legacy single-file load (unchanged) ────────────────
@@ -1071,6 +1252,7 @@ def load_config(config_file: Path | None = None) -> Config:
             data = json.loads(config_text)
         else:
             data = tomlkit.loads(config_text)
+        _report_unknown_keys_single_source(data, str(config_file))
         config = Config.model_validate(data)
     except json.JSONDecodeError as e:
         raise ConfigError(f"Invalid JSON in configuration file {config_file}: {e}") from e
@@ -1114,6 +1296,7 @@ def load_config_from_string(config_string: str) -> Config:
                 f"Invalid configuration text: {json_error}; {toml_error}"
             ) from toml_error
 
+    _report_unknown_keys_single_source(data, "--config text")
     try:
         config = Config.model_validate(data)
     except ValidationError as e:

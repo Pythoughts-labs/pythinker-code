@@ -151,12 +151,32 @@ def _full_reminder(
             "4. Write Plan — modify the plan file with WriteFile or StrReplaceFile "
             "(use WriteFile if the plan file does not exist yet). The plan MUST include "
             "a Verification section: for each change, the smallest command, test, or "
-            "check that would prove it worked end-to-end",
-            "5. Exit — call ExitPlanMode for user approval",
+            "check that would prove it worked end-to-end. Keep the plan file "
+            "skimmable: 3-5 short sections (including Assumptions and Verification), "
+            "bullets grouped by subsystem, naming only load-bearing files",
+            (
+                "5. Exit — call ExitPlanMode for user approval, only once the plan is "
+                "decision-complete: an implementer could execute it without making any "
+                'decision themselves. "Figure out X during implementation" is not a plan '
+                "step — resolve it now by exploring, or ask via AskUserQuestion."
+            ),
         ]
     )
     lines.extend(
         [
+            "",
+            "## Resolving unknowns",
+            (
+                "Unknowns come in two kinds. Repo-discoverable facts (current behavior, "
+                "existing patterns, file locations): explore and answer them yourself — "
+                "never ask the user. Preference or scope decisions (product behavior, "
+                "tradeoff priorities, rollout): surface them early with AskUserQuestion, "
+                "offering 2-4 concrete options with your recommended default first."
+            ),
+            (
+                "If a preference question stays unanswered, proceed with your recommended "
+                "default and record it in the plan's Assumptions section."
+            ),
             "",
             "## Handling multiple approaches",
             "Keep it focused: at most 2-3 meaningfully different approaches. "
@@ -205,6 +225,10 @@ def _sparse_reminder(plan_file_path: str | None = None) -> str:
     )
     parts.extend(
         [
+            (
+                "Exit only with a decision-complete plan; "
+                "record unconfirmed defaults under Assumptions."
+            ),
             "Use AskUserQuestion to clarify user preferences "
             "when it helps you write a better plan.",
             "If the plan has multiple approaches, "
@@ -246,6 +270,7 @@ def _reentry_reminder(plan_file_path: str | None = None) -> str:
             "or user preferences that affect the plan.",
             "6. Always edit the plan file before calling ExitPlanMode.",
             "",
+            "Exit only when the plan is decision-complete (no decisions left to the implementer).",
             "Your turn must end with either AskUserQuestion (to clarify requirements) "
             "or ExitPlanMode (to request plan approval).",
         ]

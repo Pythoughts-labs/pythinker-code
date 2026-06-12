@@ -1,6 +1,6 @@
 """Shared reasoning/thinking effort helpers.
 
-The UI exposes the same provider-neutral effort dial as pi-main. Provider
+The UI exposes a provider-neutral effort dial. Provider
 adapters may map or clamp unsupported levels internally, but callers should
 preserve the user's requested level in config/session state and pass it through
 to ``ChatProvider.with_thinking`` when the selected model advertises reasoning
@@ -125,7 +125,7 @@ def clamp_thinking_effort(
 ) -> ThinkingEffort:
     """Clamp *effort* to the nearest selectable entry in *levels*.
 
-    Match pi-main's behavior: if the exact level is unsupported, first search
+    If the exact level is unsupported, first search
     upward for a stronger available level, then downward. This keeps requests
     like ``xhigh`` on high-only models useful without silently disabling
     thinking.

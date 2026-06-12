@@ -2,11 +2,119 @@
 
 ## Active
 
-- [ ] `mythos-enhancements` PR #118: opened; CI test failures fixed (statusline
-      reap deadlock, diff-marker style assertion). CodeRabbit gate before merge
-      (first review attempt was rate-limited; re-review triggers on push).
+- [ ] Agent-harness adoption arc (`feat/agent-harness-enhancements`): executing
+      `tasks/agent-harness-adoption-plan.md` (124 verified items, tiers 1-4).
+      DONE: all 5 Tier-1 high/S + first high/M — `047a0b29` orchestration
+      provider+scrub, `b40cdb71` ACP question-tool hide, `36cedafd` plan,
+      `e722278c` restore-time history invariant repair, `388da2d3`
+      decision-complete plan mode, `f5b9b06a` print channel discipline,
+      `c8d82d38` review git-context+merge-base, `e2e74b70` parallel-tool
+      concurrency policy, `1615cfbd` reactive overflow recovery (loop +
+      SimpleCompaction halving; classify_api_error → soul/api_errors.py),
+      `0f39a3b1` per-project trust gating of project hooks (project_trust.py
+      store + /trust persistence + untrusted-TOML tolerance), `9d1178f4`
+      unknown-config-key diagnostics (unknown_config_key_paths +
+      PYTHINKER_STRICT_CONFIG).
+      `bf549c28` model-switch carry-over (summarize_all with the outgoing
+      model seeds the new session; model_switch_carryover flag).
+      `5dc87aaf` known-safe command auto-approval (is_known_safe_command
+      positive allowlist; root-only elision, deny-gate preserved).
+      `5dc87aaf`+`59deceff` known-safe command elision (+env-prefix
+      allowlist security fix; e2e approval pins moved to wrapper commands
+      `5dadb1c6`), `05f86428`+`df4801f5` MCP startup timeout + actionable
+      failure diagnostics (/mcp shows classified error lines).
+      `60fc8b16` MCP per-server tool filtering (enabledTools/disabledTools,
+      list-time + call-time).
+      `a01e5940` spawn-time context fork (Agent fork_context=true seeds
+      foreground children with the filtered conversational spine; background
+      fork is a tracked follow-up).
+      Workspace isolation: design note at tasks/worktree-isolation-design.md;
+      P1 seam `56d6fa53` + P2 lifecycle `8bc6c697` DONE (background
+      write-profile children get per-agent worktrees, diff-summary reports,
+      recovery-aware cleanup). P3 DONE (chain verified end-to-end; descriptions state enforced semantics). Isolation item CLOSED.
+      `eb13fdae` fuzzy edit-recovery ladder (rstrip→strip→unicode-punct
+      line-window seek in StrReplaceFile; ambiguity contract kept).
+      `cde3c726` live permissions-state injection (posture-fingerprinted
+      provider; Approval read accessors).
+      NEXT (Tier-1 high/M, plan order): MCP startup
+      timeout+diagnostics; MCP per-server tool filtering; subagent context
+      fork; workspace isolation for parallel writers; turn rollup analytics;
+      feedback diagnostics; fuzzy edit ladder; permissions-state
+      instructions; model escalation w/ justification; JSONL lifecycle
+      stream; schema-constrained final output; /review command; hook trust
+      gating; PostToolUse feedback to model; deferred tool loading; foreign
+      schema sanitization. Discipline: TDD + clean-code-guard + make check
+      per checkpoint; single writer now.
+- [ ] Windows shell hardening (researched, not yet implemented): bash-first
+      shell policy (Git Bash probe → pwsh → powershell, never cmd), Windows
+      tool-description guidance (`;` not `&&` on PS 5.1, `$env:`, quoting),
+      docker-daemon-down interceptor (`error during connect` +
+      `pipe/docker` → actionable remediation incl. `docker desktop start`),
+      POSIX-ism lint under PowerShell, `CTRL_BREAK_EVENT` + `taskkill /T`
+      tree-kill, `-EncodedCommand` UTF-16LE for PowerShell args. Full brief in
+      session notes 2026-06-12; permission tokenization is POSIX-blind for
+      PowerShell syntax (gate review needed before shipping).
+
+Merged from `refactor/agent-contract-and-tool-metadata` — step 1 of
+`tasks/design-adoption-blueprint.md` (agent-logic/coding-flow cleanup):
+
+- [x] Task 1: FetchURL untrusted-envelope fix — DONE (ceeeeb78; 3 TDD tests,
+      spec + quality review approved). Deferred: add `await
+      builder.spill_to_disk()` at the trafilatura + fetch-service sites for
+      event-loop hygiene (pre-existing asymmetry; no output difference).
+      Original: `tools/web/fetch.py:232,277,338`
+      write pre-rendered `UntrustedData(...).render_for_prompt()` into the
+      builder, so truncation can cut the closing envelope tag and break
+      `strip_untrusted_envelope` (endswith). Switch to raw write +
+      `builder.mark_untrusted()` (idiom: `tools/web/search.py:174-177`).
+      → verify: new TDD test reproducing tag truncation fails before / passes
+      after; `tests/utils` untrusted-wrapping suite green.
+- [x] Task 2: Public `turn()` contract on PythinkerSoul — DONE (7e96dfb8;
+      thin delegate keeps `_turn` as the test patch point; 3 call sites
+      migrated, suppressions removed; contract docstring distinguishes
+      framed vs unframed callers; spec + quality review approved).
+- [x] Task 3: Declarative tool metadata for the dispatch/permission gates —
+      DONE (eaa96d6e; `external_side_effect_tool` ClassVar on the 3 adapters,
+      `emits_tool_execution_started_after_approval` pinned on 8 classes,
+      both string-match consumers rewritten; spec review, quality review,
+      and security review (SAFE TO MERGE) all passed).
+
+Review: branch `refactor/agent-contract-and-tool-metadata` (3 commits on top
+of bff54f94) final-reviewed READY TO MERGE. Full `make test-pythinker-code`:
+5279 passed, 1 failed — the failure is
+`tests/e2e/test_shell_pty_e2e.py::test_shell_cancel_running_command_kills_process_and_recovers`,
+verified PRE-EXISTING and machine-local: fails identically in isolation on
+main (bff54f94) and on 7caeca33 / d51ef649 / 2904de00, all of which merged
+with green CI. It is the ONLY test that sends ESC, so the local ESC-interrupt
+PTY path has no corroborating coverage. Needs its own debugging session
+(suspect ESC flush timing in the local macOS/Python 3.14 PTY environment).
+
+Out of scope this PR (logged): pricing display move out of core, the
+`extract_key_argument` name→spec registry, larger soul/toolset splits
+(blueprint P1a/P2a/P2b).
+
+### Deferred from this branch's reviews
+- [x] FetchURL spill awaits — DONE: `await builder.spill_to_disk()` added at
+  the trafilatura + fetch-service sites.
+- [x] MCPTool event ordering — DONE: `emits_tool_execution_started_after_approval`
+  set on MCPTool (Approval.request emits after resolution, idempotent per
+  call id); pinned in test_toolset.py alongside the other 8 classes.
+- No structural enforcement that FUTURE external adapters declare
+  `external_side_effect_tool` (pin tests cover the current three only).
+  Deliberately NOT bolted on now: the three adapters share no in-package
+  base class to hang an `__init_subclass__` hook on; revisit when the
+  toolset split (blueprint P2a) introduces an adapter base.
+
+Done: `mythos-enhancements` PR #118 merged (d51ef649).
 
 ### Deferred (documented, not silently dropped)
+
+- Arc-review finding (medium, deliberate deferral): the same-step exclusive
+  gate is held across a mutating tool's approval wait, blocking sibling
+  parallel-safe reads in that batch. Proper fix = split approval from
+  execution per tool (approval ungated, only the mutation gated) — an
+  invasive per-tool refactor; the cost today is bounded (elision/auto modes
+  remove most waits). Revisit with the approval-split refactor.
 
 - Read-only MCP doc-lookup carve-out for offline roles — today ALL MCP tools
   are fail-closed below the implement profile (deliberate); reviewer specs

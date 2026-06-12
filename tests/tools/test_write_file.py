@@ -218,3 +218,24 @@ async def test_write_symlink_escaping_workspace_classified_outside(
     assert captured_actions[0] == FileActions.EDIT_OUTSIDE, (
         f"Expected EDIT_OUTSIDE for symlink escaping workspace, got {captured_actions[0]}"
     )
+
+
+async def test_relative_path_resolves_against_work_dir(
+    write_file_tool: WriteFile, temp_work_dir: HostPath, tmp_path: Path
+):
+    """An isolated child's relative write must land in its (overridden) work
+    dir, not wherever the process cwd happens to be."""
+    import os
+
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    previous_cwd = os.getcwd()
+    os.chdir(elsewhere)
+    try:
+        result = await write_file_tool(Params(path="rel_note.txt", content="hi"))
+    finally:
+        os.chdir(previous_cwd)
+
+    assert not result.is_error
+    assert (Path(str(temp_work_dir)) / "rel_note.txt").read_text() == "hi"
+    assert not (elsewhere / "rel_note.txt").exists()

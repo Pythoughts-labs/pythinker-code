@@ -111,6 +111,7 @@ def _render_transcript(context_file: Path, budget: int) -> str:
 
 class Recall(CallableTool2[Params]):
     name: str = NAME
+    supports_parallel: bool = True
     params: type[Params] = Params
 
     def __init__(self, runtime: Runtime):
@@ -136,7 +137,7 @@ class Recall(CallableTool2[Params]):
         return await self._read(session_id)
 
     async def _search(self, query: str) -> ToolReturnValue:
-        work_dir = self._runtime.session.work_dir
+        work_dir = self._runtime.work_dir
         try:
             sessions = await Session.list(work_dir)
         except Exception as exc:
@@ -165,7 +166,7 @@ class Recall(CallableTool2[Params]):
     async def _read(self, session_id: str) -> ToolReturnValue:
         if session_id == self._runtime.session.id:
             return ToolError(message="Cannot recall the current session.", brief="Current session")
-        work_dir = self._runtime.session.work_dir
+        work_dir = self._runtime.work_dir
         try:
             session = await Session.find(work_dir, session_id)
         except Exception as exc:

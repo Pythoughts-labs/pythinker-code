@@ -220,7 +220,9 @@ class Host(Protocol):
         """Create a directory at the given path."""
         ...
 
-    async def exec(self, *args: str, env: Mapping[str, str] | None = None) -> HostProcess:
+    async def exec(
+        self, *args: str, env: Mapping[str, str] | None = None, cwd: str | None = None
+    ) -> HostProcess:
         """
         Execute a command with arguments and return the running process.
 
@@ -228,6 +230,8 @@ class Host(Protocol):
             *args: Command and its arguments.
             env: Environment variables for the subprocess. If None, inherits
                  from the parent process.
+            cwd: Working directory for the subprocess. If None, inherits the
+                 backend's current working directory (process cwd locally).
         """
         ...
 
@@ -347,8 +351,10 @@ async def mkdir(path: StrOrHostPath, parents: bool = False, exist_ok: bool = Fal
     return await get_current_host().mkdir(path, parents=parents, exist_ok=exist_ok)
 
 
-async def exec(*args: str, env: Mapping[str, str] | None = None) -> HostProcess:
-    return await get_current_host().exec(*args, env=env)
+async def exec(
+    *args: str, env: Mapping[str, str] | None = None, cwd: str | None = None
+) -> HostProcess:
+    return await get_current_host().exec(*args, env=env, cwd=cwd)
 
 
 from pythinker_host._current import current_host as current_host  # noqa: E402

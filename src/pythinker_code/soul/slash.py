@@ -68,7 +68,7 @@ async def recap(soul: PythinkerSoul, args: str) -> None:
     from pythinker_code.session_recap import build_pythinker_recap
 
     try:
-        text = await build_pythinker_recap(soul.runtime.session.work_dir, args)
+        text = await build_pythinker_recap(soul.runtime.work_dir, args)
     except ValueError as exc:
         wire_send(TextPart(text=str(exc)))
         return
@@ -282,9 +282,7 @@ async def goal(soul: PythinkerSoul, args: str):
             "with /goal clear."
         )
     )
-    await soul._turn(  # pyright: ignore[reportPrivateUsage]
-        Message(role="user", content=prompts.GOAL_SET.format(objective=text))
-    )
+    await soul.turn(Message(role="user", content=prompts.GOAL_SET.format(objective=text)))
 
 
 @registry.command
@@ -297,9 +295,7 @@ async def learn(soul: PythinkerSoul, args: str):
         else "No specific focus was given; review the whole session."
     )
     wire_send(TextPart(text="Reviewing the session for lessons worth keeping..."))
-    await soul._turn(  # pyright: ignore[reportPrivateUsage]
-        Message(role="user", content=prompts.LEARN.format(focus=focus_line))
-    )
+    await soul.turn(Message(role="user", content=prompts.LEARN.format(focus=focus_line)))
 
 
 @registry.command(name="best-practices", aliases=["bp"])

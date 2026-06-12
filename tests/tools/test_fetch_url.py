@@ -396,6 +396,66 @@ async def test_fetch_url_with_service(runtime) -> None:
         await runner.cleanup()
 
 
+async def test_fetch_url_with_service_truncated_envelope_stays_closed(runtime) -> None:
+    """Service-fetched content larger than the builder limit must keep a
+    well-formed <untrusted_data> envelope: wrapping happens after truncation,
+    so the closing tag can never be cut off."""
+    from pydantic import SecretStr
+
+    from pythinker_code.config import Config, PythinkerAIFetchConfig, Services
+    from pythinker_code.tools.utils import DEFAULT_MAX_CHARS
+    from pythinker_code.utils.trust import strip_untrusted_envelope
+
+    big_content = "".join(f"line {i}: service filler text\n" for i in range(4000))
+    assert len(big_content) > DEFAULT_MAX_CHARS
+
+    async def service_handler(request: web.Request) -> web.Response:  # noqa: ARG001
+        return web.Response(text=big_content)
+
+    app = web.Application()
+    app.router.add_post("/fetch", service_handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host="127.0.0.1", port=0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]  # pyright: ignore[reportAttributeAccessIssue, reportOptionalMemberAccess]
+
+    try:
+        config = Config(
+            services=Services(
+                pythinker_ai_fetch=PythinkerAIFetchConfig(
+                    base_url=f"http://127.0.0.1:{port}/fetch",
+                    api_key=SecretStr("test-key"),
+                )
+            )
+        )
+        fetch_tool = FetchURL(config=config, runtime=runtime)
+
+        from pythinker_code.soul.toolset import current_tool_call
+        from pythinker_code.wire.types import ToolCall
+
+        token = current_tool_call.set(
+            ToolCall(
+                id="test-call-id", function=ToolCall.FunctionBody(name="FetchURL", arguments=None)
+            )
+        )
+        try:
+            result = await fetch_tool(Params(url="https://example.com"))
+        finally:
+            current_tool_call.reset(token)
+
+        assert not result.is_error
+        assert isinstance(result.output, str)
+        assert "truncated" in result.message
+        # unwrap_untrusted asserts the envelope is well-formed (closing tag intact).
+        inner = unwrap_untrusted(result.output)
+        assert len(inner) < len(big_content)
+        assert strip_untrusted_envelope(result.output) == inner
+
+    finally:
+        await runner.cleanup()
+
+
 @pytest_asyncio.fixture
 async def serve_app() -> AsyncIterator[Callable[[web.Application], Awaitable[str]]]:
     """Serve an arbitrary aiohttp app on a random loopback port and clean up."""

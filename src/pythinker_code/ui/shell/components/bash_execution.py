@@ -2,7 +2,7 @@
 
 
 
-Render bash as a compact Codex-style execution cell: a lifecycle bullet,
+Render bash as a compact execution cell: a lifecycle bullet,
 a ``$ <command>`` header, indented output, and small status/footer hints.
 We model the same shape as a stateless Rich renderable factory so callers
 (the bash tool renderer or future ``Shell`` history) can drive it.

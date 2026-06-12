@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pythinker_host.path import HostPath
+
 from pythinker_code.llm import clone_llm_with_model_alias
 from pythinker_code.soul.agent import Agent, Runtime, load_agent
 from pythinker_code.subagents.models import AgentLaunchSpec, AgentTypeDefinition
@@ -15,6 +17,7 @@ class SubagentBuilder:
         agent_id: str,
         type_def: AgentTypeDefinition,
         launch_spec: AgentLaunchSpec,
+        work_dir_override: HostPath | None = None,
     ) -> Agent:
         effective_model = self.resolve_effective_model(type_def=type_def, launch_spec=launch_spec)
         llm_override = clone_llm_with_model_alias(
@@ -26,10 +29,23 @@ class SubagentBuilder:
             thinking=launch_spec.thinking,
             thinking_effort=launch_spec.thinking_effort,
         )
+        work_dir_ls: str | None = None
+        work_dir_agents_md: str | None = None
+        if work_dir_override is not None:
+            from pythinker_code.soul.agent import load_agents_md
+            from pythinker_code.utils.path import list_directory
+
+            work_dir_ls, work_dir_agents_md = (
+                await list_directory(work_dir_override),
+                await load_agents_md(work_dir_override),
+            )
         runtime = self._root_runtime.copy_for_subagent(
             agent_id=agent_id,
             subagent_type=type_def.name,
             llm_override=llm_override,
+            work_dir_override=work_dir_override,
+            work_dir_ls=work_dir_ls,
+            work_dir_agents_md=work_dir_agents_md,
         )
         return await load_agent(
             type_def.agent_file,

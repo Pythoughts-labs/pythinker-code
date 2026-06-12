@@ -116,7 +116,7 @@ class SetTodoList(CallableTool2[Params]):
             )
         in_progress = sum(1 for todo in todos if todo.status == "in_progress")
         if in_progress > 1:
-            # Codex plan-tool contract, softened: parallel-subagent fan-out
+            # Single-in-progress discipline, softened: parallel-subagent fan-out
             # legitimately tracks one in_progress sub-todo per running child.
             result = _with_appended_note(
                 result,
@@ -149,7 +149,7 @@ class SetTodoList(CallableTool2[Params]):
         if not todos:
             details.append("cleared: true")
         await append_scratch_event(
-            self._runtime.session.work_dir,
+            self._runtime.work_dir,
             session_id=self._runtime.session.id,
             session_title=self._runtime.session.title or self._runtime.session.state.custom_title,
             labels=["kind:todo"],

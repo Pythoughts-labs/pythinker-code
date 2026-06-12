@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from prompt_toolkit.shortcuts.choice_input import ChoiceInput
@@ -362,10 +363,57 @@ async def model(app: Shell, args: str):
         session.state.additional_dirs = list(current_session.state.additional_dirs)
         if session.state.additional_dirs:
             await asyncio.to_thread(session.save_state)
-        console.print(f"[{_t.success}]Starting fresh session for the new model...[/]")
+        carried = False
+        if config.model_switch_carryover:
+            carried = await _carry_context_to_session(soul, session)
+        if carried:
+            console.print(f"[{_t.success}]Carrying a conversation summary to the new model...[/]")
+        else:
+            console.print(f"[{_t.success}]Starting fresh session for the new model...[/]")
         raise Reload(session_id=session.id)
 
     raise Reload(session_id=soul.runtime.session.id)
+
+
+async def _carry_context_to_session(soul: PythinkerSoul, new_session: Any) -> bool:
+    """Seed the new session with a summary written by the outgoing model.
+
+    Summarizing before the switch means only plain text crosses the model
+    boundary — no provider-specific thinking blocks or tool-call schemas the
+    incoming provider might reject. Best-effort: any failure leaves the new
+    session untouched so the switch degrades to the start-fresh behavior.
+    """
+    from pythinker_code.soul.compaction import SimpleCompaction
+    from pythinker_code.soul.context import Context
+    from pythinker_code.soul.message import system
+    from pythinker_code.utils.logging import logger
+
+    history = list(soul.context.history)
+    llm = soul.runtime.llm
+    if not history or llm is None:
+        return False
+    compaction = SimpleCompaction(base_prompt=soul.runtime.config.compact_prompt)
+    try:
+        summary = await compaction.summarize_all(history, llm)
+    except Exception:
+        logger.warning("Model-switch carry-over summarization failed", exc_info=True)
+        return False
+    if not summary:
+        return False
+    from pythinker_core.message import Message
+
+    seed = Message(
+        role="system",
+        content=[
+            system(
+                "Summary of the conversation so far, carried over from the previous "
+                f"model session:\n{summary}\nContinue from this state. Details were "
+                "summarized away; re-read files before editing them."
+            )
+        ],
+    )
+    await Context(file_backend=new_session.context_file).append_message(seed)
+    return True
 
 
 _PROVIDER_LABEL_OVERRIDES = {
@@ -1734,6 +1782,11 @@ def trust(app: Shell, args: str) -> None:
         console.print(
             f"[{_t_trust.success}]Workspace trusted. Safe mode disabled for this session.[/]"
         )
+        if _persist_project_trust(soul, trusted=True):
+            console.print(
+                f"[{_t_trust.info}]Project config trust recorded — project hooks load "
+                "on /reload or next start.[/]"
+            )
         return
     if mode in {"off", "no", "untrust", "safe"}:
         state.trusted = False
@@ -1743,6 +1796,7 @@ def trust(app: Shell, args: str) -> None:
         soul.runtime.approval.set_auto(False)
         soul.runtime.session.state.approval.auto_approve_actions.clear()
         soul.runtime.session.save_state()
+        _persist_project_trust(soul, trusted=False)
         console.print(
             f"[{_t_trust.warning}]Workspace untrusted. Safe mode enabled; "
             "auto-approval is disabled.[/]"
@@ -1755,6 +1809,22 @@ def trust(app: Shell, args: str) -> None:
     status = "trusted" if state.trusted else "untrusted"
     safe = "on" if state.safe_mode else "off"
     console.print(f"Workspace trust: [bold]{status}[/bold]  safe mode: [bold]{safe}[/bold]")
+
+
+def _persist_project_trust(soul: PythinkerSoul, *, trusted: bool) -> bool:
+    """Record the durable per-project trust decision for the session's repo.
+
+    Returns True when a project root was found and recorded. Sessions outside
+    a git project have no project config scope to gate, so nothing persists.
+    """
+    from pythinker_code.config import find_project_root
+    from pythinker_code.project_trust import set_project_trusted
+
+    root = find_project_root(Path(str(soul.runtime.work_dir)))
+    if root is None:
+        return False
+    set_project_trusted(root, trusted)
+    return True
 
 
 @registry.command
@@ -1948,7 +2018,7 @@ async def show_memory(app: Shell, args: str):
         return
     from pythinker_code.project_memory import ProjectMemoryStore
 
-    store = ProjectMemoryStore(soul.runtime.session.work_dir)
+    store = ProjectMemoryStore(soul.runtime.work_dir)
     parts = args.split()
     if parts and parts[0] == "inbox":
         memory_config = getattr(soul.runtime.config, "memory", None)
@@ -1967,7 +2037,7 @@ async def show_memory(app: Shell, args: str):
 
         action = parts[1] if len(parts) > 1 else "list"
         if action == "scan":
-            created = await generate_inbox_candidates(store, soul.runtime.session.work_dir)
+            created = await generate_inbox_candidates(store, soul.runtime.work_dir)
             console.print(f"Staged {len(created)} memory inbox candidate(s).")
             return
         if action == "approve" and len(parts) > 2:

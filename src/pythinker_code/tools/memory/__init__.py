@@ -26,7 +26,7 @@ class Memory(CallableTool2[Params]):
     def __init__(self, runtime: Runtime) -> None:
         super().__init__()
         self._runtime = runtime
-        self._store = ProjectMemoryStore(runtime.session.work_dir)
+        self._store = ProjectMemoryStore(runtime.work_dir)
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:

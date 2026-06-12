@@ -12,13 +12,70 @@ from typing import Any, cast
 import aiofiles
 import aiofiles.os
 from pydantic import ValidationError
-from pythinker_core.message import Message
+from pythinker_core.message import Message, TextPart
 
 from pythinker_code.soul.compaction import estimate_text_tokens
 from pythinker_code.soul.message import system
 from pythinker_code.utils.io import ends_with_newline
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.path import next_available_rotation
+
+_LOST_RESULT_NOTE = (
+    "Tool call result was lost before it could be recorded (the session ended "
+    "unexpectedly). Re-run the tool if its output is still needed."
+)
+
+
+def repair_history_invariants(history: Sequence[Message]) -> list[Message]:
+    """Restore tool call/result pairing broken by a crash mid-persistence.
+
+    Synthesizes a lost-result message for every assistant tool call without a
+    recorded result and drops tool results with no matching open call —
+    either anomaly makes every subsequent provider request fail with a
+    pairing error. Runtime appends are pair-shielded, so this runs only at
+    the restore boundary; it never rewrites the file, so re-repair on each
+    restore is idempotent.
+    """
+    repaired: list[Message] = []
+    open_call_ids: list[str] = []
+
+    def _synthesize_lost_results() -> None:
+        for call_id in open_call_ids:
+            logger.warning(
+                "Context repair: synthesizing lost result for tool call {call_id}",
+                call_id=call_id,
+            )
+            repaired.append(
+                Message(
+                    role="tool",
+                    content=[TextPart(text=_LOST_RESULT_NOTE)],
+                    tool_call_id=call_id,
+                )
+            )
+        open_call_ids.clear()
+
+    for message in history:
+        if message.role == "tool":
+            if message.tool_call_id is None:
+                # An unpaired tool result cannot satisfy the call/result pairing
+                # invariant this repair enforces; keeping it would re-break the
+                # next provider request, so drop it like an orphan.
+                logger.warning("Context repair: dropping tool result without tool_call_id")
+            elif message.tool_call_id in open_call_ids:
+                open_call_ids.remove(message.tool_call_id)
+                repaired.append(message)
+            else:
+                logger.warning(
+                    "Context repair: dropping orphaned tool result for {call_id}",
+                    call_id=message.tool_call_id,
+                )
+            continue
+        _synthesize_lost_results()
+        repaired.append(message)
+        if message.role == "assistant" and message.tool_calls:
+            open_call_ids.extend(call.id for call in message.tool_calls)
+    _synthesize_lost_results()
+    return repaired
 
 
 class Context:
@@ -77,6 +134,8 @@ class Context:
                     line_no=line_no,
                 )
 
+        self._history[:] = repair_history_invariants(self._history)
+        messages_after_last_usage[:] = repair_history_invariants(messages_after_last_usage)
         self._pending_token_estimate = estimate_text_tokens(messages_after_last_usage)
         return True
 
@@ -228,6 +287,8 @@ class Context:
                 if keep_line:
                     await new_file.write(line)
 
+        self._history[:] = repair_history_invariants(self._history)
+        messages_after_last_usage[:] = repair_history_invariants(messages_after_last_usage)
         self._pending_token_estimate = estimate_text_tokens(messages_after_last_usage)
 
     async def clear(self):

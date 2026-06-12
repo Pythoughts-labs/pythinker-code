@@ -43,6 +43,7 @@ class WriteFile(CallableTool2[Params]):
     name: str = "WriteFile"
     description: str = _BASE_DESCRIPTION
     params: type[Params] = Params
+    emits_tool_execution_started_after_approval = True
 
     def __init__(self, runtime: Runtime, approval: Approval):
         super().__init__()
@@ -96,7 +97,13 @@ class WriteFile(CallableTool2[Params]):
 
         try:
             raw = HostPath(params.path).expanduser()
-            p = raw.canonical()
+            # Relative tool paths resolve against the runtime work dir
+            # (override-aware), NOT the process cwd — an isolated child's
+            # relative write must land in its worktree. `raw` keeps the
+            # original form: the workspace-escape rule for relative paths
+            # checks (and reports) what the caller actually passed.
+            base_joined = raw if raw.is_absolute() else self._work_dir.joinpath(str(raw))
+            p = base_joined.canonical()
 
             # Resolve the real (symlink-followed) path for security checks only.
             # os.path.realpath follows symlinks at every component including the leaf.

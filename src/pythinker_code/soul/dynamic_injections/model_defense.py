@@ -34,8 +34,8 @@ class ModelDefenseFragment:
     """A model-family-keyed defense fragment.
 
     ``patterns`` and ``excludes`` are case-insensitive substrings matched against
-    the model name (``excludes`` veto a match — mirrors Kilo's isLing matcher with
-    excludes). Keep ``content`` short; it is wrapped in a ``<system-reminder>``.
+    the model name (``excludes`` veto a match). Keep ``content`` short; it is
+    wrapped in a ``<system-reminder>``.
     """
 
     name: str

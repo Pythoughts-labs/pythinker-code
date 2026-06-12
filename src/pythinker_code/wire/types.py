@@ -202,6 +202,8 @@ class MCPServerSnapshot(BaseModel):
     name: str
     status: Literal["pending", "connecting", "connected", "failed", "unauthorized"]
     tools: tuple[str, ...] = ()
+    error: str | None = None
+    """One short actionable line explaining a failed connect."""
 
 
 class MCPStatusSnapshot(BaseModel):

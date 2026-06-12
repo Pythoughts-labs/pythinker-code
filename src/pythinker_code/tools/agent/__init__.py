@@ -51,6 +51,16 @@ class Params(BaseModel):
         default=None,
         description="Optional agent ID to resume instead of creating a new instance.",
     )
+    fork_context: bool = Field(
+        default=False,
+        description=(
+            "Seed the new agent with a filtered transcript of this conversation (user "
+            "requests and assistant replies; tool traffic and thinking are dropped). Use "
+            "when the child needs the discussion so far without a hand-written context "
+            "packet. New foreground instances only — invalid with resume or "
+            "run_in_background."
+        ),
+    )
     run_in_background: bool = Field(
         default=False,
         description=(
@@ -88,8 +98,10 @@ class Params(BaseModel):
     isolation: Literal["none", "worktree"] = Field(
         default="none",
         description=(
-            "Optional isolation request for background agents. `worktree` records a git-worktree "
-            "isolation intent for orchestration/recovery; unsupported callers should leave `none`."
+            "Optional isolation for background agents. `worktree` runs a write-profile child "
+            "in its own git worktree of HEAD; its final report names the worktree path and a "
+            "diff summary so changes are merged deliberately (clean worktrees are removed). "
+            "Requires a git repository; ignored for read-profile child types."
         ),
     )
 
@@ -157,7 +169,12 @@ class RunAgentsParams(BaseModel):
     )
     isolation: Literal["none", "worktree"] = Field(
         default="none",
-        description="Optional isolation request for background child agents.",
+        description=(
+            "Optional isolation for background child agents. `worktree` gives each "
+            "write-profile child its own git worktree of HEAD so parallel children "
+            "cannot clobber each other; each child's report names its worktree and "
+            "diff summary for deliberate merging."
+        ),
     )
 
 
@@ -226,7 +243,7 @@ class AgentTool(CallableTool2[Params]):
         if params.resume:
             details.append(f"resume: {params.resume}")
         await append_scratch_event(
-            self._runtime.session.work_dir,
+            self._runtime.work_dir,
             session_id=self._runtime.session.id,
             session_title=self._runtime.session.title or self._runtime.session.state.custom_title,
             labels=["kind:agent", f"agent-type:{actual_type}"],
@@ -272,14 +289,26 @@ class AgentTool(CallableTool2[Params]):
         requested_type = params.subagent_type or "coder"
         if err := self.check_execution_policy(requested_type):
             return err
+        if params.fork_context and (params.resume is not None or params.run_in_background):
+            return ToolError(
+                message=(
+                    "fork_context seeds a NEW foreground agent; it cannot be combined "
+                    "with resume or run_in_background."
+                ),
+                brief="Invalid fork_context",
+            )
+        if not params.run_in_background and params.isolation != "none":
+            # Proceeding unisolated after an isolation request would present
+            # degraded behavior as authoritative; fail fast instead.
+            return ToolError(
+                message=(
+                    "isolation='worktree' is only supported for background agents; "
+                    "set run_in_background=true or drop isolation."
+                ),
+                brief="Invalid isolation",
+            )
         if params.run_in_background:
             return await self._run_in_background(params)
-        if params.isolation != "none":
-            logger.warning(
-                "isolation={isolation!r} has no effect on foreground agents; "
-                "use run_in_background=True to enable isolation.",
-                isolation=params.isolation,
-            )
         await self._journal_foreground_agent_start(params, requested_type)
         timeout = params.effective_timeout
         try:
@@ -290,6 +319,7 @@ class AgentTool(CallableTool2[Params]):
                 requested_type=params.subagent_type or "coder",
                 model=params.model,
                 resume=params.resume,
+                fork_context=params.fork_context,
             )
             if timeout is not None:
                 return await asyncio.wait_for(runner.run(req), timeout=timeout)
@@ -641,6 +671,16 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
                 message="Subagents cannot launch other subagents.",
                 brief="RunAgents unavailable",
             )
+        if not params.run_in_background and params.isolation != "none":
+            # Foreground children would share one tree despite the isolation
+            # request; fail fast rather than proceed unisolated.
+            return ToolError(
+                message=(
+                    "isolation='worktree' is only supported for background child "
+                    "agents; set run_in_background=true or drop isolation."
+                ),
+                brief="Invalid isolation",
+            )
         if params.model is not None and params.model not in self._runtime.config.models:
             return ToolError(
                 message=f"Unknown model alias: {params.model}",
@@ -718,7 +758,7 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
         from pythinker_code.scratchpad import append_scratch_event
 
         scratchpad_result = await append_scratch_event(
-            self._runtime.session.work_dir,
+            self._runtime.work_dir,
             session_id=self._runtime.session.id,
             session_title=self._runtime.session.title or self._runtime.session.state.custom_title,
             labels=["kind:agent-batch"],

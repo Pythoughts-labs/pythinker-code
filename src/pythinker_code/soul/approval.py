@@ -260,6 +260,14 @@ class Approval:
         """True only when auto mode came from this invocation."""
         return self._state.runtime_auto
 
+    def is_safe_mode(self) -> bool:
+        """True when workspace safe mode suppresses auto-approval paths."""
+        return self._state.safe_mode
+
+    def session_approved_actions(self) -> frozenset[str]:
+        """Read-only view of action names approved for this session."""
+        return frozenset(self._state.auto_approve_actions)
+
     def _unattended_denial_feedback(self, action: str, tool_call: ToolCall) -> str | None:
         """Fail closed when an unattended run would otherwise wait for approval forever.
 

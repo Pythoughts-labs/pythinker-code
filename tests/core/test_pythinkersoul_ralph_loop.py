@@ -18,6 +18,7 @@ from pythinker_code.soul import run_soul
 from pythinker_code.soul.agent import Agent, Runtime
 from pythinker_code.soul.approval import Approval
 from pythinker_code.soul.context import Context
+from pythinker_code.soul.message import is_system_reminder_message
 from pythinker_code.soul.pythinkersoul import PythinkerSoul
 from pythinker_code.tools.utils import ToolRejectedError
 from pythinker_code.utils.aioqueue import QueueShutDown
@@ -41,6 +42,23 @@ RALPH_IMAGE_USER_INPUT = [
 def expect_snapshot[T](value: T, expected: Snapshot[T]) -> None:
     if expected != value:
         pytest.fail(f"Snapshot mismatch: {value!r} != {expected!r}")
+
+
+def _normalize_permissions_reminders(history: Sequence[Message]) -> list[Message]:
+    normalized: list[Message] = []
+    for message in history:
+        if is_system_reminder_message(message) and "Permissions state:" in message.extract_text(
+            " "
+        ):
+            normalized.append(
+                Message(
+                    role=message.role,
+                    content=[TextPart(text="<permissions-state-reminder>")],
+                )
+            )
+        else:
+            normalized.append(message)
+    return normalized
 
 
 class SequenceStreamedMessage:
@@ -204,7 +222,7 @@ async def test_ralph_loop_replays_original_prompt(runtime: Runtime, tmp_path: Pa
 
     await _run_and_collect_turns(soul, user_input)
     expect_snapshot(
-        context.history,
+        _normalize_permissions_reminders(context.history),
         snapshot(
             [
                 Message(
@@ -215,6 +233,10 @@ async def test_ralph_loop_replays_original_prompt(runtime: Runtime, tmp_path: Pa
                             image_url=ImageURLPart.ImageURL(url="https://example.com/test.png")
                         ),
                     ],
+                ),
+                Message(
+                    role="user",
+                    content=[TextPart(text="<permissions-state-reminder>")],
                 ),
                 Message(role="assistant", content=[TextPart(text="first")]),
                 Message(
@@ -275,7 +297,7 @@ async def test_ralph_loop_stops_on_choice(runtime: Runtime, tmp_path: Path) -> N
 
     await _run_and_collect_turns(soul, "do it")
     expect_snapshot(
-        context.history,
+        _normalize_permissions_reminders(context.history),
         snapshot(
             [
                 Message(
@@ -283,6 +305,10 @@ async def test_ralph_loop_stops_on_choice(runtime: Runtime, tmp_path: Path) -> N
                     content=[
                         TextPart(text="do it"),
                     ],
+                ),
+                Message(
+                    role="user",
+                    content=[TextPart(text="<permissions-state-reminder>")],
                 ),
                 Message(role="assistant", content=[TextPart(text="first")]),
                 Message(
@@ -328,7 +354,7 @@ async def test_ralph_loop_stops_on_tool_rejected(runtime: Runtime, tmp_path: Pat
 
     await _run_and_collect_turns(soul, "do it")
     expect_snapshot(
-        context.history,
+        _normalize_permissions_reminders(context.history),
         snapshot(
             [
                 Message(
@@ -336,6 +362,10 @@ async def test_ralph_loop_stops_on_tool_rejected(runtime: Runtime, tmp_path: Pat
                     content=[
                         TextPart(text="do it"),
                     ],
+                ),
+                Message(
+                    role="user",
+                    content=[TextPart(text="<permissions-state-reminder>")],
                 ),
                 Message(
                     role="assistant",
@@ -376,10 +406,14 @@ async def test_ralph_loop_disabled_skips_loop_prompt(runtime: Runtime, tmp_path:
 
     await _run_and_collect_turns(soul, "hello")
     expect_snapshot(
-        context.history,
+        _normalize_permissions_reminders(context.history),
         snapshot(
             [
                 Message(role="user", content=[TextPart(text="hello")]),
+                Message(
+                    role="user",
+                    content=[TextPart(text="<permissions-state-reminder>")],
+                ),
                 Message(role="assistant", content=[TextPart(text="done")]),
             ]
         ),

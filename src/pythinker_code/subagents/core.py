@@ -8,15 +8,31 @@ implemented once.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+from pythinker_core.message import Message, TextPart, ThinkPart
+from pythinker_host.path import HostPath
+
+from pythinker_code.notifications import is_notification_message
 from pythinker_code.soul.context import Context
+from pythinker_code.soul.message import is_system_reminder_message
 from pythinker_code.soul.pythinkersoul import PythinkerSoul
 from pythinker_code.subagents.builder import SubagentBuilder
 from pythinker_code.subagents.models import AgentLaunchSpec, AgentTypeDefinition
 from pythinker_code.subagents.store import SubagentStore
+
+# NOTE: these must match the registered type names in agents/default/agent.yaml
+# (dashed), which _SUBAGENT_PROFILES also keys on — not the yaml file stems.
+GIT_CONTEXT_AGENT_TYPES = frozenset({"explore", "review", "code-reviewer", "security-reviewer"})
+"""Read-oriented agent types whose first prompt gets a git-context prefix.
+
+Exploration and review both orient on repo state (branch, dirty files,
+merge base); injecting it up front saves the turns each run would spend
+rediscovering its scope. Write-capable types derive state themselves as
+part of their task."""
 
 SUBAGENT_OUTPUT_LANGUAGE_INSTRUCTION = """\
 <output-language>
@@ -41,6 +57,57 @@ class SubagentRunSpec:
     launch_spec: AgentLaunchSpec
     prompt: str
     resumed: bool
+    # Filtered parent transcript to seed a NEW child with (spawn-time context
+    # fork). Ignored on resume; see filter_history_for_fork.
+    fork_history: Sequence[Message] | None = None
+    # Operational work-dir override (e.g. an isolation worktree); flows into
+    # the child runtime via copy_for_subagent.
+    work_dir_override: HostPath | None = None
+
+
+_CHECKPOINT_MARKER_RE = re.compile(r"^CHECKPOINT \d+$")
+
+
+def filter_history_for_fork(history: Sequence[Message]) -> list[Message]:
+    """Filter a parent transcript down to its conversational spine.
+
+    Keeps user requests and assistant text; drops tool traffic (whose
+    call/result pairing would dangle out of context), thinking parts,
+    injected reminder/notification wrappers, and checkpoint markers — the
+    child should inherit intent and conclusions, not raw activity.
+    """
+    forked: list[Message] = []
+    for message in history:
+        if message.role == "user":
+            if is_notification_message(message) or is_system_reminder_message(message):
+                continue
+            text = message.extract_text(" ").strip()
+            if not text or _CHECKPOINT_MARKER_RE.match(text):
+                continue
+            forked.append(Message(role="user", content=[TextPart(text=text)]))
+        elif message.role == "assistant":
+            text = " ".join(
+                part.text
+                for part in message.content
+                if isinstance(part, TextPart) and not isinstance(part, ThinkPart)
+            ).strip()
+            if not text:
+                continue
+            forked.append(Message(role="assistant", content=[TextPart(text=text)]))
+    return forked
+
+
+async def seed_forked_history(
+    context: Context, fork_history: Sequence[Message] | None, *, resumed: bool
+) -> None:
+    """Seed a NEW child's context with the forked parent transcript.
+
+    Persisting through the child's own context file keeps resume working
+    unchanged. No-op on resume or when the child already has history.
+    """
+    if not fork_history or resumed or context.history:
+        return
+    await context.append_message(list(fork_history))
 
 
 def _prepend_output_language_instruction(prompt: str) -> str:
@@ -67,6 +134,7 @@ async def prepare_soul(
         agent_id=spec.agent_id,
         type_def=spec.type_def,
         launch_spec=spec.launch_spec,
+        work_dir_override=spec.work_dir_override,
     )
     if on_stage:
         on_stage("agent_built")
@@ -74,6 +142,7 @@ async def prepare_soul(
     # 2. Restore conversation context
     context = Context(store.context_path(spec.agent_id))
     await context.restore()
+    await seed_forked_history(context, spec.fork_history, resumed=spec.resumed)
     if on_stage:
         on_stage("context_restored")
 
@@ -85,12 +154,13 @@ async def prepare_soul(
     if on_stage:
         on_stage("context_ready")
 
-    # 4. For new (non-resumed) explore agents, prepend git context to the prompt
+    # 4. For new (non-resumed) read-oriented agents, prepend git context to the prompt
     prompt = spec.prompt
-    if spec.type_def.name == "explore" and not spec.resumed:
+    if spec.type_def.name in GIT_CONTEXT_AGENT_TYPES and not spec.resumed:
         from pythinker_code.subagents.git_context import collect_git_context
 
-        git_ctx = await collect_git_context(runtime.builtin_args.PYTHINKER_WORK_DIR)
+        git_context_dir = spec.work_dir_override or runtime.builtin_args.PYTHINKER_WORK_DIR
+        git_ctx = await collect_git_context(git_context_dir)
         if git_ctx:
             prompt = f"{git_ctx}\n\n{prompt}"
     prompt = _prepend_output_language_instruction(prompt)

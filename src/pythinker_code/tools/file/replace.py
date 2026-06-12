@@ -1,5 +1,6 @@
 import json
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast, override
 
@@ -124,10 +125,109 @@ def _crlf_translated_edit(content: str, edit: Edit) -> Edit | None:
     return Edit(old=old, new=new, replace_all=edit.replace_all)
 
 
+_SMART_PUNCTUATION = str.maketrans(
+    {
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2026": "...",
+    }
+)
+
+# Graduated relaxations for edit-location recovery, in strictness order.
+# Each tier normalizes one drift class the model cannot see in numbered
+# ReadFile output; the first tier with hits wins.
+_FUZZY_TIERS: tuple[tuple[str, Callable[[str], str]], ...] = (
+    ("trailing-whitespace", str.rstrip),
+    ("indentation", str.strip),
+    ("unicode-punctuation", lambda line: line.translate(_SMART_PUNCTUATION).strip()),
+)
+
+
+@dataclass(frozen=True)
+class _FuzzyResult:
+    content: str
+    tier: str
+    count: int
+
+
+def _line_body(line: str) -> str:
+    return line.rstrip("\r\n")
+
+
+def _find_fuzzy_windows(
+    file_lines: list[str], needle_lines: list[str], normalize: Callable[[str], str]
+) -> list[int]:
+    targets = [normalize(line) for line in needle_lines]
+    width = len(targets)
+    hits: list[int] = []
+    index = 0
+    while index <= len(file_lines) - width:
+        if all(
+            normalize(_line_body(file_lines[index + offset])) == targets[offset]
+            for offset in range(width)
+        ):
+            hits.append(index)
+            index += width  # non-overlapping
+        else:
+            index += 1
+    return hits
+
+
+def apply_fuzzy_edit(content: str, edit: Edit) -> _FuzzyResult | ToolError | None:
+    """Line-window relaxation ladder once exact (and CRLF) matching missed.
+
+    Replaces the ACTUAL matched file slice, never the needle text; the
+    replacement adopts the slice's line-ending style (CRLF preserved) and
+    its trailing newline so the following line never glues on. Multiple
+    hits at the firing tier without replace_all keep the ambiguity-error
+    contract. Returns None when no tier matches.
+    """
+    needle_lines = edit.old.splitlines()
+    if not needle_lines:
+        return None
+    file_lines = content.splitlines(keepends=True)
+    for tier, normalize in _FUZZY_TIERS:
+        hits = _find_fuzzy_windows(file_lines, needle_lines, normalize)
+        if not hits:
+            continue
+        if len(hits) > 1 and not edit.replace_all:
+            return ToolError(
+                message=(
+                    f"old string {edit.old!r} occurs {len(hits)} times under "
+                    f"{tier}-relaxed matching. Add surrounding context to make it "
+                    "unique, or set replace_all=true."
+                ),
+                brief="Ambiguous replacement",
+            )
+        width = len(needle_lines)
+        rebuilt: list[str] = []
+        cursor = 0
+        for start in hits:
+            rebuilt.extend(file_lines[cursor:start])
+            slice_lines = file_lines[start : start + width]
+            replacement = edit.new
+            if any("\r\n" in line for line in slice_lines) and "\r" not in replacement:
+                replacement = replacement.replace("\n", "\r\n")
+            last = slice_lines[-1]
+            ending = "\r\n" if last.endswith("\r\n") else "\n" if last.endswith("\n") else ""
+            if ending and not replacement.endswith(("\n", "\r\n")):
+                replacement += ending
+            rebuilt.append(replacement)
+            cursor = start + width
+        rebuilt.extend(file_lines[cursor:])
+        return _FuzzyResult(content="".join(rebuilt), tier=tier, count=len(hits))
+    return None
+
+
 class StrReplaceFile(CallableTool2[Params]):
     name: str = "StrReplaceFile"
     description: str = _BASE_DESCRIPTION
     params: type[Params] = Params
+    emits_tool_execution_started_after_approval = True
 
     def __init__(self, runtime: Runtime, approval: Approval):
         super().__init__()
@@ -186,7 +286,13 @@ class StrReplaceFile(CallableTool2[Params]):
 
         try:
             raw = HostPath(params.path).expanduser()
-            p = raw.canonical()
+            # Relative tool paths resolve against the runtime work dir
+            # (override-aware), NOT the process cwd — an isolated child's
+            # relative write must land in its worktree. `raw` keeps the
+            # original form: the workspace-escape rule for relative paths
+            # checks (and reports) what the caller actually passed.
+            base_joined = raw if raw.is_absolute() else self._work_dir.joinpath(str(raw))
+            p = base_joined.canonical()
 
             # Resolve the real (symlink-followed) path for security checks only.
             # os.path.realpath follows symlinks at every component including the leaf.
@@ -245,6 +351,7 @@ class StrReplaceFile(CallableTool2[Params]):
             # missing or ambiguous, return before writing so the file stays
             # unchanged.
             per_edit_counts: list[int] = []
+            fuzzy_notes: list[str] = []
             for index, edit in enumerate(edits, start=1):
                 if not edit.old:
                     return ToolError(
@@ -262,6 +369,19 @@ class StrReplaceFile(CallableTool2[Params]):
                     edit = crlf_edit
                     match_count = content.count(edit.old)
                 if match_count == 0:
+                    fuzzy = apply_fuzzy_edit(content, edit)
+                    if isinstance(fuzzy, ToolError):
+                        return ToolError(
+                            message=f"Edit {index}: {fuzzy.message}",
+                            brief=fuzzy.brief or "Ambiguous replacement",
+                        )
+                    if fuzzy is not None:
+                        content = fuzzy.content
+                        per_edit_counts.append(fuzzy.count if edit.replace_all else 1)
+                        fuzzy_notes.append(
+                            f"edit {index} matched with {fuzzy.tier}-relaxed matching"
+                        )
+                        continue
                     return ToolError(
                         message=(
                             f"No replacements were made for edit {index}: "
@@ -321,6 +441,7 @@ class StrReplaceFile(CallableTool2[Params]):
                 message=(
                     f"File successfully edited. "
                     f"Applied {len(edits)} edit(s) with {total_replacements} total replacement(s)."
+                    + (f" ({'; '.join(fuzzy_notes)})" if fuzzy_notes else "")
                 ),
                 display=diff_blocks,
             )

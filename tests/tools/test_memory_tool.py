@@ -24,9 +24,15 @@ class FakeGit:
         return GitResult(ok=True, exit_code=1, stdout="")
 
 
-def _runtime(tmp_path, role="root"):
+def _runtime(tmp_path, role="root", work_dir=None) -> SimpleNamespace:
     session = SimpleNamespace(id="sess1", title="t", work_dir=_hp(tmp_path / "repo"))
-    return SimpleNamespace(role=role, session=session, rearmed=[], rearm_injection=lambda key: None)
+    return SimpleNamespace(
+        role=role,
+        session=session,
+        work_dir=work_dir or session.work_dir,
+        rearmed=[],
+        rearm_injection=lambda key: None,
+    )
 
 
 def _make_tool(tmp_path, monkeypatch, role="root"):
@@ -67,3 +73,14 @@ async def test_memory_tool_blocks_subagent(tmp_path, monkeypatch):
     res = await tool(Params(action="add", target="memory", content="x"))
     assert res.is_error is True
     assert "root" in res.message.lower()
+
+
+def test_memory_tool_uses_runtime_work_dir_seam(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path / "share"))
+    from pythinker_code.tools.memory import Memory
+
+    runtime = _runtime(tmp_path, work_dir=_hp(tmp_path / "different_repo"))
+    tool = Memory(cast(Any, runtime))
+
+    assert tool._store._work_dir == runtime.work_dir
+    assert tool._store._work_dir != runtime.session.work_dir

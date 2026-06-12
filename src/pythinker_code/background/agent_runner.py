@@ -4,7 +4,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from dataclasses import replace
+from pathlib import Path
 from typing import TYPE_CHECKING
+
+from pythinker_host.path import HostPath
 
 from pythinker_code.approval_runtime import (
     ApprovalSource,
@@ -64,6 +67,7 @@ class BackgroundAgentRunner:
         model_override: str | None,
         timeout_s: int | None = None,
         resumed: bool = False,
+        isolation: str | None = None,
     ) -> None:
         self._runtime = runtime
         self._manager = manager
@@ -74,6 +78,8 @@ class BackgroundAgentRunner:
         self._model_override = model_override
         self._timeout_s = timeout_s
         self._resumed = resumed
+        self._isolation = isolation
+        self._worktree_path: Path | None = None
         self._builder = SubagentBuilder(runtime)
         self._approval_update_tasks: set[asyncio.Task[None]] = set()
 
@@ -131,11 +137,13 @@ class BackgroundAgentRunner:
                 output.error(
                     _timeout_recovery_message(timeout_s=self._timeout_s, agent_id=self._agent_id)
                 )
+                self._note_retained_worktree(output)
             else:
                 # Internal timeout (e.g. aiohttp request) — treat as generic failure
                 logger.exception("Background agent runner failed")
                 self._finalize_safely(outcome="failed", reason=str(exc))
                 output.error(_failure_recovery_message(reason=str(exc), agent_id=self._agent_id))
+                self._note_retained_worktree(output)
         except asyncio.CancelledError:
             self._finalize_safely(outcome="killed", reason="Stopped by TaskStop")
             output.stage("cancelled")
@@ -150,6 +158,7 @@ class BackgroundAgentRunner:
             logger.exception("Background agent runner failed")
             self._finalize_safely(outcome="failed", reason=str(exc))
             output.error(_failure_recovery_message(reason=str(exc), agent_id=self._agent_id))
+            self._note_retained_worktree(output)
         finally:
             # Whatever happens in approval cleanup below, the dict pop must
             # run — it is the *only* place that removes this task from
@@ -184,12 +193,14 @@ class BackgroundAgentRunner:
                 effective_model=self._model_override,
             )
 
+        work_dir_override = await self._prepare_isolation_worktree(output)
         spec = SubagentRunSpec(
             agent_id=self._agent_id,
             type_def=type_def,
             launch_spec=launch_spec,
             prompt=self._prompt,
             resumed=self._resumed,
+            work_dir_override=work_dir_override,
         )
         soul, prompt = await prepare_soul(
             spec,
@@ -220,6 +231,7 @@ class BackgroundAgentRunner:
         if failure is not None:
             self._finalize_safely(outcome="failed", reason=failure.message)
             output.error(_failure_recovery_message(reason=failure.message, agent_id=self._agent_id))
+            self._note_retained_worktree(output)
             output.stage(f"failed: {failure.brief}")
             return
         output.stage("run_soul_finished")
@@ -228,6 +240,7 @@ class BackgroundAgentRunner:
             self._finalize_safely(
                 outcome="failed", reason="Agent completed but produced no output."
             )
+            self._note_retained_worktree(output)
             output.stage("failed: empty output")
             return
         # Surface this child's total LLM spend so the orchestrating parent can budget a
@@ -235,8 +248,73 @@ class BackgroundAgentRunner:
         # runner. Background results are read later via TaskOutput, so the spend rides in
         # the written transcript rather than the immediate (launch-stub) tool return.
         output.usage(format_usage_lines("child", soul.cumulative_usage, soul.model_name))
+        final_response = await self._append_worktree_report(final_response)
         output.summary(final_response)
         self._finalize_safely(outcome="completed")
+
+    async def _prepare_isolation_worktree(self, output: SubagentOutputWriter) -> HostPath | None:
+        """Honor isolation='worktree' for write-profile children.
+
+        Read-profile children gain nothing from isolation (they cannot
+        mutate), so the request is logged and skipped rather than failing
+        the task. Raises WorktreeError for non-git roots — actionable, and
+        better surfaced before any model spend.
+        """
+        if self._isolation != "worktree":
+            return None
+        from pythinker_code.soul.permission import subagent_type_allows_file_mutation
+        from pythinker_code.subagents.worktree import create_agent_worktree
+
+        if not subagent_type_allows_file_mutation(self._subagent_type):
+            logger.info(
+                "isolation='worktree' ignored for read-profile subagent type {t}",
+                t=self._subagent_type,
+            )
+            return None
+        worktree = Path(str(self._runtime.session.dir)) / "worktrees" / self._agent_id
+        await create_agent_worktree(Path(str(self._runtime.work_dir)), worktree)
+        self._worktree_path = worktree
+        output.stage(f"worktree_created: {worktree}")
+        return HostPath.unsafe_from_local_path(worktree)
+
+    def _note_retained_worktree(self, output: SubagentOutputWriter) -> None:
+        """Name the retained worktree on failure/timeout paths.
+
+        Retention on failure is deliberate — resume reuses the worktree and a
+        post-mortem may need its state — but it must never be silent.
+        """
+        if self._worktree_path is None:
+            return
+        output.stage(
+            f"worktree_retained: {self._worktree_path} (resume reuses it; remove with "
+            f"`git worktree remove {self._worktree_path}`)"
+        )
+
+    async def _append_worktree_report(self, final_response: str) -> str:
+        """Tell the orchestrator where the isolated changes live.
+
+        Changes are never auto-merged; the report carries the worktree path
+        and a diff summary so merging stays a deliberate decision. Clean
+        worktrees are removed.
+        """
+        if self._worktree_path is None:
+            return final_response
+        from pythinker_code.subagents.worktree import (
+            cleanup_agent_worktree,
+            worktree_change_summary,
+        )
+
+        summary = await worktree_change_summary(self._worktree_path)
+        disposition = await cleanup_agent_worktree(
+            Path(str(self._runtime.work_dir)),
+            self._worktree_path,
+            has_changes=bool(summary),
+        )
+        return (
+            f"{final_response}\n\n## Isolation worktree\n"
+            f"Path: {self._worktree_path} ({disposition})\n"
+            f"{summary or 'No changes were made.'}"
+        )
 
     def _on_approval_runtime_event(self, event: ApprovalRuntimeEvent) -> None:
         request = event.request

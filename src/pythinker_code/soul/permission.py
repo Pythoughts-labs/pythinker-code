@@ -264,6 +264,16 @@ _SUDO_VALUE_OPTS = {
 _TIME_VALUE_OPTS = {"-o", "-f", "--output", "--format"}
 
 
+def subagent_type_allows_file_mutation(subagent_type: str) -> bool:
+    """Whether *subagent_type*'s permission profile permits file mutation.
+
+    Unmapped types default to read_only (fail closed), matching
+    permission_profile_for_runtime.
+    """
+    profile_name = _SUBAGENT_PROFILES.get(subagent_type, "read_only")
+    return _PERMISSION_PROFILES[profile_name].allow_file_mutation
+
+
 def permission_profile_for_runtime(runtime: Runtime) -> PermissionProfile:
     """Return the hard permission profile currently enforced for a runtime."""
     if runtime.role == "subagent" and runtime.subagent_type:
@@ -354,14 +364,14 @@ def check_shell_command_allowed(runtime: Runtime, command: str) -> ToolError | N
         )
     if reason := shell_workspace_escape_reason(
         command,
-        work_dir=runtime.session.work_dir,
+        work_dir=runtime.work_dir,
         additional_dirs=runtime.additional_dirs,
     ):
         return ToolError(
             message=(
                 f"The active {profile.description} permission profile blocks this shell command "
                 f"because {reason}. Use the Glob/Grep/ReadFile tools or restrict path arguments "
-                f"to the workspace root ({runtime.session.work_dir}) and approved additional "
+                f"to the workspace root ({runtime.work_dir}) and approved additional "
                 "directories."
             ),
             brief="Permission profile restriction",
@@ -418,12 +428,10 @@ def check_tool_call_allowed(
     if tool_name in _NETWORK_TOOLS:
         return check_network_tool_allowed(runtime, tool_name)
 
-    tool_type = type(tool)
-    module = getattr(tool_type, "__module__", "")
-    qualname = getattr(tool_type, "__qualname__", "")
-    if module == "pythinker_code.plugin.tool" and qualname.endswith("PluginTool"):
-        return check_external_tool_allowed(runtime, tool_name)
-    if module == "pythinker_code.soul.toolset" and qualname in {"MCPTool", "WireExternalTool"}:
+    # Declarative flag set by external adapters (MCPTool, WireExternalTool,
+    # PluginTool) whose side effects cannot be statically classified; see the
+    # `external_side_effect_tool` declarations for the fail-closed contract.
+    if getattr(tool, "external_side_effect_tool", False):
         return check_external_tool_allowed(runtime, tool_name)
     return None
 
@@ -483,6 +491,179 @@ def _shell_hidden_command_reason(command: str) -> str | None:
         if tok in _AMP_OPERATORS and i != len(punct_tokens) - 1:
             return "ungrouped command operator"
     return None
+
+
+# Positive allowlist for approval elision. Deliberately tight: every entry is
+# read-only regardless of arguments once write redirection, hidden commands,
+# and network/mutation segments are rejected. Deliberately EXCLUDED:
+# env/printenv (env executes commands and prints secrets), find (-exec/
+# -delete), xargs (executes), awk/sed (program execution / in-place), rg
+# (--pre executes), sort/uniq/tee (write to file args), less/more (shell
+# escapes).
+_SAFE_READONLY_COMMANDS = frozenset(
+    {
+        "ls",
+        "pwd",
+        "cat",
+        "head",
+        "tail",
+        "wc",
+        "stat",
+        "file",
+        "which",
+        "whoami",
+        "id",
+        "date",
+        "uname",
+        "basename",
+        "dirname",
+        "realpath",
+        "readlink",
+        "du",
+        "df",
+        "tr",
+        "cut",
+        "nl",
+        "column",
+        "true",
+        "false",
+        "echo",
+        "printf",
+        "grep",
+        "diff",
+        "cmp",
+        "md5sum",
+        "sha1sum",
+        "sha256sum",
+        "shasum",
+        "ps",
+        "uptime",
+        "hostname",
+        "arch",
+        "tty",
+    }
+)
+# Read-only git subcommands. `branch` is excluded (positional arg creates one);
+# `--output*` is rejected separately because log/diff/show can write files.
+_SAFE_GIT_SUBCOMMANDS = frozenset(
+    {
+        "status",
+        "log",
+        "diff",
+        "show",
+        "rev-parse",
+        "describe",
+        "blame",
+        "ls-files",
+        "shortlog",
+    }
+)
+# Absolute command paths must come from here; a workspace-local fake `git`
+# (e.g. ./git or /tmp/x/git) must never ride the allowlist via its basename.
+_SYSTEM_BIN_DIRS = frozenset(
+    {"/bin", "/usr/bin", "/usr/local/bin", "/sbin", "/usr/sbin", "/opt/homebrew/bin"}
+)
+# The only env assignments allowed to prefix an elidable command. Anything
+# else fails closed — PATH/LD_*/DYLD_*/GIT_* prefixes can redirect or inject
+# code into an otherwise read-only command.
+_SAFE_INLINE_ENV_VARS = frozenset({"LANG", "LC_ALL", "LC_COLLATE", "LC_CTYPE", "LC_MESSAGES", "TZ"})
+
+
+_WINDOWS_DRIVE_PATH_RE = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+def _has_unvalidated_path_operand(args: Sequence[str]) -> bool:
+    """Whether args contain a path that prompt elision cannot safely bound.
+
+    Prompt elision has no runtime workspace root, so it must fail closed for
+    absolute paths, home paths, parent traversal, or explicit path separators.
+    The command can still run after normal approval.
+    """
+    for arg in args:
+        if arg == "--":
+            continue
+        value = arg.split("=", 1)[1] if arg.startswith("--") and "=" in arg else arg
+        if (
+            value.startswith(("/", "~"))
+            or "../" in value
+            or value == ".."
+            or "/" in value
+            or "\\" in value
+            or _WINDOWS_DRIVE_PATH_RE.match(value)
+        ):
+            return True
+    return False
+
+
+def is_known_safe_command(command: str) -> bool:
+    """Whether *command* is provably read-only, qualifying for prompt elision.
+
+    Positive allowlist, fail closed. ``shell_mutation_reason`` rejects hidden
+    sub-commands (substitution, glued operators, unquoted newlines), write
+    redirections, and mutating/network segments first; then every
+    ``;``/``&&``/``||``/``|`` segment must start with an allowlisted
+    read-only binary or read-only git subcommand. Wrapper commands
+    (sudo/env/time/nohup/...) are never unwrapped here — they disqualify —
+    and absolute command paths must live in a system bin dir.
+    """
+    if shell_mutation_reason(command) is not None:
+        return False
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        return False
+    if not tokens:
+        return False
+
+    saw_segment = False
+    segment: list[str] = []
+    for token in [*tokens, ";"]:
+        if token in _SHELL_SEGMENT_SEPARATORS:
+            if segment:
+                saw_segment = True
+                if not _is_safe_readonly_segment(segment):
+                    return False
+            segment = []
+        else:
+            segment.append(token)
+    return saw_segment
+
+
+def _is_safe_readonly_segment(tokens: list[str]) -> bool:
+    rest = list(tokens)
+    # Env-assignment prefixes are allowlisted, not generically skipped: an
+    # arbitrary KEY=VALUE prefix is an injection vector (PATH=/tmp/evil ls
+    # resolves ls from the attacker dir; LD_PRELOAD/DYLD_*/GIT_PAGER inject
+    # code into otherwise read-only commands). Only harmless locale/timezone
+    # assignments may prefix an elidable command.
+    while rest and "=" in rest[0] and not rest[0].startswith("="):
+        key = rest[0].split("=", 1)[0]
+        if key not in _SAFE_INLINE_ENV_VARS:
+            return False
+        rest.pop(0)
+    if not rest:
+        return False
+    command, args = rest[0], rest[1:]
+    if "/" in command:
+        directory, _, base = command.rpartition("/")
+        if directory not in _SYSTEM_BIN_DIRS:
+            return False
+    else:
+        base = command
+    base = base.lower()
+    if _has_unvalidated_path_operand(args):
+        return False
+    if base == "git":
+        if any(arg in {"-C", "--git-dir", "--work-tree"} for arg in args):
+            return False
+        if any(arg.startswith(("--git-dir=", "--work-tree=")) for arg in args):
+            return False
+        subcommand = _git_subcommand(args)
+        if subcommand not in _SAFE_GIT_SUBCOMMANDS:
+            return False
+        # log/diff/show accept --output=<file>, which writes.
+        return not any(arg.startswith("--output") for arg in args)
+    return base in _SAFE_READONLY_COMMANDS
 
 
 def shell_mutation_reason(command: str) -> str | None:

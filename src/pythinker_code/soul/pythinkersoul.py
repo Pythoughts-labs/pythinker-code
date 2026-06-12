@@ -52,6 +52,10 @@ from pythinker_code.soul import (
     wire_send,
 )
 from pythinker_code.soul.agent import Agent, Runtime
+
+# classify_api_error is re-exported so telemetry tests and existing imports
+# keep resolving against this module.
+from pythinker_code.soul.api_errors import classify_api_error as classify_api_error
 from pythinker_code.soul.approval import deliberation_scope
 from pythinker_code.soul.compaction import (
     CompactionResult,
@@ -79,6 +83,8 @@ from pythinker_code.soul.dynamic_injections.auto_mode import AutoModeInjectionPr
 from pythinker_code.soul.dynamic_injections.goal_mode import GoalModeInjectionProvider
 from pythinker_code.soul.dynamic_injections.inline_commands import InlineCommandReminderProvider
 from pythinker_code.soul.dynamic_injections.model_defense import ModelDefenseInjectionProvider
+from pythinker_code.soul.dynamic_injections.orchestration import OrchestrationInjectionProvider
+from pythinker_code.soul.dynamic_injections.permissions_state import PermissionsInjectionProvider
 from pythinker_code.soul.dynamic_injections.plan_mode import PlanModeInjectionProvider
 from pythinker_code.soul.flow_runner import FLOW_COMMAND_PREFIX, FlowRunner
 from pythinker_code.soul.message import (
@@ -162,51 +168,11 @@ def classify_llm_system(chat_provider: object | None) -> str:
         return "unknown"
 
 
-def classify_api_error(e: Exception) -> tuple[str, int | None]:
-    """Classify an LLM API exception into (error_type, status_code).
-
-    Exposed at module level so telemetry tests can import the real function
-    instead of duplicating the classification table.
-
-    Returns:
-        (error_type, status_code) where status_code is None for non-HTTP errors.
-    """
-    status_code: int | None = None
-    if isinstance(e, APIStatusError):
-        status = getattr(e, "status_code", getattr(e, "status", 0))
-        status_code = int(status) if status else None
-        if status == 429:
-            return "rate_limit", status_code
-        if status in (401, 403):
-            return "auth", status_code
-        if status >= 500:
-            return "5xx_server", status_code
-        if 400 <= status < 500:
-            msg_lower = str(e).lower()
-            if (
-                "context length" in msg_lower
-                or "context_length" in msg_lower
-                or "max tokens" in msg_lower
-                or "maximum context" in msg_lower
-                or "too many tokens" in msg_lower
-            ):
-                return "context_overflow", status_code
-            return "4xx_client", status_code
-        return "api", status_code
-    if isinstance(e, APIConnectionError):
-        return "network", None
-    if isinstance(e, (APITimeoutError, TimeoutError)):
-        return "timeout", None
-    if isinstance(e, APIEmptyResponseError):
-        return "empty_response", None
-    return "other", None
-
-
 def _is_hard_usage_limit(exception: BaseException) -> bool:
     """Whether a 429 is a subscription usage cap (resets in hours) rather than a
     transient RPM/TPM burst (clears in seconds).
 
-    Hard caps — e.g. ChatGPT Codex ``usage_limit_reached`` — should NOT be retried:
+    Hard caps — e.g. ChatGPT ``usage_limit_reached`` — should NOT be retried:
     the backoff just delays the inevitable failure. Detected from the parsed body
     when present, else from the stringified message (the streaming 429 often
     carries only the bare text)."""
@@ -447,6 +413,12 @@ class PythinkerSoul:
             # Self-filtering: root-only; flags inline /command references in the
             # latest user message that the shell could not have executed.
             InlineCommandReminderProvider(),
+            # Self-filtering: root-only; nudges substantial normal-mode tasks toward
+            # direct tools, todos, RunAgents, and verification.
+            OrchestrationInjectionProvider(),
+            # Self-filtering: root-only; posture-fingerprinted so it re-emits
+            # exactly when yolo/auto/safe-mode/profile/session-approvals change.
+            PermissionsInjectionProvider(),
             *(
                 []
                 if self._runtime.config.skip_auto_prompt_injection
@@ -804,9 +776,8 @@ class PythinkerSoul:
         """Apply a user-selected thinking level to the live runtime.
 
         Returns the effective/clamped level, or ``None`` when no LLM/model is
-        active. Best-effort persistence mirrors pi-main's settings update, but
-        a config write failure must not prevent the current session from using
-        the new level.
+        active. Persistence is best-effort: a config write failure must not
+        prevent the current session from using the new level.
         """
         if self._runtime.llm is None or self._runtime.llm.model_config is None:
             return None
@@ -996,7 +967,7 @@ class PythinkerSoul:
                     matcher_value=text_input_for_hook,
                     input_data=events.user_prompt_submit(
                         session_id=self._runtime.session.id,
-                        cwd=_safe_cwd(str(self._runtime.session.work_dir)),
+                        cwd=_safe_cwd(str(self._runtime.work_dir)),
                         prompt=text_input_for_hook,
                     ),
                 )
@@ -1039,7 +1010,7 @@ class PythinkerSoul:
                     "Stop",
                     input_data=events.stop(
                         session_id=self._runtime.session.id,
-                        cwd=_safe_cwd(str(self._runtime.session.work_dir)),
+                        cwd=_safe_cwd(str(self._runtime.work_dir)),
                         stop_hook_active=False,
                     ),
                 )
@@ -1116,7 +1087,7 @@ class PythinkerSoul:
     async def _run_goal_continuations(self, primary_outcome: TurnOutcome) -> None:
         """Auto-continue toward the active /goal after the primary turn.
 
-        Ported from Codex CLI's automatic goal continuations, bounded per user
+        Automatic goal continuations, bounded per user
         submission by ``goal.max_continuations``. Hard stops (cancellation,
         MaxStepsReached, provider errors) propagate out of ``_turn`` and end
         the loop together with the run; a rejected tool call, a stuck turn, or
@@ -1140,6 +1111,39 @@ class PythinkerSoul:
             outcome = await self._turn(Message(role="user", content=content))
             if outcome.stop_reason != "no_tool_calls":
                 return
+
+    async def turn(self, user_message: Message) -> TurnOutcome:
+        """
+        Run one full agent turn for ``user_message`` and return its outcome.
+
+        The message is appended to the context, then the agent loop steps the
+        model — executing any tool calls it makes — until the model stops.
+        The returned ``TurnOutcome`` carries the ``stop_reason``
+        (``"no_tool_calls"``: the model finished with a plain response;
+        ``"tool_rejected"``: the user rejected a tool call; ``"stuck"``: the
+        turn was cut short as a degenerate tool-call loop), the final
+        assistant message (``None`` when a tool call was rejected), and the
+        number of steps taken.
+
+        This is the public entry point for external drivers (flows, slash
+        command handlers). It emits per-step wire framing but NOT
+        ``TurnBegin``/``TurnEnd``. Callers starting a new wire-level turn
+        (e.g. ``FlowRunner``) must wrap the call in ``TurnBegin``/``TurnEnd``;
+        callers already executing inside a framed turn (e.g. slash-command
+        handlers running under ``run()``) must not add extra framing.
+
+        Raises:
+            LLMNotSet: When the LLM is not set.
+            LLMNotSupported: When the LLM does not have required capabilities.
+            ChatProviderError: When the LLM provider returns an error.
+            MaxStepsReached: When the per-turn step limit is reached.
+            asyncio.CancelledError: When the turn is cancelled by user.
+        """
+        # Thin delegate by design: many tests monkeypatch ``soul._turn`` to
+        # stub turn execution, so ``_turn`` must remain the single
+        # implementation/patch point that both ``turn()`` and internal
+        # callers go through.
+        return await self._turn(user_message)
 
     async def _turn(self, user_message: Message) -> TurnOutcome:
         from pythinker_code.extensions import shared_event_bus
@@ -1383,6 +1387,9 @@ class PythinkerSoul:
         self._intent_nudge_used = False
         # Reset the degenerate-loop failure tracker at the start of each turn.
         self._consecutive_failures = 0
+        # One-shot per turn: reactive compact-and-retry after a provider
+        # context-length rejection (proactive thresholds can undercount).
+        overflow_recovery_used = False
         while True:
             step_no += 1
             if step_no > self._loop_control.max_steps_per_turn:
@@ -1471,6 +1478,10 @@ class PythinkerSoul:
                 if status_code is not None:
                     api_error_props["status_code"] = status_code
                 track("api_error", **api_error_props)
+                if error_type == "context_overflow" and not overflow_recovery_used:
+                    overflow_recovery_used = True
+                    if await self._recover_from_context_overflow(step_no):
+                        continue
                 # --- StopFailure hook ---
                 from pythinker_code.hooks import events as _hook_events
 
@@ -1479,7 +1490,7 @@ class PythinkerSoul:
                     matcher_value=type(e).__name__,
                     input_data=_hook_events.stop_failure(
                         session_id=self._runtime.session.id,
-                        cwd=_safe_cwd(str(self._runtime.session.work_dir)),
+                        cwd=_safe_cwd(str(self._runtime.work_dir)),
                         error_type=type(e).__name__,
                         error_message=str(e),
                     ),
@@ -1545,7 +1556,7 @@ class PythinkerSoul:
                     matcher_value=view.event.type,
                     input_data=events.notification(
                         session_id=self._runtime.session.id,
-                        cwd=_safe_cwd(str(self._runtime.session.work_dir)),
+                        cwd=_safe_cwd(str(self._runtime.work_dir)),
                         sink="llm",
                         notification_type=view.event.type,
                         title=view.event.title,
@@ -1952,6 +1963,44 @@ class PythinkerSoul:
         await self._context.append_message(tool_messages)
         # token count of tool results are not available yet
 
+    async def _recover_from_context_overflow(self, step_no: int) -> bool:
+        """Reactive shrink-and-retry after a provider context-length rejection.
+
+        The proactive prune/compact thresholds run on heuristic token counts
+        and can undercount (e.g. large pending tool output), so the provider
+        may still reject a step. Prune (best-effort), force a full
+        compaction, and let the loop retry the step once. Returns False when
+        compaction itself fails — the original error then propagates.
+        """
+        from pythinker_code.telemetry import track
+
+        logger.warning(
+            "Provider rejected step {step_no} for context length; compacting and retrying once",
+            step_no=step_no,
+        )
+        try:
+            try:
+                await self.prune_context()
+            except Exception as prune_err:
+                logger.debug(
+                    "Best-effort prune during overflow recovery failed: {error}",
+                    error=prune_err,
+                )
+            await self.compact_context()
+        except Exception as compact_err:
+            from pythinker_code.telemetry.errors import report_handled_error
+
+            report_handled_error(compact_err, site="soul.context.overflow_recovery")
+            logger.error(
+                "Context-overflow recovery compaction failed: {error_type}: {error}",
+                error_type=type(compact_err).__name__,
+                error=compact_err,
+            )
+            track("context_overflow_recovery", outcome="failed")
+            return False
+        track("context_overflow_recovery", outcome="recovered")
+        return True
+
     async def prune_context(self) -> bool:
         """Cheap, fidelity-preserving compaction tier: replace large stale
         tool-result bodies in deep history with placeholders, then rewrite the
@@ -2057,7 +2106,7 @@ class PythinkerSoul:
             matcher_value=trigger_reason,
             input_data=events.pre_compact(
                 session_id=self._runtime.session.id,
-                cwd=_safe_cwd(str(self._runtime.session.work_dir)),
+                cwd=_safe_cwd(str(self._runtime.work_dir)),
                 trigger=trigger_reason,
                 token_count=before_tokens,
                 custom_instructions=custom_instruction,
@@ -2128,7 +2177,7 @@ class PythinkerSoul:
                     matcher_value=trigger_reason,
                     input_data=events.post_compact(
                         session_id=self._runtime.session.id,
-                        cwd=_safe_cwd(str(self._runtime.session.work_dir)),
+                        cwd=_safe_cwd(str(self._runtime.work_dir)),
                         trigger=trigger_reason,
                         estimated_token_count=estimated_token_count,
                         compact_summary=summary_text,
@@ -2139,7 +2188,7 @@ class PythinkerSoul:
                     matcher_value="compact",
                     input_data=events.session_start(
                         session_id=self._runtime.session.id,
-                        cwd=_safe_cwd(str(self._runtime.session.work_dir)),
+                        cwd=_safe_cwd(str(self._runtime.work_dir)),
                         source="compact",
                     ),
                 )
@@ -2223,7 +2272,7 @@ class PythinkerSoul:
         for note in notes:
             try:
                 await append_scratch_note(
-                    self._runtime.session.work_dir,
+                    self._runtime.work_dir,
                     kind=note.kind,
                     content=note.content,
                     session_id=self._runtime.session.id,
