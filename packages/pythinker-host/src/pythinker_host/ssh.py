@@ -303,7 +303,9 @@ class SSHHost:
                 raise FileExistsError(f"{path} already exists")
             await self._sftp.mkdir(str(path))
 
-    async def exec(self, *args: str, env: Mapping[str, str] | None = None) -> HostProcess:
+    async def exec(
+        self, *args: str, env: Mapping[str, str] | None = None, cwd: str | None = None
+    ) -> HostProcess:
         if not args:
             raise ValueError("At least one argument (the program to execute) is required.")
         command = " ".join(shlex.quote(arg) for arg in args)
@@ -313,8 +315,9 @@ class SSHHost:
         #   cwd before running the command.
         #
         # This is intentionally strict: if cwd doesn't exist, the command fails.
-        if self._cwd:
-            command = f"cd {shlex.quote(self._cwd)} && {command}"
+        effective_cwd = cwd or self._cwd
+        if effective_cwd:
+            command = f"cd {shlex.quote(effective_cwd)} && {command}"
         process = await self._connection.create_process(command, encoding=None, env=env)
         return self.Process(process)
 

@@ -123,3 +123,29 @@ class TestCallTimeGate:
 
         assert result.is_error
         assert "disabled" in (result.message or "").lower()
+
+
+class TestReadOnlyHintParallel:
+    def test_read_only_hint_enables_parallel(self, runtime) -> None:
+        tool = MCPTool(
+            "srv",
+            mcp.types.Tool(
+                name="lookup",
+                inputSchema={},
+                annotations=mcp.types.ToolAnnotations(readOnlyHint=True),
+            ),
+            cast(Any, _ListingClient([])),
+            runtime=runtime,
+        )
+
+        assert tool.supports_parallel is True
+
+    def test_unannotated_tool_stays_exclusive(self, runtime) -> None:
+        tool = MCPTool(
+            "srv",
+            mcp.types.Tool(name="mutate", inputSchema={}),
+            cast(Any, _ListingClient([])),
+            runtime=runtime,
+        )
+
+        assert tool.supports_parallel is False

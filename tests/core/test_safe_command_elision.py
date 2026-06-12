@@ -105,3 +105,25 @@ class TestShellPromptElision:
 
         with pytest.raises(_ApprovalReached):
             await shell_tool(Params(command="touch /tmp/should-not-run"))
+
+
+class TestSafeModeKeepsPrompts:
+    @pytest.mark.asyncio
+    async def test_safe_mode_blocks_elision(self, shell_tool) -> None:
+        """A user who enabled safe mode depends on prompts as checkpoints;
+        provably-safe classification must not bypass them."""
+        from pythinker_code.tools.shell import Params
+
+        class _ApprovalReached(Exception):
+            pass
+
+        async def _raise(*args: object, **kwargs: object) -> object:
+            raise _ApprovalReached
+
+        shell_tool._approval.set_safe_mode(True)
+        shell_tool._approval.request = _raise  # type: ignore[method-assign]
+
+        import pytest
+
+        with pytest.raises(_ApprovalReached):
+            await shell_tool(Params(command="echo checkpoint"))

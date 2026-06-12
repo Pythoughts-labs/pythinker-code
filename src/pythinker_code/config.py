@@ -379,6 +379,8 @@ def _load_scoped(project_root: Path | None) -> Config:
     local_file: Path | None = None
     project_dict: dict[str, Any] = {}
     local_dict: dict[str, Any] = {}
+    project_trusted = True
+    stripped_hook_files: list[str] = []
 
     if project_root is not None:
         from pythinker_code.project_trust import is_project_trusted
@@ -406,6 +408,7 @@ def _load_scoped(project_root: Path | None) -> Config:
                 local_dict = {}
             for scope_dict, scope_file in ((project_dict, project_file), (local_dict, local_file)):
                 if scope_dict.pop("hooks", None) is not None:
+                    stripped_hook_files.append(str(scope_file))
                     logger.warning(
                         "Project hooks in {file} are disabled until the project is "
                         "trusted; run /trust to enable them",
@@ -444,6 +447,8 @@ def _load_scoped(project_root: Path | None) -> Config:
         raise ConfigError("Invalid configuration:\n" + "\n".join(enriched)) from exc
 
     # ── METADATA ──────────────────────────────────────────────────────────
+    if project_root is not None and not project_trusted:
+        config.disabled_project_hooks = stripped_hook_files
     config.is_from_default_location = True
     config.source_file = user_file
     if user_file.exists():
@@ -1103,6 +1108,15 @@ class Config(BaseModel):
     mcp: MCPConfig = Field(default_factory=MCPConfig, description="MCP configuration")
     tui: TUIConfig = Field(default_factory=TUIConfig, description="TUI rendering configuration")
     hooks: list[HookDef] = Field(default_factory=list, description="Hook definitions")  # pyright: ignore[reportUnknownVariableType]
+    disabled_project_hooks: list[str] = Field(
+        default_factory=list,
+        exclude=True,
+        description=(
+            "Config files whose project-scope hooks were stripped because the "
+            "project is untrusted. Populated at load; surfaced as a "
+            "notification so non-shell frontends see it too."
+        ),
+    )
     merge_all_available_skills: bool = Field(
         default=True,
         description=(

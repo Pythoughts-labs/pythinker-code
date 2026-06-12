@@ -388,6 +388,30 @@ class PythinkerCLI:
         from pythinker_code.hooks.engine import HookEngine
 
         hook_engine = HookEngine(config.hooks, cwd=str(session.work_dir))
+        if config.disabled_project_hooks:
+            # The load-time logger.warning only reaches shell users; publish a
+            # notification so web/ACP frontends also learn why their project
+            # hooks did not run and how to enable them.
+            from pythinker_code.notifications.models import NotificationEvent
+
+            runtime.notifications.publish(
+                NotificationEvent(
+                    id=f"project-hooks-disabled:{session.id}",
+                    category="system",
+                    type="project_hooks_disabled",
+                    source_kind="config",
+                    source_id="project_trust",
+                    title="Project hooks disabled (untrusted project)",
+                    body=(
+                        "Hooks defined in "
+                        + ", ".join(config.disabled_project_hooks)
+                        + " are disabled until you trust this project. Run /trust to "
+                        "enable them (takes effect on /reload or next start)."
+                    ),
+                    severity="warning",
+                    dedupe_key=f"project-hooks-disabled:{session.id}",
+                )
+            )
         soul.set_hook_engine(hook_engine)
         runtime.hook_engine = hook_engine
 

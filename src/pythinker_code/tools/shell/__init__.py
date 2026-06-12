@@ -156,9 +156,15 @@ class Shell(CallableTool2[Params]):
         if params.run_in_background:
             return await self._run_in_background(params, scrub_secrets=restricted_profile)
 
-        if self._runtime.role == "root" and is_known_safe_command(params.command):
+        if (
+            self._runtime.role == "root"
+            and not self._approval.is_safe_mode()
+            and is_known_safe_command(params.command)
+        ):
             # Provably read-only — elide the approval prompt for the root
-            # agent, where prompt fatigue hits the human. Subagents keep the
+            # agent, where prompt fatigue hits the human. Safe mode keeps every
+            # prompt: a user who explicitly disabled auto-approval depends on
+            # them as checkpoints. Subagents keep the
             # request: their approval path is part of the unattended-denial
             # defense surface (mutation parsing is best-effort there). The
             # deny-path gate (check_shell_command_allowed) already ran above,
@@ -381,7 +387,9 @@ class Shell(CallableTool2[Params]):
         env = get_noninteractive_env()
         if scrub_secrets:
             env = scrub_secret_env(env)
-        process = await pythinker_host.exec(*self._shell_args(command), env=env)
+        process = await pythinker_host.exec(
+            *self._shell_args(command), env=env, cwd=str(self._runtime.work_dir)
+        )
 
         # Close stdin immediately so interactive prompts (e.g. git password) get
         # EOF instead of hanging forever waiting for input that will never come.

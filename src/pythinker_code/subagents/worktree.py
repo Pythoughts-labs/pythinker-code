@@ -9,11 +9,21 @@ remote boundary.
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from pathlib import Path
 
 from pythinker_code.utils.logging import logger
 
 _GIT_TIMEOUT_S = 30.0
+# Serialize worktree add/remove per repo: git's internal locking is reliable
+# on current versions, but concurrent isolated agents should not depend on it.
+_REPO_LOCKS: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+
+def _base_sha_file(worktree: Path) -> Path:
+    # Sidecar NEXT TO the worktree, never inside it — an untracked file inside
+    # would make every clean worktree look dirty.
+    return worktree.parent / f"{worktree.name}.base-sha"
 
 
 class WorktreeError(Exception):
@@ -58,21 +68,58 @@ async def create_agent_worktree(repo_dir: Path, dest: Path) -> None:
         # Resume of an isolated agent reuses its existing worktree.
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
-    code, _, stderr = await _git(["worktree", "add", "--detach", str(dest), "HEAD"], repo_dir)
-    if code != 0:
-        first_line = stderr.splitlines()[0] if stderr else "unknown git error"
-        raise WorktreeError(f"could not create isolation worktree at {dest}: {first_line}")
+    async with _REPO_LOCKS[str(repo_dir)]:
+        code, _, stderr = await _git(["worktree", "add", "--detach", str(dest), "HEAD"], repo_dir)
+        if code != 0:
+            first_line = stderr.splitlines()[0] if stderr else "unknown git error"
+            raise WorktreeError(f"could not create isolation worktree at {dest}: {first_line}")
+    # Record the creation base so committed-but-clean child work is detected
+    # later; commits ahead of this SHA must never be silently removed.
+    code, base_sha, _ = await _git(["rev-parse", "HEAD"], dest)
+    if code == 0 and base_sha:
+        _base_sha_file(dest).write_text(base_sha + "\n", encoding="utf-8")
 
 
 async def worktree_change_summary(worktree: Path) -> str:
-    """Short human summary of changes in *worktree*; empty string when clean."""
+    """Short human summary of changes in *worktree*; empty string when clean.
+
+    "Changes" includes commits the child made on its detached HEAD: a child
+    that commits its work leaves a clean working tree, and `worktree remove`
+    would orphan those commits as dangling objects.
+    """
+    parts: list[str] = []
+    commits_ahead = await _commits_ahead_of_base(worktree)
+    if commits_ahead:
+        parts.append(f"{commits_ahead} commit(s) ahead of the creation base")
     code, status, _ = await _git(["status", "--porcelain"], worktree)
-    if code != 0 or not status:
-        return ""
-    _, diff_stat, _ = await _git(["diff", "--stat", "HEAD"], worktree)
-    untracked = sum(1 for line in status.splitlines() if line.startswith("??"))
-    parts = [part for part in (diff_stat, f"{untracked} untracked file(s)" if untracked else "")]
-    return "\n".join(part for part in parts if part)
+    if code == 0 and status:
+        _, diff_stat, _ = await _git(["diff", "--stat", "HEAD"], worktree)
+        if diff_stat:
+            parts.append(diff_stat)
+        untracked = sum(1 for line in status.splitlines() if line.startswith("??"))
+        if untracked:
+            parts.append(f"{untracked} untracked file(s)")
+    return "\n".join(parts)
+
+
+async def _commits_ahead_of_base(worktree: Path) -> int:
+    """Commits on the worktree's detached HEAD since creation.
+
+    Missing or unreadable sidecar fails CLOSED (pretend one commit exists)
+    when HEAD cannot be compared — losing work is the only unacceptable
+    outcome, so unknown provenance means retain.
+    """
+    sidecar = _base_sha_file(worktree)
+    try:
+        base_sha = sidecar.read_text(encoding="utf-8").strip()
+    except OSError:
+        base_sha = ""
+    if not base_sha:
+        return 1  # unknown provenance — retain
+    code, count, _ = await _git(["rev-list", "--count", f"{base_sha}..HEAD"], worktree)
+    if code != 0:
+        return 1
+    return int(count or 0)
 
 
 async def cleanup_agent_worktree(repo_dir: Path, worktree: Path, *, has_changes: bool) -> str:
@@ -84,10 +131,12 @@ async def cleanup_agent_worktree(repo_dir: Path, worktree: Path, *, has_changes:
     """
     if has_changes:
         return "retained"
-    code, _, stderr = await _git(["worktree", "remove", str(worktree)], repo_dir)
+    async with _REPO_LOCKS[str(repo_dir)]:
+        code, _, stderr = await _git(["worktree", "remove", str(worktree)], repo_dir)
     if code != 0:
         logger.warning(
             "Could not remove clean isolation worktree {wt}: {err}", wt=worktree, err=stderr
         )
         return "retained"
+    _base_sha_file(worktree).unlink(missing_ok=True)
     return "removed"

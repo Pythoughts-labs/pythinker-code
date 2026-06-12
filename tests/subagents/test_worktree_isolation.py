@@ -98,3 +98,36 @@ class TestWriteProfileGate:
     def test_read_types_do_not(self) -> None:
         for read_type in ("explore", "review", "verifier", "judge", "unknown-type"):
             assert subagent_type_allows_file_mutation(read_type) is False
+
+
+class TestCommittedChangesRetention:
+    @pytest.mark.asyncio
+    async def test_committed_clean_worktree_is_retained(self, tmp_path: Path) -> None:
+        """A child that commits its work leaves a CLEAN tree; removing the
+        worktree would orphan those commits as dangling objects."""
+        repo = await _repo(tmp_path)
+        worktree = tmp_path / "wt"
+        await create_agent_worktree(repo, worktree)
+        (worktree / "a.txt").write_text("committed work")
+        await _git(worktree, "add", ".")
+        await _git(worktree, "config", "user.email", "t@t")
+        await _git(worktree, "config", "user.name", "T")
+        await _git(worktree, "commit", "-m", "child work")
+
+        summary = await worktree_change_summary(worktree)
+        disposition = await cleanup_agent_worktree(repo, worktree, has_changes=bool(summary))
+
+        assert "commit(s) ahead" in summary
+        assert disposition == "retained"
+        assert worktree.exists()
+
+    @pytest.mark.asyncio
+    async def test_missing_base_sidecar_fails_closed_to_retention(self, tmp_path: Path) -> None:
+        repo = await _repo(tmp_path)
+        worktree = tmp_path / "wt"
+        await create_agent_worktree(repo, worktree)
+        (worktree.parent / f"{worktree.name}.base-sha").unlink()
+
+        summary = await worktree_change_summary(worktree)
+
+        assert "commit(s) ahead" in summary  # unknown provenance counts as changes

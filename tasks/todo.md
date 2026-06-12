@@ -109,6 +109,13 @@ Done: `mythos-enhancements` PR #118 merged (d51ef649).
 
 ### Deferred (documented, not silently dropped)
 
+- Arc-review finding (medium, deliberate deferral): the same-step exclusive
+  gate is held across a mutating tool's approval wait, blocking sibling
+  parallel-safe reads in that batch. Proper fix = split approval from
+  execution per tool (approval ungated, only the mutation gated) — an
+  invasive per-tool refactor; the cost today is bounded (elision/auto modes
+  remove most waits). Revisit with the approval-split refactor.
+
 - Read-only MCP doc-lookup carve-out for offline roles — today ALL MCP tools
   are fail-closed below the implement profile (deliberate); reviewer specs
   route doc needs to the parent/`scout` instead. Revisit only with a real

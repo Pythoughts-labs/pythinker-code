@@ -1296,6 +1296,16 @@ class MCPTool[T: ClientTransport](CallableTool):
         """Name of the MCP server this tool belongs to."""
         return self._mcp_server_name
 
+    @property
+    def supports_parallel(self) -> bool:
+        """Honor the MCP readOnlyHint annotation in the same-step gate.
+
+        Read-only server tools (doc/resource lookups) may overlap instead of
+        serializing; anything unannotated stays exclusive (safe default).
+        """
+        annotations = getattr(self._mcp_tool, "annotations", None)
+        return bool(getattr(annotations, "readOnlyHint", False))
+
     async def __call__(self, *args: Any, **kwargs: Any) -> ToolReturnValue:
         # Call-time re-check of the list-time filter: defense in depth for
         # tool maps shared across agents (e.g. runtime.mcp_tools handed to
