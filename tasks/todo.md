@@ -10,9 +10,12 @@
       decision-complete plan mode, `f5b9b06a` print channel discipline,
       `c8d82d38` review git-context+merge-base, `e2e74b70` parallel-tool
       concurrency policy, `1615cfbd` reactive overflow recovery (loop +
-      SimpleCompaction halving; classify_api_error → soul/api_errors.py).
-      NEXT (Tier-1 high/M, plan order): per-project trust gating of
-      config/hooks; unknown-config-key diagnostics; model-switch context
+      SimpleCompaction halving; classify_api_error → soul/api_errors.py),
+      `0f39a3b1` per-project trust gating of project hooks (project_trust.py
+      store + /trust persistence + untrusted-TOML tolerance), `9d1178f4`
+      unknown-config-key diagnostics (unknown_config_key_paths +
+      PYTHINKER_STRICT_CONFIG).
+      NEXT (Tier-1 high/M, plan order): model-switch context
       continuity; known-safe command auto-approval; MCP startup
       timeout+diagnostics; MCP per-server tool filtering; subagent context
       fork; workspace isolation for parallel writers; turn rollup analytics;
