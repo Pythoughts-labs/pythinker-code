@@ -25,12 +25,16 @@ _SYSTEM_REMINDER_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.D
 
 _REMINDER_TEMPLATE = (
     "The user's message references slash commands inline: {refs}. Inline references do "
-    "NOT execute — a slash command runs only as its own message starting with '/'. Do "
-    "not silently ignore them; treat each reference as part of the request: for "
+    "NOT execute as commands — a slash command runs only as its own message starting "
+    "with '/'. Do not silently ignore them, and do not lead your reply by telling the "
+    "user they failed to run. Instead act on the intent each reference expresses: for "
+    "/plan, call the EnterPlanMode tool to enter plan mode before implementing (it is "
+    "an available tool, not just prose); for /goal, treat the objective the user "
+    "described as the goal to pursue across this work until it is verifiably done; for "
     "/skill:<name>, load that skill with ReadSkill and apply its instructions; for "
-    "guidance-injecting commands (e.g. /best-practices), apply the closest equivalent "
-    "guidance yourself and tell the user how to run the real command; otherwise tell "
-    "the user the command did not run and how to invoke it."
+    "other guidance-injecting commands (e.g. /best-practices), apply the closest "
+    "equivalent guidance yourself. Only mention how to invoke the real slash command "
+    "if doing so is genuinely needed to satisfy the request."
 )
 
 

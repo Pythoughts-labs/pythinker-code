@@ -24,6 +24,7 @@ def _mock_soul(is_subagent: bool = False) -> MagicMock:
         _cmd("best-practices", aliases=["bp"]),
         _cmd("clear"),
         _cmd("goal"),
+        _cmd("plan"),
     ]
     return soul
 
@@ -40,6 +41,22 @@ async def test_injects_for_inline_known_command() -> None:
     assert result[0].type == _INLINE_COMMANDS_TYPE
     assert "/best-practices" in result[0].content
     assert "NOT execute" in result[0].content
+
+
+async def test_reminder_is_actionable_not_dismissive() -> None:
+    """The reminder must steer the agent to act on intent, not to lead by telling
+    the user the command 'did not run'."""
+    provider = InlineCommandReminderProvider()
+    history = [_user("your /goal today is to /plan and build the landing page")]
+    result = await provider.get_injections(history, _mock_soul())
+    assert len(result) == 1
+    content = result[0].content
+    # Names the real EnterPlanMode tool so the agent stops doubting it exists.
+    assert "EnterPlanMode" in content
+    # Pursues the described objective for /goal rather than just explaining syntax.
+    assert "goal to pursue" in content
+    # Does not instruct the agent to report the commands as failed up front.
+    assert "did not run" not in content
 
 
 async def test_injects_for_alias() -> None:
