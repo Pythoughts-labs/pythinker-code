@@ -23,6 +23,8 @@
       allowlist security fix; e2e approval pins moved to wrapper commands
       `5dadb1c6`), `05f86428`+`df4801f5` MCP startup timeout + actionable
       failure diagnostics (/mcp shows classified error lines).
+      `60fc8b16` MCP per-server tool filtering (enabledTools/disabledTools,
+      list-time + call-time).
       NEXT (Tier-1 high/M, plan order): MCP startup
       timeout+diagnostics; MCP per-server tool filtering; subagent context
       fork; workspace isolation for parallel writers; turn rollup analytics;
