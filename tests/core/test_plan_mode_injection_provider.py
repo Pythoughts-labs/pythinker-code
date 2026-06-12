@@ -170,3 +170,37 @@ class TestPlanModeVerificationClause:
 
     def test_reentry_reminder_requires_verification_section(self) -> None:
         assert "Verification section" in _reentry_reminder("/tmp/plan.md")
+
+
+class TestPlanModeDecisionCompleteness:
+    """Lock the unknowns-resolution protocol, the decision-complete exit bar,
+    and the plan-file shape rubric into the plan-mode reminders so they cannot
+    silently drift out of the authoring instructions."""
+
+    def test_full_reminder_distinguishes_unknown_kinds(self) -> None:
+        text = _full_reminder("/tmp/plan.md", False)
+        assert "Repo-discoverable facts" in text
+        assert "never ask the user" in text
+        assert "AskUserQuestion" in text
+        assert "recommended default" in text
+
+    def test_full_reminder_records_defaults_as_assumptions(self) -> None:
+        assert "Assumptions" in _full_reminder("/tmp/plan.md", False)
+
+    def test_full_reminder_requires_decision_complete_exit(self) -> None:
+        text = _full_reminder("/tmp/plan.md", False)
+        assert "decision-complete" in text
+        assert "Figure out" in text
+
+    def test_full_reminder_includes_plan_shape_rubric(self) -> None:
+        text = _full_reminder("/tmp/plan.md", False)
+        assert "skimmable" in text
+        assert "3-5 short sections" in text
+
+    def test_sparse_reminder_mentions_decision_complete_and_assumptions(self) -> None:
+        text = _sparse_reminder("/tmp/plan.md")
+        assert "decision-complete" in text
+        assert "Assumptions" in text
+
+    def test_reentry_reminder_requires_decision_complete_exit(self) -> None:
+        assert "decision-complete" in _reentry_reminder("/tmp/plan.md")
