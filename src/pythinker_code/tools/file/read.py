@@ -63,6 +63,7 @@ class Params(BaseModel):
 
 class ReadFile(CallableTool2[Params]):
     name: str = "ReadFile"
+    supports_parallel = True
     params: type[Params] = Params
 
     def __init__(self, runtime: Runtime) -> None:

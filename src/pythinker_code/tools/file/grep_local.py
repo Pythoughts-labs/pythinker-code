@@ -719,6 +719,7 @@ def _smart_search_patterns(query: str) -> list[tuple[str, str]]:
 
 class SmartSearch(CallableTool2[SmartSearchParams]):
     name: str = "SmartSearch"
+    supports_parallel = True
     description: str = (
         "Plan and run a small set of bounded local grep passes for a symbol or concept. "
         "Returns cited file/line spans and truncation guidance; use for exploration before "
@@ -788,6 +789,7 @@ class SmartSearch(CallableTool2[SmartSearchParams]):
 
 class Grep(CallableTool2[Params]):
     name: str = "Grep"
+    supports_parallel = True
     description: str = load_desc(Path(__file__).parent / "grep.md")
     params: type[Params] = Params
 

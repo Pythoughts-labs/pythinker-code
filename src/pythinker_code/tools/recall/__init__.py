@@ -111,6 +111,7 @@ def _render_transcript(context_file: Path, budget: int) -> str:
 
 class Recall(CallableTool2[Params]):
     name: str = NAME
+    supports_parallel = True
     params: type[Params] = Params
 
     def __init__(self, runtime: Runtime):

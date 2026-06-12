@@ -31,6 +31,7 @@ class Params(BaseModel):
 
 class Glob(CallableTool2[Params]):
     name: str = "Glob"
+    supports_parallel = True
     description: str = load_desc(
         Path(__file__).parent / "glob.md",
         {

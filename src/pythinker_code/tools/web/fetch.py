@@ -130,6 +130,7 @@ class Params(BaseModel):
 
 class FetchURL(CallableTool2[Params]):
     name: str = "FetchURL"
+    supports_parallel = True
     description: str = load_desc(Path(__file__).parent / "fetch.md", {})
     params: type[Params] = Params
 

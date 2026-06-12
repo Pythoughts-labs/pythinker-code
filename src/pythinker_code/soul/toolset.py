@@ -9,7 +9,7 @@ import inspect
 import json
 import re
 import time
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
@@ -300,6 +300,41 @@ def _append_reminder_to_return_value(return_value: Any, reminder_text: str) -> A
     return return_value.model_copy(update={"output": new_output})
 
 
+class _ReadWriteGate:
+    """Async reader-writer gate for same-step parallel tool calls.
+
+    Parallel-safe tools (readers) overlap freely; a mutating tool (writer)
+    waits for in-flight readers to drain and excludes everything while it
+    runs. Writers hold the lock while draining, which also blocks new
+    readers behind a queued writer — dispatch order stays deterministic
+    and writers cannot starve.
+    """
+
+    def __init__(self) -> None:
+        self._writer_lock = asyncio.Lock()
+        self._active_readers = 0
+        self._readers_drained = asyncio.Event()
+        self._readers_drained.set()
+
+    @contextlib.asynccontextmanager
+    async def shared(self) -> AsyncGenerator[None]:
+        async with self._writer_lock:
+            self._active_readers += 1
+            self._readers_drained.clear()
+        try:
+            yield
+        finally:
+            self._active_readers -= 1
+            if self._active_readers == 0:
+                self._readers_drained.set()
+
+    @contextlib.asynccontextmanager
+    async def exclusive(self) -> AsyncGenerator[None]:
+        async with self._writer_lock:
+            await self._readers_drained.wait()
+            yield
+
+
 class PythinkerToolset:
     def __init__(self, runtime: Runtime | None = None) -> None:
         self._runtime = runtime
@@ -309,6 +344,7 @@ class PythinkerToolset:
         self._mcp_loading_task: asyncio.Task[None] | None = None
         self._deferred_mcp_load: tuple[list[MCPConfig], Runtime] | None = None
         self._hook_engine: HookEngine = HookEngine()
+        self._concurrency_gate = _ReadWriteGate()
 
         # Deduplication state
         self._previous_step_calls: list[ToolCallKey] = []
@@ -449,6 +485,19 @@ class PythinkerToolset:
             return profile.allow_file_mutation and profile.allow_shell_mutation
 
         return True
+
+    async def _gated_call(self, tool: ToolType, arguments: JsonType) -> ToolReturnValue:
+        """Execute under the same-step concurrency policy.
+
+        Tools declaring ``supports_parallel`` share the gate; everything
+        else (including unflagged plugin/MCP tools — the safe default)
+        runs exclusively so same-step mutations stay ordered.
+        """
+        if getattr(tool, "supports_parallel", False):
+            async with self._concurrency_gate.shared():
+                return await tool.call(arguments)
+        async with self._concurrency_gate.exclusive():
+            return await tool.call(arguments)
 
     def begin_step(
         self,
@@ -652,7 +701,7 @@ class PythinkerToolset:
                 )
                 _tool_span = _tool_span_cm.__enter__()
                 try:
-                    ret = await tool.call(arguments)
+                    ret = await self._gated_call(tool, arguments)
                 except Exception as e:
                     tool_elapsed = time.monotonic() - t0
                     _tool_span.set_attribute("tool.success", False)
