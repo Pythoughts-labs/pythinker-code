@@ -303,7 +303,7 @@ class Shell(CallableTool2[Params]):
                 tool_call_id=tool_call.id,
                 shell_name="Windows PowerShell" if self._is_powershell else "bash",
                 shell_path=str(self._shell_path),
-                cwd=str(self._runtime.session.work_dir),
+                cwd=str(self._runtime.work_dir),
                 scrub_secrets=scrub_secrets,
             )
         except Exception as exc:

@@ -68,7 +68,7 @@ async def recap(soul: PythinkerSoul, args: str) -> None:
     from pythinker_code.session_recap import build_pythinker_recap
 
     try:
-        text = await build_pythinker_recap(soul.runtime.session.work_dir, args)
+        text = await build_pythinker_recap(soul.runtime.work_dir, args)
     except ValueError as exc:
         wire_send(TextPart(text=str(exc)))
         return

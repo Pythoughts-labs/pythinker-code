@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -213,6 +213,16 @@ class Runtime:
     """HookEngine instance, set by PythinkerCLI after soul creation."""
     rearm_injection: Callable[[str], None] | None = None
     """Callback set by PythinkerSoul so tools can refresh dynamic injections."""
+    work_dir_override: HostPath | None = None
+    """Operational working directory override (e.g. a per-child git worktree).
+
+    The session object stays shared for persistence paths; only the
+    operational cwd/path-resolution surface reads ``work_dir``."""
+
+    @property
+    def work_dir(self) -> HostPath:
+        """The operational working directory (override, else the session's)."""
+        return self.work_dir_override or self.session.work_dir
 
     def __post_init__(self) -> None:
         if self.subagent_store is None:
@@ -384,14 +394,28 @@ class Runtime:
         agent_id: str,
         subagent_type: str,
         llm_override: LLM | None = None,
+        work_dir_override: HostPath | None = None,
+        work_dir_ls: str | None = None,
     ) -> Runtime:
-        """Clone runtime for a subagent."""
+        """Clone runtime for a subagent.
+
+        ``work_dir_override`` points the child's operational surface (and its
+        system-prompt work-dir args) at another directory, e.g. an isolation
+        worktree; the shared session keeps owning persistence paths.
+        """
+        builtin_args = self.builtin_args
+        if work_dir_override is not None:
+            builtin_args = replace(
+                builtin_args,
+                PYTHINKER_WORK_DIR=work_dir_override,
+                PYTHINKER_WORK_DIR_LS=work_dir_ls or "",
+            )
         return Runtime(
             config=self.config,
             oauth=self.oauth,
             llm=llm_override if llm_override is not None else self.llm,
             session=self.session,
-            builtin_args=self.builtin_args,
+            builtin_args=builtin_args,
             denwa_renji=DenwaRenji(),  # subagent must have its own DenwaRenji
             approval=self.approval.share(),
             labor_market=self.labor_market,
@@ -411,6 +435,7 @@ class Runtime:
             subagent_id=agent_id,
             subagent_type=subagent_type,
             role="subagent",
+            work_dir_override=work_dir_override or self.work_dir_override,
         )
 
 
@@ -483,9 +508,7 @@ async def load_agent(
             )
         )
 
-    external_agents = await discover_markdown_agents(
-        await resolve_agent_roots(runtime.session.work_dir)
-    )
+    external_agents = await discover_markdown_agents(await resolve_agent_roots(runtime.work_dir))
     for type_def in materialize_markdown_agent_specs(
         external_agents,
         output_dir=runtime.session.dir / "external_agents",

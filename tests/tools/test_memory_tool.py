@@ -26,7 +26,13 @@ class FakeGit:
 
 def _runtime(tmp_path, role="root"):
     session = SimpleNamespace(id="sess1", title="t", work_dir=_hp(tmp_path / "repo"))
-    return SimpleNamespace(role=role, session=session, rearmed=[], rearm_injection=lambda key: None)
+    return SimpleNamespace(
+        role=role,
+        session=session,
+        work_dir=session.work_dir,
+        rearmed=[],
+        rearm_injection=lambda key: None,
+    )
 
 
 def _make_tool(tmp_path, monkeypatch, role="root"):

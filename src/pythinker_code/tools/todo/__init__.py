@@ -149,7 +149,7 @@ class SetTodoList(CallableTool2[Params]):
         if not todos:
             details.append("cleared: true")
         await append_scratch_event(
-            self._runtime.session.work_dir,
+            self._runtime.work_dir,
             session_id=self._runtime.session.id,
             session_title=self._runtime.session.title or self._runtime.session.state.custom_title,
             labels=["kind:todo"],

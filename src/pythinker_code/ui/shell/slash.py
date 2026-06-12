@@ -1820,7 +1820,7 @@ def _persist_project_trust(soul: PythinkerSoul, *, trusted: bool) -> bool:
     from pythinker_code.config import find_project_root
     from pythinker_code.project_trust import set_project_trusted
 
-    root = find_project_root(Path(str(soul.runtime.session.work_dir)))
+    root = find_project_root(Path(str(soul.runtime.work_dir)))
     if root is None:
         return False
     set_project_trusted(root, trusted)
@@ -2018,7 +2018,7 @@ async def show_memory(app: Shell, args: str):
         return
     from pythinker_code.project_memory import ProjectMemoryStore
 
-    store = ProjectMemoryStore(soul.runtime.session.work_dir)
+    store = ProjectMemoryStore(soul.runtime.work_dir)
     parts = args.split()
     if parts and parts[0] == "inbox":
         memory_config = getattr(soul.runtime.config, "memory", None)
@@ -2037,7 +2037,7 @@ async def show_memory(app: Shell, args: str):
 
         action = parts[1] if len(parts) > 1 else "list"
         if action == "scan":
-            created = await generate_inbox_candidates(store, soul.runtime.session.work_dir)
+            created = await generate_inbox_candidates(store, soul.runtime.work_dir)
             console.print(f"Staged {len(created)} memory inbox candidate(s).")
             return
         if action == "approve" and len(parts) > 2:

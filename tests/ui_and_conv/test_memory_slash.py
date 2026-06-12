@@ -19,6 +19,7 @@ def _fake_soul(tmp_path, *, consolidation: bool) -> SimpleNamespace:
         runtime=SimpleNamespace(
             config=SimpleNamespace(memory=SimpleNamespace(consolidation=consolidation)),
             session=SimpleNamespace(work_dir=HostPath.unsafe_from_local_path(tmp_path)),
+            work_dir=HostPath.unsafe_from_local_path(tmp_path),
             rearm_injection=None,
         )
     )

@@ -963,7 +963,7 @@ class PythinkerSoul:
                     matcher_value=text_input_for_hook,
                     input_data=events.user_prompt_submit(
                         session_id=self._runtime.session.id,
-                        cwd=_safe_cwd(str(self._runtime.session.work_dir)),
+                        cwd=_safe_cwd(str(self._runtime.work_dir)),
                         prompt=text_input_for_hook,
                     ),
                 )
@@ -1006,7 +1006,7 @@ class PythinkerSoul:
                     "Stop",
                     input_data=events.stop(
                         session_id=self._runtime.session.id,
-                        cwd=_safe_cwd(str(self._runtime.session.work_dir)),
+                        cwd=_safe_cwd(str(self._runtime.work_dir)),
                         stop_hook_active=False,
                     ),
                 )
@@ -1486,7 +1486,7 @@ class PythinkerSoul:
                     matcher_value=type(e).__name__,
                     input_data=_hook_events.stop_failure(
                         session_id=self._runtime.session.id,
-                        cwd=_safe_cwd(str(self._runtime.session.work_dir)),
+                        cwd=_safe_cwd(str(self._runtime.work_dir)),
                         error_type=type(e).__name__,
                         error_message=str(e),
                     ),
@@ -1552,7 +1552,7 @@ class PythinkerSoul:
                     matcher_value=view.event.type,
                     input_data=events.notification(
                         session_id=self._runtime.session.id,
-                        cwd=_safe_cwd(str(self._runtime.session.work_dir)),
+                        cwd=_safe_cwd(str(self._runtime.work_dir)),
                         sink="llm",
                         notification_type=view.event.type,
                         title=view.event.title,
@@ -2097,7 +2097,7 @@ class PythinkerSoul:
             matcher_value=trigger_reason,
             input_data=events.pre_compact(
                 session_id=self._runtime.session.id,
-                cwd=_safe_cwd(str(self._runtime.session.work_dir)),
+                cwd=_safe_cwd(str(self._runtime.work_dir)),
                 trigger=trigger_reason,
                 token_count=before_tokens,
                 custom_instructions=custom_instruction,
@@ -2168,7 +2168,7 @@ class PythinkerSoul:
                     matcher_value=trigger_reason,
                     input_data=events.post_compact(
                         session_id=self._runtime.session.id,
-                        cwd=_safe_cwd(str(self._runtime.session.work_dir)),
+                        cwd=_safe_cwd(str(self._runtime.work_dir)),
                         trigger=trigger_reason,
                         estimated_token_count=estimated_token_count,
                         compact_summary=summary_text,
@@ -2179,7 +2179,7 @@ class PythinkerSoul:
                     matcher_value="compact",
                     input_data=events.session_start(
                         session_id=self._runtime.session.id,
-                        cwd=_safe_cwd(str(self._runtime.session.work_dir)),
+                        cwd=_safe_cwd(str(self._runtime.work_dir)),
                         source="compact",
                     ),
                 )
@@ -2263,7 +2263,7 @@ class PythinkerSoul:
         for note in notes:
             try:
                 await append_scratch_note(
-                    self._runtime.session.work_dir,
+                    self._runtime.work_dir,
                     kind=note.kind,
                     content=note.content,
                     session_id=self._runtime.session.id,

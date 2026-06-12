@@ -236,7 +236,7 @@ class AgentTool(CallableTool2[Params]):
         if params.resume:
             details.append(f"resume: {params.resume}")
         await append_scratch_event(
-            self._runtime.session.work_dir,
+            self._runtime.work_dir,
             session_id=self._runtime.session.id,
             session_title=self._runtime.session.title or self._runtime.session.state.custom_title,
             labels=["kind:agent", f"agent-type:{actual_type}"],
@@ -737,7 +737,7 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
         from pythinker_code.scratchpad import append_scratch_event
 
         scratchpad_result = await append_scratch_event(
-            self._runtime.session.work_dir,
+            self._runtime.work_dir,
             session_id=self._runtime.session.id,
             session_title=self._runtime.session.title or self._runtime.session.state.custom_title,
             labels=["kind:agent-batch"],

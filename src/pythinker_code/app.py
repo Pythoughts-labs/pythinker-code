@@ -603,7 +603,7 @@ class PythinkerCLI:
     async def _env(self) -> AsyncGenerator[None]:
         async with _CWD_LOCK:
             original_cwd = HostPath.cwd()
-            await pythinker_host.chdir(self._runtime.session.work_dir)
+            await pythinker_host.chdir(self._runtime.work_dir)
             try:
                 # to ignore possible warnings from dateparser
                 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -782,7 +782,7 @@ class PythinkerCLI:
         """Run the Pythinker CLI instance with shell UI."""
         from pythinker_code.ui.shell import Shell, WelcomeInfoItem
 
-        work_dir = self._runtime.session.work_dir
+        work_dir = self._runtime.work_dir
         welcome_info = [
             WelcomeInfoItem(name="Directory", value=str(shorten_home(work_dir))),
         ]

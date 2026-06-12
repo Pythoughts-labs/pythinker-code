@@ -354,14 +354,14 @@ def check_shell_command_allowed(runtime: Runtime, command: str) -> ToolError | N
         )
     if reason := shell_workspace_escape_reason(
         command,
-        work_dir=runtime.session.work_dir,
+        work_dir=runtime.work_dir,
         additional_dirs=runtime.additional_dirs,
     ):
         return ToolError(
             message=(
                 f"The active {profile.description} permission profile blocks this shell command "
                 f"because {reason}. Use the Glob/Grep/ReadFile tools or restrict path arguments "
-                f"to the workspace root ({runtime.session.work_dir}) and approved additional "
+                f"to the workspace root ({runtime.work_dir}) and approved additional "
                 "directories."
             ),
             brief="Permission profile restriction",
