@@ -52,6 +52,10 @@ from pythinker_code.soul import (
     wire_send,
 )
 from pythinker_code.soul.agent import Agent, Runtime
+
+# classify_api_error is re-exported so telemetry tests and existing imports
+# keep resolving against this module.
+from pythinker_code.soul.api_errors import classify_api_error as classify_api_error
 from pythinker_code.soul.approval import deliberation_scope
 from pythinker_code.soul.compaction import (
     CompactionResult,
@@ -161,46 +165,6 @@ def classify_llm_system(chat_provider: object | None) -> str:
         return provider_class or "unknown"
     except Exception:
         return "unknown"
-
-
-def classify_api_error(e: Exception) -> tuple[str, int | None]:
-    """Classify an LLM API exception into (error_type, status_code).
-
-    Exposed at module level so telemetry tests can import the real function
-    instead of duplicating the classification table.
-
-    Returns:
-        (error_type, status_code) where status_code is None for non-HTTP errors.
-    """
-    status_code: int | None = None
-    if isinstance(e, APIStatusError):
-        status = getattr(e, "status_code", getattr(e, "status", 0))
-        status_code = int(status) if status else None
-        if status == 429:
-            return "rate_limit", status_code
-        if status in (401, 403):
-            return "auth", status_code
-        if status >= 500:
-            return "5xx_server", status_code
-        if 400 <= status < 500:
-            msg_lower = str(e).lower()
-            if (
-                "context length" in msg_lower
-                or "context_length" in msg_lower
-                or "max tokens" in msg_lower
-                or "maximum context" in msg_lower
-                or "too many tokens" in msg_lower
-            ):
-                return "context_overflow", status_code
-            return "4xx_client", status_code
-        return "api", status_code
-    if isinstance(e, APIConnectionError):
-        return "network", None
-    if isinstance(e, (APITimeoutError, TimeoutError)):
-        return "timeout", None
-    if isinstance(e, APIEmptyResponseError):
-        return "empty_response", None
-    return "other", None
 
 
 def _is_hard_usage_limit(exception: BaseException) -> bool:
@@ -1419,6 +1383,9 @@ class PythinkerSoul:
         self._intent_nudge_used = False
         # Reset the degenerate-loop failure tracker at the start of each turn.
         self._consecutive_failures = 0
+        # One-shot per turn: reactive compact-and-retry after a provider
+        # context-length rejection (proactive thresholds can undercount).
+        overflow_recovery_used = False
         while True:
             step_no += 1
             if step_no > self._loop_control.max_steps_per_turn:
@@ -1507,6 +1474,10 @@ class PythinkerSoul:
                 if status_code is not None:
                     api_error_props["status_code"] = status_code
                 track("api_error", **api_error_props)
+                if error_type == "context_overflow" and not overflow_recovery_used:
+                    overflow_recovery_used = True
+                    if await self._recover_from_context_overflow(step_no):
+                        continue
                 # --- StopFailure hook ---
                 from pythinker_code.hooks import events as _hook_events
 
@@ -1987,6 +1958,39 @@ class PythinkerSoul:
         )
         await self._context.append_message(tool_messages)
         # token count of tool results are not available yet
+
+    async def _recover_from_context_overflow(self, step_no: int) -> bool:
+        """Reactive shrink-and-retry after a provider context-length rejection.
+
+        The proactive prune/compact thresholds run on heuristic token counts
+        and can undercount (e.g. large pending tool output), so the provider
+        may still reject a step. Prune (best-effort), force a full
+        compaction, and let the loop retry the step once. Returns False when
+        compaction itself fails — the original error then propagates.
+        """
+        from pythinker_code.telemetry import track
+
+        logger.warning(
+            "Provider rejected step {step_no} for context length; compacting and retrying once",
+            step_no=step_no,
+        )
+        try:
+            with contextlib.suppress(Exception):
+                await self.prune_context()
+            await self.compact_context()
+        except Exception as compact_err:
+            from pythinker_code.telemetry.errors import report_handled_error
+
+            report_handled_error(compact_err, site="soul.context.overflow_recovery")
+            logger.error(
+                "Context-overflow recovery compaction failed: {error_type}: {error}",
+                error_type=type(compact_err).__name__,
+                error=compact_err,
+            )
+            track("context_overflow_recovery", outcome="failed")
+            return False
+        track("context_overflow_recovery", outcome="recovered")
+        return True
 
     async def prune_context(self) -> bool:
         """Cheap, fidelity-preserving compaction tier: replace large stale

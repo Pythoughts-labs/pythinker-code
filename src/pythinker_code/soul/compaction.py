@@ -10,6 +10,7 @@ from pythinker_core.tooling.empty import EmptyToolset
 
 import pythinker_code.prompts as prompts
 from pythinker_code.llm import LLM
+from pythinker_code.soul.api_errors import is_context_overflow_error
 from pythinker_code.soul.message import system
 from pythinker_code.utils.logging import logger
 from pythinker_code.wire.types import ContentPart, TextPart, ThinkPart
@@ -152,9 +153,10 @@ class SimpleCompaction:
     async def compact(
         self, messages: Sequence[Message], llm: LLM, *, custom_instruction: str = ""
     ) -> CompactionResult:
-        compact_message, to_preserve = self.prepare(messages, custom_instruction=custom_instruction)
+        prepared = self.prepare(messages, custom_instruction=custom_instruction)
+        compact_message, to_preserve = prepared.compact_message, prepared.to_preserve
         if compact_message is None:
-            return CompactionResult(messages=to_preserve, usage=None)
+            return CompactionResult(messages=list(to_preserve), usage=None)
 
         # Call pythinker_core.step to get the compacted context.
         # NOTE: the summary length is bounded by the chat provider's construction-time
@@ -163,12 +165,50 @@ class SimpleCompaction:
         # ``ChatProvider.generate`` (and ``pythinker_core.step``), which neither exposes
         # today; adding one ripples across every provider backend, so it is out of scope here.
         logger.debug("Compacting context...")
-        result = await pythinker_core.step(
-            chat_provider=llm.chat_provider,
-            system_prompt="You are a helpful assistant that compacts conversation context.",
-            toolset=EmptyToolset(),
-            history=[compact_message],
-        )
+        to_compact = list(prepared.to_compact)
+        while True:
+            try:
+                result = await pythinker_core.step(
+                    chat_provider=llm.chat_provider,
+                    system_prompt="You are a helpful assistant that compacts conversation context.",
+                    toolset=EmptyToolset(),
+                    history=[compact_message],
+                )
+                break
+            except Exception as e:
+                # The compaction request itself can exceed the context window
+                # (it carries the whole to-compact slice). Drop the oldest half
+                # and retry; when nothing summarizable fits, preserve only the
+                # tail with an explicit dropped-context note instead of failing.
+                if not is_context_overflow_error(e):
+                    raise
+                if len(to_compact) <= 1:
+                    logger.warning(
+                        "Compaction request still exceeds the context window with a "
+                        "single message; dropping unsummarized older context"
+                    )
+                    note = Message(
+                        role="user",
+                        content=[
+                            system(
+                                "Previous context exceeded the model's window and was "
+                                "dropped without summarization. Re-read files or re-run "
+                                "commands if earlier results are needed."
+                            )
+                        ],
+                    )
+                    return CompactionResult(messages=[note, *to_preserve], usage=None)
+                dropped = len(to_compact) // 2
+                to_compact = to_compact[dropped:]
+                logger.warning(
+                    "Compaction request exceeded the context window; retrying with the "
+                    "newest {kept} of the slice ({dropped} oldest dropped)",
+                    kept=len(to_compact),
+                    dropped=dropped,
+                )
+                compact_message = self._build_compact_message(
+                    to_compact, custom_instruction=custom_instruction
+                )
         if result.usage:
             logger.debug(
                 "Compaction used {input} input tokens and {output} output tokens",
@@ -190,6 +230,7 @@ class SimpleCompaction:
     class PrepareResult(NamedTuple):
         compact_message: Message | None
         to_preserve: Sequence[Message]
+        to_compact: Sequence[Message] = ()
 
     def prepare(
         self, messages: Sequence[Message], *, custom_instruction: str = ""
@@ -217,7 +258,18 @@ class SimpleCompaction:
             # Let's hope this won't exceed the context size limit
             return self.PrepareResult(compact_message=None, to_preserve=to_preserve)
 
-        # Create input message for compaction
+        compact_message = self._build_compact_message(
+            to_compact, custom_instruction=custom_instruction
+        )
+        return self.PrepareResult(
+            compact_message=compact_message,
+            to_preserve=to_preserve,
+            to_compact=to_compact,
+        )
+
+    def _build_compact_message(
+        self, to_compact: Sequence[Message], *, custom_instruction: str = ""
+    ) -> Message:
         compact_message = Message(role="user", content=[])
         for i, msg in enumerate(to_compact):
             compact_message.content.append(
@@ -235,4 +287,4 @@ class SimpleCompaction:
                 f"{custom_instruction}"
             )
         compact_message.content.append(TextPart(text=prompt_text))
-        return self.PrepareResult(compact_message=compact_message, to_preserve=to_preserve)
+        return compact_message
