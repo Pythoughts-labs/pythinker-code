@@ -169,7 +169,12 @@ class RunAgentsParams(BaseModel):
     )
     isolation: Literal["none", "worktree"] = Field(
         default="none",
-        description="Optional isolation request for background child agents.",
+        description=(
+            "Optional isolation for background child agents. `worktree` gives each "
+            "write-profile child its own git worktree of HEAD so parallel children "
+            "cannot clobber each other; each child's report names its worktree and "
+            "diff summary for deliberate merging."
+        ),
     )
 
 
