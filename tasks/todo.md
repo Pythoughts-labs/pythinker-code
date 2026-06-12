@@ -2,14 +2,26 @@
 
 ## Active
 
-- [ ] Agent-harness adoption arc (`feat/agent-harness-enhancements`): port the
-      reference harness's remaining coding-agent design into pythinker,
-      generically framed. Gap map DONE: 124 verified items (3 refuted) ranked in
-      `tasks/agent-harness-adoption-plan.md` (tiers 1-4, execution discipline
-      inside). Done so far: checkpoint 0 `047a0b29` (orchestration injection
-      provider + name-scrub), checkpoint 1 `b40cdb71` (ACP hides
-      AskUserQuestion). Now executing Tier 1 checkpoints: TDD per item,
-      clean-code-guard per checkpoint, make check + pytest green per commit.
+- [ ] Agent-harness adoption arc (`feat/agent-harness-enhancements`): executing
+      `tasks/agent-harness-adoption-plan.md` (124 verified items, tiers 1-4).
+      DONE: all 5 Tier-1 high/S + first high/M — `047a0b29` orchestration
+      provider+scrub, `b40cdb71` ACP question-tool hide, `36cedafd` plan,
+      `e722278c` restore-time history invariant repair, `388da2d3`
+      decision-complete plan mode, `f5b9b06a` print channel discipline,
+      `c8d82d38` review git-context+merge-base, `e2e74b70` parallel-tool
+      concurrency policy, `1615cfbd` reactive overflow recovery (loop +
+      SimpleCompaction halving; classify_api_error → soul/api_errors.py).
+      NEXT (Tier-1 high/M, plan order): per-project trust gating of
+      config/hooks; unknown-config-key diagnostics; model-switch context
+      continuity; known-safe command auto-approval; MCP startup
+      timeout+diagnostics; MCP per-server tool filtering; subagent context
+      fork; workspace isolation for parallel writers; turn rollup analytics;
+      feedback diagnostics; fuzzy edit ladder; permissions-state
+      instructions; model escalation w/ justification; JSONL lifecycle
+      stream; schema-constrained final output; /review command; hook trust
+      gating; PostToolUse feedback to model; deferred tool loading; foreign
+      schema sanitization. Discipline: TDD + clean-code-guard + make check
+      per checkpoint; single writer now.
 - [ ] Windows shell hardening (researched, not yet implemented): bash-first
       shell policy (Git Bash probe → pwsh → powershell, never cmd), Windows
       tool-description guidance (`;` not `&&` on PS 5.1, `$env:`, quoting),
