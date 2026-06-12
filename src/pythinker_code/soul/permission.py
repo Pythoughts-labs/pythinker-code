@@ -264,6 +264,16 @@ _SUDO_VALUE_OPTS = {
 _TIME_VALUE_OPTS = {"-o", "-f", "--output", "--format"}
 
 
+def subagent_type_allows_file_mutation(subagent_type: str) -> bool:
+    """Whether *subagent_type*'s permission profile permits file mutation.
+
+    Unmapped types default to read_only (fail closed), matching
+    permission_profile_for_runtime.
+    """
+    profile_name = _SUBAGENT_PROFILES.get(subagent_type, "read_only")
+    return _PERMISSION_PROFILES[profile_name].allow_file_mutation
+
+
 def permission_profile_for_runtime(runtime: Runtime) -> PermissionProfile:
     """Return the hard permission profile currently enforced for a runtime."""
     if runtime.role == "subagent" and runtime.subagent_type:

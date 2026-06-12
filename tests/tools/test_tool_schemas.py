@@ -81,7 +81,7 @@ def test_agent_params_schema(agent_tool: AgentTool):
                 },
                 "isolation": {
                     "default": "none",
-                    "description": "Optional isolation request for background agents. `worktree` records a git-worktree isolation intent for orchestration/recovery; unsupported callers should leave `none`.",
+                    "description": "Optional isolation for background agents. `worktree` runs a write-profile child in its own git worktree of HEAD; its final report names the worktree path and a diff summary so changes are merged deliberately (clean worktrees are removed). Requires a git repository; ignored for read-profile child types.",
                     "enum": ["none", "worktree"],
                     "type": "string",
                 },

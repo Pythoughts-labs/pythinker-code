@@ -397,6 +397,7 @@ class BackgroundTaskManager:
                 model_override=model_override,
                 timeout_s=effective_timeout,
                 resumed=resumed,
+                isolation=isolation,
             ).run()
         )
         self._live_agent_tasks[task_id] = task

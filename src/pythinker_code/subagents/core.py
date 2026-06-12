@@ -14,6 +14,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from pythinker_core.message import Message
+from pythinker_host.path import HostPath
 
 from pythinker_code.notifications import is_notification_message
 from pythinker_code.soul.context import Context
@@ -58,6 +59,9 @@ class SubagentRunSpec:
     # Filtered parent transcript to seed a NEW child with (spawn-time context
     # fork). Ignored on resume; see filter_history_for_fork.
     fork_history: Sequence[Message] | None = None
+    # Operational work-dir override (e.g. an isolation worktree); flows into
+    # the child runtime via copy_for_subagent.
+    work_dir_override: HostPath | None = None
 
 
 _CHECKPOINT_MARKER_RE = re.compile(r"^CHECKPOINT \d+$")
@@ -129,6 +133,7 @@ async def prepare_soul(
         agent_id=spec.agent_id,
         type_def=spec.type_def,
         launch_spec=spec.launch_spec,
+        work_dir_override=spec.work_dir_override,
     )
     if on_stage:
         on_stage("agent_built")

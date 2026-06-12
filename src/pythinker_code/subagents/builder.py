@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pythinker_host.path import HostPath
+
 from pythinker_code.llm import clone_llm_with_model_alias
 from pythinker_code.soul.agent import Agent, Runtime, load_agent
 from pythinker_code.subagents.models import AgentLaunchSpec, AgentTypeDefinition
@@ -15,6 +17,7 @@ class SubagentBuilder:
         agent_id: str,
         type_def: AgentTypeDefinition,
         launch_spec: AgentLaunchSpec,
+        work_dir_override: HostPath | None = None,
     ) -> Agent:
         effective_model = self.resolve_effective_model(type_def=type_def, launch_spec=launch_spec)
         llm_override = clone_llm_with_model_alias(
@@ -30,6 +33,7 @@ class SubagentBuilder:
             agent_id=agent_id,
             subagent_type=type_def.name,
             llm_override=llm_override,
+            work_dir_override=work_dir_override,
         )
         return await load_agent(
             type_def.agent_file,
