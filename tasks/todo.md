@@ -17,7 +17,9 @@
       PYTHINKER_STRICT_CONFIG).
       `bf549c28` model-switch carry-over (summarize_all with the outgoing
       model seeds the new session; model_switch_carryover flag).
-      NEXT (Tier-1 high/M, plan order): known-safe command auto-approval; MCP startup
+      `5dc87aaf` known-safe command auto-approval (is_known_safe_command
+      positive allowlist; root-only elision, deny-gate preserved).
+      NEXT (Tier-1 high/M, plan order): MCP startup
       timeout+diagnostics; MCP per-server tool filtering; subagent context
       fork; workspace isolation for parallel writers; turn rollup analytics;
       feedback diagnostics; fuzzy edit ladder; permissions-state
