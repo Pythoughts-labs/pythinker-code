@@ -18,6 +18,7 @@ from pythinker_code.soul.message import is_system_reminder_message, system
 from pythinker_code.utils.message import message_stringify
 from pythinker_code.utils.path import sanitize_cli_path
 from pythinker_code.utils.sensitive import is_sensitive_file as is_sensitive_path
+from pythinker_code.utils.sensitive import redact_secrets
 from pythinker_code.utils.string import shorten
 from pythinker_code.wire.types import (
     AudioURLPart,
@@ -308,7 +309,10 @@ def build_export_markdown(
     for idx, turn_messages in enumerate(turns):
         lines.append(_format_turn_md(turn_messages, idx + 1))
 
-    return "\n".join(lines)
+    # Defense-in-depth: a tool result (grep/cat over a .env, etc.) can surface a
+    # secret value into the transcript. Redact KEY=VALUE secrets before the
+    # export lands on disk so credentials don't leak into shared exports.
+    return redact_secrets("\n".join(lines))
 
 
 def _compact_message_record(msg: Message) -> dict[str, object]:
@@ -366,7 +370,9 @@ def build_export_yaml(
             for idx, turn in enumerate(turns, start=1)
         ],
     }
-    return yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+    # See build_export_markdown: strip KEY=VALUE secrets surfaced by tool output
+    # before the transcript is written.
+    return redact_secrets(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True))
 
 
 # ---------------------------------------------------------------------------

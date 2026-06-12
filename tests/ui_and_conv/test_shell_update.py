@@ -1353,6 +1353,205 @@ async def test_do_update_brew_continues_when_refresh_fails(monkeypatch, tmp_path
     assert ran == [["brew", "update", "--quiet"], ["brew", "upgrade", "pythinker-code"]]
 
 
+_BREW_UNTRUSTED_TAP_ERROR = (
+    "Error: Refusing to load formula pythoughts-labs/pythinker/pythinker-code "
+    "from untrusted tap pythoughts-labs/pythinker."
+)
+
+
+def test_homebrew_untrusted_tap_parses_refusal():
+    """The hard refusal names the tap our formula lives in; trailing period
+    and surrounding lines must not leak into the tap name."""
+    lines = [
+        "==> Updating Homebrew...",
+        _BREW_UNTRUSTED_TAP_ERROR,
+        "Run `brew trust pythoughts-labs/pythinker` to trust it.",
+    ]
+    assert update._homebrew_untrusted_tap(lines) == "pythoughts-labs/pythinker"
+
+
+def test_homebrew_untrusted_tap_ignores_unrelated_skip_warnings():
+    """`brew update` warns about every untrusted tap on the machine; warnings
+    for taps that are not ours must not trigger the trust hint."""
+    lines = [
+        "Warning: Skipping mongodb/brew because it is not trusted. "
+        "Run `brew trust mongodb/brew` to trust it.",
+        "Warning: Skipping oven-sh/bun because it is not trusted.",
+    ]
+    assert update._homebrew_untrusted_tap(lines) is None
+
+
+def test_homebrew_untrusted_tap_accepts_own_tap_skip_warning():
+    lines = [
+        "Warning: Skipping pythoughts-labs/pythinker because it is not trusted. "
+        "Run `brew trust pythoughts-labs/pythinker` to trust it.",
+    ]
+    assert update._homebrew_untrusted_tap(lines) == "pythoughts-labs/pythinker"
+
+
+def test_homebrew_untrusted_tap_none_on_unrelated_output():
+    assert update._homebrew_untrusted_tap(["==> Upgrading pythinker-code"]) is None
+
+
+@pytest.mark.asyncio
+async def test_do_update_brew_untrusted_tap_prints_trust_hint(monkeypatch, tmp_path):
+    """Homebrew >= 5 refuses formulas from untrusted taps. Non-interactively the
+    updater must surface the exact `brew trust` remediation, not the generic
+    'run manually' failure."""
+    messages: list[str] = []
+
+    def fake_run_upgrade_command(command, *, print_output: bool, output_callback):
+        if command == ["brew", "update", "--quiet"]:
+            return 0
+        assert command == ["brew", "upgrade", "pythinker-code"]
+        output_callback(_BREW_UNTRUSTED_TAP_ERROR)
+        return 1
+
+    _brew_upgrade_do_update_env(monkeypatch, tmp_path)
+    monkeypatch.setattr(update, "_run_upgrade_command", fake_run_upgrade_command)
+    monkeypatch.setattr(update, "_can_prompt_to_trust_tap", lambda print_output: False)
+
+    result = await update.do_update(print_output=False, output_callback=messages.append)
+
+    assert result is update.UpdateResult.FAILED
+    assert any("brew trust pythoughts-labs/pythinker" in m for m in messages)
+    # The raw brew error still reaches the caller's callback unmodified.
+    assert _BREW_UNTRUSTED_TAP_ERROR in messages
+
+
+@pytest.mark.asyncio
+async def test_do_update_brew_untrusted_tap_trusts_and_retries_on_consent(monkeypatch, tmp_path):
+    """With an interactive console and user consent, the updater runs
+    `brew trust <tap>`, refreshes the tap, retries once, and succeeds."""
+    ran: list[list[str]] = []
+
+    def fake_run_upgrade_command(command, *, print_output: bool, output_callback):
+        ran.append(command)
+        if (
+            command == ["brew", "upgrade", "pythinker-code"]
+            and [
+                "brew",
+                "trust",
+                "pythoughts-labs/pythinker",
+            ]
+            not in ran
+        ):
+            output_callback(_BREW_UNTRUSTED_TAP_ERROR)
+            return 1
+        return 0
+
+    async def fake_confirm(tap: str) -> bool:
+        assert tap == "pythoughts-labs/pythinker"
+        return True
+
+    _brew_upgrade_do_update_env(monkeypatch, tmp_path)
+    monkeypatch.setattr(update, "_run_upgrade_command", fake_run_upgrade_command)
+    monkeypatch.setattr(update, "_can_prompt_to_trust_tap", lambda print_output: True)
+    monkeypatch.setattr(update, "_confirm_brew_trust", fake_confirm)
+    monkeypatch.setattr(update, "_installed_homebrew_version", lambda: "999.0.0")
+
+    result = await update.do_update(print_output=False)
+
+    assert result is update.UpdateResult.UPDATED
+    assert ran == [
+        ["brew", "update", "--quiet"],
+        ["brew", "upgrade", "pythinker-code"],
+        ["brew", "trust", "pythoughts-labs/pythinker"],
+        ["brew", "update", "--quiet"],
+        ["brew", "upgrade", "pythinker-code"],
+    ]
+
+
+@pytest.mark.asyncio
+async def test_do_update_brew_untrusted_tap_declined_consent_fails_with_hint(monkeypatch, tmp_path):
+    """Declining the trust prompt must not run `brew trust`; the manual
+    remediation is printed and the update reports failure."""
+    messages: list[str] = []
+    ran: list[list[str]] = []
+
+    def fake_run_upgrade_command(command, *, print_output: bool, output_callback):
+        ran.append(command)
+        if command == ["brew", "upgrade", "pythinker-code"]:
+            output_callback(_BREW_UNTRUSTED_TAP_ERROR)
+            return 1
+        return 0
+
+    async def fake_confirm(tap: str) -> bool:
+        return False
+
+    _brew_upgrade_do_update_env(monkeypatch, tmp_path)
+    monkeypatch.setattr(update, "_run_upgrade_command", fake_run_upgrade_command)
+    monkeypatch.setattr(update, "_can_prompt_to_trust_tap", lambda print_output: True)
+    monkeypatch.setattr(update, "_confirm_brew_trust", fake_confirm)
+
+    result = await update.do_update(print_output=False, output_callback=messages.append)
+
+    assert result is update.UpdateResult.FAILED
+    assert ["brew", "trust", "pythoughts-labs/pythinker"] not in ran
+    assert ran.count(["brew", "upgrade", "pythinker-code"]) == 1
+    assert any("brew trust pythoughts-labs/pythinker" in m for m in messages)
+
+
+@pytest.mark.asyncio
+async def test_do_update_brew_untrusted_tap_trust_failure_degrades_to_hint(monkeypatch, tmp_path):
+    """If `brew trust` itself fails, no retry happens and the manual
+    remediation is still printed."""
+    messages: list[str] = []
+    ran: list[list[str]] = []
+
+    def fake_run_upgrade_command(command, *, print_output: bool, output_callback):
+        ran.append(command)
+        if command == ["brew", "upgrade", "pythinker-code"]:
+            output_callback(_BREW_UNTRUSTED_TAP_ERROR)
+            return 1
+        if command[:2] == ["brew", "trust"]:
+            return 1
+        return 0
+
+    async def fake_confirm(tap: str) -> bool:
+        return True
+
+    _brew_upgrade_do_update_env(monkeypatch, tmp_path)
+    monkeypatch.setattr(update, "_run_upgrade_command", fake_run_upgrade_command)
+    monkeypatch.setattr(update, "_can_prompt_to_trust_tap", lambda print_output: True)
+    monkeypatch.setattr(update, "_confirm_brew_trust", fake_confirm)
+
+    result = await update.do_update(print_output=False, output_callback=messages.append)
+
+    assert result is update.UpdateResult.FAILED
+    assert ran.count(["brew", "upgrade", "pythinker-code"]) == 1
+    assert any("brew trust pythoughts-labs/pythinker" in m for m in messages)
+
+
+@pytest.mark.asyncio
+async def test_do_update_brew_silent_noop_with_untrusted_tap_prints_trust_hint(
+    monkeypatch, tmp_path
+):
+    """When `brew update` skips our untrusted tap and `brew upgrade` exits 0
+    without advancing the version, the trust hint beats the generic
+    stale-metadata hint."""
+    messages: list[str] = []
+
+    def fake_run_upgrade_command(command, *, print_output: bool, output_callback):
+        if command == ["brew", "update", "--quiet"]:
+            output_callback(
+                "Warning: Skipping pythoughts-labs/pythinker because it is not "
+                "trusted. Run `brew trust pythoughts-labs/pythinker` to trust it."
+            )
+        return 0
+
+    _brew_upgrade_do_update_env(monkeypatch, tmp_path)
+    monkeypatch.setattr(update, "_run_upgrade_command", fake_run_upgrade_command)
+    monkeypatch.setattr(update, "_can_prompt_to_trust_tap", lambda print_output: False)
+    monkeypatch.setattr(update, "_installed_homebrew_version", lambda: "0.40.1")
+
+    result = await update.do_update(print_output=False, output_callback=messages.append)
+
+    assert result is update.UpdateResult.FAILED
+    assert not any("Updated successfully" in m for m in messages)
+    assert any("brew trust pythoughts-labs/pythinker" in m for m in messages)
+
+
 def test_installed_homebrew_version_returns_max_installed(monkeypatch):
     """Parses `brew list --versions`, returning the highest installed version."""
 
