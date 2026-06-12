@@ -47,6 +47,14 @@ def test_redact_ignores_non_secret_keys():
     assert redact_secrets(text) == text
 
 
+def test_redact_ignores_keys_with_suffix_after_hint():
+    """Keys where the secret hint is NOT immediately before the separator —
+    token_count (hint 'token' + '_count'), access_key_id (hint 'access_key' +
+    '_id') — are intentionally left intact, not treated as secrets."""
+    text = "token_count=100\naccess_key_id=AKIAIOSFODNN7EXAMPLE"
+    assert redact_secrets(text) == text
+
+
 def test_redact_handles_quoted_values():
     out = redact_secrets('PASSWORD="s3cr3t value"')
     assert "s3cr3t value" not in out
