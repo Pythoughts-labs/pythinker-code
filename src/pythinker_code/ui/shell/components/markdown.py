@@ -237,8 +237,8 @@ def _unwrap_fenced_markdown_tables(markup: str) -> str:
     """Unwrap ```` ```md ```` fences whose body contains a markdown table.
 
     Models sometimes wrap a whole markdown answer — tables included — in a
-    ``md``/``markdown`` fence, which renders the table as opaque code. Mirror
-    the Codex heuristic (markdown.rs): only fences explicitly tagged ``md`` or
+    ``md``/``markdown`` fence, which renders the table as opaque code. Apply
+    a conservative heuristic: only fences explicitly tagged ``md`` or
     ``markdown`` *and* containing a header+delimiter pair are unwrapped.
     Other languages, untagged fences, md fences without tables, and unclosed
     fences pass through unchanged.

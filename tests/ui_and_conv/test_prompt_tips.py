@@ -304,6 +304,29 @@ def test_working_spinner_tip_mentions_thinking_effort_shortcut() -> None:
     assert current_tip(0) == "Shift+Tab changes thinking effort levels"
 
 
+def test_feature_tips_reference_only_real_slash_commands() -> None:
+    """Every /command a tip advertises must exist in a slash registry.
+
+    Tips are marketing for real features; a tip naming a nonexistent
+    command (e.g. a past "/verify" tip) erodes trust in all of them.
+    """
+    import re as _re
+
+    from pythinker_code.soul.slash import registry as soul_registry
+    from pythinker_code.ui.shell.slash import registry as shell_registry
+    from pythinker_code.ui.shell.slash import shell_mode_registry
+    from pythinker_code.ui.shell.tips import FEATURE_TIPS
+
+    known = (
+        set(soul_registry._command_aliases)
+        | set(shell_registry._command_aliases)
+        | set(shell_mode_registry._command_aliases)
+    )
+    for tip in FEATURE_TIPS:
+        for command in _re.findall(r"/([a-z][a-z-]*)", tip):
+            assert command in known, f"tip advertises unknown command /{command}: {tip!r}"
+
+
 # ── _display_width ─────────────────────────────────────────────────────────────
 
 
@@ -552,7 +575,7 @@ def test_background_working_status_uses_pulsing_circle(monkeypatch: Any) -> None
     assert "background agent" not in second  # footer owns the count
 
 
-def test_card_toolbar_shows_codex_style_background_task_summary(monkeypatch: Any) -> None:
+def test_card_toolbar_shows_compact_background_task_summary(monkeypatch: Any) -> None:
     prompt_session = _make_toolbar_session(model_name="fast-model", tips=[])
     prompt_session._background_task_count_provider = lambda: BgTaskCounts(bash=2, agent=1)
 
@@ -971,10 +994,10 @@ def test_git_status_not_called_when_branch_is_none(monkeypatch: Any) -> None:
     assert status_call_count == 0, "_get_git_status must not be called when branch is None"
 
 
-# ── Prompt layout (Codex-style lower text area, running/idle message) ─────────
+# ── Prompt layout (lower text area, running/idle message) ─────────
 
 
-def test_running_prompt_uses_shared_toolbar_and_codex_input_layout(monkeypatch: Any) -> None:
+def test_running_prompt_uses_shared_toolbar_and_bottom_input_layout(monkeypatch: Any) -> None:
     width = 72
     prompt_session = object.__new__(CustomPromptSession)
     prompt_session._mode = PromptMode.AGENT
@@ -1293,7 +1316,7 @@ def _dummy_slash_func(*_args: Any, **_kwargs: Any) -> None:
     return None
 
 
-def test_slash_completer_uses_codex_prefix_order_and_canonical_insertions() -> None:
+def test_slash_completer_uses_prefix_order_and_canonical_insertions() -> None:
     completer = SlashCommandCompleter(
         [
             SlashCommand(
@@ -1443,7 +1466,7 @@ def test_prompt_rule_keeps_rightmost_column_clear() -> None:
     assert shell_prompt._prompt_rule(8) == "─" * 7
 
 
-def test_idle_agent_prompt_uses_same_codex_input_layout(monkeypatch: Any) -> None:
+def test_idle_agent_prompt_uses_same_bottom_input_layout(monkeypatch: Any) -> None:
     width = 64
     prompt_session = object.__new__(CustomPromptSession)
     prompt_session._running_prompt_delegate = None

@@ -10,7 +10,7 @@ from typing import Final
 FEATURE_TIPS: Final = (
     "Shift+Tab changes thinking effort levels",
     "Subagents keep your main context clean",
-    "/verify before declaring work done",
+    "/goal <objective> keeps the agent looping until it's verifiably done",
     "/learn captures a lesson after a correction",
     "@-mention files to attach them to the next message",
     "/feedback sends a note to the Pythinker team",

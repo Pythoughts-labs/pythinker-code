@@ -350,7 +350,7 @@ def create_llm(
     elif supports_thinking:
         effective_effort = requested_effort
     else:
-        # Match pi-main's clamp-to-model behavior: non-reasoning models have
+        # Clamp to the model's supported levels: non-reasoning models have
         # only the off level, so explicit non-off requests become off instead of
         # being recorded as active but ignored by the provider.
         effective_effort = "off" if requested_effort is not None else None

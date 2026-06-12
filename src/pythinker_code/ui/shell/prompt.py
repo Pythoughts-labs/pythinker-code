@@ -576,7 +576,7 @@ def _append_footer_hint_fragments(
     tip_style: str,
     key_style: str,
 ) -> None:
-    """Append toolbar tips with Codex-like key emphasis while preserving plain text."""
+    """Append toolbar tips with bold key emphasis while preserving plain text."""
     parts = tip_text.split(_TIP_SEPARATOR)
     for index, part in enumerate(parts):
         if index:

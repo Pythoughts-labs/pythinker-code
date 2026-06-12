@@ -183,7 +183,7 @@ WS-SOUL queue. A7-first removes the compaction-module half of the collision, not
 
 ## 4. config.py cross-branch collision (the live hazard)
 
-The current working tree (`feat/tui-codex-theme`) has **uncommitted `config.py` edits** (theme tokens).
+The current working tree (the TUI theme branch) has **uncommitted `config.py` edits** (theme tokens).
 Three remaining items (ctxmgmt-1, ctxmgmt-2, memory-2) also add `config.py` fields. If both streams edit
 `config.py` independently they will conflict.
 
@@ -255,7 +255,7 @@ Every item already carries a `Verify.` line in the source plan; the workstream-l
 3. **memory-2 posture:** ✅ **Opt-in "durable memory" profile** — do *not* flip defaults; ship a
    documented profile that enables harvest+journal. Reversible, no default privacy change.
 4. **Execution:** ✅ **Start now**, on `feat/agent-phase0-enhancements`, in an isolated git worktree
-   (the current tree has uncommitted `feat/tui-codex-theme` work that must not be disturbed).
+   (the current tree has uncommitted TUI theme branch work that must not be disturbed).
 
 **Execution order:** WS-FINISH (`injdef-2-grep`) → WS-SOUL non-collision items (`obs-eval-5`,
 `sysprompt-2`) → then per-collision extract-first (A7→ctxmgmt-2, A3→sysprompt-1) → parallel

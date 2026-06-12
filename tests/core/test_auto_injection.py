@@ -162,7 +162,7 @@ async def test_rearms_after_context_compaction() -> None:
 
 
 class TestApprovalModeValidationGuidance:
-    """Codex gpt_5_2_prompt.md:146-150 — validation effort keyed to approval mode."""
+    """Validation effort keyed to approval mode."""
 
     def test_auto_prompts_encourage_proactive_validation(self):
         from pythinker_code.soul.dynamic_injections.auto_mode import (

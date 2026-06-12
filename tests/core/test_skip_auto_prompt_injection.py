@@ -14,6 +14,7 @@ from pythinker_core.tooling.empty import EmptyToolset
 from pythinker_code.soul.agent import Agent, Runtime
 from pythinker_code.soul.context import Context
 from pythinker_code.soul.dynamic_injections.auto_mode import AutoModeInjectionProvider
+from pythinker_code.soul.dynamic_injections.orchestration import OrchestrationInjectionProvider
 from pythinker_code.soul.dynamic_injections.plan_mode import PlanModeInjectionProvider
 from pythinker_code.soul.pythinkersoul import PythinkerSoul
 
@@ -41,8 +42,9 @@ def test_skip_auto_prompt_injection_gates_auto_provider(
     soul = _make_soul(runtime, tmp_path)
     types_ = _provider_types(soul)
 
-    # Plan is always present and never gated by this flag.
+    # Plan and orchestration are always present and never gated by this flag.
     assert PlanModeInjectionProvider in types_
+    assert OrchestrationInjectionProvider in types_
     assert not any(provider.__name__.lower().startswith("yolo") for provider in types_)
 
     if skip:

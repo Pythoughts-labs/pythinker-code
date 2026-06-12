@@ -1,4 +1,4 @@
-"""Tests for the goal auto-continuation loop (Codex goals port)."""
+"""Tests for the goal auto-continuation loop."""
 
 from __future__ import annotations
 

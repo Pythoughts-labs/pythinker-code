@@ -562,7 +562,7 @@ Pythinker loads [Model Context Protocol](https://modelcontextprotocol.io/) tools
 ### 🛠️ Manage persistent MCP servers
 
 ```sh
-# 📚 Context7 stdio server (Codex-style: NAME -- COMMAND)
+# 📚 Context7 stdio server (positional form: NAME -- COMMAND)
 pythinker mcp add context7 -- npx -y @upstash/context7-mcp --api-key YOUR-API-KEY
 # Added MCP server 'context7' to ~/.pythinker/mcp.json
 

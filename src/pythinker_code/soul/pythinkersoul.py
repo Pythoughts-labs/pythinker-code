@@ -79,6 +79,7 @@ from pythinker_code.soul.dynamic_injections.auto_mode import AutoModeInjectionPr
 from pythinker_code.soul.dynamic_injections.goal_mode import GoalModeInjectionProvider
 from pythinker_code.soul.dynamic_injections.inline_commands import InlineCommandReminderProvider
 from pythinker_code.soul.dynamic_injections.model_defense import ModelDefenseInjectionProvider
+from pythinker_code.soul.dynamic_injections.orchestration import OrchestrationInjectionProvider
 from pythinker_code.soul.dynamic_injections.plan_mode import PlanModeInjectionProvider
 from pythinker_code.soul.flow_runner import FLOW_COMMAND_PREFIX, FlowRunner
 from pythinker_code.soul.message import (
@@ -206,7 +207,7 @@ def _is_hard_usage_limit(exception: BaseException) -> bool:
     """Whether a 429 is a subscription usage cap (resets in hours) rather than a
     transient RPM/TPM burst (clears in seconds).
 
-    Hard caps — e.g. ChatGPT Codex ``usage_limit_reached`` — should NOT be retried:
+    Hard caps — e.g. ChatGPT ``usage_limit_reached`` — should NOT be retried:
     the backoff just delays the inevitable failure. Detected from the parsed body
     when present, else from the stringified message (the streaming 429 often
     carries only the bare text)."""
@@ -447,6 +448,9 @@ class PythinkerSoul:
             # Self-filtering: root-only; flags inline /command references in the
             # latest user message that the shell could not have executed.
             InlineCommandReminderProvider(),
+            # Self-filtering: root-only; nudges substantial normal-mode tasks toward
+            # direct tools, todos, RunAgents, and verification.
+            OrchestrationInjectionProvider(),
             *(
                 []
                 if self._runtime.config.skip_auto_prompt_injection
@@ -804,9 +808,8 @@ class PythinkerSoul:
         """Apply a user-selected thinking level to the live runtime.
 
         Returns the effective/clamped level, or ``None`` when no LLM/model is
-        active. Best-effort persistence mirrors pi-main's settings update, but
-        a config write failure must not prevent the current session from using
-        the new level.
+        active. Persistence is best-effort: a config write failure must not
+        prevent the current session from using the new level.
         """
         if self._runtime.llm is None or self._runtime.llm.model_config is None:
             return None
@@ -1116,7 +1119,7 @@ class PythinkerSoul:
     async def _run_goal_continuations(self, primary_outcome: TurnOutcome) -> None:
         """Auto-continue toward the active /goal after the primary turn.
 
-        Ported from Codex CLI's automatic goal continuations, bounded per user
+        Automatic goal continuations, bounded per user
         submission by ``goal.max_continuations``. Hard stops (cancellation,
         MaxStepsReached, provider errors) propagate out of ``_turn`` and end
         the loop together with the run; a rejected tool call, a stuck turn, or

@@ -344,10 +344,9 @@ class TestSetTodoListSubagent:
 
 
 class TestSingleInProgressInvariant:
-    """Ported from Codex CLI's plan tool contract (plan_spec.rs): at most one
-    step in_progress at a time — softened to a notice because pythinker's
-    parallel-subagent fan-out legitimately tracks one in_progress sub-todo
-    per running child (system.md orchestration rules)."""
+    """At most one step in_progress at a time — softened to a notice because
+    pythinker's parallel-subagent fan-out legitimately tracks one in_progress
+    sub-todo per running child (system.md orchestration rules)."""
 
     async def test_multiple_in_progress_accepted_with_notice(
         self, set_todo_list_tool: SetTodoList, runtime: Runtime
