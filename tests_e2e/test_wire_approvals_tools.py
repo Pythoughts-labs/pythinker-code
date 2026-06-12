@@ -58,7 +58,7 @@ def test_shell_approval_approve(tmp_path) -> None:
         "\n".join(
             [
                 "text: step1",
-                build_shell_tool_call("tc-1", "echo ok"),
+                build_shell_tool_call("tc-1", "env echo ok"),
             ]
         ),
         "text: done",
@@ -105,7 +105,7 @@ def test_shell_approval_approve(tmp_path) -> None:
                     "payload": {
                         "type": "function",
                         "id": "tc-1",
-                        "function": {"name": "Shell", "arguments": '{"command": "echo ok"}'},
+                        "function": {"name": "Shell", "arguments": '{"command": "env echo ok"}'},
                         "extras": None,
                     },
                 },
@@ -132,13 +132,13 @@ def test_shell_approval_approve(tmp_path) -> None:
                         "tool_call_id": "tc-1",
                         "sender": "Shell",
                         "action": "run command",
-                        "description": "Run command `echo ok`",
+                        "description": "Run command `env echo ok`",
                         "source_kind": "foreground_turn",
                         "source_id": "<uuid>",
                         "agent_id": None,
                         "subagent_type": None,
                         "source_description": None,
-                        "display": [{"type": "shell", "language": "bash", "command": "echo ok"}],
+                        "display": [{"type": "shell", "language": "bash", "command": "env echo ok"}],
                     },
                 },
                 {
@@ -208,7 +208,7 @@ def test_shell_approval_reject(tmp_path) -> None:
         "\n".join(
             [
                 "text: step1",
-                build_shell_tool_call("tc-1", "echo ok"),
+                build_shell_tool_call("tc-1", "env echo ok"),
             ]
         ),
         "text: done",
@@ -255,7 +255,7 @@ def test_shell_approval_reject(tmp_path) -> None:
                     "payload": {
                         "type": "function",
                         "id": "tc-1",
-                        "function": {"name": "Shell", "arguments": '{"command": "echo ok"}'},
+                        "function": {"name": "Shell", "arguments": '{"command": "env echo ok"}'},
                         "extras": None,
                     },
                 },
@@ -282,13 +282,13 @@ def test_shell_approval_reject(tmp_path) -> None:
                         "tool_call_id": "tc-1",
                         "sender": "Shell",
                         "action": "run command",
-                        "description": "Run command `echo ok`",
+                        "description": "Run command `env echo ok`",
                         "source_kind": "foreground_turn",
                         "source_id": "<uuid>",
                         "agent_id": None,
                         "subagent_type": None,
                         "source_description": None,
-                        "display": [{"type": "shell", "language": "bash", "command": "echo ok"}],
+                        "display": [{"type": "shell", "language": "bash", "command": "env echo ok"}],
                     },
                 },
                 {
@@ -322,14 +322,14 @@ def test_approve_for_session(tmp_path) -> None:
         "\n".join(
             [
                 "text: step1",
-                build_shell_tool_call("tc-1", "echo first"),
+                build_shell_tool_call("tc-1", "env echo first"),
             ]
         ),
         "text: done",
         "\n".join(
             [
                 "text: step1",
-                build_shell_tool_call("tc-2", "echo second"),
+                build_shell_tool_call("tc-2", "env echo second"),
             ]
         ),
         "text: done",
@@ -388,7 +388,7 @@ def test_approve_for_session(tmp_path) -> None:
                     "payload": {
                         "type": "function",
                         "id": "tc-1",
-                        "function": {"name": "Shell", "arguments": '{"command": "echo first"}'},
+                        "function": {"name": "Shell", "arguments": '{"command": "env echo first"}'},
                         "extras": None,
                     },
                 },
@@ -415,13 +415,13 @@ def test_approve_for_session(tmp_path) -> None:
                         "tool_call_id": "tc-1",
                         "sender": "Shell",
                         "action": "run command",
-                        "description": "Run command `echo first`",
+                        "description": "Run command `env echo first`",
                         "source_kind": "foreground_turn",
                         "source_id": "<uuid>",
                         "agent_id": None,
                         "subagent_type": None,
                         "source_description": None,
-                        "display": [{"type": "shell", "language": "bash", "command": "echo first"}],
+                        "display": [{"type": "shell", "language": "bash", "command": "env echo first"}],
                     },
                 },
                 {
@@ -501,7 +501,7 @@ first
                     "payload": {
                         "type": "function",
                         "id": "tc-2",
-                        "function": {"name": "Shell", "arguments": '{"command": "echo second"}'},
+                        "function": {"name": "Shell", "arguments": '{"command": "env echo second"}'},
                         "extras": None,
                     },
                 },
@@ -582,7 +582,7 @@ def test_yolo_skips_approval(tmp_path) -> None:
         "\n".join(
             [
                 "text: step1",
-                build_shell_tool_call("tc-1", "echo ok"),
+                build_shell_tool_call("tc-1", "env echo ok"),
             ]
         ),
         "text: done",
@@ -626,7 +626,7 @@ def test_yolo_skips_approval(tmp_path) -> None:
                     "payload": {
                         "type": "function",
                         "id": "tc-1",
-                        "function": {"name": "Shell", "arguments": '{"command": "echo ok"}'},
+                        "function": {"name": "Shell", "arguments": '{"command": "env echo ok"}'},
                         "extras": None,
                     },
                 },
@@ -707,7 +707,7 @@ def test_display_block_shell(tmp_path) -> None:
         "\n".join(
             [
                 "text: step1",
-                build_shell_tool_call("tc-1", "echo ok"),
+                build_shell_tool_call("tc-1", "env echo ok"),
             ]
         ),
         "text: done",
@@ -747,13 +747,13 @@ def test_display_block_shell(tmp_path) -> None:
                 "tool_call_id": "tc-1",
                 "sender": "Shell",
                 "action": "run command",
-                "description": "Run command `echo ok`",
+                "description": "Run command `env echo ok`",
                 "source_kind": "foreground_turn",
                 "source_id": "<uuid>",
                 "agent_id": None,
                 "subagent_type": None,
                 "source_description": None,
-                "display": [{"type": "shell", "language": "bash", "command": "echo ok"}],
+                "display": [{"type": "shell", "language": "bash", "command": "env echo ok"}],
             }
         )
     finally:
