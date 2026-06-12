@@ -1375,7 +1375,7 @@ def test_homebrew_untrusted_tap_ignores_unrelated_skip_warnings():
     for taps that are not ours must not trigger the trust hint."""
     lines = [
         "Warning: Skipping mongodb/brew because it is not trusted. "
-        "Run `brew trust mongodb/brew` to trust it.",
+        + "Run `brew trust mongodb/brew` to trust it.",
         "Warning: Skipping oven-sh/bun because it is not trusted.",
     ]
     assert update._homebrew_untrusted_tap(lines) is None
@@ -1384,7 +1384,7 @@ def test_homebrew_untrusted_tap_ignores_unrelated_skip_warnings():
 def test_homebrew_untrusted_tap_accepts_own_tap_skip_warning():
     lines = [
         "Warning: Skipping pythoughts-labs/pythinker because it is not trusted. "
-        "Run `brew trust pythoughts-labs/pythinker` to trust it.",
+        + "Run `brew trust pythoughts-labs/pythinker` to trust it.",
     ]
     assert update._homebrew_untrusted_tap(lines) == "pythoughts-labs/pythinker"
 
