@@ -28,6 +28,10 @@
       `a01e5940` spawn-time context fork (Agent fork_context=true seeds
       foreground children with the filtered conversational spine; background
       fork is a tracked follow-up).
+      Workspace isolation re-sized to L: design note at
+      tasks/worktree-isolation-design.md (94 work_dir consumer sites; P1
+      seam migration → P2 worktree lifecycle → P3 RunAgents). Execute P1
+      next iteration.
       NEXT (Tier-1 high/M, plan order): MCP startup
       timeout+diagnostics; MCP per-server tool filtering; subagent context
       fork; workspace isolation for parallel writers; turn rollup analytics;
