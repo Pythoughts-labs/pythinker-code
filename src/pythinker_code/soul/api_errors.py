@@ -41,7 +41,7 @@ def classify_api_error(e: Exception) -> tuple[str, int | None]:
             return "auth", status_code
         if status >= 500:
             return "5xx_server", status_code
-        if status < 500:
+        if status >= 400:
             msg_lower = str(e).lower()
             if any(marker in msg_lower for marker in _CONTEXT_OVERFLOW_MARKERS):
                 return "context_overflow", status_code

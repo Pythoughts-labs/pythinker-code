@@ -225,8 +225,10 @@ def _sparse_reminder(plan_file_path: str | None = None) -> str:
     )
     parts.extend(
         [
-            "Exit only with a decision-complete plan; "
-            "record unconfirmed defaults under Assumptions.",
+            (
+                "Exit only with a decision-complete plan; "
+                "record unconfirmed defaults under Assumptions."
+            ),
             "Use AskUserQuestion to clarify user preferences "
             "when it helps you write a better plan.",
             "If the plan has multiple approaches, "
