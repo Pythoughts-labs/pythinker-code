@@ -1,3 +1,5 @@
+import io
+
 from rich.console import Console
 from rich.text import Text
 
@@ -222,14 +224,86 @@ def test_welcome_chip_degrades_to_ascii(monkeypatch):
     assert "Update available" in chip.plain
 
 
-def test_logo_antenna_blinks_unless_motion_disabled(monkeypatch):
-    monkeypatch.setattr(shell_module, "motion_disabled", lambda: False)
-    spans = shell_module._logo_text().spans
-    assert any("blink" in str(span.style) for span in spans)
+def test_logo_antenna_never_uses_sgr_blink(monkeypatch):
+    """The boot animation owns blinking now; the logo itself must not carry the
+    terminal's infinite slow-blink attribute in either motion mode."""
+    for disabled in (False, True):
+        monkeypatch.setattr(shell_module, "motion_disabled", lambda d=disabled: d)
+        spans = shell_module._logo_text().spans
+        assert not any("blink" in str(span.style) for span in spans)
 
+
+def _terminal_console(width: int = 100, height: int = 50) -> tuple[Console, io.StringIO]:
+    buffer = io.StringIO()
+    console = Console(
+        file=buffer,
+        force_terminal=True,
+        width=width,
+        height=height,
+        color_system="truecolor",
+    )
+    return console, buffer
+
+
+def test_welcome_banner_blinks_antenna_seven_times_then_stops(monkeypatch):
+    """On an interactive terminal the antenna ball blinks exactly
+    _ANTENNA_BLINKS times after the banner prints, then pins steady: each
+    blink is an off+on rewrite of the single antenna cell, plus one final
+    steady write."""
+    console, buffer = _terminal_console()
+    monkeypatch.setattr(shell_module, "console", console)
+    monkeypatch.setattr(shell_module, "get_version", lambda: "9.9.9")
+    monkeypatch.setattr(shell_module, "ascii_glyphs_enabled", lambda: False)
+    monkeypatch.setattr(shell_module, "motion_disabled", lambda: False)
+    monkeypatch.setattr(shell_module, "_ANTENNA_BLINK_OFF_SECONDS", 0.0)
+    monkeypatch.setattr(shell_module, "_ANTENNA_BLINK_ON_SECONDS", 0.0)
+
+    shell_module._print_welcome_info("Pythinker CLI", [])
+
+    output = buffer.getvalue()
+    # 1 antenna in the printed logo + (off + on) per blink + 1 final steady.
+    assert output.count("●") == 1 + 2 * shell_module._ANTENNA_BLINKS + 1
+    # The animation hides and restores the cursor around the rewrites.
+    assert "\x1b[?25l" in output
+    assert "\x1b[?25h" in output
+
+
+def test_welcome_banner_skips_blink_when_motion_disabled(monkeypatch):
+    console, buffer = _terminal_console()
+    monkeypatch.setattr(shell_module, "console", console)
+    monkeypatch.setattr(shell_module, "get_version", lambda: "9.9.9")
+    monkeypatch.setattr(shell_module, "ascii_glyphs_enabled", lambda: False)
     monkeypatch.setattr(shell_module, "motion_disabled", lambda: True)
-    spans = shell_module._logo_text().spans
-    assert not any("blink" in str(span.style) for span in spans)
+
+    shell_module._print_welcome_info("Pythinker CLI", [])
+
+    assert buffer.getvalue().count("●") == 1
+
+
+def test_welcome_banner_skips_blink_on_non_terminal(monkeypatch):
+    console = Console(record=True, width=100, color_system=None)
+    monkeypatch.setattr(shell_module, "console", console)
+    monkeypatch.setattr(shell_module, "get_version", lambda: "9.9.9")
+    monkeypatch.setattr(shell_module, "ascii_glyphs_enabled", lambda: False)
+    monkeypatch.setattr(shell_module, "motion_disabled", lambda: False)
+
+    shell_module._print_welcome_info("Pythinker CLI", [])
+
+    assert console.export_text().count("●") == 1
+
+
+def test_welcome_banner_skips_blink_when_terminal_too_short(monkeypatch):
+    """If the panel is taller than the screen the antenna row may have
+    scrolled off; cursor-relative repaints would land on the wrong line."""
+    console, buffer = _terminal_console(height=3)
+    monkeypatch.setattr(shell_module, "console", console)
+    monkeypatch.setattr(shell_module, "get_version", lambda: "9.9.9")
+    monkeypatch.setattr(shell_module, "ascii_glyphs_enabled", lambda: False)
+    monkeypatch.setattr(shell_module, "motion_disabled", lambda: False)
+
+    shell_module._print_welcome_info("Pythinker CLI", [])
+
+    assert buffer.getvalue().count("●") == 1
 
 
 def test_welcome_tiny_width_does_not_crash(monkeypatch):

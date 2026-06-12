@@ -4,7 +4,66 @@ from __future__ import annotations
 
 import pytest
 
-from pythinker_code.utils.sensitive import is_sensitive_file, sensitive_file_warning
+from pythinker_code.utils.sensitive import (
+    is_sensitive_file,
+    redact_secrets,
+    sensitive_file_warning,
+)
+
+_REDACTED = "[REDACTED]"
+
+
+def test_redact_env_assignment():
+    out = redact_secrets("ADMIN_PASSWORD=cp-zeyLWvKHRh_jDm8guvg")
+    assert "cp-zeyLWvKHRh_jDm8guvg" not in out
+    assert _REDACTED in out
+    # The key name is preserved so the line is still readable.
+    assert out.startswith("ADMIN_PASSWORD=")
+
+
+def test_redact_preserves_numbered_grep_prefix():
+    # A grep result line like "3ADMIN_PASSWORD=secret" keeps its line number.
+    out = redact_secrets("3ADMIN_PASSWORD=hunter2value")
+    assert "hunter2value" not in out
+    assert out == f"3ADMIN_PASSWORD={_REDACTED}"
+
+
+def test_redact_colon_separated_secret():
+    out = redact_secrets("api_key: sk-live-abc123def456")
+    assert "sk-live-abc123def456" not in out
+    assert _REDACTED in out
+
+
+def test_redact_multiple_lines_only_touches_secret_lines():
+    text = "SITE_NAME=Random Pattern\nSECRET_TOKEN=abcdef123456\nPORT=3020"
+    out = redact_secrets(text)
+    assert "Random Pattern" in out
+    assert "3020" in out
+    assert "abcdef123456" not in out
+
+
+def test_redact_ignores_non_secret_keys():
+    text = "USERNAME=rp_editor\nHOST=localhost"
+    assert redact_secrets(text) == text
+
+
+def test_redact_ignores_keys_with_suffix_after_hint():
+    """Keys where the secret hint is NOT immediately before the separator —
+    token_count (hint 'token' + '_count'), access_key_id (hint 'access_key' +
+    '_id') — are intentionally left intact, not treated as secrets."""
+    text = "token_count=100\naccess_key_id=AKIAIOSFODNN7EXAMPLE"
+    assert redact_secrets(text) == text
+
+
+def test_redact_handles_quoted_values():
+    out = redact_secrets('PASSWORD="s3cr3t value"')
+    assert "s3cr3t value" not in out
+    assert _REDACTED in out
+
+
+def test_redact_empty_and_no_secrets():
+    assert redact_secrets("") == ""
+    assert redact_secrets("just some prose about passwords") == ("just some prose about passwords")
 
 
 @pytest.mark.parametrize(

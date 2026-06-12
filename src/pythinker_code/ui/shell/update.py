@@ -648,6 +648,56 @@ def _is_homebrew_upgrade_command(command: list[str]) -> bool:
     return len(command) >= 3 and command[:2] == ["brew", "upgrade"]
 
 
+# Homebrew >= 5 refuses to read formulas from third-party taps until the user
+# runs `brew trust <tap>` (gated on $HOMEBREW_REQUIRE_TAP_TRUST). The hard
+# refusal names the tap our formula lives in and is authoritative; the soft
+# "Skipping <tap>" warning is also emitted for unrelated taps during
+# `brew update`, so it only counts when it names our tap.
+_BREW_REFUSED_UNTRUSTED_TAP_RE = re.compile(r"Refusing to load .+ from untrusted tap (\S+)")
+_BREW_SKIPPED_UNTRUSTED_TAP_RE = re.compile(r"Skipping (\S+) because it is not trusted")
+
+
+def _homebrew_untrusted_tap(output_lines: list[str]) -> str | None:
+    """Tap named in Homebrew's untrusted-tap refusal/skip output, or None."""
+    for line in output_lines:
+        match = _BREW_REFUSED_UNTRUSTED_TAP_RE.search(line)
+        if match:
+            return match.group(1).rstrip(".")
+    for line in output_lines:
+        match = _BREW_SKIPPED_UNTRUSTED_TAP_RE.search(line)
+        if match and "pythinker" in match.group(1):
+            return match.group(1).rstrip(".")
+    return None
+
+
+def _can_prompt_to_trust_tap(print_output: bool) -> bool:
+    """Consent to `brew trust` needs a real terminal; logs/callbacks cannot answer."""
+    return print_output and sys.stdout.isatty()
+
+
+async def _confirm_brew_trust(tap: str) -> bool:
+    """One-keypress consent to trust the tap. Declines on EOF/interrupt."""
+    from prompt_toolkit.shortcuts.choice_input import ChoiceInput
+
+    _t = _get_tui_tokens()
+    console.print(
+        f"[{_t.warning}]Homebrew now requires a one-time 'brew trust' before "
+        "installing from third-party taps.[/]"
+    )
+    try:
+        selection = await ChoiceInput(
+            message=f"Trust the tap {tap} and retry the update?",
+            options=[
+                ("trust", f"Run: brew trust {tap}"),
+                ("skip", "Not now"),
+            ],
+            default="trust",
+        ).prompt_async()
+    except (EOFError, KeyboardInterrupt):
+        return False
+    return selection == "trust"
+
+
 def _installed_homebrew_version() -> str | None:
     """Return the highest pythinker-code version Homebrew reports as installed.
 
@@ -1346,7 +1396,19 @@ async def _do_update(
         _print(f"[{_t.muted}]The upgrade will continue in a new process.[/]")
         sys.exit(0)
 
-    if _is_homebrew_upgrade_command(upgrade_command):
+    # Brew failure diagnosis (untrusted tap, silent no-op) needs the upgrade
+    # output; capture it while still forwarding every line to the caller.
+    captured_output: list[str] = []
+
+    def _run_streamed(command: list[str]) -> int:
+        def _capture(line: str) -> None:
+            captured_output.append(line)
+            if output_callback is not None:
+                output_callback(line)
+
+        return _run_upgrade_command(command, print_output=print_output, output_callback=_capture)
+
+    def _refresh_brew_metadata() -> None:
         # `brew upgrade <formula>` resolves against the locally-cloned tap
         # formula; a stale clone pins the old version and the upgrade silently
         # no-ops ("already installed"). Refresh the tap first. Best-effort: if
@@ -1357,11 +1419,7 @@ async def _do_update(
             # --quiet keeps the refresh from dumping the host's full outdated
             # formula/cask list (often dozens of unrelated lines) before our
             # upgrade output.
-            refresh_code = _run_upgrade_command(
-                ["brew", "update", "--quiet"],
-                print_output=print_output,
-                output_callback=output_callback,
-            )
+            refresh_code = _run_streamed(["brew", "update", "--quiet"])
         except OSError:
             logger.exception("brew update failed to launch:")
         else:
@@ -1370,36 +1428,84 @@ async def _do_update(
                     "brew update exited {code}; continuing with upgrade", code=refresh_code
                 )
 
-    try:
-        returncode = _run_upgrade_command(
-            upgrade_command,
-            print_output=print_output,
-            output_callback=output_callback,
+    def _print_brew_trust_hint(tap: str) -> None:
+        _print(f"[{_t.warning}]Trust the tap once, then update:[/]")
+        _print(f"  brew trust {shlex_quote(tap)}")
+        _print(f"  {upgrade_command_text}")
+
+    if _is_homebrew_upgrade_command(upgrade_command):
+        _refresh_brew_metadata()
+
+    brew_trust_attempted = False
+    while True:
+        try:
+            returncode = _run_streamed(upgrade_command)
+        except OSError as e:
+            logger.exception("Upgrade failed:")
+            _print(f"[{_t.error}]Upgrade failed:[/] {e}")
+            _print(f"Please run manually: {upgrade_command_text}")
+            return UpdateResult.FAILED
+
+        if returncode == 0:
+            break
+
+        untrusted_tap = (
+            _homebrew_untrusted_tap(captured_output)
+            if _is_homebrew_upgrade_command(upgrade_command)
+            else None
         )
-    except OSError as e:
-        logger.exception("Upgrade failed:")
-        _print(f"[{_t.error}]Upgrade failed:[/] {e}")
-        _print(f"Please run manually: {upgrade_command_text}")
+        if untrusted_tap is None:
+            _print(f"[{_t.error}]Upgrade failed. Please try running manually:[/]")
+            _print(f"  {upgrade_command_text}")
+            return UpdateResult.FAILED
+
+        logger.warning("Homebrew refused untrusted tap {tap}", tap=untrusted_tap)
+        _print(
+            f"[{_t.error}]Upgrade failed: Homebrew refuses to load formulas "
+            f"from the untrusted tap {untrusted_tap}.[/]"
+        )
+        if (
+            not brew_trust_attempted
+            and _can_prompt_to_trust_tap(print_output)
+            and await _confirm_brew_trust(untrusted_tap)
+        ):
+            brew_trust_attempted = True
+            try:
+                trust_code = _run_streamed(["brew", "trust", untrusted_tap])
+            except OSError:
+                logger.exception("brew trust failed to launch:")
+                trust_code = 1
+            if trust_code == 0:
+                # `brew update` skipped the untrusted tap above, so its clone
+                # may still be stale — refresh again before retrying.
+                captured_output.clear()
+                _print(f"[{_t.muted}]Tap trusted. Retrying the upgrade...[/]")
+                _refresh_brew_metadata()
+                continue
+            _print(f"[{_t.error}]'brew trust {untrusted_tap}' failed.[/]")
+        _print_brew_trust_hint(untrusted_tap)
         return UpdateResult.FAILED
 
-    if returncode == 0:
-        if _is_homebrew_upgrade_command(upgrade_command):
-            installed = _installed_homebrew_version()
-            if installed is not None and semver_tuple(installed) < semver_tuple(latest_version):
-                # brew exited 0 without changing anything (stale tap / no-op).
-                # Reporting success here is the bug we are fixing: don't.
-                _print(
-                    f"[{_t.error}]Homebrew exited cleanly but pythinker-code is "
-                    f"still {installed}, not {latest_version}.[/]"
-                )
+    if _is_homebrew_upgrade_command(upgrade_command):
+        installed = _installed_homebrew_version()
+        if installed is not None and semver_tuple(installed) < semver_tuple(latest_version):
+            # brew exited 0 without changing anything (stale tap / no-op).
+            # Reporting success here is the bug we are fixing: don't.
+            _print(
+                f"[{_t.error}]Homebrew exited cleanly but pythinker-code is "
+                f"still {installed}, not {latest_version}.[/]"
+            )
+            untrusted_tap = _homebrew_untrusted_tap(captured_output)
+            if untrusted_tap is not None:
+                # The no-op happened because `brew update` skipped our
+                # untrusted tap, pinning the old formula.
+                _print_brew_trust_hint(untrusted_tap)
+            else:
                 _print(
                     f"[{_t.warning}]The Homebrew tap metadata looks stale. "
                     "Run 'brew update' and try '/update' again.[/]"
                 )
-                return UpdateResult.FAILED
-        _print(f"[{_t.success}]Updated successfully![/]")
-        _print(f"[{_t.warning}]Restart Pythinker CLI to use the new version.[/]")
-        return UpdateResult.UPDATED
-    _print(f"[{_t.error}]Upgrade failed. Please try running manually:[/]")
-    _print(f"  {upgrade_command_text}")
-    return UpdateResult.FAILED
+            return UpdateResult.FAILED
+    _print(f"[{_t.success}]Updated successfully![/]")
+    _print(f"[{_t.warning}]Restart Pythinker CLI to use the new version.[/]")
+    return UpdateResult.UPDATED

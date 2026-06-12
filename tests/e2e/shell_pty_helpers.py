@@ -228,6 +228,9 @@ def start_shell_pty(
     env["TERM"] = "xterm-256color"
     env["PYTHONUTF8"] = "1"
     env["PROMPT_TOOLKIT_NO_CPR"] = "1"
+    # Static affordances only: the antenna boot blink (and any future motion)
+    # adds startup latency and cursor-control noise these tests don't assert.
+    env["PYTHINKER_REDUCED_MOTION"] = "1"
     env.pop("NO_COLOR", None)
 
     cmd = [sys.executable, "-m", "pythinker_code.cli"]

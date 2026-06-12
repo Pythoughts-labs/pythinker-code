@@ -26,7 +26,9 @@ from pythinker_core.chat_provider import (
 )
 from rich import box
 from rich.align import Align
+from rich.cells import cell_len
 from rich.console import Group, RenderableType
+from rich.control import Control
 from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
@@ -2150,13 +2152,66 @@ _LOGO_TEMPLATE = (
 def _logo_text() -> Text:
     """Robot mark with a glowing antenna ball.
 
-    The ball carries the terminal's SGR slow-blink attribute, so terminals
-    with blinking text enabled blink it indefinitely; everywhere else the
-    bold light-coral glow reads as "powered on". Reduced motion pins the
-    ball steady and muted.
+    The ball renders steady; the boot animation (`_blink_antenna`) blinks it a
+    fixed number of times after the welcome banner prints, instead of the old
+    indefinite SGR slow-blink. Reduced motion pins the ball muted.
     """
-    antenna_style = _LOGO_CORAL if motion_disabled() else f"blink bold {_LOGO_CORAL_LIT}"
+    antenna_style = _LOGO_CORAL if motion_disabled() else f"bold {_LOGO_CORAL_LIT}"
     return Text.from_markup(_LOGO_TEMPLATE.format(antenna_style=antenna_style))
+
+
+# Boot animation: blink the antenna ball this many times once the agent has
+# loaded and the welcome banner is on screen, then pin it steady.
+_ANTENNA_BLINKS = 7
+_ANTENNA_BLINK_OFF_SECONDS = 0.07
+_ANTENNA_BLINK_ON_SECONDS = 0.09
+_ANTENNA_GLYPH = "●"
+
+
+def _antenna_cell(panel: Panel, panel_width: int) -> tuple[int, int] | None:
+    """Locate the antenna ball in the rendered panel.
+
+    Returns ``(rows_above_cursor, column)`` valid immediately after the panel
+    prints (cursor sits on the line below it), or None when no antenna is
+    rendered. Scans top-down so the first ● found is the antenna, never a
+    same-glyph chip in the panel subtitle.
+    """
+    options = console.options.update_width(panel_width)
+    lines = console.render_lines(panel, options, pad=False)
+    for row, segments in enumerate(lines):
+        column = 0
+        for segment in segments:
+            found = segment.text.find(_ANTENNA_GLYPH)
+            if found != -1:
+                return len(lines) - row, column + cell_len(segment.text[:found])
+            column += cell_len(segment.text)
+    return None
+
+
+def _blink_antenna(rows_up: int, column: int) -> None:
+    """Blink the antenna ball ``_ANTENNA_BLINKS`` times, then pin it steady.
+
+    Deliberately synchronous: nothing else writes to the terminal while it
+    runs, so the cursor-relative addressing stays valid. Runs only on the
+    startup path, bounded to ~1.1s total.
+    """
+    states: list[tuple[Text, float]] = []
+    for _ in range(_ANTENNA_BLINKS):
+        states.append((Text(_ANTENNA_GLYPH, style=_LOGO_NAVY), _ANTENNA_BLINK_OFF_SECONDS))
+        states.append(
+            (Text(_ANTENNA_GLYPH, style=f"bold {_LOGO_CORAL_LIT}"), _ANTENNA_BLINK_ON_SECONDS)
+        )
+    states.append((Text(_ANTENNA_GLYPH, style=f"bold {_LOGO_CORAL_LIT}"), 0.0))
+    try:
+        console.control(Control.show_cursor(False))
+        for glyph, delay in states:
+            console.control(Control.move(y=-rows_up), Control.move_to_column(column))
+            console.print(glyph, end="")
+            console.control(Control.move(y=rows_up), Control.move_to_column(0))
+            if delay:
+                time.sleep(delay)
+    finally:
+        console.control(Control.show_cursor(True))
 
 
 # 1:1 ASCII stand-ins for every decorative glyph the welcome banner emits
@@ -2481,4 +2536,15 @@ def _print_welcome_info(
             padding=(1, 2),
         )
 
-    console.print(_panel())
+    panel = _panel()
+    console.print(panel)
+
+    # Boot animation: blink the antenna 7 times, then stop. Only when the
+    # Unicode logo actually rendered, on a real terminal tall enough that the
+    # antenna row is still on screen, and never under reduced motion.
+    if logo_rendered and console.is_terminal and not motion_disabled():
+        cell = _antenna_cell(panel, panel_width)
+        if cell is not None:
+            rows_up, column = cell
+            if rows_up < console.size.height:
+                _blink_antenna(rows_up, column)

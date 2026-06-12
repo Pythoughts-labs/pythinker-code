@@ -214,6 +214,8 @@ the files and the PATH edit.
 ```sh
 # 1. Install
 brew install Pythoughts-labs/pythinker/pythinker-code
+#    Homebrew ≥ 5 may refuse the untrusted tap; trust it once, then re-run:
+#      brew trust pythoughts-labs/pythinker
 
 # 2. Verify
 pythinker --version
@@ -228,6 +230,11 @@ latest version.
 
 **Upgrade:** `brew upgrade pythinker-code` (Homebrew packages don't
 auto-update; run this whenever you want the latest).
+
+> **Untrusted-tap refusal** — Homebrew ≥ 5 (with `HOMEBREW_REQUIRE_TAP_TRUST`)
+> refuses third-party taps until you trust them once:
+> `brew trust pythoughts-labs/pythinker`. The in-app updater detects the
+> refusal and offers to run it for you.
 
 **Uninstall:** `brew uninstall pythinker-code && brew untap Pythoughts-labs/pythinker`.
 
