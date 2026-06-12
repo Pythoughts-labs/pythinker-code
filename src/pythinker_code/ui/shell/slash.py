@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from prompt_toolkit.shortcuts.choice_input import ChoiceInput
@@ -1734,6 +1735,11 @@ def trust(app: Shell, args: str) -> None:
         console.print(
             f"[{_t_trust.success}]Workspace trusted. Safe mode disabled for this session.[/]"
         )
+        if _persist_project_trust(soul, trusted=True):
+            console.print(
+                f"[{_t_trust.info}]Project config trust recorded — project hooks load "
+                "on /reload or next start.[/]"
+            )
         return
     if mode in {"off", "no", "untrust", "safe"}:
         state.trusted = False
@@ -1743,6 +1749,7 @@ def trust(app: Shell, args: str) -> None:
         soul.runtime.approval.set_auto(False)
         soul.runtime.session.state.approval.auto_approve_actions.clear()
         soul.runtime.session.save_state()
+        _persist_project_trust(soul, trusted=False)
         console.print(
             f"[{_t_trust.warning}]Workspace untrusted. Safe mode enabled; "
             "auto-approval is disabled.[/]"
@@ -1755,6 +1762,22 @@ def trust(app: Shell, args: str) -> None:
     status = "trusted" if state.trusted else "untrusted"
     safe = "on" if state.safe_mode else "off"
     console.print(f"Workspace trust: [bold]{status}[/bold]  safe mode: [bold]{safe}[/bold]")
+
+
+def _persist_project_trust(soul: PythinkerSoul, *, trusted: bool) -> bool:
+    """Record the durable per-project trust decision for the session's repo.
+
+    Returns True when a project root was found and recorded. Sessions outside
+    a git project have no project config scope to gate, so nothing persists.
+    """
+    from pythinker_code.config import find_project_root
+    from pythinker_code.project_trust import set_project_trusted
+
+    root = find_project_root(Path(str(soul.runtime.session.work_dir)))
+    if root is None:
+        return False
+    set_project_trusted(root, trusted)
+    return True
 
 
 @registry.command

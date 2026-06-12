@@ -31,7 +31,7 @@ from pythinker_code.share import get_share_dir
 from pythinker_code.utils.logging import logger
 
 
-def _find_project_root(cwd: Path) -> Path | None:
+def find_project_root(cwd: Path) -> Path | None:
     """Walk up from cwd to find the nearest directory containing .git/.
 
     Returns None when no .git marker is found before reaching the filesystem
@@ -261,10 +261,36 @@ def _load_scoped(project_root: Path | None) -> Config:
     local_dict: dict[str, Any] = {}
 
     if project_root is not None:
+        from pythinker_code.project_trust import is_project_trusted
+
+        project_trusted = is_project_trusted(project_root)
         project_file = project_root / ".pythinker" / "config.toml"
         local_file = project_root / ".pythinker" / "config.local.toml"
-        project_dict = _read_toml(project_file)
-        local_dict = _read_toml(local_file)
+        if project_trusted:
+            project_dict = _read_toml(project_file)
+            local_dict = _read_toml(local_file)
+        else:
+            # An untrusted (e.g. freshly cloned) project must not brick startup
+            # with broken TOML, and must not auto-execute anything: hooks are
+            # shell commands run on lifecycle events, so they load only after
+            # the user records trust (/trust).
+            try:
+                project_dict = _read_toml(project_file)
+                local_dict = _read_toml(local_file)
+            except ConfigError as exc:
+                logger.warning(
+                    "Ignoring unreadable project config in untrusted project: {error}",
+                    error=exc,
+                )
+                project_dict = {}
+                local_dict = {}
+            for scope_dict, scope_file in ((project_dict, project_file), (local_dict, local_file)):
+                if scope_dict.pop("hooks", None) is not None:
+                    logger.warning(
+                        "Project hooks in {file} are disabled until the project is "
+                        "trusted; run /trust to enable them",
+                        file=scope_file,
+                    )
 
     # ── GUARD ─────────────────────────────────────────────────────────────
     if project_file is not None:
@@ -1039,7 +1065,7 @@ def load_config(config_file: Path | None = None) -> Config:
     behaviour used by tests and the CLI --config flag.
     """
     if config_file is None:
-        project_root = _find_project_root(Path.cwd())
+        project_root = find_project_root(Path.cwd())
         return _load_scoped(project_root)
 
     # ── Explicit path: legacy single-file load (unchanged) ────────────────

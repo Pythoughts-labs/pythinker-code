@@ -10,11 +10,11 @@ from pythinker_code.config import (
     Config,
     _apply_env_vars,
     _check_scope_locks,
-    _find_project_root,
     _load_scoped,
     _lookup_provenance,
     _set_nested,
     _type_based_merge,
+    find_project_root,
     get_default_config,
     load_config,
     load_config_from_string,
@@ -319,22 +319,22 @@ def test_auto_deliberate_is_a_valid_policy() -> None:
     assert c.ask_user_question_policy == "auto_deliberate"
 
 
-def test_find_project_root_finds_git_root(tmp_path):
+def testfind_project_root_finds_git_root(tmp_path):
     git_dir = tmp_path / ".git"
     git_dir.mkdir()
     subdir = tmp_path / "src" / "pkg"
     subdir.mkdir(parents=True)
-    assert _find_project_root(subdir) == tmp_path
+    assert find_project_root(subdir) == tmp_path
 
 
-def test_find_project_root_returns_none_outside_git(tmp_path):
+def testfind_project_root_returns_none_outside_git(tmp_path):
     # tmp_path itself has no .git ancestor in practice
-    assert _find_project_root(tmp_path) is None
+    assert find_project_root(tmp_path) is None
 
 
-def test_find_project_root_finds_root_in_cwd(tmp_path):
+def testfind_project_root_finds_root_in_cwd(tmp_path):
     (tmp_path / ".git").mkdir()
-    assert _find_project_root(tmp_path) == tmp_path
+    assert find_project_root(tmp_path) == tmp_path
 
 
 def test_set_nested_flat():
@@ -616,6 +616,8 @@ def test_load_scoped_local_overrides_project(tmp_path, monkeypatch):
 
 
 def test_load_scoped_hooks_concatenate(tmp_path, monkeypatch):
+    from pythinker_code.project_trust import set_project_trusted
+
     monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
     _write_toml(tmp_path / "config.toml", {"hooks": [{"event": "Stop", "command": "user-hook"}]})
     project_root = tmp_path / "myproject"
@@ -623,6 +625,9 @@ def test_load_scoped_hooks_concatenate(tmp_path, monkeypatch):
         project_root / ".pythinker" / "config.toml",
         {"hooks": [{"event": "Stop", "command": "project-hook"}]},
     )
+    # Project hooks auto-execute, so they only merge once the project is
+    # trusted (see test_project_trust.py for the untrusted paths).
+    set_project_trusted(project_root, True)
     config = _load_scoped(project_root=project_root)
     commands = [h.command for h in config.hooks]
     assert "user-hook" in commands
