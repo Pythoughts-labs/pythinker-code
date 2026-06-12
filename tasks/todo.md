@@ -15,8 +15,9 @@
       store + /trust persistence + untrusted-TOML tolerance), `9d1178f4`
       unknown-config-key diagnostics (unknown_config_key_paths +
       PYTHINKER_STRICT_CONFIG).
-      NEXT (Tier-1 high/M, plan order): model-switch context
-      continuity; known-safe command auto-approval; MCP startup
+      `bf549c28` model-switch carry-over (summarize_all with the outgoing
+      model seeds the new session; model_switch_carryover flag).
+      NEXT (Tier-1 high/M, plan order): known-safe command auto-approval; MCP startup
       timeout+diagnostics; MCP per-server tool filtering; subagent context
       fork; workspace isolation for parallel writers; turn rollup analytics;
       feedback diagnostics; fuzzy edit ladder; permissions-state
