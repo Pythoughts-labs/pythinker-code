@@ -2,7 +2,23 @@
 
 ## Active
 
-Branch `refactor/agent-contract-and-tool-metadata` — landing step 1 of
+- [ ] Agent-harness adoption arc (`feat/agent-harness-enhancements`): port the
+      reference harness's remaining coding-agent design (blackbox/agent_x) into
+      pythinker, generically framed. Checkpoint 0 committed (`047a0b29`):
+      orchestration injection provider + name-scrub. Gap-map workflow running
+      (14 clusters, map+verify); next: synthesize adoption plan →
+      checkpointed TDD implementation, clean-code-guard per checkpoint.
+- [ ] Windows shell hardening (researched, not yet implemented): bash-first
+      shell policy (Git Bash probe → pwsh → powershell, never cmd), Windows
+      tool-description guidance (`;` not `&&` on PS 5.1, `$env:`, quoting),
+      docker-daemon-down interceptor (`error during connect` +
+      `pipe/docker` → actionable remediation incl. `docker desktop start`),
+      POSIX-ism lint under PowerShell, `CTRL_BREAK_EVENT` + `taskkill /T`
+      tree-kill, `-EncodedCommand` UTF-16LE for PowerShell args. Full brief in
+      session notes 2026-06-12; permission tokenization is POSIX-blind for
+      PowerShell syntax (gate review needed before shipping).
+
+Merged from `refactor/agent-contract-and-tool-metadata` — step 1 of
 `tasks/design-adoption-blueprint.md` (agent-logic/coding-flow cleanup):
 
 - [x] Task 1: FetchURL untrusted-envelope fix — DONE (ceeeeb78; 3 TDD tests,
