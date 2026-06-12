@@ -48,6 +48,8 @@ class HideOutputDisplayBlock(DisplayBlock):
 
 
 class Terminal(CallableTool2[ShellParams]):
+    emits_tool_execution_started_after_approval = True
+
     def __init__(
         self,
         shell_tool: Shell,

@@ -14,7 +14,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast, overload
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, cast, overload
 
 from pythinker_core.tooling import (
     CallableTool,
@@ -123,21 +123,18 @@ def emit_current_tool_execution_started() -> None:
 
 
 def _tool_defers_execution_started(tool: ToolType) -> bool:
-    return bool(
-        getattr(tool, "emits_tool_execution_started_after_approval", False)
-        or hasattr(tool, "_approval")
-    )
+    return bool(getattr(tool, "emits_tool_execution_started_after_approval", False))
 
 
 def _is_external_side_effect_tool(tool: ToolType) -> bool:
-    """Return True for tool adapters whose side effects are not statically classified."""
-    tool_type = type(tool)
-    module = getattr(tool_type, "__module__", "")
-    qualname = getattr(tool_type, "__qualname__", "")
-    return bool(
-        (module == "pythinker_code.plugin.tool" and qualname.endswith("PluginTool"))
-        or (module == "pythinker_code.soul.toolset" and qualname in {"MCPTool", "WireExternalTool"})
-    )
+    """Return True for tool adapters whose side effects are not statically classified.
+
+    Reads the declarative ``external_side_effect_tool`` class flag (declared on
+    ``MCPTool``, ``WireExternalTool``, and ``PluginTool``) instead of matching
+    module/qualname strings, so a moved or renamed adapter cannot silently fall
+    out of the side-effect classification.
+    """
+    return bool(getattr(tool, "external_side_effect_tool", False))
 
 
 def _mcp_stderr_log_path(runtime: Runtime, server_name: str) -> Path:
@@ -1098,6 +1095,16 @@ class MCPServerInfo:
 
 
 class MCPTool[T: ClientTransport](CallableTool):
+    external_side_effect_tool: ClassVar[bool] = True
+    """Marks tool adapters whose side effects cannot be statically classified.
+
+    Consumed by the permission guard in ``permission.check_tool_call_allowed``
+    — which routes flagged tools through ``check_external_tool_allowed`` — and
+    by profile-gated tool visibility filtering
+    (``PythinkerToolset._is_tool_visible``). Removing or failing to set this
+    flag on an external adapter disables its permission gating.
+    """
+
     def __init__(
         self,
         server_name: str,
@@ -1198,6 +1205,16 @@ class MCPTool[T: ClientTransport](CallableTool):
 
 
 class WireExternalTool(CallableTool):
+    external_side_effect_tool: ClassVar[bool] = True
+    """Marks tool adapters whose side effects cannot be statically classified.
+
+    Consumed by the permission guard in ``permission.check_tool_call_allowed``
+    — which routes flagged tools through ``check_external_tool_allowed`` — and
+    by profile-gated tool visibility filtering
+    (``PythinkerToolset._is_tool_visible``). Removing or failing to set this
+    flag on an external adapter disables its permission gating.
+    """
+
     def __init__(self, *, name: str, description: str, parameters: dict[str, Any]) -> None:
         super().__init__(
             name=name,

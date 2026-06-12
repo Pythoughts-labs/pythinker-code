@@ -84,6 +84,7 @@ class Params(BaseModel):
 class Shell(CallableTool2[Params]):
     name: str = "Shell"
     params: type[Params] = Params
+    emits_tool_execution_started_after_approval = True
 
     def __init__(self, approval: Approval, environment: Environment, runtime: Runtime):
         is_powershell = environment.shell_name == "Windows PowerShell"

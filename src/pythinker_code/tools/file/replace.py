@@ -128,6 +128,7 @@ class StrReplaceFile(CallableTool2[Params]):
     name: str = "StrReplaceFile"
     description: str = _BASE_DESCRIPTION
     params: type[Params] = Params
+    emits_tool_execution_started_after_approval = True
 
     def __init__(self, runtime: Runtime, approval: Approval):
         super().__init__()
