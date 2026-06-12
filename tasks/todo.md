@@ -3,11 +3,13 @@
 ## Active
 
 - [ ] Agent-harness adoption arc (`feat/agent-harness-enhancements`): port the
-      reference harness's remaining coding-agent design (blackbox/agent_x) into
-      pythinker, generically framed. Checkpoint 0 committed (`047a0b29`):
-      orchestration injection provider + name-scrub. Gap-map workflow running
-      (14 clusters, map+verify); next: synthesize adoption plan →
-      checkpointed TDD implementation, clean-code-guard per checkpoint.
+      reference harness's remaining coding-agent design into pythinker,
+      generically framed. Gap map DONE: 124 verified items (3 refuted) ranked in
+      `tasks/agent-harness-adoption-plan.md` (tiers 1-4, execution discipline
+      inside). Done so far: checkpoint 0 `047a0b29` (orchestration injection
+      provider + name-scrub), checkpoint 1 `b40cdb71` (ACP hides
+      AskUserQuestion). Now executing Tier 1 checkpoints: TDD per item,
+      clean-code-guard per checkpoint, make check + pytest green per commit.
 - [ ] Windows shell hardening (researched, not yet implemented): bash-first
       shell policy (Git Bash probe → pwsh → powershell, never cmd), Windows
       tool-description guidance (`;` not `&&` on PS 5.1, `$env:`, quoting),
