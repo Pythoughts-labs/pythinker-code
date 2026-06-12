@@ -101,6 +101,9 @@ async def test_model_switch_starts_fresh_session(monkeypatch: pytest.MonkeyPatch
     config = Config(
         is_from_default_location=True,
         default_model="model-a",
+        # Pin the start-fresh path; carry-over has its own coverage in
+        # tests/core/test_model_switch_carryover.py.
+        model_switch_carryover=False,
         providers={
             "test-provider": LLMProvider(
                 type="pythinker",

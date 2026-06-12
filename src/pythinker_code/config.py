@@ -1060,6 +1060,14 @@ class Config(BaseModel):
             "still appended on top."
         ),
     )
+    model_switch_carryover: bool = Field(
+        default=True,
+        description=(
+            "On /model switches, seed the new session with a plain-text summary "
+            "of the conversation produced by the outgoing model. False keeps the "
+            "previous start-fresh behavior."
+        ),
+    )
     background: BackgroundConfig = Field(
         default_factory=BackgroundConfig, description="Background task configuration"
     )

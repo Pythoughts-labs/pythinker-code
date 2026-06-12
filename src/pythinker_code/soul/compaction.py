@@ -158,14 +158,85 @@ class SimpleCompaction:
         if compact_message is None:
             return CompactionResult(messages=list(to_preserve), usage=None)
 
-        # Call pythinker_core.step to get the compacted context.
-        # NOTE: the summary length is bounded by the chat provider's construction-time
-        # max output tokens (LLM default_max_tokens, or PYTHINKER_MODEL_MAX_TOKENS). A
-        # tighter *per-call* cap would require a max-tokens parameter on
-        # ``ChatProvider.generate`` (and ``pythinker_core.step``), which neither exposes
-        # today; adding one ripples across every provider backend, so it is out of scope here.
         logger.debug("Compacting context...")
-        to_compact = list(prepared.to_compact)
+        summary_message, usage = await self._summarize_to_message(
+            list(prepared.to_compact), compact_message, llm, custom_instruction
+        )
+        if summary_message is None:
+            note = Message(
+                role="user",
+                content=[
+                    system(
+                        "Previous context exceeded the model's window and was "
+                        "dropped without summarization. Re-read files or re-run "
+                        "commands if earlier results are needed."
+                    )
+                ],
+            )
+            return CompactionResult(messages=[note, *to_preserve], usage=None)
+        if usage:
+            logger.debug(
+                "Compaction used {input} input tokens and {output} output tokens",
+                input=usage.input,
+                output=usage.output,
+            )
+
+        content: list[ContentPart] = [
+            system("Previous context has been compacted. Here is the compaction output:")
+        ]
+        # drop thinking parts if any
+        content.extend(part for part in summary_message.content if not isinstance(part, ThinkPart))
+        compacted_messages: list[Message] = [Message(role="user", content=content)]
+        compacted_messages.extend(to_preserve)
+        return CompactionResult(messages=compacted_messages, usage=usage)
+
+    async def summarize_all(
+        self, messages: Sequence[Message], llm: LLM, *, custom_instruction: str = ""
+    ) -> str | None:
+        """Summarize *messages* to plain text with no preserved tail.
+
+        For boundaries where raw history must not cross — e.g. carrying a
+        conversation to a different model, whose provider may reject the
+        outgoing model's thinking blocks or tool-call schemas — only text
+        survives. Returns ``None`` when there is nothing to summarize or
+        nothing fits the context window.
+        """
+        to_compact = list(messages)
+        if not to_compact:
+            return None
+        compact_message = self._build_compact_message(
+            to_compact, custom_instruction=custom_instruction
+        )
+        summary_message, _usage = await self._summarize_to_message(
+            to_compact, compact_message, llm, custom_instruction
+        )
+        if summary_message is None:
+            return None
+        text = "\n".join(
+            part.text for part in summary_message.content if isinstance(part, TextPart)
+        ).strip()
+        return text or None
+
+    async def _summarize_to_message(
+        self,
+        to_compact: list[Message],
+        compact_message: Message,
+        llm: LLM,
+        custom_instruction: str,
+    ) -> tuple[Message | None, TokenUsage | None]:
+        """Run the summarization request, halving the slice on context overflow.
+
+        The request carries the whole to-compact slice, so it can itself
+        exceed the context window. On a context-length rejection the oldest
+        half is dropped and the request retried; ``(None, None)`` means even
+        a single message did not fit.
+
+        NOTE: the summary length is bounded by the chat provider's
+        construction-time max output tokens (LLM default_max_tokens, or
+        PYTHINKER_MODEL_MAX_TOKENS). A tighter per-call cap would require a
+        max-tokens parameter on ``ChatProvider.generate`` (and
+        ``pythinker_core.step``), which neither exposes today.
+        """
         while True:
             try:
                 result = await pythinker_core.step(
@@ -174,12 +245,8 @@ class SimpleCompaction:
                     toolset=EmptyToolset(),
                     history=[compact_message],
                 )
-                break
+                return result.message, result.usage
             except Exception as e:
-                # The compaction request itself can exceed the context window
-                # (it carries the whole to-compact slice). Drop the oldest half
-                # and retry; when nothing summarizable fits, preserve only the
-                # tail with an explicit dropped-context note instead of failing.
                 if not is_context_overflow_error(e):
                     raise
                 if len(to_compact) <= 1:
@@ -187,17 +254,7 @@ class SimpleCompaction:
                         "Compaction request still exceeds the context window with a "
                         "single message; dropping unsummarized older context"
                     )
-                    note = Message(
-                        role="user",
-                        content=[
-                            system(
-                                "Previous context exceeded the model's window and was "
-                                "dropped without summarization. Re-read files or re-run "
-                                "commands if earlier results are needed."
-                            )
-                        ],
-                    )
-                    return CompactionResult(messages=[note, *to_preserve], usage=None)
+                    return None, None
                 dropped = len(to_compact) // 2
                 to_compact = to_compact[dropped:]
                 logger.warning(
@@ -209,23 +266,6 @@ class SimpleCompaction:
                 compact_message = self._build_compact_message(
                     to_compact, custom_instruction=custom_instruction
                 )
-        if result.usage:
-            logger.debug(
-                "Compaction used {input} input tokens and {output} output tokens",
-                input=result.usage.input,
-                output=result.usage.output,
-            )
-
-        content: list[ContentPart] = [
-            system("Previous context has been compacted. Here is the compaction output:")
-        ]
-        compacted_msg = result.message
-
-        # drop thinking parts if any
-        content.extend(part for part in compacted_msg.content if not isinstance(part, ThinkPart))
-        compacted_messages: list[Message] = [Message(role="user", content=content)]
-        compacted_messages.extend(to_preserve)
-        return CompactionResult(messages=compacted_messages, usage=result.usage)
 
     class PrepareResult(NamedTuple):
         compact_message: Message | None

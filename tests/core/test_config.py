@@ -73,6 +73,7 @@ def test_default_config_dump():
             },
             "goal": {"auto_continue": False, "max_continuations": 3},
             "compact_prompt": None,
+            "model_switch_carryover": True,
             "notifications": {
                 "claim_stale_after_ms": 15000,
             },

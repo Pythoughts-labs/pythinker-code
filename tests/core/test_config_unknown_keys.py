@@ -48,9 +48,7 @@ class TestUnknownKeyPaths:
 
     def test_map_fields_allow_arbitrary_keys_but_check_values(self) -> None:
         data = {
-            "providers": {
-                "mine": {"type": "openai", "base_url": "x", "api_key": "k", "tpyo": 1}
-            }
+            "providers": {"mine": {"type": "openai", "base_url": "x", "api_key": "k", "tpyo": 1}}
         }
 
         unknown = unknown_config_key_paths(Config, data)
@@ -86,9 +84,7 @@ class TestLoadTimeDiagnostics:
         with pytest.raises(ConfigError, match="defaut_yolo"):
             _load_scoped(None)
 
-    def test_clean_config_loads_silently_in_strict_mode(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_clean_config_loads_silently_in_strict_mode(self, tmp_path: Path, monkeypatch) -> None:
         monkeypatch.setenv("PYTHINKER_STRICT_CONFIG", "1")
         _write(tmp_path / "share" / "config.toml", "session_retention_days = 30\n")
 

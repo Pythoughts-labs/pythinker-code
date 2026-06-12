@@ -363,10 +363,57 @@ async def model(app: Shell, args: str):
         session.state.additional_dirs = list(current_session.state.additional_dirs)
         if session.state.additional_dirs:
             await asyncio.to_thread(session.save_state)
-        console.print(f"[{_t.success}]Starting fresh session for the new model...[/]")
+        carried = False
+        if config.model_switch_carryover:
+            carried = await _carry_context_to_session(soul, session)
+        if carried:
+            console.print(f"[{_t.success}]Carrying a conversation summary to the new model...[/]")
+        else:
+            console.print(f"[{_t.success}]Starting fresh session for the new model...[/]")
         raise Reload(session_id=session.id)
 
     raise Reload(session_id=soul.runtime.session.id)
+
+
+async def _carry_context_to_session(soul: PythinkerSoul, new_session: Any) -> bool:
+    """Seed the new session with a summary written by the outgoing model.
+
+    Summarizing before the switch means only plain text crosses the model
+    boundary — no provider-specific thinking blocks or tool-call schemas the
+    incoming provider might reject. Best-effort: any failure leaves the new
+    session untouched so the switch degrades to the start-fresh behavior.
+    """
+    from pythinker_code.soul.compaction import SimpleCompaction
+    from pythinker_code.soul.context import Context
+    from pythinker_code.soul.message import system
+    from pythinker_code.utils.logging import logger
+
+    history = list(soul.context.history)
+    llm = soul.runtime.llm
+    if not history or llm is None:
+        return False
+    compaction = SimpleCompaction(base_prompt=soul.runtime.config.compact_prompt)
+    try:
+        summary = await compaction.summarize_all(history, llm)
+    except Exception:
+        logger.warning("Model-switch carry-over summarization failed", exc_info=True)
+        return False
+    if not summary:
+        return False
+    from pythinker_core.message import Message
+
+    seed = Message(
+        role="user",
+        content=[
+            system(
+                "Summary of the conversation so far, carried over from the previous "
+                f"model session:\n{summary}\nContinue from this state. Details were "
+                "summarized away; re-read files before editing them."
+            )
+        ],
+    )
+    await Context(file_backend=new_session.context_file).append_message(seed)
+    return True
 
 
 _PROVIDER_LABEL_OVERRIDES = {
