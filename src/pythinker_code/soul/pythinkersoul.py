@@ -84,6 +84,7 @@ from pythinker_code.soul.dynamic_injections.goal_mode import GoalModeInjectionPr
 from pythinker_code.soul.dynamic_injections.inline_commands import InlineCommandReminderProvider
 from pythinker_code.soul.dynamic_injections.model_defense import ModelDefenseInjectionProvider
 from pythinker_code.soul.dynamic_injections.orchestration import OrchestrationInjectionProvider
+from pythinker_code.soul.dynamic_injections.permissions_state import PermissionsInjectionProvider
 from pythinker_code.soul.dynamic_injections.plan_mode import PlanModeInjectionProvider
 from pythinker_code.soul.flow_runner import FLOW_COMMAND_PREFIX, FlowRunner
 from pythinker_code.soul.message import (
@@ -415,6 +416,9 @@ class PythinkerSoul:
             # Self-filtering: root-only; nudges substantial normal-mode tasks toward
             # direct tools, todos, RunAgents, and verification.
             OrchestrationInjectionProvider(),
+            # Self-filtering: root-only; posture-fingerprinted so it re-emits
+            # exactly when yolo/auto/safe-mode/profile/session-approvals change.
+            PermissionsInjectionProvider(),
             *(
                 []
                 if self._runtime.config.skip_auto_prompt_injection

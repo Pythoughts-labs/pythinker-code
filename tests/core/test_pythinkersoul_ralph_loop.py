@@ -216,6 +216,20 @@ async def test_ralph_loop_replays_original_prompt(runtime: Runtime, tmp_path: Pa
                         ),
                     ],
                 ),
+                Message(
+                    role="user",
+                    content=[
+                        TextPart(
+                            text="""\
+<system-reminder>
+Permissions state: profile 'implement' (implementation mode). Safe mode off; yolo off; auto off. File mutation allowed; shell mutation allowed; network tools allowed.
+Auto-approved without prompting: provably read-only commands (ls, cat, grep, git status/log/diff, ...); session-approved actions: none.
+Command shaping: the shell gate classifies plain commands only — command substitution $(...), backticks, and operators glued to words are rejected as hidden commands. Write plain, separated commands so the classifier can see them.
+</system-reminder>\
+"""
+                        )
+                    ],
+                ),
                 Message(role="assistant", content=[TextPart(text="first")]),
                 Message(
                     role="user",
@@ -284,6 +298,20 @@ async def test_ralph_loop_stops_on_choice(runtime: Runtime, tmp_path: Path) -> N
                         TextPart(text="do it"),
                     ],
                 ),
+                Message(
+                    role="user",
+                    content=[
+                        TextPart(
+                            text="""\
+<system-reminder>
+Permissions state: profile 'implement' (implementation mode). Safe mode off; yolo off; auto off. File mutation allowed; shell mutation allowed; network tools allowed.
+Auto-approved without prompting: provably read-only commands (ls, cat, grep, git status/log/diff, ...); session-approved actions: none.
+Command shaping: the shell gate classifies plain commands only — command substitution $(...), backticks, and operators glued to words are rejected as hidden commands. Write plain, separated commands so the classifier can see them.
+</system-reminder>\
+"""
+                        )
+                    ],
+                ),
                 Message(role="assistant", content=[TextPart(text="first")]),
                 Message(
                     role="user",
@@ -338,6 +366,20 @@ async def test_ralph_loop_stops_on_tool_rejected(runtime: Runtime, tmp_path: Pat
                     ],
                 ),
                 Message(
+                    role="user",
+                    content=[
+                        TextPart(
+                            text="""\
+<system-reminder>
+Permissions state: profile 'implement' (implementation mode). Safe mode off; yolo off; auto off. File mutation allowed; shell mutation allowed; network tools allowed.
+Auto-approved without prompting: provably read-only commands (ls, cat, grep, git status/log/diff, ...); session-approved actions: none.
+Command shaping: the shell gate classifies plain commands only — command substitution $(...), backticks, and operators glued to words are rejected as hidden commands. Write plain, separated commands so the classifier can see them.
+</system-reminder>\
+"""
+                        )
+                    ],
+                ),
+                Message(
                     role="assistant",
                     content=[],
                     tool_calls=[
@@ -380,6 +422,20 @@ async def test_ralph_loop_disabled_skips_loop_prompt(runtime: Runtime, tmp_path:
         snapshot(
             [
                 Message(role="user", content=[TextPart(text="hello")]),
+                Message(
+                    role="user",
+                    content=[
+                        TextPart(
+                            text="""\
+<system-reminder>
+Permissions state: profile 'implement' (implementation mode). Safe mode off; yolo off; auto off. File mutation allowed; shell mutation allowed; network tools allowed.
+Auto-approved without prompting: provably read-only commands (ls, cat, grep, git status/log/diff, ...); session-approved actions: none.
+Command shaping: the shell gate classifies plain commands only — command substitution $(...), backticks, and operators glued to words are rejected as hidden commands. Write plain, separated commands so the classifier can see them.
+</system-reminder>\
+"""
+                        )
+                    ],
+                ),
                 Message(role="assistant", content=[TextPart(text="done")]),
             ]
         ),

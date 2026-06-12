@@ -237,9 +237,9 @@ class TestManualPlanModeInjections:
 
         injections = await soul._collect_injections()
 
-        assert len(injections) == 1
-        assert injections[0].type == "plan_mode"
-        assert "Plan mode is active." in injections[0].content
+        plan_injections = [i for i in injections if i.type.startswith("plan_mode")]
+        assert len(plan_injections) == 1
+        assert "Plan mode is active." in plan_injections[0].content
         assert soul._pending_plan_activation_injection is False
         assert soul.context.history == []
 
@@ -260,7 +260,7 @@ class TestManualPlanModeInjections:
         assert soul._pending_plan_activation_injection is False
 
         injections = await soul._collect_injections()
-        assert injections == []
+        assert [i for i in injections if i.type.startswith("plan_mode")] == []
 
     async def test_tool_toggle_does_not_queue_manual_activation_injection(
         self,

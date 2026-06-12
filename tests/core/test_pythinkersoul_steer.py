@@ -136,9 +136,12 @@ async def test_consume_pending_steers_appends_history_before_emitting_wire_event
     sent: list[SteerInput] = []
 
     def fake_wire_send(msg) -> None:
-        assert soul.context.history == [
-            Message(role="user", content=[TextPart(text="Follow up now.")])
+        persisted = [
+            m
+            for m in soul.context.history
+            if not (m.role == "user" and "Permissions state:" in m.extract_text(" "))
         ]
+        assert persisted == [Message(role="user", content=[TextPart(text="Follow up now.")])]
         assert isinstance(msg, SteerInput)
         sent.append(msg)
 
@@ -511,7 +514,12 @@ async def test_run_soul_emits_steer_input_and_continues_same_turn(
 
     await run_soul(soul, "original question", ui_loop, asyncio.Event())
 
-    assert soul.context.history == [
+    persisted = [
+        m
+        for m in soul.context.history
+        if not (m.role == "user" and "Permissions state:" in m.extract_text(" "))
+    ]
+    assert persisted == [
         Message(role="user", content=[TextPart(text="original question")]),
         Message(role="assistant", content=[TextPart(text="first answer")]),
         Message(role="user", content=[TextPart(text="follow-up steer")]),
