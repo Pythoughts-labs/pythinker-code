@@ -6,6 +6,7 @@ import sys
 import time
 from functools import partial
 from pathlib import Path
+from uuid import uuid4
 
 from pythinker_core.chat_provider import (
     APIConnectionError,
@@ -31,6 +32,7 @@ from pythinker_code.soul.pythinkersoul import PythinkerSoul
 from pythinker_code.ui.print.visualize import visualize
 from pythinker_code.utils.logging import logger, open_original_stderr
 from pythinker_code.utils.signals import install_sigint_handler
+from pythinker_code.wire.types import Notification
 
 
 class Print:
@@ -409,19 +411,20 @@ class Print:
                 command = None
         except LLMNotSet as e:
             logger.warning("LLM not set — user has no provider configured")
-            print(str(e))
+            self._emit_failure(str(e), error_type="LLMNotSet", exit_code=ExitCode.FAILURE)
             return ExitCode.FAILURE
         except LLMNotSupported as e:
             logger.exception("LLM not supported:")
-            print(str(e))
+            self._emit_failure(str(e), error_type="LLMNotSupported", exit_code=ExitCode.FAILURE)
             return ExitCode.FAILURE
         except ChatProviderError as e:
             logger.exception("LLM provider error:")
-            print(str(e))
-            return self._classify_provider_error(e)
+            exit_code = self._classify_provider_error(e)
+            self._emit_failure(str(e), error_type=type(e).__name__, exit_code=exit_code)
+            return exit_code
         except MaxStepsReached as e:
             logger.warning("Max steps reached: {n_steps}", n_steps=e.n_steps)
-            print(str(e))
+            diagnostic = str(e)
             # Graceful handoff: a tools-disabled summary of progress / next steps
             # for the human who resumes (best-effort; falls back to the line above).
             if isinstance(self.soul, PythinkerSoul):
@@ -433,19 +436,58 @@ class Print:
                     logger.warning("Max-steps handoff failed", exc_info=True)
                     handoff = None
                 if handoff:
-                    print(f"\n── handoff ──\n{handoff}")
+                    diagnostic += f"\n\n── handoff ──\n{handoff}"
+            self._emit_failure(diagnostic, error_type="MaxStepsReached", exit_code=ExitCode.FAILURE)
             return ExitCode.FAILURE
         except RunCancelled:
             logger.error("Interrupted by user")
-            print("Interrupted by user")
+            self._emit_failure(
+                "Interrupted by user", error_type="RunCancelled", exit_code=ExitCode.FAILURE
+            )
             return ExitCode.FAILURE
         except BaseException as e:
             logger.exception("Unknown error:")
-            print(f"Unknown error: {e}")
+            self._emit_failure(
+                f"Unknown error: {e}", error_type=type(e).__name__, exit_code=ExitCode.FAILURE
+            )
             raise
         finally:
             remove_sigint()
         return ExitCode.FAILURE
+
+    def _emit_failure(self, diagnostic: str, *, error_type: str, exit_code: int) -> None:
+        """Route a failure diagnostic to stderr, keeping stdout a data channel.
+
+        ``sys.stderr`` may already be redirected to the logger pipe at this
+        point in the CLI lifecycle, so write through the pre-redirect fd when
+        one exists. In stream-json mode every stdout line must parse as JSON,
+        so the human text is followed by one structured error record on
+        stdout for machine parsers.
+        """
+        notice = diagnostic if diagnostic.endswith("\n") else diagnostic + "\n"
+        with open_original_stderr() as stream:
+            if stream is not None:
+                stream.write(notice.encode("utf-8", errors="replace"))
+                stream.flush()
+            else:
+                sys.stderr.write(notice)
+        if self.output_format == "stream-json":
+            record = Notification(
+                id=str(uuid4()),
+                category="run",
+                type="error",
+                source_kind="print",
+                source_id="print",
+                title=error_type,
+                body=diagnostic,
+                severity="error",
+                created_at=time.time(),
+                payload={"exit_code": int(exit_code)},
+            )
+            # Builtin stdout write, NOT the module's rich print: rich soft-wraps
+            # long lines, which would tear the JSON record across lines.
+            sys.stdout.write(record.model_dump_json(exclude_none=True) + "\n")
+            sys.stdout.flush()
 
     _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
