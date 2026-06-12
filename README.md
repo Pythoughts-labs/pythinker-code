@@ -50,12 +50,14 @@ It speaks the [**Agent Client Protocol (ACP)**](https://github.com/agentclientpr
 
 ---
 
-## 🆕 What's New in 0.40.1
+## 🆕 What's New in 0.41.0
 
-- **Windows/Linux native installers: web UI no longer 404s on `/`.** The installer CI froze the app without building the gitignored web/vis frontend bundles, so `pythinker web` opened a browser onto `GET /?token=… → 404 Not Found`. Both installer workflows now build the bundles before PyInstaller (matching the PyPI release flow — pip/wheel installs were never affected), every PyInstaller spec refuses to freeze when the bundles are missing, and a build that still lacks them serves an explanatory 503 page instead of a bare 404.
-- **Startup banner renders on legacy Windows consoles.** `pythinker web` / `pythinker vis` now honor the existing ASCII-glyph detection with width-preserving fallbacks and degrade per line instead of crashing when the output stream rejects Unicode (e.g. PowerShell with cp1252).
+- **Goal-driven execution: new `/goal`, `/best-practices`, and `/learn` commands.** `/goal <objective>` sets a persistent thread goal the agent pursues across turns, restarts, and compaction until it is verifiably complete — with an evidence-based completion audit, a root-only `UpdateGoal` tool to mark it `complete`/`blocked`, and opt-in `goal.auto_continue` to loop automatically toward it. `/best-practices` (alias `/bp`) injects engineering-discipline guidance now also shipped always-on in the default prompt, and `/learn` distills session lessons into per-project memory.
+- **Statusline v2: a full redesign of the shell footer.** Colored segments with a gradient context bar, working spinner, live token speed, session cost/budget, thinking-effort badge, git diff counts, elapsed time, and a clock — all fail-closed and tunable via the new `/statusline` command (persisted under `[tui.statusline]`), with ASCII fallback and narrow-width graceful degradation.
+- **Agentic orchestration hardening.** Parallel subagents and background tasks get distinctive codenames, foreground `RunAgents` batches run concurrently and roll up child RISKS/BLOCKERS, the review pipeline decomposes large diffs and adversarially verifies every finding, and restricted-profile subagents are now offline, secret-scrubbed, and workspace-jailed by default — enforced at execution time, not just prompted.
+- **TUI polish.** Flicker-free streaming on synchronized-output terminals, inline ghost-completion for slash commands, monotonic tool-call rows, shell error briefs that surface the failing command's output, and no more transient `<invalid>` flashes or raw-mode hangs on exit.
 
-Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.40.1`, or use the native installer for your platform from the [Releases page](https://github.com/Pythoughts-labs/pythinker-code/releases/latest).
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.41.0`, or use the native installer for your platform from the [Releases page](https://github.com/Pythoughts-labs/pythinker-code/releases/latest).
 
 
 ---
@@ -145,7 +147,7 @@ matches your OS — no Python, Node, or `uv` prerequisite.
 
 | Platform | Recommended install | Artifact source |
 |---|---|---|
-| **🪟 Windows** | `irm https://pythinker.com/install.ps1 \| iex` | `PythinkerSetup-0.40.1.exe` from [Releases](https://github.com/Pythoughts-labs/pythinker-code/releases/latest) |
+| **🪟 Windows** | `irm https://pythinker.com/install.ps1 \| iex` | `PythinkerSetup-0.41.0.exe` from [Releases](https://github.com/Pythoughts-labs/pythinker-code/releases/latest) |
 | **<img src="https://img.shields.io/badge/-macOS-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS"> / <img src="https://img.shields.io/badge/-Linux-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux">** | `curl -fsSL https://pythinker.com/install.sh \| bash` | native tarball from [Releases](https://github.com/Pythoughts-labs/pythinker-code/releases/latest) |
 | **<img src="https://img.shields.io/badge/-macOS-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS"> — Homebrew** | `brew install Pythoughts-labs/pythinker/pythinker-code` | auto-published Homebrew tap |
 | **🐳 Docker** | `docker run --rm -it ghcr.io/pythoughts-labs/pythinker-code` | GHCR multi-arch image |
@@ -173,7 +175,7 @@ pythinker                      # start the interactive TUI
 
 ### 🪟 Windows — native installer
 
-`PythinkerSetup-0.40.1.exe` is a signed* Inno Setup wizard. Installs per-user
+`PythinkerSetup-0.41.0.exe` is a signed* Inno Setup wizard. Installs per-user
 into `%LOCALAPPDATA%\Programs\Pythinker`, registers `pythinker` on your user
 PATH (`HKCU\Environment`), broadcasts `WM_SETTINGCHANGE` so new shells see
 the change. **No UAC prompt.**
@@ -184,13 +186,13 @@ irm https://pythinker.com/install.ps1 | iex
 
 # Or manually download the installer + checksum from the Releases page,
 # verify with Get-FileHash, then run:
-.\PythinkerSetup-0.40.1.exe
+.\PythinkerSetup-0.41.0.exe
 
 # Open a fresh PowerShell
 pythinker --version
 ```
 
-**Per-machine install** (IT-managed boxes): `.\PythinkerSetup-0.40.1.exe /ALLUSERS`
+**Per-machine install** (IT-managed boxes): `.\PythinkerSetup-0.41.0.exe /ALLUSERS`
 installs to `%ProgramFiles%\Pythinker` and writes PATH to HKLM (requires admin).
 
 **Upgrade:** `pythinker update` from inside the running app — it downloads
@@ -241,26 +243,26 @@ attached to every GitHub Release.
 
 ```sh
 # Debian / Ubuntu (x86_64)
-sudo dpkg -i pythinker-code_0.40.1_amd64.deb
+sudo dpkg -i pythinker-code_0.41.0_amd64.deb
 sudo apt-get install -f       # only if dpkg reports missing deps
 
 # Debian / Ubuntu (ARM64)
-sudo dpkg -i pythinker-code_0.40.1_arm64.deb
+sudo dpkg -i pythinker-code_0.41.0_arm64.deb
 
 # Fedora / RHEL / openSUSE (x86_64)
-curl -LO https://github.com/Pythoughts-labs/pythinker-code/releases/download/v0.40.1/pythinker-code-0.40.1.x86_64.rpm
-curl -LO https://github.com/Pythoughts-labs/pythinker-code/releases/download/v0.40.1/pythinker-code-0.40.1.x86_64.rpm.sha256
-sha256sum -c pythinker-code-0.40.1.x86_64.rpm.sha256
+curl -LO https://github.com/Pythoughts-labs/pythinker-code/releases/download/v0.41.0/pythinker-code-0.41.0.x86_64.rpm
+curl -LO https://github.com/Pythoughts-labs/pythinker-code/releases/download/v0.41.0/pythinker-code-0.41.0.x86_64.rpm.sha256
+sha256sum -c pythinker-code-0.41.0.x86_64.rpm.sha256
 # Fedora / RHEL:
-sudo dnf install ./pythinker-code-0.40.1.x86_64.rpm
+sudo dnf install ./pythinker-code-0.41.0.x86_64.rpm
 # openSUSE:
-sudo zypper install ./pythinker-code-0.40.1.x86_64.rpm
+sudo zypper install ./pythinker-code-0.41.0.x86_64.rpm
 
 # Fedora / RHEL (aarch64)
-curl -LO https://github.com/Pythoughts-labs/pythinker-code/releases/download/v0.40.1/pythinker-code-0.40.1.aarch64.rpm
-curl -LO https://github.com/Pythoughts-labs/pythinker-code/releases/download/v0.40.1/pythinker-code-0.40.1.aarch64.rpm.sha256
-sha256sum -c pythinker-code-0.40.1.aarch64.rpm.sha256
-sudo dnf install ./pythinker-code-0.40.1.aarch64.rpm
+curl -LO https://github.com/Pythoughts-labs/pythinker-code/releases/download/v0.41.0/pythinker-code-0.41.0.aarch64.rpm
+curl -LO https://github.com/Pythoughts-labs/pythinker-code/releases/download/v0.41.0/pythinker-code-0.41.0.aarch64.rpm.sha256
+sha256sum -c pythinker-code-0.41.0.aarch64.rpm.sha256
+sudo dnf install ./pythinker-code-0.41.0.aarch64.rpm
 ```
 
 Both packages drop a small `/usr/bin/pythinker` launcher that execs the real
@@ -269,8 +271,8 @@ binary under `/usr/lib/pythinker/`, so your `$PATH` stays tidy.
 **Verify before install:**
 
 ```sh
-sha256sum -c pythinker-code_0.40.1_amd64.deb.sha256        # Debian/Ubuntu
-sha256sum -c pythinker-code-0.40.1.x86_64.rpm.sha256       # Fedora/RHEL
+sha256sum -c pythinker-code_0.41.0_amd64.deb.sha256        # Debian/Ubuntu
+sha256sum -c pythinker-code-0.41.0.x86_64.rpm.sha256       # Fedora/RHEL
 ```
 
 **Upgrade:** download the new `.deb`/`.rpm` from Releases and `dpkg -i` /
