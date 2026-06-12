@@ -553,6 +553,10 @@ _SAFE_GIT_SUBCOMMANDS = frozenset(
 _SYSTEM_BIN_DIRS = frozenset(
     {"/bin", "/usr/bin", "/usr/local/bin", "/sbin", "/usr/sbin", "/opt/homebrew/bin"}
 )
+# The only env assignments allowed to prefix an elidable command. Anything
+# else fails closed — PATH/LD_*/DYLD_*/GIT_* prefixes can redirect or inject
+# code into an otherwise read-only command.
+_SAFE_INLINE_ENV_VARS = frozenset({"LANG", "LC_ALL", "LC_COLLATE", "LC_CTYPE", "LC_MESSAGES", "TZ"})
 
 
 def is_known_safe_command(command: str) -> bool:
@@ -591,9 +595,15 @@ def is_known_safe_command(command: str) -> bool:
 
 def _is_safe_readonly_segment(tokens: list[str]) -> bool:
     rest = list(tokens)
-    # Allow pure KEY=VALUE env-assignment prefixes (FOO=1 grep x); anything
-    # else that precedes the command (wrappers) disqualifies below.
-    while rest and "=" in rest[0] and not rest[0].startswith("=") and rest[0].split("=", 1)[0]:
+    # Env-assignment prefixes are allowlisted, not generically skipped: an
+    # arbitrary KEY=VALUE prefix is an injection vector (PATH=/tmp/evil ls
+    # resolves ls from the attacker dir; LD_PRELOAD/DYLD_*/GIT_PAGER inject
+    # code into otherwise read-only commands). Only harmless locale/timezone
+    # assignments may prefix an elidable command.
+    while rest and "=" in rest[0] and not rest[0].startswith("="):
+        key = rest[0].split("=", 1)[0]
+        if key not in _SAFE_INLINE_ENV_VARS:
+            return False
         rest.pop(0)
     if not rest:
         return False

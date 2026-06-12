@@ -27,7 +27,7 @@ SAFE = [
     "wc -l file.txt",
     "ls | head -3",
     "pwd && git status",
-    "FOO=1 grep x file",
+    "LC_ALL=C grep x file",
     "/usr/bin/git status",
     "echo done",
 ]
@@ -58,6 +58,11 @@ UNSAFE = [
     "curl http://example.com",
     "ls | tee /tmp/out",
     "sort -o /tmp/out input",
+    "FOO=1 grep x file",
+    "PATH=/tmp/evil ls",
+    "LD_PRELOAD=/tmp/evil.so cat f",
+    "DYLD_INSERT_LIBRARIES=/tmp/e.dylib pwd",
+    "GIT_PAGER=rm git log",
     "",
     "   ",
 ]
