@@ -143,6 +143,38 @@ def test_render_pinned_status_tail_empty_when_turn_inactive() -> None:
     assert view2.render_pinned_status_tail(80).value == ""
 
 
+def test_pinned_tail_hidden_while_foreground_tool_executes() -> None:
+    """A long-running foreground tool (e.g. a server started via the shell tool)
+    must not animate the shimmer verb spinner: the agent is awaiting the
+    subprocess, not thinking. The tool card's own running marker carries the
+    liveness instead, so the spinner reappears only once the tool finishes and
+    the agent is processing the result again."""
+    import time as _time
+
+    from pythinker_core.message import ToolCall
+    from pythinker_core.tooling import ToolReturnValue
+
+    from pythinker_code.ui.shell.visualize._blocks import _ToolCallBlock
+
+    view = object.__new__(_PromptLiveView)
+    view._turn_ended = False
+    view._active_turn_depth = 1
+    view._turn_start_time = _time.monotonic()
+
+    block = _ToolCallBlock(
+        ToolCall(id="tc-1", function=ToolCall.FunctionBody(name="Shell", arguments="{}"))
+    )
+    block.mark_execution_started()
+    view._tool_call_blocks = {block.tool_call_id: block}
+
+    # While the foreground command runs, the shimmer verb spinner is suppressed.
+    assert view.render_pinned_status_tail(80).value == ""
+
+    # Once the tool finishes, the agent is processing again → spinner returns.
+    block.finish(ToolReturnValue(is_error=False, output="ok", message="ok", display=[]))
+    assert view.render_pinned_status_tail(80).value.strip() != ""
+
+
 @pytest.mark.asyncio
 async def test_prompt_live_view_status_refresh_invalidates_active_turn(monkeypatch) -> None:
     invalidations: list[str] = []
