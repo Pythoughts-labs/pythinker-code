@@ -32,6 +32,8 @@
       P1 seam `56d6fa53` + P2 lifecycle `8bc6c697` DONE (background
       write-profile children get per-agent worktrees, diff-summary reports,
       recovery-aware cleanup). P3 DONE (chain verified end-to-end; descriptions state enforced semantics). Isolation item CLOSED.
+      `eb13fdae` fuzzy edit-recovery ladder (rstrip→strip→unicode-punct
+      line-window seek in StrReplaceFile; ambiguity contract kept).
       NEXT (Tier-1 high/M, plan order): MCP startup
       timeout+diagnostics; MCP per-server tool filtering; subagent context
       fork; workspace isolation for parallel writers; turn rollup analytics;
