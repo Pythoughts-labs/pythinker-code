@@ -228,6 +228,40 @@ def _classify_mcp_connect_error(error: BaseException, server_name: str) -> str:
     return text.splitlines()[0][:200]
 
 
+@dataclass(frozen=True, slots=True)
+class McpToolFilter:
+    """Optional per-server tool scoping from mcp.json.
+
+    ``enabledTools`` (exclusive allowlist) and ``disabledTools`` (denylist,
+    wins on conflict) keep noisy servers from flooding the model tool list
+    and double as a safety scoping knob. No filter fields → permissive.
+    """
+
+    enabled: frozenset[str] | None = None
+    deny: frozenset[str] = frozenset()
+
+    @classmethod
+    def from_server_config(cls, server_config: Any) -> McpToolFilter:
+        enabled: object = getattr(server_config, "enabledTools", None)
+        disabled: object = getattr(server_config, "disabledTools", None) or ()
+        enabled_names: frozenset[str] | None = None
+        if isinstance(enabled, list):
+            enabled_names = frozenset(
+                name for name in cast(list[Any], enabled) if isinstance(name, str)
+            )
+        deny_names: frozenset[str] = frozenset()
+        if isinstance(disabled, list):
+            deny_names = frozenset(
+                name for name in cast(list[Any], disabled) if isinstance(name, str)
+            )
+        return cls(enabled=enabled_names, deny=deny_names)
+
+    def allows(self, tool_name: str) -> bool:
+        if tool_name in self.deny:
+            return False
+        return self.enabled is None or tool_name in self.enabled
+
+
 type ToolType = CallableTool | CallableTool2[Any]
 type ToolCallKey = tuple[str, str]
 
@@ -1033,9 +1067,29 @@ class PythinkerToolset:
 
             async def _open_and_inventory() -> None:
                 async with server_info.client as client:
+                    skipped: list[str] = []
                     for tool in await client.list_tools():
+                        if server_info.tool_filter and not server_info.tool_filter.allows(
+                            tool.name
+                        ):
+                            skipped.append(tool.name)
+                            continue
                         server_info.tools.append(
-                            MCPTool(server_name, tool, client, runtime=runtime)
+                            MCPTool(
+                                server_name,
+                                tool,
+                                client,
+                                runtime=runtime,
+                                tool_filter=server_info.tool_filter,
+                            )
+                        )
+                    if skipped:
+                        logger.info(
+                            "MCP server {server_name}: {n} tools filtered out by "
+                            "mcp.json enabledTools/disabledTools: {names}",
+                            server_name=server_name,
+                            n=len(skipped),
+                            names=", ".join(sorted(skipped)),
                         )
                     # Resources/prompts are optional MCP capabilities; a server
                     # that exposes none (or does not support the request) must
@@ -1121,7 +1175,12 @@ class PythinkerToolset:
                 client = fastmcp.Client(MCPConfig(mcpServers={server_name: server_config}))
                 _configure_mcp_client_stderr_log(client, runtime, server_name)
                 self._mcp_servers[server_name] = MCPServerInfo(
-                    status="pending", client=client, tools=[], resources=[], prompts=[]
+                    status="pending",
+                    client=client,
+                    tools=[],
+                    resources=[],
+                    prompts=[],
+                    tool_filter=McpToolFilter.from_server_config(server_config),
                 )
 
         if not any(server_info.status == "pending" for server_info in self._mcp_servers.values()):
@@ -1177,6 +1236,8 @@ class MCPServerInfo:
     prompts: list[mcp.types.Prompt]
     # One short actionable line explaining a failed connect, surfaced by /mcp.
     error: str | None = None
+    # Optional mcp.json enabledTools/disabledTools scoping for this server.
+    tool_filter: McpToolFilter | None = None
 
 
 class MCPTool[T: ClientTransport](CallableTool):
@@ -1207,6 +1268,7 @@ class MCPTool[T: ClientTransport](CallableTool):
         client: fastmcp.Client[T],
         *,
         runtime: Runtime,
+        tool_filter: McpToolFilter | None = None,
         **kwargs: Any,
     ):
         super().__init__(
@@ -1227,6 +1289,7 @@ class MCPTool[T: ClientTransport](CallableTool):
         self._runtime = runtime
         self._timeout = timedelta(milliseconds=runtime.config.mcp.client.tool_call_timeout_ms)
         self._action_name = f"mcp:{mcp_tool.name}"
+        self._tool_filter = tool_filter
 
     @property
     def mcp_server_name(self) -> str:
@@ -1234,6 +1297,17 @@ class MCPTool[T: ClientTransport](CallableTool):
         return self._mcp_server_name
 
     async def __call__(self, *args: Any, **kwargs: Any) -> ToolReturnValue:
+        # Call-time re-check of the list-time filter: defense in depth for
+        # tool maps shared across agents (e.g. runtime.mcp_tools handed to
+        # subagent specs) and future live tools/list_changed updates.
+        if self._tool_filter is not None and not self._tool_filter.allows(self._mcp_tool.name):
+            return ToolError(
+                message=(
+                    f"MCP tool '{self._mcp_tool.name}' is disabled for server "
+                    f"'{self._mcp_server_name}' by mcp.json tool filtering."
+                ),
+                brief="Tool disabled",
+            )
         description = f"Call MCP tool `{self._mcp_tool.name}`."
         result = await self._runtime.approval.request(self.name, self._action_name, description)
         if not result:
