@@ -1,4 +1,4 @@
-"""Collect git repository context for explore subagents."""
+"""Collect git repository context for read-oriented subagents."""
 
 from __future__ import annotations
 
@@ -13,10 +13,11 @@ from pythinker_code.utils.logging import logger
 
 _TIMEOUT = 5.0
 _MAX_DIRTY_FILES = 20
+_BASE_REF_CANDIDATES = ("origin/main", "main", "master")
 
 
 async def collect_git_context(work_dir: HostPath) -> str:
-    """Collect git context information for the explore agent.
+    """Collect git context information for exploration and review agents.
 
     Returns a formatted ``<git-context>`` block, or an empty string if the
     directory is not a git repository or all git commands fail.  Every git
@@ -30,11 +31,12 @@ async def collect_git_context(work_dir: HostPath) -> str:
         return ""
 
     # Run all git commands in parallel for speed
-    remote_url, branch, dirty_raw, log_raw = await asyncio.gather(
+    remote_url, branch, dirty_raw, log_raw, head_sha = await asyncio.gather(
         _run_git(["remote", "get-url", "origin"], cwd),
         _run_git(["branch", "--show-current"], cwd),
         _run_git(["status", "--porcelain"], cwd),
         _run_git(["log", "-3", "--format=%h %s"], cwd),
+        _run_git(["rev-parse", "HEAD"], cwd),
     )
 
     sections: list[str] = []
@@ -52,6 +54,12 @@ async def collect_git_context(work_dir: HostPath) -> str:
     # Current branch
     if branch:
         sections.append(f"Branch: {branch}")
+
+    # Merge base — names the diff scope so review-style agents can run
+    # `git diff <sha>...HEAD` without rediscovering the base ref.
+    merge_base_line = await _merge_base_section(cwd, head_sha)
+    if merge_base_line:
+        sections.append(merge_base_line)
 
     # Dirty files
     if dirty_raw is not None:
@@ -78,6 +86,23 @@ async def collect_git_context(work_dir: HostPath) -> str:
 
     content = "\n".join(sections)
     return f"<git-context>\n{content}\n</git-context>"
+
+
+async def _merge_base_section(cwd: str, head_sha: str | None) -> str | None:
+    """Resolve the merge base against the first base ref that exists.
+
+    Returns ``None`` when no candidate resolves or when HEAD *is* the base
+    (reviewing on the base branch itself leaves nothing to scope).
+    """
+    for base_ref in _BASE_REF_CANDIDATES:
+        merge_base = await _run_git(["merge-base", "HEAD", base_ref], cwd)
+        if not merge_base:
+            continue
+        if head_sha and merge_base == head_sha:
+            return None
+        short = merge_base[:12]
+        return f"Merge base vs {base_ref}: {short} (review scope: git diff {short}...HEAD)"
+    return None
 
 
 async def _run_git(args: list[str], cwd: str, timeout: float = _TIMEOUT) -> str | None:

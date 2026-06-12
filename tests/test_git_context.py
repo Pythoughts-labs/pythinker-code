@@ -336,3 +336,52 @@ class TestCollectGitContext:
         result = await collect_git_context(_host_path(tmp_path))
         assert "Dirty files (25):" in result
         assert "... and 5 more" in result
+
+
+async def _git(cwd: Path, *args: str) -> str:
+    proc = await asyncio.create_subprocess_exec(
+        "git",
+        *args,
+        cwd=cwd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await proc.communicate()
+    return stdout.decode().strip()
+
+
+async def _init_repo(tmp_path: Path) -> None:
+    await _git(tmp_path, "init", "-b", "main")
+    await _git(tmp_path, "config", "user.email", "test@test.com")
+    await _git(tmp_path, "config", "user.name", "Test")
+    (tmp_path / "base.txt").write_text("base")
+    await _git(tmp_path, "add", ".")
+    await _git(tmp_path, "commit", "-m", "base commit")
+
+
+class TestMergeBaseContext:
+    """Review scoping: the context names the merge base so a reviewer agent
+    can run `git diff <sha>...HEAD` without rediscovering the base ref."""
+
+    @pytest.mark.asyncio
+    async def test_merge_base_shown_on_feature_branch(self, tmp_path: Path) -> None:
+        await _init_repo(tmp_path)
+        base_sha = await _git(tmp_path, "rev-parse", "HEAD")
+        await _git(tmp_path, "checkout", "-b", "feature")
+        (tmp_path / "feat.txt").write_text("feature")
+        await _git(tmp_path, "add", ".")
+        await _git(tmp_path, "commit", "-m", "feature commit")
+
+        result = await collect_git_context(_host_path(tmp_path))
+
+        assert "Merge base vs main:" in result
+        assert base_sha[:12] in result
+        assert "git diff" in result
+
+    @pytest.mark.asyncio
+    async def test_merge_base_omitted_on_base_branch(self, tmp_path: Path) -> None:
+        await _init_repo(tmp_path)
+
+        result = await collect_git_context(_host_path(tmp_path))
+
+        assert "Merge base" not in result

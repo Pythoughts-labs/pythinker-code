@@ -18,6 +18,14 @@ from pythinker_code.subagents.builder import SubagentBuilder
 from pythinker_code.subagents.models import AgentLaunchSpec, AgentTypeDefinition
 from pythinker_code.subagents.store import SubagentStore
 
+GIT_CONTEXT_AGENT_TYPES = frozenset({"explore", "review", "code_reviewer", "security_reviewer"})
+"""Read-oriented agent types whose first prompt gets a git-context prefix.
+
+Exploration and review both orient on repo state (branch, dirty files,
+merge base); injecting it up front saves the turns each run would spend
+rediscovering its scope. Write-capable types derive state themselves as
+part of their task."""
+
 SUBAGENT_OUTPUT_LANGUAGE_INSTRUCTION = """\
 <output-language>
 Write natural-language output in the same language as the original user request or task
@@ -85,9 +93,9 @@ async def prepare_soul(
     if on_stage:
         on_stage("context_ready")
 
-    # 4. For new (non-resumed) explore agents, prepend git context to the prompt
+    # 4. For new (non-resumed) read-oriented agents, prepend git context to the prompt
     prompt = spec.prompt
-    if spec.type_def.name == "explore" and not spec.resumed:
+    if spec.type_def.name in GIT_CONTEXT_AGENT_TYPES and not spec.resumed:
         from pythinker_code.subagents.git_context import collect_git_context
 
         git_ctx = await collect_git_context(runtime.builtin_args.PYTHINKER_WORK_DIR)
