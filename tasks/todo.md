@@ -25,6 +25,9 @@
       failure diagnostics (/mcp shows classified error lines).
       `60fc8b16` MCP per-server tool filtering (enabledTools/disabledTools,
       list-time + call-time).
+      `a01e5940` spawn-time context fork (Agent fork_context=true seeds
+      foreground children with the filtered conversational spine; background
+      fork is a tracked follow-up).
       NEXT (Tier-1 high/M, plan order): MCP startup
       timeout+diagnostics; MCP per-server tool filtering; subagent context
       fork; workspace isolation for parallel writers; turn rollup analytics;
