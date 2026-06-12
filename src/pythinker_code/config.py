@@ -776,6 +776,10 @@ class MCPClientConfig(BaseModel):
     tool_call_timeout_ms: int = 60000
     """Timeout for tool calls in milliseconds."""
 
+    startup_timeout_ms: int = 30000
+    """Per-server connect/inventory timeout. A hung connect would otherwise
+    block every agent turn, since the loop awaits MCP loading."""
+
 
 STATUSLINE_SEGMENT_IDS: tuple[str, ...] = (
     "spinner",

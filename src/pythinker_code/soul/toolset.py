@@ -205,6 +205,29 @@ def _configure_mcp_client_stderr_log(client: Any, runtime: Runtime, server_name:
     _set_transport_log_file(getattr(client, "transport", None))
 
 
+def _classify_mcp_connect_error(error: BaseException, server_name: str) -> str:
+    """One short actionable line for /mcp explaining a connect failure.
+
+    A bare 'failed' tells the user nothing; each common failure shape names
+    its fix (config knob, auth command, command path) so recovery does not
+    require reading logs.
+    """
+    if isinstance(error, TimeoutError):
+        return (
+            "startup timed out — raise mcp.client.startup_timeout_ms if the server is slow to start"
+        )
+    if isinstance(error, FileNotFoundError):
+        missing = error.filename or str(error)
+        return f"command not found: {missing} — check the server command/path"
+    if isinstance(error, ConnectionError):
+        return "connection failed — is the server running and the URL reachable?"
+    text = str(error) or type(error).__name__
+    lowered = text.lower()
+    if "401" in text or "unauthorized" in lowered or "authentication" in lowered:
+        return f"authentication failed — run: pythinker mcp auth {server_name}"
+    return text.splitlines()[0][:200]
+
+
 type ToolType = CallableTool | CallableTool2[Any]
 type ToolCallKey = tuple[str, str]
 
@@ -857,6 +880,7 @@ class PythinkerToolset:
                 name=name,
                 status=info.status,
                 tools=tuple(tool.name for tool in info.tools),
+                error=info.error,
             )
             for name, info in self._mcp_servers.items()
         )
@@ -1006,7 +1030,8 @@ class PythinkerToolset:
                 return server_name, None
 
             server_info.status = "connecting"
-            try:
+
+            async def _open_and_inventory() -> None:
                 async with server_info.client as client:
                     for tool in await client.list_tools():
                         server_info.tools.append(
@@ -1023,6 +1048,14 @@ class PythinkerToolset:
                     server_info.prompts = await _discover_optional_capability(
                         server_name, "prompts", client.list_prompts
                     )
+
+            try:
+                # Bound connect+inventory: a hung server would otherwise block
+                # every agent turn (the loop awaits MCP loading).
+                await asyncio.wait_for(
+                    _open_and_inventory(),
+                    timeout=runtime.config.mcp.client.startup_timeout_ms / 1000,
+                )
 
                 self._register_mcp_tools(server_name, server_info.tools)
                 for tool in server_info.tools:
@@ -1041,6 +1074,7 @@ class PythinkerToolset:
                     error=e,
                 )
                 server_info.status = "failed"
+                server_info.error = _classify_mcp_connect_error(e, server_name)
                 return server_name, e
 
         async def _connect():
@@ -1141,6 +1175,8 @@ class MCPServerInfo:
     # (mcpext-1). Empty for servers that expose none or do not support them.
     resources: list[mcp.Resource]
     prompts: list[mcp.types.Prompt]
+    # One short actionable line explaining a failed connect, surfaced by /mcp.
+    error: str | None = None
 
 
 class MCPTool[T: ClientTransport](CallableTool):

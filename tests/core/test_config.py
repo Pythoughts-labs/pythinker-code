@@ -78,7 +78,7 @@ def test_default_config_dump():
                 "claim_stale_after_ms": 15000,
             },
             "services": {"pythinker_ai_search": None, "pythinker_ai_fetch": None},
-            "mcp": {"client": {"tool_call_timeout_ms": 60000}},
+            "mcp": {"client": {"tool_call_timeout_ms": 60000, "startup_timeout_ms": 30000}},
             "memory": {
                 "lexical_recall": True,
                 "injection_bus": True,
