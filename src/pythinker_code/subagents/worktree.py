@@ -53,9 +53,13 @@ async def _git(args: list[str], cwd: Path) -> tuple[int, str, str]:
 
 
 async def _is_registered_worktree(repo_dir: Path, dest: Path) -> bool:
-    code, stdout, _ = await _git(["worktree", "list", "--porcelain"], repo_dir)
+    code, stdout, stderr = await _git(["worktree", "list", "--porcelain"], repo_dir)
     if code != 0:
-        return False
+        # A git failure here is not evidence that dest is unregistered. Collapsing
+        # it into "not a worktree" would let the caller delete a path that may
+        # still hold the child's only work; surface the real error instead.
+        first_line = stderr.splitlines()[0] if stderr else "unknown git error"
+        raise WorktreeError(f"could not verify isolation worktree at {dest}: {first_line}")
     wanted = str(dest.resolve(strict=False))
     for line in stdout.splitlines():
         if not line.startswith("worktree "):

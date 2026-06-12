@@ -406,7 +406,14 @@ class Runtime:
         """
         builtin_args = self.builtin_args
         if work_dir_override is not None:
-            agents_md = work_dir_agents_md or ""
+            # An explicit value (including "") replaces the payload for the
+            # child's work dir; None means "not provided" and keeps the parent's
+            # so inherited policy/instruction context is never silently dropped.
+            agents_md = (
+                work_dir_agents_md
+                if work_dir_agents_md is not None
+                else builtin_args.PYTHINKER_AGENTS_MD
+            )
             builtin_args = replace(
                 builtin_args,
                 PYTHINKER_WORK_DIR=work_dir_override,

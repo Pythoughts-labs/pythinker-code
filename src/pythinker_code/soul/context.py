@@ -57,7 +57,10 @@ def repair_history_invariants(history: Sequence[Message]) -> list[Message]:
     for message in history:
         if message.role == "tool":
             if message.tool_call_id is None:
-                repaired.append(message)
+                # An unpaired tool result cannot satisfy the call/result pairing
+                # invariant this repair enforces; keeping it would re-break the
+                # next provider request, so drop it like an orphan.
+                logger.warning("Context repair: dropping tool result without tool_call_id")
             elif message.tool_call_id in open_call_ids:
                 open_call_ids.remove(message.tool_call_id)
                 repaired.append(message)

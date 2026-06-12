@@ -24,7 +24,7 @@ class FakeGit:
         return GitResult(ok=True, exit_code=1, stdout="")
 
 
-def _runtime(tmp_path, role="root", work_dir=None):
+def _runtime(tmp_path, role="root", work_dir=None) -> SimpleNamespace:
     session = SimpleNamespace(id="sess1", title="t", work_dir=_hp(tmp_path / "repo"))
     return SimpleNamespace(
         role=role,
