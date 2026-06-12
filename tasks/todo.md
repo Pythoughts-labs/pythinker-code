@@ -34,6 +34,8 @@
       recovery-aware cleanup). P3 DONE (chain verified end-to-end; descriptions state enforced semantics). Isolation item CLOSED.
       `eb13fdae` fuzzy edit-recovery ladder (rstrip→strip→unicode-punct
       line-window seek in StrReplaceFile; ambiguity contract kept).
+      `cde3c726` live permissions-state injection (posture-fingerprinted
+      provider; Approval read accessors).
       NEXT (Tier-1 high/M, plan order): MCP startup
       timeout+diagnostics; MCP per-server tool filtering; subagent context
       fork; workspace isolation for parallel writers; turn rollup analytics;
