@@ -137,11 +137,13 @@ class BackgroundAgentRunner:
                 output.error(
                     _timeout_recovery_message(timeout_s=self._timeout_s, agent_id=self._agent_id)
                 )
+                self._note_retained_worktree(output)
             else:
                 # Internal timeout (e.g. aiohttp request) — treat as generic failure
                 logger.exception("Background agent runner failed")
                 self._finalize_safely(outcome="failed", reason=str(exc))
                 output.error(_failure_recovery_message(reason=str(exc), agent_id=self._agent_id))
+                self._note_retained_worktree(output)
         except asyncio.CancelledError:
             self._finalize_safely(outcome="killed", reason="Stopped by TaskStop")
             output.stage("cancelled")
@@ -156,6 +158,7 @@ class BackgroundAgentRunner:
             logger.exception("Background agent runner failed")
             self._finalize_safely(outcome="failed", reason=str(exc))
             output.error(_failure_recovery_message(reason=str(exc), agent_id=self._agent_id))
+            self._note_retained_worktree(output)
         finally:
             # Whatever happens in approval cleanup below, the dict pop must
             # run — it is the *only* place that removes this task from
@@ -271,6 +274,19 @@ class BackgroundAgentRunner:
         self._worktree_path = worktree
         output.stage(f"worktree_created: {worktree}")
         return HostPath.unsafe_from_local_path(worktree)
+
+    def _note_retained_worktree(self, output: SubagentOutputWriter) -> None:
+        """Name the retained worktree on failure/timeout paths.
+
+        Retention on failure is deliberate — resume reuses the worktree and a
+        post-mortem may need its state — but it must never be silent.
+        """
+        if self._worktree_path is None:
+            return
+        output.stage(
+            f"worktree_retained: {self._worktree_path} (resume reuses it; remove with "
+            f"`git worktree remove {self._worktree_path}`)"
+        )
 
     async def _append_worktree_report(self, final_response: str) -> str:
         """Tell the orchestrator where the isolated changes live.

@@ -1979,8 +1979,13 @@ class PythinkerSoul:
             step_no=step_no,
         )
         try:
-            with contextlib.suppress(Exception):
+            try:
                 await self.prune_context()
+            except Exception as prune_err:
+                logger.debug(
+                    "Best-effort prune during overflow recovery failed: {error}",
+                    error=prune_err,
+                )
             await self.compact_context()
         except Exception as compact_err:
             from pythinker_code.telemetry.errors import report_handled_error

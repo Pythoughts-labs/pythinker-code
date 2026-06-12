@@ -26,7 +26,7 @@ class ListParams(BaseModel):
 
 class ListMcpResources(CallableTool2[ListParams]):
     name: str = "ListMcpResources"
-    supports_parallel = True
+    supports_parallel: bool = True
     params: type[ListParams] = ListParams
 
     def __init__(self, toolset: PythinkerToolset) -> None:
@@ -75,7 +75,7 @@ class ReadParams(BaseModel):
 
 class ReadMcpResource(CallableTool2[ReadParams]):
     name: str = "ReadMcpResource"
-    supports_parallel = True
+    supports_parallel: bool = True
     params: type[ReadParams] = ReadParams
 
     def __init__(self, toolset: PythinkerToolset) -> None:

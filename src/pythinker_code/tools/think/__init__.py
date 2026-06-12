@@ -13,7 +13,7 @@ class Params(BaseModel):
 
 class Think(CallableTool2[Params]):
     name: str = "Think"
-    supports_parallel = True
+    supports_parallel: bool = True
     description: str = load_desc(Path(__file__).parent / "think.md", {})
     params: type[Params] = Params
 

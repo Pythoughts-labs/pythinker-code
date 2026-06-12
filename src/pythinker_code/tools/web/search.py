@@ -43,7 +43,7 @@ class Params(BaseModel):
 
 class SearchWeb(CallableTool2[Params]):
     name: str = "SearchWeb"
-    supports_parallel = True
+    supports_parallel: bool = True
     description: str = load_desc(Path(__file__).parent / "search.md", {})
     params: type[Params] = Params
 

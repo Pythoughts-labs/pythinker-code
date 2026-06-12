@@ -185,6 +185,21 @@ def _sole_non_none_type(annotation: Any) -> Any:
     return annotation
 
 
+def _report_unknown_keys_single_source(data: Any, source: str) -> None:
+    """Unknown-key diagnostics for single-source loads (--config/--config-file).
+
+    The scoped pipeline reports through its merge provenance; explicit loads
+    bypass the merge, so build a one-source provenance here. Non-dict payloads
+    are left for Config.model_validate to reject with its own error.
+    """
+    if not isinstance(data, dict):
+        return
+    plain = {str(key): value for key, value in cast(dict[Any, Any], data).items()}
+    provenance: dict[str, Any] = {}
+    merged = _type_based_merge({}, plain, provenance, source)
+    _report_unknown_config_keys(merged, provenance)
+
+
 def _report_unknown_config_keys(merged: dict[str, Any], provenance: dict[str, Any]) -> None:
     """Warn (or raise under PYTHINKER_STRICT_CONFIG) for unconsumed keys."""
     unknown_paths = unknown_config_key_paths(Config, merged)
@@ -1217,6 +1232,7 @@ def load_config(config_file: Path | None = None) -> Config:
             data = json.loads(config_text)
         else:
             data = tomlkit.loads(config_text)
+        _report_unknown_keys_single_source(data, str(config_file))
         config = Config.model_validate(data)
     except json.JSONDecodeError as e:
         raise ConfigError(f"Invalid JSON in configuration file {config_file}: {e}") from e
@@ -1260,6 +1276,7 @@ def load_config_from_string(config_string: str) -> Config:
                 f"Invalid configuration text: {json_error}; {toml_error}"
             ) from toml_error
 
+    _report_unknown_keys_single_source(data, "--config text")
     try:
         config = Config.model_validate(data)
     except ValidationError as e:

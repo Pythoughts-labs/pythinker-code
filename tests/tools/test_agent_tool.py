@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import re
 from types import SimpleNamespace
-from unittest.mock import patch
 
 import pytest
 from pythinker_core.chat_provider import APIConnectionError, APIStatusError, ChatProviderError
@@ -2318,8 +2317,9 @@ async def test_agent_tool_background_sets_parent_agent_id(agent_tool, runtime, m
 # ---------------------------------------------------------------------------
 
 
-async def test_agent_tool_warns_when_isolation_set_for_foreground(agent_tool, runtime, monkeypatch):
-    """isolation='worktree' on a foreground agent logs a warning (isolation only applies to background)."""
+async def test_agent_tool_rejects_isolation_for_foreground(agent_tool, runtime, monkeypatch):
+    """isolation='worktree' on a foreground agent fails fast — proceeding
+    unisolated would present degraded behavior as authoritative."""
     runtime.labor_market.add_builtin_type(
         AgentTypeDefinition(
             name="coder",
@@ -2344,20 +2344,17 @@ async def test_agent_tool_warns_when_isolation_set_for_foreground(agent_tool, ru
     monkeypatch.setattr("pythinker_code.subagents.builder.load_agent", fake_load_agent)
     monkeypatch.setattr("pythinker_code.subagents.runner.run_soul", fake_run_soul)
 
-    with patch("pythinker_code.tools.agent.logger") as mock_log:
-        result = await agent_tool(
-            agent_tool.params(
-                description="task",
-                prompt="do it",
-                run_in_background=False,
-                isolation="worktree",
-            )
+    result = await agent_tool(
+        agent_tool.params(
+            description="task",
+            prompt="do it",
+            run_in_background=False,
+            isolation="worktree",
         )
+    )
 
-    assert not result.is_error
-    mock_log.warning.assert_called_once()
-    warning_msg = str(mock_log.warning.call_args)
-    assert "isolation" in warning_msg.lower()
+    assert result.is_error
+    assert "run_in_background" in result.message
 
 
 # ---------------------------------------------------------------------------

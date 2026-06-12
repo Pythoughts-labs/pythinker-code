@@ -346,7 +346,8 @@ async def _git(cwd: Path, *args: str) -> str:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, _ = await proc.communicate()
+    stdout, stderr = await proc.communicate()
+    assert proc.returncode == 0, f"git {' '.join(args)} failed: {stderr.decode().strip()}"
     return stdout.decode().strip()
 
 

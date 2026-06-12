@@ -25,7 +25,9 @@ from pythinker_code.subagents.models import AgentLaunchSpec, AgentTypeDefinition
 from pythinker_code.subagents.store import SubagentStore
 from pythinker_code.wire.types import TextPart, ThinkPart
 
-GIT_CONTEXT_AGENT_TYPES = frozenset({"explore", "review", "code_reviewer", "security_reviewer"})
+# NOTE: these must match the registered type names in agents/default/agent.yaml
+# (dashed), which _SUBAGENT_PROFILES also keys on — not the yaml file stems.
+GIT_CONTEXT_AGENT_TYPES = frozenset({"explore", "review", "code-reviewer", "security-reviewer"})
 """Read-oriented agent types whose first prompt gets a git-context prefix.
 
 Exploration and review both orient on repo state (branch, dirty files,

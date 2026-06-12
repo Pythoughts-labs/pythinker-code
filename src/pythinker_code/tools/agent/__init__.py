@@ -297,14 +297,18 @@ class AgentTool(CallableTool2[Params]):
                 ),
                 brief="Invalid fork_context",
             )
+        if not params.run_in_background and params.isolation != "none":
+            # Proceeding unisolated after an isolation request would present
+            # degraded behavior as authoritative; fail fast instead.
+            return ToolError(
+                message=(
+                    "isolation='worktree' is only supported for background agents; "
+                    "set run_in_background=true or drop isolation."
+                ),
+                brief="Invalid isolation",
+            )
         if params.run_in_background:
             return await self._run_in_background(params)
-        if params.isolation != "none":
-            logger.warning(
-                "isolation={isolation!r} has no effect on foreground agents; "
-                "use run_in_background=True to enable isolation.",
-                isolation=params.isolation,
-            )
         await self._journal_foreground_agent_start(params, requested_type)
         timeout = params.effective_timeout
         try:
@@ -666,6 +670,16 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
             return ToolError(
                 message="Subagents cannot launch other subagents.",
                 brief="RunAgents unavailable",
+            )
+        if not params.run_in_background and params.isolation != "none":
+            # Foreground children would share one tree despite the isolation
+            # request; fail fast rather than proceed unisolated.
+            return ToolError(
+                message=(
+                    "isolation='worktree' is only supported for background child "
+                    "agents; set run_in_background=true or drop isolation."
+                ),
+                brief="Invalid isolation",
             )
         if params.model is not None and params.model not in self._runtime.config.models:
             return ToolError(

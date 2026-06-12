@@ -22,10 +22,8 @@ from pythinker_code.soul.toolset import (
 
 
 class _ListingClient:
-    def __init__(self, tool_names: list[str], *, fail_on_call: bool = False) -> None:
+    def __init__(self, tool_names: list[str]) -> None:
         self._tool_names = tool_names
-        self.calls: list[str] = []
-        self._fail_on_call = fail_on_call
 
     async def __aenter__(self) -> _ListingClient:
         return self
@@ -116,7 +114,7 @@ class TestCallTimeGate:
         tool = MCPTool(
             "srv",
             mcp.types.Tool(name="drop_db", inputSchema={}),
-            cast(Any, _ListingClient([], fail_on_call=True)),
+            cast(Any, _ListingClient([])),
             runtime=runtime,
             tool_filter=McpToolFilter(deny=frozenset({"drop_db"})),
         )
