@@ -10,6 +10,8 @@ class SlashCommand[F: Callable[..., None | Awaitable[None]]]:
     description: str
     func: F
     aliases: list[str]
+    available_during_task: bool = False
+    """Whether this command may run while an agent turn is in progress."""
 
     def slash_name(self):
         """/name (aliases)"""
@@ -36,6 +38,7 @@ class SlashCommandRegistry[F: Callable[..., None | Awaitable[None]]]:
         *,
         name: str | None = None,
         aliases: Sequence[str] | None = None,
+        available_during_task: bool = False,
     ) -> Callable[[F], F]: ...
 
     def command(
@@ -44,6 +47,7 @@ class SlashCommandRegistry[F: Callable[..., None | Awaitable[None]]]:
         *,
         name: str | None = None,
         aliases: Sequence[str] | None = None,
+        available_during_task: bool = False,
     ) -> F | Callable[[F], F]:
         """
         Decorator to register a slash command with optional custom name and aliases.
@@ -69,6 +73,7 @@ class SlashCommandRegistry[F: Callable[..., None | Awaitable[None]]]:
                 description=(f.__doc__ or "").strip(),
                 func=f,
                 aliases=alias_list,
+                available_during_task=available_during_task,
             )
 
             # Register primary command

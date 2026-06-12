@@ -176,6 +176,8 @@ async def run_engine(*, llm: ReviewLLM, inputs: EngineRunInput) -> EngineRunOutp
         base_ref=resolved.base_ref,
         base_sha=resolved.base_sha,
         source_label=resolved.source_label,
+        requested_base_ref=resolved.requested_base_ref,
+        fallback_reason=resolved.fallback_reason,
         passes=list(inputs.passes),
         model=llm.model_display_name,
         chunks_total=runner.chunks_total,

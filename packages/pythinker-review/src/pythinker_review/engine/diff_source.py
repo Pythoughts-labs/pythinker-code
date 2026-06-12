@@ -33,6 +33,11 @@ class ResolvedDiff:
     base_ref: str
     source_label: str
     changed_files: tuple[str, ...] = field(default_factory=tuple)
+    # Base-resolution audit trail: `base_ref` stores whichever ref was chosen,
+    # which hides silent fallbacks (origin/main -> main/master). These two
+    # fields make a fallback explicit so reports can surface it as degradation.
+    requested_base_ref: str = ""
+    fallback_reason: str | None = None
 
 
 def _git(repo: Path, *args: str, check: bool = True) -> str:
@@ -106,7 +111,13 @@ def resolve_diff(
         if not files:
             raise EmptyDiffError("range diff is empty")
         return ResolvedDiff(
-            patch, base_sha, range_head_sha, start_ref, f"git-range:{rev_range}", files
+            patch,
+            base_sha,
+            range_head_sha,
+            start_ref,
+            f"git-range:{rev_range}",
+            files,
+            requested_base_ref=start_ref,
         )
 
     if mode is DiffMode.staged:
@@ -114,7 +125,9 @@ def resolve_diff(
         files = _changed_files_from_diff(patch)
         if not files:
             raise EmptyDiffError("no staged changes")
-        return ResolvedDiff(patch, head_sha, head_sha, "HEAD", "staged", files)
+        return ResolvedDiff(
+            patch, head_sha, head_sha, "HEAD", "staged", files, requested_base_ref="HEAD"
+        )
 
     if mode is DiffMode.working_tree:
         tracked = _git(repo, "diff", f"--unified={unified}", "HEAD")
@@ -124,7 +137,9 @@ def resolve_diff(
         files = _changed_files_from_diff(patch)
         if not files:
             raise EmptyDiffError("no working-tree changes")
-        return ResolvedDiff(patch, head_sha, head_sha, "HEAD", "working-tree", files)
+        return ResolvedDiff(
+            patch, head_sha, head_sha, "HEAD", "working-tree", files, requested_base_ref="HEAD"
+        )
 
     candidates = (base_ref, *fallback_refs)
     chosen_ref: str | None = None
@@ -138,6 +153,11 @@ def resolve_diff(
             last_err = exc
     if chosen_ref is None:
         raise last_err or PreflightError("no resolvable base ref")
+    fallback_reason = (
+        None
+        if chosen_ref == base_ref
+        else f"requested base ref '{base_ref}' is not resolvable; fell back to '{chosen_ref}'"
+    )
     merge_base = _git(repo, "merge-base", "HEAD", chosen_ref).strip()
     if not merge_base:
         raise PreflightError(f"no merge-base between HEAD and {chosen_ref}")
@@ -145,7 +165,16 @@ def resolve_diff(
     files = _changed_files_from_diff(patch)
     if not files:
         raise EmptyDiffError(f"no changes between {chosen_ref} and HEAD")
-    return ResolvedDiff(patch, merge_base, head_sha, chosen_ref, f"git-diff:{chosen_ref}", files)
+    return ResolvedDiff(
+        patch,
+        merge_base,
+        head_sha,
+        chosen_ref,
+        f"git-diff:{chosen_ref}",
+        files,
+        requested_base_ref=base_ref,
+        fallback_reason=fallback_reason,
+    )
 
 
 def _changed_files_from_diff(patch: str) -> tuple[str, ...]:

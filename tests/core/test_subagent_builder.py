@@ -3,11 +3,26 @@ from __future__ import annotations
 import platform
 
 import pytest
+from pythinker_core.tooling import CallableTool, ToolOk, ToolReturnValue
 
 from pythinker_code.agentspec import DEFAULT_AGENT_FILE
 from pythinker_code.soul.agent import load_agent
+from pythinker_code.soul.toolset import ToolType
 from pythinker_code.subagents.builder import SubagentBuilder
 from pythinker_code.subagents.models import AgentLaunchSpec, AgentTypeDefinition, ToolPolicy
+
+
+class _FakeMCPTool(CallableTool):
+    async def __call__(self) -> ToolReturnValue:
+        return ToolOk(output="fake")
+
+
+def _fake_mcp_tool(name: str) -> ToolType:
+    return _FakeMCPTool(
+        name=name,
+        description="fake mcp tool",
+        parameters={"type": "object", "properties": {}},
+    )
 
 
 @pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
@@ -189,3 +204,71 @@ async def test_builder_model_priority_prefers_override_then_type_default_then_in
 
     assert captured_aliases == ["tool-override", "type-default", None]
     assert captured_thinking == [False, None, None]
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
+async def test_builder_attaches_shared_mcp_tools_from_allowlist(runtime):
+    runtime.mcp_tools.update(
+        {
+            "mcp__context7__resolve-library-id": _fake_mcp_tool("resolve-library-id"),
+            "mcp__context7__query-docs": _fake_mcp_tool("query-docs"),
+            "mcp__tavily__tavily_search": _fake_mcp_tool("tavily_search"),
+            "mcp__tavily__tavily_crawl": _fake_mcp_tool("tavily_crawl"),
+        }
+    )
+    await load_agent(DEFAULT_AGENT_FILE, runtime, mcp_configs=[])
+
+    builder = SubagentBuilder(runtime)
+    coder = await builder.build_builtin_instance(
+        agent_id="acoder-mcp",
+        type_def=runtime.labor_market.require_builtin_type("coder"),
+        launch_spec=AgentLaunchSpec(
+            agent_id="acoder-mcp",
+            subagent_type="coder",
+            model_override=None,
+            effective_model=None,
+        ),
+    )
+    coder_tools = [tool.name for tool in coder.toolset.tools]
+    assert "resolve-library-id" in coder_tools
+    assert "query-docs" in coder_tools
+    assert "tavily_search" not in coder_tools
+
+    judge = await builder.build_builtin_instance(
+        agent_id="ajudge-mcp",
+        type_def=runtime.labor_market.require_builtin_type("judge"),
+        launch_spec=AgentLaunchSpec(
+            agent_id="ajudge-mcp",
+            subagent_type="judge",
+            model_override=None,
+            effective_model=None,
+        ),
+    )
+    judge_tools = [tool.name for tool in judge.toolset.tools]
+    # Reviewer-class specs are offline by design and allowlist no MCP tools:
+    # none of the connected shared tools may attach.
+    assert "query-docs" not in judge_tools
+    assert "resolve-library-id" not in judge_tools
+    assert "tavily_search" not in judge_tools
+    assert "tavily_crawl" not in judge_tools
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
+async def test_builder_skips_unconnected_mcp_allowlist_entries(runtime):
+    await load_agent(DEFAULT_AGENT_FILE, runtime, mcp_configs=[])
+
+    builder = SubagentBuilder(runtime)
+    coder = await builder.build_builtin_instance(
+        agent_id="acoder-nomcp",
+        type_def=runtime.labor_market.require_builtin_type("coder"),
+        launch_spec=AgentLaunchSpec(
+            agent_id="acoder-nomcp",
+            subagent_type="coder",
+            model_override=None,
+            effective_model=None,
+        ),
+    )
+    tool_names = [tool.name for tool in coder.toolset.tools]
+    assert "query-docs" not in tool_names
+    assert "mcp__context7__query-docs" not in tool_names
+    assert "WriteFile" in tool_names

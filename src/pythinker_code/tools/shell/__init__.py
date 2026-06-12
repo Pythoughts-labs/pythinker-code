@@ -12,16 +12,28 @@ from pythinker_code.background import TaskView, format_task
 from pythinker_code.execution_profiles import resolve_execution_policy
 from pythinker_code.soul.agent import Runtime
 from pythinker_code.soul.approval import Approval
-from pythinker_code.soul.permission import check_shell_command_allowed
+from pythinker_code.soul.permission import (
+    active_permission_profile,
+    check_shell_command_allowed,
+)
 from pythinker_code.soul.toolset import get_current_tool_call_or_none
 from pythinker_code.tools.display import BackgroundTaskDisplayBlock, ShellDisplayBlock
 from pythinker_code.tools.utils import ToolResultBuilder, ToolResultStatus, load_desc
 from pythinker_code.utils.environment import Environment
 from pythinker_code.utils.logging import logger
-from pythinker_code.utils.subprocess_env import get_noninteractive_env
+from pythinker_code.utils.subprocess_env import get_noninteractive_env, scrub_secret_env
 
 MAX_FOREGROUND_TIMEOUT = 5 * 60
 MAX_BACKGROUND_TIMEOUT = 24 * 60 * 60
+# Review/read-only workflows must not flag-thrash: after a command has failed
+# this many times verbatim, re-running it is a hard denial, not a reminder.
+# The counter key is whitespace-normalized so trivial padding cannot mint a
+# fresh counter; semantic variations (quoting, flag order) stay distinct.
+MAX_IDENTICAL_FAILURES = 2
+
+
+def _failure_key(command: str) -> str:
+    return " ".join(command.split())
 
 
 def _default_background_description(*, auto_promoted: bool) -> str:
@@ -85,6 +97,9 @@ class Shell(CallableTool2[Params]):
         self._is_powershell = is_powershell
         self._shell_path = environment.shell_path
         self._runtime = runtime
+        # Verbatim-command failure counts for this agent, consulted only under
+        # restricted (no-shell-mutation) profiles to stop retry loops.
+        self._failed_attempts: dict[str, int] = {}
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
@@ -114,8 +129,27 @@ class Shell(CallableTool2[Params]):
         if err := check_shell_command_allowed(self._runtime, params.command):
             return err
 
+        # Profiles without shell-mutation rights also have no business handing
+        # inherited credentials to child processes (their network is blocked, so
+        # secrets in env are pure downside). Same flag covers fg and bg paths.
+        restricted_profile = not active_permission_profile(self._runtime).allow_shell_mutation
+
+        if (
+            restricted_profile
+            and self._failed_attempts.get(_failure_key(params.command), 0) >= MAX_IDENTICAL_FAILURES
+        ):
+            return builder.error(
+                f"This exact command already failed {MAX_IDENTICAL_FAILURES} times; repeating "
+                "it verbatim is blocked under the active restricted permission profile. Change "
+                "the approach: verify supported flags from the failure output you already have, "
+                "use a different tool, or report the blocker (exact command + exit code) in "
+                "your findings instead of retrying.",
+                brief="Repeated failing command blocked",
+                status=ToolResultStatus.denied,
+            )
+
         if params.run_in_background:
-            return await self._run_in_background(params)
+            return await self._run_in_background(params, scrub_secrets=restricted_profile)
 
         result = await self._approval.request(
             self.name,
@@ -165,7 +199,11 @@ class Shell(CallableTool2[Params]):
 
         try:
             exitcode = await self._run_shell_command(
-                params.command, stdout_cb, stderr_cb, params.timeout
+                params.command,
+                stdout_cb,
+                stderr_cb,
+                params.timeout,
+                scrub_secrets=restricted_profile,
             )
 
             # Output is fully captured now; spill it to disk off the event loop before
@@ -175,6 +213,8 @@ class Shell(CallableTool2[Params]):
             if exitcode == 0:
                 return builder.ok("Command executed successfully.", status=ToolResultStatus.success)
 
+            if restricted_profile:
+                self._record_failed_attempt(params.command)
             builder.extras(exit_code=exitcode)
             brief = f"Failed with exit code: {exitcode}"
             tail = builder.tail()
@@ -186,6 +226,8 @@ class Shell(CallableTool2[Params]):
                 status=ToolResultStatus.failure,
             )
         except TimeoutError:
+            if restricted_profile:
+                self._record_failed_attempt(params.command)
             return builder.error(
                 f"Command killed by timeout ({params.timeout}s)",
                 brief=f"Killed by timeout ({params.timeout}s)",
@@ -206,7 +248,13 @@ class Shell(CallableTool2[Params]):
                 status=ToolResultStatus.error,
             )
 
-    async def _run_in_background(self, params: Params) -> ToolReturnValue:
+    def _record_failed_attempt(self, command: str) -> None:
+        key = _failure_key(command)
+        self._failed_attempts[key] = self._failed_attempts.get(key, 0) + 1
+
+    async def _run_in_background(
+        self, params: Params, *, scrub_secrets: bool = False
+    ) -> ToolReturnValue:
         tool_call = get_current_tool_call_or_none()
         if tool_call is None:
             return ToolResultBuilder().error(
@@ -238,6 +286,7 @@ class Shell(CallableTool2[Params]):
                 shell_name="Windows PowerShell" if self._is_powershell else "bash",
                 shell_path=str(self._shell_path),
                 cwd=str(self._runtime.session.work_dir),
+                scrub_secrets=scrub_secrets,
             )
         except Exception as exc:
             from pythinker_code.telemetry.errors import report_handled_error
@@ -300,6 +349,8 @@ class Shell(CallableTool2[Params]):
         stdout_cb: Callable[[bytes], None],
         stderr_cb: Callable[[bytes], None],
         timeout: int,
+        *,
+        scrub_secrets: bool = False,
     ) -> int:
         async def _read_stream(stream: AsyncReadable, cb: Callable[[bytes], None]):
             # Use read() instead of readline() to avoid asyncio's 64 KB per-line
@@ -309,9 +360,10 @@ class Shell(CallableTool2[Params]):
             while chunk := await stream.read(65536):
                 cb(chunk)
 
-        process = await pythinker_host.exec(
-            *self._shell_args(command), env=get_noninteractive_env()
-        )
+        env = get_noninteractive_env()
+        if scrub_secrets:
+            env = scrub_secret_env(env)
+        process = await pythinker_host.exec(*self._shell_args(command), env=env)
 
         # Close stdin immediately so interactive prompts (e.g. git password) get
         # EOF instead of hanging forever waiting for input that will never come.

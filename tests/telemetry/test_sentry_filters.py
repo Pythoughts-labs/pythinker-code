@@ -222,3 +222,42 @@ def test_init_disables_local_variables_and_source_context(monkeypatch) -> None:
         "include_source_context must be False: context lines can contain "
         "inlined string literals with secrets."
     )
+
+
+# ---------------------------------------------------------------------------
+# Environment detection (release/environment sync with the running app)
+# ---------------------------------------------------------------------------
+
+from pythinker_code.telemetry import config as config_mod  # noqa: E402
+from pythinker_code.telemetry.config import detect_environment  # noqa: E402
+
+
+def test_detect_environment_env_var_wins(monkeypatch):
+    monkeypatch.setenv("PYTHINKER_ENV", "staging")
+    assert detect_environment() == "staging"
+
+
+def test_detect_environment_source_checkout_is_development(monkeypatch):
+    monkeypatch.delenv("PYTHINKER_ENV", raising=False)
+    monkeypatch.setattr(config_mod, "_is_source_checkout", lambda: True)
+    assert detect_environment() == "development"
+
+
+def test_detect_environment_default_is_production(monkeypatch):
+    monkeypatch.delenv("PYTHINKER_ENV", raising=False)
+    monkeypatch.setattr(config_mod, "_is_source_checkout", lambda: False)
+    assert detect_environment() == "production"
+
+
+def test_get_version_tracks_live_pyproject():
+    """In a source checkout the reported version must match pyproject.toml,
+    not a possibly-stale editable dist-info snapshot."""
+    import tomllib
+    from pathlib import Path
+
+    from pythinker_code.constant import source_checkout_version
+
+    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    with pyproject.open("rb") as f:
+        expected = tomllib.load(f)["project"]["version"]
+    assert source_checkout_version() == expected

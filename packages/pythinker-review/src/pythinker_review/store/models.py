@@ -116,6 +116,11 @@ class RunMeta(BaseModel):
     base_ref: str
     base_sha: str
     source_label: str
+    # Base-resolution audit trail (see ResolvedDiff): a non-None fallback_reason
+    # means the reviewed diff was NOT taken against the requested base ref;
+    # requested_base_ref is None only for runs persisted before the field existed.
+    requested_base_ref: str | None = None
+    fallback_reason: str | None = None
     passes: list[Pass]
     model: str
     chunks_total: int = Field(ge=0)

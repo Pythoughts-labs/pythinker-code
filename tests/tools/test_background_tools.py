@@ -125,6 +125,7 @@ async def test_task_output_returns_completed_output(
     assert "tool_status: success" in result.output
     assert result.extras == {"status": "success"}
     assert "retrieval_status: success" in result.output
+    assert "retrieval_hint:" not in result.output
     assert "status: completed" in result.output
     assert f"output_path: {output_path}" in result.output
     assert "output_truncated: false" in result.output
@@ -284,9 +285,112 @@ async def test_task_output_returns_not_ready_for_running_task(runtime, task_outp
     assert "tool_status: long_running_snapshot" in result.output
     assert result.extras == {"status": "long_running_snapshot"}
     assert "retrieval_status: not_ready" in result.output
+    assert "retrieval_hint: Task is still running" in result.output
+    assert "block=true" in result.output
     assert "status: running" in result.output
     assert "output_truncated: false" in result.output
     assert "still working" in result.output
+
+
+@pytest.mark.asyncio
+async def test_task_output_escalates_hint_on_repeated_non_blocking_polls(runtime, task_output_tool):
+    spec = _write_task(
+        runtime,
+        "b6666667",
+        status="running",
+        output="still working\n",
+    )
+    params = task_output_tool.params(task_id=spec.id, block=False, timeout=0)
+
+    first = await task_output_tool(params)
+    second = await task_output_tool(params)
+    third = await task_output_tool(params)
+
+    assert "retrieval_hint: Task is still running" in first.output
+    assert "non-blocking poll #2" in second.output
+    assert "STOP polling" in second.output
+    assert "non-blocking poll #3" in third.output
+
+
+@pytest.mark.asyncio
+async def test_task_output_timed_out_block_does_not_reset_poll_escalation(
+    runtime, task_output_tool
+):
+    spec = _write_task(
+        runtime,
+        "b6666669",
+        status="running",
+        output="still working\n",
+    )
+    nonblocking = task_output_tool.params(task_id=spec.id, block=False, timeout=0)
+
+    await task_output_tool(nonblocking)
+    await task_output_tool(nonblocking)
+    # A blocking wait that TIMES OUT is not progress: interleaving one must not
+    # absolve the polling streak, or the STOP escalation never sticks.
+    await task_output_tool(task_output_tool.params(task_id=spec.id, block=True, timeout=0))
+    result = await task_output_tool(nonblocking)
+
+    assert "non-blocking poll #3" in result.output
+    assert "STOP polling" in result.output
+
+
+@pytest.mark.asyncio
+async def test_task_output_blocking_timeout_hint_prioritizes_notification(
+    runtime, task_output_tool
+):
+    spec = _write_task(
+        runtime,
+        "b666666b",
+        status="running",
+        output="still working\n",
+    )
+
+    result = await task_output_tool(task_output_tool.params(task_id=spec.id, block=True, timeout=0))
+
+    # The primary guidance is to return control and rely on the completion
+    # notification; retrying with a longer timeout is the explicit exception.
+    assert "Return control and rely on the completion notification" in result.output
+    assert "only if you cannot proceed without this result" in result.output
+
+
+@pytest.mark.asyncio
+async def test_task_output_escalates_on_consecutive_blocking_timeouts(runtime, task_output_tool):
+    spec = _write_task(
+        runtime,
+        "b666666c",
+        status="running",
+        output="still working\n",
+    )
+    blocking = task_output_tool.params(task_id=spec.id, block=True, timeout=0)
+
+    await task_output_tool(blocking)
+    second = await task_output_tool(blocking)
+    third = await task_output_tool(blocking)
+
+    assert "blocking wait #2" in second.output
+    assert "STOP waiting" in second.output
+    assert "blocking wait #3" in third.output
+
+
+@pytest.mark.asyncio
+async def test_task_output_poll_escalation_survives_new_tool_instance(runtime, task_output_tool):
+    # The streak lives on the manager, not the tool: a fresh TaskOutput
+    # instance (e.g. a rebuilt toolset) must continue the escalation.
+    from pythinker_code.tools.background import TaskOutput
+
+    spec = _write_task(
+        runtime,
+        "b666666a",
+        status="running",
+        output="still working\n",
+    )
+
+    await task_output_tool(task_output_tool.params(task_id=spec.id, block=False, timeout=0))
+    fresh_tool = TaskOutput(runtime)
+    result = await fresh_tool(fresh_tool.params(task_id=spec.id, block=False, timeout=0))
+
+    assert "non-blocking poll #2" in result.output
 
 
 @pytest.mark.asyncio
@@ -322,6 +426,7 @@ async def test_task_output_blocking_timeout_surfaces_timeout_retrieval_status(
 
     assert not result.is_error
     assert "retrieval_status: timeout" in result.output
+    assert "retrieval_hint: Wait timed out" in result.output
     assert "status: running" in result.output
 
 

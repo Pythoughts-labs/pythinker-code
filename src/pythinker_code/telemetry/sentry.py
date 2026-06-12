@@ -28,7 +28,7 @@ from sentry_sdk.integrations.dedupe import DedupeIntegration
 from sentry_sdk.integrations.excepthook import ExcepthookIntegration
 from sentry_sdk.types import Event, Hint
 
-from pythinker_code.telemetry.config import is_disabled, sentry_dsn
+from pythinker_code.telemetry.config import detect_environment, is_disabled, sentry_dsn
 
 _initialized: bool = False
 
@@ -178,7 +178,7 @@ def init(
     if not dsn:
         return False
 
-    env = environment or os.environ.get("PYTHINKER_ENV") or "production"
+    env = environment or detect_environment()
 
     sentry_sdk.init(
         dsn=dsn,

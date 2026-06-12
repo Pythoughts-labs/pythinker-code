@@ -217,7 +217,7 @@ The toolset is both a registry and an execution boundary. It hides tools from th
 
 ## Subagent graph
 
-The `Agent` tool lets only the root agent create or resume subagents. Subagents get isolated context and Wire files, but share session-level services such as approval state, notification infrastructure, background task management, and the root Wire hub.
+The `Agent` tool lets only the root agent create or resume a single subagent, and the `RunAgents` tool launches a batch of subagents (up to 8) in one call. Both are root-only. Subagents get isolated context and Wire files, but share session-level services such as approval state, notification infrastructure, background task management, and the root Wire hub.
 
 ```mermaid
 flowchart TB
@@ -306,6 +306,7 @@ Hooks are integrated at both turn and tool boundaries:
 | `PostToolUseFailure` | After a tool raises an exception |
 | `Stop` | After a turn finishes, with one re-trigger guard |
 | `StopFailure` | After an agent step fails |
+| `SessionStart` and `SessionEnd` | When a session is created/resumed and when it closes |
 | `PreCompact` and `PostCompact` | Around context compaction |
 | `Notification` | When pending notifications are delivered into LLM context |
 | `SubagentStart` and `SubagentStop` | Around foreground subagent execution |

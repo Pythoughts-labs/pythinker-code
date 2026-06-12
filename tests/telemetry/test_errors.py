@@ -170,3 +170,87 @@ def test_clear_recent_errors():
     assert len(recent_errors()) == 1
     clear_recent_errors()
     assert recent_errors() == []
+
+
+# ---------------------------------------------------------------------------
+# Expected-error classification + Sentry suppression
+# ---------------------------------------------------------------------------
+
+import socket  # noqa: E402
+
+from pythinker_code.telemetry.errors import is_expected_error  # noqa: E402
+
+
+class _StatusError(Exception):
+    """Duck-typed provider error carrying an HTTP status code."""
+
+    def __init__(self, status_code: int) -> None:
+        super().__init__(f"status {status_code}")
+        self.status_code = status_code
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (401, True),
+        (403, True),
+        (408, True),
+        (429, True),
+        (500, True),
+        (503, True),
+        (400, False),
+        (404, False),
+        (422, False),
+    ],
+)
+def test_is_expected_error_http_statuses(status: int, expected: bool):
+    assert is_expected_error(_StatusError(status)) is expected
+
+
+def test_is_expected_error_environmental_classes():
+    assert is_expected_error(TimeoutError())
+    assert is_expected_error(ConnectionResetError())
+    assert is_expected_error(socket.gaierror(8, "nodename nor servname provided"))
+
+
+def test_is_expected_error_oauth():
+    from pythinker_code.auth.oauth import OAuthError
+
+    assert is_expected_error(OAuthError("Invalid callback state."))
+
+
+def test_is_expected_error_mcp_method_not_found_only():
+    from mcp.shared.exceptions import McpError
+    from mcp.types import INTERNAL_ERROR, METHOD_NOT_FOUND, ErrorData
+
+    assert is_expected_error(McpError(ErrorData(code=METHOD_NOT_FOUND, message="Method not found")))
+    assert not is_expected_error(McpError(ErrorData(code=INTERNAL_ERROR, message="boom")))
+
+
+def test_is_expected_error_walks_cause_chain():
+    outer = RuntimeError("retries exhausted")
+    outer.__cause__ = _StatusError(429)
+    assert is_expected_error(outer)
+
+
+def test_is_expected_error_plain_bug_is_not_expected():
+    assert not is_expected_error(ValueError("boom"))
+    assert not is_expected_error(OSError(8, "Exec format error"))
+
+
+def test_expected_error_skips_sentry_but_still_tracks_and_buffers():
+    set_context(device_id="dev1", session_id="sess1")
+    with patch("pythinker_code.telemetry.errors._sentry.capture_exception") as mock_capture:
+        report_handled_error(_StatusError(401), site="soul.step.error")
+    mock_capture.assert_not_called()
+    record = telemetry_mod._event_queue[0]
+    assert record["properties"]["expected"] is True
+    assert len(recent_errors()) == 1
+
+
+def test_unexpected_error_is_marked_and_sent_to_sentry():
+    set_context(device_id="dev1", session_id="sess1")
+    with patch("pythinker_code.telemetry.errors._sentry.capture_exception") as mock_capture:
+        report_handled_error(ValueError("boom"), site="tool.read")
+    mock_capture.assert_called_once()
+    assert telemetry_mod._event_queue[0]["properties"]["expected"] is False

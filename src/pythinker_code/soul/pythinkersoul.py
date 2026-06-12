@@ -77,6 +77,7 @@ from pythinker_code.soul.dynamic_injection import (
 )
 from pythinker_code.soul.dynamic_injections.auto_mode import AutoModeInjectionProvider
 from pythinker_code.soul.dynamic_injections.goal_mode import GoalModeInjectionProvider
+from pythinker_code.soul.dynamic_injections.inline_commands import InlineCommandReminderProvider
 from pythinker_code.soul.dynamic_injections.model_defense import ModelDefenseInjectionProvider
 from pythinker_code.soul.dynamic_injections.plan_mode import PlanModeInjectionProvider
 from pythinker_code.soul.flow_runner import FLOW_COMMAND_PREFIX, FlowRunner
@@ -93,7 +94,7 @@ from pythinker_code.soul.permission import (
 )
 from pythinker_code.soul.slash import registry as soul_slash_registry
 from pythinker_code.soul.toolset import PythinkerToolset
-from pythinker_code.subagents.usage import accumulate_usage
+from pythinker_code.subagents.usage import accumulate_usage, estimate_cost_usd
 from pythinker_code.thinking import (
     available_thinking_levels,
     bool_to_thinking_effort,
@@ -408,6 +409,7 @@ class PythinkerSoul:
         self._cumulative_usage = TokenUsage(
             input_other=0, output=0, input_cache_read=0, input_cache_creation=0
         )
+        self._session_cost_usd = 0.0
         self._deliberation_generation = 0
         self._sleep_inhibitor = SleepInhibitor(enabled=agent.runtime.config.prevent_idle_sleep)
         self._compaction = SimpleCompaction(base_prompt=self._runtime.config.compact_prompt)
@@ -442,6 +444,9 @@ class PythinkerSoul:
             # Self-filtering: emits a fragment only when the active model matches a
             # known-quirk family, so it is safe to register unconditionally.
             ModelDefenseInjectionProvider(),
+            # Self-filtering: root-only; flags inline /command references in the
+            # latest user message that the shell could not have executed.
+            InlineCommandReminderProvider(),
             *(
                 []
                 if self._runtime.config.skip_auto_prompt_injection
@@ -865,6 +870,9 @@ class PythinkerSoul:
             context_tokens=token_count,
             max_context_tokens=max_size,
             mcp_status=self._mcp_status_snapshot(),
+            session_cost_usd=self._session_cost_usd,
+            total_input_tokens=self._cumulative_usage.input,
+            total_output_tokens=self._cumulative_usage.output,
         )
 
     @property
@@ -1450,10 +1458,15 @@ class PythinkerSoul:
                 from pythinker_code.telemetry import track
 
                 error_type, status_code = classify_api_error(e)
+                from pythinker_code.telemetry.metrics import classify_model_family
+
                 api_error_props: dict[str, bool | int | float | str | None] = {
                     "error_type": error_type,
                     "gen_ai_system": classify_llm_system(self._runtime.llm.chat_provider),
                     "model": self._runtime.llm.chat_provider.model_name,
+                    "model_family": classify_model_family(
+                        self._runtime.llm.chat_provider.model_name
+                    ),
                 }
                 if status_code is not None:
                     api_error_props["status_code"] = status_code
@@ -1593,6 +1606,7 @@ class PythinkerSoul:
                 {
                     "gen_ai.system": gen_ai_system,
                     "gen_ai.request.model": chat_provider.model_name,
+                    "gen_ai.model.family": _m.classify_model_family(chat_provider.model_name),
                     "session.id": self._runtime.session.id,
                     "gen_ai.operation.name": "chat",
                 },
@@ -1638,6 +1652,7 @@ class PythinkerSoul:
                 u = step_result.usage
                 if u is not None:
                     self._cumulative_usage = accumulate_usage(self._cumulative_usage, u)
+                    self._session_cost_usd += estimate_cost_usd(u, self.model_name)
 
                 def _opt_int(attr: str) -> int | None:
                     """Read an optional usage counter as int — None when usage or the
@@ -2073,6 +2088,9 @@ class PythinkerSoul:
             if compaction_result.usage is not None:
                 self._cumulative_usage = accumulate_usage(
                     self._cumulative_usage, compaction_result.usage
+                )
+                self._session_cost_usd += estimate_cost_usd(
+                    compaction_result.usage, self.model_name
                 )
             await self._context.clear()
             try:

@@ -331,6 +331,26 @@ class PythinkerToolset:
     def add(self, tool: ToolType) -> None:
         self._tool_dict[tool.name] = tool
 
+    def add_shared_tools(self, names: list[str], shared: dict[str, ToolType]) -> None:
+        """Attach already-instantiated tools (e.g. the parent session's MCP tools) by registry name.
+
+        Names with no live registry entry are skipped: such a tool attaches only
+        when the runtime actually provides it (e.g. the MCP server is connected).
+        """
+        for name in names:
+            tool = shared.get(name)
+            if tool is None:
+                logger.info("Shared tool not available from runtime: {name}", name=name)
+                continue
+            existing = self.find(tool.name)
+            if existing is not None and existing is not tool:
+                logger.warning(
+                    "Shared tool '{name}' conflicts with an existing tool, skipping",
+                    name=tool.name,
+                )
+                continue
+            self.add(tool)
+
     def _register_mcp_tools(self, server_name: str, tools: list[MCPTool[Any]]) -> None:
         """Register MCP tools, skipping any whose name conflicts with a non-MCP tool."""
         for tool in tools:
@@ -413,7 +433,9 @@ class PythinkerToolset:
         if tool.name == "Shell" and policy.shell == "deny":
             return False
 
-        if tool.name in {"SearchWeb", "FetchURL"} and policy.network == "deny":
+        if tool.name in {"SearchWeb", "FetchURL"} and (
+            policy.network == "deny" or not profile.allow_network
+        ):
             return False
 
         if tool.name in {"Agent", "RunAgents"} and (
@@ -833,6 +855,12 @@ class PythinkerToolset:
         bad_tools: list[str] = []
 
         for tool_path in tool_paths:
+            if ":" not in tool_path:
+                # Named dynamic tools (e.g. MCP tools like `mcp__server__tool`) are not
+                # importable module paths; they only take effect when the runtime
+                # provides a matching tool, so they are not loaded here.
+                logger.info("Skipping non-module tool entry: {tool_path}", tool_path=tool_path)
+                continue
             try:
                 tool = self._load_tool(tool_path, dependencies)
             except SkipThisTool:
@@ -951,6 +979,8 @@ class PythinkerToolset:
                     )
 
                 self._register_mcp_tools(server_name, server_info.tools)
+                for tool in server_info.tools:
+                    runtime.mcp_tools[f"mcp__{server_name}__{tool.name}"] = tool
 
                 server_info.status = "connected"
                 logger.info("Connected MCP server: {server_name}", server_name=server_name)

@@ -59,7 +59,10 @@ sys.modules.pop("importlib.metadata", None)
 import pythinker_code.constant as constant
 assert "importlib.metadata" not in sys.modules
 assert constant.get_version()
-assert "importlib.metadata" in sys.modules
+# Tests run from the source checkout, where the version comes from the live
+# pyproject.toml; importlib.metadata stays unimported (it is only the
+# wheel/PyInstaller fallback path).
+assert "importlib.metadata" not in sys.modules
 print("ok")
 """
     )

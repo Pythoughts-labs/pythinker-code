@@ -287,6 +287,21 @@ async def goal(soul: PythinkerSoul, args: str):
     )
 
 
+@registry.command
+async def learn(soul: PythinkerSoul, args: str):
+    """Extract reusable lessons from this session and save them to project memory"""
+    focus = args.strip()
+    focus_line = (
+        f"Focus especially on: {focus}"
+        if focus
+        else "No specific focus was given; review the whole session."
+    )
+    wire_send(TextPart(text="Reviewing the session for lessons worth keeping..."))
+    await soul._turn(  # pyright: ignore[reportPrivateUsage]
+        Message(role="user", content=prompts.LEARN.format(focus=focus_line))
+    )
+
+
 @registry.command(name="best-practices", aliases=["bp"])
 async def best_practices(soul: PythinkerSoul, args: str):
     """Inject engineering best practices (code changes, testing, todos, debugging) into context"""

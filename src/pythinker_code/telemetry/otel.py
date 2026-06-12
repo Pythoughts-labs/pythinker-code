@@ -48,6 +48,7 @@ from opentelemetry.sdk.trace.sampling import (
 from opentelemetry.trace import Status, StatusCode, Tracer
 
 from pythinker_code.telemetry.config import (
+    detect_environment,
     is_disabled,
     otel_endpoint,
     otel_ingest_token,
@@ -74,7 +75,7 @@ def _resource(*, version: str, ui_mode: str, device_id: str | None) -> Resource:
     attrs: dict[str, Any] = {
         "service.name": _SERVICE_NAME,
         "service.version": version or "unknown",
-        "deployment.environment": "production",
+        "deployment.environment": detect_environment(),
         "ui.mode": ui_mode or "shell",
         "host.arch": platform.machine(),
         "os.type": platform.system().lower(),
@@ -179,8 +180,59 @@ def init(
     _m.bind(_meter)
 
     _initialized = True
+    _install_error_log_forwarding()
     _log.debug("OTel SDK initialized at %s", endpoint)
     return True
+
+
+def _install_error_log_forwarding() -> int | None:
+    """Forward loguru ERROR/CRITICAL records to OTel logs as site-only events.
+
+    ``logger.error``/``logger.exception`` sites without a paired
+    ``report_handled_error`` are otherwise invisible fleet-wide, which makes
+    agent failures undiagnosable. Only the logging site (module/function/line)
+    and the exception class are exported — never the formatted message, which
+    routinely embeds user-, repo-, or wire-controlled content (raw wire lines,
+    payloads, file fragments). The message template is recoverable from source
+    given the site and ``service.version``, and nothing below ERROR ever
+    leaves the host. Called once from :func:`init`, so the kill switch and
+    pytest guard apply. Returns the loguru sink id (tests remove it), or None
+    on failure.
+    """
+
+    sink_failure_logged = False
+
+    def _sink(message: Any) -> None:
+        nonlocal sink_failure_logged
+        try:
+            record = message.record
+            attrs: dict[str, Any] = {
+                "log.level": record["level"].name,
+                "log.module": record["name"] or "",
+                "log.function": record["function"] or "",
+                "log.line": record["line"] or 0,
+            }
+            exc = record["exception"]
+            if exc is not None and exc.type is not None:
+                attrs["exc_class"] = exc.type.__name__
+            emit_log(name="app_error_log", attributes=attrs, severity="error")
+        except Exception:  # noqa: BLE001 — telemetry must never break logging
+            # One-shot breadcrumb via stdlib logging (not loguru, so a broken
+            # sink cannot re-enter itself): a silent drop would otherwise make
+            # the app_error_log signal disappear with no way to notice.
+            if not sink_failure_logged:
+                sink_failure_logged = True
+                _log.debug(
+                    "app_error_log forwarding sink failed; suppressing repeats", exc_info=True
+                )
+
+    try:
+        from pythinker_code.utils.logging import logger as app_logger
+
+        return app_logger.add(_sink, level="ERROR")
+    except Exception:
+        _log.debug("Failed to install error-log forwarding", exc_info=True)
+        return None
 
 
 def get_tracer() -> Tracer:

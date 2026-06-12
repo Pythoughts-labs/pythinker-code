@@ -6,14 +6,17 @@ Pythinker Code shell mode supports the following keyboard shortcuts.
 
 | Shortcut | Function |
 |----------|----------|
+| `?` | Toggle the shortcuts help popup (when the input row is empty) |
 | `Ctrl-X` | Toggle agent/shell mode |
-| `Shift-Tab` | Toggle plan mode (read-only research and planning) |
+| `Shift-Tab` | Cycle the thinking effort level |
+| `!` | Run a one-shot shell command (prefix in agent mode) |
 | `Ctrl-O` | Edit in external editor (`$VISUAL`/`$EDITOR`) |
 | `Ctrl-J` | Insert newline |
 | `Alt-Enter` | Insert newline (same as `Ctrl-J`) |
 | `Ctrl-S` | Steer: inject input immediately into the running turn (during streaming) |
 | `Ctrl-V` | Paste (supports images and video files) |
 | `Ctrl-E` | Expand full approval request content |
+| `Ctrl-T` | Show/hide the pinned todo list (during a running turn) |
 | `1`–`4` | Quick select approval option (`4` for decline with feedback) |
 | `1`–`5` | Select question option by number |
 | `Ctrl-D` | Exit Pythinker Code |
@@ -33,13 +36,17 @@ The prompt changes based on current mode:
 - Plan mode: `📋`
 - Shell mode: `$`
 
+## Thinking effort
+
+### `Shift-Tab`: Cycle thinking effort
+
+Press `Shift-Tab` to cycle the thinking effort level for the current model. A toast shows the new level. If the current model uses native reasoning or does not support thinking, a toast explains that instead.
+
 ## Plan mode
 
-### `Shift-Tab`: Toggle plan mode
+Plan mode is toggled with the `/plan` slash command. In plan mode, the AI can only use read-only tools to explore the codebase, writing an implementation plan to a plan file and submitting it for your approval.
 
-Press `Shift-Tab` to enable or disable plan mode. In plan mode, the AI can only use read-only tools to explore the codebase, writing an implementation plan to a plan file and submitting it for your approval.
-
-When enabled, the prompt changes to `📋` and a blue `plan` badge appears in the status bar. You can also use the `/plan` slash command to manage plan mode. See [Plan mode](../guides/interaction.md#plan-mode) for details.
+When enabled, the prompt changes to `📋` and a blue `plan` badge appears in the status bar. See [Plan mode](../guides/interaction.md#plan-mode) for details.
 
 ## External editor
 

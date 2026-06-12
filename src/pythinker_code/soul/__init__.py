@@ -100,6 +100,12 @@ class StatusSnapshot:
     """The maximum number of tokens the context can hold."""
     mcp_status: MCPStatusSnapshot | None = None
     """The current MCP startup snapshot, if MCP is configured."""
+    session_cost_usd: float = 0.0
+    """Estimated USD cost of this run (0.0 when unpriced/local models)."""
+    total_input_tokens: int = 0
+    """Cumulative input tokens consumed this run (for the speed segment)."""
+    total_output_tokens: int = 0
+    """Cumulative output tokens produced this run (for the speed segment)."""
 
 
 @runtime_checkable

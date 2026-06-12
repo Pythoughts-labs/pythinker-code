@@ -114,3 +114,145 @@ def test_fail_with_usage_reports_spend_on_error() -> None:
     assert err.extras is not None
     assert err.extras[EXTRA_INPUT_TOKENS] == 100
     assert err.extras[EXTRA_OUTPUT_TOKENS] == 40
+
+
+# ---------------------------------------------------------------------------
+# aggregate_findings — batch-level RISKS/BLOCKERS roll-up
+# ---------------------------------------------------------------------------
+
+from pythinker_code.subagents.usage import aggregate_findings  # noqa: E402
+
+_CHILD_A = """status: completed
+
+### SUMMARY
+Implemented the parser.
+
+### RISKS
+- Parser assumes UTF-8 input.
+
+### BLOCKERS
+None
+"""
+
+_CHILD_B = """status: completed
+
+### SUMMARY
+Wired the CLI flag.
+
+### RISKS
+- Parser assumes UTF-8 input.
+- Flag collides with legacy alias.
+
+### BLOCKERS
+- Needs the new config key merged first.
+"""
+
+
+def test_aggregate_findings_collects_and_dedupes_risks_and_blockers() -> None:
+    lines = aggregate_findings([("child-a", _CHILD_A), ("child-b", _CHILD_B)])
+    text = "\n".join(lines)
+    assert text.count("Parser assumes UTF-8 input.") == 1
+    assert "Flag collides with legacy alias." in text
+    assert "Needs the new config key merged first." in text
+    assert "child-b" in text  # attribution for the blocker
+
+
+def test_aggregate_findings_tolerates_free_text_children() -> None:
+    lines = aggregate_findings([("child-a", "I just did the thing, no sections here.")])
+    assert lines == []
+
+
+def test_aggregate_findings_skips_none_text_blockers() -> None:
+    # _CHILD_A reports "### BLOCKERS\nNone" — the placeholder must not emit a
+    # blockers block, while the real RISKS finding still rolls up.
+    lines = aggregate_findings([("child-a", _CHILD_A)])
+    text = "\n".join(lines)
+    assert "batch_blockers" not in text
+    assert "batch_risks:" in text
+    assert "Parser assumes UTF-8 input. [child-a]" in text
+
+
+def test_aggregate_findings_skips_none_observed_marker() -> None:
+    """`None observed.` is the empty-section marker the built-in agent report
+    contracts document; it must not roll up as a finding."""
+    report = "### RISKS\nNone observed.\n\n### BLOCKERS\nnone observed\n"
+    assert aggregate_findings([("child-a", report)]) == []
+
+
+def test_aggregate_findings_empty_batch() -> None:
+    assert aggregate_findings([]) == []
+
+
+def test_aggregate_findings_attributes_repeating_child_once() -> None:
+    # A child listing the same bullet twice must be attributed once, not
+    # rendered as "[child-a, child-a]".
+    output = """### RISKS
+- Parser assumes UTF-8 input.
+- Parser assumes UTF-8 input.
+"""
+    lines = aggregate_findings([("child-a", output)])
+    text = "\n".join(lines)
+    assert "Parser assumes UTF-8 input. [child-a]" in text
+    assert "child-a, child-a" not in text
+
+
+def test_aggregate_findings_survives_unclosed_code_fence() -> None:
+    # A child that opens a code fence and never closes it must not swallow
+    # the sections that follow the malformed block.
+    malformed = """### SUMMARY
+Did the thing.
+
+```python
+print("oops, never closed")
+
+### RISKS
+- Fence was never closed.
+"""
+    lines = aggregate_findings([("child-a", malformed)])
+    assert any("Fence was never closed." in line for line in lines)
+
+
+def test_aggregate_findings_preserves_leading_cli_flags() -> None:
+    report = """### RISKS
+- --force flag bypasses validation.
+* *args handling is fragile.
+"""
+    lines = aggregate_findings([("child-a", report)])
+    text = "\n".join(lines)
+    assert "--force flag bypasses validation." in text
+    assert "*args handling is fragile." in text
+
+
+def test_aggregate_findings_keeps_non_bulleted_marker_lines_intact() -> None:
+    # Lines that merely START with "-"/"*" are content, not bullets: a bare
+    # "--force ..." finding must not lose its first dash.
+    report = """### RISKS
+--force flag bypasses validation.
+*args handling is fragile.
+"""
+    lines = aggregate_findings([("child-a", report)])
+    text = "\n".join(lines)
+    assert "--force flag bypasses validation." in text
+    assert "*args handling is fragile." in text
+
+
+def test_extract_section_ignores_headers_inside_code_fences():
+    output = (
+        "### RISKS\n"
+        "- real risk\n"
+        "```bash\n"
+        "# BLOCKERS\n"
+        "- not a finding, just a shell comment\n"
+        "```\n"
+        "- second real risk\n"
+        "### BLOCKERS\n"
+        "- real blocker\n"
+    )
+    from pythinker_code.subagents.usage import aggregate_findings
+
+    lines = aggregate_findings([("child", output)])
+    joined = "\n".join(lines)
+    assert "real risk" in joined
+    assert "second real risk" in joined
+    assert "real blocker" in joined
+    assert "shell comment" not in joined

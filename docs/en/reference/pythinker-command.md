@@ -14,12 +14,13 @@ pythinker [OPTIONS] COMMAND [ARGS]
 | `--help` | `-h` | Show help message and exit |
 | `--verbose` | | Output detailed runtime information |
 | `--debug` | | Log debug information (output to `~/.pythinker/logs/pythinker.log`) |
+| `--no-telemetry` | | Disable all anonymous usage telemetry and error reporting (equivalent to setting `PYTHINKER_DISABLE_TELEMETRY=1`) |
 
 ## Agent configuration
 
 | Option | Description |
 |--------|-------------|
-| `--agent NAME` | Use built-in agent, options: `default`, `okabe` |
+| `--agent NAME` | Use built-in agent, options: `default`, `ask`, `debug`, `okabe` |
 | `--agent-file PATH` | Use custom agent file |
 
 `--agent` and `--agent-file` are mutually exclusive. See [Agents and Subagents](../customization/agents.md) for details.
@@ -121,7 +122,8 @@ Default loads `~/.pythinker/mcp.json` (if exists). See [Model Context Protocol](
 | `--yolo` | `-y` | Dangerously skip permission approvals (user still reachable for `AskUserQuestion`) |
 | `--yes` | | Alias for `--yolo` |
 | `--auto-approve` | | Alias for `--yolo` |
-| `--auto` | | Auto mode: auto-approve tool calls and auto-dismiss `AskUserQuestion`. Use when no user will be at the terminal |
+| `--no-yolo` | | Force YOLO off for this run, overriding `--yolo`, config `default_yolo`, and any persisted/resumed YOLO state |
+| `--auto` | | Auto mode: auto-dismiss `AskUserQuestion`, and auto-approve tool calls when the current trust/safe-mode policy permits (otherwise approval-required actions fail closed). Use when no user will be at the terminal |
 
 ::: warning Note
 In YOLO or auto mode, all file modifications and shell commands are automatically executed. Use with caution.
@@ -143,6 +145,7 @@ You can also set `default_plan_mode = true` in the config file to start new sess
 |--------|-------------|
 | `--thinking` | Enable thinking mode |
 | `--no-thinking` | Disable thinking mode |
+| `--thinking-effort LEVEL` | Thinking effort level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` (alias `--thinking-level`) |
 
 Thinking mode requires model support. If not specified, uses the last session's setting.
 
@@ -198,6 +201,7 @@ pythinker export [<session_id>] [-o <output_path>] [--yes]
 | `<session_id>` | Session ID to export. If omitted, the CLI previews the previous session for the current working directory and asks for confirmation before exporting |
 | `--output, -o` | Output ZIP file path (defaults to `session-<id>.zip` in the current directory) |
 | `--yes, -y` | Skip the confirmation prompt when exporting the default previous session |
+| `--format` | Transcript format; only `yaml` is accepted (the transcript is always included as YAML) |
 
 ::: info Added
 Added in version 1.20.
@@ -217,7 +221,7 @@ pythinker vis [OPTIONS]
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--host TEXT` | `-h` | Host address to bind to (default: `127.0.0.1`) |
+| `--host TEXT` | `-H` | Host address to bind to (default: `127.0.0.1`) |
 | `--network` | `-n` | Listen on all network interfaces (bind to `0.0.0.0`) with auto-detected LAN IP display |
 | `--port INTEGER` | `-p` | Port number to bind to (default: `5495`) |
 | `--open / --no-open` | | Automatically open browser (default: enabled) |
@@ -237,7 +241,7 @@ If the default port is in use, the server will pick the next available port (by 
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--host TEXT` | `-h` | Host address to bind to (default: `127.0.0.1`) |
+| `--host TEXT` | `-H` | Host address to bind to (default: `127.0.0.1`) |
 | `--network` | `-n` | Listen on all network interfaces (bind to `0.0.0.0`) with auto-detected LAN IP display |
 | `--port INTEGER` | `-p` | Port number to bind to (default: `5494`) |
 | `--reload` | | Enable auto-reload (development mode) |

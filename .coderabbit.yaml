@@ -51,6 +51,10 @@ reviews:
     - "!graphify-out/**"
     - "!**/*.pyc"
     - "!**/__pycache__/**"
+    # Prose and working-notes paths: keeps bot reviews focused on shipped
+    # code and large branches under the per-PR reviewed-file limit.
+    - "!docs/**"
+    - "!tasks/**"
 
   path_instructions:
     - path: "**/*.py"

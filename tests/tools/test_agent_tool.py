@@ -574,6 +574,111 @@ async def test_run_agents_launches_background_children_with_base_prompt(runtime,
     ).is_file()
 
 
+async def test_run_agents_replaces_generic_names_with_codenames(runtime, monkeypatch):
+    """Children named after their own type (`code-reviewer:code-reviewer`) get
+    distinctive generated codenames; the type stays in its own field. Each
+    child in the batch gets a unique codename, and with no caller title the
+    description becomes `codename (type)` so notifications stay readable."""
+    from pythinker_code.subagents.codenames import _ADJECTIVES, _NOUNS
+
+    runtime.labor_market.add_builtin_type(
+        AgentTypeDefinition(
+            name="explore",
+            description="Read-only exploration.",
+            agent_file=runtime.subagent_store.root / "explore.yaml",
+            tool_policy=ToolPolicy(mode="inherit"),
+        )
+    )
+    created: list[dict[str, object]] = []
+
+    def fake_create_agent_task(**kwargs):
+        created.append(kwargs)
+        return SimpleNamespace(
+            spec=SimpleNamespace(
+                id=f"task-{len(created)}",
+                kind="agent",
+                description=kwargs["description"],
+            ),
+            runtime=SimpleNamespace(status="starting"),
+        )
+
+    monkeypatch.setattr(runtime.background_tasks, "create_agent_task", fake_create_agent_task)
+    tool = RunAgents(runtime)
+
+    with tool_call_context("RunAgents"):
+        result = await tool(
+            tool.params(
+                summary="parallel review",
+                agents=[
+                    AgentRunConfig(name="explore", subagent_type="explore", prompt="Scout A"),
+                    AgentRunConfig(name="explore", subagent_type="explore", prompt="Scout B"),
+                ],
+            )
+        )
+
+    assert not result.is_error
+    output = result.output if isinstance(result.output, str) else ""
+    names = [
+        line.removeprefix("- name: ").strip()
+        for line in output.splitlines()
+        if line.startswith("- name: ")
+    ]
+    assert len(names) == 2
+    assert len(set(names)) == 2, "each child must get a unique codename"
+    for name in names:
+        assert name != "explore"
+        adjective, _, noun = name.partition("-")
+        assert adjective in _ADJECTIVES and noun.split("-")[0] in _NOUNS, name
+    descriptions = [str(item["description"]) for item in created]
+    assert descriptions == [f"{name} (explore)" for name in names]
+
+
+async def test_run_agents_keeps_caller_chosen_names(runtime, monkeypatch):
+    """Distinct caller-supplied names and titles pass through untouched."""
+    runtime.labor_market.add_builtin_type(
+        AgentTypeDefinition(
+            name="explore",
+            description="Read-only exploration.",
+            agent_file=runtime.subagent_store.root / "explore.yaml",
+            tool_policy=ToolPolicy(mode="inherit"),
+        )
+    )
+    created: list[dict[str, object]] = []
+
+    def fake_create_agent_task(**kwargs):
+        created.append(kwargs)
+        return SimpleNamespace(
+            spec=SimpleNamespace(
+                id=f"task-{len(created)}",
+                kind="agent",
+                description=kwargs["description"],
+            ),
+            runtime=SimpleNamespace(status="starting"),
+        )
+
+    monkeypatch.setattr(runtime.background_tasks, "create_agent_task", fake_create_agent_task)
+    tool = RunAgents(runtime)
+
+    with tool_call_context("RunAgents"):
+        result = await tool(
+            tool.params(
+                summary="parallel scouting",
+                agents=[
+                    AgentRunConfig(
+                        name="api-scout",
+                        title="API scout",
+                        subagent_type="explore",
+                        prompt="Find API files",
+                    ),
+                ],
+            )
+        )
+
+    assert not result.is_error
+    assert "- name: api-scout" in result.output
+    assert [item["description"] for item in created] == ["API scout"]
+
+
 async def test_run_agents_foreground_reports_completed_status(runtime):
     runtime.labor_market.add_builtin_type(
         AgentTypeDefinition(
@@ -2331,3 +2436,154 @@ def test_run_agents_fingerprint_differs_when_child_prompts_differ():
         ],
     )
     assert _run_agents_fingerprint(params_a) != _run_agents_fingerprint(params_c)
+
+
+async def test_run_agents_foreground_children_run_concurrently(runtime):
+    runtime.labor_market.add_builtin_type(
+        AgentTypeDefinition(
+            name="code-reviewer",
+            description="Reviews diffs.",
+            agent_file=runtime.subagent_store.root / "code-reviewer.yaml",
+            tool_policy=ToolPolicy(mode="inherit"),
+        )
+    )
+    active = 0
+    max_active = 0
+
+    class SlowAgentTool:
+        def check_execution_policy(self, subagent_type):
+            return None
+
+        async def __call__(self, params):
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0.05)
+            active -= 1
+            return ToolOk(output=f"status: completed\n\n[summary]\nDone {params.description}.")
+
+    tool = RunAgents(runtime)
+    tool._agent_tool = SlowAgentTool()  # type: ignore[assignment]
+
+    children = [
+        AgentRunConfig(
+            name=f"reviewer-{i}",
+            title=f"Reviewer {i}",
+            subagent_type="code-reviewer",
+            prompt=f"Review part {i}",
+        )
+        for i in range(3)
+    ]
+    with tool_call_context("RunAgents"):
+        result = await tool(
+            tool.params(summary="parallel review", agents=children, run_in_background=False)
+        )
+
+    assert not result.is_error
+    assert max_active > 1, "foreground children should overlap in time"
+    # Result ordering matches the request order regardless of completion order.
+    assert isinstance(result.output, str)
+    order = [
+        line.removeprefix("- name: ").strip()
+        for line in result.output.splitlines()
+        if line.startswith("- name: ")
+    ]
+    assert order == ["reviewer-0", "reviewer-1", "reviewer-2"]
+
+
+async def test_run_agents_foreground_one_failure_does_not_abort_siblings(runtime):
+    runtime.labor_market.add_builtin_type(
+        AgentTypeDefinition(
+            name="code-reviewer",
+            description="Reviews diffs.",
+            agent_file=runtime.subagent_store.root / "code-reviewer.yaml",
+            tool_policy=ToolPolicy(mode="inherit"),
+        )
+    )
+
+    class FlakyAgentTool:
+        def check_execution_policy(self, subagent_type):
+            return None
+
+        async def __call__(self, params):
+            await asyncio.sleep(0.01)
+            if "1" in params.description:
+                raise RuntimeError("child exploded")
+            return ToolOk(output=f"status: completed\n\n[summary]\nDone {params.description}.")
+
+    tool = RunAgents(runtime)
+    tool._agent_tool = FlakyAgentTool()  # type: ignore[assignment]
+
+    children = [
+        AgentRunConfig(
+            name=f"reviewer-{i}",
+            title=f"Reviewer {i}",
+            subagent_type="code-reviewer",
+            prompt=f"Review part {i}",
+        )
+        for i in range(3)
+    ]
+    with tool_call_context("RunAgents"):
+        result = await tool(
+            tool.params(summary="flaky batch", agents=children, run_in_background=False)
+        )
+
+    assert result.is_error  # batch reports failure overall
+    # But both healthy siblings completed and are present in the report
+    # (child entry status lines are indented two spaces).
+    assert isinstance(result.output, str)
+    child_statuses = [
+        line.strip() for line in result.output.splitlines() if line.startswith("  status: ")
+    ]
+    assert child_statuses.count("status: completed") == 2
+    assert child_statuses.count("status: error") == 1
+    assert "child exploded" in result.output
+
+
+async def test_run_agents_foreground_aggregates_child_risks_and_blockers(runtime):
+    runtime.labor_market.add_builtin_type(
+        AgentTypeDefinition(
+            name="code-reviewer",
+            description="Reviews diffs.",
+            agent_file=runtime.subagent_store.root / "code-reviewer.yaml",
+            tool_policy=ToolPolicy(mode="inherit"),
+        )
+    )
+
+    class ReportingAgentTool:
+        def check_execution_policy(self, subagent_type):
+            return None
+
+        async def __call__(self, params):
+            return ToolOk(
+                output=(
+                    "status: completed\n\n"
+                    "### SUMMARY\nDone.\n\n"
+                    "### RISKS\n- Shared cache key may collide.\n\n"
+                    "### BLOCKERS\nNone\n"
+                )
+            )
+
+    tool = RunAgents(runtime)
+    tool._agent_tool = ReportingAgentTool()  # type: ignore[assignment]
+
+    children = [
+        AgentRunConfig(
+            name=f"reviewer-{i}",
+            title=f"Reviewer {i}",
+            subagent_type="code-reviewer",
+            prompt=f"Review part {i}",
+        )
+        for i in range(2)
+    ]
+    with tool_call_context("RunAgents"):
+        result = await tool(
+            tool.params(summary="risk batch", agents=children, run_in_background=False)
+        )
+
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    assert "batch_risks:" in result.output
+    assert result.output.count("Shared cache key may collide.") >= 1
+    assert "reviewer-0, reviewer-1" in result.output
+    assert "batch_blockers:" not in result.output

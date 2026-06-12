@@ -54,7 +54,7 @@ Environment variables can override provider and model settings without modifying
 Environment variables take effect based on the current provider type:
 
 - `pythinker` type providers: Use `PYTHINKER_*` environment variables
-- `openai_legacy` or `openai_responses` type providers: Use `OPENAI_*` environment variables
+- `openai_legacy`, `openai_responses`, or `openai_codex` type providers: Use `OPENAI_*` environment variables
 - Other provider types: Environment variable overrides not supported
 
 See [Environment Variables](./env-vars.md) for the complete list.

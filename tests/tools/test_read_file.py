@@ -642,3 +642,87 @@ async def test_read_symlink_to_outside_sensitive_is_blocked(
     assert "sensitive" in result.message.lower() or "secrets" in result.message.lower(), (
         f"Expected sensitive-file error but got: {result.message}"
     )
+
+
+async def test_max_lines_truncation_includes_continuation_hint(
+    read_file_tool: ReadFile, temp_work_dir: HostPath
+):
+    """A max-lines-capped read names the remaining lines and the next offset."""
+    large_file = temp_work_dir / "spec_file.txt"
+    content = "\n".join([f"Line {i}" for i in range(1, MAX_LINES + 10)])
+    await large_file.write_text(content)
+
+    result = await read_file_tool(Params(path=str(large_file), n_lines=MAX_LINES + 5))
+
+    assert not result.is_error
+    assert f"Max {MAX_LINES} lines reached" in result.message
+    assert (
+        f"Partial read: 9 lines remain; continue with line_offset={MAX_LINES + 1}."
+        in result.message
+    )
+
+
+async def test_max_bytes_truncation_includes_continuation_hint(
+    read_file_tool: ReadFile, temp_work_dir: HostPath
+):
+    """A max-bytes-capped read carries the same continuation hint."""
+    large_file = temp_work_dir / "large_bytes_hint.txt"
+    line_content = "A" * 1000
+    num_lines = (MAX_BYTES // 1000) + 5
+    content = "\n".join([line_content] * num_lines)
+    await large_file.write_text(content)
+
+    result = await read_file_tool(Params(path=str(large_file)))
+
+    assert not result.is_error
+    assert f"Max {MAX_BYTES} bytes reached" in result.message
+    assert "Partial read:" in result.message
+    assert "continue with line_offset=" in result.message
+
+
+async def test_max_lines_at_exact_eof_has_no_continuation_hint(
+    read_file_tool: ReadFile, temp_work_dir: HostPath
+):
+    """Hitting the line cap exactly at EOF must not claim lines remain."""
+    exact_file = temp_work_dir / "exact_max.txt"
+    content = "\n".join([f"Line {i}" for i in range(1, MAX_LINES + 1)])
+    await exact_file.write_text(content)
+
+    result = await read_file_tool(Params(path=str(exact_file), n_lines=MAX_LINES + 5))
+
+    assert not result.is_error
+    assert f"Max {MAX_LINES} lines reached" in result.message
+    assert "Partial read:" not in result.message
+
+
+async def test_requested_partial_read_has_no_continuation_hint(
+    read_file_tool: ReadFile, sample_file: HostPath
+):
+    """A deliberately small n_lines read is not flagged as a forced partial read."""
+    result = await read_file_tool(Params(path=str(sample_file), n_lines=2))
+
+    assert not result.is_error
+    assert "Partial read:" not in result.message
+
+
+async def test_default_read_of_capped_file_includes_continuation_hint(
+    read_file_tool: ReadFile, temp_work_dir: HostPath
+):
+    """The DEFAULT read (n_lines == MAX_LINES) of a larger file is a capped read.
+
+    Regression: the cap flag used to be unreachable when n_lines equaled
+    MAX_LINES, so default reads of large spec files carried no continuation
+    signal at all.
+    """
+    large_file = temp_work_dir / "default_capped.txt"
+    content = "\n".join([f"Line {i}" for i in range(1, MAX_LINES + 10)])
+    await large_file.write_text(content)
+
+    result = await read_file_tool(Params(path=str(large_file)))
+
+    assert not result.is_error
+    assert f"Max {MAX_LINES} lines reached" in result.message
+    assert (
+        f"Partial read: 9 lines remain; continue with line_offset={MAX_LINES + 1}."
+        in result.message
+    )

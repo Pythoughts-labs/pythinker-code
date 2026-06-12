@@ -1261,3 +1261,24 @@ async def test_grep_rejects_symlink_escaping_workspace(tmp_path: Path):
 
     assert result.is_error
     assert "outside the workspace" in result.message
+
+
+@pytest.mark.asyncio
+async def test_rg_exec_failure_falls_back_to_python_grep(tmp_path, monkeypatch):
+    """A resolved rg binary that cannot execute (wrong arch -> 'Exec format
+    error') must degrade to the Python grep instead of failing the tool."""
+    (tmp_path / "hello.txt").write_text("hello world\n")
+    grep = _make_grep_for(tmp_path)
+
+    async def _fake_ensure() -> str:
+        return str(tmp_path / "rg")
+
+    async def _exec_boom(*args, **kwargs):
+        raise OSError(8, "Exec format error", str(tmp_path / "rg"))
+
+    monkeypatch.setattr(grep_module, "_ensure_rg_path", _fake_ensure)
+    monkeypatch.setattr(grep_module.asyncio, "create_subprocess_exec", _exec_boom)
+
+    result = await grep(Params(pattern="hello", path=str(tmp_path)))
+    assert not result.is_error
+    assert "hello.txt" in str(result.output)

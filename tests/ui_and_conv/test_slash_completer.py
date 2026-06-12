@@ -15,6 +15,7 @@ import pythinker_code.ui.shell.prompt as prompt_mod
 from pythinker_code.ui.shell.prompt import (
     LocalFileMentionCompleter,
     LocalFileMentionMenuControl,
+    SlashCommandAutoSuggest,
     SlashCommandCompleter,
     SlashCommandMenuControl,
     _discard_slash_command,
@@ -86,6 +87,49 @@ def test_should_complete_only_for_root_slash_token():
     assert not SlashCommandCompleter.should_complete(Document(text="test /he", cursor_position=8))
     assert not SlashCommandCompleter.should_complete(Document(text="@src", cursor_position=4))
     assert not SlashCommandCompleter.should_complete(Document(text="/he next", cursor_position=8))
+
+
+def _suggestion_text(names: frozenset[str], text: str) -> str | None:
+    suggest = SlashCommandAutoSuggest(lambda: names)
+    document = Document(text=text, cursor_position=len(text))
+    suggestion = suggest.get_suggestion(Buffer(), document)
+    return suggestion.text if suggestion else None
+
+
+def test_auto_suggest_completes_best_prefix_match():
+    """Typing a slash prefix ghost-renders the remainder of the first matching
+    command (alphabetical), which Tab accepts inline."""
+    names = frozenset({"clean-code-guard", "clear", "help"})
+    assert _suggestion_text(names, "/clean") == "-code-guard"
+    assert _suggestion_text(names, "/cl") == "ean-code-guard"
+    assert _suggestion_text(names, "/h") == "elp"
+
+
+def test_auto_suggest_completes_mid_line_slash_token():
+    """A slash token after other words still ghost-completes (Tab fills it in),
+    while the dropdown menu stays line-start-only."""
+    names = frozenset({"designer-skill:designer-skill", "help"})
+    assert _suggestion_text(names, "use /designer") == "-skill:designer-skill"
+    assert _suggestion_text(names, "please run /he") == "lp"
+    # The completion *menu* must not open mid-line.
+    assert not SlashCommandCompleter.should_complete(
+        Document(text="use /designer", cursor_position=len("use /designer"))
+    )
+
+
+def test_auto_suggest_inactive_outside_root_slash_token():
+    names = frozenset({"help"})
+    assert _suggestion_text(names, "/") is None  # bare slash: menu handles discovery
+    assert _suggestion_text(names, "/zzz") is None  # no match
+    assert _suggestion_text(names, "/help") is None  # already complete
+    assert _suggestion_text(names, "path/he") is None  # glued, not a slash token
+    assert _suggestion_text(names, "/he next") is None  # slash token isn't last
+    assert _suggestion_text(names, "plain text") is None
+
+
+def test_auto_suggest_is_case_insensitive_on_typed_prefix():
+    names = frozenset({"help"})
+    assert _suggestion_text(names, "/He") == "lp"
 
 
 def test_file_mention_should_complete_for_active_at_fragment():
@@ -308,3 +352,25 @@ def test_find_prompt_float_container_supports_direct_float_container_shape():
     root = HSplit([float_container])
 
     assert _find_prompt_float_container(root) is float_container
+
+
+def test_task_unavailable_commands_annotated_during_run():
+    """Shell commands not flagged task-safe show a disabled meta while a turn runs."""
+    completer = SlashCommandCompleter(
+        [_make_command("settings"), _make_command("statusline")],
+        annotate_meta=True,
+        is_task_running=lambda: True,
+    )
+    metas = {c.text: c.display_meta_text for c in _completions(completer, "/")}
+    assert metas["/settings"] == "disabled while a task is in progress"
+    assert metas["/statusline"] != "disabled while a task is in progress"
+
+
+def test_no_disabled_annotation_when_idle():
+    completer = SlashCommandCompleter(
+        [_make_command("settings")],
+        annotate_meta=True,
+        is_task_running=lambda: False,
+    )
+    metas = {c.text: c.display_meta_text for c in _completions(completer, "/")}
+    assert "disabled" not in metas["/settings"]

@@ -9,6 +9,7 @@ input routing (queue/steer/btw), modal management, and key handling.
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 
@@ -21,7 +22,12 @@ from pythinker_core.tooling import ToolReturnValue
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from pythinker_code.ui.shell.console import console, render_to_ansi
+from pythinker_code.ui.shell.console import (
+    console,
+    current_console_width,
+    redirect_console_prints,
+    render_to_ansi,
+)
 from pythinker_code.ui.shell.echo import render_user_echo_text
 from pythinker_code.ui.shell.keyboard import KeyEvent
 from pythinker_code.ui.shell.motion import reduced_motion_enabled
@@ -39,6 +45,7 @@ from pythinker_code.ui.shell.visualize._question_panel import (
 )
 from pythinker_code.ui.theme import tui_rich_style
 from pythinker_code.utils.aioqueue import QueueShutDown
+from pythinker_code.utils.slashcmd import SlashCommandCall
 from pythinker_code.wire import WireUISide
 from pythinker_code.wire.types import (
     BtwBegin,
@@ -54,6 +61,15 @@ from pythinker_code.wire.types import (
 
 BtwRunner = Callable[[str, Callable[[str], None] | None], Awaitable[tuple[str | None, str | None]]]
 """async (question, on_text_chunk) -> (response, error). Used for direct btw execution."""
+
+ShellCommandRunner = Callable[[SlashCommandCall], Awaitable[None]]
+"""async (call) -> None. Runs a shell-level slash command while a task is in progress."""
+
+_TRANSIENT_COMMAND_PANEL_S = 10.0
+"""How long mid-task slash-command output stays visible in the live area."""
+
+_TRANSIENT_COMMAND_PANEL_MAX_LINES = 30
+"""Cap so verbose commands (/help) cannot swallow the live area."""
 
 _STATUS_REFRESH_INTERVAL_S = 0.22
 _STATUS_REFRESH_REDUCED_INTERVAL_S = 1.0
@@ -82,6 +98,7 @@ class _PromptLiveView(_LiveView):
         prompt_session: CustomPromptSession,
         steer: Callable[[str | list[ContentPart]], None],
         btw_runner: BtwRunner | None = None,
+        shell_command_runner: ShellCommandRunner | None = None,
         cancel_event: asyncio.Event | None = None,
         show_thinking_stream: bool = False,
         show_turn_recaps: bool = False,
@@ -99,6 +116,10 @@ class _PromptLiveView(_LiveView):
         self._prompt_session = prompt_session
         self._steer = steer
         self._btw_runner = btw_runner
+        self._shell_command_runner = shell_command_runner
+        self._shell_command_tasks: set[asyncio.Task[None]] = set()
+        self._transient_command_output: str | None = None
+        self._transient_command_expires: float = 0.0
         self._pending_local_steer_count: int = 0
         self._turn_ended = False
         self._question_modal: QuestionPromptDelegate | None = None
@@ -308,6 +329,14 @@ class _PromptLiveView(_LiveView):
                 task.cancel()
                 with suppress(asyncio.CancelledError, QueueShutDown):
                     await task
+            # Mid-turn slash-command tasks must not outlive the live view that
+            # displays their transient output. The runner already contains
+            # command exceptions; gather() retrieves the CancelledError.
+            if self._shell_command_tasks:
+                command_tasks = [*self._shell_command_tasks]
+                for task in command_tasks:
+                    task.cancel()
+                await asyncio.gather(*command_tasks, return_exceptions=True)
             self._status_refresh_task = None
             self._pending_local_steer_count = 0
             # Do NOT dismiss btw here — the shell will call
@@ -325,32 +354,102 @@ class _PromptLiveView(_LiveView):
 
     # -- Input handling ------------------------------------------------------
 
+    def _intercept_shell_command(self, user_input: UserInput) -> bool:
+        """Intercept shell-level slash commands typed during a running task.
+
+        Returns True when the input was consumed: commands flagged
+        ``available_during_task`` run immediately (output shows transiently
+        in the live area); the rest are rejected with a toast. Returns False
+        for non-shell input so callers can queue/steer it normally.
+        """
+        from pythinker_code.utils.slashcmd import parse_slash_command_call
+
+        cmd = parse_slash_command_call(user_input.resolved_command.strip())
+        if cmd is None:
+            return False
+        from pythinker_code.ui.shell.slash import registry as shell_registry
+
+        command = shell_registry.find_command(cmd.name)
+        if command is None:
+            return False
+        from pythinker_code.ui.shell.prompt import toast
+
+        if not command.available_during_task or self._shell_command_runner is None:
+            toast(
+                f"/{cmd.name} is disabled while a task is in progress",
+                topic="input-ignored",
+                duration=3.0,
+            )
+            return True
+        from pythinker_code.telemetry import track
+
+        track("input_command", command=command.name)
+        runner = self._shell_command_runner
+        echo = render_user_echo_text(user_input.resolved_command)
+
+        async def _run() -> None:
+            # Capture the command's output (this task's prints only) and show
+            # it transiently in the live area instead of polluting scrollback
+            # above the streaming agent output.
+            try:
+                with redirect_console_prints(columns=current_console_width()) as buf:
+                    console.print(echo)
+                    try:
+                        await runner(cmd)
+                    finally:
+                        self._show_transient_command_output(buf.getvalue().rstrip("\n"))
+            except Exception:
+                # The task object is discarded on completion; without this the
+                # crash would vanish with it.
+                from pythinker_code.utils.logging import logger
+
+                logger.exception("Mid-task slash command /{} failed", cmd.name)
+
+        task = asyncio.create_task(_run())
+        self._shell_command_tasks.add(task)
+        task.add_done_callback(self._shell_command_tasks.discard)
+        return True
+
+    def _show_transient_command_output(self, ansi_text: str) -> None:
+        if not ansi_text:
+            return
+        lines = ansi_text.splitlines()
+        if len(lines) > _TRANSIENT_COMMAND_PANEL_MAX_LINES:
+            hidden = len(lines) - _TRANSIENT_COMMAND_PANEL_MAX_LINES
+            lines = [*lines[:_TRANSIENT_COMMAND_PANEL_MAX_LINES], f"… +{hidden} more lines"]
+            ansi_text = "\n".join(lines)
+        self._transient_command_output = ansi_text
+        self._transient_command_expires = time.monotonic() + _TRANSIENT_COMMAND_PANEL_S
+        self._prompt_session.invalidate()
+
+    def _dismiss_transient_command_output(self) -> None:
+        self._transient_command_output = None
+
+    def _current_transient_command_output(self) -> str | None:
+        if self._transient_command_output is None:
+            return None
+        if time.monotonic() >= self._transient_command_expires:
+            self._transient_command_output = None
+            return None
+        return self._transient_command_output
+
     def handle_local_input(self, user_input: UserInput) -> None:
         """Route user input through the unified classifier."""
         if not user_input or self._turn_ended:
             return
+        # New input dismisses any lingering slash-command panel.
+        self._dismiss_transient_command_output()
         action = classify_input(user_input.resolved_command, is_streaming=True)
         match action.kind:
             case InputAction.BTW:
                 if self._btw_runner is not None and not self._btw_active:
                     self._start_btw(action.args)
             case InputAction.QUEUE:
-                # Block shell-only commands from being queued — they would
-                # be misrouted through run_soul() instead of the shell dispatcher.
-                from pythinker_code.utils.slashcmd import parse_slash_command_call
-
-                if cmd := parse_slash_command_call(user_input.resolved_command.strip()):
-                    from pythinker_code.ui.shell.slash import registry as shell_registry
-
-                    if shell_registry.find_command(cmd.name) is not None:
-                        from pythinker_code.ui.shell.prompt import toast
-
-                        toast(
-                            f"/{cmd.name} is not available during streaming",
-                            topic="input-ignored",
-                            duration=3.0,
-                        )
-                        return
+                # Shell-only commands must not be queued — they would be
+                # misrouted through run_soul() instead of the shell dispatcher.
+                # Safe ones run immediately; the rest are rejected.
+                if self._intercept_shell_command(user_input):
+                    return
                 self._queued_messages.append(user_input)
                 from pythinker_code.telemetry import track
 
@@ -380,21 +479,9 @@ class _PromptLiveView(_LiveView):
 
             toast(action.args, topic="input-ignored", duration=3.0)
             return
-        # Block shell-only commands — same check as the Enter/queue path
-        from pythinker_code.utils.slashcmd import parse_slash_command_call
-
-        if cmd := parse_slash_command_call(user_input.resolved_command.strip()):
-            from pythinker_code.ui.shell.slash import registry as shell_registry
-
-            if shell_registry.find_command(cmd.name) is not None:
-                from pythinker_code.ui.shell.prompt import toast
-
-                toast(
-                    f"/{cmd.name} is not available during streaming",
-                    topic="input-ignored",
-                    duration=3.0,
-                )
-                return
+        # Intercept shell-only commands — same handling as the Enter/queue path
+        if self._intercept_shell_command(user_input):
+            return
         # Print permanently in conversation flow with UI-only text placeholders expanded.
         console.print(render_user_echo_text(user_input.resolved_command))
         from pythinker_code.telemetry import track
@@ -459,19 +546,24 @@ class _PromptLiveView(_LiveView):
         return ANSI(body if body else "")
 
     def render_running_prompt_body(self, columns: int) -> ANSI:
-        """Render the interactive part — queued messages."""
-        if not self._queued_messages:
-            return ANSI("")
+        """Render the interactive part — transient command output + queued messages."""
+        parts: list[str] = []
+        if (panel := self._current_transient_command_output()) is not None:
+            parts.append(panel)
+        if self._queued_messages:
+            blocks: list[RenderableType] = []
+            from rich.style import Style as _RStyle
 
-        blocks: list[RenderableType] = []
-        from rich.style import Style as _RStyle
+            for qi in self._queued_messages:
+                blocks.append(
+                    Text(f"❯ {qi.command}", style=tui_rich_style("info") + _RStyle(dim=True))
+                )
+            blocks.append(Text("↑ to edit · ctrl-s to send immediately", style="dim"))
 
-        for qi in self._queued_messages:
-            blocks.append(Text(f"❯ {qi.command}", style=tui_rich_style("info") + _RStyle(dim=True)))
-        blocks.append(Text("↑ to edit · ctrl-s to send immediately", style="dim"))
-
-        body = render_to_ansi(Group(*blocks), columns=columns).rstrip("\n")
-        return ANSI(body if body else "")
+            body = render_to_ansi(Group(*blocks), columns=columns).rstrip("\n")
+            if body:
+                parts.append(body)
+        return ANSI("\n".join(parts))
 
     def running_prompt_placeholder(self) -> str | None:
         if self._current_approval_request_panel is not None:

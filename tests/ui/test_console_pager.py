@@ -79,3 +79,60 @@ class TestConsolePagerIgnoresManpager:
         custom = MagicMock(spec=Pager)
         ctx = console.pager(pager=custom, styles=True)
         assert ctx.pager is custom
+
+
+class TestWindowsBuiltinPager:
+    """On Windows without $PAGER, pydoc falls back to ``more.com``, which
+    mangles ANSI and has no quit/status line — _PythinkerPager must page
+    in-process there instead of delegating to pydoc."""
+
+    def _show_on_win32(self, content: str, *, pager_env: str | None = None):
+        env = os.environ.copy()
+        env.pop("MANPAGER", None)
+        env.pop("PAGER", None)
+        if pager_env is not None:
+            env["PAGER"] = pager_env
+        stdout = MagicMock()
+        stdout.isatty.return_value = True
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("pythinker_code.ui.shell.console.sys.platform", "win32"),
+            patch("pythinker_code.ui.shell.console.sys.stdout", stdout),
+            patch("pydoc.pager") as mock_pydoc,
+            patch("pythinker_code.ui.shell.console._BuiltinPager") as mock_builtin,
+        ):
+            _PythinkerPager().show(content)
+        return mock_pydoc, mock_builtin, stdout
+
+    def test_long_content_uses_builtin_pager(self):
+        content = "\n".join(f"line {i}" for i in range(500))
+        mock_pydoc, mock_builtin, _ = self._show_on_win32(content)
+        mock_pydoc.assert_not_called()
+        mock_builtin.assert_called_once_with(content)
+        mock_builtin.return_value.run.assert_called_once_with()
+
+    def test_short_content_printed_directly(self):
+        mock_pydoc, mock_builtin, stdout = self._show_on_win32("one line")
+        mock_pydoc.assert_not_called()
+        mock_builtin.assert_not_called()
+        stdout.write.assert_any_call("one line")
+
+    def test_explicit_pager_env_respected(self):
+        content = "\n".join(f"line {i}" for i in range(500))
+        mock_pydoc, mock_builtin, _ = self._show_on_win32(content, pager_env="less -R")
+        mock_builtin.assert_not_called()
+        mock_pydoc.assert_called_once_with(content)
+
+    def test_posix_keeps_pydoc_path(self):
+        env = os.environ.copy()
+        env.pop("MANPAGER", None)
+        env.pop("PAGER", None)
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("pythinker_code.ui.shell.console.sys.platform", "linux"),
+            patch("pydoc.pager") as mock_pydoc,
+            patch("pythinker_code.ui.shell.console._BuiltinPager") as mock_builtin,
+        ):
+            _PythinkerPager().show("content")
+        mock_builtin.assert_not_called()
+        mock_pydoc.assert_called_once_with("content")

@@ -11,13 +11,14 @@ from pythinker_core.tooling import CallableTool2, ToolError, ToolReturnValue
 from pythinker_code.execution_profiles import resolve_execution_policy
 from pythinker_code.soul.agent import Runtime
 from pythinker_code.soul.toolset import get_current_tool_call_or_none
+from pythinker_code.subagents.codenames import generate_codename, is_generic_agent_name
 from pythinker_code.subagents.models import AgentLaunchSpec, AgentTypeDefinition
 from pythinker_code.subagents.runner import (
     ForegroundRunRequest,
     ForegroundSubagentRunner,
     busy_resume_message,
 )
-from pythinker_code.subagents.usage import summarize_batch
+from pythinker_code.subagents.usage import aggregate_findings, summarize_batch
 from pythinker_code.tools.utils import ToolResultStatus, load_desc, tool_status_line
 from pythinker_code.utils.logging import logger
 
@@ -142,8 +143,10 @@ class RunAgentsParams(BaseModel):
     run_in_background: bool = Field(
         default=True,
         description=(
-            "Launch children as background tasks by default so independent work can run in "
-            "parallel. Set false only when sequential foreground results are needed immediately."
+            "Foreground (false) runs children concurrently and returns all results inline — "
+            "prefer it when your only next step is to synthesize the results. Background "
+            "(true) returns immediately with task ids; use it only when you have other work "
+            "to do while children run."
         ),
     )
     timeout: int | None = Field(
@@ -527,6 +530,34 @@ class _BackgroundCapacity:
         return self.deferred_count > 0
 
 
+def _with_distinct_codenames(agents: list[AgentRunConfig]) -> list[AgentRunConfig]:
+    """Replace generic/duplicate child names with distinctive instance codenames.
+
+    Models routinely echo the subagent type as the name, producing identical
+    ``code-reviewer:code-reviewer`` rows for every parallel child. A generated
+    codename makes each instance distinguishable across the result tree,
+    TaskList, and notifications; caller-chosen distinct names are kept as-is.
+    When the caller gave no title either, the codename plus type becomes the
+    task description so notifications stay self-explanatory.
+    """
+    renamed: list[AgentRunConfig] = []
+    seen: set[str] = set()
+    for child in agents:
+        child_type = child.subagent_type or "coder"
+        name = child.name.strip()
+        if is_generic_agent_name(name, child_type) or name.lower() in seen:
+            codename = generate_codename(seen | {a.name.strip().lower() for a in agents})
+            child = child.model_copy(
+                update={
+                    "name": codename,
+                    "title": child.title or f"{codename} ({child_type})",
+                }
+            )
+        seen.add(child.name.strip().lower())
+        renamed.append(child)
+    return renamed
+
+
 class RunAgentsTool(CallableTool2[RunAgentsParams]):
     name: str = "RunAgents"
     params: type[RunAgentsParams] = RunAgentsParams
@@ -543,7 +574,8 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
                 "scope, and output requirements. Each child receives base_prompt, then "
                 "its own single-objective prompt with scope and verification criteria. "
                 "Background mode returns task IDs immediately; foreground mode runs children "
-                "sequentially and returns their summaries. Background batches share the session "
+                "concurrently (bounded by the session background-task limit) and returns their "
+                "summaries. Background batches share the session "
                 f"background-task limit ({max_background} total slots, including running "
                 "shell/background tasks); oversized background batches launch what fits now "
                 "and report the deferred children."
@@ -551,6 +583,15 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
         )
         self._runtime = runtime
         self._agent_tool = AgentTool(runtime)
+
+    def _child_concurrency_limit(self) -> int:
+        """How many children may execute at once (execution-capacity guard).
+
+        Deliberately reuses ``background.max_running_tasks`` so one config knob
+        bounds total child execution; setting it to 1 also serializes
+        foreground fan-out.
+        """
+        return max(1, self._runtime.config.background.max_running_tasks)
 
     def _background_capacity(self, params: RunAgentsParams) -> _BackgroundCapacity | None:
         if not params.run_in_background:
@@ -574,7 +615,7 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
         message = (
             f"RunAgents requested {capacity.requested} background agent(s), but no background "
             f"task slots are available (active={capacity.active}, max={capacity.max_running}). "
-            "Wait for existing tasks to finish, or set run_in_background=false for sequential "
+            "Wait for existing tasks to finish, or set run_in_background=false for "
             "foreground execution."
         )
         output = "\n".join(
@@ -587,7 +628,7 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
                 f"available_background_slots: {capacity.available}",
                 (
                     "next_step: Wait for active tasks to finish, or use run_in_background=false "
-                    "to run children sequentially."
+                    "to run children in the foreground."
                 ),
             ]
         )
@@ -639,8 +680,9 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
                 approval_summary = (
                     f"Launch up to {len(params.agents)} child agent(s) for `{params.summary}` "
                     f"with isolation={params.isolation}, background={params.run_in_background}. "
-                    f"Currently {approved_count} slot(s) are available; overflow children will "
-                    "be reported as deferred."
+                    f"Currently {approved_count} slot(s) are available; any children "
+                    "beyond the capacity available at launch time will be reported "
+                    "as deferred."
                 )
             else:
                 approval_summary = (
@@ -669,6 +711,9 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
         if capacity is not None and capacity.is_limited:
             agents_to_launch = params.agents[: capacity.launch_count]
             deferred_agents = params.agents[capacity.launch_count :]
+        # Applied after fingerprinting/approval (which use the caller's params
+        # verbatim, keeping re-approval stable) and only to launched children.
+        agents_to_launch = _with_distinct_codenames(agents_to_launch)
 
         from pythinker_code.scratchpad import append_scratch_event
 
@@ -685,8 +730,13 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
             ],
         )
 
-        results: list[tuple[AgentRunConfig, ToolReturnValue]] = []
-        for child in agents_to_launch:
+        # Children run concurrently (background launches are quick; foreground
+        # children genuinely overlap), bounded so a large batch cannot fork-bomb
+        # the session. Results keep the request order, and one failing child
+        # surfaces as its own error entry instead of aborting its siblings.
+        concurrency = asyncio.Semaphore(self._child_concurrency_limit())
+
+        async def run_child(child: AgentRunConfig) -> ToolReturnValue:
             child_params = Params(
                 description=(child.title or child.name).strip(),
                 prompt=self._child_prompt(params.base_prompt, child.prompt),
@@ -696,8 +746,15 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
                 timeout=params.timeout,
                 isolation=params.isolation,
             )
-            result = await self._agent_tool(child_params)
-            results.append((child, result))
+            async with concurrency:
+                try:
+                    return await self._agent_tool(child_params)
+                except Exception as exc:  # noqa: BLE001 — isolate child crash from siblings
+                    logger.exception("RunAgents child {} failed", child.name)
+                    return ToolError(message=f"Failed to run agent: {exc}", brief="Agent failed")
+
+        child_results = await asyncio.gather(*(run_child(child) for child in agents_to_launch))
+        results = list(zip(agents_to_launch, child_results, strict=True))
 
         any_error = any(result.is_error for _, result in results)
         tool_status = (
@@ -722,6 +779,16 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
         # Aggregate child spend so an N-child fan-out reports total tokens/cost in
         # one place (foreground completions only; background children report later).
         lines.extend(summarize_batch([result for _, result in results]))
+        # Roll up RISKS/BLOCKERS from completed child reports so the orchestrator
+        # sees cross-child findings without re-parsing every result body.
+        if not params.run_in_background:
+            lines.extend(
+                aggregate_findings(
+                    (child.name, result.output if isinstance(result.output, str) else "")
+                    for child, result in results
+                    if not result.is_error
+                )
+            )
         if capacity is not None:
             lines.extend(
                 [

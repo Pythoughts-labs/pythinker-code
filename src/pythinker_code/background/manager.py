@@ -72,6 +72,10 @@ class BackgroundTaskManager:
         self._live_agent_tasks: dict[str, asyncio.Task[None]] = {}
         self._current_turn_task_ids: set[str] = set()
         self._completion_event: asyncio.Event = asyncio.Event()
+        self._nonblocking_polls: dict[str, int] = {}
+        """Consecutive non-blocking TaskOutput polls per still-running task."""
+        self._blocking_timeouts: dict[str, int] = {}
+        """Consecutive timed-out blocking TaskOutput waits per still-running task."""
 
     @property
     def completion_event(self) -> asyncio.Event:
@@ -105,7 +109,31 @@ class BackgroundTaskManager:
         # recoverable — enabling a corrupting double-resume.
         manager._live_agent_tasks = self._live_agent_tasks
         manager._current_turn_task_ids = self._current_turn_task_ids
+        manager._nonblocking_polls = self._nonblocking_polls
+        manager._blocking_timeouts = self._blocking_timeouts
         return manager
+
+    def note_nonblocking_poll(self, task_id: str) -> int:
+        """Record a non-blocking poll on a still-running task; returns the streak count."""
+        count = self._nonblocking_polls.get(task_id, 0) + 1
+        self._nonblocking_polls[task_id] = count
+        return count
+
+    def note_blocking_timeout(self, task_id: str) -> int:
+        """Record a blocking wait that timed out on a still-running task; returns the streak."""
+        count = self._blocking_timeouts.get(task_id, 0) + 1
+        self._blocking_timeouts[task_id] = count
+        return count
+
+    def reset_poll_escalation(self, task_id: str) -> None:
+        """Clear both wait-escalation streaks after a terminal retrieval.
+
+        A timed-out blocking wait deliberately does NOT reset the non-blocking
+        streak: interleaving one blocking attempt between polls must not absolve
+        the "STOP polling" escalation.
+        """
+        self._nonblocking_polls.pop(task_id, None)
+        self._blocking_timeouts.pop(task_id, None)
 
     def bind_runtime(self, runtime: Runtime) -> None:
         self._runtime = runtime
@@ -232,6 +260,7 @@ class BackgroundTaskManager:
         shell_name: str,
         shell_path: str,
         cwd: str,
+        scrub_secrets: bool = False,
     ) -> TaskView:
         self._ensure_root()
         self._ensure_local_backend()
@@ -239,7 +268,7 @@ class BackgroundTaskManager:
         if self._active_task_count() >= self._config.max_running_tasks:
             raise RuntimeError("Too many background tasks are already running.")
 
-        task_id = generate_task_id("bash")
+        task_id = generate_task_id("bash", used=self._store.list_task_ids())
         spec = TaskSpec(
             id=task_id,
             kind="bash",
@@ -252,6 +281,7 @@ class BackgroundTaskManager:
             shell_path=shell_path,
             cwd=cwd,
             timeout_s=timeout_s,
+            scrub_secrets=scrub_secrets,
         )
         self._store.create_task(spec)
         from pythinker_code.telemetry import track
@@ -312,7 +342,7 @@ class BackgroundTaskManager:
         if self._active_task_count() >= self._config.max_running_tasks:
             raise RuntimeError("Too many background tasks are already running.")
 
-        task_id = generate_task_id("agent")
+        task_id = generate_task_id("agent", used=self._store.list_task_ids())
         # Explicit None check — the falsy idiom ``timeout_s or default``
         # would silently promote a caller-supplied ``0`` to the agent
         # default, matching the analogous fix in Print's wait-cap reader.
@@ -347,10 +377,15 @@ class BackgroundTaskManager:
             },
         )
         self._store.create_task(spec)
-        runtime = self._store.read_runtime(task_id)
-        runtime.status = "starting"
-        runtime.updated_at = time.time()
-        self._store.write_runtime(task_id, runtime)
+
+        def mark_agent_starting(runtime: TaskRuntime) -> bool:
+            if is_terminal_status(runtime.status):
+                return False
+            runtime.status = "starting"
+            runtime.updated_at = time.time()
+            return True
+
+        self._store.update_runtime(task_id, mark_agent_starting)
         task = asyncio.create_task(
             BackgroundAgentRunner(
                 runtime=self._runtime,
@@ -789,6 +824,11 @@ class BackgroundTaskManager:
             if not is_terminal_status(view.runtime.status):
                 continue
 
+            # A terminal task can never be polled-while-running again, so its
+            # escalation counter is dead weight; drop it here (not only in
+            # TaskOutput) so tasks that finish unpolled don't leak entries.
+            self._nonblocking_polls.pop(view.spec.id, None)
+
             status = view.runtime.status
             terminal_reason = "timed_out" if view.runtime.timed_out else status
             match terminal_reason:
@@ -832,6 +872,14 @@ class BackgroundTaskManager:
                 body_lines.append(f"Exit code: {view.runtime.exit_code}")
             if view.runtime.failure_reason:
                 body_lines.append(f"Failure reason: {view.runtime.failure_reason}")
+            output_path = self._store.output_path(view.spec.id)
+            try:
+                output_size = output_path.stat().st_size
+            except OSError:
+                output_size = 0
+            if output_size > 0:
+                body_lines.append(f"Output path: {output_path.resolve()}")
+                body_lines.append(f"Output size bytes: {output_size}")
 
             event = NotificationEvent(
                 id=self._notifications.new_id(),
@@ -852,6 +900,8 @@ class BackgroundTaskManager:
                     "timed_out": view.runtime.timed_out,
                     "terminal_reason": terminal_reason,
                     "failure_reason": view.runtime.failure_reason,
+                    "output_path": str(output_path.resolve()) if output_size > 0 else None,
+                    "output_size_bytes": output_size,
                 },
                 dedupe_key=f"background_task:{view.spec.id}:{terminal_reason}",
             )

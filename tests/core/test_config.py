@@ -106,6 +106,28 @@ def test_default_config_dump():
                 "prompt_history_enabled": True,
                 "turn_recaps": False,
                 "code_theme": "catppuccin-adaptive",
+                "statusline": {
+                    "enabled": True,
+                    "segments": [
+                        "spinner",
+                        "model",
+                        "cost",
+                        "speed",
+                        "effort",
+                        "cwd",
+                        "git",
+                        "diff",
+                        "flags",
+                        "context",
+                        "elapsed",
+                        "clock",
+                    ],
+                    "command": None,
+                    "command_timeout_ms": 1000,
+                    "style": "fancy",
+                    "bar_width": 10,
+                    "cost_budget": None,
+                },
                 "smooth_streaming": True,
             },
         }
@@ -394,12 +416,51 @@ def test_scope_lock_feedback_url_allowed():
     )
 
 
+def test_scope_lock_statusline_command_in_project():
+    with pytest.raises(ConfigError, match="'tui.statusline.command'.*project scope"):
+        _check_scope_locks(
+            {"tui": {"statusline": {"command": "/tmp/evil-binary"}}},
+            ".pythinker/config.toml",
+        )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("enabled", True),
+        ("segments", ["cwd", "git", "command"]),
+        ("command_timeout_ms", 60000),
+    ],
+)
+def test_scope_lock_statusline_run_knobs_in_project(field, value):
+    """A repo-controlled config must not be able to CAUSE the user's status
+    command to run, only the user may: `command` chooses the binary, and
+    `enabled`/`segments`/`command_timeout_ms` are the knobs that trigger or
+    extend its execution."""
+    with pytest.raises(ConfigError, match=f"'tui.statusline.{field}'.*project scope"):
+        _check_scope_locks(
+            {"tui": {"statusline": {field: value}}},
+            ".pythinker/config.toml",
+        )
+
+
+def test_scope_lock_statusline_cosmetic_fields_allowed():
+    # Purely cosmetic statusline fields stay project-configurable; only the
+    # execution-relevant knobs are user-scope-only.
+    _check_scope_locks(
+        {"tui": {"statusline": {"style": "plain", "bar_width": 8}}},
+        ".pythinker/config.toml",
+    )
+
+
 def test_scope_lock_clean_dict():
     _check_scope_locks({"theme": "light", "default_model": "gpt-4"}, ".pythinker/config.toml")
 
 
-def test_scope_lock_error_mentions_env_var():
-    with pytest.raises(ConfigError, match="PYTHINKER_"):
+def test_scope_lock_error_points_to_user_config():
+    # No locked path has an env override, so the error must point at the user
+    # config file — not at a "corresponding PYTHINKER_*" var that doesn't exist.
+    with pytest.raises(ConfigError, match=r"Move it to ~/\.pythinker/config\.toml\."):
         _check_scope_locks({"providers": {}}, ".pythinker/config.toml")
 
 
@@ -661,3 +722,51 @@ def test_goal_config_bounds():
         GoalConfig(max_continuations=0)
     with pytest.raises(ValidationError):
         GoalConfig(max_continuations=11)
+
+
+def test_statusline_v2_segment_ids_and_defaults():
+    from pythinker_code.config import STATUSLINE_SEGMENT_IDS, StatusLineConfig
+
+    for seg in ("spinner", "speed", "effort", "cost", "diff", "elapsed", "limits", "clock"):
+        assert seg in STATUSLINE_SEGMENT_IDS
+    cfg = StatusLineConfig()
+    assert cfg.segments == [
+        "spinner",
+        "model",
+        "cost",
+        "speed",
+        "effort",
+        "cwd",
+        "git",
+        "diff",
+        "flags",
+        "context",
+        "elapsed",
+        "clock",
+    ]
+    assert cfg.style == "fancy"
+    assert cfg.bar_width == 10
+    assert cfg.cost_budget is None
+
+
+def test_statusline_v2_field_validation():
+    import pytest
+    from pydantic import ValidationError
+
+    from pythinker_code.config import StatusLineConfig
+
+    with pytest.raises(ValidationError):
+        StatusLineConfig(bar_width=3)
+    with pytest.raises(ValidationError):
+        StatusLineConfig(bar_width=21)
+    with pytest.raises(ValidationError):
+        StatusLineConfig(cost_budget=-1.0)
+    with pytest.raises(ValidationError):
+        StatusLineConfig.model_validate({"style": "neon"})
+    # command_timeout_ms is bounded: a runaway value must not let the external
+    # status command hang for days before the kill fires.
+    assert StatusLineConfig(command_timeout_ms=60_000).command_timeout_ms == 60_000
+    with pytest.raises(ValidationError):
+        StatusLineConfig(command_timeout_ms=60_001)
+    with pytest.raises(ValidationError):
+        StatusLineConfig(command_timeout_ms=0)

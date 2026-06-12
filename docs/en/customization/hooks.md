@@ -36,7 +36,7 @@ Pythinker Code supports 13 lifecycle events:
 | `SubagentStop` | When subagent ends | Agent name | `agent_name`, `response` |
 | `PreCompact` | Before context compaction | Trigger reason | `trigger`, `token_count` |
 | `PostCompact` | After context compaction | Trigger reason | `trigger`, `estimated_token_count` |
-| `Notification` | When notification is delivered | Sink name | `sink`, `notification_type`, `title`, `body`, `severity` |
+| `Notification` | When notification is delivered | Notification type | `sink`, `notification_type`, `title`, `body`, `severity` |
 
 ## Configuring Hooks
 

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from pythinker_code.utils.logging import logger
-from pythinker_code.utils.subprocess_env import get_clean_env
+from pythinker_code.utils.subprocess_env import get_clean_env, scrub_secret_env
 
 from .models import TaskControl, TaskRuntime
 from .store import BackgroundTaskStore
@@ -182,7 +182,7 @@ async def run_background_task_worker(
                 "stdout": output_file,
                 "stderr": output_file,
                 "cwd": spec.cwd,
-                "env": get_clean_env(),
+                "env": scrub_secret_env(get_clean_env()) if spec.scrub_secrets else get_clean_env(),
             }
             if os.name == "nt":
                 spawn_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)

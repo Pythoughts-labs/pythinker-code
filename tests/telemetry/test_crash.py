@@ -324,3 +324,34 @@ class TestIdempotentInstall:
         # our own hook (which would cause infinite recursion when invoked).
         assert crash_mod._original_excepthook is saved_original
         assert crash_mod._original_excepthook is not crash_mod._excepthook
+
+
+class TestAsyncioHandlerExpectedErrors:
+    @pytest.mark.asyncio
+    async def test_expected_task_exception_tracked_but_not_sent_to_sentry(self):
+        """Expected user-environment failures (e.g. MCP method-not-found) keep the
+        OTel crash count but stay out of Sentry/Bugsink."""
+        from unittest.mock import patch
+
+        from mcp.shared.exceptions import McpError
+        from mcp.types import METHOD_NOT_FOUND, ErrorData
+
+        loop = asyncio.get_running_loop()
+        original_default = loop.default_exception_handler
+        loop.default_exception_handler = lambda ctx: None  # type: ignore[method-assign]
+        try:
+            install_asyncio_handler(loop)
+            set_phase("runtime")
+            exc = McpError(ErrorData(code=METHOD_NOT_FOUND, message="Method not found"))
+
+            with patch("pythinker_code.telemetry.sentry.capture_exception") as mock_capture:
+                loop.call_exception_handler({"message": "task failed", "exception": exc})
+
+            mock_capture.assert_not_called()
+            assert len(telemetry_mod._event_queue) == 1
+            event = telemetry_mod._event_queue[0]
+            assert event["event"] == "crash"
+            assert event["properties"]["expected"] is True
+        finally:
+            loop.default_exception_handler = original_default  # type: ignore[method-assign]
+            loop.set_exception_handler(None)

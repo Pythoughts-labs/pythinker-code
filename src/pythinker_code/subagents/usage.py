@@ -100,3 +100,80 @@ def summarize_batch(results: Iterable[ToolReturnValue]) -> list[str]:
     if total_cost > 0:
         lines.append(f"total_child_cost_usd: {total_cost:.4f}")
     return lines
+
+
+# ---------------------------------------------------------------------------
+# Batch findings roll-up
+# ---------------------------------------------------------------------------
+
+_FINDING_SECTIONS = ("RISKS", "BLOCKERS")
+# Includes the `None observed.` marker the built-in agent report contracts
+# document for empty RISKS/BLOCKERS sections.
+_NONE_PLACEHOLDERS = frozenset(
+    {"none", "none.", "none observed", "none observed.", "n/a", "-", "(none)"}
+)
+
+
+def _extract_section(output: str, section: str) -> list[str]:
+    """Collect non-empty content lines under a ``### <section>`` style header."""
+    collected: list[str] = []
+    in_section = False
+    in_fence = False
+    lines = output.splitlines()
+    fence_indices = [i for i, raw in enumerate(lines) if raw.strip().startswith("```")]
+    # An odd fence count means the last opener never closes; ignore it so a
+    # malformed child report can't swallow every section that follows it.
+    # Deliberate tradeoff: loose lines after the unclosed opener may be code
+    # that gets extracted as findings (noise), but the alternative — treating
+    # the rest of the report as fenced — silently drops every later RISKS/
+    # BLOCKERS entry. Noise is visible; loss is not.
+    unclosed_fence_index = fence_indices[-1] if len(fence_indices) % 2 else None
+    for index, raw_line in enumerate(lines):
+        line = raw_line.strip()
+        if line.startswith("```"):
+            # Lines inside fenced code blocks (e.g. `# comment` in a shell
+            # snippet) must not be mistaken for section headers or findings.
+            if index != unclosed_fence_index:
+                in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        header = line.lstrip("#").strip().upper()
+        if line.startswith("#"):
+            in_section = header == section
+            continue
+        if not in_section or not line:
+            continue
+        if line.lower() in _NONE_PLACEHOLDERS:
+            continue
+        # Strip a single leading bullet marker only ("- " / "* "); matching a
+        # bare leading "-" or "*" would eat CLI flags ("--force") or star text
+        # ("*args") out of non-bulleted finding lines.
+        collected.append(line[2:].strip() if line[:2] in ("- ", "* ") else line)
+    return collected
+
+
+def aggregate_findings(named_outputs: Iterable[tuple[str, str]]) -> list[str]:
+    """Roll RISKS/BLOCKERS sections from child reports into one envelope block.
+
+    Children follow the structured report contract (### SUMMARY / EVIDENCE /
+    CHANGES / RISKS / BLOCKERS). Free-text children simply contribute nothing;
+    identical findings raised by several children are listed once with every
+    reporter attributed. Returns [] when no child raised anything.
+    """
+    findings: dict[str, dict[str, list[str]]] = {section: {} for section in _FINDING_SECTIONS}
+    for name, output in named_outputs:
+        for section in _FINDING_SECTIONS:
+            for finding in _extract_section(output, section):
+                reporters = findings[section].setdefault(finding, [])
+                # A child repeating the same bullet must still be attributed once.
+                if name not in reporters:
+                    reporters.append(name)
+    lines: list[str] = []
+    for section in _FINDING_SECTIONS:
+        if not findings[section]:
+            continue
+        lines.append(f"batch_{section.lower()}:")
+        for finding, reporters in findings[section].items():
+            lines.append(f"- {finding} [{', '.join(reporters)}]")
+    return lines

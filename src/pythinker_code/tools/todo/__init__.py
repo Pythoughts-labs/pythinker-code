@@ -54,6 +54,37 @@ class Params(BaseModel):
         return v
 
 
+def _with_appended_note(result: ToolReturnValue, note: str) -> ToolReturnValue:
+    """Rebuild a successful tool result with an advisory note appended to its output."""
+    base_output = result.output if isinstance(result.output, str) else ""
+    return ToolReturnValue(
+        is_error=False,
+        output=base_output + note,
+        message=result.message,
+        display=result.display,
+    )
+
+
+def _normalize_single_in_progress(todos: list[Todo]) -> tuple[list[Todo], int]:
+    """Keep the first in_progress item; demote later ones to pending.
+
+    Two in_progress items on a single sequential worker's list are
+    contradictory state, not a batch — order is preserved so the demoted items
+    stay visible as upcoming work.
+    """
+    seen = False
+    normalized: list[Todo] = []
+    demoted = 0
+    for todo in todos:
+        if todo.status == "in_progress":
+            if seen:
+                todo = Todo(title=todo.title, status="pending")
+                demoted += 1
+            seen = True
+        normalized.append(todo)
+    return normalized, demoted
+
+
 class SetTodoList(CallableTool2[Params]):
     name: str = "SetTodoList"
     description: str = load_desc(Path(__file__).parent / "set_todo_list.md")
@@ -67,23 +98,34 @@ class SetTodoList(CallableTool2[Params]):
     async def __call__(self, params: Params) -> ToolReturnValue:
         if params.todos is None:
             return self._read_todos()
-        result = self._write_todos(params.todos)
-        in_progress = sum(1 for todo in params.todos if todo.status == "in_progress")
+        todos = params.todos
+        demoted = 0
+        if self._runtime.role != "root":
+            # Invariant: a subagent is a single sequential worker, so its own
+            # list can hold at most one in_progress item. The parallel-batch
+            # exception below applies only to the root list, which legitimately
+            # tracks one in_progress sub-todo per running child.
+            todos, demoted = _normalize_single_in_progress(todos)
+        result = self._write_todos(todos)
+        if demoted:
+            result = _with_appended_note(
+                result,
+                f"\nNote: normalized {demoted} extra in_progress item(s) to pending — "
+                "a subagent works one item at a time; mark the previous item done or "
+                "pending before starting the next.",
+            )
+        in_progress = sum(1 for todo in todos if todo.status == "in_progress")
         if in_progress > 1:
             # Codex plan-tool contract, softened: parallel-subagent fan-out
             # legitimately tracks one in_progress sub-todo per running child.
-            base_output = result.output if isinstance(result.output, str) else ""
-            result = ToolReturnValue(
-                is_error=False,
-                output=base_output
-                + "\nNote: keep at most one item in_progress at a time for your own "
+            result = _with_appended_note(
+                result,
+                "\nNote: keep at most one item in_progress at a time for your own "
                 "sequential work; multiple in_progress items are expected only while "
                 "tracking parallel subagents (one sub-todo per running child).",
-                message=result.message,
-                display=result.display,
             )
-        if self._runtime.role == "root" and len(params.todos) >= 3:
-            await self._journal_todo_update(params.todos)
+        if self._runtime.role == "root" and len(todos) >= 3:
+            await self._journal_todo_update(todos)
         return result
 
     async def _journal_todo_update(self, todos: list[Todo]) -> None:

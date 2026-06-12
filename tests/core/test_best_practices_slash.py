@@ -54,21 +54,37 @@ def sent(monkeypatch: pytest.MonkeyPatch) -> list[TextPart]:
 
 def test_best_practices_prompt_asset_loads() -> None:
     assert "Engineering best practices" in prompts.BEST_PRACTICES
-    # Core sections distilled from the Codex CLI prompts.
+    # Core profile sections.
     for heading in (
-        "## Code changes",
-        "## Working in a dirty worktree",
+        "## Operating principles",
+        "## Context gathering",
+        "## Scoping and assumptions",
+        "## Design and implementation",
+        "## Code change discipline",
+        "## Version control",
         "## Testing",
+        "## Debugging",
+        "## Security and secrets",
+        "## Agent operational discipline",
+        "## Subagents and background work",
         "## Plan and todo hygiene",
         "## Progress updates",
-        "## Debugging",
+        "## Verification before done",
         "## Final answers",
     ):
         assert heading in prompts.BEST_PRACTICES
-    # Wording pins for the load-bearing Codex guidance.
-    assert "do not add tests to codebases with no tests" in prompts.BEST_PRACTICES
+    # Wording pins for the load-bearing guidance.
+    assert "Do not add tests — or a test framework — to a codebase that has none" in (
+        prompts.BEST_PRACTICES
+    )
     assert "exactly one item in_progress at a time" in prompts.BEST_PRACTICES
     assert "NEVER revert existing changes you did not make" in prompts.BEST_PRACTICES
+    assert "never pick one silently" in prompts.BEST_PRACTICES
+    assert "Evidence precedes assertion" in prompts.BEST_PRACTICES
+    assert "Never invent APIs" in prompts.BEST_PRACTICES
+    assert "typosquatting vector" in prompts.BEST_PRACTICES
+    assert "Never game verification" in prompts.BEST_PRACTICES
+    assert "Treat subagent findings as claims, not facts" in prompts.BEST_PRACTICES
 
 
 class TestBestPracticesSlashCommand:

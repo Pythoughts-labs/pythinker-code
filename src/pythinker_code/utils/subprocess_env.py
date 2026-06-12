@@ -62,6 +62,63 @@ def get_clean_env(base_env: dict[str, str] | None = None) -> dict[str, str]:
     return env
 
 
+# Credential-looking environment variable shapes. Read-only/review/verify
+# permission profiles block network access, but a child process inherits the
+# parent's environment, so API keys and cloud credentials would still be
+# readable (and exfiltratable through any future gap). Suffix patterns catch
+# the long tail of provider keys (ANTHROPIC_API_KEY, GH_TOKEN, ...); the AWS_
+# prefix also drops non-secret AWS config, which restricted-profile commands
+# (git/rg/find/cat) never need.
+_SECRET_ENV_EXACT = {
+    "API_KEY",
+    "APIKEY",
+    "TOKEN",
+    "SECRET",
+    "PASSWORD",
+    "PRIVATE_KEY",
+    "JWT",
+    "COOKIE",
+    "BEARER",
+}
+_SECRET_ENV_SUFFIXES = (
+    "_API_KEY",
+    "_APIKEY",
+    "_TOKEN",
+    "_SECRET",
+    "_SECRET_KEY",
+    "_PASSWORD",
+    "_PASSWD",
+    "_CREDENTIALS",
+    "_ACCESS_KEY",
+    "_ACCESS_KEY_ID",
+    "_PRIVATE_KEY",
+    "_JWT",
+    "_COOKIE",
+    "_BEARER",
+)
+_SECRET_ENV_PREFIXES = ("AWS_", "GOOGLE_APPLICATION_")
+
+
+def _is_secret_env_name(name: str) -> bool:
+    upper = name.upper()
+    return (
+        upper in _SECRET_ENV_EXACT
+        or upper.endswith(_SECRET_ENV_SUFFIXES)
+        or upper.startswith(_SECRET_ENV_PREFIXES)
+    )
+
+
+def scrub_secret_env(env: dict[str, str]) -> dict[str, str]:
+    """Drop credential-looking variables from a subprocess environment.
+
+    Applied to shell subprocesses spawned under permission profiles without
+    shell-mutation rights (read-only/plan/review/verify), so blocked-network
+    subagents cannot read inherited secrets either. Heuristic by design; it
+    must never be the only secret-protection layer.
+    """
+    return {k: v for k, v in env.items() if not _is_secret_env_name(k)}
+
+
 def get_noninteractive_env(base_env: dict[str, str] | None = None) -> dict[str, str]:
     """
     Get an environment for subprocesses that must not block on interactive prompts.

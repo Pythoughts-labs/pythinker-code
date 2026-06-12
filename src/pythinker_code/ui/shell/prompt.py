@@ -13,14 +13,16 @@ import time
 from collections import deque
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from hashlib import md5
 from pathlib import Path
-from typing import Any, Literal, Protocol, cast, override, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, override, runtime_checkable
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.application import Application
 from prompt_toolkit.application.current import get_app_or_none
+from prompt_toolkit.auto_suggest import AutoSuggest, Suggestion
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.clipboard.pyperclip import PyperclipClipboard
 from prompt_toolkit.completion import (
@@ -55,11 +57,13 @@ from prompt_toolkit.layout.controls import BufferControl, UIContent, UIControl
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.layout.margins import Margin
 from prompt_toolkit.layout.menus import CompletionsMenu
+from prompt_toolkit.lexers import Lexer
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.utils import get_cwidth
 from pydantic import BaseModel, ValidationError
 from pythinker_host.path import HostPath
 
+from pythinker_code.config import StatusLineConfig
 from pythinker_code.llm import ModelCapability
 from pythinker_code.share import get_share_dir
 from pythinker_code.soul import StatusSnapshot, format_context_status
@@ -80,6 +84,8 @@ from pythinker_code.ui.shell.placeholders import (
 )
 from pythinker_code.ui.shell.spacing import ensure_prompt_newline
 from pythinker_code.ui.shell.spinner_words import spinner_message
+from pythinker_code.ui.shell.sync_output import install_synchronized_output
+from pythinker_code.ui.terminal_capabilities import synchronized_output_enabled
 from pythinker_code.ui.theme import get_prompt_style, get_toolbar_colors, thinking_dot_style
 from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
 from pythinker_code.ui.tui_config import is_card_style
@@ -91,6 +97,9 @@ from pythinker_code.utils.clipboard import (
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.slashcmd import SlashCommand
 from pythinker_code.wire.types import ContentPart, TextPart
+
+if TYPE_CHECKING:
+    from pythinker_code.ui.shell.statusline import StatusLineContext
 
 AttachmentCache = prompt_placeholders.AttachmentCache
 CachedAttachment = prompt_placeholders.CachedAttachment
@@ -154,6 +163,15 @@ class CwdLostError(OSError):
     """Raised when the working directory no longer exists (e.g. external drive unplugged)."""
 
 
+def _command_name_set(commands: Sequence[SlashCommand[Any]]) -> frozenset[str]:
+    """Lowercased names and aliases for exact-match slash highlighting."""
+    names: set[str] = set()
+    for cmd in commands:
+        names.add(cmd.name.lower())
+        names.update(alias.lower() for alias in cmd.aliases)
+    return frozenset(names)
+
+
 def _slash_command_token_before_cursor(document: Document) -> str | None:
     """Return the active slash-command token, or ``None`` when completion should stay hidden."""
     text = document.text_before_cursor
@@ -166,6 +184,25 @@ def _slash_command_token_before_cursor(document: Document) -> str | None:
     prefix = text[: last_space + 1] if last_space != -1 else ""
 
     if prefix.strip() or not token.startswith("/"):
+        return None
+    return token
+
+
+def _slash_suggest_token_before_cursor(document: Document) -> str | None:
+    """Return the active slash token for inline ghost-text suggestion.
+
+    Unlike :func:`_slash_command_token_before_cursor` (which gates the dropdown
+    menu and only fires when the slash command starts the line), this accepts a
+    ``/name`` token anywhere on the current line, so mid-sentence references such
+    as ``use /desi`` still ghost-complete. Ghost text only renders at the end of
+    the buffer, so we still require nothing typed after the cursor.
+    """
+    if document.text_after_cursor.strip():
+        return None
+    line = document.current_line_before_cursor
+    last_space = line.rfind(" ")
+    token = line[last_space + 1 :]
+    if not token.startswith("/"):
         return None
     return token
 
@@ -191,6 +228,126 @@ def _discard_slash_command(buffer: Buffer) -> bool:
     return True
 
 
+# A "/name" token that starts the input or follows whitespace. The name charset
+# matches registered command names and aliases (including "skill:x" / "flow:x").
+_SLASH_TOKEN_RE = re.compile(r"(?<!\S)/([A-Za-z0-9][A-Za-z0-9_:.-]*)")
+# An "@path" mention: "@" followed by a non-space fragment. The word boundary
+# before "@" is validated separately to mirror LocalFileMentionCompleter.
+_MENTION_TOKEN_RE = re.compile(r"@[^\s@]+")
+# Characters that, immediately before "@", disqualify it as a mention boundary
+# (so emails like "foo@bar" don't trigger). Shared by the lexer and completer.
+_MENTION_TRIGGER_GUARDS = frozenset((".", "-", "_", "`", "'", '"', ":", "@", "#", "~"))
+
+
+class InputHighlightLexer(Lexer):
+    """Highlight recognized input tokens in the prompt buffer.
+
+    Three token kinds are styled, composing on the same line:
+
+    - **Slash commands** (``class:slash-command``) -- only exact matches against
+      the registered command names/aliases, anywhere on the line. Partial or
+      made-up tokens render as plain text.
+    - **``@file`` mentions** (``class:file-mention``) -- agent mode only, styled
+      syntactically at a word boundary. The lexer runs on every keystroke and
+      cannot touch the filesystem, so mentions are not resolution-checked.
+    - **Leading ``!`` bash prefix** (``class:bash-prefix``) -- agent mode only,
+      the first character when the input is a one-shot shell command (mirrors
+      ``_build_user_input``).
+    """
+
+    def __init__(
+        self,
+        known_names: Callable[[], frozenset[str]],
+        *,
+        agent_mode: Callable[[], bool],
+    ) -> None:
+        self._known_names = known_names
+        self._agent_mode = agent_mode
+
+    @override
+    def lex_document(self, document: Document) -> Callable[[int], StyleAndTextTuples]:
+        known = self._known_names()
+        agent_mode = self._agent_mode()
+        lines = document.lines
+
+        def spans(line: str, lineno: int) -> list[tuple[int, int, str]]:
+            out: list[tuple[int, int, str]] = []
+            # Leading "!" bash prefix: first line, agent mode, command after it.
+            if agent_mode and lineno == 0 and line.startswith("!") and line[1:].strip():
+                out.append((0, 1, "class:bash-prefix"))
+            # Slash commands anywhere on the line (exact registered matches only).
+            for match in _SLASH_TOKEN_RE.finditer(line):
+                if match.group(1).lower() not in known:
+                    continue
+                # Path-like tokens ("/clear/subdir") are not commands.
+                if match.end() < len(line) and line[match.end()] == "/":
+                    continue
+                out.append((match.start(), match.end(), "class:slash-command"))
+            # "@path" file mentions at a word boundary (agent mode only).
+            if agent_mode:
+                for match in _MENTION_TOKEN_RE.finditer(line):
+                    start = match.start()
+                    if start > 0:
+                        prev = line[start - 1]
+                        if prev.isalnum() or prev in _MENTION_TRIGGER_GUARDS:
+                            continue
+                    out.append((start, match.end(), "class:file-mention"))
+            out.sort(key=lambda span: span[0])
+            return out
+
+        def get_line(lineno: int) -> StyleAndTextTuples:
+            try:
+                line = lines[lineno]
+            except IndexError:
+                return []
+            fragments: StyleAndTextTuples = []
+            pos = 0
+            for start, end, style in spans(line, lineno):
+                if start < pos:
+                    continue  # defensive: drop overlapping spans
+                if start > pos:
+                    fragments.append(("", line[pos:start]))
+                fragments.append((style, line[start:end]))
+                pos = end
+            if pos < len(line):
+                fragments.append(("", line[pos:]))
+            return fragments
+
+        return get_line
+
+
+class SlashCommandAutoSuggest(AutoSuggest):
+    """Inline ghost-text completion for a partially typed slash command.
+
+    While the user types a ``/name`` token -- at the start of the line *or*
+    mid-sentence (e.g. ``use /desi``) -- the remainder of the best (alphabetically
+    first) matching command renders as dim ghost text after the cursor; Tab
+    accepts it word-for-word. The dropdown menu stays line-start-only, so
+    mid-sentence typing never pops a completion list. Rendering and the standard
+    accept bindings (right-arrow / ctrl-e) come from prompt_toolkit's auto-suggest
+    plumbing; the Tab binding is added in CustomPromptSession.
+    """
+
+    def __init__(self, known_names: Callable[[], frozenset[str]]) -> None:
+        self._known_names = known_names
+
+    @override
+    def get_suggestion(self, buffer: Buffer, document: Document) -> Suggestion | None:
+        token = _slash_suggest_token_before_cursor(document)
+        if token is None or len(token) < 2:
+            return None
+        typed = token[1:]
+        typed_lower = typed.lower()
+        matches = sorted(
+            name
+            for name in self._known_names()
+            if name.lower().startswith(typed_lower) and len(name) > len(typed)
+        )
+        if not matches:
+            return None
+        return Suggestion(matches[0][len(typed) :])
+
+
 class SlashCommandCompleter(Completer):
     """
     A completer that:
@@ -205,11 +362,13 @@ class SlashCommandCompleter(Completer):
         *,
         annotate_meta: bool = False,
         command_scope: str = "command",
+        is_task_running: Callable[[], bool] | None = None,
     ) -> None:
         super().__init__()
         self._available_commands = sorted(available_commands, key=lambda c: c.name)
         self._annotate_meta = annotate_meta
         self._command_scope = command_scope
+        self._is_task_running = is_task_running
         self._command_lookup: dict[str, list[SlashCommand[Any]]] = {}
 
         for cmd in self._available_commands:
@@ -266,7 +425,18 @@ class SlashCommandCompleter(Completer):
         for cmd in prefix:
             yield from emit(cmd)
 
+    def _disabled_during_task(self, cmd: SlashCommand[Any]) -> bool:
+        """True when a running turn blocks this shell-level command."""
+        if self._is_task_running is None or not self._is_task_running():
+            return False
+        from pythinker_code.ui.shell.slash import registry as shell_registry
+
+        shell_cmd = shell_registry.find_command(cmd.name)
+        return shell_cmd is not None and not shell_cmd.available_during_task
+
     def _display_meta(self, cmd: SlashCommand[Any]) -> str:
+        if self._disabled_during_task(cmd):
+            return "disabled while a task is in progress"
         if not self._annotate_meta:
             return cmd.description
 
@@ -1177,7 +1347,7 @@ class LocalFileMentionCompleter(Completer):
     """
 
     _FRAGMENT_PATTERN = re.compile(r"[^\s@]+")
-    _TRIGGER_GUARDS = frozenset((".", "-", "_", "`", "'", '"', ":", "@", "#", "~"))
+    _TRIGGER_GUARDS = _MENTION_TRIGGER_GUARDS
 
     def __init__(
         self,
@@ -1621,6 +1791,57 @@ def _format_git_badge(branch: str, dirty: bool, ahead: int, behind: int) -> str:
     return f"{branch} [{' '.join(parts)}]"
 
 
+_GIT_DIFFSTAT_TTL = 15.0
+
+
+@dataclass
+class _GitDiffStatState:
+    timestamp: float = 0.0
+    added: int = 0
+    removed: int = 0
+    proc: subprocess.Popen[str] | None = None
+
+
+_git_diffstat_state = _GitDiffStatState()
+
+
+def _get_git_diffstat() -> tuple[int, int] | None:
+    """Return (added, removed) working-tree line counts via a non-blocking cached
+    subprocess. None when not a repo / no changes."""
+    from pythinker_code.ui.shell.statusline import parse_shortstat
+
+    state = _git_diffstat_state
+    now = time.monotonic()
+    if state.proc is not None:
+        returncode = state.proc.poll()
+        if returncode is not None:
+            try:
+                stdout, _ = state.proc.communicate()
+                state.added, state.removed = parse_shortstat(stdout)
+            except Exception:
+                logger.debug("git diff --shortstat read/parse failed", exc_info=True)
+            state.proc = None
+        elif now - state.timestamp > _GIT_DIFFSTAT_TTL:
+            with contextlib.suppress(Exception):
+                state.proc.terminate()
+            state.proc = None
+            state.timestamp = now
+    if state.timestamp + _GIT_DIFFSTAT_TTL <= now and state.proc is None:
+        state.timestamp = now
+        with contextlib.suppress(Exception):
+            state.proc = subprocess.Popen(
+                ["git", "--no-optional-locks", "diff", "--shortstat"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+    if state.added == 0 and state.removed == 0:
+        return None
+    return state.added, state.removed
+
+
 def _shorten_cwd(path: str) -> str:
     """Replace the home directory prefix in *path* with ``~``."""
     home = str(Path.home())
@@ -1840,7 +2061,27 @@ class CustomPromptSession:
         plan_mode_toggle_callback: Callable[[], Awaitable[bool]] | None = None,
         thinking_effort_cycle_callback: Callable[[], Awaitable[str | None]] | None = None,
         history_enabled: bool = True,
+        statusline_config: StatusLineConfig | None = None,
     ) -> None:
+        from pythinker_code.ui.shell.statusline import (
+            RateSampler,
+            StatusLineCommandRunner,
+            resolve_segments,
+        )
+
+        _statusline_cfg = statusline_config or StatusLineConfig()
+        self._statusline_layout = resolve_segments(_statusline_cfg)
+        self._statusline_runner: StatusLineCommandRunner | None = None
+        if self._statusline_layout.show_command and _statusline_cfg.command:
+            self._statusline_runner = StatusLineCommandRunner(
+                command=_statusline_cfg.command,
+                timeout_ms=_statusline_cfg.command_timeout_ms,
+            )
+        self._statusline_cfg = _statusline_cfg
+        self._statusline_started_at = time.monotonic()
+        self._rate_in_sampler = RateSampler()
+        self._rate_out_sampler = RateSampler()
+        self._statusline_frame = 0
         history_dir = get_share_dir() / "user-history"
         work_dir_id = md5(
             str(HostPath.cwd()).encode(encoding="utf-8"), usedforsecurity=False
@@ -1903,6 +2144,7 @@ class CustomPromptSession:
                     agent_mode_slash_commands,
                     annotate_meta=True,
                     command_scope="command",
+                    is_task_running=lambda: self._running_prompt_delegate is not None,
                 ),
                 # TODO(host): we need an async HostFileMentionCompleter
                 LocalFileMentionCompleter(HostPath.cwd().unsafe_to_local_path()),
@@ -1913,6 +2155,23 @@ class CustomPromptSession:
             shell_mode_slash_commands,
             annotate_meta=True,
             command_scope="shell",
+        )
+        self._agent_command_names = _command_name_set(agent_mode_slash_commands)
+        self._shell_command_names = _command_name_set(shell_mode_slash_commands)
+        self._input_highlight_lexer = InputHighlightLexer(
+            lambda: (
+                self._shell_command_names
+                if self._mode == PromptMode.SHELL
+                else self._agent_command_names
+            ),
+            agent_mode=lambda: self._mode == PromptMode.AGENT,
+        )
+        self._slash_auto_suggest = SlashCommandAutoSuggest(
+            lambda: (
+                self._shell_command_names
+                if self._mode == PromptMode.SHELL
+                else self._agent_command_names
+            )
         )
 
         # Build key bindings
@@ -1962,6 +2221,17 @@ class CustomPromptSession:
         def _(event: KeyPressEvent) -> None:
             """Non-slash completion (file mentions, etc.): accept only."""
             _accept_completion(event.current_buffer)
+
+        def _has_slash_suggestion() -> bool:
+            buff = self._session.default_buffer
+            return bool(buff.suggestion and buff.suggestion.text)
+
+        @_kb.add("tab", filter=Condition(_has_slash_suggestion))
+        def _(event: KeyPressEvent) -> None:
+            """Slash command ghost suggestion: Tab completes the word inline."""
+            suggestion = event.current_buffer.suggestion
+            if suggestion and suggestion.text:
+                event.current_buffer.insert_text(suggestion.text)
 
         @_kb.add("?", eager=True)
         def _(event: KeyPressEvent) -> None:
@@ -2242,6 +2512,7 @@ class CustomPromptSession:
         self._session = PromptSession[str](
             message=self._render_message,
             completer=self._agent_mode_completer,
+            auto_suggest=self._slash_auto_suggest,
             complete_while_typing=True,
             reserve_space_for_menu=6,
             key_bindings=_kb,
@@ -2250,6 +2521,7 @@ class CustomPromptSession:
             prompt_continuation=self._render_prompt_continuation,
             bottom_toolbar=self._render_bottom_toolbar,
             style=get_prompt_style(),
+            lexer=self._input_highlight_lexer,
         )
         # Throttle redraws so the fast streaming-reveal cadence can't overwhelm
         # slower terminals (best practice for "invalidate is called a lot").
@@ -2258,6 +2530,11 @@ class CustomPromptSession:
         # NB: max_render_postpone_time (not min_redraw_interval) — see the
         # constant's definition for why the coroutine-free path matters here.
         self._session.app.max_render_postpone_time = _MAX_RENDER_POSTPONE_S
+        # Deliver each redraw atomically (DEC mode 2026) so supporting
+        # terminals never paint a half-written frame — the remaining source
+        # of visible flicker once the frame rate above is already capped.
+        if synchronized_output_enabled():
+            install_synchronized_output(self._session.app.output)
         self._session.default_buffer.read_only = Condition(
             lambda: (
                 (delegate := self._active_prompt_delegate()) is not None
@@ -3093,12 +3370,16 @@ class CustomPromptSession:
                 pass
 
         self._status_refresh_task = asyncio.create_task(_refresh())
+        if self._statusline_runner is not None:
+            self._statusline_runner.start()
         return self
 
     def __exit__(self, *_) -> None:
         if self._status_refresh_task is not None and not self._status_refresh_task.done():
             self._status_refresh_task.cancel()
         self._status_refresh_task = None
+        if self._statusline_runner is not None:
+            self._statusline_runner.cancel()
 
     def _get_placeholder_manager(self) -> PromptPlaceholderManager:
         manager = getattr(self, "_placeholder_manager", None)
@@ -3478,96 +3759,151 @@ class CustomPromptSession:
 
         return FormattedText(fragments)
 
-    def _render_card_bottom_toolbar(self, columns: int) -> FormattedText:
-        """Pythinker two-line footer.
+    def _build_statusline_context(self, columns: int) -> StatusLineContext:
+        from pythinker_code.ui.shell.statusline import (
+            GitInfo,
+            RateSampler,
+            StatusFlags,
+            StatusLineContext,
+        )
+        from pythinker_code.ui.terminal_capabilities import ascii_glyphs_enabled
 
-        Line 1: cwd (home-shortened) + ``(branch)`` + mode/flag chips.
-        Line 2: context% + model on the right; toast/extension statuses left.
-        """
-        from pythinker_code.extensions import footer_statuses
-        from pythinker_code.ui.shell.components import format_tokens
+        cfg = getattr(self, "_statusline_cfg", None) or StatusLineConfig()
+        status = self._status_provider()
+        now = time.monotonic()
 
-        fragments: list[tuple[str, str]] = []
-        tc = get_toolbar_colors()
-        tokens = _get_tui_tokens()
-        mode_style = f"fg:{tokens.text or tokens.activity_label}"
-        secondary_style = f"fg:{tokens.muted}"
+        self._statusline_frame = getattr(self, "_statusline_frame", 0) + 1
+        working = self._has_background_tasks()
 
-        fragments.append((self._prompt_separator_style(tc.separator), _prompt_rule(columns)))
-        fragments.append(("", "\n"))
+        # Samplers may be missing when a session is constructed without __init__
+        # (test helpers do this); fall back to fresh ones so rendering is robust.
+        rate_in_sampler = getattr(self, "_rate_in_sampler", None) or RateSampler()
+        self._rate_in_sampler = rate_in_sampler
+        rate_out_sampler = getattr(self, "_rate_out_sampler", None) or RateSampler()
+        self._rate_out_sampler = rate_out_sampler
 
-        # ── line 1: cwd + git + status flags ───────────────────────────────
+        rate_in: int | None = None
+        rate_out: int | None = None
+        if working:
+            rate_in = rate_in_sampler.update(now, status.total_input_tokens)
+            rate_out = rate_out_sampler.update(now, status.total_output_tokens)
+        else:
+            rate_in_sampler.reset()
+            rate_out_sampler.reset()
+
         try:
-            cwd_str = _shorten_cwd(str(HostPath.cwd()))
-        except OSError:
-            app = get_app_or_none()
-            if app is not None:
-                app.exit(exception=CwdLostError())
-            return FormattedText([])
-        cwd_text = _truncate_left(cwd_str, _MAX_CWD_COLS)
+            cwd_text = _truncate_left(_shorten_cwd(str(HostPath.cwd())), _MAX_CWD_COLS)
+        except OSError as exc:
+            raise CwdLostError() from exc
+
+        git_info: GitInfo | None = None
         branch = _get_git_branch()
         if branch:
             dirty, ahead, behind = _get_git_status()
-            branch_short = _truncate_right(branch, _MAX_BRANCH_COLS)
-            cwd_text = f"{cwd_text}  {_format_git_badge(branch_short, dirty, ahead, behind)}"
-        cwd_text = _truncate_right(cwd_text, max(0, columns))
-        fragments.append((tc.cwd, cwd_text))
+            git_info = GitInfo(
+                branch=_truncate_right(branch, _MAX_BRANCH_COLS),
+                dirty=dirty,
+                ahead=ahead,
+                behind=behind,
+            )
 
-        status = self._status_provider()
-        flag_chips: list[tuple[str, str]] = []
-        if status.yolo_enabled:
-            flag_chips.append((tc.yolo_label, "yolo"))
-        if status.auto_enabled:
-            flag_chips.append((tc.auto_label, "auto"))
-        if status.plan_mode:
-            flag_chips.append((tc.plan_label, "plan"))
-        for style, label in flag_chips:
-            fragments.append(("", "  "))
-            fragments.append((style, label))
+        diff = _get_git_diffstat()
+        diff_added, diff_removed = diff if diff is not None else (None, None)
 
+        thinking_effort = getattr(self, "_thinking_effort", None)
+        effort = thinking_effort if thinking_effort in ("high", "medium", "low") else None
+
+        started = getattr(self, "_statusline_started_at", None)
+        elapsed_s = (now - started) if started is not None else 0.0
+
+        return StatusLineContext(
+            columns=columns,
+            working=working,
+            frame=self._statusline_frame,
+            model_name=self._model_name,
+            provider_label=None,
+            effort=effort,
+            rate_in=rate_in,
+            rate_out=rate_out,
+            session_cost_usd=getattr(status, "session_cost_usd", 0.0),
+            cost_budget_usd=cfg.cost_budget,
+            context_tokens=status.context_tokens,
+            max_context_tokens=status.max_context_tokens,
+            elapsed_s=elapsed_s,
+            clock=datetime.now().strftime("%H:%M"),
+            cwd=cwd_text,
+            git=git_info,
+            diff_added=diff_added,
+            diff_removed=diff_removed,
+            flags=StatusFlags(
+                yolo=status.yolo_enabled,
+                auto=status.auto_enabled,
+                plan=status.plan_mode,
+            ),
+            limits=None,
+            ascii_only=ascii_glyphs_enabled(),
+            style=cfg.style if cfg.enabled else "plain",
+            bar_width=cfg.bar_width,
+        )
+
+    def _render_card_bottom_toolbar(self, columns: int) -> FormattedText:
+        """Pythinker two-line footer (statusline v2).
+
+        Line 1 + line-2 right are assembled from the segment registry; the
+        line-2 left side keeps the command/extension/background/toast
+        precedence from the legacy footer.
+        """
+        from pythinker_code.config import StatusLineConfig
+        from pythinker_code.extensions import footer_statuses
+        from pythinker_code.ui.shell.statusline import (
+            DEFAULT_STATUSLINE_SEGMENTS,
+            assemble_footer,
+        )
+
+        cfg = getattr(self, "_statusline_cfg", None) or StatusLineConfig()
+        tc = get_toolbar_colors()
+        tokens = _get_tui_tokens()
+        secondary_style = f"fg:{tokens.muted}"
+
+        fragments: list[tuple[str, str]] = []
+        fragments.append((self._prompt_separator_style(tc.separator), _prompt_rule(columns)))
         fragments.append(("", "\n"))
 
-        # ── line 2: extension statuses (left) + context% + model (right) ───
-        right_parts: list[str] = []
-        right_fragments: list[tuple[str, str]] = []
+        try:
+            ctx = self._build_statusline_context(columns)
+        except CwdLostError as exc:
+            app = get_app_or_none()
+            if app is not None:
+                app.exit(exception=exc)
+            return FormattedText([])
 
-        def _append_right(style: str, text: str) -> None:
-            if right_fragments:
-                right_fragments.append(("", "  "))
-            right_fragments.append((style, text))
-            right_parts.append(text)
+        segments = list(cfg.segments) if cfg.enabled else list(DEFAULT_STATUSLINE_SEGMENTS)
+        line1, line2_right = assemble_footer(ctx, segments)
+        fragments.extend(line1)
+        fragments.append(("", "\n"))
 
-        _append_right(
-            secondary_style,
-            format_context_status(
-                status.context_usage,
-                status.context_tokens,
-                status.max_context_tokens,
-            ),
-        )
-        # Compact ``17k/200k`` glyph next to the percentage when both sides are known.
-        if status.max_context_tokens:
-            ctx_compact = (
-                f"{format_tokens(status.context_tokens)}/{format_tokens(status.max_context_tokens)}"
-            )
-            _append_right(secondary_style, ctx_compact)
-        if self._model_name:
-            _append_right(mode_style, self._mode_model_thinking_label())
-        right_text = "  ".join(right_parts)
+        # Reserve the last column (like _prompt_rule) so writing the final cell
+        # can't wrap the line on terminals such as Windows conhost / PowerShell.
+        usable = max(0, columns - 1)
+
+        right_text = "".join(t for _, t in line2_right)
         right_width = _display_width(right_text)
-        if right_width > columns:
-            # Keep the footer single-line on narrow terminals; preserve the right edge
-            # where the model/status glyphs tend to be most useful.
-            right_text = _truncate_left(right_text, max(0, columns))
-            right_fragments = [(secondary_style, right_text)]
+        if right_width > usable:
+            right_text = _truncate_left(right_text, usable)
+            line2_right = [(secondary_style, right_text)]
             right_width = _display_width(right_text)
 
-        # Left side: prefer extension statuses, then active background work,
-        # then any active toast. The background-work copy is a compact footer
-        # summary using Pythinker's single /task command.
-        max_left_width = max(0, columns - right_width - 2)
+        max_left_width = max(0, usable - right_width - 1)
+        command_line = ""
+        runner = getattr(self, "_statusline_runner", None)
+        if cfg.enabled and "command" in segments and runner is not None:
+            command_line = runner.current_line
         ext = footer_statuses()
-        if ext:
+        if command_line:
+            command_line = _truncate_right(command_line, max_left_width)
+            fragments.append((tc.tip, command_line))
+            left_width = _display_width(command_line)
+        elif ext:
             ordered = sorted(ext.items())
             ext_line = " ".join(f"{k}:{v}" for k, v in ordered)
             ext_line = _truncate_right(ext_line, max_left_width)
@@ -3586,15 +3922,14 @@ class CustomPromptSession:
         else:
             left_toast = _current_toast("left")
             if left_toast is not None:
-                left_text = left_toast.message
-                left_text = _truncate_right(left_text, max_left_width)
+                left_text = _truncate_right(left_toast.message, max_left_width)
                 fragments.append((left_toast.style or secondary_style, left_text))
                 left_width = _display_width(left_text)
             else:
                 left_width = 0
 
-        fragments.append(("", " " * max(0, columns - left_width - right_width)))
-        fragments.extend(right_fragments)
+        fragments.append(("", " " * max(0, usable - left_width - right_width)))
+        fragments.extend(line2_right)
         return FormattedText(fragments)
 
     def _get_two_rotating_tips(self) -> str | None:

@@ -15,10 +15,16 @@ if TYPE_CHECKING:
 class Reload(Exception):
     """Reload configuration."""
 
-    def __init__(self, session_id: str | None = None, prefill_text: str | None = None):
+    def __init__(
+        self,
+        session_id: str | None = None,
+        prefill_text: str | None = None,
+        clear_screen: bool = False,
+    ):
         super().__init__("reload")
         self.session_id = session_id
         self.prefill_text = prefill_text
+        self.clear_screen = clear_screen
         self.source_session: Session | None = None
 
 
@@ -1024,7 +1030,11 @@ def pythinker(
             except Reload as e:
                 preserve_background_tasks = True
                 if e.session_id is None:
-                    r = Reload(session_id=session.id, prefill_text=e.prefill_text)
+                    r = Reload(
+                        session_id=session.id,
+                        prefill_text=e.prefill_text,
+                        clear_screen=e.clear_screen,
+                    )
                     r.source_session = session
                     raise r from e
                 e.source_session = session
@@ -1138,6 +1148,12 @@ def pythinker(
                     last_session, exit_code = await _run(session_id, prefill_text=prefill_text)
                     break
                 except Reload as e:
+                    if e.clear_screen:
+                        # /clear and /reload wipe the whole terminal (screen +
+                        # scrollback) so the restarted UI begins on a clean slate.
+                        from pythinker_code.ui.shell.console import clear_terminal_screen
+
+                        clear_terminal_screen()
                     # Release the writer lock before re-opening: a same-session
                     # reload (/theme, /model) re-acquires on a fresh fd, and
                     # flock treats that fd as a separate owner even in-process.

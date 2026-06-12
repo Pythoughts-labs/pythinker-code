@@ -109,6 +109,12 @@ export default withMermaid(defineConfig({
     ],
   },
 
+  transformHead({ pageData }) {
+    if (pageData.relativePath === 'index.md') {
+      return [['meta', { 'http-equiv': 'refresh', content: `0; url=${base}en/` }]]
+    }
+  },
+
   vite: {
     plugins: [llmstxt()],
   },

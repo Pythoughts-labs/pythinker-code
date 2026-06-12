@@ -31,7 +31,7 @@ Run the native installation script to complete the installation. The canonical e
 curl -fsSL https://pythinker.com/install.sh | bash
 
 # Pin a specific version
-curl -fsSL https://pythinker.com/install.sh | bash -s -- --version 0.27.0
+curl -fsSL https://pythinker.com/install.sh | bash -s -- --version 0.40.1
 
 # Custom prefix (defaults to $HOME/.local)
 curl -fsSL https://pythinker.com/install.sh | bash -s -- --prefix /opt/pythinker

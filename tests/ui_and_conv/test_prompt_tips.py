@@ -576,8 +576,8 @@ def test_card_toolbar_shows_codex_style_background_task_summary(monkeypatch: Any
     assert "/task list" not in plain
 
 
-def test_card_toolbar_agent_label_is_light_and_context_is_muted(monkeypatch: Any) -> None:
-    from pythinker_code.ui.theme import get_tui_tokens, set_active_theme
+def test_card_toolbar_shows_model_via_statusline_renderer(monkeypatch: Any) -> None:
+    from pythinker_code.ui.theme import get_statusline_colors, set_active_theme
 
     prompt_session = _make_toolbar_session(model_name="fast-model", tips=[])
 
@@ -587,23 +587,24 @@ def test_card_toolbar_agent_label_is_light_and_context_is_muted(monkeypatch: Any
             return SimpleNamespace(columns=120)
 
     set_active_theme("dark")
-    tokens = get_tui_tokens("dark")
+    colors = get_statusline_colors()
     monkeypatch.setenv("PYTHINKER_TUI_STYLE", "card")
     monkeypatch.setattr(
         shell_prompt, "get_app_or_none", lambda: SimpleNamespace(output=_DummyOutput())
     )
     monkeypatch.setattr(shell_prompt, "_get_git_branch", lambda: None)
+    monkeypatch.setattr(shell_prompt, "_get_git_diffstat", lambda: None)
     monkeypatch.setattr(shell_prompt, "_shorten_cwd", lambda _: "~/proj")
     monkeypatch.setattr("pythinker_code.extensions.footer_statuses", lambda: {})
 
     fragments = list(prompt_session._render_bottom_toolbar())
 
-    assert (f"fg:{tokens.muted}", "context: 0.0%") in fragments
-    # Footer shows mode + model only; thinking effort lives on the top border.
-    assert (
-        f"fg:{tokens.text or tokens.activity_label}",
-        "agent fast-model",
-    ) in fragments
+    # The v2 footer renders the model name through the statusline segment
+    # registry with its dedicated model color (not the legacy theme token).
+    assert (colors.model, "fast-model") in fragments
+    # The legacy "context: <pct>%" label is gone; context renders only when a
+    # context budget is known.
+    assert not any("context:" in text for _, text in fragments)
 
 
 def test_card_toolbar_separator_is_static_grey_regardless_of_effort(monkeypatch: Any) -> None:

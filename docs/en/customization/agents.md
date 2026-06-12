@@ -16,7 +16,7 @@ pythinker --agent okabe
 
 The default agent, suitable for general use. Enabled tools:
 
-`Agent`, `AskUserQuestion`, `SetTodoList`, `Shell`, `ReadFile`, `ReadMediaFile`, `Glob`, `Grep`, `WriteFile`, `StrReplaceFile`, `SearchWeb`, `FetchURL`, `EnterPlanMode`, `ExitPlanMode`, `TaskList`, `TaskOutput`, `TaskStop`
+`Agent`, `RunAgents`, `ReadSkill`, `AskUserQuestion`, `SetTodoList`, `UpdateGoal`, `Progress`, `Suggest`, `Memory`, `Recall`, `Scratchpad`, `Shell`, `TaskList`, `TaskOutput`, `TaskInput`, `TaskHandoff`, `TaskStop`, `ReadFile`, `ReadMediaFile`, `Glob`, `Grep`, `SmartSearch`, `WriteFile`, `StrReplaceFile`, `SearchWeb`, `FetchURL`, `ListMcpResources`, `ReadMcpResource`, `EnterPlanMode`, `ExitPlanMode`
 
 ### `ask`
 
@@ -28,7 +28,7 @@ Primary mode for systematic failure diagnosis. It reproduces or inspects failure
 
 ### `okabe`
 
-An experimental agent for testing new prompts and tools. Adds `SendDMail` on top of `default`.
+An experimental agent for testing new prompts and tools. It inherits from `default` but defines its own tool list, which adds `SendDMail` (D-Mail checkpoint rollback).
 
 ## Repository markdown agents
 
@@ -187,18 +187,20 @@ The default agent configuration includes focused built-in subagent types with di
 |------|---------|----------------|
 | `coder` | General software engineering with judgment: read/write files, run commands, search code | Read/search tools, `Shell`, write tools, web tools |
 | `implementer` | Scoped implementation with minimal edits and quick verification | Read/search tools, `Shell`, write tools, web tools |
-| `explore` | Fast read-only codebase exploration: search, read, summarize | Read/search tools, `Shell`, web tools; no write tools |
+| `explore` | Fast read-only codebase exploration: search, read, summarize | Read/search tools and `Shell`; no write tools |
 | `plan` | Implementation planning and architecture design | Read/search tools and web tools; no write tools |
 | `planner` | Read-only recon planner that decomposes broad work into parallel seeds | Read/search tools and `Shell`; no write tools |
 | `scout` | Read-only external docs, dependency-source, and API freshness researcher | Read/search tools, `Shell`, web tools; no write tools |
-| `review` | Read-only severity-scored code review | Read/search tools, `Shell`, web tools; no write tools |
-| `code-reviewer` | Diff-focused code review for the current branch | Read/search tools, `Shell`, web tools; no write tools |
-| `security-reviewer` | Diff-focused security review with validated findings | Read/search tools, `Shell`, web tools; no write tools |
+| `review` | Read-only severity-scored code review | Read/search tools and `Shell`; no write tools |
+| `code-reviewer` | Diff-focused code review for the current branch | Read/search tools and `Shell`; no write tools |
+| `security-reviewer` | Diff-focused security review with validated findings | Read/search tools and `Shell`; no write tools |
 | `debugger` | Root-cause analysis for failures, logs, and stack traces | Read/search tools and `Shell`; no write tools |
 | `verifier` | Read-only validation runner for tests, lint, type checks, and builds | Read/search tools and `Shell`; no write tools |
 | `judge` | Independent final quality gate for answers, reports, and code-change summaries | Read/search tools and `Shell`; no write tools |
 
 All subagent types are prohibited from nesting the `Agent` tool (subagents cannot create their own subagents). The `Agent` tool is only available to the root agent.
+
+Reviewer-class types (`review`, `code-reviewer`, `security-reviewer`, `debugger`, `judge`, `verifier`, `explore`) run offline by design: their permission profiles block network and external doc-lookup tools because the content they analyze is untrusted. Third-party claims they cannot verify from the repository come back under RISKS as `needs verification` items; the parent agent resolves those against live docs — directly or by dispatching `scout`, the online research type (`plan` also keeps web access for planning research).
 
 ## How subagents run
 
@@ -226,7 +228,31 @@ The following are all built-in tools in Pythinker Code.
 | `model` | string | Optional model override |
 | `resume` | string | Optional agent instance ID to resume an existing instance |
 | `run_in_background` | bool | Whether to run in background, default false |
-| `timeout` | int | Timeout in seconds, range 30–3600. Foreground defaults to no timeout (runs until completion), background defaults to 15 minutes; the task is stopped if the limit is exceeded |
+| `timeout` | int | Timeout in seconds, range 30–3600. Foreground defaults to no timeout (runs until completion), background defaults to the configured limit (1 hour); the task is stopped if the limit is exceeded |
+| `dependencies` | array | Optional background task IDs this task depends on. Metadata only — launch dependent tasks after their prerequisites are ready |
+| `budget_seconds` | int | Optional time budget (seconds) recorded as planning/synthesis metadata |
+| `isolation` | string | `none` (default) or `worktree`. `worktree` records a git-worktree isolation intent for background agents; ignored for foreground runs |
+
+### `RunAgents`
+
+- **Path**: `pythinker_code.tools.agent:RunAgents`
+- **Description**: Launch a batch of subagents (1–8) in one call, sharing a common `base_prompt` and each running its own `prompt`. Foreground batches run the children concurrently and return all results inline; background batches return task IDs immediately, and if a background batch exceeds the available slots only the fitting prefix is launched while the rest are reported as deferred. Like `Agent`, this tool is only available to the root agent.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `summary` | string | Short summary of the multi-agent run |
+| `base_prompt` | string | Shared context prepended to every child prompt |
+| `agents` | array | Child agents to launch (1–8); each has its own objective |
+| `agents[].name` | string | Stable short name for the child agent |
+| `agents[].prompt` | string | Child-specific task prompt |
+| `agents[].title` | string | Optional 3–5 word display title, defaults to `name` |
+| `agents[].subagent_type` | string | Built-in subagent type for the child, default `coder` |
+| `model` | string | Optional model override applied to every child |
+| `run_in_background` | bool | Whether to run in background, default true |
+| `timeout` | int | Optional per-agent timeout in seconds, range 30–3600 |
+| `isolation` | string | `none` (default) or `worktree` for background children |
+
+To keep parallel children distinguishable in the task list, tree, and notifications, any child whose name is generic (or collides with a sibling) is given a stable `adjective-noun` codename (for example `amber-falcon`), while its subagent type stays visible separately.
 
 ### `AskUserQuestion`
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -33,7 +34,7 @@ from pythinker_code.skill import (
 )
 from pythinker_code.soul.approval import Approval, ApprovalState
 from pythinker_code.soul.denwarenji import DenwaRenji
-from pythinker_code.soul.toolset import PythinkerToolset
+from pythinker_code.soul.toolset import PythinkerToolset, ToolType
 from pythinker_code.subagents.discovery import (
     discover_markdown_agents,
     materialize_markdown_agent_specs,
@@ -74,9 +75,17 @@ class BuiltinSystemPromptArgs:
     """The shell executable used by the Shell tool, e.g. 'bash (`/bin/bash`)'."""
     PYTHINKER_SCRATCHPAD_SECTION: str = DEFAULT_SCRATCHPAD_SECTION
     """The rendered session-scratchpad prompt section (available or unavailable guard)."""
+    PYTHINKER_AGENTS_MD_FENCE: str = "`" * 9
+    """Code-fence delimiter for the AGENTS.md block, sized to exceed any backtick run in it."""
 
 
 _AGENTS_MD_MAX_BYTES = 32 * 1024  # 32 KiB
+
+
+def _agents_md_fence(content: str) -> str:
+    """Return a backtick fence longer than any backtick run inside *content*."""
+    longest = max((len(m.group()) for m in re.finditer(r"`+", content)), default=0)
+    return "`" * max(9, longest + 1)
 
 
 async def _dirs_root_to_leaf(work_dir: HostPath, project_root: HostPath) -> list[HostPath]:
@@ -190,6 +199,8 @@ class Runtime:
     additional_dirs: list[HostPath]
     skills_dirs: list[HostPath]
     prompt_templates: dict[str, PromptTemplate] = field(default_factory=dict[str, PromptTemplate])
+    mcp_tools: dict[str, ToolType] = field(default_factory=dict[str, ToolType])
+    """Connected MCP tools, keyed `mcp__<server>__<tool>`, shared with subagent allowlists."""
     subagent_store: SubagentStore | None = None
     approval_runtime: ApprovalRuntime | None = None
     root_wire_hub: RootWireHub | None = None
@@ -336,6 +347,7 @@ class Runtime:
                 PYTHINKER_WORK_DIR=session.work_dir,
                 PYTHINKER_WORK_DIR_LS=ls_output,
                 PYTHINKER_AGENTS_MD=agents_md or "",
+                PYTHINKER_AGENTS_MD_FENCE=_agents_md_fence(agents_md or ""),
                 PYTHINKER_SKILLS=skills_formatted or "No skills found.",
                 PYTHINKER_ADDITIONAL_DIRS_INFO=additional_dirs_info,
                 PYTHINKER_OS=environment.os_kind,
@@ -391,6 +403,8 @@ class Runtime:
             # Share the same list reference so /add-dir mutations propagate to all agents
             additional_dirs=self.additional_dirs,
             skills_dirs=self.skills_dirs,
+            # Share the parent's connected MCP tools so allowlisted subagents can attach them
+            mcp_tools=self.mcp_tools,
             subagent_store=self.subagent_store,
             approval_runtime=self.approval_runtime,
             root_wire_hub=self.root_wire_hub,
@@ -503,7 +517,10 @@ async def load_agent(
     if agent_spec.exclude_tools:
         logger.debug("Excluding tools: {tools}", tools=agent_spec.exclude_tools)
         tools = [tool for tool in tools if tool not in agent_spec.exclude_tools]
-    toolset.load_tools(tools, tool_deps)
+    named_tools = [tool for tool in tools if ":" not in tool]
+    toolset.load_tools([tool for tool in tools if ":" in tool], tool_deps)
+    if named_tools:
+        toolset.add_shared_tools(named_tools, runtime.mcp_tools)
 
     # Load plugin tools
     from pythinker_code.plugin.manager import get_plugins_dir

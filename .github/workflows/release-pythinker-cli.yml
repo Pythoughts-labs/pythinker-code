@@ -571,6 +571,40 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  register-bugsink-release:
+    name: Register release in Bugsink
+    needs: [validate, release]
+    # Registering the release at cut time (instead of waiting for the first
+    # event from that version) makes Bugsink's "resolved in next release"
+    # semantics flip exactly when the release ships. Telemetry must never
+    # gate a release: failures here are warnings, not job failures.
+    if: always() && needs.release.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST release to Bugsink
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          BUGSINK_TOKEN: ${{ secrets.BUGSINK_RELEASES_TOKEN }}
+        run: |
+          set -uo pipefail
+          if [[ -z "$BUGSINK_TOKEN" ]]; then
+            echo "::warning title=Bugsink::BUGSINK_RELEASES_TOKEN not set; skipping release registration"
+            exit 0
+          fi
+          body=$(jq -n --arg v "pythinker-code@${VERSION}" '{project: 1, version: $v}')
+          status=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -m 30 \
+            -X POST "https://errors.pythinker.com/api/canonical/0/releases/" \
+            -H "Authorization: Bearer ${BUGSINK_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$body" || echo "000")
+          if [[ "$status" == "201" || "$status" == "200" ]]; then
+            echo "Registered pythinker-code@${VERSION} in Bugsink"
+          elif [[ "$status" == "400" ]] && grep -q "already exists" /tmp/resp.json; then
+            echo "Release pythinker-code@${VERSION} already registered (idempotent re-run)"
+          else
+            echo "::warning title=Bugsink::release registration failed (HTTP ${status}): $(cat /tmp/resp.json 2>/dev/null | head -c 200)"
+          fi
+
   publish-python-testpypi:
     name: Publish Python package to TestPyPI
     needs: validate

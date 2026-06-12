@@ -34,6 +34,10 @@ def test_base_mode_diffs_branch_vs_merge_base(
     assert "app.py" in res.changed_files
     assert "diff --git" in res.patch_text
     assert res.head_sha and res.base_sha and res.head_sha != res.base_sha
+    # No fallback occurred: requested and chosen refs agree, no reason recorded.
+    assert res.requested_base_ref == "main"
+    assert res.base_ref == "main"
+    assert res.fallback_reason is None
 
 
 def test_base_mode_falls_back_main_then_master(
@@ -44,6 +48,12 @@ def test_base_mode_falls_back_main_then_master(
     res = resolve_diff(repo, mode=DiffMode.base, base_ref="origin/main")
     assert res.source_label.startswith("git-diff:")
     assert "app.py" in res.changed_files
+    # The silent origin/main -> main fallback must be loud in the metadata.
+    assert res.requested_base_ref == "origin/main"
+    assert res.base_ref == "main"
+    assert res.fallback_reason is not None
+    assert "origin/main" in res.fallback_reason
+    assert "main" in res.fallback_reason
 
 
 def test_staged_mode(tmp_git_repo: Callable[..., Path], git_run: Callable[..., str]) -> None:

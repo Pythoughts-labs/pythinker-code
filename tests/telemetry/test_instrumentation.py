@@ -955,3 +955,36 @@ class TestCompactionTracking:
         assert kwargs["before_tokens"] == 50000
         assert kwargs["success"] is False
         assert "after_tokens" not in kwargs
+
+
+# ---------------------------------------------------------------------------
+# Model-family classification (gen_ai.model.family)
+# ---------------------------------------------------------------------------
+
+from pythinker_code.telemetry.metrics import classify_model_family  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    ("model", "family"),
+    [
+        ("claude-sonnet-4-6", "claude"),
+        ("gpt-5.2-codex", "codex"),
+        ("gpt-5.2", "gpt"),
+        ("gemini-3-pro", "gemini"),
+        ("qwen3.7-max", "qwen"),
+        ("Qwen/QwQ-32B", "qwen"),
+        ("deepseek-v3.3", "deepseek"),
+        ("kimi-k2-thinking", "kimi"),
+        ("moonshot-v1-128k", "kimi"),
+        ("MiniMax-M2.1", "minimax"),
+        ("glm-5", "glm"),
+        ("llama-4-maverick", "llama"),
+        ("mistral-large-3", "mistral"),
+        ("grok-4.1", "grok"),
+        ("totally-unknown-model", "other"),
+        ("", "other"),
+        (None, "other"),
+    ],
+)
+def test_classify_model_family(model, family):
+    assert classify_model_family(model) == family

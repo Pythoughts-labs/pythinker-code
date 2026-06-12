@@ -240,7 +240,7 @@ def test_write_existing_file_renders_diff_for_add_only_change():
     )
 
     assert "Added 1 line" in rendered
-    assert "+ 2 new section" in rendered
+    assert " 2 + new section" in rendered
     assert "Wrote 2 lines" not in rendered
 
 
@@ -315,8 +315,8 @@ def test_edit_renders_inline_diff():
     assert "Added 1 line" in rendered
     assert "return 1" in rendered
     assert "return 2" in rendered
-    assert "- 1 return 1" in rendered
-    assert "+ 1 return 2" in rendered
+    assert " 1 - return 1" in rendered
+    assert " 1 + return 2" in rendered
 
 
 def test_edit_multi_count_in_header():
@@ -360,8 +360,8 @@ def test_edit_prefers_structured_result_diff_blocks():
     rendered = render_plain(comp.render(), width=100)
     assert "removed 1 line" in rendered
     assert "Added 1 line" in rendered
-    assert "-41 old" in rendered
-    assert "+41 new" in rendered
+    assert "41 - old" in rendered
+    assert "41 + new" in rendered
 
 
 def test_summary_diff_blocks_count_each_line():
@@ -859,6 +859,46 @@ def test_run_agents_renders_compact_professional_summary():
     assert "Review every changed file" not in rendered
     assert "result: |" not in rendered
     assert "agent_id:" not in rendered
+
+
+def test_run_agents_rows_align_columns_and_drop_redundant_name():
+    rendered = _render(
+        "RunAgents",
+        {
+            "summary": "Parallel deep review",
+            "run_in_background": True,
+            "agents": [
+                {"name": "code-reviewer", "subagent_type": "code-reviewer"},
+                {"name": "qa", "subagent_type": "qa"},
+            ],
+        },
+        output=(
+            "tool_status: success\n"
+            "mode: background\n"
+            "agent_count: 2\n"
+            "agents:\n"
+            "- name: code-reviewer\n"
+            "  subagent_type: code-reviewer\n"
+            "  status: running\n"
+            "  task_id: agent-aaaa\n"
+            "- name: qa\n"
+            "  subagent_type: qa\n"
+            "  status: running\n"
+            "  task_id: agent-bbbb\n"
+        ),
+        width=120,
+    )
+    tree_lines = [line for line in rendered.splitlines() if line.lstrip().startswith(("├─", "└─"))]
+    assert len(tree_lines) == 2
+    # Variable-width subagent labels are padded so the status column aligns.
+    status_cols = {line.index("running") for line in tree_lines}
+    assert len(status_cols) == 1, tree_lines
+    # And the trailing task_id column aligns too.
+    task_cols = {line.index("agent-") for line in tree_lines}
+    assert len(task_cols) == 1, tree_lines
+    # A name identical to the subagent_type is not echoed twice in its tree row.
+    code_reviewer_line = next(line for line in tree_lines if "code-reviewer" in line)
+    assert code_reviewer_line.count("code-reviewer") == 1
 
 
 # ---------------------------------------------------------------------------

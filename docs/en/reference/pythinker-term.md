@@ -14,21 +14,17 @@ When you run `pythinker term`, it automatically starts a `pythinker acp` server 
 
 ## Options
 
-All extra options are passed through to the internal `pythinker acp` command. For example:
+`pythinker term` reads the working directory from extra arguments and opens Toad there. For example:
 
 ```sh
-pythinker term --work-dir /path/to/project --model pythinker-ai
+pythinker term --work-dir /path/to/project
 ```
 
-Common options:
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--work-dir PATH` | `-w` | Specify working directory (passed to Toad as the project directory) |
 
-| Option | Description |
-|--------|-------------|
-| `--work-dir PATH` | Specify working directory |
-| `--model NAME` | Specify model |
-| `--yolo` | Auto-approve all tool calls |
-
-For the full list of options, see [`pythinker` command](./pythinker-command.md).
+Other options are not forwarded to the internal `pythinker acp` server; only the working directory is honored.
 
 ## System requirements
 

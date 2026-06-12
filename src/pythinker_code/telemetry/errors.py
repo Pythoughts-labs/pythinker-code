@@ -20,8 +20,10 @@ telemetry must never break the host program.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import re
+import socket
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -29,6 +31,74 @@ from typing import Any
 
 from pythinker_code.telemetry import sentry as _sentry
 from pythinker_code.telemetry import track
+
+# ---------------------------------------------------------------------------
+# Expected-error classification
+# ---------------------------------------------------------------------------
+# Sentry/Bugsink is reserved for actionable defects. Errors caused by the
+# user's environment — bad/expired credentials, exhausted quotas, rate limits,
+# offline network, abandoned OAuth flows, MCP servers lacking an optional
+# capability — are *expected*: they still flow to the OTel ``error`` event
+# stream (with ``expected=True``) and the local ring buffer, but are not
+# reported to Sentry.
+
+# HTTP statuses that signal a user/provider-side condition, not a client bug:
+# auth (401/403), rate limit (429), request timeout (408), provider outage (5xx).
+_EXPECTED_HTTP_STATUSES = frozenset({401, 403, 408, 429})
+
+
+def _matches_expected(exc: BaseException) -> bool:
+    if isinstance(exc, (TimeoutError, asyncio.CancelledError, ConnectionError, socket.gaierror)):
+        return True
+
+    # Duck-typed HTTP status: covers pythinker_core's APIStatusError as well as
+    # raw provider-SDK errors (openai/anthropic both expose ``status_code``).
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int) and (status in _EXPECTED_HTTP_STATUSES or status >= 500):
+        return True
+
+    # Lazy imports: classification must work even when an optional dependency
+    # is absent, and must never introduce import cycles.
+    with contextlib.suppress(Exception):
+        from pythinker_core.chat_provider import (
+            APIConnectionError,
+            APIEmptyResponseError,
+            APITimeoutError,
+        )
+
+        if isinstance(exc, (APIConnectionError, APITimeoutError, APIEmptyResponseError)):
+            return True
+    with contextlib.suppress(Exception):
+        from pythinker_code.auth.oauth import OAuthError
+
+        if isinstance(exc, OAuthError):
+            return True
+    with contextlib.suppress(Exception):
+        import aiohttp
+
+        if isinstance(exc, aiohttp.ClientConnectionError):
+            return True
+    with contextlib.suppress(Exception):
+        from mcp.shared.exceptions import McpError
+        from mcp.types import METHOD_NOT_FOUND
+
+        if isinstance(exc, McpError) and exc.error.code == METHOD_NOT_FOUND:
+            return True
+    return False
+
+
+def is_expected_error(exc: BaseException) -> bool:
+    """Whether *exc* (or anything in its cause chain) is an expected
+    user-environment failure rather than a pythinker defect."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen and len(seen) < 8:
+        seen.add(id(current))
+        if _matches_expected(current):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
 
 # ---------------------------------------------------------------------------
 # Process-local ring buffer of recent errors
@@ -78,6 +148,10 @@ def report_handled_error(
 ) -> None:
     """Forward a caught-and-rendered exception to Sentry + the OTel error stream.
 
+    Expected user-environment failures (see :func:`is_expected_error`) are
+    tracked in OTel with ``expected=True`` and kept in the local ring buffer,
+    but skipped for Sentry/Bugsink.
+
     Args:
         exc: The exception that was caught at the call site.
         site: Stable identifier for the catch site, e.g. ``"tool.read"`` or
@@ -90,17 +164,22 @@ def report_handled_error(
             and short strings only. Values must not contain user input,
             absolute paths, or code snippets.
     """
+    expected = False
+    with contextlib.suppress(Exception):
+        expected = is_expected_error(exc)
     properties: dict[str, Any] = {
         "site": site,
         "exc_class": type(exc).__name__,
+        "expected": expected,
     }
     if tool is not None:
         properties["tool"] = tool
     properties.update(attrs)
     with contextlib.suppress(Exception):
         track("error", **properties)
-    with contextlib.suppress(Exception):
-        _sentry.capture_exception(exc)
+    if not expected:
+        with contextlib.suppress(Exception):
+            _sentry.capture_exception(exc)
     with contextlib.suppress(Exception):
         _recent.append(
             RecentError(

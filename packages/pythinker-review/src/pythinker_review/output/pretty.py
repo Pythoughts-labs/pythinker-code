@@ -24,6 +24,8 @@ def render_pretty(meta: RunMeta, findings: list[Finding], *, no_color: bool = Fa
         f"[bold]pythinker review[/bold] run [cyan]{meta.id}[/cyan]  "
         f"status={meta.status}  findings={meta.findings_count}"
     )
+    if meta.fallback_reason:
+        console.print(f"[yellow]warning:[/yellow] base fallback: {meta.fallback_reason}")
     if meta.chunks_failed:
         console.print(
             f"[yellow]warning:[/yellow] {meta.chunks_failed} chunk(s) failed "

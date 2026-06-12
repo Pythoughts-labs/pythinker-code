@@ -44,6 +44,7 @@ instance can preserve previous findings and work.
 - Use `resume` when you want to continue an existing instance instead of starting a new one.
 - If an existing subagent already has relevant context or the task is a continuation of its prior work, prefer `resume` over creating a new instance.
 - Default to foreground execution. Use `run_in_background=true` only when the task can continue independently, you do not need the result immediately, and there is a clear benefit to returning control before it finishes.
+- If your only next step is to wait for and synthesize the results (e.g. parallel reviews feeding one report), run in the foreground — `RunAgents` foreground children still execute concurrently and return results inline, with no polling or notification handling. Reserve background for when you have other work to do while children run.
 - Be explicit about whether the subagent should write code, only research, review, or verify.
 - Provide the subagent all required context and success criteria. New subagents do not inherit your transcript automatically.
 - Brief the agent like a capable teammate joining mid-task: state the goal, why it matters, what you already learned or ruled out, exact paths/commands when known, and the output format you need.
@@ -305,6 +306,7 @@ Read text content from a file.
 - Use negative `line_offset` to read from the end of the file (e.g. `line_offset=-100` reads the last 100 lines). This is useful for viewing the tail of log files. The absolute value cannot exceed 1000.
 - The tool always returns the total number of lines in the file in its message, which you can use to plan subsequent reads.
 - The maximum number of lines that can be read at once is 1000.
+- A result reporting fewer lines than the file total is a partial read — continue with `line_offset` until you have covered what the task depends on, especially for spec, skill, or checklist files you are implementing against.
 - Any lines longer than 2000 characters will be truncated, ending with "...".
 """
     )

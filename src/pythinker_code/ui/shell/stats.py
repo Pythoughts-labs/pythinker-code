@@ -300,6 +300,7 @@ class StatsApp:
             layout=layout,
             key_bindings=kb,
             full_screen=False,
+            erase_when_done=True,
             style=Style.from_dict(
                 {
                     "": "bg:#1e1e1e fg:#d4d4d4",

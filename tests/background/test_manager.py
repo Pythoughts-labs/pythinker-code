@@ -1197,12 +1197,19 @@ def test_publish_terminal_notifications_creates_notification(runtime):
         ),
     )
 
+    store.output_path(spec.id).write_text("done output\n", encoding="utf-8")
+
     published = manager.publish_terminal_notifications(limit=4)
     assert len(published) == 1
     notification = runtime.notifications.store.merged_view(published[0])
     assert notification.event.source_id == spec.id
     assert notification.event.type == "task.completed"
     assert notification.event.payload["task_id"] == spec.id
+    output_path = store.output_path(spec.id).resolve()
+    assert notification.event.payload["output_path"] == str(output_path)
+    assert notification.event.payload["output_size_bytes"] == len("done output\n")
+    assert f"Output path: {output_path}" in notification.event.body
+    assert "done output" not in notification.event.body
 
 
 def test_publish_terminal_notifications_marks_timeout_distinctly(runtime):

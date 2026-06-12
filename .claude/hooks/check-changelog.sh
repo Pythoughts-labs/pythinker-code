@@ -54,11 +54,16 @@ done <<< "$changed"
 [ "$touched" -eq 0 ] && exit 0
 
 # Pass if ## Unreleased has at least one non-blank line.
+# Checked inside awk (no pipe): `| grep -q` exits at the first match, and
+# under pipefail the resulting SIGPIPE to awk reads as failure once the
+# block outgrows the pipe buffer — denying exactly when the changelog is
+# at its fullest.
 if awk '
   /^## Unreleased[[:space:]]*$/ { inblk=1; next }
   inblk && /^## /               { inblk=0 }
-  inblk                         { print }
-' CHANGELOG.md 2>/dev/null | grep -q '[^[:space:]]'; then
+  inblk && /[^[:space:]]/       { found=1; exit }
+  END                           { exit !found }
+' CHANGELOG.md 2>/dev/null; then
   exit 0
 fi
 
