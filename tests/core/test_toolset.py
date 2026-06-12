@@ -558,6 +558,7 @@ def test_approval_gated_tools_declare_deferred_execution_started() -> None:
     """
     from pythinker_code.acp.tools import Terminal
     from pythinker_code.plugin.tool import PluginTool
+    from pythinker_code.soul.toolset import MCPTool
     from pythinker_code.tools.agent import RunAgents
     from pythinker_code.tools.background import TaskInput, TaskStop
     from pythinker_code.tools.file.replace import StrReplaceFile
@@ -573,6 +574,10 @@ def test_approval_gated_tools_declare_deferred_execution_started() -> None:
         Terminal,
         PluginTool,
         RunAgents,
+        # MCPTool requests approval via runtime.approval (not _approval) as the
+        # first step of __call__; the flag defers ToolExecutionStarted until
+        # that approval resolves, matching every other approval-gated tool.
+        MCPTool,
     )
     for tool_class in approval_gated:
         assert tool_class.emits_tool_execution_started_after_approval is True, tool_class

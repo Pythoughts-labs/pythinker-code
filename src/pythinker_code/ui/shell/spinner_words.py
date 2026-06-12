@@ -1,4 +1,4 @@
-"""Blackbox-inspired loading spinner words for the shell TUI."""
+"""Loading spinner words for the shell TUI."""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ import time
 # import them from the spinner module.
 from pythinker_code.ui.shell.glyphs import SPINNER_FRAME_INTERVAL_S, SPINNER_FRAMES
 
-# Keep each verb on-screen long enough to be readable, matching Blackbox's
-# stable loading-word feel rather than changing every frame.
+# Keep each verb on-screen long enough to be readable — a stable loading word
+# rather than one that changes every frame.
 SPINNER_VERB_INTERVAL_S = 600.0
 
-# Ported from blackbox/src/constants/spinnerVerbs.ts. Keep the list broad so
-# long-running turns do not look frozen even when no new tool output arrives.
+# Keep the list broad so long-running turns do not look frozen even when no
+# new tool output arrives.
 SPINNER_VERBS: tuple[str, ...] = (
     "Accomplishing",
     "Actioning",

@@ -57,15 +57,16 @@ Out of scope this PR (logged): pricing display move out of core, the
 (blueprint P1a/P2a/P2b).
 
 ### Deferred from this branch's reviews
-- `await builder.spill_to_disk()` missing at FetchURL trafilatura +
-  fetch-service sites (pre-existing; sync-spill fallback is correct, just
-  blocks the event loop briefly).
+- [x] FetchURL spill awaits — DONE: `await builder.spill_to_disk()` added at
+  the trafilatura + fetch-service sites.
+- [x] MCPTool event ordering — DONE: `emits_tool_execution_started_after_approval`
+  set on MCPTool (Approval.request emits after resolution, idempotent per
+  call id); pinned in test_toolset.py alongside the other 8 classes.
 - No structural enforcement that FUTURE external adapters declare
-  `external_side_effect_tool` (pin tests cover the current three only);
-  consider an `__init_subclass__` check or lint rule.
-- MCPTool fires ToolExecutionStarted before its approval dialog resolves
-  (no `emits_tool_execution_started_after_approval`); pre-existing event
-  ordering inconsistency vs Shell/WriteFile — decide deliberately.
+  `external_side_effect_tool` (pin tests cover the current three only).
+  Deliberately NOT bolted on now: the three adapters share no in-package
+  base class to hang an `__init_subclass__` hook on; revisit when the
+  toolset split (blueprint P2a) introduces an adapter base.
 
 Done: `mythos-enhancements` PR #118 merged (d51ef649).
 

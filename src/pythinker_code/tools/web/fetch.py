@@ -279,6 +279,8 @@ class FetchURL(CallableTool2[Params]):
 
         builder.mark_untrusted()
         builder.write(extracted_text)
+        # Spill the full text off the event loop before building the result.
+        await builder.spill_to_disk()
         return builder.ok("The returned content is the main text content extracted from the page.")
 
     async def _fetch_with_service(self, params: Params) -> ToolReturnValue:
@@ -341,6 +343,8 @@ class FetchURL(CallableTool2[Params]):
                     )
                 builder.mark_untrusted()
                 builder.write(content)
+                # Spill the full text off the event loop before building the result.
+                await builder.spill_to_disk()
                 return builder.ok(
                     "The returned content is the main content extracted from the page."
                 )

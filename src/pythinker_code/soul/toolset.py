@@ -1105,6 +1105,16 @@ class MCPTool[T: ClientTransport](CallableTool):
     flag on an external adapter disables its permission gating.
     """
 
+    emits_tool_execution_started_after_approval: ClassVar[bool] = True
+    """Defer ToolExecutionStarted until ``approval.request`` resolves.
+
+    ``__call__`` requests approval as its first step, and ``Approval.request``
+    emits the started event after resolution (idempotent per call id), so the
+    UI shows the approval prompt before the tool reads as "running" — the same
+    ordering as Shell/WriteFile. The old ``_approval`` duck-typing missed this
+    class because it requests via ``runtime.approval`` instead.
+    """
+
     def __init__(
         self,
         server_name: str,
