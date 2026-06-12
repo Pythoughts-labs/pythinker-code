@@ -48,6 +48,11 @@ def test_agent_params_schema(agent_tool: AgentTool):
                     "default": None,
                     "description": "Optional agent ID to resume instead of creating a new instance.",
                 },
+                "fork_context": {
+                    "default": False,
+                    "description": "Seed the new agent with a filtered transcript of this conversation (user requests and assistant replies; tool traffic and thinking are dropped). Use when the child needs the discussion so far without a hand-written context packet. New foreground instances only — invalid with resume or run_in_background.",
+                    "type": "boolean",
+                },
                 "run_in_background": {
                     "default": False,
                     "description": "Whether to run the agent in the background. Prefer false unless the task can continue independently and there is a clear benefit to returning control before the result is needed.",

@@ -51,6 +51,16 @@ class Params(BaseModel):
         default=None,
         description="Optional agent ID to resume instead of creating a new instance.",
     )
+    fork_context: bool = Field(
+        default=False,
+        description=(
+            "Seed the new agent with a filtered transcript of this conversation (user "
+            "requests and assistant replies; tool traffic and thinking are dropped). Use "
+            "when the child needs the discussion so far without a hand-written context "
+            "packet. New foreground instances only — invalid with resume or "
+            "run_in_background."
+        ),
+    )
     run_in_background: bool = Field(
         default=False,
         description=(
@@ -272,6 +282,14 @@ class AgentTool(CallableTool2[Params]):
         requested_type = params.subagent_type or "coder"
         if err := self.check_execution_policy(requested_type):
             return err
+        if params.fork_context and (params.resume is not None or params.run_in_background):
+            return ToolError(
+                message=(
+                    "fork_context seeds a NEW foreground agent; it cannot be combined "
+                    "with resume or run_in_background."
+                ),
+                brief="Invalid fork_context",
+            )
         if params.run_in_background:
             return await self._run_in_background(params)
         if params.isolation != "none":
@@ -290,6 +308,7 @@ class AgentTool(CallableTool2[Params]):
                 requested_type=params.subagent_type or "coder",
                 model=params.model,
                 resume=params.resume,
+                fork_context=params.fork_context,
             )
             if timeout is not None:
                 return await asyncio.wait_for(runner.run(req), timeout=timeout)

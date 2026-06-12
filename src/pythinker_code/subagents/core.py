@@ -8,15 +8,21 @@ implemented once.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+from pythinker_core.message import Message
+
+from pythinker_code.notifications import is_notification_message
 from pythinker_code.soul.context import Context
+from pythinker_code.soul.message import is_system_reminder_message
 from pythinker_code.soul.pythinkersoul import PythinkerSoul
 from pythinker_code.subagents.builder import SubagentBuilder
 from pythinker_code.subagents.models import AgentLaunchSpec, AgentTypeDefinition
 from pythinker_code.subagents.store import SubagentStore
+from pythinker_code.wire.types import TextPart, ThinkPart
 
 GIT_CONTEXT_AGENT_TYPES = frozenset({"explore", "review", "code_reviewer", "security_reviewer"})
 """Read-oriented agent types whose first prompt gets a git-context prefix.
@@ -49,6 +55,54 @@ class SubagentRunSpec:
     launch_spec: AgentLaunchSpec
     prompt: str
     resumed: bool
+    # Filtered parent transcript to seed a NEW child with (spawn-time context
+    # fork). Ignored on resume; see filter_history_for_fork.
+    fork_history: Sequence[Message] | None = None
+
+
+_CHECKPOINT_MARKER_RE = re.compile(r"^CHECKPOINT \d+$")
+
+
+def filter_history_for_fork(history: Sequence[Message]) -> list[Message]:
+    """Filter a parent transcript down to its conversational spine.
+
+    Keeps user requests and assistant text; drops tool traffic (whose
+    call/result pairing would dangle out of context), thinking parts,
+    injected reminder/notification wrappers, and checkpoint markers — the
+    child should inherit intent and conclusions, not raw activity.
+    """
+    forked: list[Message] = []
+    for message in history:
+        if message.role == "user":
+            if is_notification_message(message) or is_system_reminder_message(message):
+                continue
+            text = message.extract_text(" ").strip()
+            if not text or _CHECKPOINT_MARKER_RE.match(text):
+                continue
+            forked.append(Message(role="user", content=[TextPart(text=text)]))
+        elif message.role == "assistant":
+            text = " ".join(
+                part.text
+                for part in message.content
+                if isinstance(part, TextPart) and not isinstance(part, ThinkPart)
+            ).strip()
+            if not text:
+                continue
+            forked.append(Message(role="assistant", content=[TextPart(text=text)]))
+    return forked
+
+
+async def seed_forked_history(
+    context: Context, fork_history: Sequence[Message] | None, *, resumed: bool
+) -> None:
+    """Seed a NEW child's context with the forked parent transcript.
+
+    Persisting through the child's own context file keeps resume working
+    unchanged. No-op on resume or when the child already has history.
+    """
+    if not fork_history or resumed or context.history:
+        return
+    await context.append_message(list(fork_history))
 
 
 def _prepend_output_language_instruction(prompt: str) -> str:
@@ -82,6 +136,7 @@ async def prepare_soul(
     # 2. Restore conversation context
     context = Context(store.context_path(spec.agent_id))
     await context.restore()
+    await seed_forked_history(context, spec.fork_history, resumed=spec.resumed)
     if on_stage:
         on_stage("context_restored")
 
