@@ -16,10 +16,11 @@ from aiohttp import web
 from pythinker_host.path import HostPath
 
 from pythinker_code.tools.file.read import Params, ReadFile
+from pythinker_code.tools.utils import DEFAULT_MAX_CHARS
 from pythinker_code.tools.web import fetch as fetch_module
 from pythinker_code.tools.web.fetch import FetchURL
 from pythinker_code.tools.web.fetch import Params as FetchParams
-from pythinker_code.utils.trust import UntrustedData
+from pythinker_code.utils.trust import UntrustedData, strip_untrusted_envelope
 from tests.tools._untrusted import assert_wrapped, unwrap_untrusted
 
 WRAPPER_RE = re.compile(r'^<untrusted_data id="[0-9a-f]{8}">\n.*\n</untrusted_data>$', re.DOTALL)
@@ -268,6 +269,63 @@ async def test_fetchurl_error_results_are_not_wrapped(
     assert result.is_error
     assert isinstance(result.output, str)
     assert "<untrusted_data" not in result.output
+
+
+async def test_fetchurl_truncated_markdown_envelope_stays_closed(
+    fetch_url_tool: FetchURL,
+    _bypass_ssrf_validation: None,
+) -> None:
+    """Truncation must never cut the closing ``</untrusted_data>`` tag.
+
+    A page larger than the builder's character limit used to be wrapped
+    *before* truncation, so the closing tag was truncated away — leaving an
+    unterminated envelope for the model and a raw envelope leaking into
+    display paths (``strip_untrusted_envelope`` only strips well-formed
+    envelopes). Wrapping must happen after truncation.
+    """
+    body = "".join(f"line {i}: markdown filler text\n" for i in range(4000))
+    assert len(body) > DEFAULT_MAX_CHARS
+    base, runner = await _start_server(body, "text/markdown; charset=utf-8")
+    try:
+        result = await fetch_url_tool(FetchParams(url=base))
+    finally:
+        await runner.cleanup()
+
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    # Truncation actually happened (not a no-op page).
+    assert "truncated" in result.message
+    assert WRAPPER_RE.match(result.output), (
+        f"truncated output tore the envelope: {result.output[-200:]!r}"
+    )
+    inner = unwrap_untrusted(result.output)
+    assert len(inner) < len(body)
+    # The display-surface stripper round-trips: the envelope is removed cleanly.
+    assert strip_untrusted_envelope(result.output) == inner
+
+
+async def test_fetchurl_truncated_extracted_html_envelope_stays_closed(
+    fetch_url_tool: FetchURL,
+    _bypass_ssrf_validation: None,
+) -> None:
+    """The trafilatura-extraction path must also wrap after truncation."""
+    paragraphs = "".join(
+        f"<p>paragraph {i} " + "lorem ipsum filler words " * 20 + "</p>" for i in range(200)
+    )
+    body = f"<!DOCTYPE html><html><body><article><h1>Big</h1>{paragraphs}</article></body></html>"
+    base, runner = await _start_server(body, "text/html")
+    try:
+        result = await fetch_url_tool(FetchParams(url=base))
+    finally:
+        await runner.cleanup()
+
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    assert "truncated" in result.message
+    assert WRAPPER_RE.match(result.output), (
+        f"truncated output tore the envelope: {result.output[-200:]!r}"
+    )
+    assert strip_untrusted_envelope(result.output) == unwrap_untrusted(result.output)
 
 
 # ── UntrustedData primitive round-trip via the tools ─────────────────

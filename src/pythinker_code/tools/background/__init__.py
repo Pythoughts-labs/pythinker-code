@@ -469,6 +469,7 @@ class TaskInput(CallableTool2[TaskInputParams]):
     name: str = "TaskInput"
     description: str = load_desc(Path(__file__).parent / "input.md")
     params: type[TaskInputParams] = TaskInputParams
+    emits_tool_execution_started_after_approval = True
 
     def __init__(self, runtime: Runtime, approval: Approval):
         super().__init__()
@@ -549,6 +550,7 @@ class TaskStop(CallableTool2[TaskStopParams]):
     name: str = "TaskStop"
     description: str = load_desc(Path(__file__).parent / "stop.md")
     params: type[TaskStopParams] = TaskStopParams
+    emits_tool_execution_started_after_approval = True
 
     def __init__(self, runtime: Runtime, approval: Approval):
         super().__init__()

@@ -282,9 +282,7 @@ async def goal(soul: PythinkerSoul, args: str):
             "with /goal clear."
         )
     )
-    await soul._turn(  # pyright: ignore[reportPrivateUsage]
-        Message(role="user", content=prompts.GOAL_SET.format(objective=text))
-    )
+    await soul.turn(Message(role="user", content=prompts.GOAL_SET.format(objective=text)))
 
 
 @registry.command
@@ -297,9 +295,7 @@ async def learn(soul: PythinkerSoul, args: str):
         else "No specific focus was given; review the whole session."
     )
     wire_send(TextPart(text="Reviewing the session for lessons worth keeping..."))
-    await soul._turn(  # pyright: ignore[reportPrivateUsage]
-        Message(role="user", content=prompts.LEARN.format(focus=focus_line))
-    )
+    await soul.turn(Message(role="user", content=prompts.LEARN.format(focus=focus_line)))
 
 
 @registry.command(name="best-practices", aliases=["bp"])

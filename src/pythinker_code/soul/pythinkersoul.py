@@ -1144,6 +1144,39 @@ class PythinkerSoul:
             if outcome.stop_reason != "no_tool_calls":
                 return
 
+    async def turn(self, user_message: Message) -> TurnOutcome:
+        """
+        Run one full agent turn for ``user_message`` and return its outcome.
+
+        The message is appended to the context, then the agent loop steps the
+        model — executing any tool calls it makes — until the model stops.
+        The returned ``TurnOutcome`` carries the ``stop_reason``
+        (``"no_tool_calls"``: the model finished with a plain response;
+        ``"tool_rejected"``: the user rejected a tool call; ``"stuck"``: the
+        turn was cut short as a degenerate tool-call loop), the final
+        assistant message (``None`` when a tool call was rejected), and the
+        number of steps taken.
+
+        This is the public entry point for external drivers (flows, slash
+        command handlers). It emits per-step wire framing but NOT
+        ``TurnBegin``/``TurnEnd``. Callers starting a new wire-level turn
+        (e.g. ``FlowRunner``) must wrap the call in ``TurnBegin``/``TurnEnd``;
+        callers already executing inside a framed turn (e.g. slash-command
+        handlers running under ``run()``) must not add extra framing.
+
+        Raises:
+            LLMNotSet: When the LLM is not set.
+            LLMNotSupported: When the LLM does not have required capabilities.
+            ChatProviderError: When the LLM provider returns an error.
+            MaxStepsReached: When the per-turn step limit is reached.
+            asyncio.CancelledError: When the turn is cancelled by user.
+        """
+        # Thin delegate by design: many tests monkeypatch ``soul._turn`` to
+        # stub turn execution, so ``_turn`` must remain the single
+        # implementation/patch point that both ``turn()`` and internal
+        # callers go through.
+        return await self._turn(user_message)
+
     async def _turn(self, user_message: Message) -> TurnOutcome:
         from pythinker_code.extensions import shared_event_bus
         from pythinker_code.telemetry import metrics as _m

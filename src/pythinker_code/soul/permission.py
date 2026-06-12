@@ -418,12 +418,10 @@ def check_tool_call_allowed(
     if tool_name in _NETWORK_TOOLS:
         return check_network_tool_allowed(runtime, tool_name)
 
-    tool_type = type(tool)
-    module = getattr(tool_type, "__module__", "")
-    qualname = getattr(tool_type, "__qualname__", "")
-    if module == "pythinker_code.plugin.tool" and qualname.endswith("PluginTool"):
-        return check_external_tool_allowed(runtime, tool_name)
-    if module == "pythinker_code.soul.toolset" and qualname in {"MCPTool", "WireExternalTool"}:
+    # Declarative flag set by external adapters (MCPTool, WireExternalTool,
+    # PluginTool) whose side effects cannot be statically classified; see the
+    # `external_side_effect_tool` declarations for the fail-closed contract.
+    if getattr(tool, "external_side_effect_tool", False):
         return check_external_tool_allowed(runtime, tool_name)
     return None
 
