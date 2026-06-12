@@ -29,9 +29,9 @@
       foreground children with the filtered conversational spine; background
       fork is a tracked follow-up).
       Workspace isolation: design note at tasks/worktree-isolation-design.md;
-      P1 work_dir seam DONE `56d6fa53` (Runtime.work_dir property + 26-site
-      migration + copy_for_subagent override). NEXT: P2 worktree lifecycle
-      in background runner, then P3 RunAgents.
+      P1 seam `56d6fa53` + P2 lifecycle `8bc6c697` DONE (background
+      write-profile children get per-agent worktrees, diff-summary reports,
+      recovery-aware cleanup). P3 (RunAgents batch reuse) remains.
       NEXT (Tier-1 high/M, plan order): MCP startup
       timeout+diagnostics; MCP per-server tool filtering; subagent context
       fork; workspace isolation for parallel writers; turn rollup analytics;
