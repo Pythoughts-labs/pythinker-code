@@ -13,7 +13,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from pythinker_core.message import Message
+from pythinker_core.message import Message, TextPart, ThinkPart
 from pythinker_host.path import HostPath
 
 from pythinker_code.notifications import is_notification_message
@@ -23,7 +23,6 @@ from pythinker_code.soul.pythinkersoul import PythinkerSoul
 from pythinker_code.subagents.builder import SubagentBuilder
 from pythinker_code.subagents.models import AgentLaunchSpec, AgentTypeDefinition
 from pythinker_code.subagents.store import SubagentStore
-from pythinker_code.wire.types import TextPart, ThinkPart
 
 # NOTE: these must match the registered type names in agents/default/agent.yaml
 # (dashed), which _SUBAGENT_PROFILES also keys on — not the yaml file stems.
@@ -160,7 +159,8 @@ async def prepare_soul(
     if spec.type_def.name in GIT_CONTEXT_AGENT_TYPES and not spec.resumed:
         from pythinker_code.subagents.git_context import collect_git_context
 
-        git_ctx = await collect_git_context(runtime.builtin_args.PYTHINKER_WORK_DIR)
+        git_context_dir = spec.work_dir_override or runtime.builtin_args.PYTHINKER_WORK_DIR
+        git_ctx = await collect_git_context(git_context_dir)
         if git_ctx:
             prompt = f"{git_ctx}\n\n{prompt}"
     prompt = _prepend_output_language_instruction(prompt)

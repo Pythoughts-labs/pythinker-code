@@ -38,6 +38,10 @@ UNSAFE = [
     "git commit -m x",
     "git branch new-branch",
     "git status --output=/tmp/f",
+    "git -C /other/repo status",
+    "cat /etc/shadow",
+    "cat ~/.ssh/id_rsa",
+    "cat ../secret.txt",
     "git log --output=/tmp/f --oneline",
     "git -c core.pager=rm status",
     "ls > /tmp/out",
@@ -122,8 +126,6 @@ class TestSafeModeKeepsPrompts:
 
         shell_tool._approval.set_safe_mode(True)
         shell_tool._approval.request = _raise  # type: ignore[method-assign]
-
-        import pytest
 
         with pytest.raises(_ApprovalReached):
             await shell_tool(Params(command="echo checkpoint"))

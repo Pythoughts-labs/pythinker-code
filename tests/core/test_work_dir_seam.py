@@ -18,7 +18,9 @@ class TestWorkDirSeam:
         child = runtime.copy_for_subagent(agent_id="a1", subagent_type="coder")
 
         assert child.work_dir == runtime.session.work_dir
-        assert child.builtin_args is runtime.builtin_args
+        for field in runtime.builtin_args.__dataclass_fields__:
+            if field.startswith("PYTHINKER_"):
+                assert getattr(child.builtin_args, field) == getattr(runtime.builtin_args, field)
 
     def test_override_redirects_child_only(self, runtime, tmp_path) -> None:
         worktree = HostPath.unsafe_from_local_path(tmp_path / "wt")

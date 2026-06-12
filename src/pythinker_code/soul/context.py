@@ -56,7 +56,9 @@ def repair_history_invariants(history: Sequence[Message]) -> list[Message]:
 
     for message in history:
         if message.role == "tool":
-            if message.tool_call_id in open_call_ids:
+            if message.tool_call_id is None:
+                repaired.append(message)
+            elif message.tool_call_id in open_call_ids:
                 open_call_ids.remove(message.tool_call_id)
                 repaired.append(message)
             else:
@@ -130,6 +132,7 @@ class Context:
                 )
 
         self._history[:] = repair_history_invariants(self._history)
+        messages_after_last_usage[:] = repair_history_invariants(messages_after_last_usage)
         self._pending_token_estimate = estimate_text_tokens(messages_after_last_usage)
         return True
 
@@ -282,6 +285,7 @@ class Context:
                     await new_file.write(line)
 
         self._history[:] = repair_history_invariants(self._history)
+        messages_after_last_usage[:] = repair_history_invariants(messages_after_last_usage)
         self._pending_token_estimate = estimate_text_tokens(messages_after_last_usage)
 
     async def clear(self):

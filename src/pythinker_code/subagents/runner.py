@@ -282,8 +282,8 @@ class ForegroundSubagentRunner:
 
         Reads the persisted parent context file rather than live soul state,
         so the fork inherits exactly what would survive a parent restore
-        (including the restore-time pairing repair). Best-effort: a read
-        failure degrades to a blank child rather than failing the spawn.
+        (including the restore-time pairing repair). An explicit fork must not
+        silently degrade to a blank child: read failures abort the spawn.
         """
         from pythinker_code.soul.context import Context
         from pythinker_code.subagents.core import filter_history_for_fork
@@ -291,9 +291,11 @@ class ForegroundSubagentRunner:
         try:
             parent_context = Context(file_backend=self._runtime.session.context_file)
             await parent_context.restore()
-        except Exception:
+        except Exception as exc:
             logger.warning("Context fork: failed to read parent history", exc_info=True)
-            return None
+            raise RuntimeError(
+                "Context fork requested, but the parent history could not be restored."
+            ) from exc
         forked = filter_history_for_fork(parent_context.history)
         return forked or None
 

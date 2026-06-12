@@ -49,7 +49,7 @@ class Params(BaseModel):
 
 class ReadMediaFile(CallableTool2[Params]):
     name: str = "ReadMediaFile"
-    supports_parallel: bool = True
+    supports_parallel: bool = False
     params: type[Params] = Params
 
     def __init__(self, runtime: Runtime) -> None:

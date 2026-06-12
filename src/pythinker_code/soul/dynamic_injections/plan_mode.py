@@ -154,23 +154,29 @@ def _full_reminder(
             "check that would prove it worked end-to-end. Keep the plan file "
             "skimmable: 3-5 short sections (including Assumptions and Verification), "
             "bullets grouped by subsystem, naming only load-bearing files",
-            "5. Exit — call ExitPlanMode for user approval, only once the plan is "
-            "decision-complete: an implementer could execute it without making any "
-            'decision themselves. "Figure out X during implementation" is not a plan '
-            "step — resolve it now by exploring, or ask",
+            (
+                "5. Exit — call ExitPlanMode for user approval, only once the plan is "
+                "decision-complete: an implementer could execute it without making any "
+                'decision themselves. "Figure out X during implementation" is not a plan '
+                "step — resolve it now by exploring, or ask via AskUserQuestion."
+            ),
         ]
     )
     lines.extend(
         [
             "",
             "## Resolving unknowns",
-            "Unknowns come in two kinds. Repo-discoverable facts (current behavior, "
-            "existing patterns, file locations): explore and answer them yourself — "
-            "never ask the user. Preference or scope decisions (product behavior, "
-            "tradeoff priorities, rollout): surface them early with AskUserQuestion, "
-            "offering 2-4 concrete options with your recommended default first.",
-            "If a preference question stays unanswered, proceed with your recommended "
-            "default and record it in the plan's Assumptions section.",
+            (
+                "Unknowns come in two kinds. Repo-discoverable facts (current behavior, "
+                "existing patterns, file locations): explore and answer them yourself — "
+                "never ask the user. Preference or scope decisions (product behavior, "
+                "tradeoff priorities, rollout): surface them early with AskUserQuestion, "
+                "offering 2-4 concrete options with your recommended default first."
+            ),
+            (
+                "If a preference question stays unanswered, proceed with your recommended "
+                "default and record it in the plan's Assumptions section."
+            ),
             "",
             "## Handling multiple approaches",
             "Keep it focused: at most 2-3 meaningfully different approaches. "

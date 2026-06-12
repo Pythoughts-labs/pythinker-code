@@ -8,6 +8,8 @@ across sessions in a user-scope trust file.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -65,6 +67,31 @@ class TestTrustStore:
         trust_files[0].write_text("{not json", encoding="utf-8")
 
         assert is_project_trusted(root) is False
+
+    def test_trust_store_uses_hashed_project_ids(self, tmp_path: Path) -> None:
+        root = tmp_path / "repo"
+        root.mkdir()
+
+        set_project_trusted(root, True)
+
+        trust_file = tmp_path / "share" / "trusted_projects.json"
+        payload = json.loads(trust_file.read_text(encoding="utf-8"))
+        normalized = str(root.expanduser().resolve(strict=False))
+        expected = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        assert payload == {"trusted_project_ids": [expected]}
+        assert normalized not in trust_file.read_text(encoding="utf-8")
+
+    def test_legacy_cleartext_trust_store_is_read(self, tmp_path: Path) -> None:
+        root = tmp_path / "repo"
+        root.mkdir()
+        trust_file = tmp_path / "share" / "trusted_projects.json"
+        trust_file.parent.mkdir(parents=True)
+        trust_file.write_text(
+            json.dumps({"trusted_roots": [str(root.resolve(strict=False))]}),
+            encoding="utf-8",
+        )
+
+        assert is_project_trusted(root) is True
 
 
 class TestUntrustedProjectConfigGating:

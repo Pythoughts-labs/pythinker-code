@@ -40,6 +40,7 @@ class PermissionsInjectionProvider(DynamicInjectionProvider):
         approved = tuple(sorted(approval.session_approved_actions()))
         fingerprint = (
             profile.name,
+            soul.runtime.config.agent_execution_profile,
             approval.is_yolo(),
             approval.is_auto(),
             approval.is_safe_mode(),

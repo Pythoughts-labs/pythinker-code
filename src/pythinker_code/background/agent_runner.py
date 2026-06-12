@@ -231,6 +231,7 @@ class BackgroundAgentRunner:
         if failure is not None:
             self._finalize_safely(outcome="failed", reason=failure.message)
             output.error(_failure_recovery_message(reason=failure.message, agent_id=self._agent_id))
+            self._note_retained_worktree(output)
             output.stage(f"failed: {failure.brief}")
             return
         output.stage("run_soul_finished")
@@ -239,6 +240,7 @@ class BackgroundAgentRunner:
             self._finalize_safely(
                 outcome="failed", reason="Agent completed but produced no output."
             )
+            self._note_retained_worktree(output)
             output.stage("failed: empty output")
             return
         # Surface this child's total LLM spend so the orchestrating parent can budget a

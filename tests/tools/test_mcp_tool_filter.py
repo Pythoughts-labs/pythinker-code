@@ -126,7 +126,7 @@ class TestCallTimeGate:
 
 
 class TestReadOnlyHintParallel:
-    def test_read_only_hint_enables_parallel(self, runtime) -> None:
+    def test_remote_read_only_hint_stays_exclusive(self, runtime) -> None:
         tool = MCPTool(
             "srv",
             mcp.types.Tool(
@@ -138,7 +138,7 @@ class TestReadOnlyHintParallel:
             runtime=runtime,
         )
 
-        assert tool.supports_parallel is True
+        assert tool.supports_parallel is False
 
     def test_unannotated_tool_stays_exclusive(self, runtime) -> None:
         tool = MCPTool(

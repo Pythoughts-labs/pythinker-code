@@ -396,6 +396,7 @@ class Runtime:
         llm_override: LLM | None = None,
         work_dir_override: HostPath | None = None,
         work_dir_ls: str | None = None,
+        work_dir_agents_md: str | None = None,
     ) -> Runtime:
         """Clone runtime for a subagent.
 
@@ -405,10 +406,13 @@ class Runtime:
         """
         builtin_args = self.builtin_args
         if work_dir_override is not None:
+            agents_md = work_dir_agents_md or ""
             builtin_args = replace(
                 builtin_args,
                 PYTHINKER_WORK_DIR=work_dir_override,
                 PYTHINKER_WORK_DIR_LS=work_dir_ls or "",
+                PYTHINKER_AGENTS_MD=agents_md,
+                PYTHINKER_AGENTS_MD_FENCE=_agents_md_fence(agents_md),
             )
         return Runtime(
             config=self.config,

@@ -74,6 +74,14 @@ def _runtime_with_llm(runtime: Runtime, llm: LLM) -> Runtime:
     )
 
 
+def _is_permissions_state_injection(message: Message) -> bool:
+    return (
+        message.role == "user"
+        and is_system_reminder_message(message)
+        and "Permissions state:" in message.extract_text(" ")
+    )
+
+
 def _llm_with_capabilities(runtime: Runtime, capabilities: set[ModelCapability]) -> LLM:
     assert runtime.llm is not None
     return LLM(
@@ -136,11 +144,7 @@ async def test_consume_pending_steers_appends_history_before_emitting_wire_event
     sent: list[SteerInput] = []
 
     def fake_wire_send(msg) -> None:
-        persisted = [
-            m
-            for m in soul.context.history
-            if not (m.role == "user" and "Permissions state:" in m.extract_text(" "))
-        ]
+        persisted = [m for m in soul.context.history if not _is_permissions_state_injection(m)]
         assert persisted == [Message(role="user", content=[TextPart(text="Follow up now.")])]
         assert isinstance(msg, SteerInput)
         sent.append(msg)
@@ -514,11 +518,7 @@ async def test_run_soul_emits_steer_input_and_continues_same_turn(
 
     await run_soul(soul, "original question", ui_loop, asyncio.Event())
 
-    persisted = [
-        m
-        for m in soul.context.history
-        if not (m.role == "user" and "Permissions state:" in m.extract_text(" "))
-    ]
+    persisted = [m for m in soul.context.history if not _is_permissions_state_injection(m)]
     assert persisted == [
         Message(role="user", content=[TextPart(text="original question")]),
         Message(role="assistant", content=[TextPart(text="first answer")]),

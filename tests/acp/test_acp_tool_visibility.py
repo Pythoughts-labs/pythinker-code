@@ -14,7 +14,6 @@ import acp
 from pythinker_host.local import local_host
 
 import pythinker_code.acp.tools as acp_tools
-from pythinker_code.acp.tools import replace_tools
 from pythinker_code.soul.toolset import PythinkerToolset
 from pythinker_code.tools.ask_user import AskUserQuestion
 
@@ -34,7 +33,7 @@ class TestReplaceToolsHidesQuestionTool:
         monkeypatch.setattr(acp_tools, "get_current_host", lambda: local_host)
         toolset = _make_toolset()
 
-        replace_tools(_capabilities(), MagicMock(), "sid", toolset, MagicMock())
+        acp_tools.replace_tools(_capabilities(), MagicMock(), "sid", toolset, MagicMock())
 
         visible = [tool.name for tool in toolset.tools]
         assert "AskUserQuestion" not in visible
@@ -43,6 +42,6 @@ class TestReplaceToolsHidesQuestionTool:
         monkeypatch.setattr(acp_tools, "get_current_host", lambda: local_host)
         toolset = _make_toolset()
 
-        replace_tools(_capabilities(), MagicMock(), "sid", toolset, MagicMock())
+        acp_tools.replace_tools(_capabilities(), MagicMock(), "sid", toolset, MagicMock())
 
         assert toolset.find(AskUserQuestion) is not None

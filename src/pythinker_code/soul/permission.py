@@ -569,6 +569,32 @@ _SYSTEM_BIN_DIRS = frozenset(
 _SAFE_INLINE_ENV_VARS = frozenset({"LANG", "LC_ALL", "LC_COLLATE", "LC_CTYPE", "LC_MESSAGES", "TZ"})
 
 
+_WINDOWS_DRIVE_PATH_RE = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+def _has_unvalidated_path_operand(args: Sequence[str]) -> bool:
+    """Whether args contain a path that prompt elision cannot safely bound.
+
+    Prompt elision has no runtime workspace root, so it must fail closed for
+    absolute paths, home paths, parent traversal, or explicit path separators.
+    The command can still run after normal approval.
+    """
+    for arg in args:
+        if arg == "--":
+            continue
+        value = arg.split("=", 1)[1] if arg.startswith("--") and "=" in arg else arg
+        if (
+            value.startswith(("/", "~"))
+            or "../" in value
+            or value == ".."
+            or "/" in value
+            or "\\" in value
+            or _WINDOWS_DRIVE_PATH_RE.match(value)
+        ):
+            return True
+    return False
+
+
 def is_known_safe_command(command: str) -> bool:
     """Whether *command* is provably read-only, qualifying for prompt elision.
 
@@ -625,7 +651,13 @@ def _is_safe_readonly_segment(tokens: list[str]) -> bool:
     else:
         base = command
     base = base.lower()
+    if _has_unvalidated_path_operand(args):
+        return False
     if base == "git":
+        if any(arg in {"-C", "--git-dir", "--work-tree"} for arg in args):
+            return False
+        if any(arg.startswith(("--git-dir=", "--work-tree=")) for arg in args):
+            return False
         subcommand = _git_subcommand(args)
         if subcommand not in _SAFE_GIT_SUBCOMMANDS:
             return False

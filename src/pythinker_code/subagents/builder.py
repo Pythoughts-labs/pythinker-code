@@ -29,11 +29,23 @@ class SubagentBuilder:
             thinking=launch_spec.thinking,
             thinking_effort=launch_spec.thinking_effort,
         )
+        work_dir_ls: str | None = None
+        work_dir_agents_md: str | None = None
+        if work_dir_override is not None:
+            from pythinker_code.soul.agent import load_agents_md
+            from pythinker_code.utils.path import list_directory
+
+            work_dir_ls, work_dir_agents_md = (
+                await list_directory(work_dir_override),
+                await load_agents_md(work_dir_override),
+            )
         runtime = self._root_runtime.copy_for_subagent(
             agent_id=agent_id,
             subagent_type=type_def.name,
             llm_override=llm_override,
             work_dir_override=work_dir_override,
+            work_dir_ls=work_dir_ls,
+            work_dir_agents_md=work_dir_agents_md,
         )
         return await load_agent(
             type_def.agent_file,

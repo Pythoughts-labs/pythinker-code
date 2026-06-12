@@ -10,6 +10,7 @@ exclusively, keeping same-step mutation ordering deterministic.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 from pythinker_core.tooling import ToolReturnValue
 
@@ -37,9 +38,9 @@ class _RecordingTool:
         return ToolReturnValue(is_error=False, output="ok", message="ok", display=[])
 
 
-def _toolset(*tools: _RecordingTool) -> PythinkerToolset:
+def _toolset(*tools: _RecordingTool, cwd: Path) -> PythinkerToolset:
     toolset = PythinkerToolset()
-    toolset._hook_engine = HookEngine([], cwd="/tmp")
+    toolset._hook_engine = HookEngine([], cwd=str(cwd))
     for tool in tools:
         toolset._tool_dict[tool.name] = tool  # type: ignore[assignment]
     return toolset
@@ -57,11 +58,12 @@ async def _dispatch(toolset: PythinkerToolset, *names: str) -> None:
 
 
 class TestSameStepConcurrencyPolicy:
-    async def test_mutating_tools_serialize_in_dispatch_order(self) -> None:
+    async def test_mutating_tools_serialize_in_dispatch_order(self, tmp_path: Path) -> None:
         events: list[tuple[str, str]] = []
         toolset = _toolset(
             _RecordingTool("WriteA", events, parallel=False),
             _RecordingTool("WriteB", events, parallel=False),
+            cwd=tmp_path,
         )
 
         await _dispatch(toolset, "WriteA", "WriteB")
@@ -73,33 +75,36 @@ class TestSameStepConcurrencyPolicy:
             ("exit", "WriteB"),
         ]
 
-    async def test_parallel_safe_tools_overlap(self) -> None:
+    async def test_parallel_safe_tools_overlap(self, tmp_path: Path) -> None:
         events: list[tuple[str, str]] = []
         toolset = _toolset(
             _RecordingTool("ReadA", events, parallel=True),
             _RecordingTool("ReadB", events, parallel=True),
+            cwd=tmp_path,
         )
 
         await _dispatch(toolset, "ReadA", "ReadB")
 
         assert {events[0][0], events[1][0]} == {"enter"}, events
 
-    async def test_reader_waits_for_earlier_writer(self) -> None:
+    async def test_reader_waits_for_earlier_writer(self, tmp_path: Path) -> None:
         events: list[tuple[str, str]] = []
         toolset = _toolset(
             _RecordingTool("Write", events, parallel=False),
             _RecordingTool("Read", events, parallel=True),
+            cwd=tmp_path,
         )
 
         await _dispatch(toolset, "Write", "Read")
 
         assert events.index(("exit", "Write")) < events.index(("enter", "Read"))
 
-    async def test_writer_waits_for_inflight_readers(self) -> None:
+    async def test_writer_waits_for_inflight_readers(self, tmp_path: Path) -> None:
         events: list[tuple[str, str]] = []
         toolset = _toolset(
             _RecordingTool("Read", events, parallel=True),
             _RecordingTool("Write", events, parallel=False),
+            cwd=tmp_path,
         )
 
         await _dispatch(toolset, "Read", "Write")

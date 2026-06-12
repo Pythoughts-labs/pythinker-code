@@ -52,6 +52,20 @@ async def _git(args: list[str], cwd: Path) -> tuple[int, str, str]:
     )
 
 
+async def _is_registered_worktree(repo_dir: Path, dest: Path) -> bool:
+    code, stdout, _ = await _git(["worktree", "list", "--porcelain"], repo_dir)
+    if code != 0:
+        return False
+    wanted = str(dest.resolve(strict=False))
+    for line in stdout.splitlines():
+        if not line.startswith("worktree "):
+            continue
+        registered = Path(line.removeprefix("worktree ")).resolve(strict=False)
+        if str(registered) == wanted:
+            return True
+    return False
+
+
 async def create_agent_worktree(repo_dir: Path, dest: Path) -> None:
     """Create a detached worktree of HEAD at *dest* for one child agent.
 
@@ -64,11 +78,16 @@ async def create_agent_worktree(repo_dir: Path, dest: Path) -> None:
             f"isolation='worktree' requires a git repository at {repo_dir}; "
             "launch without isolation, or run `git init` first"
         )
-    if dest.exists():
-        # Resume of an isolated agent reuses its existing worktree.
-        return
     dest.parent.mkdir(parents=True, exist_ok=True)
     async with _REPO_LOCKS[str(repo_dir)]:
+        if dest.exists():
+            # Resume of an isolated agent may reuse its existing worktree, but
+            # only after verifying the path is still registered for this repo.
+            if await _is_registered_worktree(repo_dir, dest):
+                return
+            raise WorktreeError(
+                f"isolation worktree path exists but is not a registered worktree: {dest}"
+            )
         code, _, stderr = await _git(["worktree", "add", "--detach", str(dest), "HEAD"], repo_dir)
         if code != 0:
             first_line = stderr.splitlines()[0] if stderr else "unknown git error"

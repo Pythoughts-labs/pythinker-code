@@ -315,7 +315,13 @@ class SSHHost:
         #   cwd before running the command.
         #
         # This is intentionally strict: if cwd doesn't exist, the command fails.
-        effective_cwd = cwd or self._cwd
+        if cwd is None:
+            effective_cwd = self._cwd
+        elif posixpath.isabs(cwd):
+            effective_cwd = cwd
+        else:
+            base_cwd = self._cwd or "/"
+            effective_cwd = posixpath.normpath(posixpath.join(base_cwd, cwd))
         if effective_cwd:
             command = f"cd {shlex.quote(effective_cwd)} && {command}"
         process = await self._connection.create_process(command, encoding=None, env=env)

@@ -403,7 +403,7 @@ async def _carry_context_to_session(soul: PythinkerSoul, new_session: Any) -> bo
     from pythinker_core.message import Message
 
     seed = Message(
-        role="user",
+        role="system",
         content=[
             system(
                 "Summary of the conversation so far, carried over from the previous "

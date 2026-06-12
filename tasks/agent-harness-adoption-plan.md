@@ -80,7 +80,7 @@ generic pythinker agent enhancements — no external product names in code, comm
 
 ### `config-features/unknown-config-key-detection-with-source-located-diagnostics` — missing, M, high
 
-**Today.** Missing. Config models in src/pythinker_code/config.py use Pydantic's default extra='ignore', so a typo'd key (e.g. 'defaut_yolo') silently vanishes and changes agent behavior with no signal; validation errors are scope-attributed via _lookup_provenance but carry no positions, and there is no strict mode.
+**Today.** Missing. Config models in src/pythinker_code/config.py use Pydantic's default extra='ignore', so a typo'd key (e.g. 'default_yolo_typo') silently vanishes and changes agent behavior with no signal; validation errors are scope-attributed via _lookup_provenance but carry no positions, and there is no strict mode.
 
 **Verifier note.** Claim confirmed. No extra='forbid'/strict mode anywhere in the config models; typo'd keys are silently dropped. Provenance enrichment attaches only scope file-path strings to validation errors, with no line/column positions.
 
@@ -378,7 +378,7 @@ generic pythinker agent enhancements — no external product names in code, comm
 
 **Verifier note.** Claim confirmed. Scope locks exist and cover the claimed keys, but enforcement is hard-fail (ConfigError raise), not sanitize-and-warn; invalid project TOML also hard-fails, so a repo-controlled .pythinker/config.toml can block startup in that directory.
 
-**Adopt.** In the GUARD step, strip locked paths from project/local dicts and collect startup warnings ('ignored providers in .pythinker/config.toml; move to ~/.pythinker/config.toml') instead of raising; degrade unparseable project/local TOML to an empty scope with a warning. Keep hard failure for the user scope only. Surface accumulated warnings once in the shell banner.
+**Adopt.** In the GUARD step, strip locked paths from project/local dicts and collect startup warnings ('ignored providers in .pythinker/config.toml; move to ~/.pythinker/config.toml') instead of raising; degrade unparsable project/local TOML to an empty scope with a warning. Keep hard failure for the user scope only. Surface accumulated warnings once in the shell banner.
 
 **Files.** `src/pythinker_code/config.py`, `<ref>/config/src/loader/mod.rs`
 

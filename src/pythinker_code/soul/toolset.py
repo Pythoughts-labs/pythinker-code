@@ -1068,13 +1068,14 @@ class PythinkerToolset:
             async def _open_and_inventory() -> None:
                 async with server_info.client as client:
                     skipped: list[str] = []
+                    local_tools: list[MCPTool[Any]] = []
                     for tool in await client.list_tools():
                         if server_info.tool_filter and not server_info.tool_filter.allows(
                             tool.name
                         ):
                             skipped.append(tool.name)
                             continue
-                        server_info.tools.append(
+                        local_tools.append(
                             MCPTool(
                                 server_name,
                                 tool,
@@ -1096,12 +1097,15 @@ class PythinkerToolset:
                     # still connect, so capture them best-effort (mcpext-1). A
                     # METHOD_NOT_FOUND means the capability is genuinely absent; any
                     # other error is surfaced (WARNING) rather than masked as "none".
-                    server_info.resources = await _discover_optional_capability(
+                    local_resources = await _discover_optional_capability(
                         server_name, "resources", client.list_resources
                     )
-                    server_info.prompts = await _discover_optional_capability(
+                    local_prompts = await _discover_optional_capability(
                         server_name, "prompts", client.list_prompts
                     )
+                    server_info.tools = local_tools
+                    server_info.resources = local_resources
+                    server_info.prompts = local_prompts
 
             try:
                 # Bound connect+inventory: a hung server would otherwise block
@@ -1298,13 +1302,12 @@ class MCPTool[T: ClientTransport](CallableTool):
 
     @property
     def supports_parallel(self) -> bool:
-        """Honor the MCP readOnlyHint annotation in the same-step gate.
+        """MCP tools stay exclusive unless locally proven safe.
 
-        Read-only server tools (doc/resource lookups) may overlap instead of
-        serializing; anything unannotated stays exclusive (safe default).
+        Server-supplied annotations are untrusted remote metadata, so they must
+        not relax local write serialization.
         """
-        annotations = getattr(self._mcp_tool, "annotations", None)
-        return bool(getattr(annotations, "readOnlyHint", False))
+        return False
 
     async def __call__(self, *args: Any, **kwargs: Any) -> ToolReturnValue:
         # Call-time re-check of the list-time filter: defense in depth for

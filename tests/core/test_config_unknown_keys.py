@@ -1,6 +1,6 @@
 """Unknown-config-key detection with source-located diagnostics.
 
-Config models ignore extra keys, so a typo'd key ('defaut_yolo') silently
+Config models ignore extra keys, so an unknown key ('default_yolo_typo') silently
 vanishes and changes behavior with no signal. Loading now diffs the raw
 merged dict against the model field tree and warns with the dotted path
 and originating scope file; PYTHINKER_STRICT_CONFIG escalates to an error.
@@ -28,9 +28,9 @@ def _isolated_share_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
 
 class TestUnknownKeyPaths:
     def test_top_level_typo_detected(self) -> None:
-        unknown = unknown_config_key_paths(Config, {"defaut_yolo": True})
+        unknown = unknown_config_key_paths(Config, {"default_yolo_typo": True})
 
-        assert ("defaut_yolo",) in unknown
+        assert ("default_yolo_typo",) in unknown
 
     def test_nested_typo_detected(self) -> None:
         unknown = unknown_config_key_paths(Config, {"tui": {"statuslin": {}}})
@@ -48,12 +48,14 @@ class TestUnknownKeyPaths:
 
     def test_map_fields_allow_arbitrary_keys_but_check_values(self) -> None:
         data = {
-            "providers": {"mine": {"type": "openai", "base_url": "x", "api_key": "k", "tpyo": 1}}
+            "providers": {
+                "mine": {"type": "openai", "base_url": "x", "api_key": "k", "typo_unknown": 1}
+            }
         }
 
         unknown = unknown_config_key_paths(Config, data)
 
-        assert ("providers", "mine", "tpyo") in unknown
+        assert ("providers", "mine", "typo_unknown") in unknown
         assert all(path[:2] != ("providers", "mine") or len(path) == 3 for path in unknown)
 
     def test_list_of_models_checks_items(self) -> None:
@@ -68,20 +70,20 @@ class TestLoadTimeDiagnostics:
     def test_unknown_key_warned_with_scope(self, tmp_path: Path, monkeypatch) -> None:
         from unittest.mock import patch
 
-        _write(tmp_path / "share" / "config.toml", "defaut_yolo = true\n")
+        _write(tmp_path / "share" / "config.toml", "default_yolo_typo = true\n")
 
         with patch("pythinker_code.config.logger") as mock_logger:
             _load_scoped(None)
 
         joined = " ".join(str(call) for call in mock_logger.warning.call_args_list)
-        assert "defaut_yolo" in joined
+        assert "default_yolo_typo" in joined
         assert "config.toml" in joined
 
     def test_strict_mode_escalates_to_error(self, tmp_path: Path, monkeypatch) -> None:
         monkeypatch.setenv("PYTHINKER_STRICT_CONFIG", "1")
-        _write(tmp_path / "share" / "config.toml", "defaut_yolo = true\n")
+        _write(tmp_path / "share" / "config.toml", "default_yolo_typo = true\n")
 
-        with pytest.raises(ConfigError, match="defaut_yolo"):
+        with pytest.raises(ConfigError, match="default_yolo_typo"):
             _load_scoped(None)
 
     def test_clean_config_loads_silently_in_strict_mode(self, tmp_path: Path, monkeypatch) -> None:

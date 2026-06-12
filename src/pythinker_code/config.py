@@ -398,13 +398,19 @@ def _load_scoped(project_root: Path | None) -> Config:
             # the user records trust (/trust).
             try:
                 project_dict = _read_toml(project_file)
-                local_dict = _read_toml(local_file)
             except ConfigError as exc:
                 logger.warning(
                     "Ignoring unreadable project config in untrusted project: {error}",
                     error=exc,
                 )
                 project_dict = {}
+            try:
+                local_dict = _read_toml(local_file)
+            except ConfigError as exc:
+                logger.warning(
+                    "Ignoring unreadable project config in untrusted project: {error}",
+                    error=exc,
+                )
                 local_dict = {}
             for scope_dict, scope_file in ((project_dict, project_file), (local_dict, local_file)):
                 if scope_dict.pop("hooks", None) is not None:
