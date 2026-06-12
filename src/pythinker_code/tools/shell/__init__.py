@@ -15,8 +15,12 @@ from pythinker_code.soul.approval import Approval
 from pythinker_code.soul.permission import (
     active_permission_profile,
     check_shell_command_allowed,
+    is_known_safe_command,
 )
-from pythinker_code.soul.toolset import get_current_tool_call_or_none
+from pythinker_code.soul.toolset import (
+    emit_current_tool_execution_started,
+    get_current_tool_call_or_none,
+)
 from pythinker_code.tools.display import BackgroundTaskDisplayBlock, ShellDisplayBlock
 from pythinker_code.tools.utils import ToolResultBuilder, ToolResultStatus, load_desc
 from pythinker_code.utils.environment import Environment
@@ -152,19 +156,32 @@ class Shell(CallableTool2[Params]):
         if params.run_in_background:
             return await self._run_in_background(params, scrub_secrets=restricted_profile)
 
-        result = await self._approval.request(
-            self.name,
-            "run command",
-            f"Run command `{params.command}`",
-            display=[
-                ShellDisplayBlock(
-                    language="powershell" if self._is_powershell else "bash",
-                    command=params.command,
-                )
-            ],
-        )
-        if not result:
-            return result.rejection_error()
+        if self._runtime.role == "root" and is_known_safe_command(params.command):
+            # Provably read-only — elide the approval prompt for the root
+            # agent, where prompt fatigue hits the human. Subagents keep the
+            # request: their approval path is part of the unattended-denial
+            # defense surface (mutation parsing is best-effort there). The
+            # deny-path gate (check_shell_command_allowed) already ran above,
+            # so this only ever replaces a would-be ask, never a deny. The
+            # started event normally fires when approval resolves; emit it.
+            from pythinker_code.telemetry import track
+
+            track("shell_safe_command_elision")
+            emit_current_tool_execution_started()
+        else:
+            result = await self._approval.request(
+                self.name,
+                "run command",
+                f"Run command `{params.command}`",
+                display=[
+                    ShellDisplayBlock(
+                        language="powershell" if self._is_powershell else "bash",
+                        command=params.command,
+                    )
+                ],
+            )
+            if not result:
+                return result.rejection_error()
 
         tool_call = get_current_tool_call_or_none()
 

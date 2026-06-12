@@ -483,6 +483,137 @@ def _shell_hidden_command_reason(command: str) -> str | None:
     return None
 
 
+# Positive allowlist for approval elision. Deliberately tight: every entry is
+# read-only regardless of arguments once write redirection, hidden commands,
+# and network/mutation segments are rejected. Deliberately EXCLUDED:
+# env/printenv (env executes commands and prints secrets), find (-exec/
+# -delete), xargs (executes), awk/sed (program execution / in-place), rg
+# (--pre executes), sort/uniq/tee (write to file args), less/more (shell
+# escapes).
+_SAFE_READONLY_COMMANDS = frozenset(
+    {
+        "ls",
+        "pwd",
+        "cat",
+        "head",
+        "tail",
+        "wc",
+        "stat",
+        "file",
+        "which",
+        "whoami",
+        "id",
+        "date",
+        "uname",
+        "basename",
+        "dirname",
+        "realpath",
+        "readlink",
+        "du",
+        "df",
+        "tr",
+        "cut",
+        "nl",
+        "column",
+        "true",
+        "false",
+        "echo",
+        "printf",
+        "grep",
+        "diff",
+        "cmp",
+        "md5sum",
+        "sha1sum",
+        "sha256sum",
+        "shasum",
+        "ps",
+        "uptime",
+        "hostname",
+        "arch",
+        "tty",
+    }
+)
+# Read-only git subcommands. `branch` is excluded (positional arg creates one);
+# `--output*` is rejected separately because log/diff/show can write files.
+_SAFE_GIT_SUBCOMMANDS = frozenset(
+    {
+        "status",
+        "log",
+        "diff",
+        "show",
+        "rev-parse",
+        "describe",
+        "blame",
+        "ls-files",
+        "shortlog",
+    }
+)
+# Absolute command paths must come from here; a workspace-local fake `git`
+# (e.g. ./git or /tmp/x/git) must never ride the allowlist via its basename.
+_SYSTEM_BIN_DIRS = frozenset(
+    {"/bin", "/usr/bin", "/usr/local/bin", "/sbin", "/usr/sbin", "/opt/homebrew/bin"}
+)
+
+
+def is_known_safe_command(command: str) -> bool:
+    """Whether *command* is provably read-only, qualifying for prompt elision.
+
+    Positive allowlist, fail closed. ``shell_mutation_reason`` rejects hidden
+    sub-commands (substitution, glued operators, unquoted newlines), write
+    redirections, and mutating/network segments first; then every
+    ``;``/``&&``/``||``/``|`` segment must start with an allowlisted
+    read-only binary or read-only git subcommand. Wrapper commands
+    (sudo/env/time/nohup/...) are never unwrapped here — they disqualify —
+    and absolute command paths must live in a system bin dir.
+    """
+    if shell_mutation_reason(command) is not None:
+        return False
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        return False
+    if not tokens:
+        return False
+
+    saw_segment = False
+    segment: list[str] = []
+    for token in [*tokens, ";"]:
+        if token in _SHELL_SEGMENT_SEPARATORS:
+            if segment:
+                saw_segment = True
+                if not _is_safe_readonly_segment(segment):
+                    return False
+            segment = []
+        else:
+            segment.append(token)
+    return saw_segment
+
+
+def _is_safe_readonly_segment(tokens: list[str]) -> bool:
+    rest = list(tokens)
+    # Allow pure KEY=VALUE env-assignment prefixes (FOO=1 grep x); anything
+    # else that precedes the command (wrappers) disqualifies below.
+    while rest and "=" in rest[0] and not rest[0].startswith("=") and rest[0].split("=", 1)[0]:
+        rest.pop(0)
+    if not rest:
+        return False
+    command, args = rest[0], rest[1:]
+    if "/" in command:
+        directory, _, base = command.rpartition("/")
+        if directory not in _SYSTEM_BIN_DIRS:
+            return False
+    else:
+        base = command
+    base = base.lower()
+    if base == "git":
+        subcommand = _git_subcommand(args)
+        if subcommand not in _SAFE_GIT_SUBCOMMANDS:
+            return False
+        # log/diff/show accept --output=<file>, which writes.
+        return not any(arg.startswith("--output") for arg in args)
+    return base in _SAFE_READONLY_COMMANDS
+
+
 def shell_mutation_reason(command: str) -> str | None:
     """Best-effort guard for obviously mutating or network-accessing shell commands.
 

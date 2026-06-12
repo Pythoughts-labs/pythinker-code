@@ -922,11 +922,12 @@ async def test_subagent_shell_python_runtime_blocked_by_profile(
 @pytest.mark.skipif(
     platform.system() == "Windows", reason="Shell mutation guard examples use POSIX"
 )
-async def test_read_only_shell_in_root_agent_still_requests_approval(
+async def test_root_agent_elides_approval_for_known_safe_commands(
     runtime: Runtime,
     environment: Environment,
 ) -> None:
-    """In the root (non-subagent) context, even read-only commands still go through approval."""
+    """Root context: provably read-only commands skip the prompt; anything
+    outside the positive allowlist still goes through approval."""
     approval_requested: list[str] = []
 
     class TrackingApproval(Approval):
@@ -935,14 +936,18 @@ async def test_read_only_shell_in_root_agent_still_requests_approval(
             return await super().request(sender, action, description, display)
 
     runtime.role = "root"
-    tracking = TrackingApproval(yolo=True)  # yolo so the approval auto-passes
+    tracking = TrackingApproval(yolo=True)  # yolo so any request auto-passes
 
     with tool_call_context("Shell"):
         shell = Shell(tracking, environment, runtime)
         result = await shell(ShellParams(command="echo hello"))
+        unlisted = await shell(ShellParams(command="true && python3 -c 'pass'"))
 
     assert not result.is_error
-    assert "run command" in approval_requested, "root agent should still request approval"
+    assert approval_requested == ["run command"], (
+        "safe command must elide; the unlisted one must still request"
+    )
+    assert not unlisted.is_error
 
 
 @pytest.mark.skipif(
