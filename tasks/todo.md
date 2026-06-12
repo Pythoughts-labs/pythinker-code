@@ -19,6 +19,10 @@
       model seeds the new session; model_switch_carryover flag).
       `5dc87aaf` known-safe command auto-approval (is_known_safe_command
       positive allowlist; root-only elision, deny-gate preserved).
+      `5dc87aaf`+`59deceff` known-safe command elision (+env-prefix
+      allowlist security fix; e2e approval pins moved to wrapper commands
+      `5dadb1c6`), `05f86428`+`df4801f5` MCP startup timeout + actionable
+      failure diagnostics (/mcp shows classified error lines).
       NEXT (Tier-1 high/M, plan order): MCP startup
       timeout+diagnostics; MCP per-server tool filtering; subagent context
       fork; workspace isolation for parallel writers; turn rollup analytics;
