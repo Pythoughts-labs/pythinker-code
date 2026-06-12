@@ -18,7 +18,6 @@ from pythinker_code.tools.utils import ToolResultBuilder, load_desc
 from pythinker_code.tools.web._allowlist import host_in_allowlist
 from pythinker_code.utils.aiohttp import new_client_session
 from pythinker_code.utils.logging import logger
-from pythinker_code.utils.trust import UntrustedData
 
 MAX_FETCH_BYTES = 5 * 1024 * 1024
 MAX_FETCH_REDIRECTS = 10  # matches aiohttp's default redirect cap
@@ -229,7 +228,11 @@ class FetchURL(CallableTool2[Params]):
 
                     content_type = response.headers.get(aiohttp.hdrs.CONTENT_TYPE, "").lower()
                     if content_type.startswith(("text/plain", "text/markdown")):
-                        builder.write(UntrustedData(resp_text).render_for_prompt())
+                        # Write the raw page text; mark_untrusted wraps the
+                        # already-truncated block in ok(), so truncation can
+                        # never cut off the closing </untrusted_data> tag.
+                        builder.mark_untrusted()
+                        builder.write(resp_text)
                         # Spill the full page off the event loop before building the result.
                         await builder.spill_to_disk()
                         return builder.ok("The returned content is the full content of the page.")
@@ -274,7 +277,8 @@ class FetchURL(CallableTool2[Params]):
                 brief="No content extracted",
             )
 
-        builder.write(UntrustedData(extracted_text).render_for_prompt())
+        builder.mark_untrusted()
+        builder.write(extracted_text)
         return builder.ok("The returned content is the main text content extracted from the page.")
 
     async def _fetch_with_service(self, params: Params) -> ToolReturnValue:
@@ -335,7 +339,8 @@ class FetchURL(CallableTool2[Params]):
                         f"Failed to fetch URL via service: response exceeds {max_mb}MB.",
                         brief="Response too large",
                     )
-                builder.write(UntrustedData(content).render_for_prompt())
+                builder.mark_untrusted()
+                builder.write(content)
                 return builder.ok(
                     "The returned content is the main content extracted from the page."
                 )
