@@ -244,6 +244,26 @@ def _auto_update_disabled() -> bool:
     return get_env_bool("PYTHINKER_CLI_NO_AUTO_UPDATE")
 
 
+def format_managed_channel_notice(
+    current: str,
+    latest: str,
+    *,
+    upgrade_command: list[str] | None = None,
+) -> str | None:
+    """One-line channel-native upgrade hint for managed installs, or None."""
+    command = (
+        upgrade_command if upgrade_command is not None else _detect_upgrade_command()
+    )
+    if command[:1] != [MANAGED_CHANNEL_MARKER] or len(command) < 2:
+        return None
+    channel = command[1]
+    return (
+        f"Pythinker is managed by your {channel} channel. "
+        f"Update {current} → {latest} via {channel} "
+        "(rebuild/repull the image or run the channel's upgrade command)."
+    )
+
+
 def _is_running_from_source_checkout() -> bool:
     """Return true when invoked from this repository via ``uv run``/editable source.
 
@@ -1330,16 +1350,17 @@ async def _do_update(
 
         upgrade_command = _detect_upgrade_command()
         if upgrade_command[:1] == [MANAGED_CHANNEL_MARKER]:
-            channel = upgrade_command[1]
             try:
                 LATEST_VERSION_FILE.write_text(latest_version, encoding="utf-8")
             except OSError:
                 logger.exception("Failed to cache latest version:")
-            _print(
-                f"[{_t.warning}]Pythinker is managed by your {channel} channel. "
-                f"Update {current_version} → {latest_version} via {channel} "
-                "(rebuild/repull the image or run the channel's upgrade command).[/]"
+            notice = format_managed_channel_notice(
+                current_version,
+                latest_version,
+                upgrade_command=upgrade_command,
             )
+            if notice:
+                _print(f"[{_t.warning}]{notice}[/]")
             return UpdateResult.UPDATE_AVAILABLE
         unavailable_reason = await _update_candidate_unavailable_reason(
             session, latest_version, upgrade_command

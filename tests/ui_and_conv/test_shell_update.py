@@ -1598,3 +1598,25 @@ def test_auto_update_enabled_precedence(
     )
     config = SimpleNamespace(auto_update=config_value)
     assert update.auto_update_enabled(config) is expected
+
+
+def test_format_managed_channel_notice_managed():
+    notice = update.format_managed_channel_notice(
+        "0.42.0",
+        "0.43.0",
+        upgrade_command=[update.MANAGED_CHANNEL_MARKER, "Nix"],
+    )
+    assert notice is not None
+    assert "Nix" in notice
+    assert "0.42.0 → 0.43.0" in notice
+    # Plain text — no rich markup; the toast applies style separately.
+    assert "[" not in notice
+
+
+def test_format_managed_channel_notice_non_managed():
+    assert (
+        update.format_managed_channel_notice(
+            "0.42.0", "0.43.0", upgrade_command=["pip"]
+        )
+        is None
+    )
