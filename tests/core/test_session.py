@@ -650,6 +650,24 @@ async def test_exception_cleanup_none_session():
 # ---------------------------------------------------------------------------
 
 
+async def _simulate_exception_cleanup(session: Session | None) -> None:
+    """Replicate exception-path cleanup from cli/__init__.py _reload_loop."""
+    import contextlib
+
+    if session is None:
+        return
+    with contextlib.suppress(Exception):
+        from pythinker_code.scratchpad import cleanup_session_scratch
+
+        await cleanup_session_scratch(
+            session.work_dir,
+            session_id=session.id,
+            session_title=session.title,
+        )
+    if session.is_empty():
+        await session.delete()
+
+
 async def test_exception_cleanup_deletes_empty_current_session(
     isolated_share_dir: Path, work_dir: HostPath
 ):
@@ -660,10 +678,28 @@ async def test_exception_cleanup_deletes_empty_current_session(
     assert session.is_empty()
 
     _latest_created_session: Session | None = session
-    if _latest_created_session is not None and _latest_created_session.is_empty():
-        await _latest_created_session.delete()
+    await _simulate_exception_cleanup(_latest_created_session)
 
     assert not session_dir.exists()
+
+
+async def test_exception_cleanup_removes_session_scratch_file(
+    isolated_share_dir: Path,
+    work_dir: HostPath,
+):
+    """Exception handler deletes the per-session scratch file like _post_run."""
+    from pythinker_code.scratchpad import session_scratch_path
+
+    session = await Session.create(work_dir)
+    _write_context_records(session.context_file, {"role": "_system_prompt", "content": "p"})
+    scratch_path = session_scratch_path(work_dir, session_id=session.id)
+    scratch_path.parent.mkdir(parents=True, exist_ok=True)
+    scratch_path.write_text("# scratch\n", encoding="utf-8")
+    assert scratch_path.is_file()
+
+    await _simulate_exception_cleanup(session)
+
+    assert not scratch_path.exists()
 
 
 async def test_exception_cleanup_preserves_nonempty_current_session(
@@ -677,10 +713,30 @@ async def test_exception_cleanup_preserves_nonempty_current_session(
     assert not session.is_empty()
 
     _latest_created_session: Session | None = session
-    if _latest_created_session is not None and _latest_created_session.is_empty():
-        await _latest_created_session.delete()
+    await _simulate_exception_cleanup(_latest_created_session)
 
     assert session_dir.exists(), "Non-empty session must survive exception cleanup"
+
+
+async def test_exception_cleanup_removes_scratch_even_for_nonempty_session(
+    isolated_share_dir: Path,
+    work_dir: HostPath,
+):
+    """Scratch cleanup mirrors _post_run: always delete the session scratch file."""
+    from pythinker_code.scratchpad import session_scratch_path
+
+    session = await Session.create(work_dir)
+    _write_context_message(session.context_file, "real work")
+    _write_wire_turn(session.dir, "real")
+    session_dir = session.dir
+    scratch_path = session_scratch_path(work_dir, session_id=session.id)
+    scratch_path.parent.mkdir(parents=True, exist_ok=True)
+    scratch_path.write_text("# scratch\n", encoding="utf-8")
+
+    await _simulate_exception_cleanup(session)
+
+    assert session_dir.exists()
+    assert not scratch_path.exists()
 
 
 async def test_exception_cleanup_targets_current_not_previous(
@@ -706,8 +762,7 @@ async def test_exception_cleanup_targets_current_not_previous(
     # Exception handler only looks at _latest_created_session (B),
     # NOT at last_session (A from previous Reload).
     _latest_created_session: Session | None = session_b
-    if _latest_created_session is not None and _latest_created_session.is_empty():
-        await _latest_created_session.delete()
+    await _simulate_exception_cleanup(_latest_created_session)
 
     assert not session_b_dir.exists(), "Empty session B from failed _run() should be deleted"
     assert session_a_dir.exists(), "Non-empty session A from previous iteration must be preserved"

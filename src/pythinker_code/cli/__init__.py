@@ -1203,6 +1203,14 @@ def pythinker(
             # the most recent _run() call, which may have failed before returning.
             # last_session is from a *previous* iteration and must not be touched.
             if _latest_created_session is not None:
+                with contextlib.suppress(Exception):
+                    from pythinker_code.scratchpad import cleanup_session_scratch
+
+                    await cleanup_session_scratch(
+                        _latest_created_session.work_dir,
+                        session_id=_latest_created_session.id,
+                        session_title=_latest_created_session.title,
+                    )
                 _print_resume_hint(_latest_created_session)
                 if _latest_created_session.is_empty():
                     with contextlib.suppress(Exception):

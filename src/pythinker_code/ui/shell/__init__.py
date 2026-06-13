@@ -934,6 +934,11 @@ class Shell:
                 if isinstance(self.soul, PythinkerSoul)
                 else ""
             ),
+            turn_recaps_provider=lambda: (
+                self.soul.runtime.config.tui.turn_recaps
+                if isinstance(self.soul, PythinkerSoul)
+                else False
+            ),
             plan_mode_toggle_callback=_plan_mode_toggle,
             thinking_effort_cycle_callback=_thinking_effort_cycle,
             history_enabled=(

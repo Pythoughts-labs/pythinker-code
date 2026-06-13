@@ -54,6 +54,8 @@ class SelectorItem[T]:
         value: Returned by :func:`run_selector` when this item is chosen.
         label: Bold primary column, e.g. ``"dark"`` or ``"claude-opus-4-7"``.
         description: Optional muted secondary column shown to the right.
+        description_icon_style: Optional style for the first description character.
+        description_text_style: Optional style for the rest of the description.
         is_current: Marks the item as the active selection — pre-selected
             on open and labelled ``(current)`` in the description.
     """
@@ -61,6 +63,8 @@ class SelectorItem[T]:
     value: T
     label: str
     description: str = ""
+    description_icon_style: str = ""
+    description_text_style: str = ""
     is_current: bool = False
 
 
@@ -139,11 +143,27 @@ def _format_item_line[T](
     remaining = max(0, width - marker_width - cell_width(label) - gap_width)
     description = truncate_to_width(description, remaining, ellipsis="")
     pad = max(0, width - marker_width - cell_width(label) - gap_width - cell_width(description))
+    description_fragments: StyleAndTextTuples
+    if item.description_icon_style and description:
+        icon_style = (
+            f"{item.description_icon_style}.current" if is_selected else item.description_icon_style
+        )
+        text_style = (
+            f"{item.description_text_style}.current"
+            if is_selected and item.description_text_style
+            else item.description_text_style or meta_style
+        )
+        description_fragments = [
+            (icon_style, description[0]),
+            (text_style, description[1:]),
+        ]
+    else:
+        description_fragments = [(meta_style, description)]
     return [
         (marker_style, marker),
         (label_style, label),
         (row_bg, gap),
-        (meta_style, description),
+        *description_fragments,
         (row_bg, " " * pad),
         ("", "\n"),
     ]

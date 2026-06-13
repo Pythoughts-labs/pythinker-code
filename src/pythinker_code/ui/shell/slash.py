@@ -1335,8 +1335,8 @@ async def settings(app: Shell, args: str):
         print_settings_table()
         return
     mode_parts = mode.split()
-    if mode_parts and mode_parts[0] == "recaps":
-        value = mode.removeprefix("recaps").strip()
+    if mode_parts and mode_parts[0] in {"recap", "recaps"}:
+        value = " ".join(mode_parts[1:]).strip()
         if value not in {"on", "off"}:
             console.print(f"[{_t_set.warning}]Usage: /settings recaps on|off[/]")
             return
@@ -1364,7 +1364,7 @@ async def settings(app: Shell, args: str):
         console.print(f"[{_t_set.success}]Turn recaps {value}. Reloading...[/]")
         raise Reload(session_id=soul.runtime.session.id)
     if mode:
-        console.print(f"[{_t_set.warning}]Usage: /settings [show|recaps on|off][/]")
+        console.print(f"[{_t_set.warning}]Usage: /settings [show|recap(s) on|off][/]")
         return
 
     config_file = config.source_file

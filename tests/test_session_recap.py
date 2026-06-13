@@ -87,6 +87,16 @@ def test_build_turn_recap_line_strips_report_blocks() -> None:
     assert line == ("※ recap: Deep scan completed. · 28 steps (disable recaps in /config)")
 
 
+def test_build_turn_recap_line_ignores_internal_system_reminder_request() -> None:
+    line = build_turn_recap_line(
+        request="<system-reminder>Background tasks completed while you were idle.</system-reminder>",
+        assistant_text="Server is up (PID 468, LISTENING on 3020) and the post returns HTTP 200.",
+        step_count=3,
+    )
+
+    assert line is None
+
+
 def test_build_turn_recap_line_strips_markdown_tables_from_request() -> None:
     line = build_turn_recap_line(
         request=(

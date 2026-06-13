@@ -52,6 +52,21 @@ def sent(monkeypatch: pytest.MonkeyPatch) -> list[TextPart]:
     return captured
 
 
+def test_apply_always_on_best_practices_disabled_is_noop() -> None:
+    base = "Test system prompt."
+    assert prompts.apply_always_on_best_practices(base, enabled=False) == base
+
+
+def test_apply_always_on_best_practices_appends_and_rephrases() -> None:
+    base = "Test system prompt."
+    result = prompts.apply_always_on_best_practices(base, enabled=True)
+    assert result.startswith(base + "\n\n")
+    # Full guidance is folded in...
+    assert "Engineering best practices are now in effect" in result
+    # ...but the manual-command lead-in is stripped for the always-on path.
+    assert "The user ran `/best-practices`." not in result
+
+
 def test_best_practices_prompt_asset_loads() -> None:
     assert "Engineering best practices" in prompts.BEST_PRACTICES
     # Core profile sections.

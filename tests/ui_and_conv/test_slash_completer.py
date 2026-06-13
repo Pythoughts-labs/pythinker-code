@@ -96,6 +96,15 @@ def _suggestion_text(names: frozenset[str], text: str) -> str | None:
     return suggestion.text if suggestion else None
 
 
+def _suggestion_text_with_exact(
+    names: frozenset[str], exact: dict[str, str], text: str
+) -> str | None:
+    suggest = SlashCommandAutoSuggest(lambda: names, exact_suggestions=lambda: exact)
+    document = Document(text=text, cursor_position=len(text))
+    suggestion = suggest.get_suggestion(Buffer(), document)
+    return suggestion.text if suggestion else None
+
+
 def test_auto_suggest_completes_best_prefix_match():
     """Typing a slash prefix ghost-renders the remainder of the first matching
     command (alphabetical), which Tab accepts inline."""
@@ -125,6 +134,13 @@ def test_auto_suggest_inactive_outside_root_slash_token():
     assert _suggestion_text(names, "path/he") is None  # glued, not a slash token
     assert _suggestion_text(names, "/he next") is None  # slash token isn't last
     assert _suggestion_text(names, "plain text") is None
+
+
+def test_auto_suggest_exact_recap_toggle_hint():
+    names = frozenset({"recap", "help"})
+    assert _suggestion_text_with_exact(names, {"recap": " off"}, "/recap") == " off"
+    assert _suggestion_text_with_exact(names, {"recap": " off"}, "please /recap") == " off"
+    assert _suggestion_text_with_exact(names, {"recap": " off"}, "/recap today") is None
 
 
 def test_auto_suggest_is_case_insensitive_on_typed_prefix():

@@ -60,6 +60,26 @@ async def test_recaps_on_persists_and_reloads(
 
 
 @pytest.mark.asyncio
+async def test_recap_singular_on_persists_and_reloads(
+    runtime: Runtime, tmp_path: Path, monkeypatch
+) -> None:
+    config_path = (tmp_path / "config.toml").resolve()
+    runtime.config.source_file = config_path
+    runtime.config.tui.turn_recaps = False
+    app = _make_shell_app(runtime, tmp_path)
+
+    config_for_save = get_default_config()
+    monkeypatch.setattr(shell_slash, "load_config", Mock(return_value=config_for_save))
+    monkeypatch.setattr(shell_slash, "save_config", Mock())
+    monkeypatch.setattr(shell_slash.console, "print", Mock())
+
+    with pytest.raises(Reload):
+        await _run_settings(app, "recap on")
+
+    assert config_for_save.tui.turn_recaps is True
+
+
+@pytest.mark.asyncio
 async def test_recaps_off_persists(runtime: Runtime, tmp_path: Path, monkeypatch) -> None:
     config_path = (tmp_path / "config.toml").resolve()
     runtime.config.source_file = config_path

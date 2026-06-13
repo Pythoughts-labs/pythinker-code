@@ -36,20 +36,36 @@ def _format_status_indicator(status: OAuthProviderStatus) -> str:
     return f"✓ {status.label or 'configured'}"
 
 
+def _status_icon_style(status: OAuthProviderStatus) -> str:
+    if status.source == "unconfigured":
+        return ""
+    return "class:slash-completion-menu.meta.success"
+
+
+def _status_text_style(status: OAuthProviderStatus) -> str:
+    if status.source == "unconfigured":
+        return ""
+    return "class:slash-completion-menu.meta.warning"
+
+
 def _build_oauth_config(
     providers: list[OAuthProviderEntry],
     get_status: Callable[[str], OAuthProviderStatus],
     *,
     action: Literal["login", "logout"] = "login",
 ) -> SelectorConfig[str]:
-    items = [
-        SelectorItem(
-            value=provider.id,
-            label=provider.name,
-            description=_format_status_indicator(get_status(provider.id)),
+    items: list[SelectorItem[str]] = []
+    for provider in providers:
+        status = get_status(provider.id)
+        items.append(
+            SelectorItem(
+                value=provider.id,
+                label=provider.name,
+                description=_format_status_indicator(status),
+                description_icon_style=_status_icon_style(status),
+                description_text_style=_status_text_style(status),
+            )
         )
-        for provider in providers
-    ]
     title = "Select provider to log in" if action == "login" else "Select provider to log out"
     return SelectorConfig(title=title, items=items)
 

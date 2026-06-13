@@ -1020,6 +1020,14 @@ class Config(BaseModel):
         ),
     )
     default_yolo: bool = Field(default=False, description="Default yolo (auto-approve) mode")
+    best_practices_always: bool = Field(
+        default=False,
+        description=(
+            "When true, fold the full /best-practices engineering guidance into the root "
+            "session's system prompt at startup, so the guardrails apply without running "
+            "/best-practices manually. Applies to new sessions; costs context tokens each session."
+        ),
+    )
     ask_user_question_policy: Literal["always", "ask_except_auto", "never", "auto_deliberate"] = (
         Field(
             default="ask_except_auto",

@@ -276,11 +276,13 @@ _OPTION_HEADING_RE = re.compile(
     re.IGNORECASE,
 )
 _PARENTHETICAL_RE = re.compile(r"\([^)]*\)")
+_SYSTEM_REMINDER_BLOCK_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
 
 
 def _recap_source_text(text: str) -> str:
     """Return one-line recap input with bulky structured blocks removed."""
-    without_fences = _strip_fenced_blocks(text)
+    without_reminders = _SYSTEM_REMINDER_BLOCK_RE.sub("", text)
+    without_fences = _strip_fenced_blocks(without_reminders)
     without_tables = _strip_markdown_tables(without_fences)
     without_structure = _strip_markdown_structure(without_tables)
     without_ticks = without_structure.replace("`", "")

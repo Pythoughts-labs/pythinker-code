@@ -72,11 +72,10 @@ from pythinker_code.tools.display import TodoDisplayItem
 from pythinker_code.ui.shell import placeholders as prompt_placeholders
 from pythinker_code.ui.shell.console import console
 from pythinker_code.ui.shell.glyphs import (
-    TRANSCRIPT_ACTIVE_MARKER,
     TRANSCRIPT_PROMPT_MARKER,
     TRANSCRIPT_TOOL_GUTTER,
 )
-from pythinker_code.ui.shell.motion import blink_visible, shimmer_prompt_fragments
+from pythinker_code.ui.shell.motion import active_marker_frame, shimmer_prompt_fragments
 from pythinker_code.ui.shell.placeholders import (
     PromptPlaceholderManager,
     normalize_pasted_text,
@@ -316,6 +315,10 @@ class InputHighlightLexer(Lexer):
         return get_line
 
 
+def _no_exact_suggestions() -> dict[str, str]:
+    return {}
+
+
 class SlashCommandAutoSuggest(AutoSuggest):
     """Inline ghost-text completion for a partially typed slash command.
 
@@ -328,8 +331,14 @@ class SlashCommandAutoSuggest(AutoSuggest):
     plumbing; the Tab binding is added in CustomPromptSession.
     """
 
-    def __init__(self, known_names: Callable[[], frozenset[str]]) -> None:
+    def __init__(
+        self,
+        known_names: Callable[[], frozenset[str]],
+        *,
+        exact_suggestions: Callable[[], dict[str, str]] | None = None,
+    ) -> None:
         self._known_names = known_names
+        self._exact_suggestions = exact_suggestions or _no_exact_suggestions
 
     @override
     def get_suggestion(self, buffer: Buffer, document: Document) -> Suggestion | None:
@@ -338,6 +347,9 @@ class SlashCommandAutoSuggest(AutoSuggest):
             return None
         typed = token[1:]
         typed_lower = typed.lower()
+        exact = self._exact_suggestions().get(typed_lower)
+        if exact is not None and typed_lower in self._known_names():
+            return Suggestion(exact)
         matches = sorted(
             name
             for name in self._known_names()
@@ -2058,6 +2070,7 @@ class CustomPromptSession:
         agent_mode_slash_commands: Sequence[SlashCommand[Any]] = (),
         shell_mode_slash_commands: Sequence[SlashCommand[Any]],
         editor_command_provider: Callable[[], str] = lambda: "",
+        turn_recaps_provider: Callable[[], bool] = lambda: False,
         plan_mode_toggle_callback: Callable[[], Awaitable[bool]] | None = None,
         thinking_effort_cycle_callback: Callable[[], Awaitable[str | None]] | None = None,
         history_enabled: bool = True,
@@ -2098,6 +2111,7 @@ class CustomPromptSession:
         self._fast_refresh_provider = fast_refresh_provider
         self._background_task_count_provider = background_task_count_provider
         self._editor_command_provider = editor_command_provider
+        self._turn_recaps_provider = turn_recaps_provider
         self._plan_mode_toggle_callback = plan_mode_toggle_callback
         self._thinking_effort_cycle_callback = thinking_effort_cycle_callback
         self._model_capabilities = model_capabilities
@@ -2171,7 +2185,8 @@ class CustomPromptSession:
                 self._shell_command_names
                 if self._mode == PromptMode.SHELL
                 else self._agent_command_names
-            )
+            ),
+            exact_suggestions=self._exact_slash_suggestions,
         )
 
         # Build key bindings
@@ -2709,6 +2724,9 @@ class CustomPromptSession:
         """Keep the prompt marker on the normal prompt color, independent of thinking effort."""
         return "class:compact-input.prompt"
 
+    def _exact_slash_suggestions(self) -> dict[str, str]:
+        return {"recap": " off" if self._turn_recaps_provider() else " on"}
+
     def _uses_native_thinking(self) -> bool:
         return model_uses_native_thinking(getattr(self, "_model_capabilities", None))
 
@@ -3101,6 +3119,16 @@ class CustomPromptSession:
         if running is not None and isinstance(running, AgentStatusProvider):
             rendered = to_formatted_text(running.render_agent_status(columns))
             if any(fragment for _, fragment, *_ in rendered):
+                # A blocking foreground TaskOutput card can be visible while the
+                # actual background agent is still running. If the live view does
+                # not expose a pinned tail for that state, keep the background
+                # verb spinner visible above the prompt instead of showing only
+                # the footer count.
+                if not self._render_pinned_status_tail(columns):
+                    background = self._render_background_working_status(columns)
+                    if background:
+                        ensure_prompt_newline(rendered)
+                        rendered.extend(background)
                 # The prompt layer owns the gap below the agent stream: one blank
                 # row under the spinner verb (the stream's tail) before the input,
                 # mirroring the blank row above it inside the stream.
@@ -3240,9 +3268,12 @@ class CustomPromptSession:
                 samples.clear()
             return FormattedText([])
         now = time.monotonic()
-        if getattr(self, "_bg_status_started_at", None) is None:
+        started_at = getattr(self, "_bg_status_started_at", None)
+        if started_at is None:
+            started_at = now
             self._bg_status_started_at = now
-        frame = TRANSCRIPT_ACTIVE_MARKER if blink_visible(now) else " "
+        elapsed = max(0.0, now - started_at)
+        frame = active_marker_frame(elapsed)
         tokens = _get_tui_tokens()
         muted_style = f"fg:{tokens.muted}" if tokens.muted else ""
         frame_style = f"fg:{tokens.activity_spinner}" if tokens.activity_spinner else muted_style

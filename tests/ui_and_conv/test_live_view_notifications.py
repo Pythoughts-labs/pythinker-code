@@ -251,6 +251,28 @@ def test_working_indicator_pins_todos_under_spinner(monkeypatch):
     assert "Tip:" not in rendered
 
 
+def test_working_indicator_tip_wraps_with_hanging_indent(monkeypatch) -> None:
+    now = 1000.0
+    monkeypatch.setattr(live_view_module.time, "monotonic", lambda: now)
+    long_tip = (
+        "Type /login to configure providers and /model to switch models quickly "
+        "without leaving the shell."
+    )
+    monkeypatch.setattr(live_view_module, "current_tip", lambda _now: long_tip)
+    view = _LiveView(StatusUpdate())
+    view.dispatch_wire_message(TurnBegin(user_input="scan"))
+    view._turn_start_time = now - 10.0
+
+    console = Console(width=36, record=True, highlight=False)
+    console.print(view._working_indicator())
+    lines = [line.rstrip() for line in console.export_text().splitlines() if line.strip()]
+
+    assert any("Tip:" in line for line in lines)
+    assert len(lines) >= 2
+    for line in lines[1:]:
+        assert line.startswith(" "), f"wrapped tip line lost hanging indent: {line!r}"
+
+
 def test_working_indicator_keeps_done_todos_pinned(monkeypatch):
     now = 1000.0
     monkeypatch.setattr(live_view_module.time, "monotonic", lambda: now)

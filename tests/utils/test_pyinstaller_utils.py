@@ -129,6 +129,10 @@ def test_pyinstaller_datas():
             "pythinker_code/skills/create-pr",
         ),
         (
+            "src/pythinker_code/skills/designer-skill/SKILL.md",
+            "pythinker_code/skills/designer-skill",
+        ),
+        (
             "src/pythinker_code/skills/diagnose-ci-failures/SKILL.md",
             "pythinker_code/skills/diagnose-ci-failures",
         ),
@@ -319,6 +323,7 @@ def test_pyinstaller_hiddenimports():
             "pythinker_code.tools.scratchpad",
             "pythinker_code.tools.shell",
             "pythinker_code.tools.skill",
+            "pythinker_code.tools.skill._mcp_bridge",
             "pythinker_code.tools.suggest",
             "pythinker_code.tools.test",
             "pythinker_code.tools.think",

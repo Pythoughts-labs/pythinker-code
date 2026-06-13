@@ -36,6 +36,7 @@ def test_default_config_dump():
             "default_thinking_effort": None,
             "agent_execution_profile": "default",
             "default_yolo": False,
+            "best_practices_always": False,
             "ask_user_question_policy": "ask_except_auto",
             "auto_deliberate_destructive_actions": False,
             "default_plan_mode": False,

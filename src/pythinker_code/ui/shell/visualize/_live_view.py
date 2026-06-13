@@ -31,6 +31,7 @@ from pythinker_code.soul import format_token_count
 from pythinker_code.tools.display import DiffDisplayBlock, TodoDisplayBlock, TodoDisplayItem
 from pythinker_code.ui.shell.components.render_utils import (
     cell_width,
+    render_message_response,
     sanitize_ansi,
     truncate_to_width,
 )
@@ -666,10 +667,9 @@ class _LiveView:
         # During longer waits, surface a rotating CLI-feature tip under the verb.
         if elapsed < _WORKING_TIP_MIN_ELAPSED_S:
             return line
-        tip = Text("  ⎿  ", style=tui_rich_style("muted"))
-        tip.append("Tip: ", style=tui_rich_style("dim"))
-        tip.append(current_tip(now), style=tui_rich_style("dim"))
-        return Group(line, tip)
+        tip_content = Text("Tip: ", style=tui_rich_style("dim"))
+        tip_content.append(current_tip(now), style=tui_rich_style("dim"))
+        return Group(line, render_message_response(tip_content))
 
     def _turn_token_rate(self, now: float) -> int | None:
         """Stable recent tokens/sec for the running turn, or None until known.

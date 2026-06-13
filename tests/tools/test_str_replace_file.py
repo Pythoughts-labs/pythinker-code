@@ -139,6 +139,54 @@ async def test_replace_accepts_edit_aliases(
     assert await file_path.read_text() == "new content"
 
 
+async def test_malformed_edit_batch_returns_actionable_error(
+    str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+):
+    """A list batch with collapsed entries gets a clear resend-as-singles error.
+
+    Mirrors a streaming glitch where edit entries degrade to ``{"$text": ...}``
+    instead of ``{old, new}``. The file must be left untouched.
+    """
+    file_path = temp_work_dir / "test.txt"
+    await file_path.write_text("alpha beta gamma")
+
+    result = await str_replace_file_tool.call(
+        {
+            "path": str(file_path),
+            "edit": [
+                {"old": "alpha", "new": "one"},
+                {"$text": "beta"},
+                {"$text": "false"},
+            ],
+        }
+    )
+
+    assert result.is_error
+    assert "Malformed `edit` batch" in result.message
+    assert "entries 2, 3" in result.message
+    assert "its own StrReplaceFile call" in result.message
+    # No partial application: the one valid entry must NOT have been applied.
+    assert await file_path.read_text() == "alpha beta gamma"
+
+
+async def test_valid_edit_batch_is_unaffected_by_malformed_guard(
+    str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+):
+    """The malformed-batch guard never trips on a fully valid list batch."""
+    file_path = temp_work_dir / "test.txt"
+    await file_path.write_text("alpha beta gamma")
+
+    result = await str_replace_file_tool.call(
+        {
+            "path": str(file_path),
+            "edit": [{"old": "alpha", "new": "one"}, {"old": "beta", "new": "two"}],
+        }
+    )
+
+    assert not result.is_error
+    assert await file_path.read_text() == "one two gamma"
+
+
 async def test_replace_multiline_content(
     str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
 ):

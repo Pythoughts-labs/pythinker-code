@@ -54,6 +54,56 @@ async def test_read_skill_reports_missing_skill(runtime) -> None:
     assert result.brief == "Skill not found"
 
 
+async def test_read_skill_resolves_plugin_style_alias(runtime, tmp_path: Path) -> None:
+    skill_dir = tmp_path / "designer-skill"
+    skill_dir.mkdir()
+    skill_path = skill_dir / "SKILL.md"
+    skill_path.write_text("Use MCP tools for design.", encoding="utf-8")
+    runtime.skills = {
+        "designer-skill": _skill("designer-skill", skill_path, scope="builtin"),
+    }
+
+    result = await ReadSkill(runtime)(ReadSkill.params(skill_name="designer-skill:designer-skill"))
+
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    assert "skill: designer-skill" in result.output
+    assert "Use MCP tools for design." in result.output
+
+
+async def test_read_skill_mcp_bridge_when_filesystem_skill_missing(runtime) -> None:
+    runtime.skills = {}
+    runtime.mcp_tools = {
+        "mcp__designer-skill__get_design_system": object(),
+        "mcp__designer-skill__get_reference": object(),
+        "mcp__designer-skill__anti_slop_checklist": object(),
+    }
+
+    result = await ReadSkill(runtime)(ReadSkill.params(skill_name="designer-skill"))
+
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    assert "MCP bridge" in result.output
+    assert "mcp__designer-skill__get_design_system" in result.output
+    assert "anti_slop_checklist" in result.output
+
+
+async def test_read_skill_mcp_bridge_works_for_user_added_server(runtime) -> None:
+    runtime.skills = {}
+    runtime.mcp_tools = {
+        "mcp__my-research__search": object(),
+        "mcp__my-research__extract": object(),
+    }
+
+    result = await ReadSkill(runtime)(ReadSkill.params(skill_name="my-research"))
+
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    assert "# MCP skill bridge: my-research" in result.output
+    assert "mcp__my-research__search" in result.output
+    assert "get_design_system" not in result.output
+
+
 async def test_read_skill_appends_resource_manifest(runtime, tmp_path: Path) -> None:
     # skills-1: a subdirectory skill referencing scripts/ and references/ must
     # surface those bundled files at runtime so the model knows they exist and
