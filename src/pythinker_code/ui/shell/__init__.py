@@ -80,11 +80,12 @@ from pythinker_code.ui.shell.update import (
     welcome_update_target,
 )
 from pythinker_code.ui.shell.update_orchestrator import (
-    prompt_pre_start_update_job as prompt_pre_start_update,
-)
-from pythinker_code.ui.shell.update_orchestrator import (
+    SMOKE_CHECK_FAILED_PREFIX,
     read_update_status,
     run_update_job,
+)
+from pythinker_code.ui.shell.update_orchestrator import (
+    prompt_pre_start_update_job as prompt_pre_start_update,
 )
 from pythinker_code.ui.shell.visualize import (
     ApprovalPromptDelegate,
@@ -2157,7 +2158,7 @@ class Shell:
     def _installed_update_smoke_check_failed(self) -> bool:
         status = read_update_status()
         message = status.message if status else None
-        return bool(message and message.startswith("Updated, but smoke check"))
+        return bool(message and message.startswith(SMOKE_CHECK_FAILED_PREFIX))
 
     def _installed_update_restart_notice(self) -> str:
         from pythinker_code.constant import VERSION as current_version
@@ -2178,8 +2179,8 @@ class Shell:
     def _managed_channel_notice(self) -> str | None:
         from pythinker_code.constant import VERSION as current_version
 
-        # Only managed installs get the channel-native hint; otherwise defer to
-        # the generic pending-update notice via the caller's fallback.
+        # Managed-channel fast-path: skip the welcome lookup for non-managed
+        # installs; format_managed_channel_notice re-validates the marker.
         if _detect_upgrade_command()[:1] != [MANAGED_CHANNEL_MARKER]:
             return None
         latest = welcome_update_target()
