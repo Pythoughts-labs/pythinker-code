@@ -32,9 +32,7 @@ def _make_shell(runtime: Runtime, tmp_path: Path) -> Shell:
 @pytest.fixture
 def _toasts(monkeypatch):
     captured: list[tuple[str, dict]] = []
-    monkeypatch.setattr(
-        shell_module, "toast", lambda msg, **kw: captured.append((msg, kw))
-    )
+    monkeypatch.setattr(shell_module, "toast", lambda msg, **kw: captured.append((msg, kw)))
     return captured
 
 

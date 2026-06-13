@@ -2121,9 +2121,7 @@ class Shell:
 
     async def _run_silent_update_job(self) -> UpdateResult | None:
         try:
-            return await run_update_job(
-                print_output=False, check_only=False, source="startup-auto"
-            )
+            return await run_update_job(print_output=False, check_only=False, source="startup-auto")
         except SystemExit:
             raise
         except Exception:
@@ -2193,11 +2191,9 @@ class Shell:
           `pending_update_notice()` returns None in that path.
         """
         if get_env_bool("PYTHINKER_CLI_NO_AUTO_UPDATE"):
-            logger.info(
-                "Auto-update disabled by PYTHINKER_CLI_NO_AUTO_UPDATE environment variable"
-            )
+            logger.info("Auto-update disabled by PYTHINKER_CLI_NO_AUTO_UPDATE environment variable")
             return
-        if auto_update_enabled(self.soul.runtime.config):
+        if isinstance(self.soul, PythinkerSoul) and auto_update_enabled(self.soul.runtime.config):
             self._start_background_task(self._silent_auto_update())
         else:
             self._start_background_task(self._auto_update())

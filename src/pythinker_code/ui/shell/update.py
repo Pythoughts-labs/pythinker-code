@@ -251,9 +251,7 @@ def format_managed_channel_notice(
     upgrade_command: list[str] | None = None,
 ) -> str | None:
     """One-line channel-native upgrade hint for managed installs, or None."""
-    command = (
-        upgrade_command if upgrade_command is not None else _detect_upgrade_command()
-    )
+    command = upgrade_command if upgrade_command is not None else _detect_upgrade_command()
     if command[:1] != [MANAGED_CHANNEL_MARKER] or len(command) < 2:
         return None
     channel = command[1]

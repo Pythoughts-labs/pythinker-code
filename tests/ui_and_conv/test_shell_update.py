@@ -3,12 +3,16 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 
 import pytest
 import typer
 from rich.console import Console
 
 from pythinker_code.ui.shell import update
+
+if TYPE_CHECKING:
+    from pythinker_code.config import Config
 
 
 @pytest.mark.asyncio
@@ -1571,24 +1575,20 @@ def test_installed_homebrew_version_returns_none_on_failure(monkeypatch):
 @pytest.mark.parametrize(
     ("env_kill", "config_value", "source_checkout", "expected"),
     [
-        (False, True, False, True),    # default → enabled
-        (True, True, False, False),    # env kill-switch wins over config
+        (False, True, False, True),  # default → enabled
+        (True, True, False, False),  # env kill-switch wins over config
         (False, False, False, False),  # config off
-        (True, False, False, False),   # both off
-        (False, True, True, False),    # source checkout always off
-        (True, True, True, False),     # source checkout + env kill
+        (True, False, False, False),  # both off
+        (False, True, True, False),  # source checkout always off
+        (True, True, True, False),  # source checkout + env kill
     ],
 )
 def test_auto_update_enabled_precedence(
     monkeypatch, env_kill, config_value, source_checkout, expected
 ):
-    monkeypatch.setattr(
-        update, "_auto_update_disabled", lambda: env_kill
-    )
-    monkeypatch.setattr(
-        update, "_is_running_from_source_checkout", lambda: source_checkout
-    )
-    config = SimpleNamespace(auto_update=config_value)
+    monkeypatch.setattr(update, "_auto_update_disabled", lambda: env_kill)
+    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: source_checkout)
+    config = cast("Config", SimpleNamespace(auto_update=config_value))
     assert update.auto_update_enabled(config) is expected
 
 
@@ -1606,12 +1606,7 @@ def test_format_managed_channel_notice_managed():
 
 
 def test_format_managed_channel_notice_non_managed():
-    assert (
-        update.format_managed_channel_notice(
-            "0.42.0", "0.43.0", upgrade_command=["pip"]
-        )
-        is None
-    )
+    assert update.format_managed_channel_notice("0.42.0", "0.43.0", upgrade_command=["pip"]) is None
 
 
 @pytest.mark.asyncio
