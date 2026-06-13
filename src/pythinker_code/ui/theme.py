@@ -638,7 +638,7 @@ _TUI_TOKENS_DARK = TuiTokens(
     tool_output="#D4D4D4",
     tool_diff_added="#81C784",
     tool_diff_removed="#E57373",
-    tool_diff_context="#B8B8B8",
+    tool_diff_context="",  # match normal body text (terminal default fg), not muted grey
     bash_mode="#7BC97F",
     code_block_bg="#1f2030",
 )
@@ -674,7 +674,7 @@ _TUI_TOKENS_LIGHT = TuiTokens(
     tool_output="#666666",
     tool_diff_added="#2C7A39",
     tool_diff_removed="#C0392B",
-    tool_diff_context="#666666",
+    tool_diff_context="#213853",  # match normal body text (theme `text`), not muted grey
     bash_mode="#2C7A39",
     code_block_bg="#f1f5f9",
 )

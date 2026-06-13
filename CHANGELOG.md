@@ -23,6 +23,7 @@ GitHub Releases page; `0.8.0` is the new starting line.
 - **Recap hygiene.** Session recaps strip `<system-reminder>` blocks so injected harness context no longer leaks into one-line recaps.
 - **Login selector polish.** Configured `/login` providers render with distinct success/state styling; the background working indicator uses the braille spinner, and working tips wrap with a hanging indent under the verb.
 - **Scratch cleanup on exit.** Sessions that end via an exception now clean up their scratch files instead of orphaning them.
+- **Readable diff context.** Unchanged context lines in file-edit diff snippets now render in the normal body-text color instead of muted grey, so edited-file previews are easier to read; added/removed lines are unchanged.
 
 ## 0.42.0 (2026-06-12)
 
