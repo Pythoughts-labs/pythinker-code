@@ -1612,3 +1612,26 @@ def test_format_managed_channel_notice_non_managed():
         )
         is None
     )
+
+
+@pytest.mark.asyncio
+async def test_do_update_result_is_print_output_invariant(monkeypatch, tmp_path):
+    # Managed channel returns UPDATE_AVAILABLE regardless of print_output.
+    monkeypatch.setattr(
+        update,
+        "_detect_upgrade_command",
+        lambda: [update.MANAGED_CHANNEL_MARKER, "Nix"],
+    )
+    monkeypatch.setattr(update, "LATEST_VERSION_FILE", tmp_path / "latest.txt")
+
+    async def fake_latest(session):
+        return "999.0.0"  # force "newer than current"
+
+    monkeypatch.setattr(update, "_get_latest_version", fake_latest)
+    monkeypatch.setattr(update, "_clear_latest_version_cache", lambda: None)
+    # Prevent real network I/O: wrap the session context with a no-op stub.
+    monkeypatch.setattr(update, "new_client_session", lambda timeout: _FakeSessionContext(object()))
+
+    loud = await update.do_update(print_output=True, check_only=False)
+    quiet = await update.do_update(print_output=False, check_only=False)
+    assert loud is quiet is update.UpdateResult.UPDATE_AVAILABLE
