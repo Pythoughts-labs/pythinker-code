@@ -4,6 +4,12 @@ This page documents breaking changes in Pythinker Code releases and provides mig
 
 ## Unreleased
 
+## 0.43.0 (2026-06-13)
+
+No configuration or session-data breaking changes. One behavior change affects update handling:
+
+- **Startup auto-updates are now on by default.** Managed and native installs check for and apply updates in the background at startup, then show a restart-to-apply notice — replacing the previous blocking prompt. To keep updates manual, set `auto_update = false` in `~/.pythinker/config.toml` or export `PYTHINKER_AUTO_UPDATE=0`. The in-app `pythinker update` command is unchanged.
+
 ## 0.42.0 (2026-06-12)
 
 No configuration or session-data breaking changes. Two behavior changes may affect scripted or automated use:
