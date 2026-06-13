@@ -275,11 +275,28 @@ class ProjectMemoryStore:
             )
         return matches[0]
 
-    async def replace(self, target: Target, old_text: str, new_content: str) -> MemoryOpResult:
+    def _locate(self, entries: list[str], old_text: str, index: int | None) -> int | MemoryOpResult:
+        """Resolve which entry to mutate. ``index`` (0-based, from `list`) is the
+        deterministic path — preferred when substring matching is uncertain;
+        ``old_text`` is the substring fallback. Out-of-range indices report the
+        inventory so the retry is guided, not a guess."""
+        if index is not None:
+            if not 0 <= index < len(entries):
+                return MemoryOpResult(
+                    False,
+                    f"No entry at index {index} ({len(entries)} stored). "
+                    f"Current entries:\n{self._inventory(entries)}",
+                )
+            return index
+        if old_text:
+            return self._match_one(entries, old_text)
+        return MemoryOpResult(False, "Provide old_text or index to identify the entry.")
+
+    async def replace(
+        self, target: Target, old_text: str, new_content: str, *, index: int | None = None
+    ) -> MemoryOpResult:
         old_text = old_text.strip()
         new_content = new_content.strip()
-        if not old_text:
-            return MemoryOpResult(False, "old_text cannot be empty.")
         if not new_content:
             return MemoryOpResult(False, "new_content cannot be empty. Use 'remove' to delete.")
         blocked = scan_memory_content(new_content)
@@ -293,7 +310,7 @@ class ProjectMemoryStore:
                 return MemoryOpResult(
                     False, f"Memory read failed ({exc}); aborting write to avoid data loss."
                 )
-            idx = self._match_one(entries, old_text)
+            idx = self._locate(entries, old_text, index)
             if isinstance(idx, MemoryOpResult):
                 return idx
             limit = self._char_limit(target)
@@ -312,10 +329,10 @@ class ProjectMemoryStore:
             await self._write_entries(target, candidate)
         return MemoryOpResult(True, "Entry replaced.")
 
-    async def remove(self, target: Target, old_text: str) -> MemoryOpResult:
+    async def remove(
+        self, target: Target, old_text: str, *, index: int | None = None
+    ) -> MemoryOpResult:
         old_text = old_text.strip()
-        if not old_text:
-            return MemoryOpResult(False, "old_text cannot be empty.")
         path = await self._path_for(target)
         async with self._async_lock, self._file_lock(path):
             try:
@@ -324,7 +341,7 @@ class ProjectMemoryStore:
                 return MemoryOpResult(
                     False, f"Memory read failed ({exc}); aborting write to avoid data loss."
                 )
-            idx = self._match_one(entries, old_text)
+            idx = self._locate(entries, old_text, index)
             if isinstance(idx, MemoryOpResult):
                 return idx
             entries.pop(idx)

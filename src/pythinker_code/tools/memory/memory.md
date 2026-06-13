@@ -5,6 +5,13 @@ WRITE FACTS, NOT INSTRUCTIONS:
 - "Project uses pytest with xdist" ✓ — "Run tests with pytest -n 4" ✗
 - "User prefers concise answers" ✓ — "Always respond concisely" ✗
 
+AUTHORITATIVE FILES FIRST:
+If a fact would change how you already behave according to a file you read (AGENTS.md, a
+protocol/spec/config), EDIT that file — do not store it here. Memory does not change files
+you follow, so the change would be silently lost. Rephrasing a correction as a preference
+("set the limit to 100" → "user prefers a 100-word limit") does NOT turn a file edit into a
+memory fact. When the user corrects a rule, find and edit the file that governs it first.
+
 TWO TARGETS:
 - `memory`: project facts — conventions, architecture notes, gotchas, key file locations.
 - `user`: how the user likes to work in this repo — preferences, style, do/don't.
@@ -12,13 +19,19 @@ TWO TARGETS:
 DO NOT store: task progress, session outcomes, "fixed bug X / merged PR Y /
 Phase N done", PR/issue numbers, commit SHAs, file counts, or anything stale
 within a week. Those are transient and belong in the session journal, not memory.
-NEVER store secrets, tokens, or credentials.
+Store only non-obvious facts — deviations, gotchas, conventions — not baseline
+behavior any agent would assume. Store rules the user actually stated, never ones
+you inferred from conversation fragments. NEVER store secrets, tokens, or credentials.
 
 ACTIONS:
 - `add`: append a new entry (requires `content`).
-- `replace`: update an entry (`old_text` = a unique substring of the target entry; `content` = new text).
-- `remove`: delete an entry (`old_text` = a unique substring of the target entry).
-- `list`: show current entries with their sizes and how much room is free (read-only).
+- `replace`: update an entry — identify it by `index` or `old_text`; `content` = new text.
+- `remove`: delete an entry — identify it by `index` or `old_text`.
+- `list`: show current entries, each with its `[index]`, size, and how much room is free (read-only).
+
+IDENTIFYING AN ENTRY: prefer `index` (the `[N]` shown by `list`) — it is exact. Use `old_text`
+(a unique substring) only when you are sure of the literal stored text. If a remove/replace
+fails to match, run `list` and retry with the `index` rather than guessing the substring again.
 
 WHEN A WRITE IS REJECTED FOR SPACE:
 The error reports the exact free budget and lists existing entries. Do NOT retry the

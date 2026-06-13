@@ -401,14 +401,15 @@ class SlashCommandCompleter(Completer):
         typed_lower = typed.lower()
         seen: set[str] = set()
 
-        def emit(cmd: SlashCommand[Any]) -> Iterable[Completion]:
+        def emit(cmd: SlashCommand[Any], label: str | None = None) -> Iterable[Completion]:
             if cmd.name in seen:
                 return
             seen.add(cmd.name)
+            shown = label or cmd.name
             yield Completion(
-                text=f"/{cmd.name}",
+                text=f"/{shown}",
                 start_position=-len(token),
-                display=f"/{cmd.name}",
+                display=f"/{shown}",
                 display_meta=self._display_meta(cmd),
             )
 
@@ -417,35 +418,39 @@ class SlashCommandCompleter(Completer):
                 yield from emit(cmd)
             return
 
-        def match_tier(cmd: SlashCommand[Any]) -> int | None:
-            """Lower tier = stronger match. Name matches rank above alias matches
-            so typing toward a command name (e.g. ``/report`` → ``/reports``)
-            wins over a command that only matches via an exact alias."""
+        def match_tier(cmd: SlashCommand[Any]) -> tuple[int, str] | None:
+            """Return ``(tier, label)`` or ``None``. Lower tier = stronger match.
+            Name matches rank above alias matches so typing toward a command name
+            (e.g. ``/report`` → ``/reports``) wins over a command that only matches
+            via an exact alias. For alias-only matches the label is the matched
+            alias, so the menu surfaces what the user typed toward (e.g. ``/res``
+            → ``/resume``) rather than the differently-named command (``/sessions``)."""
             name_lower = cmd.name.lower()
             if name_lower == typed_lower:
-                return 0
+                return (0, cmd.name)
             if name_lower.startswith(typed_lower):
-                return 1
-            alias_prefix = False
+                return (1, cmd.name)
+            alias_prefix: str | None = None
             for alias in cmd.aliases:
                 alias_lower = alias.lower()
                 if alias_lower == typed_lower:
-                    return 2
-                if alias_lower.startswith(typed_lower):
-                    alias_prefix = True
-            return 3 if alias_prefix else None
+                    return (2, alias)
+                if alias_prefix is None and alias_lower.startswith(typed_lower):
+                    alias_prefix = alias
+            return (3, alias_prefix) if alias_prefix is not None else None
 
         # Rank by (match tier, command-name length, name): the closest, shortest
         # command name surfaces first within each tier.
-        matched: list[tuple[int, int, str, SlashCommand[Any]]] = []
+        matched: list[tuple[int, int, str, str, SlashCommand[Any]]] = []
         for cmd in self._available_commands:
-            tier = match_tier(cmd)
-            if tier is not None:
-                matched.append((tier, len(cmd.name), cmd.name, cmd))
+            result = match_tier(cmd)
+            if result is not None:
+                tier, label = result
+                matched.append((tier, len(cmd.name), cmd.name, label, cmd))
         matched.sort(key=lambda item: (item[0], item[1], item[2]))
 
-        for _, _, _, cmd in matched:
-            yield from emit(cmd)
+        for _, _, _, label, cmd in matched:
+            yield from emit(cmd, label)
 
     def _disabled_during_task(self, cmd: SlashCommand[Any]) -> bool:
         """True when a running turn blocks this shell-level command."""

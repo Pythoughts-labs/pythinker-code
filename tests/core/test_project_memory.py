@@ -239,6 +239,36 @@ async def test_remove_deletes_matching_entry(tmp_path, monkeypatch):
     assert not r.ok and "No entry matched" in r.message
 
 
+async def test_remove_by_index(tmp_path, monkeypatch):
+    """An entry can be deleted by its 0-based index (from `list`) without
+    guessing a substring — the fix for stale/imprecise old_text matches."""
+    store = _store(tmp_path, monkeypatch)
+    await store.add("memory", "uses pytest")
+    await store.add("memory", "uses ruff")
+
+    r = await store.remove("memory", "", index=0)
+    assert r.ok and await store.read_entries("memory") == ["uses ruff"]
+
+
+async def test_replace_by_index(tmp_path, monkeypatch):
+    store = _store(tmp_path, monkeypatch)
+    await store.add("memory", "uses pytest")
+    await store.add("memory", "uses ruff")
+
+    r = await store.replace("memory", "", "uses ruff + biome", index=1)
+    assert r.ok and await store.read_entries("memory") == ["uses pytest", "uses ruff + biome"]
+
+
+async def test_index_out_of_range_errors_with_inventory(tmp_path, monkeypatch):
+    store = _store(tmp_path, monkeypatch)
+    await store.add("memory", "uses pytest")
+
+    r = await store.remove("memory", "", index=5)
+    assert not r.ok
+    assert "index 5" in r.message
+    assert "uses pytest" in r.message  # inventory guides the retry
+
+
 async def test_snapshot_builds_block_with_priority_and_budget(tmp_path, monkeypatch):
     monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path / "share"))
     from pythinker_code.project_memory import ProjectMemoryStore

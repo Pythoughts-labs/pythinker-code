@@ -97,6 +97,28 @@ def test_command_name_prefix_outranks_exact_alias_match():
     assert texts == ["/reports", "/report_error"]
 
 
+def test_alias_only_match_surfaces_matched_alias():
+    """When the typed prefix matches only via an alias, the menu surfaces the
+    matched alias (``/res`` → ``/resume``) so the user sees what they typed
+    toward, even though it maps to a differently-named command (``/sessions``).
+    Name matches still outrank alias-only matches."""
+    completer = SlashCommandCompleter(
+        [
+            _make_command("sessions", aliases=["resume", "session"]),
+            _make_command("restore"),
+        ]
+    )
+
+    assert _completion_texts(completer, "/res") == ["/restore", "/resume"]
+
+
+def test_exact_alias_match_surfaces_matched_alias():
+    """An exact alias match shows the alias the user typed, not the canonical name."""
+    completer = SlashCommandCompleter([_make_command("clear", aliases=["reset"])])
+
+    assert _completion_texts(completer, "/reset") == ["/reset"]
+
+
 def test_shorter_command_name_prefix_ranks_first():
     """Within the same match tier the closest (shortest) command name wins."""
     completer = SlashCommandCompleter(
