@@ -35,8 +35,8 @@ if TYPE_CHECKING:
     from pythinker_code.soul.pythinkersoul import PythinkerSoul
 
 ENTRY_DELIMITER = "\n§\n"
-MEMORY_CHAR_LIMIT = 2200
-USER_CHAR_LIMIT = 1375
+MEMORY_CHAR_LIMIT = 5000
+USER_CHAR_LIMIT = 2500
 INJECTION_BUDGET_BYTES = 8 * 1024
 _JOURNAL_MAX_ENTRIES = 100
 
@@ -92,6 +92,9 @@ async def project_key(work_dir: HostPath, *, git_runner: GitRunner | None = None
 class MemoryOpResult:
     ok: bool
     message: str
+    # True only when the op failed because the store is at capacity. Lets the UI
+    # layer attach user-facing guidance without string-matching the message.
+    full: bool = False
 
 
 class ProjectMemoryStore:
@@ -129,6 +132,31 @@ class ProjectMemoryStore:
 
     def _char_limit(self, target: Target) -> int:
         return self._user_limit if target == "user" else self._memory_limit
+
+    @staticmethod
+    def _used(entries: list[str]) -> int:
+        return len(ENTRY_DELIMITER.join(entries))
+
+    @staticmethod
+    def _append_overhead(entries: list[str]) -> int:
+        """Chars an appended entry costs beyond its own text (the joining delimiter)."""
+        return len(ENTRY_DELIMITER) if entries else 0
+
+    @staticmethod
+    def _inventory(entries: list[str]) -> str:
+        """Compact, model-readable listing: index, size, and a one-line preview.
+
+        The preview doubles as a copy-paste ``old_text`` substring for remove/replace,
+        turning a space-rejection into a guided one-step fix instead of a guessing game.
+        """
+        if not entries:
+            return "  (none)"
+        lines: list[str] = []
+        for i, entry in enumerate(entries):
+            preview = " ".join(entry.split())
+            clipped = preview[:60] + ("…" if len(preview) > 60 else "")
+            lines.append(f"  [{i}] {len(entry)} chars — {clipped}")
+        return "\n".join(lines)
 
     async def _path_for(self, target: Target) -> Path:
         root = await self._ensure_dir()
@@ -219,13 +247,19 @@ class ProjectMemoryStore:
             if content in entries:
                 return MemoryOpResult(True, "Entry already exists (no duplicate added).")
             limit = self._char_limit(target)
-            new_total = len(ENTRY_DELIMITER.join([*entries, content]))
-            if new_total > limit:
-                current = len(ENTRY_DELIMITER.join(entries))
+            if len(ENTRY_DELIMITER.join([*entries, content])) > limit:
+                used = self._used(entries)
+                overhead = self._append_overhead(entries)
+                free = max(0, limit - used - overhead)
+                need = len(content) + overhead
                 return MemoryOpResult(
                     False,
-                    f"Memory at {current}/{limit} chars; this entry ({len(content)}) "
-                    "exceeds the limit. Replace or remove entries first.",
+                    f"Not enough room: this entry needs {need} chars "
+                    f"(content {len(content)} + {overhead} separator), but only {free} free "
+                    f"({used}/{limit} used). Remove or replace an entry to free space, "
+                    f"or shorten this entry to ≤{free} chars.\n"
+                    f"Current entries:\n{self._inventory(entries)}",
+                    full=True,
                 )
             await self._write_entries(target, [*entries, content])
         return MemoryOpResult(True, "Entry added.")
@@ -265,8 +299,16 @@ class ProjectMemoryStore:
             limit = self._char_limit(target)
             candidate = list(entries)
             candidate[idx] = new_content
-            if len(ENTRY_DELIMITER.join(candidate)) > limit:
-                return MemoryOpResult(False, f"Replacement would exceed the {limit}-char limit.")
+            projected = self._used(candidate)
+            if projected > limit:
+                over = projected - limit
+                return MemoryOpResult(
+                    False,
+                    f"Replacement too large by {over} chars: result would be "
+                    f"{projected}/{limit}. Shorten the new text by ≥{over} chars, or remove "
+                    f"another entry first.\nCurrent entries:\n{self._inventory(entries)}",
+                    full=True,
+                )
             await self._write_entries(target, candidate)
         return MemoryOpResult(True, "Entry replaced.")
 
@@ -288,6 +330,31 @@ class ProjectMemoryStore:
             entries.pop(idx)
             await self._write_entries(target, entries)
         return MemoryOpResult(True, "Entry removed.")
+
+    async def capacity(self, target: Target) -> tuple[int, int, int]:
+        """Return ``(used, limit, free)`` chars for ``target`` (free accounts for the
+        delimiter a new entry would cost). Used by the UI to show/explain capacity."""
+        entries = await self.read_entries(target)
+        limit = self._char_limit(target)
+        used = self._used(entries)
+        free = max(0, limit - used - self._append_overhead(entries))
+        return used, limit, free
+
+    async def status(self, target: Target) -> str:
+        """Read-only capacity + inventory snapshot for mid-session introspection.
+
+        Lets the agent see what is stored, at what size, and exactly how much room
+        is free before attempting a write — so it can remove/consolidate instead of
+        repeatedly retrying an over-budget add.
+        """
+        entries = await self.read_entries(target)
+        limit = self._char_limit(target)
+        used = self._used(entries)
+        free = max(0, limit - used - self._append_overhead(entries))
+        return (
+            f"{self._filename(target)}: {used}/{limit} chars across {len(entries)} "
+            f"entries; {free} free for a new entry.\nCurrent entries:\n{self._inventory(entries)}"
+        )
 
     async def append_journal(self, recap: str) -> MemoryOpResult:
         """Prepend one stable session recap to ``JOURNAL.md`` if it is new."""

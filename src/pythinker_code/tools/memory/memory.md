@@ -18,3 +18,14 @@ ACTIONS:
 - `add`: append a new entry (requires `content`).
 - `replace`: update an entry (`old_text` = a unique substring of the target entry; `content` = new text).
 - `remove`: delete an entry (`old_text` = a unique substring of the target entry).
+- `list`: show current entries with their sizes and how much room is free (read-only).
+
+WHEN A WRITE IS REJECTED FOR SPACE:
+The error reports the exact free budget and lists existing entries. Do NOT retry the
+same write with a slightly shorter entry — instead `remove` or `replace` a stale or
+redundant entry to free room, or consolidate two entries into one. Use `list` first if
+unsure what is stored.
+
+Memory writes are best-effort housekeeping: if room cannot be freed in one or two
+steps, drop the write and continue the user's actual task. Never loop on a rejected
+memory write.

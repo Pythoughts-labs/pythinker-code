@@ -10,7 +10,7 @@ from pythinker_code.tools.utils import load_desc
 
 
 class Params(BaseModel):
-    action: Literal["add", "replace", "remove"] = Field(description="The memory operation.")
+    action: Literal["add", "replace", "remove", "list"] = Field(description="The memory operation.")
     target: Literal["memory", "user"] = Field(description="Which store to write.")
     content: str | None = Field(default=None, description="Entry text for add/replace.")
     old_text: str | None = Field(
@@ -43,6 +43,10 @@ class Memory(CallableTool2[Params]):
                 message="old_text is required for replace/remove.", brief="memory: no old_text"
             )
 
+        if params.action == "list":
+            output = await self._store.status(params.target)
+            return ToolOk(output=output, message=output, brief="list")
+
         if params.action == "add":
             result = await self._store.add(params.target, params.content or "")
         elif params.action == "replace":
@@ -53,7 +57,18 @@ class Memory(CallableTool2[Params]):
             result = await self._store.remove(params.target, params.old_text or "")
 
         if not result.ok:
-            return ToolError(message=result.message, brief="memory: rejected")
+            message = result.message
+            if result.full:
+                # Educate the human reading the tool card: what happened, that nothing
+                # was lost, and the real ways to fix it. Kept short and command-accurate.
+                message += (
+                    "\n\nProject memory for this repo is full — nothing was lost, and your "
+                    "task can continue. To free space: ask me to merge or drop stale entries, "
+                    "run /memory to see what's stored, or edit MEMORY.md / USER.md directly. "
+                    "Memory is for durable facts only, so occasional pruning is expected."
+                )
+            brief = "memory: full" if result.full else "memory: rejected"
+            return ToolError(message=message, brief=brief)
         rearm = getattr(self._runtime, "rearm_injection", None)
         if rearm is not None:
             rearm("project_memory")

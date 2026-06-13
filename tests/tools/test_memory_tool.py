@@ -58,6 +58,21 @@ async def test_memory_tool_add_and_read_back(tmp_path, monkeypatch):
     assert calls == ["project_memory"]
 
 
+async def test_memory_tool_list_reports_status(tmp_path, monkeypatch):
+    from pythinker_code.tools.memory import Params
+
+    tool = _make_tool(tmp_path, monkeypatch)
+    await tool._store.add("memory", "uses pytest")
+
+    # `list` is read-only: needs no content/old_text and must not rearm injection.
+    rearmed: list[str] = []
+    tool._runtime.rearm_injection = rearmed.append
+    res = await tool(Params(action="list", target="memory"))
+    assert res.is_error is False
+    assert "uses pytest" in res.output
+    assert rearmed == []
+
+
 async def test_memory_tool_missing_content_errors(tmp_path, monkeypatch):
     from pythinker_code.tools.memory import Params
 
