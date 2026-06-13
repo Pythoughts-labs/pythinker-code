@@ -2212,6 +2212,10 @@ class Shell:
                 t.result()
             except asyncio.CancelledError:
                 pass
+            except SystemExit:
+                # The silent updater's Windows native/pip path raises SystemExit
+                # so the installer can replace the binary; don't crash the shell.
+                logger.info("Background task requested process exit (update installer launched).")
             except Exception:
                 logger.exception("Background task failed:")
 

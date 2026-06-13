@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from pythinker_core.tooling.empty import EmptyToolset
@@ -194,3 +196,52 @@ def test_dispatch_env_killswitch_schedules_nothing(runtime, tmp_path, monkeypatc
 
     shell._schedule_startup_update_task()
     assert scheduled == []
+
+
+def test_background_task_systemexit_does_not_crash(runtime, tmp_path, monkeypatch):
+    """_cleanup swallows SystemExit from t.result() and logs instead of crashing.
+
+    Python 3.14 propagates SystemExit out of asyncio.run() when a task raises it,
+    so we test the done-callback in isolation: intercept the callback registered by
+    _start_background_task and invoke it with a mock task whose .result() raises
+    SystemExit.
+    """
+    shell = _make_shell(runtime, tmp_path)
+    logged: list[str] = []
+    monkeypatch.setattr(shell_module.logger, "info", lambda msg, *a, **k: logged.append(msg))
+
+    # A thin stand-in for asyncio.Task that captures the done-callback.
+    registered: list = []
+
+    class _CapturingTask:
+        def add_done_callback(self, fn):
+            registered.append(fn)
+
+    capturing_task = _CapturingTask()
+
+    def fake_create_task(coro, **kw):
+        coro.close()  # avoid "coroutine never awaited" warning
+        return capturing_task  # type: ignore[return-value]
+
+    monkeypatch.setattr(asyncio, "create_task", fake_create_task)
+
+    async def noop():
+        pass
+
+    shell._start_background_task(noop())
+
+    assert len(registered) == 1, "expected one done-callback to be registered"
+    cleanup = registered[0]
+
+    # Build a finished mock task whose .result() raises SystemExit.
+    fake_task: MagicMock = MagicMock(spec=asyncio.Task)
+    fake_task.cancelled.return_value = False
+    fake_task.result.side_effect = SystemExit(0)
+    shell._background_tasks.add(fake_task)
+
+    # Invoke _cleanup with the fake task — must NOT raise.
+    cleanup(fake_task)
+
+    # Cleanup removed the task from the set and logged the process-exit message.
+    assert fake_task not in shell._background_tasks
+    assert any("process exit" in m for m in logged)
