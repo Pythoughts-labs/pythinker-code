@@ -12,6 +12,13 @@ you follow, so the change would be silently lost. Rephrasing a correction as a p
 ("set the limit to 100" → "user prefers a 100-word limit") does NOT turn a file edit into a
 memory fact. When the user corrects a rule, find and edit the file that governs it first.
 
+CONFIRMATION ON FLAGGED WRITES:
+An add/replace whose content looks like a rule or a value/limit, or that names a project
+file, is shown to the user for confirmation before it is stored. If they decline (or no
+user is available), the entry is NOT saved and the tool tells you so — treat that as a
+signal to edit the governing file instead, not as an error to retry. Plain durable facts
+save without a prompt.
+
 TWO TARGETS:
 - `memory`: project facts — conventions, architecture notes, gotchas, key file locations.
 - `user`: how the user likes to work in this repo — preferences, style, do/don't.

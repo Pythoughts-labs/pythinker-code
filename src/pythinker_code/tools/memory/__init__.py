@@ -10,17 +10,6 @@ from pythinker_code.tools.memory.routing_guard import routing_signals
 from pythinker_code.tools.utils import load_desc
 from pythinker_code.utils.logging import logger
 
-# Appended (never substituted) to a successful add/replace whose content looks
-# like it governs behavior defined in a project file. The tool is blind to
-# conversation context, so it can only nudge — enforcement lives in memory.md
-# guidance and the model's own awareness of the correction it just received.
-_ROUTING_ADVISORY = (
-    "\n\nNote: this looks like it may set a rule that lives in a project file "
-    "(a protocol, spec, or config you read). If so, edit that file directly — "
-    "memory does not change files you follow, so the change would be silently "
-    "lost. Memory is only for durable facts with no authoritative home."
-)
-
 
 class Params(BaseModel):
     action: Literal["add", "replace", "remove", "list"] = Field(description="The memory operation.")
@@ -70,6 +59,15 @@ class Memory(CallableTool2[Params]):
             output = await self._store.status(params.target)
             return ToolOk(output=output, message=output, brief="list")
 
+        # Confirm-before-remember: a write whose content looks like a rule or a
+        # file-governed setting (routing signals) is gated behind the user, so the
+        # agent can't silently fill memory with corrections that belong in a project
+        # file. Plain durable facts (no signals) skip the gate and write directly.
+        if params.action in ("add", "replace"):
+            declined = await self._confirm_flagged_write(params.target, params.content or "")
+            if declined is not None:
+                return declined
+
         if params.action == "add":
             result = await self._store.add(params.target, params.content or "")
         elif params.action == "replace":
@@ -86,8 +84,9 @@ class Memory(CallableTool2[Params]):
             if result.full:
                 # Educate the human reading the tool card: what happened, that nothing
                 # was lost, and the real ways to fix it. Kept short and command-accurate.
+                store_label = "Project memory" if params.target == "memory" else "User memory"
                 message += (
-                    "\n\nProject memory for this repo is full — nothing was lost, and your "
+                    f"\n\n{store_label} for this repo is full — nothing was lost, and your "
                     "task can continue. To free space: ask me to merge or drop stale entries, "
                     "run /memory to see what's stored, or edit MEMORY.md / USER.md directly. "
                     "Memory is for durable facts only, so occasional pruning is expected."
@@ -97,18 +96,54 @@ class Memory(CallableTool2[Params]):
         rearm = getattr(self._runtime, "rearm_injection", None)
         if rearm is not None:
             rearm("project_memory")
-        message = result.message
-        if params.action in ("add", "replace"):
-            signals = routing_signals(params.content or "")
-            if signals:
-                logger.bind(
-                    event="memory_guard_advisory",
-                    action=params.action,
-                    target=params.target,
-                    signals=signals,
-                ).debug(
-                    "memory write tripped routing advisory: {preview}",
-                    preview=(params.content or "")[:60],
-                )
-                message += _ROUTING_ADVISORY
-        return ToolOk(output=message, message=message, brief=params.action)
+        return ToolOk(output=result.message, message=result.message, brief=params.action)
+
+    async def _confirm_flagged_write(
+        self, target: Literal["memory", "user"], content: str
+    ) -> ToolReturnValue | None:
+        """Gate a routing-flagged add/replace behind user confirmation.
+
+        Returns ``None`` when the write may proceed — either the content has no
+        routing signals (a plain durable fact) or the user approved. Returns a
+        non-error result describing what to do instead when the write is declined:
+        by the user (edit the governing file) or because no user is available to
+        confirm (skipped). Yolo/auto-approve and "allow for session" are handled by
+        the shared approval flow, so a confirmed store stops nagging for the session.
+        """
+        signals = routing_signals(content)
+        if not signals:
+            return None
+        logger.bind(event="memory_guard_gate", target=target, signals=signals).debug(
+            "memory write flagged for confirmation: {preview}", preview=content[:60]
+        )
+
+        store_label = "project" if target == "memory" else "user"
+        why = (
+            "It names a project file"
+            if "file_ref" in signals
+            else "It reads like a rule or a value/limit"
+        )
+        preview = content if len(content) <= 200 else content[:200] + "…"
+        description = (
+            f"Save this to {store_label} memory?\n\n{preview}\n\n"
+            f"{why}, which usually belongs in an authoritative project file. Memory does "
+            "not change files you follow, so a rule stored here is silently lost — edit "
+            "that file instead. Approve only if this is a durable fact with no file home."
+        )
+        decision = await self._runtime.approval.request(self.name, "save to memory", description)
+        if decision:
+            return None  # approved → caller performs the write
+        if decision.user_rejection:
+            message = (
+                "Not saved to memory — you declined. This looks like it belongs in a "
+                "project file; edit that file directly so the change actually takes effect."
+            )
+            if decision.feedback:
+                message += f"\n\nYour note: {decision.feedback}"
+        else:
+            message = (
+                "Not saved to memory: this write was flagged for confirmation but no user "
+                "is available to approve it. Skipped — continue the task, and if this fact "
+                "governs behavior, edit the relevant project file instead."
+            )
+        return ToolOk(output=message, message=message, brief="memory: not saved")
