@@ -314,6 +314,7 @@ def test_pyinstaller_hiddenimports():
             "pythinker_code.tools.goal",
             "pythinker_code.tools.mcp_resource",
             "pythinker_code.tools.memory",
+            "pythinker_code.tools.memory.routing_guard",
             "pythinker_code.tools.plan",
             "pythinker_code.tools.plan.enter",
             "pythinker_code.tools.plan.handoff",

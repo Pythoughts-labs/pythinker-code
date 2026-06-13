@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -25,7 +26,9 @@ def _make_soul(runtime: Runtime, tmp_path: Path) -> PythinkerSoul:
 
 
 async def _run_recap(soul: PythinkerSoul, args: str = "") -> None:
-    await recap_slash(soul, args)
+    ret = recap_slash(soul, args)
+    if isinstance(ret, Awaitable):
+        await ret
 
 
 async def test_recap_on_persists_and_updates_runtime(
