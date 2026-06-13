@@ -63,8 +63,14 @@ warning), and currently has no monitoring visibility.
 
 It:
 
-1. Emits an OTel `error` event with `{site, exc_class, tool, **attrs}`.
-2. Calls `sentry.capture_exception(exc)`.
+1. Emits an OTel `error` event with `{site, exc_class, expected, tool, **attrs}`.
+2. Calls `sentry.capture_exception(exc)` **only when the error is not expected**.
+   Expected user-environment failures — bad/expired credentials, exhausted
+   quotas, rate limits, request timeouts, offline network, abandoned OAuth
+   flows, MCP servers lacking an optional capability (see
+   `errors.is_expected_error`) — still flow to the OTel `error` stream with
+   `expected=True`, but are withheld from Sentry/Bugsink, which is reserved for
+   actionable defects.
 
 Both calls are wrapped in `contextlib.suppress(Exception)` so monitoring can
 never break the host program.

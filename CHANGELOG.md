@@ -24,6 +24,7 @@ GitHub Releases page; `0.8.0` is the new starting line.
 - **Login selector polish.** Configured `/login` providers render with distinct success/state styling; the background working indicator uses the braille spinner, and working tips wrap with a hanging indent under the verb.
 - **Scratch cleanup on exit.** Sessions that end via an exception now clean up their scratch files instead of orphaning them.
 - **Readable diff context.** Unchanged context lines in file-edit diff snippets now render in the normal body-text color instead of muted grey, so edited-file previews are easier to read; added/removed lines are unchanged.
+- **Cleaner slash command menu.** The slash command popup now has a blank line separating it from the input row, drops the repetitive `[command]`/`[shell]` tag (keeping the distinguishing `[skill]`/`[flow]` ones), and gains a persistent footer (`Enter to select · ↑/↓ to navigate · Esc to cancel`) set off by its own separator line. When the list scrolls, the footer folds in a `+N more` count instead of silently hiding entries, and the menu height adapts to the terminal.
 
 ## 0.42.0 (2026-06-12)
 

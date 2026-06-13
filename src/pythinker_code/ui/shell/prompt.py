@@ -467,14 +467,21 @@ class SlashCommandCompleter(Completer):
         if not self._annotate_meta:
             return cmd.description
 
+        # Only surface a kind tag when it distinguishes the entry from a plain
+        # command. Skills and flows are interleaved with commands in the agent
+        # menu, so their tag carries information; the generic command/shell scope
+        # is already obvious from the menu itself, so tagging every row is noise.
         if cmd.name.startswith("skill:"):
-            kind = "skill"
+            kind: str | None = "skill"
         elif cmd.name.startswith("flow:"):
             kind = "flow"
         else:
-            kind = self._command_scope
+            kind = None
 
-        parts = [f"[{kind}]", cmd.description]
+        parts: list[str] = []
+        if kind is not None:
+            parts.append(f"[{kind}]")
+        parts.append(cmd.description)
         if cmd.aliases:
             parts.append(f"aliases: {', '.join('/' + alias for alias in cmd.aliases)}")
         return "  ".join(part for part in parts if part)
@@ -851,6 +858,14 @@ class SlashCommandMenuControl(UIControl):
     """Render slash command completions as a full-width menu that matches the shell UI."""
 
     _MAX_EXPANDED_META_LINES = 3
+    # One blank line is reserved above the list as breathing room from the input
+    # row, so the menu reads as its own region rather than crowding what's typed.
+    _GAP_LINES = 1
+    # A persistent footer block at the bottom: a blank separator line plus the
+    # navigation legend (which folds in the overflow count when the list scrolls).
+    # The separator gives the legend the same breathing room as the top gap.
+    _FOOTER_LINES = 2
+    _FOOTER_LEGEND = "Enter to select · ↑/↓ to navigate · Esc to cancel"
 
     def __init__(
         self,
@@ -881,19 +896,27 @@ class SlashCommandMenuControl(UIControl):
         if complete_state is None:
             return 0
         completions = complete_state.completions
+        if not completions:
+            return 0
         selected_index = complete_state.complete_index
         if selected_index is None:
-            return min(max_available_height, len(completions))
-        menu_width = max(0, width - self._left_padding())
-        marker_width = 2
-        command_width = self._command_column_width(completions, menu_width, marker_width)
-        gap_width = 3 if menu_width > command_width + 6 else 1
-        meta_width = max(0, menu_width - marker_width - command_width - gap_width)
-        selected_meta_lines = self._selected_meta_lines(
-            completions[selected_index].display_meta_text,
-            meta_width,
-        )
-        return min(max_available_height, len(completions) + len(selected_meta_lines) - 1)
+            content_height = len(completions)
+        else:
+            menu_width = max(0, width - self._left_padding())
+            marker_width = 2
+            command_width = self._command_column_width(completions, menu_width, marker_width)
+            gap_width = 3 if menu_width > command_width + 6 else 1
+            meta_width = max(0, menu_width - marker_width - command_width - gap_width)
+            selected_meta_lines = self._selected_meta_lines(
+                completions[selected_index].display_meta_text,
+                meta_width,
+            )
+            content_height = (len(completions) - 1) + len(selected_meta_lines)
+        # Reserve the gap line above the list and the footer line below it. When
+        # the list is taller than the space the window allows, the window caps the
+        # height and create_content lays the list out within whatever rows remain.
+        chrome = self._GAP_LINES + self._FOOTER_LINES
+        return min(max_available_height, content_height + chrome)
 
     def create_content(self, width: int, height: int) -> UIContent:
         app = get_app_or_none()
@@ -905,7 +928,6 @@ class SlashCommandMenuControl(UIControl):
 
         completions = complete_state.completions
         selected_index = complete_state.complete_index
-        available_rows = max(1, height)
         match_prefix_len = self._match_prefix_len(app)
 
         menu_width = max(0, width - self._left_padding())
@@ -914,16 +936,21 @@ class SlashCommandMenuControl(UIControl):
         gap_width = 3 if menu_width > command_width + 6 else 1
         meta_width = max(0, menu_width - marker_width - command_width - gap_width)
 
-        rendered_lines: list[FormattedText] = []
-        selected_line_index = 0
+        total_rows = max(1, height)
+        # The gap line above the list and the footer line below it are always
+        # present, so the list itself lays out within the remaining rows.
+        item_rows = max(1, total_rows - self._GAP_LINES - self._FOOTER_LINES)
+
+        rendered_lines: list[FormattedText] = [self._blank_line()]
+        cursor_y = 0
 
         if selected_index is None:
             # Pre-highlight index 0 even before the user navigates: pressing
             # Enter accepts the first completion, so the visual state should
             # match that behavior. Without this the menu looks ambiguous (no
             # row highlighted) but Enter still commits the top row.
-            end = min(len(completions) - 1, available_rows - 1)
-            for index in range(0, end + 1):
+            shown = min(len(completions), item_rows)
+            for index in range(shown):
                 rendered_lines.append(
                     self._render_single_line_item(
                         width=width,
@@ -936,61 +963,82 @@ class SlashCommandMenuControl(UIControl):
                         match_prefix_len=match_prefix_len,
                     )
                 )
-
-            return UIContent(
-                get_line=lambda i: rendered_lines[i],
-                line_count=len(rendered_lines),
-                cursor_position=Point(x=0, y=0),
+            cursor_y = 1 if shown else 0
+            hidden = len(completions) - shown
+        else:
+            selected_meta_lines = self._selected_meta_lines(
+                completions[selected_index].display_meta_text,
+                meta_width,
             )
-
-        selected_meta_lines = self._selected_meta_lines(
-            completions[selected_index].display_meta_text,
-            meta_width,
-        )
-        start, end = self._visible_window_bounds(
-            completion_count=len(completions),
-            selected_index=selected_index,
-            available_rows=available_rows,
-            selected_item_height=len(selected_meta_lines),
-        )
-        selected_line_index = 0
-
-        for index in range(start, end + 1):
-            completion = completions[index]
-            if index == selected_index:
-                selected_line_index = len(rendered_lines)
-                rendered_lines.extend(
-                    self._render_selected_item_lines(
+            start, end = self._visible_window_bounds(
+                completion_count=len(completions),
+                selected_index=selected_index,
+                available_rows=item_rows,
+                selected_item_height=len(selected_meta_lines),
+            )
+            for index in range(start, end + 1):
+                completion = completions[index]
+                if index == selected_index:
+                    cursor_y = len(rendered_lines)
+                    rendered_lines.extend(
+                        self._render_selected_item_lines(
+                            width=width,
+                            completion=completion,
+                            marker_width=marker_width,
+                            command_width=command_width,
+                            meta_width=meta_width,
+                            gap_width=gap_width,
+                            meta_lines=selected_meta_lines,
+                            match_prefix_len=match_prefix_len,
+                        )
+                    )
+                    continue
+                rendered_lines.append(
+                    self._render_single_line_item(
                         width=width,
                         completion=completion,
                         marker_width=marker_width,
                         command_width=command_width,
                         meta_width=meta_width,
                         gap_width=gap_width,
-                        meta_lines=selected_meta_lines,
+                        is_current=False,
                         match_prefix_len=match_prefix_len,
                     )
                 )
-                continue
+            hidden = len(completions) - (end - start + 1)
 
-            rendered_lines.append(
-                self._render_single_line_item(
-                    width=width,
-                    completion=completion,
-                    marker_width=marker_width,
-                    command_width=command_width,
-                    meta_width=meta_width,
-                    gap_width=gap_width,
-                    is_current=False,
-                    match_prefix_len=match_prefix_len,
-                )
+        rendered_lines.append(self._blank_line())
+        rendered_lines.append(
+            self._render_footer_line(
+                width=width, marker_width=marker_width, hidden_count=max(0, hidden)
             )
-
+        )
         return UIContent(
             get_line=lambda i: rendered_lines[i],
             line_count=len(rendered_lines),
-            cursor_position=Point(x=0, y=selected_line_index),
+            cursor_position=Point(x=0, y=cursor_y),
         )
+
+    def _blank_line(self) -> FormattedText:
+        return FormattedText([("class:slash-completion-menu", "")])
+
+    def _render_footer_line(
+        self, *, width: int, marker_width: int, hidden_count: int
+    ) -> FormattedText:
+        # Persistent navigation legend, rendered in the dim meta style and aligned
+        # under the command column. When the list scrolled, the count of hidden
+        # entries leads so it survives truncation on narrow terminals.
+        indent = self._left_padding() + marker_width
+        text = self._FOOTER_LEGEND
+        if hidden_count > 0:
+            text = f"+{hidden_count} more · {text}"
+        body = _truncate_to_width(text, max(0, width - indent))
+        trailing = max(0, width - indent - get_cwidth(body))
+        fragments: FormattedText = FormattedText()
+        fragments.append(("class:slash-completion-menu", " " * indent))
+        fragments.append(("class:slash-completion-menu.meta", body))
+        fragments.append(("class:slash-completion-menu", " " * trailing))
+        return fragments
 
     def _match_prefix_len(self, app: Any) -> int:
         document = getattr(getattr(app, "current_buffer", None), "document", None)
@@ -2637,7 +2685,10 @@ class CustomPromptSession:
             Window(
                 content=self._slash_menu_control,
                 dont_extend_height=True,
-                height=Dimension(max=10),
+                # Cap leaves room for the gap + separator + footer chrome (3 rows)
+                # while still showing ~9 commands; preferred_height clamps to the
+                # terminal's available height so it never overflows a short window.
+                height=Dimension(max=12),
                 style="class:slash-completion-menu",
             ),
             filter=has_completions & slash_completion_filter,

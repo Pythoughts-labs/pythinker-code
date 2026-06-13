@@ -1385,7 +1385,8 @@ def test_slash_menu_highlights_typed_command_prefix(monkeypatch: Any) -> None:
     )
 
     content = SlashCommandMenuControl(left_padding=lambda: 0).create_content(width=60, height=5)
-    line = content.get_line(0)
+    # Line 0 is the blank gap row; the first command renders on line 1.
+    line = content.get_line(1)
 
     assert "".join(text for _, text, *_ in line).lstrip().startswith("❯ /model")
     highlighted = [(style, text) for style, text, *_ in line if "command.match" in style]
