@@ -2189,6 +2189,8 @@ class Shell:
         - config-disabled OR source checkout → informational toast only
           (`_auto_update`); self-suppresses for source checkouts because
           `pending_update_notice()` returns None in that path.
+        - non-PythinkerSoul → same toast-only path (no runtime config to
+          consult), matching the prior unconditional `_auto_update` behavior.
         """
         if get_env_bool("PYTHINKER_CLI_NO_AUTO_UPDATE"):
             logger.info("Auto-update disabled by PYTHINKER_CLI_NO_AUTO_UPDATE environment variable")
