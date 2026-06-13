@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable
 from pathlib import Path
+from typing import cast
 from unittest.mock import Mock
 
 import pytest
@@ -26,9 +27,9 @@ def _make_soul(runtime: Runtime, tmp_path: Path) -> PythinkerSoul:
 
 
 async def _run_recap(soul: PythinkerSoul, args: str = "") -> None:
-    ret = recap_slash(soul, args)
-    if isinstance(ret, Awaitable):
-        await ret
+    # `recap` is async; the registry types commands as the looser
+    # `None | Awaitable[None]`, so cast to await the concrete coroutine.
+    await cast(Awaitable[None], recap_slash(soul, args))
 
 
 async def test_recap_on_persists_and_updates_runtime(

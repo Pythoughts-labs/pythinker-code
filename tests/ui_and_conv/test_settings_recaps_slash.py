@@ -70,12 +70,14 @@ async def test_recap_singular_on_persists_and_reloads(
 
     config_for_save = get_default_config()
     monkeypatch.setattr(shell_slash, "load_config", Mock(return_value=config_for_save))
-    monkeypatch.setattr(shell_slash, "save_config", Mock())
+    save_mock = Mock()
+    monkeypatch.setattr(shell_slash, "save_config", save_mock)
     monkeypatch.setattr(shell_slash.console, "print", Mock())
 
     with pytest.raises(Reload):
         await _run_settings(app, "recap on")
 
+    save_mock.assert_called_once_with(config_for_save, config_path)
     assert config_for_save.tui.turn_recaps is True
 
 

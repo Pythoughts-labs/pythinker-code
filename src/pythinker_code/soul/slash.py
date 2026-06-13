@@ -74,6 +74,7 @@ async def recap(soul: PythinkerSoul, args: str) -> None:
         if soul.runtime.config.tui.turn_recaps == enabled:
             wire_send(TextPart(text=f"Turn recaps already {mode}."))
             return
+        previous = soul.runtime.config.tui.turn_recaps
         soul.runtime.config.tui.turn_recaps = enabled
         config_file = soul.runtime.config.source_file
         if config_file is None:
@@ -91,6 +92,9 @@ async def recap(soul: PythinkerSoul, args: str) -> None:
             config_for_save.tui.turn_recaps = enabled
             save_config(config_for_save, config_file)
         except (ConfigError, OSError) as exc:
+            # Persistence failed: revert the in-memory toggle so runtime state
+            # matches the reported failure instead of silently diverging.
+            soul.runtime.config.tui.turn_recaps = previous
             wire_send(TextPart(text=f"Failed to save recap setting: {exc}"))
             return
         wire_send(TextPart(text=f"Turn recaps {mode}."))

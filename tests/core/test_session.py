@@ -683,8 +683,8 @@ async def test_exception_cleanup_deletes_empty_current_session(
     assert not session_dir.exists()
 
 
+@pytest.mark.usefixtures("isolated_share_dir")
 async def test_exception_cleanup_removes_session_scratch_file(
-    isolated_share_dir: Path,
     work_dir: HostPath,
 ):
     """Exception handler deletes the per-session scratch file like _post_run."""
@@ -702,8 +702,9 @@ async def test_exception_cleanup_removes_session_scratch_file(
     assert not scratch_path.exists()
 
 
+@pytest.mark.usefixtures("isolated_share_dir")
 async def test_exception_cleanup_preserves_nonempty_current_session(
-    isolated_share_dir: Path, work_dir: HostPath
+    work_dir: HostPath,
 ):
     """Exception handler does not delete a non-empty session from a failed _run()."""
     session = await Session.create(work_dir)
@@ -718,8 +719,8 @@ async def test_exception_cleanup_preserves_nonempty_current_session(
     assert session_dir.exists(), "Non-empty session must survive exception cleanup"
 
 
+@pytest.mark.usefixtures("isolated_share_dir")
 async def test_exception_cleanup_removes_scratch_even_for_nonempty_session(
-    isolated_share_dir: Path,
     work_dir: HostPath,
 ):
     """Scratch cleanup mirrors _post_run: always delete the session scratch file."""
