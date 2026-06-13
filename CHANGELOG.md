@@ -15,7 +15,7 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
-- **Toggle auto-update from the CLI.** `/update auto on|off` turns silent startup auto-updates on or off (and `/update auto` reports the effective state); the same toggle now appears in the interactive `/settings` panel, and `pythinker info` reports the auto-update status. All three show the *effective* state — an external override (`PYTHINKER_CLI_NO_AUTO_UPDATE` or a source checkout) is surfaced as the reason and renders the `/settings` row read-only, so the toggle is never a silent no-op.
+- **Toggle auto-update from the CLI.** Running `/update` now opens a menu — *Check for updates now* (the default, so a bare `/update` + Enter still checks immediately) or *Auto-update on startup* with its current state — so the toggle is discoverable without knowing a subcommand. `/update auto on|off` still sets it directly, and `/update auto` with no value opens an interactive On/Off picker (cursor defaulted to the current setting). The same toggle appears in the interactive `/settings` panel, and `pythinker info` reports the auto-update status. All surfaces show the *effective* state — an external override (`PYTHINKER_CLI_NO_AUTO_UPDATE` or a source checkout) is surfaced as the reason, renders the `/settings` row read-only, and makes `/update auto` report the read-only state rather than popping a no-op picker, so the toggle is never a silent no-op.
 
 ## 0.43.0 (2026-06-13)
 
