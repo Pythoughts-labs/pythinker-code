@@ -68,13 +68,22 @@ from pythinker_code.ui.shell.replay import replay_recent_history
 from pythinker_code.ui.shell.slash import SKILL_COMMAND_PREFIX, shell_mode_registry
 from pythinker_code.ui.shell.slash import registry as shell_slash_registry
 from pythinker_code.ui.shell.update import (
+    MANAGED_CHANNEL_MARKER,
+    UpdateResult,
+    _detect_upgrade_command,  # pyright: ignore[reportPrivateUsage]
+    _mark_auto_update_check_attempt,  # pyright: ignore[reportPrivateUsage]
+    _should_auto_check_for_updates,  # pyright: ignore[reportPrivateUsage]
+    auto_update_enabled,
     consume_whats_new,
+    format_managed_channel_notice,
     pending_update_notice,
     refresh_update_cache_if_due,
     welcome_update_target,
 )
 from pythinker_code.ui.shell.update_orchestrator import (
-    prompt_pre_start_update_job as prompt_pre_start_update,
+    SMOKE_CHECK_FAILED_PREFIX,
+    read_update_status,
+    run_update_job,
 )
 from pythinker_code.ui.shell.visualize import (
     ApprovalPromptDelegate,
@@ -814,19 +823,10 @@ class Shell:
             finally:
                 self._cancel_background_tasks()
 
-        # Blocking pre-start update prompt. Must run before _auto_update so the
-        # same upgrade isn't shown as both a blocking menu and a background
-        # toast; if the user picks "Skip this session" the toast is suppressed
-        # by _skipped_version_this_session. May raise typer.Exit on "Update now"
-        # or "Exit" — that's the documented behavior. prompt_pre_start_update
-        # self-suppresses for source checkouts and non-TTY sessions.
-        await prompt_pre_start_update()
-
-        # Start auto-update background task if not disabled.
-        if get_env_bool("PYTHINKER_CLI_NO_AUTO_UPDATE"):
-            logger.info("Auto-update disabled by PYTHINKER_CLI_NO_AUTO_UPDATE environment variable")
-        else:
-            self._start_background_task(self._auto_update())
+        # Auto-update at startup is silent + non-blocking (default on). The old
+        # blocking pre-start prompt is intentionally gone; the function remains
+        # in update_orchestrator.py for future re-wiring.
+        self._schedule_startup_update_task()
 
         if isinstance(self.soul, PythinkerSoul):
             # Kick off MCP loading before the banner so servers connect in the
@@ -2106,6 +2106,100 @@ class Shell:
             if self._prompt_session is not None:
                 self._prompt_session.invalidate()
 
+    async def _silent_auto_update(self) -> None:
+        """Install a newer release silently in the background at startup."""
+        if not _should_auto_check_for_updates():
+            return
+        _mark_auto_update_check_attempt()
+
+        result = await self._run_silent_update_job()
+        if result is UpdateResult.UPDATED:
+            self._surface_installed_update_notice()
+        elif result is UpdateResult.UPDATE_AVAILABLE:
+            self._surface_managed_channel_notice()
+        # FAILED / UP_TO_DATE / UNSUPPORTED / None → silent (recorded in the job log).
+
+    async def _run_silent_update_job(self) -> UpdateResult | None:
+        try:
+            return await run_update_job(print_output=False, check_only=False, source="startup-auto")
+        except SystemExit:
+            raise
+        except Exception:
+            # Boundary-only recovery: update failure must not abort the shell,
+            # and run_update_job has already persisted status/log details.
+            logger.exception("Silent auto-update failed:")
+            return None
+
+    def _surface_installed_update_notice(self) -> None:
+        if self._installed_update_smoke_check_failed():
+            self._update_toast(
+                "Update installed but verification failed; see update.log.",
+                style="fg:ansiyellow",
+            )
+            return
+        self._update_toast(
+            self._installed_update_restart_notice(),
+            style="fg:ansibrightyellow bold",
+        )
+
+    def _installed_update_smoke_check_failed(self) -> bool:
+        status = read_update_status()
+        message = status.message if status else None
+        return bool(message and message.startswith(SMOKE_CHECK_FAILED_PREFIX))
+
+    def _installed_update_restart_notice(self) -> str:
+        from pythinker_code.constant import VERSION as current_version
+
+        status = read_update_status()
+        new_version = (
+            (status.target_version if status else None)
+            or welcome_update_target()
+            or "the latest version"
+        )
+        return f"Updated {current_version} → {new_version}. Restart Pythinker to apply."
+
+    def _surface_managed_channel_notice(self) -> None:
+        notice = self._managed_channel_notice() or pending_update_notice()
+        if notice:
+            self._update_toast(notice, style="fg:ansibrightyellow bold")
+
+    def _managed_channel_notice(self) -> str | None:
+        from pythinker_code.constant import VERSION as current_version
+
+        # Managed-channel fast-path: skip the welcome lookup for non-managed
+        # installs; format_managed_channel_notice re-validates the marker.
+        if _detect_upgrade_command()[:1] != [MANAGED_CHANNEL_MARKER]:
+            return None
+        latest = welcome_update_target()
+        if latest is None:
+            return None
+        return format_managed_channel_notice(current_version, latest)
+
+    def _update_toast(self, notice: str, *, style: str) -> None:
+        toast(notice, topic="update", duration=30.0, immediate=True, style=style)
+        if self._prompt_session is not None:
+            self._prompt_session.invalidate()
+
+    def _schedule_startup_update_task(self) -> None:
+        """Pick the startup update behavior and schedule it (non-blocking).
+
+        - env kill-switch set → nothing (cache filters already suppress the
+          toast, matching today's hard-disable behavior).
+        - enabled → silent background install.
+        - config-disabled OR source checkout → informational toast only
+          (`_auto_update`); self-suppresses for source checkouts because
+          `pending_update_notice()` returns None in that path.
+        - non-PythinkerSoul → same toast-only path (no runtime config to
+          consult), matching the prior unconditional `_auto_update` behavior.
+        """
+        if get_env_bool("PYTHINKER_CLI_NO_AUTO_UPDATE"):
+            logger.info("Auto-update disabled by PYTHINKER_CLI_NO_AUTO_UPDATE environment variable")
+            return
+        if isinstance(self.soul, PythinkerSoul) and auto_update_enabled(self.soul.runtime.config):
+            self._start_background_task(self._silent_auto_update())
+        else:
+            self._start_background_task(self._auto_update())
+
     def _start_background_task(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
         task = asyncio.create_task(coro)
         self._background_tasks.add(task)
@@ -2116,6 +2210,10 @@ class Shell:
                 t.result()
             except asyncio.CancelledError:
                 pass
+            except SystemExit:
+                # The silent updater's Windows native/pip path raises SystemExit
+                # so the installer can replace the binary; don't crash the shell.
+                logger.info("Background task requested process exit (update installer launched).")
             except Exception:
                 logger.exception("Background task failed:")
 

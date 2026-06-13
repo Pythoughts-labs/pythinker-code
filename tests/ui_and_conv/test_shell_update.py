@@ -3,12 +3,16 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 
 import pytest
 import typer
 from rich.console import Console
 
 from pythinker_code.ui.shell import update
+
+if TYPE_CHECKING:
+    from pythinker_code.config import Config
 
 
 @pytest.mark.asyncio
@@ -1067,13 +1071,13 @@ def test_update_prompt_text_shows_version_and_command(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_run_awaits_pre_start_update_before_auto_update(runtime, tmp_path, monkeypatch):
-    """Regression (efe101c/#63): Shell.run() must await prompt_pre_start_update()
-    — the blocking update menu — before scheduling the _auto_update background
-    toast. The menu was silently unwired while its unit tests stayed green; this
-    pins the wiring so it can't regress again unnoticed.
+async def test_run_schedules_startup_update_task(runtime, tmp_path, monkeypatch):
+    """Regression (efe101c/#63, updated for silent auto-update): Shell.run() must
+    invoke _schedule_startup_update_task() during startup — the silent, non-blocking
+    auto-update dispatch that replaced the old blocking pre-start prompt. Pins the
+    wiring so the startup update path can't be silently unwired again.
     """
-    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import MagicMock
 
     from pythinker_core.tooling.empty import EmptyToolset
 
@@ -1088,26 +1092,18 @@ async def test_run_awaits_pre_start_update_before_auto_update(runtime, tmp_path,
     soul = PythinkerSoul(agent, context=Context(file_backend=tmp_path / "h.jsonl"))
     shell = Shell(soul)
 
-    class _PromptReached(Exception):
+    class _SchedulerReached(Exception):
         pass
 
-    # Patch the name where run() looks it up (imported into the ui.shell module).
-    prompt_mock = AsyncMock(side_effect=_PromptReached)
-    monkeypatch.setattr("pythinker_code.ui.shell.prompt_pre_start_update", prompt_mock)
-    # If auto_update were scheduled before the prompt, this spy would be called.
-    auto_update_mock = MagicMock(name="_auto_update")
-    monkeypatch.setattr(shell, "_auto_update", auto_update_mock)
+    # The sentinel is the real guard: _SchedulerReached is only reachable if run()
+    # actually calls _schedule_startup_update_task during startup, pinning the wiring.
+    scheduler_mock = MagicMock(side_effect=_SchedulerReached)
+    monkeypatch.setattr(shell, "_schedule_startup_update_task", scheduler_mock)
 
-    # The sentinel is the real guard: _PromptReached is only reachable if run()
-    # actually awaits the (patched) prompt, so it pins prompt-before-auto_update.
-    # If the wiring were removed, run() would instead schedule the un-awaited
-    # MagicMock _auto_update and fail at create_task (TypeError) — still a failure,
-    # just a noisier one.
-    with pytest.raises(_PromptReached):
+    with pytest.raises(_SchedulerReached):
         await shell.run()
 
-    prompt_mock.assert_awaited_once()
-    auto_update_mock.assert_not_called()
+    scheduler_mock.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -1574,3 +1570,63 @@ def test_installed_homebrew_version_returns_none_on_failure(monkeypatch):
     monkeypatch.setattr(update.subprocess, "run", lambda *a, **k: FakeCompleted())
 
     assert update._installed_homebrew_version() is None
+
+
+@pytest.mark.parametrize(
+    ("env_kill", "config_value", "source_checkout", "expected"),
+    [
+        (False, True, False, True),  # default → enabled
+        (True, True, False, False),  # env kill-switch wins over config
+        (False, False, False, False),  # config off
+        (True, False, False, False),  # both off
+        (False, True, True, False),  # source checkout always off
+        (True, True, True, False),  # source checkout + env kill
+    ],
+)
+def test_auto_update_enabled_precedence(
+    monkeypatch, env_kill, config_value, source_checkout, expected
+):
+    monkeypatch.setattr(update, "_auto_update_disabled", lambda: env_kill)
+    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: source_checkout)
+    config = cast("Config", SimpleNamespace(auto_update=config_value))
+    assert update.auto_update_enabled(config) is expected
+
+
+def test_format_managed_channel_notice_managed():
+    notice = update.format_managed_channel_notice(
+        "0.42.0",
+        "0.43.0",
+        upgrade_command=[update.MANAGED_CHANNEL_MARKER, "Nix"],
+    )
+    assert notice is not None
+    assert "Nix" in notice
+    assert "0.42.0 → 0.43.0" in notice
+    # Plain text — no rich markup; the toast applies style separately.
+    assert "[" not in notice
+
+
+def test_format_managed_channel_notice_non_managed():
+    assert update.format_managed_channel_notice("0.42.0", "0.43.0", upgrade_command=["pip"]) is None
+
+
+@pytest.mark.asyncio
+async def test_do_update_result_is_print_output_invariant(monkeypatch, tmp_path):
+    # Managed channel returns UPDATE_AVAILABLE regardless of print_output.
+    monkeypatch.setattr(
+        update,
+        "_detect_upgrade_command",
+        lambda: [update.MANAGED_CHANNEL_MARKER, "Nix"],
+    )
+    monkeypatch.setattr(update, "LATEST_VERSION_FILE", tmp_path / "latest.txt")
+
+    async def fake_latest(session):
+        return "999.0.0"  # force "newer than current"
+
+    monkeypatch.setattr(update, "_get_latest_version", fake_latest)
+    monkeypatch.setattr(update, "_clear_latest_version_cache", lambda: None)
+    # Prevent real network I/O: wrap the session context with a no-op stub.
+    monkeypatch.setattr(update, "new_client_session", lambda timeout: _FakeSessionContext(object()))
+
+    loud = await update.do_update(print_output=True, check_only=False)
+    quiet = await update.do_update(print_output=False, check_only=False)
+    assert loud is quiet is update.UpdateResult.UPDATE_AVAILABLE

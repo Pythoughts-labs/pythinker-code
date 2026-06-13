@@ -15,7 +15,10 @@ from collections.abc import Awaitable, Callable, Mapping
 from enum import Enum, auto
 from pathlib import Path
 from shutil import which
-from typing import cast
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from pythinker_code.config import Config
 
 import aiohttp
 import typer
@@ -241,6 +244,24 @@ def _auto_update_disabled() -> bool:
     return get_env_bool("PYTHINKER_CLI_NO_AUTO_UPDATE")
 
 
+def format_managed_channel_notice(
+    current: str,
+    latest: str,
+    *,
+    upgrade_command: list[str] | None = None,
+) -> str | None:
+    """One-line channel-native upgrade hint for managed installs, or None."""
+    command = upgrade_command if upgrade_command is not None else _detect_upgrade_command()
+    if command[:1] != [MANAGED_CHANNEL_MARKER] or len(command) < 2:
+        return None
+    channel = command[1]
+    return (
+        f"Pythinker is managed by your {channel} channel. "
+        f"Update {current} → {latest} via {channel} "
+        "(rebuild/repull the image or run the channel's upgrade command)."
+    )
+
+
 def _is_running_from_source_checkout() -> bool:
     """Return true when invoked from this repository via ``uv run``/editable source.
 
@@ -265,6 +286,27 @@ def _is_running_from_source_checkout() -> bool:
                 return False
             return 'name = "pythinker-code"' in text or "name = 'pythinker-code'" in text
     return False
+
+
+def auto_update_enabled(config: Config) -> bool:
+    """Whether startup may silently install a newer release.
+
+    Precedence (highest first):
+    1. ``PYTHINKER_CLI_NO_AUTO_UPDATE`` (the hard kill-switch) → disabled.
+    2. ``config.auto_update is False`` → disabled.
+    3. Source checkout → disabled.
+    4. Otherwise → enabled.
+
+    Managed channels (Docker/Nix/Scoop/WinGet) are *not* special-cased here:
+    they may be "enabled" but ``_do_update`` returns ``UPDATE_AVAILABLE`` and
+    emits a channel hint instead of swapping the binary, so they never get a
+    silent install regardless of this result.
+    """
+    if _auto_update_disabled():
+        return False
+    if config.auto_update is False:
+        return False
+    return not _is_running_from_source_checkout()
 
 
 def _should_auto_check_for_updates(now: float | None = None) -> bool:
@@ -1306,16 +1348,17 @@ async def _do_update(
 
         upgrade_command = _detect_upgrade_command()
         if upgrade_command[:1] == [MANAGED_CHANNEL_MARKER]:
-            channel = upgrade_command[1]
             try:
                 LATEST_VERSION_FILE.write_text(latest_version, encoding="utf-8")
             except OSError:
                 logger.exception("Failed to cache latest version:")
-            _print(
-                f"[{_t.warning}]Pythinker is managed by your {channel} channel. "
-                f"Update {current_version} → {latest_version} via {channel} "
-                "(rebuild/repull the image or run the channel's upgrade command).[/]"
+            notice = format_managed_channel_notice(
+                current_version,
+                latest_version,
+                upgrade_command=upgrade_command,
             )
+            if notice:
+                _print(f"[{_t.warning}]{notice}[/]")
             return UpdateResult.UPDATE_AVAILABLE
         unavailable_reason = await _update_candidate_unavailable_reason(
             session, latest_version, upgrade_command

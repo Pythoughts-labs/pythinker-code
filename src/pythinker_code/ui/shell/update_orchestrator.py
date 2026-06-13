@@ -32,6 +32,8 @@ _LOCK_STALE_AFTER_SECONDS = 2 * 60 * 60
 _LOCK_MALFORMED_GRACE_SECONDS = 60
 _SMOKE_CHECK_TIMEOUT_SECONDS = 10
 
+SMOKE_CHECK_FAILED_PREFIX = "Updated, but smoke check did not pass: "
+
 
 class UpdateJobState(StrEnum):
     IDLE = "idle"
@@ -381,7 +383,7 @@ async def run_update_job(
                 message = smoke_message
                 _write_last_success(job_id=job_id, message=message)
             else:
-                message = f"Updated, but smoke check did not pass: {smoke_message}"
+                message = f"{SMOKE_CHECK_FAILED_PREFIX}{smoke_message}"
 
         write_update_status(
             _new_status(

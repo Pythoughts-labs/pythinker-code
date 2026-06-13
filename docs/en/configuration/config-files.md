@@ -33,6 +33,7 @@ The configuration file contains the following top-level configuration items:
 | `theme` | `string` | Terminal color theme: `"dark"`, `"light"`, or `"auto"` (detects the terminal background at startup, falling back to dark); defaults to `"dark"` |
 | `show_thinking_stream` | `boolean` | Whether to stream the raw reasoning text in the live area as a 6-line scrolling preview and commit the full reasoning markdown to history when the block ends (defaults to `true`; set to `false` to show only the compact `Thinking ...` indicator and a one-line trace summary) |
 | `prevent_idle_sleep` | `boolean` | Whether to prevent the computer from idle-sleeping while an agent turn is running (defaults to `false`; supported on macOS, Linux, and Windows) |
+| `auto_update` | `boolean` | Automatically install new releases in the background at startup; the current session keeps running and you restart to apply (defaults to `true`) |
 | `merge_all_available_skills` | `boolean` | Whether to merge skills from all brand directories (defaults to `true`); see [Skills configuration](../customization/skills.md) |
 | `providers` | `table` | API provider configuration |
 | `models` | `table` | Model configuration |
@@ -56,6 +57,7 @@ default_editor = ""
 theme = "dark"
 show_thinking_stream = true
 prevent_idle_sleep = false
+auto_update = true
 merge_all_available_skills = true
 
 [providers.pythinker-for-coding]

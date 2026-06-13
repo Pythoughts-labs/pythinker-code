@@ -15,6 +15,7 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- Added silent startup auto-updates with `auto_update`/`PYTHINKER_AUTO_UPDATE` opt-outs and a restart-to-apply notice.
 - **designer-skill MCP bridge.** Bundled a `designer-skill` stub skill that routes frontend work to the connected designer-skill MCP tools instead of failing ReadSkill; plugin-style names like `designer-skill:designer-skill` resolve correctly, and ReadSkill falls back to a generic MCP bridge (any user-configured server name) when only the MCP server is connected.
 - **Always-on best practices.** New `best_practices_always` config option folds the full `/best-practices` engineering guidance into the root session's system prompt at startup, so the guardrails apply to every new session without running the command. Default off.
 - **Smarter multi-edit errors.** A `StrReplaceFile` batch that fails schema validation (e.g. edit entries collapsed by a streaming glitch) now returns a precise, actionable error naming the bad entries and steering toward single-edit calls, instead of a wall of validation errors. Valid edits are never partially applied.

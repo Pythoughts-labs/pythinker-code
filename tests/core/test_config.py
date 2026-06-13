@@ -44,6 +44,7 @@ def test_default_config_dump():
             "theme": "dark",
             "show_thinking_stream": True,
             "prevent_idle_sleep": False,
+            "auto_update": True,
             "models": {},
             "providers": {},
             "loop_control": {
@@ -777,3 +778,25 @@ def test_statusline_v2_field_validation():
         StatusLineConfig(command_timeout_ms=60_001)
     with pytest.raises(ValidationError):
         StatusLineConfig(command_timeout_ms=0)
+
+
+def test_apply_env_vars_auto_update(monkeypatch):
+    monkeypatch.setenv("PYTHINKER_AUTO_UPDATE", "false")
+    merged: dict = {}
+    prov: dict = {}
+    _apply_env_vars(merged, prov)
+    assert merged["auto_update"] == "false"
+    assert prov["auto_update"] == "env PYTHINKER_AUTO_UPDATE"
+
+
+def test_auto_update_defaults_true():
+    from pythinker_code.config import Config
+
+    assert Config().auto_update is True
+
+
+def test_auto_update_round_trips_false():
+    from pythinker_code.config import Config
+
+    cfg = Config.model_validate({"auto_update": False})
+    assert cfg.auto_update is False
