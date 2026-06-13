@@ -2084,10 +2084,14 @@ async def show_memory(app: Shell, args: str):
 
 @registry.command(name="update", aliases=["upgrade"])
 async def update_command(app: Shell, args: str):
-    """Check for and optionally install the latest Pythinker version."""
-    _ = args, app
+    """Check for updates, or `auto [on|off]` to toggle silent startup auto-updates."""
     from pythinker_code.ui.shell.update import UpdateResult, run_update_prompt
     from pythinker_code.ui.shell.update_orchestrator import run_update_job
+
+    parts = args.strip().split()
+    if parts and parts[0].lower() in {"auto", "auto-update", "autoupdate"}:
+        await _auto_update_toggle(app, parts[1:])
+        return
 
     async def _runner(*, print_output: bool, check_only: bool) -> UpdateResult:
         return await run_update_job(
@@ -2097,6 +2101,66 @@ async def update_command(app: Shell, args: str):
     result = await run_update_prompt(update_runner=_runner)
     if result is UpdateResult.UPDATED:
         console.print("Updated — restart Pythinker to use the new version.")
+
+
+async def _auto_update_toggle(app: Shell, args: list[str]) -> None:
+    """Show or set the silent startup auto-update preference (`/update auto [on|off]`)."""
+    from pythinker_code.telemetry import track
+    from pythinker_code.ui.theme import get_tui_tokens as _get_tok
+    from pythinker_code.update_policy import auto_update_enabled, auto_update_override_reason
+
+    _t = _get_tok()
+    soul = ensure_pythinker_soul(app)
+    if soul is None:
+        return
+    config = soul.runtime.config
+    override = auto_update_override_reason()
+
+    def _print_override() -> None:
+        if override is not None:
+            console.print(f"[{_t.muted}]Note: {override}; this overrides the setting.[/]")
+
+    # No value → report effective state.
+    if not args:
+        effective = "on" if auto_update_enabled(config) else "off"
+        stored = "on" if config.auto_update else "off"
+        console.print(f"[{_t.info}]Auto-update: {effective}[/] (config auto_update={stored})")
+        _print_override()
+        return
+
+    value = args[0].lower()
+    if len(args) > 1 or value not in {"on", "off"}:
+        console.print(f"[{_t.warning}]Usage: /update auto [on|off][/]")
+        return
+    enabled = value == "on"
+
+    if config.auto_update == enabled:
+        console.print(f"[{_t.warning}]Auto-update already {value}.[/]")
+        _print_override()
+        return
+
+    config_file = config.source_file
+    if config_file is None:
+        console.print(
+            f"[{_t.warning}]Toggling auto-update requires a config file; "
+            f"restart without --config (or use --config-file) to persist settings.[/]"
+        )
+        return
+    try:
+        config_for_save = load_config(config_file)
+        config_for_save.auto_update = enabled
+        save_config(config_for_save, config_file)
+    except (ConfigError, OSError) as exc:
+        console.print(f"[{_t.error}]Failed to save config: {_rich_escape(exc)}[/]")
+        return
+    # auto_update is only consulted at startup, so nothing live depends on it:
+    # mirror the saved value into the running config instead of forcing a reload
+    # (a reload would re-trigger the startup auto-update task we just toggled).
+    config.auto_update = enabled
+
+    track("settings_update", changed="auto_update", count=1)
+    console.print(f"[{_t.success}]Auto-update {value}. Takes effect at next startup.[/]")
+    _print_override()
 
 
 @registry.command

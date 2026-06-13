@@ -48,6 +48,9 @@ def _float_values(current: float, presets: list[float]) -> list[str]:
 
 def _build_settings_config(config: Config) -> SettingsListConfig:
     """Build the settings-list config from a Pythinker ``Config`` object."""
+    from pythinker_code.update_policy import auto_update_override_reason
+
+    _auto_update_override = auto_update_override_reason()
     model_values = [_NONE_MODEL_VALUE, *sorted(config.models)]
     current_model = config.default_model or _NONE_MODEL_VALUE
     current_model_cfg = config.models.get(config.default_model) if config.default_model else None
@@ -159,6 +162,21 @@ def _build_settings_config(config: Config) -> SettingsListConfig:
             description="Enable anonymous telemetry to help improve pythinker-code.",
             current_value=_bool(config.telemetry),
             values=_BOOL_VALUES,
+        ),
+        SettingItem(
+            id="auto_update",
+            label="Auto-update",
+            description=(
+                "Silently install new releases in the background at startup "
+                "(applied on next restart)."
+                if _auto_update_override is None
+                else f"Auto-update is {_auto_update_override}; that override outranks this setting."
+            ),
+            # Show the *effective* state, and make the row read-only when an
+            # override (env kill-switch / source checkout) forces it off, so the
+            # panel never offers a no-op toggle.
+            current_value=(_bool(config.auto_update) if _auto_update_override is None else "false"),
+            values=_BOOL_VALUES if _auto_update_override is None else None,
         ),
         SettingItem(
             id="merge_all_available_skills",
@@ -342,6 +360,13 @@ def apply_settings_changes(config: Config, changes: dict[str, str]) -> list[str]
                 new = value == "true"
                 if config.telemetry != new:
                     config.telemetry = new
+                    mark(setting_id)
+            case "auto_update":
+                # Only reached for the live (non-override) row; a read-only row
+                # never submits a change.
+                new = value == "true"
+                if config.auto_update != new:
+                    config.auto_update = new
                     mark(setting_id)
             case "merge_all_available_skills":
                 new = value == "true"

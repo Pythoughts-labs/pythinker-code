@@ -197,3 +197,49 @@ def test_settings_list_overflow_keeps_selected_row_within_window():
         content_rows = (end - start) + (1 if has_scroll_row else 0)
         assert start <= target < end, f"selected {target} fell outside window {(start, end)}"
         assert content_rows <= budget, f"content {content_rows} exceeds budget {budget}"
+
+
+def _item(settings: SettingsListConfig, item_id: str) -> SettingItem | None:
+    return next((item for item in settings.items if item.id == item_id), None)
+
+
+def test_settings_exposes_auto_update_toggle_when_live(monkeypatch):
+    from pythinker_code import update_policy
+
+    monkeypatch.setattr(update_policy, "auto_update_override_reason", lambda: None)
+    config = Config()
+    config.auto_update = True
+
+    item = _item(_build_settings_config(config), "auto_update")
+
+    assert item is not None
+    assert item.values == ("true", "false")  # togglable
+    assert item.current_value == "true"
+
+
+def test_settings_auto_update_readonly_under_override(monkeypatch):
+    from pythinker_code import update_policy
+
+    monkeypatch.setattr(
+        update_policy,
+        "auto_update_override_reason",
+        lambda: "disabled by PYTHINKER_CLI_NO_AUTO_UPDATE",
+    )
+    config = Config()
+    config.auto_update = True  # stored true, but override forces effective off
+
+    item = _item(_build_settings_config(config), "auto_update")
+
+    assert item is not None
+    assert item.values is None  # read-only: no no-op toggle
+    assert item.current_value == "false"  # shows the effective state
+    assert "PYTHINKER_CLI_NO_AUTO_UPDATE" in item.description
+
+
+def test_apply_settings_changes_sets_auto_update():
+    config = Config()  # auto_update defaults to True
+
+    changed = apply_settings_changes(config, {"auto_update": "false"})
+
+    assert changed == ["auto_update"]
+    assert config.auto_update is False
