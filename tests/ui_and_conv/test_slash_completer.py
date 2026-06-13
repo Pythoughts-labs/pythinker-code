@@ -248,7 +248,9 @@ def test_completion_display_uses_canonical_command_name():
     assert completions[0].display_meta_text == "help command"
 
 
-def test_annotated_completion_meta_includes_kind_and_aliases():
+def test_annotated_command_meta_drops_generic_tag_but_keeps_aliases():
+    """Plain commands no longer carry a redundant scope tag in the menu; the
+    description and aliases remain so the row stays informative."""
     completer = SlashCommandCompleter(
         [_make_command("help", aliases=["h", "?"])],
         annotate_meta=True,
@@ -258,7 +260,9 @@ def test_annotated_completion_meta_includes_kind_and_aliases():
     completions = _completions(completer, "/h")
 
     assert len(completions) == 1
-    assert completions[0].display_meta_text == "[shell]  help command  aliases: /h, /?"
+    assert completions[0].display_meta_text == "help command  aliases: /h, /?"
+    assert "[shell]" not in completions[0].display_meta_text
+    assert "[command]" not in completions[0].display_meta_text
 
 
 def test_annotated_skill_completion_uses_skill_kind():
@@ -394,13 +398,88 @@ def test_slash_menu_preselects_first_item_when_index_unset(monkeypatch):
         "".join(fragment[1] for fragment in content.get_line(i)) for i in range(content.line_count)
     ]
 
-    assert content.line_count == len(completions)
-    assert content.cursor_position.y == 0
-    # First row is highlighted, second row is not.
-    assert "❯" in rendered_lines[0]
-    assert "❯" not in rendered_lines[1]
-    assert "Ctrl-O" in rendered_lines[0]
-    assert rendered_lines[0].count("/editor") == 1
+    # A blank gap line precedes the list; a blank separator and footer legend
+    # follow it, so the menu reads as its own region.
+    assert content.line_count == len(completions) + 3
+    assert rendered_lines[0].strip() == ""
+    assert content.cursor_position.y == 1
+    # First item row is highlighted, second is not.
+    assert "❯" in rendered_lines[1]
+    assert "❯" not in rendered_lines[2]
+    assert "Ctrl-O" in rendered_lines[1]
+    assert rendered_lines[1].count("/editor") == 1
+    # Blank separator then the footer legend on the last two lines.
+    assert rendered_lines[-2].strip() == ""
+    assert rendered_lines[-1].strip() == "Enter to select · ↑/↓ to navigate · Esc to cancel"
+
+
+def _slash_completions(count: int) -> list[Completion]:
+    return [
+        Completion(
+            text=f"/cmd{i}",
+            start_position=0,
+            display=f"/cmd{i}",
+            display_meta=f"command number {i}",
+        )
+        for i in range(count)
+    ]
+
+
+def test_slash_menu_footer_folds_in_overflow_count_when_list_exceeds_height(monkeypatch):
+    """When more completions exist than fit, the footer leads with the hidden
+    count alongside the navigation legend instead of silently truncating."""
+    completions = _slash_completions(20)
+    complete_state = SimpleNamespace(completions=completions, complete_index=None)
+    app = SimpleNamespace(current_buffer=SimpleNamespace(complete_state=complete_state))
+    monkeypatch.setattr(prompt_mod, "get_app_or_none", lambda: app)
+
+    control = SlashCommandMenuControl(left_padding=lambda: 0)
+    content = control.create_content(width=80, height=5)
+
+    rendered_lines = [
+        "".join(fragment[1] for fragment in content.get_line(i)) for i in range(content.line_count)
+    ]
+
+    # Gap line + visible items + blank separator + footer, within the 5-row budget.
+    assert content.line_count == 5
+    assert rendered_lines[0].strip() == ""
+    assert rendered_lines[-2].strip() == ""
+    footer = rendered_lines[-1].strip()
+    visible_items = content.line_count - 3  # minus gap, separator, footer
+    assert footer.startswith(f"+{20 - visible_items} more · ")
+    assert footer.endswith("Enter to select · ↑/↓ to navigate · Esc to cancel")
+
+
+def test_slash_menu_footer_shows_legend_without_count_when_list_fits(monkeypatch):
+    completions = _slash_completions(2)
+    complete_state = SimpleNamespace(completions=completions, complete_index=None)
+    app = SimpleNamespace(current_buffer=SimpleNamespace(complete_state=complete_state))
+    monkeypatch.setattr(prompt_mod, "get_app_or_none", lambda: app)
+
+    control = SlashCommandMenuControl(left_padding=lambda: 0)
+    content = control.create_content(width=80, height=6)
+
+    rendered_lines = [
+        "".join(fragment[1] for fragment in content.get_line(i)) for i in range(content.line_count)
+    ]
+
+    assert content.line_count == len(completions) + 3  # gap + items + separator + footer
+    assert rendered_lines[-2].strip() == ""
+    assert rendered_lines[-1].strip() == "Enter to select · ↑/↓ to navigate · Esc to cancel"
+    assert not any("more · " in line for line in rendered_lines)
+
+
+def test_annotated_plain_command_meta_has_no_tag():
+    completer = SlashCommandCompleter(
+        [_make_command("help")],
+        annotate_meta=True,
+        command_scope="command",
+    )
+
+    completions = _completions(completer, "/he")
+
+    assert completions[0].display_meta_text == "help command"
+    assert "[command]" not in completions[0].display_meta_text
 
 
 def test_find_prompt_float_container_supports_conditional_container_shape():
