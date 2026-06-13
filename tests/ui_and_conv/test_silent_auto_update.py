@@ -233,10 +233,14 @@ def test_background_task_systemexit_does_not_crash(runtime, tmp_path, monkeypatc
     assert len(registered) == 1, "expected one done-callback to be registered"
     cleanup = registered[0]
 
-    # Build a finished mock task whose .result() raises SystemExit.
+    # capturing_task only needs add_done_callback() to grab the real _cleanup
+    # closure; fake_task is the argument _cleanup actually operates on, so it
+    # needs the .cancelled() / .result() interface that _cleanup calls.
     fake_task: MagicMock = MagicMock(spec=asyncio.Task)
     fake_task.cancelled.return_value = False
     fake_task.result.side_effect = SystemExit(0)
+    # Pre-populate the set so _cleanup's discard(t) has something to remove,
+    # mirroring what _start_background_task does in production.
     shell._background_tasks.add(fake_task)
 
     # Invoke _cleanup with the fake task — must NOT raise.
