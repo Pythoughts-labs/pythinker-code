@@ -49,6 +49,88 @@ def _flatten_event(event: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+# Event names whose telemetry must be recorded at ERROR severity, so SigNoz
+# severity filters and error dashboards can find them. Without this, track()
+# forwards everything at the emit_log() default of INFO, leaving crashes and
+# handled errors indistinguishable from product-analytics events.
+_ERROR_EVENTS = frozenset({"error", "crash", "api_error"})
+
+# Telemetry event name -> OTel severity. Names not listed stay INFO.
+_EVENT_SEVERITY: dict[str, str] = {
+    **dict.fromkeys(_ERROR_EVENTS, "error"),
+    # A session that failed to load but fell back to a fresh state is degraded,
+    # not broken — surface it above INFO without crying ERROR.
+    "session_load_failed": "warning",
+}
+
+
+def _event_severity(event_name: str) -> str:
+    """Map a telemetry event name to an OTel severity (defaults to ``info``)."""
+    return _EVENT_SEVERITY.get(event_name, "info")
+
+
+def _apply_canonical_error_attrs(event_name: str, attrs: dict[str, Any]) -> None:
+    """Add stable, queryable ``error.*`` attributes for error-like events.
+
+    Call sites are inconsistent: crashes and API errors carry ``error_type``
+    while handled errors carry ``exc_class`` — which, after flattening, become
+    ``property.error_type`` / ``property.exc_class``. Dashboards shouldn't have
+    to know which. Mirror the discriminator into canonical top-level keys while
+    leaving the original ``property.*`` values untouched. Mutates ``attrs``.
+    """
+    if event_name not in _ERROR_EVENTS:
+        return
+    error_type = attrs.get("property.error_type") or attrs.get("property.exc_class")
+    if error_type is not None:
+        attrs.setdefault("error.type", error_type)
+    site = attrs.get("property.site")
+    if site is not None:
+        attrs.setdefault("error.site", site)
+    if "property.expected" in attrs:
+        attrs.setdefault("error.expected", attrs["property.expected"])
+    # 'error' (handled) vs 'crash' (uncaught) vs 'api_error' (provider call).
+    attrs.setdefault("error.kind", event_name)
+
+
+def emit_events_to_otel(events: list[dict[str, Any]]) -> None:
+    """Forward telemetry events to the OTel logs pipeline.
+
+    Shared by :meth:`EventSink._emit_to_otel` and the crash-safe queue drain in
+    :func:`pythinker_code.telemetry.flush_sync`, so a startup crash that occurs
+    before any sink is attached still reaches SigNoz. ``otel.emit_log`` is a
+    no-op when the SDK was never initialized, so this is always safe to call.
+    """
+    if not events:
+        return
+    try:
+        from pythinker_code.telemetry import otel as _otel
+    except Exception:
+        return
+
+    for event in events:
+        event_name = str(event.get("event") or "event")
+        ts = event.get("timestamp")
+        ts_ns = int(ts * 1_000_000_000) if isinstance(ts, (int, float)) else None
+        try:
+            attrs = _flatten_event(event)
+        except TypeError as exc:
+            # Schema violation — drop, never retry.
+            logger.debug("Telemetry event dropped (non-primitive attr): {err}", err=exc)
+            continue
+        attrs.pop("event", None)
+        attrs.pop("timestamp", None)
+        _apply_canonical_error_attrs(event_name, attrs)
+        try:
+            _otel.emit_log(
+                name=event_name,
+                attributes=attrs,
+                severity=_event_severity(event_name),
+                timestamp_ns=ts_ns,
+            )
+        except Exception:
+            logger.debug("OTel emit failed; event dropped")
+
+
 class EventSink:
     """Buffers telemetry events and flushes them in batches to OTel logs."""
 
@@ -155,29 +237,7 @@ class EventSink:
         self._emit_to_otel(events)
 
     def _emit_to_otel(self, events: list[dict[str, Any]]) -> None:
-        if not events:
-            return
-        try:
-            from pythinker_code.telemetry import otel as _otel
-
-            for event in events:
-                ts = event.get("timestamp")
-                ts_ns = int(ts * 1_000_000_000) if isinstance(ts, (int, float)) else None
-                try:
-                    attrs = _flatten_event(event)
-                except TypeError as exc:
-                    # Schema violation — drop, never retry.
-                    logger.debug("Telemetry event dropped (non-primitive attr): {err}", err=exc)
-                    continue
-                attrs.pop("event", None)
-                attrs.pop("timestamp", None)
-                _otel.emit_log(
-                    name=str(event.get("event") or "event"),
-                    attributes=attrs,
-                    timestamp_ns=ts_ns,
-                )
-        except Exception:
-            logger.debug("OTel flush failed; events dropped")
+        emit_events_to_otel(events)
 
     def _schedule_async_flush(self) -> None:
         """Schedule an async flush from any thread."""

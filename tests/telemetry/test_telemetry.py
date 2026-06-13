@@ -173,8 +173,16 @@ class TestEventSink:
         """Run flush_sync with otel.emit_log mocked, return captured args."""
         captured: list[dict[str, Any]] = []
 
-        def _capture(*, name: str, attributes: dict[str, Any], timestamp_ns: int | None = None):
-            captured.append({"name": name, "attrs": attributes, "ts_ns": timestamp_ns})
+        def _capture(
+            *,
+            name: str,
+            attributes: dict[str, Any],
+            severity: str = "info",
+            timestamp_ns: int | None = None,
+        ):
+            captured.append(
+                {"name": name, "attrs": attributes, "severity": severity, "ts_ns": timestamp_ns}
+            )
 
         with patch("pythinker_code.telemetry.otel.emit_log", side_effect=_capture):
             sink.flush_sync()
@@ -290,3 +298,124 @@ class TestFlatten:
 
         with pytest.raises(TypeError):
             _flatten_event({"event": "x", "properties": {"items": [1, 2, 3]}})
+
+
+class TestErrorSeverity:
+    """Error-like events are emitted at ERROR/WARN severity with canonical
+    ``error.*`` attributes, so SigNoz dashboards can find and group them."""
+
+    def _captured(self, sink: EventSink) -> list[dict[str, Any]]:
+        captured: list[dict[str, Any]] = []
+
+        def _capture(
+            *,
+            name: str,
+            attributes: dict[str, Any],
+            severity: str = "info",
+            timestamp_ns: int | None = None,
+        ):
+            captured.append({"name": name, "attrs": attributes, "severity": severity})
+
+        with patch("pythinker_code.telemetry.otel.emit_log", side_effect=_capture):
+            sink.flush_sync()
+        return captured
+
+    def test_handled_error_event_is_error_severity_with_canonical_attrs(self):
+        sink = EventSink(version="1.0.0")
+        sink.accept(
+            {
+                "event": "error",
+                "timestamp": 1.0,
+                "properties": {"site": "tool.read", "exc_class": "ValueError", "expected": False},
+            }
+        )
+        emission = self._captured(sink)[0]
+        assert emission["severity"] == "error"
+        attrs = emission["attrs"]
+        # Canonical keys derived from exc_class (handled errors don't set error_type).
+        assert attrs["error.type"] == "ValueError"
+        assert attrs["error.site"] == "tool.read"
+        assert attrs["error.expected"] is False
+        assert attrs["error.kind"] == "error"
+        # Original property.* values are preserved untouched.
+        assert attrs["property.exc_class"] == "ValueError"
+
+    def test_crash_event_canonical_type_from_error_type_key(self):
+        sink = EventSink(version="1.0.0")
+        sink.accept(
+            {
+                "event": "crash",
+                "timestamp": 1.0,
+                "properties": {"error_type": "RuntimeError", "where": "startup"},
+            }
+        )
+        emission = self._captured(sink)[0]
+        assert emission["severity"] == "error"
+        assert emission["attrs"]["error.type"] == "RuntimeError"
+        assert emission["attrs"]["error.kind"] == "crash"
+
+    def test_api_error_event_is_error_severity(self):
+        sink = EventSink(version="1.0.0")
+        sink.accept(
+            {
+                "event": "api_error",
+                "timestamp": 1.0,
+                "properties": {"error_type": "rate_limit", "status_code": 429},
+            }
+        )
+        emission = self._captured(sink)[0]
+        assert emission["severity"] == "error"
+        assert emission["attrs"]["error.type"] == "rate_limit"
+
+    def test_session_load_failed_is_warning(self):
+        sink = EventSink(version="1.0.0")
+        sink.accept(
+            {"event": "session_load_failed", "timestamp": 1.0, "properties": {"reason": "OSError"}}
+        )
+        emission = self._captured(sink)[0]
+        assert emission["severity"] == "warning"
+        # Not in the error set → no canonical error.* attributes.
+        assert "error.type" not in emission["attrs"]
+
+    def test_regular_event_is_info_without_error_attrs(self):
+        sink = EventSink(version="1.0.0")
+        sink.accept({"event": "tool_call", "timestamp": 1.0, "properties": {"tool": "ReadFile"}})
+        emission = self._captured(sink)[0]
+        assert emission["severity"] == "info"
+        assert not any(k.startswith("error.") for k in emission["attrs"])
+
+
+class TestCrashSafeFlush:
+    """flush_sync() drains the pre-sink event queue so a startup crash (before
+    attach_sink) still reaches SigNoz."""
+
+    def test_flush_sync_drains_event_queue_when_no_sink(self):
+        set_context(device_id="dev1", session_id="sess1")
+        track("crash", error_type="RuntimeError", where="startup")
+        assert len(telemetry_mod._event_queue) == 1
+        assert telemetry_mod._sink is None
+
+        captured: list[dict[str, Any]] = []
+
+        def _capture(*, name: str, attributes: dict[str, Any], severity: str = "info", **_):
+            captured.append({"name": name, "severity": severity, "attrs": attributes})
+
+        with patch("pythinker_code.telemetry.otel.emit_log", side_effect=_capture):
+            telemetry_mod.flush_sync()
+
+        assert len(captured) == 1
+        assert captured[0]["name"] == "crash"
+        assert captured[0]["severity"] == "error"
+        assert captured[0]["attrs"]["error.type"] == "RuntimeError"
+        # Queue drained so a second flush is a no-op.
+        assert len(telemetry_mod._event_queue) == 0
+
+    def test_flush_sync_no_sink_empty_queue_is_noop(self):
+        captured: list[dict[str, Any]] = []
+
+        def _capture(**kwargs):
+            captured.append(kwargs)
+
+        with patch("pythinker_code.telemetry.otel.emit_log", side_effect=_capture):
+            telemetry_mod.flush_sync()
+        assert captured == []

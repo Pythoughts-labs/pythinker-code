@@ -202,6 +202,20 @@ def flush_sync() -> None:
     """
     if _sink is not None:
         _sink.flush_sync()
+    elif _event_queue:
+        # No sink was ever attached — e.g. a crash during startup, before
+        # attach_sink() runs. Best-effort direct emit so the crash/error event
+        # still reaches SigNoz (otel.emit_log no-ops if OTel was never inited).
+        with suppress(Exception):
+            from pythinker_code.telemetry.sink import emit_events_to_otel
+
+            for event in _event_queue:
+                if event.get("device_id") is None:
+                    event["device_id"] = _device_id
+                if event.get("session_id") is None:
+                    event["session_id"] = _session_id
+            emit_events_to_otel(list(_event_queue))
+            _event_queue.clear()
     # Flush vendor SDKs last — they take the network hit.
     try:
         from pythinker_code.telemetry import otel as _otel

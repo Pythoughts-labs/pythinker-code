@@ -689,7 +689,13 @@ def _flush_and_capture_attrs(sink: EventSink) -> dict[str, Any]:
     """Run flush_sync with otel.emit_log patched, return the first event's attrs."""
     captured: list[dict[str, Any]] = []
 
-    def _capture(*, name: str, attributes: dict[str, Any], timestamp_ns: int | None = None):
+    def _capture(
+        *,
+        name: str,
+        attributes: dict[str, Any],
+        severity: str = "info",
+        timestamp_ns: int | None = None,
+    ):
         captured.append(attributes)
 
     with patch("pythinker_code.telemetry.otel.emit_log", side_effect=_capture):
