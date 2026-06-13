@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Clock, Coins, FolderGit2, MessagesSquare } from "lucide-react";
 import { type AggregateStats, getAggregateStats } from "@/lib/api";
 import {
@@ -30,27 +30,39 @@ function formatDuration(sec: number): string {
 /*  Daily Usage Chart (SVG line chart)                                 */
 /* ------------------------------------------------------------------ */
 
-const CHART_WIDTH = 600;
-const CHART_HEIGHT = 140;
-const CHART_PAD_X = 36;
-const CHART_PAD_TOP = 14;
-const CHART_PAD_BOTTOM = 26;
+const DU_HEIGHT = 220;
+const DU_PAD_L = 34;
+const DU_PAD_R = 16;
+const DU_PAD_T = 16;
+const DU_PAD_B = 28;
+const DU_GRID_STEPS = 4;
 
 function DailyUsageChart({ daily }: { daily: AggregateStats["daily_usage"] }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(720);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setWidth(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   if (daily.length === 0) return null;
 
   const maxSessions = Math.max(1, ...daily.map((d) => d.sessions));
   const maxTurns = Math.max(1, ...daily.map((d) => d.turns));
 
-  const innerW = CHART_WIDTH - CHART_PAD_X * 2;
-  const innerH = CHART_HEIGHT - CHART_PAD_TOP - CHART_PAD_BOTTOM;
+  const plotW = Math.max(1, width - DU_PAD_L - DU_PAD_R);
+  const plotH = DU_HEIGHT - DU_PAD_T - DU_PAD_B;
 
   const toX = (i: number) =>
-    CHART_PAD_X +
-    (daily.length > 1 ? (i / (daily.length - 1)) * innerW : innerW / 2);
-  const toYSessions = (v: number) =>
-    CHART_PAD_TOP + (1 - v / maxSessions) * innerH;
-  const toYTurns = (v: number) => CHART_PAD_TOP + (1 - v / maxTurns) * innerH;
+    DU_PAD_L + (daily.length > 1 ? (i / (daily.length - 1)) * plotW : plotW / 2);
+  const toYSessions = (v: number) => DU_PAD_T + (1 - v / maxSessions) * plotH;
+  const toYTurns = (v: number) => DU_PAD_T + (1 - v / maxTurns) * plotH;
 
   const sessionsPath = daily
     .map((d, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toYSessions(d.sessions)}`)
@@ -63,18 +75,7 @@ function DailyUsageChart({ daily }: { daily: AggregateStats["daily_usage"] }) {
     ` L ${toX(daily.length - 1)} ${toYSessions(0)}` +
     ` L ${toX(0)} ${toYSessions(0)} Z`;
 
-  const baselineY = CHART_PAD_TOP + innerH;
-
-  // X-axis labels: ~5 evenly spaced dates
-  const labelCount = Math.min(5, daily.length);
-  const labelIndices: number[] = [];
-  if (labelCount <= 1) {
-    if (daily.length > 0) labelIndices.push(0);
-  } else {
-    for (let i = 0; i < labelCount; i++) {
-      labelIndices.push(Math.round((i / (labelCount - 1)) * (daily.length - 1)));
-    }
-  }
+  const labelStep = Math.max(1, Math.ceil(daily.length / 6));
 
   return (
     <Card>
@@ -94,91 +95,93 @@ function DailyUsageChart({ daily }: { daily: AggregateStats["daily_usage"] }) {
           </span>
         </div>
       </CardHeader>
-      <CardContent className="pt-2">
-        <svg
-          viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-          className="w-full"
-          style={{ maxHeight: CHART_HEIGHT }}
-          role="img"
-          aria-label="Daily sessions and turns over the last 30 days"
-        >
-          {/* Baseline */}
-          <line
-            x1={CHART_PAD_X}
-            y1={baselineY}
-            x2={CHART_WIDTH - CHART_PAD_X}
-            y2={baselineY}
-            className="stroke-border"
-            strokeWidth={1}
-          />
-
-          {/* Sessions area + line (accent) */}
-          <path d={sessionsArea} className="fill-primary/[0.08]" />
-          <path
-            d={sessionsPath}
-            className="stroke-primary"
-            strokeWidth={1.5}
-            fill="none"
-            strokeLinejoin="round"
-          />
-
-          {/* Turns line (muted dashed) */}
-          <path
-            d={turnsPath}
-            className="stroke-muted-foreground"
-            strokeWidth={1.5}
-            fill="none"
-            strokeDasharray="4 3"
-            strokeLinejoin="round"
-          />
-
-          {/* Y-axis bounds */}
-          <text
-            x={CHART_PAD_X - 6}
-            y={CHART_PAD_TOP + 4}
-            className="fill-muted-foreground"
-            fontSize={8}
-            textAnchor="end"
+      <CardContent className="pt-3">
+        <div ref={ref} className="w-full" style={{ height: DU_HEIGHT }}>
+          <svg
+            width={width}
+            height={DU_HEIGHT}
+            role="img"
+            aria-label="Daily sessions and turns over the last 30 days"
           >
-            {maxSessions}
-          </text>
-          <text
-            x={CHART_PAD_X - 6}
-            y={baselineY + 3}
-            className="fill-muted-foreground"
-            fontSize={8}
-            textAnchor="end"
-          >
-            0
-          </text>
+            {/* Horizontal gridlines + sessions Y labels */}
+            {Array.from({ length: DU_GRID_STEPS + 1 }, (_, i) => {
+              const v = (maxSessions / DU_GRID_STEPS) * i;
+              const y = toYSessions(v);
+              return (
+                <g key={i}>
+                  <line
+                    x1={DU_PAD_L}
+                    y1={y}
+                    x2={width - DU_PAD_R}
+                    y2={y}
+                    className="stroke-border"
+                    strokeWidth={1}
+                    strokeDasharray={i === 0 ? undefined : "4 4"}
+                  />
+                  <text
+                    x={DU_PAD_L - 6}
+                    y={y + 3}
+                    className="fill-muted-foreground"
+                    fontSize={9}
+                    textAnchor="end"
+                  >
+                    {Math.round(v)}
+                  </text>
+                </g>
+              );
+            })}
 
-          {/* X-axis date labels */}
-          {labelIndices.map((idx) => (
-            <text
-              key={idx}
-              x={toX(idx)}
-              y={CHART_HEIGHT - 6}
-              className="fill-muted-foreground"
-              fontSize={8}
-              textAnchor="middle"
-            >
-              {daily[idx].date.slice(5)}
-            </text>
-          ))}
+            {/* Sessions area + line (accent) */}
+            <path d={sessionsArea} className="fill-primary/[0.08]" />
+            <path
+              d={sessionsPath}
+              className="stroke-primary"
+              strokeWidth={2}
+              fill="none"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
 
-          {/* Session dots */}
-          {daily.map((d, i) =>
-            d.sessions > 0 ? (
-              <circle
-                key={i}
-                cx={toX(i)}
-                cy={toYSessions(d.sessions)}
-                r={1.8}
-                className="fill-primary"
-              />
-            ) : null,
-          )}
-        </svg>
+            {/* Turns line (muted dashed) */}
+            <path
+              d={turnsPath}
+              className="stroke-muted-foreground"
+              strokeWidth={1.5}
+              fill="none"
+              strokeDasharray="4 3"
+              strokeLinejoin="round"
+            />
+
+            {/* X-axis date labels */}
+            {daily.map((d, i) =>
+              i % labelStep === 0 || i === daily.length - 1 ? (
+                <text
+                  key={i}
+                  x={toX(i)}
+                  y={DU_HEIGHT - 8}
+                  className="fill-muted-foreground"
+                  fontSize={9}
+                  textAnchor="middle"
+                >
+                  {d.date.slice(5)}
+                </text>
+              ) : null,
+            )}
+
+            {/* Session dots */}
+            {daily.map((d, i) =>
+              d.sessions > 0 ? (
+                <circle
+                  key={i}
+                  cx={toX(i)}
+                  cy={toYSessions(d.sessions)}
+                  r={2}
+                  className="fill-primary"
+                />
+              ) : null,
+            )}
+          </svg>
+        </div>
       </CardContent>
     </Card>
   );
