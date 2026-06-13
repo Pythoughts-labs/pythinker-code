@@ -139,7 +139,8 @@ export OPENAI_ADMIN_KEY="sk-admin-xxx"
 | Environment Variable | Description |
 | --- | --- |
 | `PYTHINKER_SHARE_DIR` | Customize the share directory path (default: `~/.pythinker`) |
-| `PYTHINKER_CLI_NO_AUTO_UPDATE` | Disable proactive update checks and startup update notices |
+| `PYTHINKER_CLI_NO_AUTO_UPDATE` | Hard kill-switch: disable silent auto-install, update checks, and startup update notices |
+| `PYTHINKER_AUTO_UPDATE` | Toggle silent startup auto-update (`auto_update` config field); the hard kill-switch `PYTHINKER_CLI_NO_AUTO_UPDATE` overrides it |
 | `PYTHINKER_CLI_PASTE_CHAR_THRESHOLD` | Character threshold for folding pasted text (default: `200`) |
 | `PYTHINKER_CLI_PASTE_LINE_THRESHOLD` | Line threshold for folding pasted text (default: `5`) |
 
@@ -168,6 +169,32 @@ export PYTHINKER_CLI_NO_AUTO_UPDATE="1"
 ::: tip
 If you installed Pythinker Code via Nix or other package managers, this environment variable is typically set automatically since updates are handled by the package manager.
 :::
+
+### `PYTHINKER_AUTO_UPDATE`
+
+Set to `0`/`false`/`no` to disable silent startup auto-updates, or `1`/`true`/`yes`
+to enable them (default). This flips the `auto_update` config field.
+
+```sh
+export PYTHINKER_AUTO_UPDATE="false"
+```
+
+::: warning Hard kill-switch wins
+`PYTHINKER_CLI_NO_AUTO_UPDATE` takes precedence: when it is set, `PYTHINKER_AUTO_UPDATE=1`
+cannot re-enable updates, and Pythinker shows no update activity at all.
+:::
+
+#### Per-channel behavior
+
+When enabled and a newer installable release exists, Pythinker installs it in a
+background task and shows a one-line `Updated X → Y. Restart Pythinker to apply.`
+notice — the running session continues on the old version until you restart.
+
+- **Windows** (native installer / pip): the process exits so the installer can
+  replace the binary.
+- **Managed channels** (Docker/Nix/Scoop/WinGet): no binary swap — Pythinker
+  shows a channel-native upgrade hint instead.
+- **Source checkouts**: never auto-update.
 
 ### `PYTHINKER_CLI_PASTE_CHAR_THRESHOLD`
 
