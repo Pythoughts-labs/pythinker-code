@@ -204,9 +204,9 @@ def _item(settings: SettingsListConfig, item_id: str) -> SettingItem | None:
 
 
 def test_settings_exposes_auto_update_toggle_when_live(monkeypatch):
-    import pythinker_code.ui.shell.update as update_module
+    from pythinker_code import update_policy
 
-    monkeypatch.setattr(update_module, "auto_update_override_reason", lambda: None)
+    monkeypatch.setattr(update_policy, "auto_update_override_reason", lambda: None)
     config = Config()
     config.auto_update = True
 
@@ -218,10 +218,10 @@ def test_settings_exposes_auto_update_toggle_when_live(monkeypatch):
 
 
 def test_settings_auto_update_readonly_under_override(monkeypatch):
-    import pythinker_code.ui.shell.update as update_module
+    from pythinker_code import update_policy
 
     monkeypatch.setattr(
-        update_module,
+        update_policy,
         "auto_update_override_reason",
         lambda: "disabled by PYTHINKER_CLI_NO_AUTO_UPDATE",
     )

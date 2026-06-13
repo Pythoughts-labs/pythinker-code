@@ -11,13 +11,13 @@ from unittest.mock import Mock
 import pytest
 from pythinker_core.tooling.empty import EmptyToolset
 
-from pythinker_code.config import get_default_config
+from pythinker_code import update_policy
+from pythinker_code.config import get_default_config, load_config, save_config
 from pythinker_code.soul.agent import Agent, Runtime
 from pythinker_code.soul.context import Context
 from pythinker_code.soul.pythinkersoul import PythinkerSoul
 from pythinker_code.ui.shell import Shell
 from pythinker_code.ui.shell import slash as shell_slash
-from pythinker_code.ui.shell import update as update_module
 
 
 def _make_shell_app(runtime: Runtime, tmp_path: Path) -> SimpleNamespace:
@@ -39,32 +39,32 @@ async def _run_update(app: SimpleNamespace, args: str) -> None:
 def _no_override(monkeypatch: pytest.MonkeyPatch) -> None:
     # The suite runs from a source checkout, where the override would otherwise
     # be active; neutralize it so the toggle path is the live (non-override) one.
-    monkeypatch.setattr(update_module, "auto_update_override_reason", lambda: None)
+    monkeypatch.setattr(update_policy, "auto_update_override_reason", lambda: None)
+
+
+def _seed_config_file(path: Path, *, auto_update: bool) -> None:
+    config = get_default_config()
+    config.auto_update = auto_update
+    save_config(config, path)
 
 
 @pytest.mark.asyncio
 async def test_update_auto_on_persists_and_mirrors_live(
     runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.delenv("PYTHINKER_AUTO_UPDATE", raising=False)
     config_path = (tmp_path / "config.toml").resolve()
+    _seed_config_file(config_path, auto_update=False)
     runtime.config.source_file = config_path
     runtime.config.auto_update = False
     app = _make_shell_app(runtime, tmp_path)
-
-    config_for_save = get_default_config()
-    config_for_save.auto_update = False
-    load_mock = Mock(return_value=config_for_save)
-    save_mock = Mock()
-    monkeypatch.setattr(shell_slash, "load_config", load_mock)
-    monkeypatch.setattr(shell_slash, "save_config", save_mock)
     monkeypatch.setattr(shell_slash.console, "print", Mock())
 
     await _run_update(app, "auto on")
 
-    load_mock.assert_called_once_with(config_path)
-    save_mock.assert_called_once_with(config_for_save, config_path)
-    assert config_for_save.auto_update is True
-    # No reload: the running config is mirrored so status reflects immediately.
+    # Behavior-level: the value is actually persisted to disk...
+    assert load_config(config_path).auto_update is True
+    # ...and mirrored into the live config (no reload).
     assert runtime.config.auto_update is True
 
 
@@ -72,22 +72,17 @@ async def test_update_auto_on_persists_and_mirrors_live(
 async def test_update_auto_off_persists(
     runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.delenv("PYTHINKER_AUTO_UPDATE", raising=False)
     config_path = (tmp_path / "config.toml").resolve()
+    _seed_config_file(config_path, auto_update=True)
     runtime.config.source_file = config_path
     runtime.config.auto_update = True
     app = _make_shell_app(runtime, tmp_path)
-
-    config_for_save = get_default_config()
-    config_for_save.auto_update = True
-    save_mock = Mock()
-    monkeypatch.setattr(shell_slash, "load_config", Mock(return_value=config_for_save))
-    monkeypatch.setattr(shell_slash, "save_config", save_mock)
     monkeypatch.setattr(shell_slash.console, "print", Mock())
 
     await _run_update(app, "auto off")
 
-    save_mock.assert_called_once()
-    assert config_for_save.auto_update is False
+    assert load_config(config_path).auto_update is False
     assert runtime.config.auto_update is False
 
 
@@ -150,11 +145,11 @@ async def test_update_auto_status_surfaces_override(
     app = _make_shell_app(runtime, tmp_path)
     print_mock = Mock()
     monkeypatch.setattr(
-        update_module,
+        update_policy,
         "auto_update_override_reason",
         lambda: "disabled by PYTHINKER_CLI_NO_AUTO_UPDATE",
     )
-    monkeypatch.setattr(update_module, "auto_update_enabled", lambda cfg: False)
+    monkeypatch.setattr(update_policy, "auto_update_enabled", lambda cfg: False)
     monkeypatch.setattr(shell_slash.console, "print", print_mock)
 
     await _run_update(app, "auto")

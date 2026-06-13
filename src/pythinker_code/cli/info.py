@@ -39,7 +39,13 @@ def _auto_update_info() -> tuple[bool | None, bool | None, str | None]:
         config_exists = get_config_file(create=False).expanduser().exists()
         config = load_config() if config_exists else Config()
         return auto_update_enabled(config), config.auto_update, override
-    except Exception:
+    except (OSError, ValueError, ImportError) as exc:
+        # Read-only diagnostic: never abort `info`, but log the degraded path
+        # instead of silently masking a real config/policy failure. ConfigError
+        # and pydantic validation errors are ValueError subclasses.
+        from pythinker_code.utils.logging import logger
+
+        logger.debug("Could not resolve auto-update status for `info`: {}", exc)
         return None, None, None
 
 

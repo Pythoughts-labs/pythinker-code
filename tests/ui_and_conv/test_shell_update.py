@@ -1593,7 +1593,7 @@ def test_auto_update_enabled_precedence(
     monkeypatch.setattr(update_policy, "auto_update_disabled", lambda: env_kill)
     monkeypatch.setattr(update_policy, "is_running_from_source_checkout", lambda: source_checkout)
     config = cast("Config", SimpleNamespace(auto_update=config_value))
-    assert update.auto_update_enabled(config) is expected
+    assert update_policy.auto_update_enabled(config) is expected
 
 
 def test_format_managed_channel_notice_managed():

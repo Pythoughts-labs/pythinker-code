@@ -48,7 +48,7 @@ def _float_values(current: float, presets: list[float]) -> list[str]:
 
 def _build_settings_config(config: Config) -> SettingsListConfig:
     """Build the settings-list config from a Pythinker ``Config`` object."""
-    from pythinker_code.ui.shell.update import auto_update_override_reason
+    from pythinker_code.update_policy import auto_update_override_reason
 
     _auto_update_override = auto_update_override_reason()
     model_values = [_NONE_MODEL_VALUE, *sorted(config.models)]

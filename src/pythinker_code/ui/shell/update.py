@@ -33,17 +33,13 @@ from pythinker_code.share import get_share_dir
 from pythinker_code.ui.shell.console import console
 from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
 
-# Pure policy lives in a shell-free module so lightweight callers (e.g.
-# `pythinker info`) can resolve auto-update status without importing this stack.
-# Re-exported here under the historical names so existing call sites/tests work.
+# Pure policy lives in a shell-free module (`update_policy`) so lightweight
+# callers (e.g. `pythinker info`) can resolve auto-update status without
+# importing this stack. These two primitives are used internally below; the
+# public `auto_update_enabled` / `auto_update_override_reason` are imported
+# directly from `update_policy` by their consumers.
 from pythinker_code.update_policy import (
     auto_update_disabled as _auto_update_disabled,
-)
-from pythinker_code.update_policy import (
-    auto_update_enabled as auto_update_enabled,
-)
-from pythinker_code.update_policy import (
-    auto_update_override_reason as auto_update_override_reason,
 )
 from pythinker_code.update_policy import (
     is_running_from_source_checkout as _is_running_from_source_checkout,

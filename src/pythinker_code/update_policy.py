@@ -37,7 +37,7 @@ def is_running_from_source_checkout() -> bool:
         import pythinker_code
 
         package_path = Path(pythinker_code.__file__).resolve()
-    except Exception:
+    except (ImportError, AttributeError, OSError):
         return False
 
     for parent in package_path.parents:

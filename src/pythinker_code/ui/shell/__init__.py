@@ -73,7 +73,6 @@ from pythinker_code.ui.shell.update import (
     _detect_upgrade_command,  # pyright: ignore[reportPrivateUsage]
     _mark_auto_update_check_attempt,  # pyright: ignore[reportPrivateUsage]
     _should_auto_check_for_updates,  # pyright: ignore[reportPrivateUsage]
-    auto_update_enabled,
     consume_whats_new,
     format_managed_channel_notice,
     pending_update_notice,
@@ -92,6 +91,7 @@ from pythinker_code.ui.shell.visualize import (
 from pythinker_code.ui.terminal_capabilities import ascii_glyphs_enabled, motion_disabled
 from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
 from pythinker_code.ui.theme import tui_rich_style
+from pythinker_code.update_policy import auto_update_enabled
 from pythinker_code.utils.aioqueue import QueueShutDown
 from pythinker_code.utils.envvar import get_env_bool
 from pythinker_code.utils.logging import logger

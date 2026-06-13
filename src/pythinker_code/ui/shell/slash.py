@@ -2106,8 +2106,8 @@ async def update_command(app: Shell, args: str):
 async def _auto_update_toggle(app: Shell, args: list[str]) -> None:
     """Show or set the silent startup auto-update preference (`/update auto [on|off]`)."""
     from pythinker_code.telemetry import track
-    from pythinker_code.ui.shell.update import auto_update_enabled, auto_update_override_reason
     from pythinker_code.ui.theme import get_tui_tokens as _get_tok
+    from pythinker_code.update_policy import auto_update_enabled, auto_update_override_reason
 
     _t = _get_tok()
     soul = ensure_pythinker_soul(app)
