@@ -68,13 +68,23 @@ from pythinker_code.ui.shell.replay import replay_recent_history
 from pythinker_code.ui.shell.slash import SKILL_COMMAND_PREFIX, shell_mode_registry
 from pythinker_code.ui.shell.slash import registry as shell_slash_registry
 from pythinker_code.ui.shell.update import (
+    MANAGED_CHANNEL_MARKER,
+    UpdateResult,
+    _detect_upgrade_command,  # pyright: ignore[reportPrivateUsage]
+    _mark_auto_update_check_attempt,  # pyright: ignore[reportPrivateUsage]
+    _should_auto_check_for_updates,  # pyright: ignore[reportPrivateUsage]
     consume_whats_new,
+    format_managed_channel_notice,
     pending_update_notice,
     refresh_update_cache_if_due,
     welcome_update_target,
 )
 from pythinker_code.ui.shell.update_orchestrator import (
     prompt_pre_start_update_job as prompt_pre_start_update,
+)
+from pythinker_code.ui.shell.update_orchestrator import (
+    read_update_status,
+    run_update_job,
 )
 from pythinker_code.ui.shell.visualize import (
     ApprovalPromptDelegate,
@@ -2105,6 +2115,82 @@ class Shell:
             )
             if self._prompt_session is not None:
                 self._prompt_session.invalidate()
+
+    async def _silent_auto_update(self) -> None:
+        """Install a newer release silently in the background at startup."""
+        if not _should_auto_check_for_updates():
+            return
+        _mark_auto_update_check_attempt()
+
+        result = await self._run_silent_update_job()
+        if result is UpdateResult.UPDATED:
+            self._surface_installed_update_notice()
+        elif result is UpdateResult.UPDATE_AVAILABLE:
+            self._surface_managed_channel_notice()
+        # FAILED / UP_TO_DATE / UNSUPPORTED / None → silent (recorded in the job log).
+
+    async def _run_silent_update_job(self) -> UpdateResult | None:
+        try:
+            return await run_update_job(
+                print_output=False, check_only=False, source="startup-auto"
+            )
+        except SystemExit:
+            raise
+        except Exception:
+            # Boundary-only recovery: update failure must not abort the shell,
+            # and run_update_job has already persisted status/log details.
+            logger.exception("Silent auto-update failed:")
+            return None
+
+    def _surface_installed_update_notice(self) -> None:
+        if self._installed_update_smoke_check_failed():
+            self._update_toast(
+                "Update installed but verification failed; see update.log.",
+                style="fg:ansiyellow",
+            )
+            return
+        self._update_toast(
+            self._installed_update_restart_notice(),
+            style="fg:ansibrightyellow bold",
+        )
+
+    def _installed_update_smoke_check_failed(self) -> bool:
+        status = read_update_status()
+        message = status.message if status else None
+        return bool(message and message.startswith("Updated, but smoke check"))
+
+    def _installed_update_restart_notice(self) -> str:
+        from pythinker_code.constant import VERSION as current_version
+
+        status = read_update_status()
+        new_version = (
+            (status.target_version if status else None)
+            or welcome_update_target()
+            or "the latest version"
+        )
+        return f"Updated {current_version} → {new_version}. Restart Pythinker to apply."
+
+    def _surface_managed_channel_notice(self) -> None:
+        notice = self._managed_channel_notice() or pending_update_notice()
+        if notice:
+            self._update_toast(notice, style="fg:ansibrightyellow bold")
+
+    def _managed_channel_notice(self) -> str | None:
+        from pythinker_code.constant import VERSION as current_version
+
+        # Only managed installs get the channel-native hint; otherwise defer to
+        # the generic pending-update notice via the caller's fallback.
+        if _detect_upgrade_command()[:1] != [MANAGED_CHANNEL_MARKER]:
+            return None
+        latest = welcome_update_target()
+        if latest is None:
+            return None
+        return format_managed_channel_notice(current_version, latest)
+
+    def _update_toast(self, notice: str, *, style: str) -> None:
+        toast(notice, topic="update", duration=30.0, immediate=True, style=style)
+        if self._prompt_session is not None:
+            self._prompt_session.invalidate()
 
     def _start_background_task(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
         task = asyncio.create_task(coro)
