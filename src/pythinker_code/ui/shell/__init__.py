@@ -825,7 +825,7 @@ class Shell:
 
         # Auto-update at startup is silent + non-blocking (default on). The old
         # blocking pre-start prompt is intentionally gone; the function remains
-        # in update_orchestrator.py for future re-wiring (see design doc).
+        # in update_orchestrator.py for future re-wiring.
         self._schedule_startup_update_task()
 
         if isinstance(self.soul, PythinkerSoul):
@@ -2188,8 +2188,9 @@ class Shell:
         - env kill-switch set → nothing (cache filters already suppress the
           toast, matching today's hard-disable behavior).
         - enabled → silent background install.
-        - config-disabled → informational toast only.
-        - source checkout → schedule the existing toast-only path, which self-suppresses.
+        - config-disabled OR source checkout → informational toast only
+          (`_auto_update`); self-suppresses for source checkouts because
+          `pending_update_notice()` returns None in that path.
         """
         if get_env_bool("PYTHINKER_CLI_NO_AUTO_UPDATE"):
             logger.info(

@@ -172,7 +172,6 @@ def _scheduling_shell(runtime, tmp_path, monkeypatch):
 
 def test_dispatch_enabled_schedules_silent(runtime, tmp_path, monkeypatch):
     shell, scheduled = _scheduling_shell(runtime, tmp_path, monkeypatch)
-    monkeypatch.setenv("PYTHINKER_CLI_NO_AUTO_UPDATE", "")
     monkeypatch.delenv("PYTHINKER_CLI_NO_AUTO_UPDATE", raising=False)
     monkeypatch.setattr(shell_module, "auto_update_enabled", lambda cfg: True)
 
