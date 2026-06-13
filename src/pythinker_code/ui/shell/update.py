@@ -15,10 +15,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from enum import Enum, auto
 from pathlib import Path
 from shutil import which
-from typing import TYPE_CHECKING, cast
-
-if TYPE_CHECKING:
-    from pythinker_code.config import Config
+from typing import cast
 
 import aiohttp
 import typer
@@ -35,6 +32,22 @@ from pythinker_code.native import (
 from pythinker_code.share import get_share_dir
 from pythinker_code.ui.shell.console import console
 from pythinker_code.ui.theme import get_tui_tokens as _get_tui_tokens
+
+# Pure policy lives in a shell-free module so lightweight callers (e.g.
+# `pythinker info`) can resolve auto-update status without importing this stack.
+# Re-exported here under the historical names so existing call sites/tests work.
+from pythinker_code.update_policy import (
+    auto_update_disabled as _auto_update_disabled,
+)
+from pythinker_code.update_policy import (
+    auto_update_enabled as auto_update_enabled,
+)
+from pythinker_code.update_policy import (
+    auto_update_override_reason as auto_update_override_reason,
+)
+from pythinker_code.update_policy import (
+    is_running_from_source_checkout as _is_running_from_source_checkout,
+)
 from pythinker_code.utils.aiohttp import new_client_session
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.subprocess_env import get_clean_env
@@ -238,12 +251,6 @@ async def _get_latest_version(session: aiohttp.ClientSession) -> str | None:
         return None
 
 
-def _auto_update_disabled() -> bool:
-    from pythinker_code.utils.envvar import get_env_bool
-
-    return get_env_bool("PYTHINKER_CLI_NO_AUTO_UPDATE")
-
-
 def format_managed_channel_notice(
     current: str,
     latest: str,
@@ -260,53 +267,6 @@ def format_managed_channel_notice(
         f"Update {current} → {latest} via {channel} "
         "(rebuild/repull the image or run the channel's upgrade command)."
     )
-
-
-def _is_running_from_source_checkout() -> bool:
-    """Return true when invoked from this repository via ``uv run``/editable source.
-
-    In that mode PyPI can legitimately have a newer released version than the
-    checkout's local ``pyproject.toml`` version. Showing the normal upgrade
-    banner is noisy and suggests replacing the developer checkout.
-    """
-    try:
-        import pythinker_code
-
-        package_path = Path(pythinker_code.__file__).resolve()
-    except Exception:
-        return False
-
-    for parent in package_path.parents:
-        pyproject = parent / "pyproject.toml"
-        git_dir = parent / ".git"
-        if pyproject.exists() and git_dir.exists():
-            try:
-                text = pyproject.read_text(encoding="utf-8")
-            except OSError:
-                return False
-            return 'name = "pythinker-code"' in text or "name = 'pythinker-code'" in text
-    return False
-
-
-def auto_update_enabled(config: Config) -> bool:
-    """Whether startup may silently install a newer release.
-
-    Precedence (highest first):
-    1. ``PYTHINKER_CLI_NO_AUTO_UPDATE`` (the hard kill-switch) → disabled.
-    2. ``config.auto_update is False`` → disabled.
-    3. Source checkout → disabled.
-    4. Otherwise → enabled.
-
-    Managed channels (Docker/Nix/Scoop/WinGet) are *not* special-cased here:
-    they may be "enabled" but ``_do_update`` returns ``UPDATE_AVAILABLE`` and
-    emits a channel hint instead of swapping the binary, so they never get a
-    silent install regardless of this result.
-    """
-    if _auto_update_disabled():
-        return False
-    if config.auto_update is False:
-        return False
-    return not _is_running_from_source_checkout()
 
 
 def _should_auto_check_for_updates(now: float | None = None) -> bool:

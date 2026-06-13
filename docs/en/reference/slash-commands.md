@@ -176,6 +176,13 @@ Check for and optionally install the latest Pythinker Code version.
 
 Alias: `/upgrade`
 
+Use `/update auto on` or `/update auto off` to turn silent startup auto-updates
+on or off (persisted to the `auto_update` config field); `/update auto` with no
+argument reports the effective state. When an external override is active — the
+`PYTHINKER_CLI_NO_AUTO_UPDATE` kill-switch or a source checkout — it is surfaced
+as the reason and outranks the setting. The same toggle is available in
+`/settings`, and `pythinker info` reports the auto-update status.
+
 ### `/reload`
 
 Reload the configuration file without exiting Pythinker Code.

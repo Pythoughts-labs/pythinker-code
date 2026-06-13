@@ -1586,8 +1586,12 @@ def test_installed_homebrew_version_returns_none_on_failure(monkeypatch):
 def test_auto_update_enabled_precedence(
     monkeypatch, env_kill, config_value, source_checkout, expected
 ):
-    monkeypatch.setattr(update, "_auto_update_disabled", lambda: env_kill)
-    monkeypatch.setattr(update, "_is_running_from_source_checkout", lambda: source_checkout)
+    # auto_update_enabled now lives in the shell-free update_policy module and
+    # reads its dependencies there; patch the canonical location.
+    from pythinker_code import update_policy
+
+    monkeypatch.setattr(update_policy, "auto_update_disabled", lambda: env_kill)
+    monkeypatch.setattr(update_policy, "is_running_from_source_checkout", lambda: source_checkout)
     config = cast("Config", SimpleNamespace(auto_update=config_value))
     assert update.auto_update_enabled(config) is expected
 

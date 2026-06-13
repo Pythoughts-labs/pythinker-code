@@ -246,3 +246,27 @@ def test_background_task_systemexit_does_not_crash(runtime, tmp_path, monkeypatc
     # Cleanup removed the task from the set and logged the process-exit message.
     assert fake_task not in shell._background_tasks
     assert any("process exit" in m for m in logged)
+
+
+def test_auto_update_override_reason_env_killswitch(monkeypatch):
+    from pythinker_code import update_policy
+
+    monkeypatch.setattr(update_policy, "auto_update_disabled", lambda: True)
+    monkeypatch.setattr(update_policy, "is_running_from_source_checkout", lambda: False)
+    assert update_policy.auto_update_override_reason() == "disabled by PYTHINKER_CLI_NO_AUTO_UPDATE"
+
+
+def test_auto_update_override_reason_source_checkout(monkeypatch):
+    from pythinker_code import update_policy
+
+    monkeypatch.setattr(update_policy, "auto_update_disabled", lambda: False)
+    monkeypatch.setattr(update_policy, "is_running_from_source_checkout", lambda: True)
+    assert update_policy.auto_update_override_reason() == "disabled for source checkouts"
+
+
+def test_auto_update_override_reason_none_when_config_decides(monkeypatch):
+    from pythinker_code import update_policy
+
+    monkeypatch.setattr(update_policy, "auto_update_disabled", lambda: False)
+    monkeypatch.setattr(update_policy, "is_running_from_source_checkout", lambda: False)
+    assert update_policy.auto_update_override_reason() is None

@@ -1206,9 +1206,13 @@ class Config(BaseModel):
             self.ask_user_question_policy = "ask_except_auto"
 
 
-def get_config_file() -> Path:
-    """Get the configuration file path."""
-    return get_share_dir() / "config.toml"
+def get_config_file(*, create: bool = True) -> Path:
+    """Get the configuration file path.
+
+    Pass ``create=False`` to resolve the path without creating the share
+    directory, for read-only callers that must avoid filesystem side effects.
+    """
+    return get_share_dir(create=create) / "config.toml"
 
 
 def get_default_config() -> Config:
