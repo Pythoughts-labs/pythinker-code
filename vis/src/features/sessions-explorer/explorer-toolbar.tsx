@@ -69,22 +69,27 @@ export function ExplorerToolbar({
         <div className="relative flex-1 max-w-sm">
           <Search
             size={13}
-            className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
           />
           <input
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search sessions..."
             data-session-search
-            className="w-full rounded border bg-background pl-7 pr-7 py-1 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            className="h-8 w-full rounded-md border bg-background pl-8 pr-8 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
-          {search && (
+          {search ? (
             <button
               onClick={() => onSearchChange("")}
+              aria-label="Clear search"
               className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
             >
               <X size={12} />
             </button>
+          ) : (
+            <kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:block">
+              /
+            </kbd>
           )}
         </div>
 
@@ -112,7 +117,8 @@ export function ExplorerToolbar({
         {/* Imported filter toggle */}
         <button
           onClick={() => onFilterModeChange(filterMode === "all" ? "imported" : "all")}
-          className={`flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] transition-colors ${
+          aria-pressed={filterMode === "imported"}
+          className={`flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
             filterMode === "imported"
               ? "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/30"
               : "text-muted-foreground hover:bg-muted"
@@ -126,7 +132,8 @@ export function ExplorerToolbar({
         {/* Group toggle */}
         <button
           onClick={onToggleGrouped}
-          className={`flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] transition-colors ${
+          aria-pressed={grouped}
+          className={`flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
             grouped
               ? "bg-primary/10 text-primary border-primary/30"
               : "text-muted-foreground hover:bg-muted"
@@ -142,7 +149,8 @@ export function ExplorerToolbar({
           onClick={() =>
             onViewModeChange(viewMode === "cards" ? "compact" : "cards")
           }
-          className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted transition-colors"
+          aria-label={viewMode === "cards" ? "Switch to list view" : "Switch to card view"}
+          className="flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] text-muted-foreground hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           title={viewMode === "cards" ? "Switch to list" : "Switch to cards"}
         >
           {viewMode === "cards" ? <List size={12} /> : <LayoutGrid size={12} />}
@@ -154,7 +162,7 @@ export function ExplorerToolbar({
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={importing}
-          className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted transition-colors disabled:opacity-50"
+          className="flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] text-muted-foreground hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           title="Import session from ZIP"
         >
           {importing ? <Loader2 size={12} className="animate-spin" /> : <Import size={12} />}

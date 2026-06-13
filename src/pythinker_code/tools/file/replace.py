@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast, override
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from pythinker_core.tooling import CallableTool2, ToolError, ToolReturnValue
+from pythinker_core.utils.typing import JsonType
 from pythinker_host.path import HostPath
 
 from pythinker_code.file_restore import create_file_restore_point
@@ -105,6 +106,51 @@ class Params(BaseModel):
             return values
 
         return values
+
+
+def _malformed_edit_batch_error(arguments: Any) -> ToolError | None:
+    """Actionable error when a multi-edit batch fails schema validation.
+
+    A streaming or serialization glitch can collapse a list of edits into entries
+    that no longer match the ``{old, new}`` shape (e.g. items degrading to
+    ``{"$text": ...}``). Pydantic then reports a wall of per-arm, per-entry errors
+    that the model struggles to act on. Instead, name the specific bad entries and
+    steer it to resend each edit as its own call — which is the reliable recovery.
+
+    Returns ``None`` for anything that is not a malformed *list* batch, so the
+    caller falls back to the default validation error.
+    """
+    if not isinstance(arguments, dict):
+        return None
+    data = cast(dict[str, Any], arguments)
+    raw = data.get("edit", data.get("edits"))
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(raw, list):
+        return None
+    bad: list[int] = []
+    for index, item in enumerate(cast(list[Any], raw), start=1):
+        # Probe each entry through the public schema (the before-validator handles
+        # alias/shape drift); an entry that fails on its own is genuinely malformed.
+        try:
+            Params.model_validate({"path": "_probe_", "edit": item})
+        except ValidationError:
+            bad.append(index)
+    if not bad:
+        return None
+    positions = ", ".join(str(i) for i in bad)
+    return ToolError(
+        message=(
+            f"Malformed `edit` batch: entries {positions} are not valid "
+            "{{old, new}} objects (likely a serialization glitch). Resend the edits — "
+            "send each edit as its own StrReplaceFile call with explicit `old` and "
+            "`new` strings. Do not retry the same batch unchanged."
+        ),
+        brief="Malformed edit batch",
+    )
 
 
 def _crlf_translated_edit(content: str, edit: Edit) -> Edit | None:
@@ -275,6 +321,16 @@ class StrReplaceFile(CallableTool2[Params]):
             return content.replace(edit.old, edit.new)
         else:
             return content.replace(edit.old, edit.new, 1)
+
+    @override
+    async def call(self, arguments: JsonType) -> ToolReturnValue:
+        from pythinker_core.tooling.error import ToolValidateError
+
+        try:
+            params = self.params.model_validate(arguments)
+        except ValidationError as exc:
+            return _malformed_edit_batch_error(arguments) or ToolValidateError(str(exc))
+        return await self.__call__(params)
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:

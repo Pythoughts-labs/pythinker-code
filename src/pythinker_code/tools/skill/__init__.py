@@ -4,11 +4,13 @@ from typing import override
 from pydantic import BaseModel, Field
 from pythinker_core.tooling import CallableTool2, ToolError, ToolReturnValue
 
-from pythinker_code.skill import (
-    normalize_skill_name,
-    read_skill_text_with_local_specialization,
-)
+from pythinker_code.skill import read_skill_text_with_local_specialization
 from pythinker_code.soul.agent import Runtime
+from pythinker_code.tools.skill._mcp_bridge import (
+    find_mcp_server_for_skill_name,
+    mcp_skill_bridge_content,
+    skill_lookup_keys,
+)
 from pythinker_code.tools.utils import load_desc
 
 NAME = "ReadSkill"
@@ -32,11 +34,42 @@ class ReadSkillTool(CallableTool2[Params]):
         if not skill_name:
             return ToolError(message="Skill name is required.", brief="Missing skill name")
 
-        skill = self._runtime.skills.get(normalize_skill_name(skill_name))
+        lookup_keys = skill_lookup_keys(skill_name)
+        skill = None
+        for key in lookup_keys:
+            skill = self._runtime.skills.get(key)
+            if skill is not None:
+                break
+
+        mcp_match = find_mcp_server_for_skill_name(skill_name, self._runtime.mcp_tools)
+
         if skill is None:
+            if mcp_match is not None:
+                server, tools = mcp_match
+                content = mcp_skill_bridge_content(server, tools)
+                return ToolReturnValue(
+                    is_error=False,
+                    output=f"skill: {server} (MCP bridge)\n\n{content}",
+                    message=f"Resolved {skill_name} to MCP server {server}.",
+                    display=[],
+                )
+
             available = ", ".join(sorted(s.name for s in self._runtime.skills.values())) or "(none)"
+            mcp_hint = ""
+            if mcp_match is None and self._runtime.mcp_tools:
+                servers = sorted(
+                    {
+                        key.split("__", 2)[1]
+                        for key in self._runtime.mcp_tools
+                        if key.startswith("mcp__") and key.count("__") >= 2
+                    }
+                )
+                if servers:
+                    mcp_hint = f" Connected MCP servers: {', '.join(servers)}."
             return ToolError(
-                message=f"Skill not found: {skill_name}. Available skills: {available}",
+                message=(
+                    f"Skill not found: {skill_name}. Available skills: {available}.{mcp_hint}"
+                ),
                 brief="Skill not found",
             )
 

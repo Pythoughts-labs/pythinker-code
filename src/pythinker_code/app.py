@@ -352,6 +352,14 @@ class PythinkerCLI:
         )
         _phase_timings_ms["mcp_ms"] = int((time.monotonic() - _phase_t) * 1000)
 
+        if runtime.config.best_practices_always:
+            from pythinker_code.prompts import apply_always_on_best_practices
+
+            agent = dataclasses.replace(
+                agent,
+                system_prompt=apply_always_on_best_practices(agent.system_prompt, enabled=True),
+            )
+
         if startup_progress is not None:
             startup_progress("Restoring conversation...")
         context = Context(session.context_file)

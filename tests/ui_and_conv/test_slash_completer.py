@@ -81,6 +81,61 @@ def test_exact_alias_match_keeps_completions_visible():
     assert "/help" in texts
 
 
+def test_command_name_prefix_outranks_exact_alias_match():
+    """Typing toward a command name surfaces that command first, even when a
+    different command claims the typed text as an exact alias. ``/report`` lists
+    ``/reports`` above ``/report_error`` (whose alias is ``report``)."""
+    completer = SlashCommandCompleter(
+        [
+            _make_command("report_error", aliases=["report-error", "report"]),
+            _make_command("reports"),
+        ]
+    )
+
+    texts = _completion_texts(completer, "/report")
+
+    assert texts == ["/reports", "/report_error"]
+
+
+def test_alias_only_match_surfaces_matched_alias():
+    """When the typed prefix matches only via an alias, the menu surfaces the
+    matched alias (``/res`` → ``/resume``) so the user sees what they typed
+    toward, even though it maps to a differently-named command (``/sessions``).
+    Name matches still outrank alias-only matches."""
+    completer = SlashCommandCompleter(
+        [
+            _make_command("sessions", aliases=["resume", "session"]),
+            _make_command("restore"),
+        ]
+    )
+
+    assert _completion_texts(completer, "/res") == ["/restore", "/resume"]
+
+
+def test_exact_alias_match_surfaces_matched_alias():
+    """An exact alias match shows the alias the user typed, not the canonical name."""
+    completer = SlashCommandCompleter([_make_command("clear", aliases=["reset"])])
+
+    assert _completion_texts(completer, "/reset") == ["/reset"]
+
+
+def test_shorter_command_name_prefix_ranks_first():
+    """Within the same match tier the closest (shortest) command name wins."""
+    completer = SlashCommandCompleter(
+        [
+            _make_command("settings"),
+            _make_command("set"),
+            _make_command("setup-wizard"),
+        ]
+    )
+
+    assert _completion_texts(completer, "/set") == [
+        "/set",
+        "/settings",
+        "/setup-wizard",
+    ]
+
+
 def test_should_complete_only_for_root_slash_token():
     assert SlashCommandCompleter.should_complete(Document(text="/", cursor_position=1))
     assert SlashCommandCompleter.should_complete(Document(text="  /he", cursor_position=5))
@@ -91,6 +146,15 @@ def test_should_complete_only_for_root_slash_token():
 
 def _suggestion_text(names: frozenset[str], text: str) -> str | None:
     suggest = SlashCommandAutoSuggest(lambda: names)
+    document = Document(text=text, cursor_position=len(text))
+    suggestion = suggest.get_suggestion(Buffer(), document)
+    return suggestion.text if suggestion else None
+
+
+def _suggestion_text_with_exact(
+    names: frozenset[str], exact: dict[str, str], text: str
+) -> str | None:
+    suggest = SlashCommandAutoSuggest(lambda: names, exact_suggestions=lambda: exact)
     document = Document(text=text, cursor_position=len(text))
     suggestion = suggest.get_suggestion(Buffer(), document)
     return suggestion.text if suggestion else None
@@ -125,6 +189,13 @@ def test_auto_suggest_inactive_outside_root_slash_token():
     assert _suggestion_text(names, "path/he") is None  # glued, not a slash token
     assert _suggestion_text(names, "/he next") is None  # slash token isn't last
     assert _suggestion_text(names, "plain text") is None
+
+
+def test_auto_suggest_exact_recap_toggle_hint():
+    names = frozenset({"recap", "help"})
+    assert _suggestion_text_with_exact(names, {"recap": " off"}, "/recap") == " off"
+    assert _suggestion_text_with_exact(names, {"recap": " off"}, "please /recap") == " off"
+    assert _suggestion_text_with_exact(names, {"recap": " off"}, "/recap today") is None
 
 
 def test_auto_suggest_is_case_insensitive_on_typed_prefix():

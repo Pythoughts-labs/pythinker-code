@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pythinker_code.ui.shell.selector import (
     SelectorItem,
+    _format_item_line,  # type: ignore[reportPrivateUsage]
     _SelectorState,  # type: ignore[reportPrivateUsage]
 )
 
@@ -214,6 +215,27 @@ def test_oauth_selector_status_configured():
     )
 
     assert "✓" in _format_status_indicator(OAuthProviderStatus(source="configured"))
+
+
+def test_oauth_selector_configured_checkmark_uses_success_style():
+    from pythinker_code.ui.shell.selectors.oauth import (
+        OAuthProviderEntry,
+        OAuthProviderStatus,
+        _build_oauth_config,
+    )
+
+    config = _build_oauth_config(
+        [OAuthProviderEntry(id="openai", name="OpenAI", auth_type="oauth")],
+        lambda _: OAuthProviderStatus(source="configured"),
+        action="login",
+    )
+    item = config.items[0]
+    assert isinstance(item, SelectorItem)
+
+    rendered = _format_item_line(item, is_selected=False, width=80)
+
+    assert ("class:slash-completion-menu.meta.success", "✓") in rendered
+    assert ("class:slash-completion-menu.meta.warning", " configured") in rendered
 
 
 def test_oauth_selector_status_unconfigured():

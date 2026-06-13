@@ -158,8 +158,54 @@ async def test_add_success_dedup_guard_and_limit(tmp_path, monkeypatch):
     r = await store.add("memory", "   ")
     assert not r.ok
 
+    # Over-budget add: the message must disclose the exact free space (delimiter
+    # included) and list current entries so the model can free room in one step,
+    # instead of blind-shrinking against an invisible boundary.
     r = await store.add("memory", "x" * 60)
-    assert not r.ok and "limit" in r.message.lower()
+    assert not r.ok
+    # used=11 ("uses pytest"), overhead=3 (delimiter), free = 40 - 11 - 3 = 26.
+    assert "26 free" in r.message
+    assert "11/40" in r.message
+    assert "uses pytest" in r.message  # inventory preview present
+
+
+async def test_add_rejection_accounts_for_delimiter_overhead(tmp_path, monkeypatch):
+    """An entry that fits the raw budget but not the delimiter must still be rejected,
+    and the message must state the true free budget (limit - used - delimiter)."""
+    store = _store(tmp_path, monkeypatch)  # limit 40
+    await store.add("memory", "x" * 35)  # used = 35
+    # Raw free = 5, but a new entry also costs the 3-char delimiter, so only 2
+    # content chars actually fit. A 4-char entry (35+3+4=42 > 40) must be rejected.
+    r = await store.add("memory", "abcd")
+    assert not r.ok
+    assert "2 free" in r.message
+    # And the largest entry that DOES fit (35+3+2=40) is accepted.
+    r = await store.add("memory", "ab")
+    assert r.ok
+
+
+async def test_status_reports_capacity_and_inventory(tmp_path, monkeypatch):
+    store = _store(tmp_path, monkeypatch)  # limit 40
+
+    empty = await store.status("memory")
+    assert "0/40" in empty
+    assert "(none)" in empty
+
+    await store.add("memory", "uses pytest")
+    s = await store.status("memory")
+    assert "11/40" in s
+    assert "26 free" in s  # 40 - 11 - 3
+    assert "uses pytest" in s
+
+
+async def test_replace_over_limit_reports_overage(tmp_path, monkeypatch):
+    store = _store(tmp_path, monkeypatch)  # limit 40
+    await store.add("memory", "short")  # used = 5
+
+    r = await store.replace("memory", "short", "y" * 50)
+    assert not r.ok
+    assert "by 10 chars" in r.message  # 50 - 40
+    assert "short" in r.message  # inventory present
 
 
 async def test_replace_matches_substring_and_errors(tmp_path, monkeypatch):
@@ -191,6 +237,36 @@ async def test_remove_deletes_matching_entry(tmp_path, monkeypatch):
 
     r = await store.remove("memory", "nope")
     assert not r.ok and "No entry matched" in r.message
+
+
+async def test_remove_by_index(tmp_path, monkeypatch):
+    """An entry can be deleted by its 0-based index (from `list`) without
+    guessing a substring — the fix for stale/imprecise old_text matches."""
+    store = _store(tmp_path, monkeypatch)
+    await store.add("memory", "uses pytest")
+    await store.add("memory", "uses ruff")
+
+    r = await store.remove("memory", "", index=0)
+    assert r.ok and await store.read_entries("memory") == ["uses ruff"]
+
+
+async def test_replace_by_index(tmp_path, monkeypatch):
+    store = _store(tmp_path, monkeypatch)
+    await store.add("memory", "uses pytest")
+    await store.add("memory", "uses ruff")
+
+    r = await store.replace("memory", "", "uses ruff + biome", index=1)
+    assert r.ok and await store.read_entries("memory") == ["uses pytest", "uses ruff + biome"]
+
+
+async def test_index_out_of_range_errors_with_inventory(tmp_path, monkeypatch):
+    store = _store(tmp_path, monkeypatch)
+    await store.add("memory", "uses pytest")
+
+    r = await store.remove("memory", "", index=5)
+    assert not r.ok
+    assert "index 5" in r.message
+    assert "uses pytest" in r.message  # inventory guides the retry
 
 
 async def test_snapshot_builds_block_with_priority_and_budget(tmp_path, monkeypatch):

@@ -15,6 +15,16 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **designer-skill MCP bridge.** Bundled a `designer-skill` stub skill that routes frontend work to the connected designer-skill MCP tools instead of failing ReadSkill; plugin-style names like `designer-skill:designer-skill` resolve correctly, and ReadSkill falls back to a generic MCP bridge (any user-configured server name) when only the MCP server is connected.
+- **Always-on best practices.** New `best_practices_always` config option folds the full `/best-practices` engineering guidance into the root session's system prompt at startup, so the guardrails apply to every new session without running the command. Default off.
+- **Smarter multi-edit errors.** A `StrReplaceFile` batch that fails schema validation (e.g. edit entries collapsed by a streaming glitch) now returns a precise, actionable error naming the bad entries and steering toward single-edit calls, instead of a wall of validation errors. Valid edits are never partially applied.
+- **Agent guardrails.** The default system prompt now requires absence claims ("no em-dashes", "no leftover debug", "matches the source") to be backed by an actual zero-hit scan, and to re-ask rather than act on a self-authored reading of a non-responsive clarifying answer.
+- **`/recap on|off`.** Toggle turn recaps from the recap command (mirrors `/settings recap(s)`), with a grey inline autosuggest reflecting the current state.
+- **Recap hygiene.** Session recaps strip `<system-reminder>` blocks so injected harness context no longer leaks into one-line recaps.
+- **Login selector polish.** Configured `/login` providers render with distinct success/state styling; the background working indicator uses the braille spinner, and working tips wrap with a hanging indent under the verb.
+- **Scratch cleanup on exit.** Sessions that end via an exception now clean up their scratch files instead of orphaning them.
+- **Readable diff context.** Unchanged context lines in file-edit diff snippets now render in the normal body-text color instead of muted grey, so edited-file previews are easier to read; added/removed lines are unchanged.
+
 ## 0.42.0 (2026-06-12)
 
 - **Adversarial branch review hardening.** A multi-agent review pass confirmed and fixed: committed-but-clean isolation worktrees are now retained (commits ahead of the creation base count as changes — they were previously orphaned on cleanup); foreground shell commands and relative-path file edits now resolve against the agent's work dir, so worktree isolation actually binds them (host exec gained a `cwd` argument); safe mode now also disables the read-only-command prompt elision; locally parallel-safe MCP/tools run in parallel in the same-step gate; worktree add/remove serializes per repo. Behavior notes: same-step tool calls without `supports_parallel` now serialize deterministically (previously fully concurrent), and text-mode error diagnostics moved to stderr — capture `2>&1` or use `--output-format stream-json` if you scraped stdout.

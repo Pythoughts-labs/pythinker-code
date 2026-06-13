@@ -14,6 +14,7 @@ from prompt_toolkit.completion import Completion
 from pythinker_code.llm import ModelCapability
 from pythinker_code.soul import StatusSnapshot
 from pythinker_code.ui.shell import prompt as shell_prompt
+from pythinker_code.ui.shell.glyphs import SPINNER_FRAMES
 from pythinker_code.ui.shell.prompt import (
     _GIT_STATUS_TTL,
     PROMPT_SYMBOL,
@@ -560,17 +561,18 @@ def test_bottom_toolbar_shows_agent_badge_alone_when_no_bash(monkeypatch: Any) -
     assert "◇ agent: 2" in lines[1], f"agent badge missing: {lines[1]!r}"
 
 
-def test_background_working_status_uses_pulsing_circle(monkeypatch: Any) -> None:
+def test_background_working_status_uses_braille_spinner(monkeypatch: Any) -> None:
     prompt_session = _make_toolbar_session()
     prompt_session._background_task_count_provider = lambda: BgTaskCounts(bash=0, agent=1)
 
-    monkeypatch.setattr(shell_prompt.time, "monotonic", lambda: 0.0)
+    monkeypatch.setattr(shell_prompt.time, "monotonic", lambda: 10.0)
     first = "".join(text for _, text, *_ in prompt_session._render_background_working_status(80))
-    monkeypatch.setattr(shell_prompt.time, "monotonic", lambda: 0.9)
+    monkeypatch.setattr(shell_prompt.time, "monotonic", lambda: 10.08)
     second = "".join(text for _, text, *_ in prompt_session._render_background_working_status(80))
 
     assert first != second
-    assert first.startswith("● ")
+    assert first[0] in SPINNER_FRAMES
+    assert second[0] in SPINNER_FRAMES
     assert "background agent" not in first  # footer owns the count
     assert "background agent" not in second  # footer owns the count
 
@@ -1430,6 +1432,41 @@ def test_modal_prompt_keeps_input_buffer_when_text_input_is_allowed() -> None:
 
     assert prompt_session._prompt_buffer_container is not None
     assert prompt_session._should_render_input_buffer() is True
+
+
+def test_recap_slash_exact_suggestion_reflects_recaps_state() -> None:
+    command = SlashCommand(
+        name="recap",
+        description="Recap sessions",
+        func=_dummy_slash_func,
+        aliases=[],
+    )
+    recaps_enabled = True
+    prompt_session = CustomPromptSession(
+        status_provider=lambda: StatusSnapshot(context_usage=0.0),
+        model_capabilities=set(),
+        model_name=None,
+        thinking=False,
+        agent_mode_slash_commands=[command],
+        shell_mode_slash_commands=[],
+        turn_recaps_provider=lambda: recaps_enabled,
+    )
+    document = shell_prompt.Document(text="/recap", cursor_position=len("/recap"))
+
+    suggestion = prompt_session._slash_auto_suggest.get_suggestion(
+        prompt_session._session.default_buffer,
+        document,
+    )
+    assert suggestion is not None
+    assert suggestion.text == " off"
+
+    recaps_enabled = False
+    suggestion = prompt_session._slash_auto_suggest.get_suggestion(
+        prompt_session._session.default_buffer,
+        document,
+    )
+    assert suggestion is not None
+    assert suggestion.text == " on"
 
 
 def test_modal_prompt_suspends_and_restores_existing_draft_when_input_is_hidden() -> None:

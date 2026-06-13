@@ -9,6 +9,7 @@ from pythinker_core.message import Message
 from pythinker_host.path import HostPath
 
 import pythinker_code.prompts as prompts
+from pythinker_code.config import ConfigError, load_config, save_config
 from pythinker_code.soul import wire_send
 from pythinker_code.soul.agent import load_agents_md
 from pythinker_code.soul.context import Context
@@ -64,8 +65,40 @@ async def init(soul: PythinkerSoul, args: str) -> None:
 
 @registry.command
 async def recap(soul: PythinkerSoul, args: str) -> None:
-    """Recap Pythinker sessions. Usage: /recap [today|yesterday|week|YYYY-MM-DD]"""
+    """Recap Pythinker sessions. Usage: /recap [on|off|today|yesterday|week|YYYY-MM-DD]"""
     from pythinker_code.session_recap import build_pythinker_recap
+
+    mode = args.strip().lower()
+    if mode in {"on", "off"}:
+        enabled = mode == "on"
+        if soul.runtime.config.tui.turn_recaps == enabled:
+            wire_send(TextPart(text=f"Turn recaps already {mode}."))
+            return
+        previous = soul.runtime.config.tui.turn_recaps
+        soul.runtime.config.tui.turn_recaps = enabled
+        config_file = soul.runtime.config.source_file
+        if config_file is None:
+            wire_send(
+                TextPart(
+                    text=(
+                        f"Turn recaps {mode} for the current session only "
+                        "(no config file available to persist)."
+                    )
+                )
+            )
+            return
+        try:
+            config_for_save = load_config(config_file)
+            config_for_save.tui.turn_recaps = enabled
+            save_config(config_for_save, config_file)
+        except (ConfigError, OSError) as exc:
+            # Persistence failed: revert the in-memory toggle so runtime state
+            # matches the reported failure instead of silently diverging.
+            soul.runtime.config.tui.turn_recaps = previous
+            wire_send(TextPart(text=f"Failed to save recap setting: {exc}"))
+            return
+        wire_send(TextPart(text=f"Turn recaps {mode}."))
+        return
 
     try:
         text = await build_pythinker_recap(soul.runtime.work_dir, args)

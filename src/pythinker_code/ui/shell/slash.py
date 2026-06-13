@@ -1335,8 +1335,8 @@ async def settings(app: Shell, args: str):
         print_settings_table()
         return
     mode_parts = mode.split()
-    if mode_parts and mode_parts[0] == "recaps":
-        value = mode.removeprefix("recaps").strip()
+    if mode_parts and mode_parts[0] in {"recap", "recaps"}:
+        value = " ".join(mode_parts[1:]).strip()
         if value not in {"on", "off"}:
             console.print(f"[{_t_set.warning}]Usage: /settings recaps on|off[/]")
             return
@@ -1364,7 +1364,7 @@ async def settings(app: Shell, args: str):
         console.print(f"[{_t_set.success}]Turn recaps {value}. Reloading...[/]")
         raise Reload(session_id=soul.runtime.session.id)
     if mode:
-        console.print(f"[{_t_set.warning}]Usage: /settings [show|recaps on|off][/]")
+        console.print(f"[{_t_set.warning}]Usage: /settings [show|recap(s) on|off][/]")
         return
 
     config_file = config.source_file
@@ -2016,7 +2016,7 @@ async def show_memory(app: Shell, args: str):
     soul = ensure_pythinker_soul(app)
     if soul is None:
         return
-    from pythinker_code.project_memory import ProjectMemoryStore
+    from pythinker_code.project_memory import ProjectMemoryStore, Target
 
     store = ProjectMemoryStore(soul.runtime.work_dir)
     parts = args.split()
@@ -2061,6 +2061,25 @@ async def show_memory(app: Shell, args: str):
         console.print("No project memory recorded yet. The agent records it with the Memory tool.")
         return
     console.print(block)
+
+    # Capacity line + education: surface how full each store is so the user
+    # understands the "memory full" rejection and how to act on it.
+    near_full = False
+    cap_parts: list[str] = []
+    targets: tuple[tuple[Target, str], ...] = (("memory", "Project"), ("user", "User"))
+    for target, label in targets:
+        used, limit, free = await store.capacity(target)
+        cap_parts.append(f"{label} {used}/{limit} ({free} free)")
+        if limit and used / limit >= 0.85:
+            near_full = True
+    console.print(f"\n[dim]Capacity — {' · '.join(cap_parts)}[/dim]")
+    if near_full:
+        console.print(
+            "[yellow]Memory is nearly full.[/yellow] When full, new facts are rejected "
+            "(nothing is lost). To make room: ask the agent to merge or drop stale entries, "
+            "or edit MEMORY.md / USER.md directly. Memory holds only durable facts, so "
+            "occasional pruning is expected."
+        )
 
 
 @registry.command(name="update", aliases=["upgrade"])

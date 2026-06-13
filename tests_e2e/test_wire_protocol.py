@@ -51,7 +51,7 @@ def test_initialize_handshake(tmp_path) -> None:
                         },
                         {
                             "name": "recap",
-                            "description": "Recap Pythinker sessions. Usage: /recap [today|yesterday|week|YYYY-MM-DD]",
+                            "description": "Recap Pythinker sessions. Usage: /recap [on|off|today|yesterday|week|YYYY-MM-DD]",
                             "aliases": [],
                         },
                         {
@@ -123,6 +123,11 @@ def test_initialize_handshake(tmp_path) -> None:
                         {
                             "name": "skill:customize-pythinker",
                             "description": "Edit Pythinker's own configuration — agent YAML specs and extend-inheritance, the permission profiles that gate tools, plugin.json, and hook lifecycle events. Use ONLY when the user wants to configure, customize, or extend Pythinker itself (its agents, permissions, plugins, or hooks). For authoring a new agent use agent-creator; for authoring a skill use skill-creator; for general usage Q&A use pythinker-code-help.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:designer-skill",
+                            "description": "Prescriptive frontend design guidance via the designer-skill MCP server. Use when the user asks to use designer-skill, improve UI/UX, run the anti-slop ship gate, apply a design system, or enhance pages/components with MCP-backed design references — especially for Pythinker docs and marketing surfaces with DESIGN.md/PRODUCT.md.",
                             "aliases": [],
                         },
                         {
@@ -251,7 +256,7 @@ def test_initialize_external_tool_conflict(tmp_path) -> None:
                         },
                         {
                             "name": "recap",
-                            "description": "Recap Pythinker sessions. Usage: /recap [today|yesterday|week|YYYY-MM-DD]",
+                            "description": "Recap Pythinker sessions. Usage: /recap [on|off|today|yesterday|week|YYYY-MM-DD]",
                             "aliases": [],
                         },
                         {
@@ -323,6 +328,11 @@ def test_initialize_external_tool_conflict(tmp_path) -> None:
                         {
                             "name": "skill:customize-pythinker",
                             "description": "Edit Pythinker's own configuration — agent YAML specs and extend-inheritance, the permission profiles that gate tools, plugin.json, and hook lifecycle events. Use ONLY when the user wants to configure, customize, or extend Pythinker itself (its agents, permissions, plugins, or hooks). For authoring a new agent use agent-creator; for authoring a skill use skill-creator; for general usage Q&A use pythinker-code-help.",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "skill:designer-skill",
+                            "description": "Prescriptive frontend design guidance via the designer-skill MCP server. Use when the user asks to use designer-skill, improve UI/UX, run the anti-slop ship gate, apply a design system, or enhance pages/components with MCP-backed design references — especially for Pythinker docs and marketing surfaces with DESIGN.md/PRODUCT.md.",
                             "aliases": [],
                         },
                         {

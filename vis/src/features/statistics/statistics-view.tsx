@@ -1,5 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Clock, Coins, FolderGit2, MessagesSquare } from "lucide-react";
 import { type AggregateStats, getAggregateStats } from "@/lib/api";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { MetricCard } from "@/components/metric-card";
 
 /* ------------------------------------------------------------------ */
 /*  Formatting helpers                                                 */
@@ -18,168 +27,163 @@ function formatDuration(sec: number): string {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Summary Cards                                                      */
-/* ------------------------------------------------------------------ */
-
-function SummaryCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border p-4 flex flex-col gap-1">
-      <span className="text-2xl font-bold tabular-nums">{value}</span>
-      <span className="text-xs text-muted-foreground">{label}</span>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /*  Daily Usage Chart (SVG line chart)                                 */
 /* ------------------------------------------------------------------ */
 
-const CHART_WIDTH = 600;
-const CHART_HEIGHT = 120;
-const CHART_PAD_X = 40;
-const CHART_PAD_TOP = 12;
-const CHART_PAD_BOTTOM = 24;
+const DU_HEIGHT = 220;
+const DU_PAD_L = 34;
+const DU_PAD_R = 16;
+const DU_PAD_T = 16;
+const DU_PAD_B = 28;
+const DU_GRID_STEPS = 4;
 
-function DailyUsageChart({
-  daily,
-}: {
-  daily: AggregateStats["daily_usage"];
-}) {
+function DailyUsageChart({ daily }: { daily: AggregateStats["daily_usage"] }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(720);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setWidth(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   if (daily.length === 0) return null;
 
   const maxSessions = Math.max(1, ...daily.map((d) => d.sessions));
   const maxTurns = Math.max(1, ...daily.map((d) => d.turns));
 
-  const innerW = CHART_WIDTH - CHART_PAD_X * 2;
-  const innerH = CHART_HEIGHT - CHART_PAD_TOP - CHART_PAD_BOTTOM;
+  const plotW = Math.max(1, width - DU_PAD_L - DU_PAD_R);
+  const plotH = DU_HEIGHT - DU_PAD_T - DU_PAD_B;
 
   const toX = (i: number) =>
-    CHART_PAD_X + (daily.length > 1 ? (i / (daily.length - 1)) * innerW : innerW / 2);
-  const toYSessions = (v: number) =>
-    CHART_PAD_TOP + (1 - v / maxSessions) * innerH;
-  const toYTurns = (v: number) =>
-    CHART_PAD_TOP + (1 - v / maxTurns) * innerH;
+    DU_PAD_L + (daily.length > 1 ? (i / (daily.length - 1)) * plotW : plotW / 2);
+  const toYSessions = (v: number) => DU_PAD_T + (1 - v / maxSessions) * plotH;
+  const toYTurns = (v: number) => DU_PAD_T + (1 - v / maxTurns) * plotH;
 
-  // Sessions line
   const sessionsPath = daily
     .map((d, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toYSessions(d.sessions)}`)
     .join(" ");
-
-  // Turns line
   const turnsPath = daily
     .map((d, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toYTurns(d.turns)}`)
     .join(" ");
-
-  // Sessions area fill
   const sessionsArea =
     sessionsPath +
     ` L ${toX(daily.length - 1)} ${toYSessions(0)}` +
     ` L ${toX(0)} ${toYSessions(0)} Z`;
 
-  // X-axis labels: show ~5 evenly spaced dates
-  const labelCount = Math.min(5, daily.length);
-  const labelIndices: number[] = [];
-  if (labelCount <= 1) {
-    if (daily.length > 0) labelIndices.push(0);
-  } else {
-    for (let i = 0; i < labelCount; i++) {
-      labelIndices.push(
-        Math.round((i / (labelCount - 1)) * (daily.length - 1)),
-      );
-    }
-  }
+  const labelStep = Math.max(1, Math.ceil(daily.length / 6));
 
   return (
-    <div className="rounded-lg border p-4">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-sm font-medium">Daily Usage (Last 30 Days)</span>
-      </div>
-
-      <svg
-        viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-        className="w-full"
-        style={{ maxHeight: CHART_HEIGHT }}
-      >
-        {/* Sessions area fill */}
-        <path d={sessionsArea} className="fill-blue-500/10" />
-
-        {/* Sessions line */}
-        <path
-          d={sessionsPath}
-          className="stroke-blue-500"
-          strokeWidth={1.5}
-          fill="none"
-        />
-
-        {/* Turns line */}
-        <path
-          d={turnsPath}
-          className="stroke-green-500"
-          strokeWidth={1.5}
-          fill="none"
-          strokeDasharray="4 2"
-        />
-
-        {/* Y-axis labels */}
-        <text
-          x={CHART_PAD_X - 4}
-          y={CHART_PAD_TOP + 4}
-          className="fill-muted-foreground"
-          fontSize={8}
-          textAnchor="end"
-        >
-          {maxSessions}
-        </text>
-        <text
-          x={CHART_PAD_X - 4}
-          y={CHART_PAD_TOP + innerH + 3}
-          className="fill-muted-foreground"
-          fontSize={8}
-          textAnchor="end"
-        >
-          0
-        </text>
-
-        {/* X-axis date labels */}
-        {labelIndices.map((idx) => (
-          <text
-            key={idx}
-            x={toX(idx)}
-            y={CHART_HEIGHT - 4}
-            className="fill-muted-foreground"
-            fontSize={8}
-            textAnchor="middle"
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Daily Usage</CardTitle>
+          <CardDescription>Sessions and turns over the last 30 days</CardDescription>
+        </div>
+        <div className="flex items-center gap-3 pt-0.5">
+          <span className="flex items-center gap-1.5">
+            <span className="h-0.5 w-3 rounded bg-primary" />
+            <span className="text-[10px] text-muted-foreground">Sessions</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-0 w-3 border-t border-dashed border-muted-foreground" />
+            <span className="text-[10px] text-muted-foreground">Turns</span>
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-3">
+        <div ref={ref} className="w-full" style={{ height: DU_HEIGHT }}>
+          <svg
+            width={width}
+            height={DU_HEIGHT}
+            role="img"
+            aria-label="Daily sessions and turns over the last 30 days"
           >
-            {daily[idx].date.slice(5)}
-          </text>
-        ))}
+            {/* Horizontal gridlines + sessions Y labels */}
+            {Array.from({ length: DU_GRID_STEPS + 1 }, (_, i) => {
+              const v = (maxSessions / DU_GRID_STEPS) * i;
+              const y = toYSessions(v);
+              return (
+                <g key={i}>
+                  <line
+                    x1={DU_PAD_L}
+                    y1={y}
+                    x2={width - DU_PAD_R}
+                    y2={y}
+                    className="stroke-border"
+                    strokeWidth={1}
+                    strokeDasharray={i === 0 ? undefined : "4 4"}
+                  />
+                  <text
+                    x={DU_PAD_L - 6}
+                    y={y + 3}
+                    className="fill-muted-foreground"
+                    fontSize={9}
+                    textAnchor="end"
+                  >
+                    {Math.round(v)}
+                  </text>
+                </g>
+              );
+            })}
 
-        {/* Data dots for sessions */}
-        {daily.map((d, i) =>
-          d.sessions > 0 ? (
-            <circle
-              key={i}
-              cx={toX(i)}
-              cy={toYSessions(d.sessions)}
-              r={2}
-              className="fill-blue-500"
+            {/* Sessions area + line (accent) */}
+            <path d={sessionsArea} className="fill-primary/[0.08]" />
+            <path
+              d={sessionsPath}
+              className="stroke-primary"
+              strokeWidth={2}
+              fill="none"
+              strokeLinejoin="round"
+              strokeLinecap="round"
             />
-          ) : null,
-        )}
-      </svg>
 
-      {/* Legend */}
-      <div className="flex items-center gap-4 mt-2">
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-0.5 bg-blue-500 rounded" />
-          <span className="text-[10px] text-muted-foreground">Sessions</span>
+            {/* Turns line (muted dashed) */}
+            <path
+              d={turnsPath}
+              className="stroke-muted-foreground"
+              strokeWidth={1.5}
+              fill="none"
+              strokeDasharray="4 3"
+              strokeLinejoin="round"
+            />
+
+            {/* X-axis date labels */}
+            {daily.map((d, i) =>
+              i % labelStep === 0 || i === daily.length - 1 ? (
+                <text
+                  key={i}
+                  x={toX(i)}
+                  y={DU_HEIGHT - 8}
+                  className="fill-muted-foreground"
+                  fontSize={9}
+                  textAnchor="middle"
+                >
+                  {d.date.slice(5)}
+                </text>
+              ) : null,
+            )}
+
+            {/* Session dots */}
+            {daily.map((d, i) =>
+              d.sessions > 0 ? (
+                <circle
+                  key={i}
+                  cx={toX(i)}
+                  cy={toYSessions(d.sessions)}
+                  r={2}
+                  className="fill-primary"
+                />
+              ) : null,
+            )}
+          </svg>
         </div>
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-0.5 bg-green-500 rounded border-dashed" />
-          <span className="text-[10px] text-muted-foreground">Turns</span>
-        </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -187,79 +191,48 @@ function DailyUsageChart({
 /*  Tool Usage Bar Chart                                               */
 /* ------------------------------------------------------------------ */
 
-function ToolUsageChart({
-  tools,
-}: {
-  tools: AggregateStats["tool_usage"];
-}) {
+function ToolUsageChart({ tools }: { tools: AggregateStats["tool_usage"] }) {
   if (tools.length === 0) return null;
 
   const maxCount = tools[0].count;
 
   return (
-    <div className="rounded-lg border p-4">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-sm font-medium">Tool Usage (Top 20)</span>
-      </div>
-
-      <div className="flex flex-col gap-1">
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Tool Usage</CardTitle>
+          <CardDescription>Most-used tools across all sessions</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2.5 pt-3">
         {tools.map((tool) => {
           const barPct = maxCount > 0 ? (tool.count / maxCount) * 100 : 0;
-          const errorPct =
-            tool.count > 0 ? (tool.error_count / tool.count) * 100 : 0;
-          const successPct = 100 - errorPct;
 
           return (
-            <div key={tool.name} className="flex items-center gap-2">
-              <div className="w-[140px] shrink-0 text-right pr-1">
-                <span className="text-[11px] text-foreground truncate">
-                  {tool.name}
+            <div key={tool.name} className="space-y-1">
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="truncate font-medium">{tool.name}</span>
+                <span className="flex shrink-0 items-center gap-1.5 tabular-nums text-muted-foreground">
+                  {tool.error_count > 0 && (
+                    <span className="rounded-full border border-border/60 bg-muted px-1.5 py-0 text-[10px] font-medium text-muted-foreground">
+                      {tool.error_count}{" "}
+                      {tool.error_count === 1 ? "error" : "errors"}
+                    </span>
+                  )}
+                  {tool.count.toLocaleString()}
                 </span>
               </div>
-
-              <div className="flex-1 h-3 bg-muted/30 rounded-sm overflow-hidden">
+              <div className="h-2 overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full flex rounded-sm"
+                  className="h-full rounded-full bg-primary"
                   style={{ width: `${barPct}%` }}
-                >
-                  <div
-                    className="h-full bg-blue-500/70"
-                    style={{ width: `${successPct}%` }}
-                  />
-                  {tool.error_count > 0 && (
-                    <div
-                      className="h-full bg-red-500/70"
-                      style={{ width: `${errorPct}%` }}
-                    />
-                  )}
-                </div>
+                />
               </div>
-
-              <span className="w-[64px] shrink-0 text-[10px] text-muted-foreground text-right tabular-nums">
-                {tool.count}
-                {tool.error_count > 0 && (
-                  <span className="text-red-500 ml-1">
-                    ({tool.error_count})
-                  </span>
-                )}
-              </span>
             </div>
           );
         })}
-      </div>
-
-      {/* Legend */}
-      <div className="flex items-center gap-3 mt-2">
-        <div className="flex items-center gap-1">
-          <div className="w-2 h-2 rounded-sm bg-blue-500/70" />
-          <span className="text-[10px] text-muted-foreground">Success</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <div className="w-2 h-2 rounded-sm bg-red-500/70" />
-          <span className="text-[10px] text-muted-foreground">Error</span>
-        </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -267,49 +240,61 @@ function ToolUsageChart({
 /*  Per-Project Table                                                  */
 /* ------------------------------------------------------------------ */
 
-function ProjectTable({
-  projects,
-}: {
-  projects: AggregateStats["per_project"];
-}) {
+function ProjectTable({ projects }: { projects: AggregateStats["per_project"] }) {
   if (projects.length === 0) return null;
 
   return (
-    <div className="rounded-lg border p-4">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-sm font-medium">Top Projects</span>
-      </div>
-
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b text-xs text-muted-foreground">
-            <th className="text-left py-1.5 font-medium">Project</th>
-            <th className="text-right py-1.5 font-medium w-[80px]">Sessions</th>
-            <th className="text-right py-1.5 font-medium w-[80px]">Turns</th>
-          </tr>
-        </thead>
-        <tbody>
-          {projects.map((p) => {
-            const segments = p.work_dir.split("/");
-            const shortName = segments[segments.length - 1] || p.work_dir;
-            return (
-              <tr key={p.work_dir} className="border-b last:border-b-0">
-                <td
-                  className="py-1.5 truncate max-w-[300px]"
-                  title={p.work_dir}
-                >
-                  {shortName}
-                </td>
-                <td className="py-1.5 text-right tabular-nums">
-                  {p.sessions}
-                </td>
-                <td className="py-1.5 text-right tabular-nums">{p.turns}</td>
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Top Projects</CardTitle>
+          <CardDescription>Projects with the most activity</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-3">
+        <div className="overflow-hidden rounded-lg border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50 text-xs text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">Project</th>
+                <th className="w-20 px-3 py-2 text-right font-medium">Sessions</th>
+                <th className="w-16 px-3 py-2 text-right font-medium">Turns</th>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+            </thead>
+            <tbody>
+              {projects.map((p) => {
+                const segments = p.work_dir.split("/");
+                const shortName = segments[segments.length - 1] || p.work_dir;
+                return (
+                  <tr
+                    key={p.work_dir}
+                    className="border-t transition-colors hover:bg-muted/40"
+                  >
+                    <td className="max-w-0 px-3 py-2">
+                      <div className="truncate font-medium" title={p.work_dir}>
+                        {shortName}
+                      </div>
+                      <div
+                        className="truncate font-mono text-[10px] text-muted-foreground"
+                        title={p.work_dir}
+                      >
+                        {p.work_dir}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {p.sessions}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {p.turns}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -333,26 +318,40 @@ export function StatisticsView() {
 
   if (loading) {
     return (
-      <div className="flex-1 overflow-auto p-4 space-y-4">
-        {/* Skeleton cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="rounded-lg border p-4 space-y-2">
-              <div className="h-7 w-20 rounded bg-muted animate-pulse" />
-              <div className="h-3 w-16 rounded bg-muted animate-pulse" />
-            </div>
-          ))}
+      <div className="flex-1 overflow-auto p-4">
+        <div className="mx-auto w-full max-w-[1400px] space-y-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="space-y-3 rounded-xl border p-4 shadow-sm">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-2">
+                    <div className="h-3 w-16 animate-pulse rounded bg-muted" />
+                    <div className="h-6 w-20 animate-pulse rounded bg-muted" />
+                  </div>
+                  <div className="size-9 animate-pulse rounded-lg bg-muted" />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="h-[200px] animate-pulse rounded-xl border bg-muted/30" />
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="h-[260px] animate-pulse rounded-xl border bg-muted/30" />
+            <div className="h-[260px] animate-pulse rounded-xl border bg-muted/30" />
+          </div>
         </div>
-        <div className="h-[160px] rounded-lg border bg-muted/30 animate-pulse" />
-        <div className="h-[200px] rounded-lg border bg-muted/30 animate-pulse" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex-1 flex items-center justify-center text-red-500 text-sm">
-        Failed to load statistics: {error}
+      <div className="flex flex-1 items-center justify-center bg-muted/30 p-6">
+        <div className="max-w-sm rounded-2xl border border-destructive/30 bg-destructive/5 p-6 text-center">
+          <p className="text-sm font-medium text-destructive">
+            Failed to load statistics
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">{error}</p>
+        </div>
       </div>
     );
   }
@@ -360,35 +359,65 @@ export function StatisticsView() {
   if (!stats) return null;
 
   const totalTokens = stats.total_tokens.input + stats.total_tokens.output;
+  const isEmpty = stats.total_sessions === 0;
+
+  if (isEmpty) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 bg-muted/30 p-6 text-center">
+        <div className="flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <MessagesSquare size={22} />
+        </div>
+        <p className="text-base font-semibold">No activity yet</p>
+        <p className="max-w-sm text-sm text-muted-foreground">
+          Run{" "}
+          <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
+            pythinker
+          </code>{" "}
+          to create sessions, then come back to see aggregate statistics.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex-1 overflow-auto p-4 space-y-4">
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <SummaryCard label="Total Sessions" value={String(stats.total_sessions)} />
-        <SummaryCard label="Total Turns" value={String(stats.total_turns)} />
-        <SummaryCard
-          label="Total Tokens"
-          value={formatTokens(totalTokens)}
-        />
-        <SummaryCard
-          label="Total Duration"
-          value={formatDuration(stats.total_duration_sec)}
-        />
-      </div>
+    <div className="flex-1 overflow-auto bg-muted/30 p-6">
+      <div className="mx-auto w-full max-w-[1400px] space-y-6">
+        {/* Summary Cards */}
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <MetricCard
+            label="Total Sessions"
+            value={String(stats.total_sessions)}
+            helper="Tracked agent runs"
+            icon={FolderGit2}
+          />
+          <MetricCard
+            label="Total Turns"
+            value={stats.total_turns.toLocaleString()}
+            helper="Conversation turns"
+            icon={MessagesSquare}
+          />
+          <MetricCard
+            label="Total Tokens"
+            value={formatTokens(totalTokens)}
+            helper={`${formatTokens(stats.total_tokens.input)} in / ${formatTokens(stats.total_tokens.output)} out`}
+            icon={Coins}
+          />
+          <MetricCard
+            label="Total Duration"
+            value={formatDuration(stats.total_duration_sec)}
+            helper="Runtime across sessions"
+            icon={Clock}
+          />
+        </div>
 
-      {/* Token detail */}
-      <div className="text-xs text-muted-foreground px-1">
-        Tokens: {formatTokens(stats.total_tokens.input)} input / {formatTokens(stats.total_tokens.output)} output
-      </div>
+        {/* Daily Usage Chart */}
+        <DailyUsageChart daily={stats.daily_usage} />
 
-      {/* Daily Usage Chart */}
-      <DailyUsageChart daily={stats.daily_usage} />
-
-      {/* Tool Usage + Project Table side by side on wide screens */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ToolUsageChart tools={stats.tool_usage} />
-        <ProjectTable projects={stats.per_project} />
+        {/* Tool Usage + Project Table */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <ToolUsageChart tools={stats.tool_usage} />
+          <ProjectTable projects={stats.per_project} />
+        </div>
       </div>
     </div>
   );

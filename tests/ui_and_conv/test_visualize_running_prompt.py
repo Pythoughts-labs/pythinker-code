@@ -386,6 +386,29 @@ def test_prompt_status_falls_back_to_background_spinner_after_turn_end() -> None
     assert "1 background agent" not in text
 
 
+def test_prompt_status_keeps_background_spinner_during_blocking_task_output() -> None:
+    session = object.__new__(CustomPromptSession)
+    session._background_task_count_provider = lambda: BgTaskCounts(agent=2)
+    session._status_block_provider = None
+    session._latest_todos = ()
+
+    class _BlockingTaskOutputDelegate:
+        def render_agent_status(self, columns: int):  # noqa: ARG002
+            return "TaskOutput(agent-reviewer · block, timeout 600s)"
+
+        def render_pinned_status_tail(self, columns: int):  # noqa: ARG002
+            return ""
+
+    session._running_prompt_delegate = cast(Any, _BlockingTaskOutputDelegate())
+
+    rendered = CustomPromptSession._render_agent_status(session, 80)
+    text = "".join(item[1] for item in rendered)
+
+    assert "TaskOutput(agent-reviewer" in text
+    assert "…" in text
+    assert "2 background agents" not in text
+
+
 def test_prompt_status_keeps_todos_visible_during_background_tasks() -> None:
     session = object.__new__(CustomPromptSession)
     session._running_prompt_delegate = None

@@ -13,7 +13,7 @@ from pythinker_code.skill import discover_skills, get_builtin_skills_dir
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("name", ["agent-creator", "customize-pythinker"])
+@pytest.mark.parametrize("name", ["agent-creator", "customize-pythinker", "designer-skill"])
 async def test_authoring_skill_is_discovered_builtin(name: str) -> None:
     skills = await discover_skills(
         HostPath.unsafe_from_local_path(get_builtin_skills_dir()), scope="builtin"

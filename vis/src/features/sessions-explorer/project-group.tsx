@@ -32,21 +32,24 @@ export function ProjectGroup({
     <div className="mb-4">
       <button
         onClick={() => setCollapsed((v) => !v)}
-        className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md hover:bg-muted transition-colors"
+        aria-expanded={!collapsed}
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {collapsed ? (
           <ChevronRight size={14} className="shrink-0 text-muted-foreground" />
         ) : (
           <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
         )}
-        <FolderOpen size={14} className="shrink-0 text-muted-foreground" />
-        <span className="text-sm font-medium truncate">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <FolderOpen size={13} />
+        </span>
+        <span className="truncate text-sm font-medium">
           {shortProjectName(workDir)}
         </span>
-        <span className="text-[11px] text-muted-foreground shrink-0">
-          ({sessions.length})
+        <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+          {sessions.length}
         </span>
-        <span className="text-[10px] font-mono text-muted-foreground ml-auto truncate max-w-[300px] hidden md:block">
+        <span className="ml-auto hidden max-w-[300px] truncate font-mono text-[10px] text-muted-foreground md:block">
           {workDir}
         </span>
       </button>

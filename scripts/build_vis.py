@@ -35,7 +35,7 @@ def resolve_npm() -> str | None:
 
 
 def check_node_version() -> bool:
-    """Vite 7 requires Node.js ^20.19.0 || >=22.12.0."""
+    """Vite 8 requires Node.js ^20.19.0 || >=22.12.0."""
     node = shutil.which("node")
     if not node:
         return False
@@ -47,7 +47,7 @@ def check_node_version() -> bool:
         ok = (major == 20 and minor >= 19) or (major >= 22 and (major > 22 or minor >= 12))
         if not ok:
             print(
-                f"Node.js ^20.19.0 or >=22.12.0 required (Vite 7), found v{version}",
+                f"Node.js ^20.19.0 or >=22.12.0 required (Vite 8), found v{version}",
                 file=sys.stderr,
             )
             return False

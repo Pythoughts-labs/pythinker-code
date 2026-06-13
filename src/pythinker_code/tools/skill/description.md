@@ -5,6 +5,7 @@ Read the full instructions for an available skill by name.
 
 **When NOT to use:**
 - For a one-off task with no matching skill — do not read skills speculatively just to fill context.
+- For a connected MCP server — invoke its `mcp__<server>__<tool>` tools directly. If you mistakenly call ReadSkill with a server name (e.g. `tavily`, `designer-skill`), it resolves to an MCP bridge listing that server's tools when no filesystem skill exists.
 
 **Tips:**
 - If a skill `<name>` has a `<name>-local` companion, the returned content includes the local specialization after the core skill; apply the local part last.

@@ -57,6 +57,24 @@ async def test_memory_inbox_disabled_short_circuits(tmp_path, monkeypatch, capsy
     assert called["scan"] is False
 
 
+async def test_memory_shows_capacity_line(tmp_path, monkeypatch, capsys):
+    """Bare `/memory` prints a capacity summary so the user can see how full it is."""
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path / "share"))
+    from pythinker_code.project_memory import ProjectMemoryStore
+    from pythinker_code.ui.shell import slash
+
+    soul = _fake_soul(tmp_path, consolidation=False)
+    monkeypatch.setattr(slash, "ensure_pythinker_soul", lambda app: soul)
+
+    store = ProjectMemoryStore(soul.runtime.work_dir)
+    await store.add("memory", "uses pytest")
+
+    await _run("", SimpleNamespace())
+    out = capsys.readouterr().out
+    assert "Capacity" in out
+    assert "/5000" in out  # raised project-memory limit
+
+
 async def test_memory_inbox_enabled_invokes_scan(tmp_path, monkeypatch, capsys):
     """With the flag on, `/memory inbox scan` reaches the consolidation path."""
     from pythinker_code.ui.shell import slash
