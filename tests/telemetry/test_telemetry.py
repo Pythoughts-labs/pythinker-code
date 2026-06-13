@@ -419,3 +419,19 @@ class TestCrashSafeFlush:
         with patch("pythinker_code.telemetry.otel.emit_log", side_effect=_capture):
             telemetry_mod.flush_sync()
         assert captured == []
+
+    def test_flush_sync_retains_queue_when_emit_raises(self):
+        """A failed crash-safe emit must not drop the buffered events, so the
+        later vendor-SDK flush (or a retry) can still send them."""
+        set_context(device_id="dev1", session_id="sess1")
+        track("crash", error_type="RuntimeError", where="startup")
+        assert len(telemetry_mod._event_queue) == 1
+
+        with patch(
+            "pythinker_code.telemetry.sink.emit_events_to_otel",
+            side_effect=RuntimeError("boom"),
+        ):
+            telemetry_mod.flush_sync()
+
+        # Emit failed, so the queue is left intact rather than silently cleared.
+        assert len(telemetry_mod._event_queue) == 1

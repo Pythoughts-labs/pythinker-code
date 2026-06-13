@@ -403,9 +403,11 @@ def test_slash_menu_preselects_first_item_when_index_unset(monkeypatch):
     assert content.line_count == len(completions) + 3
     assert rendered_lines[0].strip() == ""
     assert content.cursor_position.y == 1
-    # First item row is highlighted, second is not.
-    assert "❯" in rendered_lines[1]
-    assert "❯" not in rendered_lines[2]
+    # First item row is highlighted, second is not. U+276F is the selection
+    # marker; built via chr() to avoid RUF001 ambiguous-glyph lint.
+    selected_marker = chr(0x276F)
+    assert selected_marker in rendered_lines[1]
+    assert selected_marker not in rendered_lines[2]
     assert "Ctrl-O" in rendered_lines[1]
     assert rendered_lines[1].count("/editor") == 1
     # Blank separator then the footer legend on the last two lines.

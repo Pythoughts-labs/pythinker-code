@@ -104,7 +104,12 @@ def emit_events_to_otel(events: list[dict[str, Any]]) -> None:
         return
     try:
         from pythinker_code.telemetry import otel as _otel
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "Telemetry OTel import failed; dropping {n} events: {err}",
+            n=len(events),
+            err=exc,
+        )
         return
 
     for event in events:
