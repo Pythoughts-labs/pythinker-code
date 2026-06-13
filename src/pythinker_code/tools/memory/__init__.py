@@ -113,8 +113,10 @@ class Memory(CallableTool2[Params]):
         signals = routing_signals(content)
         if not signals:
             return None
+        # Log only structural metadata — never the entry content, which can carry
+        # secrets/PII and may not be stored at all if the user declines the gate.
         logger.bind(event="memory_guard_gate", target=target, signals=signals).debug(
-            "memory write flagged for confirmation: {preview}", preview=content[:60]
+            "memory write flagged for confirmation"
         )
 
         store_label = "project" if target == "memory" else "user"

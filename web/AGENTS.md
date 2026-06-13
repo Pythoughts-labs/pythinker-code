@@ -1,6 +1,6 @@
 # Pythinker Web UI (web/)
 
-React 19 + Vite 7 + TypeScript SPA chat UI, bundled into the `pythinker-code` package. Run all
+React 19 + Vite 8 + TypeScript SPA chat UI, bundled into the `pythinker-code` package. Run all
 `npm` commands from this directory.
 
 ## Critical invariants

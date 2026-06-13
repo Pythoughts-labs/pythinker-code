@@ -1203,8 +1203,6 @@ def pythinker(
             # the most recent _run() call, which may have failed before returning.
             # last_session is from a *previous* iteration and must not be touched.
             if _latest_created_session is not None:
-                from pythinker_code.utils.logging import logger
-
                 try:
                     from pythinker_code.scratchpad import cleanup_session_scratch
 

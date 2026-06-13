@@ -219,7 +219,7 @@ is load-bearing for approval gating of persistent-backdoor vectors (`AGENTS.md`,
 | --- | --- | --- |
 | `src/pythinker_code/web/` | FastAPI backend (port 5494) managing CLI sessions via subprocess workers; bearer-token auth; `/api/*`; sensitive-path restriction. | `create_app`, `run_web_server`, `PythinkerCLIRunner`, `SessionProcess`, `AuthMiddleware` |
 | `src/pythinker_code/vis/` | FastAPI read-only tracing/statistics backend (port 5495) for the visualizer. | `create_app`, `run_vis_server` |
-| `web/` | React 19 + Vite 7 + TypeScript SPA chat UI; bundled into the package. See `web/AGENTS.md`. | `main.tsx`, `App`, `apiClient`, generated client `src/lib/api/`, `useSessionStream` |
+| `web/` | React 19 + Vite 8 + TypeScript SPA chat UI; bundled into the package. See `web/AGENTS.md`. | `main.tsx`, `App`, `apiClient`, generated client `src/lib/api/`, `useSessionStream` |
 | `vis/` | React 19 + Vite session-tracing visualizer. See `vis/AGENTS.md`. | `main.tsx`, `App`, hand-written `src/lib/api.ts` (`WireEvent`, `ContextMessage`, `SessionInfo`), feature panels under `src/features/` |
 
 Both frontends build with `tsc -b && vite build` and are synced into the Python package by
