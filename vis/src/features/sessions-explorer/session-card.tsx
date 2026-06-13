@@ -178,7 +178,7 @@ export function SessionCard({ session, onSelect, compact, searchQuery, onDeleted
     <>
       <button
         onClick={onSelect}
-        className="rounded-lg border bg-card p-3 text-left hover:bg-accent/50 hover:border-primary/30 transition-colors w-full"
+        className="group w-full rounded-xl border bg-card p-3 text-left shadow-sm transition-all hover:border-foreground/20 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {/* Row 1: ID + time + actions */}
         <div className="flex items-center justify-between mb-1">

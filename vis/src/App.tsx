@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { SessionsExplorer } from "@/features/sessions-explorer/sessions-explorer";
 import { StatisticsView } from "@/features/statistics/statistics-view";
+import { UsageView } from "@/features/usage/usage-view";
 import { WireViewer } from "@/features/wire-viewer/wire-viewer";
 import { ContextViewer } from "@/features/context-viewer/context-viewer";
 import { StateViewer } from "@/features/state-viewer/state-viewer";
@@ -19,6 +20,7 @@ import {
 } from "@/lib/api";
 import { isErrorEvent } from "@/features/wire-viewer/wire-event-card";
 import {
+  Activity,
   ArrowLeft,
   BarChart3,
   Bot,
@@ -27,6 +29,7 @@ import {
   Copy,
   Download,
   FolderOpen,
+  LineChart,
   List,
   Moon,
   RefreshCw,
@@ -289,7 +292,9 @@ export function App() {
     return params.get("session");
   });
   const [activeTab, setActiveTab] = useState<Tab>("wire");
-  const [explorerView, setExplorerView] = useState<"sessions" | "statistics">("sessions");
+  const [explorerView, setExplorerView] = useState<
+    "sessions" | "statistics" | "usage"
+  >("sessions");
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
@@ -389,20 +394,41 @@ export function App() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <header className="flex items-center justify-between border-b px-4 py-3">
-        <h1
-          className={`text-lg font-semibold tracking-tight flex items-center gap-2 ${
-            sessionId ? "cursor-pointer hover:text-primary transition-colors" : ""
+      <header className="flex items-center justify-between border-b bg-background/80 px-4 py-3 backdrop-blur-sm">
+        <button
+          type="button"
+          className={`flex items-center gap-2.5 text-left ${
+            sessionId ? "cursor-pointer" : "cursor-default"
           }`}
           onClick={() => sessionId && handleSessionChange(null)}
           title={sessionId ? "Back to Sessions Explorer" : undefined}
         >
-          {sessionId && <ArrowLeft size={16} className="text-muted-foreground" />}
-          Pythinker Agent Tracing
-        </h1>
+          {sessionId ? (
+            <ArrowLeft size={16} className="text-muted-foreground" />
+          ) : (
+            <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Activity size={16} />
+            </span>
+          )}
+          <span className="flex flex-col leading-tight">
+            <span
+              className={`text-base font-semibold tracking-tight ${
+                sessionId ? "transition-colors hover:text-primary" : ""
+              }`}
+            >
+              Pythinker Agent Tracing
+            </span>
+            {!sessionId && (
+              <span className="hidden text-xs text-muted-foreground sm:block">
+                Monitor sessions, tools, tokens, and project activity
+              </span>
+            )}
+          </span>
+        </button>
         <button
           onClick={toggleTheme}
-          className="rounded-md p-2 hover:bg-accent"
+          className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
           title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
         >
           {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
@@ -531,20 +557,22 @@ export function App() {
       {!sessionId && (
         <div className="flex h-full flex-col overflow-hidden">
           {/* Explorer view tabs */}
-          <div className="flex items-center gap-1 border-b px-4 py-1.5">
+          <div className="flex items-center gap-1 border-b px-4 py-2">
             {(
               [
                 { key: "sessions", label: "Sessions", icon: <List size={14} /> },
                 { key: "statistics", label: "Statistics", icon: <BarChart3 size={14} /> },
+                { key: "usage", label: "Usage", icon: <LineChart size={14} /> },
               ] as const
             ).map(({ key, label, icon }) => (
               <button
                 key={key}
                 onClick={() => setExplorerView(key)}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                aria-pressed={explorerView === key}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   explorerView === key
-                    ? "bg-accent text-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                    ? "bg-card text-foreground shadow-sm ring-1 ring-border"
+                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                 }`}
               >
                 {icon}
@@ -554,11 +582,11 @@ export function App() {
           </div>
 
           {/* Explorer content */}
-          {explorerView === "sessions" ? (
+          {explorerView === "sessions" && (
             <SessionsExplorer onSelectSession={handleSessionChange} />
-          ) : (
-            <StatisticsView />
           )}
+          {explorerView === "statistics" && <StatisticsView />}
+          {explorerView === "usage" && <UsageView />}
         </div>
       )}
 
