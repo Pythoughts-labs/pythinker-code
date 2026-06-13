@@ -8,86 +8,141 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { UsageHeatmap } from "./usage-heatmap";
+import { MetricCard } from "@/components/metric-card";
+import {
+  type HeatmapMetric,
+  UsageHeatmap,
+  heatmapLevelClass,
+} from "./usage-heatmap";
+import { UsageTrendChart } from "./usage-trend-chart";
 
 type DailyUsage = AggregateStats["daily_usage"][number];
 
-function SummaryCard({
-  label,
-  value,
-  helper,
-  icon: Icon,
-}: {
-  label: string;
-  value: string;
-  helper?: string;
-  icon: typeof Activity;
-}) {
+/* ------------------------------------------------------------------ */
+/*  Heatmap card (with metric toggle + legend)                         */
+/* ------------------------------------------------------------------ */
+
+function HeatmapLegend() {
   return (
-    <Card className="p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="mt-1.5 text-2xl font-semibold tracking-tight tabular-nums">
-            {value}
-          </p>
+    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <span>Less</span>
+      {[0, 1, 2, 3, 4].map((lvl) => (
+        <span
+          key={lvl}
+          className={`size-3.5 rounded-[4px] ${heatmapLevelClass(lvl)}`}
+        />
+      ))}
+      <span>More</span>
+    </div>
+  );
+}
+
+function SegmentedToggle({
+  value,
+  onChange,
+}: {
+  value: HeatmapMetric;
+  onChange: (v: HeatmapMetric) => void;
+}) {
+  const options: { key: HeatmapMetric; label: string }[] = [
+    { key: "turns", label: "Turns" },
+    { key: "sessions", label: "Sessions" },
+  ];
+  return (
+    <div className="flex rounded-lg bg-muted p-0.5">
+      {options.map((opt) => (
+        <button
+          key={opt.key}
+          onClick={() => onChange(opt.key)}
+          aria-pressed={value === opt.key}
+          className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            value === opt.key
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ActivityHeatmapCard({ daily }: { daily: DailyUsage[] }) {
+  const [metric, setMetric] = useState<HeatmapMetric>("turns");
+
+  return (
+    <Card className="flex flex-col">
+      <CardHeader>
+        <div>
+          <CardTitle>Activity Heatmap</CardTitle>
+          <CardDescription>
+            Daily {metric} over the last 30 days
+          </CardDescription>
         </div>
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <Icon size={16} />
-        </div>
+        <SegmentedToggle value={metric} onChange={setMetric} />
+      </CardHeader>
+      <CardContent className="flex flex-1 items-center justify-center overflow-x-auto py-6">
+        <UsageHeatmap daily={daily} metric={metric} />
+      </CardContent>
+      <div className="flex items-center justify-between gap-2 border-t border-border/60 px-4 py-3">
+        <p className="text-xs text-muted-foreground">
+          Shown in your local timezone
+        </p>
+        <HeatmapLegend />
       </div>
-      {helper && (
-        <p className="mt-3 truncate text-[11px] text-muted-foreground">{helper}</p>
-      )}
     </Card>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/*  Turn trend (compact single-series area)                            */
+/*  Insights panel                                                     */
 /* ------------------------------------------------------------------ */
 
-const W = 600;
-const H = 150;
-const PAD_X = 8;
-const PAD_TOP = 10;
-const PAD_BOTTOM = 8;
-
-function UsageTrendChart({ daily }: { daily: DailyUsage[] }) {
-  if (daily.length === 0) return null;
-
-  const maxTurns = Math.max(1, ...daily.map((d) => d.turns));
-  const innerW = W - PAD_X * 2;
-  const innerH = H - PAD_TOP - PAD_BOTTOM;
-
-  const toX = (i: number) =>
-    PAD_X + (daily.length > 1 ? (i / (daily.length - 1)) * innerW : innerW / 2);
-  const toY = (v: number) => PAD_TOP + (1 - v / maxTurns) * innerH;
-
-  const line = daily
-    .map((d, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toY(d.turns)}`)
-    .join(" ");
-  const area =
-    line + ` L ${toX(daily.length - 1)} ${toY(0)} L ${toX(0)} ${toY(0)} Z`;
-
+function InsightRow({ label, value }: { label: string; value: string }) {
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      className="w-full"
-      style={{ maxHeight: H }}
-      role="img"
-      aria-label="Turn volume over the last 30 days"
-      preserveAspectRatio="none"
-    >
-      <path d={area} className="fill-foreground/[0.06]" />
-      <path
-        d={line}
-        className="stroke-foreground"
-        strokeWidth={1.5}
-        fill="none"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-3 last:border-0 last:pb-0">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-sm font-semibold tabular-nums">{value}</span>
+    </div>
+  );
+}
+
+function UsageInsightsCard({
+  peak,
+  activeDays,
+  quietDays,
+  avgActiveTurns,
+}: {
+  peak: DailyUsage | null;
+  activeDays: number;
+  quietDays: number;
+  avgActiveTurns: number;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Usage Insights</CardTitle>
+          <CardDescription>Summary for the last 30 days</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-3">
+        <InsightRow
+          label="Most active day"
+          value={peak && peak.turns > 0 ? peak.date.slice(5) : "None"}
+        />
+        <InsightRow
+          label="Peak turns"
+          value={peak ? peak.turns.toLocaleString() : "0"}
+        />
+        <InsightRow
+          label="Avg active day"
+          value={`${avgActiveTurns.toLocaleString()} turns`}
+        />
+        <InsightRow label="Quiet days" value={String(quietDays)} />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -114,24 +169,37 @@ export function UsageView() {
     const totalTurns = daily.reduce((s, d) => s + d.turns, 0);
     const totalSessions = daily.reduce((s, d) => s + d.sessions, 0);
     const activeDays = daily.filter((d) => d.turns > 0).length;
+    const quietDays = daily.length - activeDays;
+    const avgActiveTurns = activeDays > 0 ? Math.round(totalTurns / activeDays) : 0;
     const peak = daily.reduce<DailyUsage | null>(
       (best, d) => (best === null || d.turns > best.turns ? d : best),
       null,
     );
-    return { daily, totalTurns, totalSessions, activeDays, peak };
+    return {
+      daily,
+      totalTurns,
+      totalSessions,
+      activeDays,
+      quietDays,
+      avgActiveTurns,
+      peak,
+    };
   }, [stats]);
 
   if (loading) {
     return (
-      <div className="flex-1 overflow-auto p-4">
-        <div className="mx-auto w-full max-w-[1400px] space-y-4">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="flex-1 overflow-auto bg-muted/30 p-6">
+        <div className="mx-auto w-full max-w-[1500px] space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="h-[92px] animate-pulse rounded-xl border bg-muted/30" />
+              <div key={i} className="h-[124px] animate-pulse rounded-2xl border border-border/60 bg-card" />
             ))}
           </div>
-          <div className="h-[220px] animate-pulse rounded-xl border bg-muted/30" />
-          <div className="h-[200px] animate-pulse rounded-xl border bg-muted/30" />
+          <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
+            <div className="h-[320px] animate-pulse rounded-2xl border border-border/60 bg-card" />
+            <div className="h-[320px] animate-pulse rounded-2xl border border-border/60 bg-card" />
+          </div>
+          <div className="h-[360px] animate-pulse rounded-2xl border border-border/60 bg-card" />
         </div>
       </div>
     );
@@ -139,8 +207,8 @@ export function UsageView() {
 
   if (error) {
     return (
-      <div className="flex flex-1 items-center justify-center p-4">
-        <div className="max-w-sm rounded-xl border border-destructive/30 bg-destructive/5 p-6 text-center">
+      <div className="flex flex-1 items-center justify-center bg-muted/30 p-6">
+        <div className="max-w-sm rounded-2xl border border-destructive/30 bg-destructive/5 p-6 text-center">
           <p className="text-sm font-medium text-destructive">
             Failed to load usage data
           </p>
@@ -152,76 +220,78 @@ export function UsageView() {
 
   if (!stats || derived.totalTurns === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-center">
-        <div className="flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Activity size={22} />
+      <div className="flex flex-1 items-center justify-center bg-muted/30 p-6">
+        <div className="flex min-h-[280px] w-full max-w-md flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card p-8 text-center">
+          <div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+            <Activity size={24} />
+          </div>
+          <h3 className="text-base font-semibold">No usage recorded yet</h3>
+          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+            Activity will appear here once sessions record turns. Run{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
+              pythinker
+            </code>{" "}
+            to get started.
+          </p>
         </div>
-        <p className="text-base font-semibold">No usage in the last 30 days</p>
-        <p className="max-w-sm text-sm text-muted-foreground">
-          Activity appears here once sessions record turns. Run{" "}
-          <code className="rounded bg-muted px-1.5 py-0.5 font-mono">pythinker</code>{" "}
-          to get started.
-        </p>
       </div>
     );
   }
 
-  const peakLabel = derived.peak
-    ? `${derived.peak.turns.toLocaleString()} on ${derived.peak.date.slice(5)}`
-    : "No peak yet";
-
   return (
-    <div className="flex-1 overflow-auto p-4">
-      <div className="mx-auto w-full max-w-[1400px] space-y-4">
+    <div className="flex-1 overflow-auto bg-muted/30 p-6">
+      <div className="mx-auto w-full max-w-[1500px] space-y-6">
         {/* Summary cards */}
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <SummaryCard
-            label="Turns (30d)"
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <MetricCard
+            label="Turns"
             value={derived.totalTurns.toLocaleString()}
-            helper="Conversation turns"
+            helper="Conversation turns in the last 30 days"
             icon={MessagesSquare}
           />
-          <SummaryCard
-            label="Sessions (30d)"
+          <MetricCard
+            label="Sessions"
             value={derived.totalSessions.toLocaleString()}
-            helper="Sessions started"
+            helper="Sessions started in the last 30 days"
             icon={CalendarDays}
           />
-          <SummaryCard
+          <MetricCard
             label="Active Days"
             value={`${derived.activeDays} / ${derived.daily.length}`}
-            helper="Days with activity"
+            helper="Days with recorded activity"
             icon={Activity}
           />
-          <SummaryCard
+          <MetricCard
             label="Peak Day"
             value={derived.peak ? derived.peak.turns.toLocaleString() : "0"}
-            helper={peakLabel}
+            helper={
+              derived.peak && derived.peak.turns > 0
+                ? `Highest usage on ${derived.peak.date.slice(5)}`
+                : "No peak yet"
+            }
             icon={Flame}
           />
-        </div>
+        </section>
 
-        {/* Heatmap */}
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle>Activity Heatmap</CardTitle>
-              <CardDescription>
-                Daily turn activity over the last 30 days
-              </CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-3">
-            <UsageHeatmap daily={derived.daily} />
-          </CardContent>
-        </Card>
+        {/* Heatmap + Insights */}
+        <section className="grid gap-6 xl:grid-cols-[1fr_320px]">
+          <ActivityHeatmapCard daily={derived.daily} />
+          <UsageInsightsCard
+            peak={derived.peak}
+            activeDays={derived.activeDays}
+            quietDays={derived.quietDays}
+            avgActiveTurns={derived.avgActiveTurns}
+          />
+        </section>
 
         {/* Trend */}
         <Card>
           <CardHeader>
             <div>
               <CardTitle>Turn Trend</CardTitle>
-              <CardDescription>Turn volume per day, last 30 days</CardDescription>
+              <CardDescription>
+                Turn volume per day across the last 30 days
+              </CardDescription>
             </div>
           </CardHeader>
           <CardContent className="pt-3">

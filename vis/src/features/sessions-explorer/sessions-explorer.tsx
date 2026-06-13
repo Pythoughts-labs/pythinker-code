@@ -249,7 +249,11 @@ export function SessionsExplorer({ onSelectSession }: SessionsExplorerProps) {
         importing={importing}
       />
 
-      <div ref={scrollRef} className="flex-1 overflow-auto p-4" onScroll={handleScroll}>
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-auto bg-muted/30 p-4"
+        onScroll={handleScroll}
+      >
         {grouped ? (
           displayedGroups.map((g) => (
             <ProjectGroup

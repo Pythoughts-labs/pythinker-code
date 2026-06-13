@@ -1,11 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  Clock,
-  Coins,
-  FolderGit2,
-  MessagesSquare,
-  type LucideIcon,
-} from "lucide-react";
+import { Clock, Coins, FolderGit2, MessagesSquare } from "lucide-react";
 import { type AggregateStats, getAggregateStats } from "@/lib/api";
 import {
   Card,
@@ -14,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { MetricCard } from "@/components/metric-card";
 
 /* ------------------------------------------------------------------ */
 /*  Formatting helpers                                                 */
@@ -29,43 +24,6 @@ function formatDuration(sec: number): string {
   if (sec < 60) return `${sec.toFixed(0)}s`;
   if (sec < 3600) return `${(sec / 60).toFixed(1)}min`;
   return `${(sec / 3600).toFixed(1)}h`;
-}
-
-/* ------------------------------------------------------------------ */
-/*  Summary Cards                                                      */
-/* ------------------------------------------------------------------ */
-
-function MetricCard({
-  label,
-  value,
-  helper,
-  icon: Icon,
-}: {
-  label: string;
-  value: string;
-  helper?: string;
-  icon: LucideIcon;
-}) {
-  return (
-    <Card className="p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="mt-1.5 text-2xl font-semibold tracking-tight tabular-nums">
-            {value}
-          </p>
-        </div>
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <Icon size={16} />
-        </div>
-      </div>
-      {helper && (
-        <p className="mt-3 truncate text-[11px] text-muted-foreground">
-          {helper}
-        </p>
-      )}
-    </Card>
-  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -127,7 +85,7 @@ function DailyUsageChart({ daily }: { daily: AggregateStats["daily_usage"] }) {
         </div>
         <div className="flex items-center gap-3 pt-0.5">
           <span className="flex items-center gap-1.5">
-            <span className="h-0.5 w-3 rounded bg-foreground" />
+            <span className="h-0.5 w-3 rounded bg-primary" />
             <span className="text-[10px] text-muted-foreground">Sessions</span>
           </span>
           <span className="flex items-center gap-1.5">
@@ -154,11 +112,11 @@ function DailyUsageChart({ daily }: { daily: AggregateStats["daily_usage"] }) {
             strokeWidth={1}
           />
 
-          {/* Sessions area + line (ink) */}
-          <path d={sessionsArea} className="fill-foreground/[0.06]" />
+          {/* Sessions area + line (accent) */}
+          <path d={sessionsArea} className="fill-primary/[0.08]" />
           <path
             d={sessionsPath}
-            className="stroke-foreground"
+            className="stroke-primary"
             strokeWidth={1.5}
             fill="none"
             strokeLinejoin="round"
@@ -216,7 +174,7 @@ function DailyUsageChart({ daily }: { daily: AggregateStats["daily_usage"] }) {
                 cx={toX(i)}
                 cy={toYSessions(d.sessions)}
                 r={1.8}
-                className="fill-foreground"
+                className="fill-primary"
               />
             ) : null,
           )}
@@ -246,33 +204,26 @@ function ToolUsageChart({ tools }: { tools: AggregateStats["tool_usage"] }) {
       <CardContent className="space-y-2.5 pt-3">
         {tools.map((tool) => {
           const barPct = maxCount > 0 ? (tool.count / maxCount) * 100 : 0;
-          const errorPct =
-            tool.count > 0 ? (tool.error_count / tool.count) * 100 : 0;
-          const successPct = 100 - errorPct;
 
           return (
             <div key={tool.name} className="space-y-1">
               <div className="flex items-center justify-between gap-3 text-xs">
                 <span className="truncate font-medium">{tool.name}</span>
                 <span className="flex shrink-0 items-center gap-1.5 tabular-nums text-muted-foreground">
-                  {tool.count.toLocaleString()}
                   {tool.error_count > 0 && (
-                    <span className="rounded-full bg-destructive/10 px-1.5 py-0 text-[10px] font-medium text-destructive">
-                      {tool.error_count} err
+                    <span className="rounded-full border border-border/60 bg-muted px-1.5 py-0 text-[10px] font-medium text-muted-foreground">
+                      {tool.error_count}{" "}
+                      {tool.error_count === 1 ? "error" : "errors"}
                     </span>
                   )}
+                  {tool.count.toLocaleString()}
                 </span>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-muted">
-                <div className="flex h-full" style={{ width: `${barPct}%` }}>
-                  <div className="h-full bg-primary" style={{ width: `${successPct}%` }} />
-                  {tool.error_count > 0 && (
-                    <div
-                      className="h-full bg-destructive"
-                      style={{ width: `${errorPct}%` }}
-                    />
-                  )}
-                </div>
+                <div
+                  className="h-full rounded-full bg-primary"
+                  style={{ width: `${barPct}%` }}
+                />
               </div>
             </div>
           );
@@ -391,8 +342,8 @@ export function StatisticsView() {
 
   if (error) {
     return (
-      <div className="flex flex-1 items-center justify-center p-4">
-        <div className="max-w-sm rounded-xl border border-destructive/30 bg-destructive/5 p-6 text-center">
+      <div className="flex flex-1 items-center justify-center bg-muted/30 p-6">
+        <div className="max-w-sm rounded-2xl border border-destructive/30 bg-destructive/5 p-6 text-center">
           <p className="text-sm font-medium text-destructive">
             Failed to load statistics
           </p>
@@ -409,7 +360,7 @@ export function StatisticsView() {
 
   if (isEmpty) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-center">
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 bg-muted/30 p-6 text-center">
         <div className="flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
           <MessagesSquare size={22} />
         </div>
@@ -426,8 +377,8 @@ export function StatisticsView() {
   }
 
   return (
-    <div className="flex-1 overflow-auto p-4">
-      <div className="mx-auto w-full max-w-[1400px] space-y-4">
+    <div className="flex-1 overflow-auto bg-muted/30 p-6">
+      <div className="mx-auto w-full max-w-[1400px] space-y-6">
         {/* Summary Cards */}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <MetricCard
