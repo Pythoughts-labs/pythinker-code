@@ -1067,13 +1067,13 @@ def test_update_prompt_text_shows_version_and_command(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_run_awaits_pre_start_update_before_auto_update(runtime, tmp_path, monkeypatch):
-    """Regression (efe101c/#63): Shell.run() must await prompt_pre_start_update()
-    — the blocking update menu — before scheduling the _auto_update background
-    toast. The menu was silently unwired while its unit tests stayed green; this
-    pins the wiring so it can't regress again unnoticed.
+async def test_run_schedules_startup_update_task(runtime, tmp_path, monkeypatch):
+    """Regression (efe101c/#63, updated for silent auto-update): Shell.run() must
+    invoke _schedule_startup_update_task() during startup — the silent, non-blocking
+    auto-update dispatch that replaced the old blocking pre-start prompt. Pins the
+    wiring so the startup update path can't be silently unwired again.
     """
-    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import MagicMock
 
     from pythinker_core.tooling.empty import EmptyToolset
 
@@ -1088,26 +1088,18 @@ async def test_run_awaits_pre_start_update_before_auto_update(runtime, tmp_path,
     soul = PythinkerSoul(agent, context=Context(file_backend=tmp_path / "h.jsonl"))
     shell = Shell(soul)
 
-    class _PromptReached(Exception):
+    class _SchedulerReached(Exception):
         pass
 
-    # Patch the name where run() looks it up (imported into the ui.shell module).
-    prompt_mock = AsyncMock(side_effect=_PromptReached)
-    monkeypatch.setattr("pythinker_code.ui.shell.prompt_pre_start_update", prompt_mock)
-    # If auto_update were scheduled before the prompt, this spy would be called.
-    auto_update_mock = MagicMock(name="_auto_update")
-    monkeypatch.setattr(shell, "_auto_update", auto_update_mock)
+    # The sentinel is the real guard: _SchedulerReached is only reachable if run()
+    # actually calls _schedule_startup_update_task during startup, pinning the wiring.
+    scheduler_mock = MagicMock(side_effect=_SchedulerReached)
+    monkeypatch.setattr(shell, "_schedule_startup_update_task", scheduler_mock)
 
-    # The sentinel is the real guard: _PromptReached is only reachable if run()
-    # actually awaits the (patched) prompt, so it pins prompt-before-auto_update.
-    # If the wiring were removed, run() would instead schedule the un-awaited
-    # MagicMock _auto_update and fail at create_task (TypeError) — still a failure,
-    # just a noisier one.
-    with pytest.raises(_PromptReached):
+    with pytest.raises(_SchedulerReached):
         await shell.run()
 
-    prompt_mock.assert_awaited_once()
-    auto_update_mock.assert_not_called()
+    scheduler_mock.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

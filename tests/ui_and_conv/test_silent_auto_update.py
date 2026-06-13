@@ -153,3 +153,45 @@ async def test_silent_update_respects_throttle(
     await shell._silent_auto_update()
     assert called is False
     assert _toasts == []
+
+
+def _scheduling_shell(runtime, tmp_path, monkeypatch):
+    shell = _make_shell(runtime, tmp_path)
+    scheduled: list[str] = []
+
+    def fake_start(coro):
+        # Identify which coroutine was scheduled, then close it to avoid a
+        # "coroutine was never awaited" warning.
+        scheduled.append(coro.__name__ if hasattr(coro, "__name__") else repr(coro))
+        coro.close()
+        return None
+
+    monkeypatch.setattr(shell, "_start_background_task", fake_start)
+    return shell, scheduled
+
+
+def test_dispatch_enabled_schedules_silent(runtime, tmp_path, monkeypatch):
+    shell, scheduled = _scheduling_shell(runtime, tmp_path, monkeypatch)
+    monkeypatch.setenv("PYTHINKER_CLI_NO_AUTO_UPDATE", "")
+    monkeypatch.delenv("PYTHINKER_CLI_NO_AUTO_UPDATE", raising=False)
+    monkeypatch.setattr(shell_module, "auto_update_enabled", lambda cfg: True)
+
+    shell._schedule_startup_update_task()
+    assert scheduled == ["_silent_auto_update"]
+
+
+def test_dispatch_config_disabled_schedules_toast_only(runtime, tmp_path, monkeypatch):
+    shell, scheduled = _scheduling_shell(runtime, tmp_path, monkeypatch)
+    monkeypatch.delenv("PYTHINKER_CLI_NO_AUTO_UPDATE", raising=False)
+    monkeypatch.setattr(shell_module, "auto_update_enabled", lambda cfg: False)
+
+    shell._schedule_startup_update_task()
+    assert scheduled == ["_auto_update"]
+
+
+def test_dispatch_env_killswitch_schedules_nothing(runtime, tmp_path, monkeypatch):
+    shell, scheduled = _scheduling_shell(runtime, tmp_path, monkeypatch)
+    monkeypatch.setenv("PYTHINKER_CLI_NO_AUTO_UPDATE", "1")
+
+    shell._schedule_startup_update_task()
+    assert scheduled == []

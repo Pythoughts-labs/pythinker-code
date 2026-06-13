@@ -73,6 +73,7 @@ from pythinker_code.ui.shell.update import (
     _detect_upgrade_command,  # pyright: ignore[reportPrivateUsage]
     _mark_auto_update_check_attempt,  # pyright: ignore[reportPrivateUsage]
     _should_auto_check_for_updates,  # pyright: ignore[reportPrivateUsage]
+    auto_update_enabled,
     consume_whats_new,
     format_managed_channel_notice,
     pending_update_notice,
@@ -83,9 +84,6 @@ from pythinker_code.ui.shell.update_orchestrator import (
     SMOKE_CHECK_FAILED_PREFIX,
     read_update_status,
     run_update_job,
-)
-from pythinker_code.ui.shell.update_orchestrator import (
-    prompt_pre_start_update_job as prompt_pre_start_update,
 )
 from pythinker_code.ui.shell.visualize import (
     ApprovalPromptDelegate,
@@ -825,19 +823,10 @@ class Shell:
             finally:
                 self._cancel_background_tasks()
 
-        # Blocking pre-start update prompt. Must run before _auto_update so the
-        # same upgrade isn't shown as both a blocking menu and a background
-        # toast; if the user picks "Skip this session" the toast is suppressed
-        # by _skipped_version_this_session. May raise typer.Exit on "Update now"
-        # or "Exit" — that's the documented behavior. prompt_pre_start_update
-        # self-suppresses for source checkouts and non-TTY sessions.
-        await prompt_pre_start_update()
-
-        # Start auto-update background task if not disabled.
-        if get_env_bool("PYTHINKER_CLI_NO_AUTO_UPDATE"):
-            logger.info("Auto-update disabled by PYTHINKER_CLI_NO_AUTO_UPDATE environment variable")
-        else:
-            self._start_background_task(self._auto_update())
+        # Auto-update at startup is silent + non-blocking (default on). The old
+        # blocking pre-start prompt is intentionally gone; the function remains
+        # in update_orchestrator.py for future re-wiring (see design doc).
+        self._schedule_startup_update_task()
 
         if isinstance(self.soul, PythinkerSoul):
             # Kick off MCP loading before the banner so servers connect in the
@@ -2192,6 +2181,25 @@ class Shell:
         toast(notice, topic="update", duration=30.0, immediate=True, style=style)
         if self._prompt_session is not None:
             self._prompt_session.invalidate()
+
+    def _schedule_startup_update_task(self) -> None:
+        """Pick the startup update behavior and schedule it (non-blocking).
+
+        - env kill-switch set → nothing (cache filters already suppress the
+          toast, matching today's hard-disable behavior).
+        - enabled → silent background install.
+        - config-disabled → informational toast only.
+        - source checkout → schedule the existing toast-only path, which self-suppresses.
+        """
+        if get_env_bool("PYTHINKER_CLI_NO_AUTO_UPDATE"):
+            logger.info(
+                "Auto-update disabled by PYTHINKER_CLI_NO_AUTO_UPDATE environment variable"
+            )
+            return
+        if auto_update_enabled(self.soul.runtime.config):
+            self._start_background_task(self._silent_auto_update())
+        else:
+            self._start_background_task(self._auto_update())
 
     def _start_background_task(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
         task = asyncio.create_task(coro)
