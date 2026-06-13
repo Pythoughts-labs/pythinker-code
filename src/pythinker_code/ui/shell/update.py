@@ -17,6 +17,9 @@ from pathlib import Path
 from shutil import which
 from typing import TYPE_CHECKING, cast
 
+if TYPE_CHECKING:
+    from pythinker_code.config import Config
+
 import aiohttp
 import typer
 from rich.text import Text
@@ -265,10 +268,6 @@ def _is_running_from_source_checkout() -> bool:
                 return False
             return 'name = "pythinker-code"' in text or "name = 'pythinker-code'" in text
     return False
-
-
-if TYPE_CHECKING:
-    from pythinker_code.config import Config
 
 
 def auto_update_enabled(config: Config) -> bool:
