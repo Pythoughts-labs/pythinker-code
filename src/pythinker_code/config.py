@@ -84,6 +84,7 @@ ENV_FIELD_MAP: dict[str, tuple[str, ...]] = {
     "PYTHINKER_THEME": ("theme",),
     "PYTHINKER_SHOW_THINKING_STREAM": ("show_thinking_stream",),
     "PYTHINKER_PREVENT_IDLE_SLEEP": ("prevent_idle_sleep",),
+    "PYTHINKER_AUTO_UPDATE": ("auto_update",),
     "PYTHINKER_TELEMETRY": ("telemetry",),
     "PYTHINKER_SESSION_RETENTION_DAYS": ("session_retention_days",),
     "PYTHINKER_MERGE_ALL_AVAILABLE_SKILLS": ("merge_all_available_skills",),
@@ -1081,6 +1082,10 @@ class Config(BaseModel):
             "Prevent the computer from idle-sleeping while an agent turn is running. "
             "Supported on macOS, Linux, and Windows. Default: false."
         ),
+    )
+    auto_update: bool = Field(
+        default=True,
+        description="Automatically install new releases in the background at startup.",
     )
     models: dict[str, LLMModel] = Field(default_factory=dict, description="List of LLM models")
     providers: dict[str, LLMProvider] = Field(
