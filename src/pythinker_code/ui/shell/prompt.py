@@ -381,12 +381,6 @@ class SlashCommandCompleter(Completer):
         self._annotate_meta = annotate_meta
         self._command_scope = command_scope
         self._is_task_running = is_task_running
-        self._command_lookup: dict[str, list[SlashCommand[Any]]] = {}
-
-        for cmd in self._available_commands:
-            self._command_lookup.setdefault(cmd.name, []).append(cmd)
-            for alias in cmd.aliases:
-                self._command_lookup.setdefault(alias, []).append(cmd)
 
     @staticmethod
     def should_complete(document: Document) -> bool:
@@ -423,18 +417,34 @@ class SlashCommandCompleter(Completer):
                 yield from emit(cmd)
             return
 
-        exact: list[SlashCommand[Any]] = []
-        prefix: list[SlashCommand[Any]] = []
-        for candidate, commands in self._command_lookup.items():
-            candidate_lower = candidate.lower()
-            if candidate_lower == typed_lower:
-                exact.extend(commands)
-            elif candidate_lower.startswith(typed_lower):
-                prefix.extend(commands)
+        def match_tier(cmd: SlashCommand[Any]) -> int | None:
+            """Lower tier = stronger match. Name matches rank above alias matches
+            so typing toward a command name (e.g. ``/report`` → ``/reports``)
+            wins over a command that only matches via an exact alias."""
+            name_lower = cmd.name.lower()
+            if name_lower == typed_lower:
+                return 0
+            if name_lower.startswith(typed_lower):
+                return 1
+            alias_prefix = False
+            for alias in cmd.aliases:
+                alias_lower = alias.lower()
+                if alias_lower == typed_lower:
+                    return 2
+                if alias_lower.startswith(typed_lower):
+                    alias_prefix = True
+            return 3 if alias_prefix else None
 
-        for cmd in exact:
-            yield from emit(cmd)
-        for cmd in prefix:
+        # Rank by (match tier, command-name length, name): the closest, shortest
+        # command name surfaces first within each tier.
+        matched: list[tuple[int, int, str, SlashCommand[Any]]] = []
+        for cmd in self._available_commands:
+            tier = match_tier(cmd)
+            if tier is not None:
+                matched.append((tier, len(cmd.name), cmd.name, cmd))
+        matched.sort(key=lambda item: (item[0], item[1], item[2]))
+
+        for _, _, _, cmd in matched:
             yield from emit(cmd)
 
     def _disabled_during_task(self, cmd: SlashCommand[Any]) -> bool:

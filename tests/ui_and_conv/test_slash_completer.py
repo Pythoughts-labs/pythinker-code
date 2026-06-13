@@ -81,6 +81,39 @@ def test_exact_alias_match_keeps_completions_visible():
     assert "/help" in texts
 
 
+def test_command_name_prefix_outranks_exact_alias_match():
+    """Typing toward a command name surfaces that command first, even when a
+    different command claims the typed text as an exact alias. ``/report`` lists
+    ``/reports`` above ``/report_error`` (whose alias is ``report``)."""
+    completer = SlashCommandCompleter(
+        [
+            _make_command("report_error", aliases=["report-error", "report"]),
+            _make_command("reports"),
+        ]
+    )
+
+    texts = _completion_texts(completer, "/report")
+
+    assert texts == ["/reports", "/report_error"]
+
+
+def test_shorter_command_name_prefix_ranks_first():
+    """Within the same match tier the closest (shortest) command name wins."""
+    completer = SlashCommandCompleter(
+        [
+            _make_command("settings"),
+            _make_command("set"),
+            _make_command("setup-wizard"),
+        ]
+    )
+
+    assert _completion_texts(completer, "/set") == [
+        "/set",
+        "/settings",
+        "/setup-wizard",
+    ]
+
+
 def test_should_complete_only_for_root_slash_token():
     assert SlashCommandCompleter.should_complete(Document(text="/", cursor_position=1))
     assert SlashCommandCompleter.should_complete(Document(text="  /he", cursor_position=5))
