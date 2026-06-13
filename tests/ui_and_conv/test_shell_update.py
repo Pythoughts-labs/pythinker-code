@@ -1574,3 +1574,27 @@ def test_installed_homebrew_version_returns_none_on_failure(monkeypatch):
     monkeypatch.setattr(update.subprocess, "run", lambda *a, **k: FakeCompleted())
 
     assert update._installed_homebrew_version() is None
+
+
+@pytest.mark.parametrize(
+    ("env_kill", "config_value", "source_checkout", "expected"),
+    [
+        (False, True, False, True),    # default → enabled
+        (True, True, False, False),    # env kill-switch wins over config
+        (False, False, False, False),  # config off
+        (True, False, False, False),   # both off
+        (False, True, True, False),    # source checkout always off
+        (True, True, True, False),     # source checkout + env kill
+    ],
+)
+def test_auto_update_enabled_precedence(
+    monkeypatch, env_kill, config_value, source_checkout, expected
+):
+    monkeypatch.setattr(
+        update, "_auto_update_disabled", lambda: env_kill
+    )
+    monkeypatch.setattr(
+        update, "_is_running_from_source_checkout", lambda: source_checkout
+    )
+    config = SimpleNamespace(auto_update=config_value)
+    assert update.auto_update_enabled(config) is expected

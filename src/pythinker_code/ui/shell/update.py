@@ -15,7 +15,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from enum import Enum, auto
 from pathlib import Path
 from shutil import which
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import aiohttp
 import typer
@@ -265,6 +265,31 @@ def _is_running_from_source_checkout() -> bool:
                 return False
             return 'name = "pythinker-code"' in text or "name = 'pythinker-code'" in text
     return False
+
+
+if TYPE_CHECKING:
+    from pythinker_code.config import Config
+
+
+def auto_update_enabled(config: Config) -> bool:
+    """Whether startup may silently install a newer release.
+
+    Precedence (highest first):
+    1. ``PYTHINKER_CLI_NO_AUTO_UPDATE`` (the hard kill-switch) → disabled.
+    2. ``config.auto_update is False`` → disabled.
+    3. Source checkout → disabled.
+    4. Otherwise → enabled.
+
+    Managed channels (Docker/Nix/Scoop/WinGet) are *not* special-cased here:
+    they may be "enabled" but ``_do_update`` returns ``UPDATE_AVAILABLE`` and
+    emits a channel hint instead of swapping the binary, so they never get a
+    silent install regardless of this result.
+    """
+    if _auto_update_disabled():
+        return False
+    if config.auto_update is False:
+        return False
+    return not _is_running_from_source_checkout()
 
 
 def _should_auto_check_for_updates(now: float | None = None) -> bool:
