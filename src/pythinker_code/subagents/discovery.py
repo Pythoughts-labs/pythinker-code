@@ -136,7 +136,9 @@ def parse_markdown_agent(
             path=prompt_file,
         )
     required_mcp_servers: tuple[str, ...] = (
-        tuple(str(s).strip() for s in cast(list[object], raw_required) if str(s).strip())
+        tuple(
+            s.strip() for s in cast(list[object], raw_required) if isinstance(s, str) and s.strip()
+        )
         if isinstance(raw_required, list)
         else ()
     )

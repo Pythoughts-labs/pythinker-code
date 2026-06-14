@@ -69,6 +69,17 @@ def test_parse_and_materialize_required_mcp_servers(tmp_path: Path) -> None:
     assert plain.required_mcp_servers == ()
 
 
+def test_required_mcp_servers_drops_non_string_values(tmp_path: Path) -> None:
+    """Non-string YAML values (int, bool, null) must be silently dropped; only real strings
+    are retained.  Previously str(s) coerced them into names like '1', 'False', 'None'."""
+    spec = parse_markdown_agent(
+        "---\nname: mixed\ndescription: mixed types\nrequired_mcp_servers: [my-server, 1, false, null]\n---\nBody\n",
+        prompt_file=HostPath.unsafe_from_local_path(tmp_path / "mixed.md"),
+        scope="project",
+    )
+    assert spec.required_mcp_servers == ("my-server",)
+
+
 @pytest.mark.asyncio
 async def test_discover_project_claude_agents_from_repo_root(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
