@@ -628,3 +628,57 @@ def _load_system_prompt(
         raise SystemPromptTemplateError(f"Missing system prompt arg in {path}: {exc}") from exc
     except TemplateError as exc:
         raise SystemPromptTemplateError(f"Invalid system prompt template: {path}: {exc}") from exc
+
+
+async def build_builtin_system_prompt_args(
+    work_dir: HostPath,
+    config: Config,
+    *,
+    scratchpad_section: str | None = None,
+) -> BuiltinSystemPromptArgs:
+    """Build system-prompt args from the filesystem + environment only.
+
+    Read-only: constructs no Runtime, session, LLM, auth, or MCP connection. Mirrors
+    the arg assembly in :meth:`Runtime.create` so a dumped prompt matches what an agent
+    would actually receive. ``PYTHINKER_ADDITIONAL_DIRS_INFO`` is empty because additional
+    directories are session state, which inspection does not load.
+    """
+    ls_output, agents_md, environment = await asyncio.gather(
+        list_directory(work_dir),
+        load_agents_md(work_dir),
+        Environment.detect(),
+    )
+    scoped_roots = await resolve_skills_roots(
+        work_dir,
+        merge_brands=config.merge_all_available_skills,
+        extra_skill_dirs=config.extra_skill_dirs or None,
+    )
+    skills_formatted = format_skills_for_prompt(await discover_skills_from_roots(scoped_roots))
+    return BuiltinSystemPromptArgs(
+        PYTHINKER_NOW=datetime.now().astimezone().isoformat(),
+        PYTHINKER_WORK_DIR=work_dir,
+        PYTHINKER_WORK_DIR_LS=ls_output,
+        PYTHINKER_AGENTS_MD=agents_md or "",
+        PYTHINKER_AGENTS_MD_FENCE=_agents_md_fence(agents_md or ""),
+        PYTHINKER_SKILLS=skills_formatted or "No skills found.",
+        PYTHINKER_ADDITIONAL_DIRS_INFO="",
+        PYTHINKER_OS=environment.os_kind,
+        PYTHINKER_SHELL=f"{environment.shell_name} (`{environment.shell_path}`)",
+        PYTHINKER_SCRATCHPAD_SECTION=scratchpad_section or DEFAULT_SCRATCHPAD_SECTION,
+    )
+
+
+async def render_agent_system_prompt(agent_file: Path, work_dir: HostPath, config: Config) -> str:
+    """Render an agent's assembled system prompt for inspection (read-only).
+
+    Resolves the agent spec, builds live builtin args from the filesystem + environment,
+    and renders the template — with no Runtime, session, auth, or MCP. Backs the
+    ``pythinker system-prompt`` command.
+    """
+    agent_spec = load_agent_spec(agent_file)
+    builtin_args = await build_builtin_system_prompt_args(work_dir, config)
+    return _load_system_prompt(
+        agent_spec.system_prompt_path,
+        agent_spec.system_prompt_args,
+        builtin_args,
+    )

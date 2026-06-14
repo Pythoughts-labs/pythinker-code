@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from inline_snapshot import snapshot
+from pythinker_host.path import HostPath
 
 from pythinker_code.config import Config
 from pythinker_code.exception import InvalidToolError, SystemPromptTemplateError
@@ -53,6 +54,27 @@ def test_system_prompt_contains_platform_info(builtin_args: BuiltinSystemPromptA
     # System prompt must include OS kind and shell info
     assert builtin_args.PYTHINKER_OS in prompt
     assert builtin_args.PYTHINKER_SHELL in prompt
+
+
+async def test_render_agent_system_prompt_builds_args_without_runtime(
+    temp_work_dir: HostPath, config: Config
+) -> None:
+    """`render_agent_system_prompt` renders the real default-agent prompt with live
+    args (work dir, OS, shell, now) substituted — read-only, with no Runtime, session,
+    auth, or MCP. This is the core backing the `pythinker system-prompt` dump command.
+    """
+    from pythinker_code.agentspec import DEFAULT_AGENT_FILE
+    from pythinker_code.soul.agent import render_agent_system_prompt
+
+    prompt = await render_agent_system_prompt(DEFAULT_AGENT_FILE, temp_work_dir, config)
+
+    # Static section proves the template rendered.
+    assert "## 1. Identity" in prompt
+    # ${PYTHINKER_WORK_DIR} substitution proves the builtin args were built live.
+    assert str(temp_work_dir) in prompt
+    # StrictUndefined raises on any missing arg, so a clean render with no leftover
+    # ${PYTHINKER_*} placeholder proves every dynamic section was supplied.
+    assert "${PYTHINKER_" not in prompt
 
 
 def test_system_prompt_explains_adding_mcp_servers(builtin_args: BuiltinSystemPromptArgs):

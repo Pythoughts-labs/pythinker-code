@@ -15,6 +15,13 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Inspect the assembled system prompt.** New `pythinker system-prompt` command
+  renders and prints the fully-assembled system prompt for an agent
+  (`--agent <name>`, `--agent-file <path>`, `--work-dir <dir>`) — substituting the
+  live work directory, OS/shell, merged `AGENTS.md`, and discovered skills. It is
+  read-only: no session is created, no provider auth is required, and no MCP
+  servers are loaded.
+
 ## 0.44.0 (2026-06-13)
 
 - **Toggle auto-update from the CLI.** Running `/update` now opens a menu — *Check for updates now* (the default, so a bare `/update` + Enter still checks immediately) or *Auto-update on startup* with its current state — so the toggle is discoverable without knowing a subcommand. `/update auto on|off` still sets it directly, and `/update auto` with no value opens an interactive On/Off picker (cursor defaulted to the current setting). The same toggle appears in the interactive `/settings` panel, and `pythinker info` reports the auto-update status. All surfaces show the *effective* state — an external override (`PYTHINKER_CLI_NO_AUTO_UPDATE` or a source checkout) is surfaced as the reason, renders the `/settings` row read-only, and makes `/update auto` report the read-only state rather than popping a no-op picker, so the toggle is never a silent no-op.

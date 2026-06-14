@@ -20,6 +20,11 @@ class LazySubcommandGroup(typer.core.TyperGroup):
         "mcp": ("pythinker_code.cli.mcp", "cli", "Manage MCP server configurations."),
         "plugin": ("pythinker_code.cli.plugin", "cli", "Manage plugins."),
         "skill": ("pythinker_code.cli.skill", "cli", "Inspect and lock Pythinker skills."),
+        "system-prompt": (
+            "pythinker_code.cli.system_prompt",
+            "cli",
+            "Print the assembled system prompt for an agent.",
+        ),
         "review": (
             "pythinker_code.cli.review",
             "cli",
@@ -54,6 +59,7 @@ class LazySubcommandGroup(typer.core.TyperGroup):
         "mcp",
         "plugin",
         "skill",
+        "system-prompt",
         "review",
         "secscan",
         "security-scan",
