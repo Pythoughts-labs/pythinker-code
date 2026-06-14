@@ -59,6 +59,11 @@ GitHub Releases page; `0.8.0` is the new starting line.
   are not silently clobbered — read it again first. First-contact writes (a file you never
   read) are unaffected, and a tool's own write refreshes the read-state so consecutive
   edits are never falsely flagged.
+- **Recover from output-token truncation.** When a response is cut off by the
+  output-token limit and makes no tool call, the turn no longer ends with a half-finished
+  answer treated as complete — the model is nudged to continue from where it stopped, up
+  to `loop_control.max_truncation_recoveries` times per turn (default 3; `0` disables).
+  pythinker-core now surfaces the provider's truncation signal so the loop can detect it.
 
 ## 0.44.0 (2026-06-13)
 

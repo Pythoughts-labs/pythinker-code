@@ -114,6 +114,7 @@ from pythinker_code.tools.utils import ToolRejectedError
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.slashcmd import SlashCommand, parse_slash_command_call
 from pythinker_code.utils.sleep_inhibitor import SleepInhibitor
+from pythinker_code.utils.trust import UntrustedData
 from pythinker_code.wire.file import WireFile
 from pythinker_code.wire.types import (
     CompactionBegin,
@@ -283,6 +284,10 @@ def _user_message_with_hook_context(
     """Build the user-turn message, appending non-block ``additional_context`` from
     UserPromptSubmit hooks as a system reminder so the model sees it as context for this
     prompt. Blocking results are handled separately and never contribute context.
+
+    Hook stdout is external, untrusted content (it may echo git logs, issue bodies, or
+    fetched pages), so it is wrapped in the untrusted-data envelope before injection —
+    matching how fetch/search/shell/grep output is neutralized.
     """
     context = "\n\n".join(
         r.additional_context.strip()
@@ -295,9 +300,22 @@ def _user_message_with_hook_context(
         list(user_input) if isinstance(user_input, list) else [TextPart(text=user_input)]
     )
     reminder = system_reminder(
-        f"A UserPromptSubmit hook added context for this prompt:\n\n{context}"
+        "A UserPromptSubmit hook added context for this prompt:\n\n"
+        + UntrustedData(context).render_for_prompt()
     )
     return Message(role="user", content=[*base, reminder])
+
+
+def _should_nudge_truncation(
+    truncated: bool, has_tool_calls: bool, recoveries: int, limit: int
+) -> bool:
+    """Whether a truncated (output-cap) response should be nudged to continue.
+
+    Only fires for a truncated response with NO tool calls — a tool-call response continues
+    the loop via its results anyway. ``recoveries < limit`` bounds the retries per turn so a
+    persistently-truncating model cannot loop forever.
+    """
+    return truncated and not has_tool_calls and recoveries < limit
 
 
 def _stuck_summary_message(
@@ -427,6 +445,7 @@ class PythinkerSoul:
             )
         self._current_step_no = 0
         self._consecutive_failures = 0
+        self._truncation_recoveries = 0
         # Cumulative LLM token usage for this soul instance (one run), so a subagent
         # can report its spend back to the orchestrating parent (subagent-2). A
         # resumed session runs on a fresh soul, so this counts the current run.
@@ -1454,6 +1473,8 @@ class PythinkerSoul:
         self._intent_nudge_used = False
         # Reset the degenerate-loop failure tracker at the start of each turn.
         self._consecutive_failures = 0
+        # Bounded per turn: nudges to continue after an output-token-limit truncation.
+        self._truncation_recoveries = 0
         # One-shot per turn: reactive compact-and-retry after a provider
         # context-length rejection (proactive thresholds can undercount).
         overflow_recovery_used = False
@@ -1889,6 +1910,30 @@ class PythinkerSoul:
         except asyncio.CancelledError:
             await _settle_shielded(grow_context_task)
             raise
+
+        # Truncation recovery: a response cut off by the output-token limit that made no tool
+        # call would otherwise end the turn as a half-finished answer. Nudge the model to
+        # resume (bounded per turn) instead of treating the cut-off text as the final answer.
+        if _should_nudge_truncation(
+            result.truncated,
+            bool(result.tool_calls),
+            self._truncation_recoveries,
+            self._loop_control.max_truncation_recoveries,
+        ):
+            self._truncation_recoveries += 1
+            await self._context.append_message(
+                Message(
+                    role="user",
+                    content=[
+                        system_reminder(
+                            "Your previous response was cut off by the output token limit. "
+                            "Continue directly from where you stopped — no apology, no recap — "
+                            "and break the remaining work into smaller pieces."
+                        )
+                    ],
+                )
+            )
+            return None
 
         if invalid_summary := _malformed_empty_tool_call_summary(result.tool_calls, results):
             message = Message(

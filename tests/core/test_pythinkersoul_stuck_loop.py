@@ -31,8 +31,11 @@ from pythinker_code.wire import Wire
 
 
 class _StaticStreamedMessage:
-    def __init__(self, parts: Sequence[StreamedMessagePart]) -> None:
+    def __init__(
+        self, parts: Sequence[StreamedMessagePart], finish_reason: str | None = None
+    ) -> None:
         self._iter = self._to_stream(parts)
+        self._finish_reason = finish_reason
 
     def __aiter__(self) -> Self:
         return self
@@ -54,6 +57,10 @@ class _StaticStreamedMessage:
     def usage(self) -> TokenUsage | None:
         return None
 
+    @property
+    def finish_reason(self) -> str | None:
+        return self._finish_reason
+
 
 class _ScriptedToolCallProvider:
     """Emits one tool call (or final text) per step from a fixed script.
@@ -64,8 +71,9 @@ class _ScriptedToolCallProvider:
 
     name = "scripted-tool-call"
 
-    def __init__(self, script: Sequence[str | None]) -> None:
+    def __init__(self, script: Sequence[str | None], truncated_steps: Sequence[int] = ()) -> None:
         self._script = list(script)
+        self._truncated_steps = set(truncated_steps)
         self.generate_attempts = 0
 
     @property
@@ -84,11 +92,13 @@ class _ScriptedToolCallProvider:
     ) -> _StaticStreamedMessage:
         index = self.generate_attempts
         self.generate_attempts += 1
+        finish_reason = "length" if index in self._truncated_steps else None
         entry = self._script[index] if index < len(self._script) else None
         if entry is None:
-            return _StaticStreamedMessage([TextPart(text="done")])
+            return _StaticStreamedMessage([TextPart(text="done")], finish_reason)
         return _StaticStreamedMessage(
-            [ToolCall(id=f"c{index}", function=ToolCall.FunctionBody(name=entry, arguments="{}"))]
+            [ToolCall(id=f"c{index}", function=ToolCall.FunctionBody(name=entry, arguments="{}"))],
+            finish_reason,
         )
 
     def with_thinking(self, effort: ThinkingEffort) -> Self:
@@ -216,6 +226,23 @@ def test_stuck_summary_handles_whitespace_only_brief() -> None:
     assert "Boom" in text  # tool name still surfaced despite the empty brief
 
 
+@pytest.mark.parametrize(
+    ("truncated", "has_tool_calls", "recoveries", "limit", "expected"),
+    [
+        (True, False, 0, 3, True),  # truncated text, under budget -> nudge to continue
+        (False, False, 0, 3, False),  # not truncated
+        (True, True, 0, 3, False),  # has tool calls -> the loop continues via results anyway
+        (True, False, 3, 3, False),  # recovery budget exhausted
+    ],
+)
+def test_should_nudge_truncation(
+    truncated: bool, has_tool_calls: bool, recoveries: int, limit: int, expected: bool
+) -> None:
+    from pythinker_code.soul.pythinkersoul import _should_nudge_truncation
+
+    assert _should_nudge_truncation(truncated, has_tool_calls, recoveries, limit) is expected
+
+
 def test_user_message_with_hook_context() -> None:
     """Non-block additional_context from UserPromptSubmit hooks is appended to the user
     turn as a system reminder; block results and empty context contribute nothing."""
@@ -332,4 +359,39 @@ async def test_max_consecutive_failures_zero_disables_backstop(
 
     # Never escalated despite 4 consecutive failures; ran to the final text step.
     assert provider.generate_attempts == 5
+    assert record_turn.call_args.kwargs["stop_reason"] == "no_tool_calls"
+
+
+@pytest.mark.asyncio
+async def test_truncated_response_nudges_continuation(runtime: Runtime, tmp_path: Path) -> None:
+    """A response cut off by the output-token limit (no tool calls) nudges the model to
+    continue instead of ending the turn with a half-finished answer."""
+    runtime.config.loop_control.max_truncation_recoveries = 3
+    runtime.config.loop_control.max_steps_per_turn = 10
+    # Step 0: a truncated text response. Step 1: a normal text response that ends the turn.
+    provider = _ScriptedToolCallProvider([None, None], truncated_steps=[0])
+    context, soul = _make_soul(runtime, provider, tmp_path)
+
+    with patch("pythinker_code.telemetry.metrics.record_turn") as record_turn:
+        await run_soul(soul, "go", _drain_ui_messages, asyncio.Event())
+
+    # Truncation triggered a second model call (the continuation nudge); then it ended.
+    assert provider.generate_attempts == 2
+    assert record_turn.call_args.kwargs["stop_reason"] == "no_tool_calls"
+    history_text = " ".join(m.extract_text(" ") for m in context.history)
+    assert "cut off by the output token limit" in history_text
+
+
+@pytest.mark.asyncio
+async def test_truncation_recovery_disabled_at_zero(runtime: Runtime, tmp_path: Path) -> None:
+    """max_truncation_recoveries=0 disables the nudge — a truncated text response ends the turn."""
+    runtime.config.loop_control.max_truncation_recoveries = 0
+    runtime.config.loop_control.max_steps_per_turn = 10
+    provider = _ScriptedToolCallProvider([None], truncated_steps=[0])
+    context, soul = _make_soul(runtime, provider, tmp_path)
+
+    with patch("pythinker_code.telemetry.metrics.record_turn") as record_turn:
+        await run_soul(soul, "go", _drain_ui_messages, asyncio.Event())
+
+    assert provider.generate_attempts == 1  # no continuation nudge
     assert record_turn.call_args.kwargs["stop_reason"] == "no_tool_calls"
