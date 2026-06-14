@@ -95,7 +95,11 @@ class Shell(CallableTool2[Params]):
         super().__init__(
             description=load_desc(
                 Path(__file__).parent / ("powershell.md" if is_powershell else "bash.md"),
-                {"SHELL": f"{environment.shell_name} (`{environment.shell_path}`)"},
+                {
+                    "SHELL": f"{environment.shell_name} (`{environment.shell_path}`)",
+                    "MAX_FOREGROUND_TIMEOUT": MAX_FOREGROUND_TIMEOUT,
+                    "MAX_BACKGROUND_TIMEOUT": MAX_BACKGROUND_TIMEOUT,
+                },
             )
         )
         self._approval = approval

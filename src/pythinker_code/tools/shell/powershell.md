@@ -9,7 +9,7 @@ If `run_in_background=true`, the command will be started as a background task an
 
 **Guidelines for safety and security:**
 - Every tool call starts a fresh ${SHELL} session. Environment variables, `cd` changes, and command history do not persist between calls.
-- Foreground commands must finish promptly and use `timeout <= 300`. For long-running builds, scans, test suites, watchers, or servers, set `run_in_background=true`, provide a concise `description`, and use a longer `timeout` up to 86400 seconds. If you accidentally request `timeout > 300` without `run_in_background`, the tool will automatically start it as a background task instead of failing validation.
+- Foreground commands must finish promptly and use `timeout <= ${MAX_FOREGROUND_TIMEOUT}`. For long-running builds, scans, test suites, watchers, or servers, set `run_in_background=true`, provide a concise `description`, and use a longer `timeout` up to ${MAX_BACKGROUND_TIMEOUT} seconds. If you accidentally request `timeout > ${MAX_FOREGROUND_TIMEOUT}` without `run_in_background`, the tool will automatically start it as a background task instead of failing validation.
 - Avoid using `..` to leave the working directory, and never touch files outside that directory unless explicitly instructed.
 - Never attempt commands that require elevated (Administrator) privileges unless explicitly authorized.
 
@@ -17,7 +17,7 @@ If `run_in_background=true`, the command will be started as a background task an
 - Chain related commands with `;` and use `if ($?)` or `if (-not $?)` to conditionally execute commands based on the success or failure of previous ones.
 - Redirect or pipe output with `>`, `>>`, `|`, and leverage `for /f`, `if`, and `set` to build richer one-liners instead of multiple tool calls.
 - Reuse built-in utilities (e.g., `findstr`, `where`) to filter, transform, or locate data in a single invocation.
-- Prefer `run_in_background=true` for long-running builds, scans, tests, watchers, or servers when you need the conversation to continue before the command finishes or when the command needs more than 300 seconds.
+- Prefer `run_in_background=true` for long-running builds, scans, tests, watchers, or servers when you need the conversation to continue before the command finishes or when the command needs more than ${MAX_FOREGROUND_TIMEOUT} seconds.
 - After starting a background task, do not guess its outcome. Rely on the automatic completion notification whenever possible. Use `TaskOutput` for non-blocking progress snapshots by default, and set `block=true` only when you intentionally want to wait.
 - If you need to tell a human shell user how to manage background tasks, only mention `/task`. Do not invent `/task list`, `/task output`, `/task stop`, or `/tasks`.
 
