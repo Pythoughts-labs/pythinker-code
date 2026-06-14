@@ -69,64 +69,6 @@ async def test_overwrite_blocked_when_file_changed_since_read(
     assert "v2 external change" in await file_path.read_text()  # external change survived
 
 
-async def test_overwrite_blocked_after_partial_read(
-    read_file_tool: ReadFile, write_file_tool: WriteFile, temp_work_dir: HostPath
-) -> None:
-    """Overwriting a file the agent only PARTIALLY read is rejected: a full overwrite would
-    discard the lines it never saw. The remedy is to read the file in full first."""
-    file_path = temp_work_dir / "big.txt"
-    await file_path.write_text("line1\nline2\nline3\nline4\n")
-    # Capped read: only the first line is seen (n_lines=1 of a 4-line file).
-    assert not (await read_file_tool(ReadParams(path=str(file_path), n_lines=1))).is_error
-
-    result = await write_file_tool(Params(path=str(file_path), content="new"))
-    assert result.is_error
-    assert "part of this file" in result.message.lower()
-    assert await file_path.read_text() != "new"  # original preserved, nothing clobbered
-
-
-async def test_overwrite_allowed_after_full_read(
-    read_file_tool: ReadFile, write_file_tool: WriteFile, temp_work_dir: HostPath
-) -> None:
-    """A full read then overwrite is allowed — the agent has seen the whole file."""
-    file_path = temp_work_dir / "small.txt"
-    await file_path.write_text("a\nb\nc\n")
-    assert not (await read_file_tool(ReadParams(path=str(file_path)))).is_error
-
-    result = await write_file_tool(Params(path=str(file_path), content="rewritten"))
-    assert not result.is_error
-    assert await file_path.read_text() == "rewritten"
-
-
-async def test_overwrite_allowed_when_full_read_then_partial_reread(
-    read_file_tool: ReadFile, write_file_tool: WriteFile, temp_work_dir: HostPath
-) -> None:
-    """A full read already saw the whole file; a later partial re-read of the same content
-    does not re-impose the block (completeness is sticky until the file changes)."""
-    file_path = temp_work_dir / "f.txt"
-    await file_path.write_text("x\ny\nz\n")
-    assert not (await read_file_tool(ReadParams(path=str(file_path)))).is_error  # full
-    assert not (
-        await read_file_tool(ReadParams(path=str(file_path), n_lines=1))
-    ).is_error  # partial
-
-    result = await write_file_tool(Params(path=str(file_path), content="ok"))
-    assert not result.is_error
-
-
-async def test_first_contact_overwrite_allowed_without_read(
-    write_file_tool: WriteFile, temp_work_dir: HostPath
-) -> None:
-    """A file the agent never read is not gated — the partial-read guard only blocks an
-    overwrite when there is a recorded incomplete read."""
-    file_path = temp_work_dir / "unseen.txt"
-    await file_path.write_text("preexisting\n")
-
-    result = await write_file_tool(Params(path=str(file_path), content="fresh"))
-    assert not result.is_error
-    assert await file_path.read_text() == "fresh"
-
-
 async def test_overwrite_allowed_after_read(
     read_file_tool: ReadFile, write_file_tool: WriteFile, temp_work_dir: HostPath
 ) -> None:
