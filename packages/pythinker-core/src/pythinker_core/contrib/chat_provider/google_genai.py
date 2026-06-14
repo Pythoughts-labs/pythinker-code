@@ -289,7 +289,7 @@ class GoogleGenAIStreamedMessage:
 
         # Process candidates
         for candidate in response.candidates or []:
-            if candidate.finish_reason is not None:
+            if candidate.finish_reason is not None and self._finish_reason != "length":
                 self._finish_reason = _google_finish_reason(candidate.finish_reason)
             parts = candidate.content.parts if candidate.content else None
             if not parts:
@@ -314,7 +314,7 @@ class GoogleGenAIStreamedMessage:
 
                 # Process candidates
                 for candidate in response.candidates or []:
-                    if candidate.finish_reason is not None:
+                    if candidate.finish_reason is not None and self._finish_reason != "length":
                         self._finish_reason = _google_finish_reason(candidate.finish_reason)
                     parts = candidate.content.parts if candidate.content else None
                     if not parts:

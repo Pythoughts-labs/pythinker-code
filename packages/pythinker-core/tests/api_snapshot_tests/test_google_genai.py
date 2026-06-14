@@ -548,3 +548,36 @@ async def test_google_genai_with_thinking():
         assert body.get("generationConfig", {}).get("thinkingConfig") == snapshot(
             {"include_thoughts": True, "thinking_budget": 32000}
         )
+
+
+async def test_google_genai_finish_reason_length_is_sticky() -> None:
+    """Once a candidate sets finish_reason to 'length' (MAX_TOKENS), a subsequent candidate
+    with a different finish_reason (e.g. STOP → None) must not overwrite it.
+
+    Regression test for the sticky-truncation bug: the guard
+    ``candidate.finish_reason is not None`` passed for STOP, causing
+    ``_google_finish_reason(STOP) == None`` to erase the captured 'length'.
+    """
+    from google.genai.types import Candidate, Content, FinishReason, GenerateContentResponse, Part
+
+    from pythinker_core.contrib.chat_provider.google_genai import GoogleGenAIStreamedMessage
+
+    # Non-stream path: two candidates in one response — MAX_TOKENS first, then STOP.
+    response = GenerateContentResponse(
+        candidates=[
+            Candidate(
+                finish_reason=FinishReason.MAX_TOKENS,
+                content=Content(role="model", parts=[Part(text="truncated")]),
+            ),
+            Candidate(
+                finish_reason=FinishReason.STOP,
+                content=Content(role="model", parts=[Part(text="done")]),
+            ),
+        ]
+    )
+    stream = GoogleGenAIStreamedMessage(response)
+    async for _ in stream:
+        pass
+    assert stream.finish_reason == "length", (
+        f"Expected 'length' to be sticky after MAX_TOKENS candidate, got {stream.finish_reason!r}"
+    )
