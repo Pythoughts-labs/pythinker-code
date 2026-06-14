@@ -1,5 +1,42 @@
 # Reference Adoption Catalog — best practices from the blackbox agent-harness reference
 
+## Execution status (branch `feat/reference-adoption`, off `main`)
+
+- **Waves 1–3 DONE** (10 items, 11 commits, all TDD + clean-code-guard; Wave 2 items
+  security-reviewed SAFE TO MERGE; `make check-pythinker-code` green, 2151 tests passing):
+  - W1: `system-prompt` cmd · shell-timeout drift-guard · memory freshness caveat ·
+    bounded fan-out cap · per-session spend ceiling.
+  - W2: dangerous-host deny-set (`EDIT_DANGEROUS`) · accept-edits tier (`/accept-edits`).
+  - W3: `TurnOutcome.produced_answer` (observable) · required-MCP spawn gate · UserPromptSubmit
+    `additionalContext` injection.
+- **Wave 4 REMAINING** (3 items — the heaviest):
+  - **#11 read-before-write file-state cache.** Technique (from the reference
+    `utils/file_state_cache.py`): a session-scoped path→read-mtime cache; ReadFile records the
+    mtime at read; WriteFile-overwrite and StrReplaceFile then require the path to have been read
+    AND reject if the on-disk mtime is newer ("File has been modified since read"). Scope to
+    EXISTING-file overwrites only (new files exempt). Edge cases that must be right: the tool's own
+    successful write updates the cache (so the agent can immediately re-edit); a partial-view inject
+    (truncated AGENTS.md/MEMORY.md) should still require an explicit read. Cache owner on
+    Runtime/Session; touches `tools/file/{read,write,replace}.py`. Tool-semantics change → CHANGELOG
+    + security review required. This is invasive (the core edit path) — best executed in a focused
+    session.
+  - **#12 project/env context as a separate `<system-reminder>` user message.** Move volatile
+    project/env context out of the immutable system array (rendered from `system.md` §10/§11) into a
+    separate `<system-reminder>` user message for prompt-cache stability. Refactor flows through the
+    HEAVILY test-pinned `system.md` (tests/core/test_default_agent.py + test_load_agent.py assert
+    many exact phrases) and the AGENTS.md fence/budget + subagent work-dir override paths — brittle;
+    budget the pin migration.
+  - **#13 max-output-token escalation ladder.** BLOCKED: pythinker-core `_generate.py:74-91`
+    surfaces no `finish_reason`/truncation signal (the cap case returns a silent normal result), so
+    the soul cannot detect truncation. Step 1 = a pythinker-core change to emit a typed
+    truncation/length signal (own `make check-pythinker-core`); step 2 = the soul-side escalate-once
+    -then-bounded-nudge ladder. Cross-package; do step 1 first.
+- **Deferred follow-ups (low):** item-8 print exit-code gating; item-10 PostToolUse
+  additionalContext (await the fire-and-forget trigger gated on has_hooks_for); deny-set symlink-dir
+  + Shell-write limitations; accept-edits in `dynamic_injections/permissions_state.py`.
+
+---
+
 Source: a 25-agent gap-analysis scout (2026-06-14) comparing the current pythinker CLI against a
 cleanly-layered reverse-engineered agent-harness reference (Python port, local clone under
 `blackbox/`, gitignored). Each candidate was scouted with a hard verdict, then adversarially
