@@ -213,7 +213,7 @@ def test_settings_exposes_auto_update_toggle_when_live(monkeypatch):
     item = _item(_build_settings_config(config), "auto_update")
 
     assert item is not None
-    assert item.values == ("true", "false")  # togglable
+    assert item.values == ("true", "false")  # toggleable
     assert item.current_value == "true"
 
 
