@@ -206,9 +206,11 @@ _SHELL_STARTUP_FILES = frozenset(
 # Host files that hold credentials or run code via config (git aliases / credential helpers).
 _DANGEROUS_HOST_FILES = frozenset({".gitconfig", ".git-credentials", ".netrc"})
 # Directory components whose contents grant code execution or hold credentials:
-# ``.git`` (hooks run arbitrary code; config has credential helpers), ``.ssh``
-# (private keys, authorized_keys, ProxyCommand), ``.vscode`` (tasks.json can auto-run).
-_DANGEROUS_HOST_DIRS = frozenset({".git", ".ssh", ".vscode"})
+# ``.git`` (hooks run arbitrary code; config has credential helpers), ``.githooks``
+# (the conventional ``core.hooksPath`` location — same arbitrary-code-on-commit risk as
+# ``.git/hooks`` but outside ``.git``), ``.ssh`` (private keys, authorized_keys,
+# ProxyCommand), ``.vscode`` (tasks.json can auto-run).
+_DANGEROUS_HOST_DIRS = frozenset({".git", ".githooks", ".ssh", ".vscode"})
 
 
 def is_dangerous_host_path(path: HostPath) -> bool:

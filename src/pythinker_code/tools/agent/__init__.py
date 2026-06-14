@@ -290,8 +290,9 @@ class AgentTool(CallableTool2[Params]):
         return ToolError(
             message=(
                 f"Agent type '{requested_type}' requires MCP server(s) not available: "
-                f"{', '.join(missing)}. Add them with `pythinker mcp add`, or choose a "
-                f"different agent type."
+                f"{', '.join(missing)}. Add a missing server with `pythinker mcp add` "
+                f"(or `pythinker mcp auth <server>` if it is configured but unauthorized), "
+                f"or choose a different agent type."
             ),
             brief="Required MCP server unavailable",
         )

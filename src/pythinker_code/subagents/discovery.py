@@ -130,6 +130,11 @@ def parse_markdown_agent(
     when_to_use = _as_nonempty_str(fm.get("when_to_use")) or description
     tools = _map_tools(fm.get("tools"), source=prompt_file)
     raw_required = fm.get("required_mcp_servers")
+    if raw_required is not None and not isinstance(raw_required, list):
+        logger.info(
+            "Ignoring non-list required_mcp_servers field in markdown agent {path}",
+            path=prompt_file,
+        )
     required_mcp_servers: tuple[str, ...] = (
         tuple(str(s).strip() for s in cast(list[object], raw_required) if str(s).strip())
         if isinstance(raw_required, list)
