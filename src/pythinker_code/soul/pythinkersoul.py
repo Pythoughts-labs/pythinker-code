@@ -35,6 +35,7 @@ from pythinker_code.approval_runtime import (
 )
 from pythinker_code.background import build_active_task_snapshot
 from pythinker_code.hooks.engine import HookEngine
+from pythinker_code.hooks.runner import HookResult
 from pythinker_code.llm import ModelCapability, create_llm
 from pythinker_code.notifications import (
     NotificationView,
@@ -274,6 +275,29 @@ def _budget_exhausted_message(session_cost_usd: float, ceiling: float) -> Messag
         f"`loop_control.max_session_cost_usd` in config, or start a new session, to continue."
     )
     return Message(role="assistant", content=[TextPart(text=text)])
+
+
+def _user_message_with_hook_context(
+    user_input: str | list[ContentPart], results: Sequence[HookResult]
+) -> Message:
+    """Build the user-turn message, appending non-block ``additional_context`` from
+    UserPromptSubmit hooks as a system reminder so the model sees it as context for this
+    prompt. Blocking results are handled separately and never contribute context.
+    """
+    context = "\n\n".join(
+        r.additional_context.strip()
+        for r in results
+        if r.action != "block" and r.additional_context.strip()
+    )
+    if not context:
+        return Message(role="user", content=user_input)
+    base: list[ContentPart] = (
+        list(user_input) if isinstance(user_input, list) else [TextPart(text=user_input)]
+    )
+    reminder = system_reminder(
+        f"A UserPromptSubmit hook added context for this prompt:\n\n{context}"
+    )
+    return Message(role="user", content=[*base, reminder])
 
 
 def _stuck_summary_message(
@@ -993,6 +1017,7 @@ class PythinkerSoul:
             # the wait ceiling is hit) must bypass ``UserPromptSubmit``:
             # they are not user input, and a user-configured prompt-blocking
             # hook would drop the notification and hang the wait loop.
+            hook_results: Sequence[HookResult] = []
             if not skip_user_prompt_hook:
                 text_input_for_hook = user_input if isinstance(user_input, str) else ""
 
@@ -1016,8 +1041,11 @@ class PythinkerSoul:
 
             wire_send(TurnBegin(user_input=user_input))
             turn_started = True
-            user_message = Message(role="user", content=user_input)
-            text_input = user_message.extract_text(" ").strip()
+            # Inject any non-block additional_context from UserPromptSubmit hooks into the
+            # user turn so the model sees it as context for this prompt.
+            user_message = _user_message_with_hook_context(user_input, hook_results)
+            # Slash-command parsing must see only the user's text, never appended hook context.
+            text_input = Message(role="user", content=user_input).extract_text(" ").strip()
 
             primary_outcome: TurnOutcome | None = None
             if command_call := parse_slash_command_call(text_input):

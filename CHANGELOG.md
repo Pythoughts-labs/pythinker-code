@@ -49,6 +49,10 @@ GitHub Releases page; `0.8.0` is the new starting line.
   rejected with a clear message when those servers are configured-and-absent, instead of
   wasting a turn on an agent that cannot reach its tools. While MCP is still loading the
   spawn is allowed (the servers may yet connect).
+- **UserPromptSubmit hooks can add context.** A non-blocking `UserPromptSubmit` hook's
+  `additionalContext` is now injected into the user turn as a system reminder, so the
+  model sees it as context for the prompt (previously only a hook *block* was honored).
+  Slash-command parsing still reads only the user's text, never the appended context.
 
 ## 0.44.0 (2026-06-13)
 

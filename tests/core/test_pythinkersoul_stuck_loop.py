@@ -216,6 +216,30 @@ def test_stuck_summary_handles_whitespace_only_brief() -> None:
     assert "Boom" in text  # tool name still surfaced despite the empty brief
 
 
+def test_user_message_with_hook_context() -> None:
+    """Non-block additional_context from UserPromptSubmit hooks is appended to the user
+    turn as a system reminder; block results and empty context contribute nothing."""
+    from pythinker_code.hooks.runner import HookResult
+    from pythinker_code.soul.pythinkersoul import _user_message_with_hook_context
+
+    plain = _user_message_with_hook_context("review the diff", [])
+    assert "review the diff" in plain.extract_text(" ")
+    assert "system-reminder" not in plain.extract_text(" ")
+
+    enriched = _user_message_with_hook_context(
+        "review the diff", [HookResult(additional_context="The repo uses pnpm, not npm.")]
+    )
+    text = enriched.extract_text(" ")
+    assert "review the diff" in text
+    assert "pnpm" in text
+
+    # A blocking result does not contribute context (block is handled separately).
+    blocked = _user_message_with_hook_context(
+        "review the diff", [HookResult(action="block", additional_context="should be ignored")]
+    )
+    assert "should be ignored" not in blocked.extract_text(" ")
+
+
 @pytest.mark.parametrize(
     ("stop_reason", "text", "expected"),
     [
