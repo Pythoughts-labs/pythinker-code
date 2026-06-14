@@ -1286,7 +1286,7 @@ class Shell:
             remove_sigint()
 
     async def _run_slash_command(self, command_call: SlashCommandCall) -> None:
-        from pythinker_code.cli import Reload, SwitchToVis, SwitchToWeb
+        from pythinker_code.cli import Reload, SwitchToDashboard, SwitchToWeb
         from pythinker_code.telemetry import track
 
         available_command = self._find_available_slash_command(command_call.name)
@@ -1318,7 +1318,7 @@ class Shell:
             ret = command.func(self, command_call.args)
             if isinstance(ret, Awaitable):
                 await ret
-        except (Reload, SwitchToWeb, SwitchToVis):
+        except (Reload, SwitchToWeb, SwitchToDashboard):
             # just propagate
             raise
         except (asyncio.CancelledError, KeyboardInterrupt):
@@ -1337,7 +1337,7 @@ class Shell:
         change is already saved, so report that it applies later instead of
         letting the exception escape the fire-and-forget task.
         """
-        from pythinker_code.cli import Reload, SwitchToVis, SwitchToWeb
+        from pythinker_code.cli import Reload, SwitchToDashboard, SwitchToWeb
 
         _t = _get_tui_tokens()
         try:
@@ -1347,7 +1347,7 @@ class Shell:
                 f"[{_t.warning}]Settings saved — restart pythinker after the "
                 f"current task to apply them.[/]"
             )
-        except (SwitchToWeb, SwitchToVis):
+        except (SwitchToWeb, SwitchToDashboard):
             console.print(
                 f"[{_t.warning}]Mode switches are unavailable while a task is in progress.[/]"
             )

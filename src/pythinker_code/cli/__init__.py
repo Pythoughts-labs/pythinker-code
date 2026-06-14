@@ -36,11 +36,11 @@ class SwitchToWeb(Exception):
         self.session_id = session_id
 
 
-class SwitchToVis(Exception):
-    """Switch to vis (tracing visualizer) interface."""
+class SwitchToDashboard(Exception):
+    """Switch to dashboard (tracing visualizer) interface."""
 
-    def __init__(self, session_id: str | None = None):
-        super().__init__("switch_to_vis")
+    def __init__(self, session_id: str | None = None) -> None:
+        super().__init__("switch_to_dashboard")
         self.session_id = session_id
 
 
@@ -1042,7 +1042,7 @@ def pythinker(
             except SwitchToWeb:
                 preserve_background_tasks = True
                 raise
-            except SwitchToVis:
+            except SwitchToDashboard:
                 preserve_background_tasks = True
                 raise
             finally:
@@ -1134,10 +1134,10 @@ def pythinker(
             await asyncio.to_thread(mutate_metadata, _mark_last)
 
     async def _reload_loop(session_id: str | None) -> tuple[str | None, int]:
-        """Run the main loop, handling Reload/SwitchToWeb/SwitchToVis.
+        """Run the main loop, handling Reload/SwitchToWeb/SwitchToDashboard.
 
         Returns:
-            (switch_target, exit_code) where switch_target is "web", "vis",
+            (switch_target, exit_code) where switch_target is "web", "dashboard",
             or None if the session ended normally.
         """
         last_session: Session | None = None
@@ -1182,19 +1182,19 @@ def pythinker(
                         if session is not None:
                             await _post_run(session, ExitCode.SUCCESS)
                     return "web", ExitCode.SUCCESS
-                except SwitchToVis as e:
+                except SwitchToDashboard as e:
                     if _latest_created_session is not None:
                         _latest_created_session.release_ownership()
                     if e.session_id is not None:
                         session = await Session.find(work_dir, e.session_id)
                         if session is not None:
                             await _post_run(session, ExitCode.SUCCESS)
-                    return "vis", ExitCode.SUCCESS
+                    return "dashboard", ExitCode.SUCCESS
             assert last_session is not None
             await _post_run(last_session, exit_code)
             last_session.release_ownership()
             return None, exit_code
-        except (SwitchToWeb, SwitchToVis):
+        except (SwitchToWeb, SwitchToDashboard):
             # Currently handled inside the loop (return), but re-raise explicitly
             # so the generic except below never treats them as unexpected errors.
             raise
@@ -1316,7 +1316,7 @@ def pythinker(
                 "Run with --debug for full traceback, or run pythinker export to share diagnostics."
             )
         raise typer.Exit(code=1) from exc
-    if switch_target in ("web", "vis"):
+    if switch_target in ("web", "dashboard"):
         from pythinker_code.utils.logging import restore_stderr
 
         restore_stderr()
@@ -1336,9 +1336,9 @@ def pythinker(
 
             run_web_server(open_browser=True)
         else:
-            from pythinker_code.vis.app import run_vis_server
+            from pythinker_code.dashboard.app import run_dashboard_server
 
-            run_vis_server(open_browser=True)
+            run_dashboard_server(open_browser=True)
     elif exit_code != ExitCode.SUCCESS:
         raise typer.Exit(code=exit_code)
 

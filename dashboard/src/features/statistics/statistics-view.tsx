@@ -78,7 +78,7 @@ function DailyUsageChart({ daily }: { daily: AggregateStats["daily_usage"] }) {
   const labelStep = Math.max(1, Math.ceil(daily.length / 6));
 
   return (
-    <Card>
+    <Card className="mx-auto w-full max-w-3xl">
       <CardHeader>
         <div>
           <CardTitle>Daily Usage</CardTitle>
@@ -333,7 +333,7 @@ export function StatisticsView() {
               </div>
             ))}
           </div>
-          <div className="h-[200px] animate-pulse rounded-xl border bg-muted/30" />
+          <div className="mx-auto h-[200px] w-full max-w-3xl animate-pulse rounded-xl border bg-muted/30" />
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div className="h-[260px] animate-pulse rounded-xl border bg-muted/30" />
             <div className="h-[260px] animate-pulse rounded-xl border bg-muted/30" />

@@ -24,7 +24,7 @@ _PYINSTALLER_LD_VARS = [
 # arbitrary child tools, plugins, hooks, git helpers, or shell commands.
 _INTERNAL_SESSION_TOKEN_VARS = {
     "PYTHINKER_WEB_SESSION_TOKEN",
-    "PYTHINKER_VIS_SESSION_TOKEN",
+    "PYTHINKER_DASHBOARD_SESSION_TOKEN",
 }
 
 

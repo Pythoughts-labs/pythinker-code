@@ -10,7 +10,7 @@ from prompt_toolkit.shortcuts.choice_input import ChoiceInput
 from rich.markup import escape
 
 from pythinker_code.auth.platforms import get_platform_name_for_provider, refresh_managed_models
-from pythinker_code.cli import Reload, SwitchToVis, SwitchToWeb
+from pythinker_code.cli import Reload, SwitchToDashboard, SwitchToWeb
 from pythinker_code.config import StatusLineConfig, load_config, save_config
 from pythinker_code.exception import ConfigError
 from pythinker_code.session import Session
@@ -1999,15 +1999,15 @@ def web(app: Shell, args: str):
     raise SwitchToWeb(session_id=session_id)
 
 
-@registry.command
-def reports(app: Shell, args: str) -> NoReturn:
+@registry.command(aliases=["dashboard"])
+def reports(app: Shell, _args: str) -> NoReturn:
     """Open Pythinker session reports (Agent Tracing Visualizer) in browser"""
     from pythinker_code.telemetry import track
 
     track("reports_opened")
     soul = ensure_pythinker_soul(app)
     session_id = soul.runtime.session.id if soul else None
-    raise SwitchToVis(session_id=session_id)
+    raise SwitchToDashboard(session_id=session_id)
 
 
 @registry.command(name="memory", aliases=["mem"])

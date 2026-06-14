@@ -10,7 +10,7 @@ from pythinker_code.cli import (
     _load_mcp_configs_from_cli_inputs,
     _yaml_files_with_misplaced_mcp_servers,
 )
-from pythinker_code.cli.vis import cli as vis_cli
+from pythinker_code.cli.dashboard import cli as dashboard_cli
 from pythinker_code.cli.web import cli as web_cli
 
 
@@ -101,7 +101,7 @@ def test_load_mcp_configs_ignores_misplaced_yaml(
 
 
 def test_web_dash_h_shows_help_not_host() -> None:
-    """-h on web/vis CLIs must show help (exit 0), not demand a host argument (exit 2)."""
+    """-h on web/dashboard CLIs must show help (exit 0), not demand a host argument (exit 2)."""
     runner = CliRunner()
 
     # web: -h shows help
@@ -113,13 +113,13 @@ def test_web_dash_h_shows_help_not_host() -> None:
     result_h = runner.invoke(web_cli, ["-H", "1.2.3.4", "--help"], color=False)
     assert result_h.exit_code == 0
 
-    # vis: -h shows help
-    result_vis = runner.invoke(vis_cli, ["-h"], color=False)
-    assert result_vis.exit_code == 0, (
-        f"vis -h exit_code={result_vis.exit_code!r}, output={result_vis.output!r}"
+    # dashboard: -h shows help
+    result_dashboard = runner.invoke(dashboard_cli, ["-h"], color=False)
+    assert result_dashboard.exit_code == 0, (
+        f"dashboard -h exit_code={result_dashboard.exit_code!r}, output={result_dashboard.output!r}"
     )
-    assert "Usage" in result_vis.output
+    assert "Usage" in result_dashboard.output
 
-    # vis: -H sets host without error
-    result_vis_h = runner.invoke(vis_cli, ["-H", "1.2.3.4", "--help"], color=False)
-    assert result_vis_h.exit_code == 0
+    # dashboard: -H sets host without error
+    result_dashboard_h = runner.invoke(dashboard_cli, ["-H", "1.2.3.4", "--help"], color=False)
+    assert result_dashboard_h.exit_code == 0

@@ -29,12 +29,12 @@ web-back: ## Start web backend with uvicorn (reload enabled).
 web-front: ## Start web frontend (vite dev server).
 	@npm --prefix web run dev
 
-# for pythinker vis development
-.PHONY: vis-back vis-front
-vis-back: ## Start vis backend with uvicorn (reload enabled).
-	@LOG_LEVEL=DEBUG uv run uvicorn pythinker_code.vis.app:create_app --factory --reload --port 5495
-vis-front: ## Start vis frontend (vite dev server).
-	@npm --prefix vis run dev
+# for pythinker dashboard development
+.PHONY: dashboard-back dashboard-front
+dashboard-back: ## Start dashboard backend with uvicorn (reload enabled).
+	@LOG_LEVEL=DEBUG uv run uvicorn pythinker_code.dashboard.app:create_app --factory --reload --port 5495
+dashboard-front: ## Start dashboard frontend (vite dev server).
+	@npm --prefix dashboard run dev
 
 .PHONY: format format-pythinker-code format-pythinker-core format-pythinker-host format-pythinker-review format-pythinker-sdk format-web
 format: format-pythinker-code format-pythinker-core format-pythinker-host format-pythinker-review format-pythinker-sdk format-web ## Auto-format all workspace packages.
@@ -145,8 +145,8 @@ cov-pythinker-sdk: ## Run Pythinker SDK tests with coverage.
 		--cov --cov-report=xml:coverage.xml -vv
 
 .PHONY: build build-pythinker-code build-pythinker-core build-pythinker-host build-pythinker-review build-pythinker-sdk build-bin build-bin-onedir
-build: build-web build-vis build-pythinker-code build-pythinker-core build-pythinker-host build-pythinker-review build-pythinker-sdk ## Build Python packages for release.
-build-pythinker-code: build-web build-vis ## Build the pythinker-code sdist and wheel.
+build: build-web build-dashboard build-pythinker-code build-pythinker-core build-pythinker-host build-pythinker-review build-pythinker-sdk ## Build Python packages for release.
+build-pythinker-code: build-web build-dashboard ## Build the pythinker-code sdist and wheel.
 	@echo "==> Building pythinker-code distributions"
 	@uv build --package pythinker-code --no-sources --out-dir dist
 build-pythinker-core: ## Build the pythinker-core sdist and wheel.
@@ -164,15 +164,15 @@ build-pythinker-sdk: ## Build the pythinker-sdk sdist and wheel.
 build-web: ## Build web UI and sync into pythinker-code package.
 	@echo "==> Building web UI"
 	@uv run scripts/build_web.py
-build-vis: ## Build vis UI and sync into pythinker-code package.
-	@echo "==> Building vis UI"
-	@uv run scripts/build_vis.py
-build-bin: build-web build-vis ## Build the standalone executable with PyInstaller (one-file mode).
+build-dashboard: ## Build dashboard UI and sync into pythinker-code package.
+	@echo "==> Building dashboard UI"
+	@uv run scripts/build_dashboard.py
+build-bin: build-web build-dashboard ## Build the standalone executable with PyInstaller (one-file mode).
 	@echo "==> Building PyInstaller binary (one-file)"
 	@uv run pyinstaller pythinker.spec
 	@mkdir -p dist/onefile
 	@if [ -f dist/pythinker.exe ]; then mv dist/pythinker.exe dist/onefile/; elif [ -f dist/pythinker ]; then mv dist/pythinker dist/onefile/; fi
-build-bin-onedir: build-web build-vis ## Build the standalone executable with PyInstaller (one-dir mode).
+build-bin-onedir: build-web build-dashboard ## Build the standalone executable with PyInstaller (one-dir mode).
 	@echo "==> Building PyInstaller binary (one-dir)"
 	@rm -rf dist/onedir dist/pythinker
 	@PYINSTALLER_ONEDIR=1 uv run pyinstaller pythinker.spec

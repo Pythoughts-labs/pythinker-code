@@ -3,7 +3,7 @@
 Pins the version-detection behaviour of `WireFile`: files written before the
 metadata header existed (legacy, headerless) must still be readable and must
 report `WIRE_PROTOCOL_LEGACY_VERSION`. A regression here would silently break
-old `wire.jsonl` files for every frontend (Shell, Web, Vis, ACP).
+old `wire.jsonl` files for every frontend (Shell, Web, Dashboard, ACP).
 """
 
 from __future__ import annotations

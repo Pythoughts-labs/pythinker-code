@@ -28,8 +28,8 @@ src/pythinker_code/deps/tmp
 # Web build artifacts
 src/pythinker_code/web/static/assets/
 
-# Vis build artifacts
-src/pythinker_code/vis/static/
+# Dashboard build artifacts
+src/pythinker_code/dashboard/static/
 
 # Generated reports
 .firecrawl/

@@ -144,8 +144,8 @@ Development servers:
 ```bash
 make web-back     # FastAPI web backend on port 5494
 make web-front    # web frontend dev server
-make vis-back     # visualization backend on port 5495
-make vis-front    # visualization frontend dev server
+make dashboard-back     # dashboard backend on port 5495
+make dashboard-front    # dashboard frontend dev server
 ```
 
 Targeted package commands:
@@ -173,7 +173,7 @@ Pick the smallest reliable gate for the change, then run broader gates before re
 | `packages/pythinker-host` | `make check-pythinker-host && make test-pythinker-host` |
 | `packages/pythinker-review` | `make check-pythinker-review && make test-pythinker-review` |
 | `sdks/pythinker-sdk` | `make check-pythinker-sdk && make test-pythinker-sdk` |
-| Web / vis frontends | `make check-web`; build affected frontend when packaging assets changed |
+| Web / dashboard frontends | `make check-web`; build affected frontend when packaging assets changed |
 | Release / packaging / PyInstaller | `make build` or `make build-bin` as appropriate |
 
 If a gate cannot run because of missing system tools (for example `npm`), report that explicitly
@@ -221,7 +221,7 @@ see `docs/en/customization/architecture.md`. This list is a quick orientation on
 - `src/pythinker_code/auth/`: OAuth/API-key provider integrations.
 - `src/pythinker_code/background/`: background task worker/runtime support.
 - `src/pythinker_code/cli/`: Typer command tree (lazy-loaded subcommands `mcp`, `plugin`,
-  `skill`, `web`, `vis`, `info`, `export`, `review`, `secscan`, `security-scan`, `debug`,
+  `skill`, `web`, `dashboard`, `info`, `export`, `review`, `secscan`, `security-scan`, `debug`,
   `update`, plus eager `login`, `logout`, `term`, `acp`).
 - `src/pythinker_code/hooks/`: hook definitions and execution engine.
 - `src/pythinker_code/plugin/`: plugin discovery and installation support.
@@ -239,8 +239,8 @@ see `docs/en/customization/architecture.md`. This list is a quick orientation on
 - `src/pythinker_code/tools/`: built-in tools (`agent`, `ask_user`, `background`, `dmail`, `file`,
   `plan`, `shell`, `think`, `todo`, `web`, etc.).
 - `src/pythinker_code/ui/`: shell, print, and ACP frontends.
-- `src/pythinker_code/web/`, `src/pythinker_code/vis/`: backend integrations for web/visualization.
-- `web/`, `vis/`: frontend apps bundled into the CLI package.
+- `src/pythinker_code/web/`, `src/pythinker_code/dashboard/`: backend integrations for web/visualization.
+- `web/`, `dashboard/`: frontend apps bundled into the CLI package.
 - `packages/pythinker-core/`: LLM abstraction layer for messages, providers, streaming, and tools.
 - `packages/pythinker-host/`: host abstraction for local/remote file and shell operations.
 - `packages/pythinker-review/`: review/debug/security engine, code-reviewr-derived PR

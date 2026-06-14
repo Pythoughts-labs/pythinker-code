@@ -80,7 +80,7 @@ export default withMermaid(defineConfig({
                 { text: 'pythinker acp Subcommand', link: '/en/reference/pythinker-acp' },
                 { text: 'pythinker mcp Subcommand', link: '/en/reference/pythinker-mcp' },
                 { text: 'pythinker term Subcommand', link: '/en/reference/pythinker-term' },
-                { text: 'pythinker vis Subcommand', link: '/en/reference/pythinker-vis' },
+                { text: 'pythinker dashboard Subcommand', link: '/en/reference/pythinker-dashboard' },
                 { text: 'pythinker web Subcommand', link: '/en/reference/pythinker-web' },
                 { text: 'Slash Commands', link: '/en/reference/slash-commands' },
                 { text: 'Keyboard Shortcuts', link: '/en/reference/keyboard' },
