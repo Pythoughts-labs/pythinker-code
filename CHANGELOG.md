@@ -15,6 +15,20 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Fixed MiniMax token-plan `/usage` accuracy.** The token-plan response now meters by
+  percentage (the count fields are 0) and reports reset times in milliseconds; the adapter was
+  reading the zero counts (showing "0 requests used") and treating milliseconds as seconds
+  (showing resets like "171d" for a 5-hour window). It now reads `*_remaining_percent` and
+  converts reset times correctly, so e.g. a week at 82% remaining shows "18% used" resetting in
+  hours, not days.
+- **GLM-5.2 (1M context) is now the default Z.AI model.** Logging in with Z.AI selects
+  `z-ai/glm-5.2` with its full 1,000,000-token context window. GLM-5.2 is absent from z.ai's
+  model-listing API, so it is pinned into the catalog and offered even when discovery omits it;
+  if z.ai later lists it, the API definition wins and it is shown once (no duplicate). Earlier
+  GLM models (5.1, 5, 5-turbo, 4.7, 4.5-air) remain available.
+- **Kimi K2.7 Code added, and a new Kimi Coding Plan provider.** `kimi-k2.7-code` is now the
+  default model on the Moonshot plan, and a separate "Kimi Coding Plan" provider
+  (`/login kimi`) targets Moonshot's Anthropic-compatible coding endpoint with `kimi-k2.7-code`.
 - **Verb spinner stays visible while a foreground tool or subagent runs.** The shimmering
   "Working…/Thinking…" activity indicator now persists for the whole active turn — including
   while a foreground tool (such as a shell-started server) or a subagent is executing — instead

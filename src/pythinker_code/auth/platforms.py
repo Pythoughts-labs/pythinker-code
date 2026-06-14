@@ -231,6 +231,12 @@ async def refresh_managed_models(config: Config) -> bool:
     if not config.is_from_default_location:
         return False
 
+    from pythinker_code.auth.kimi import (
+        KIMI_PROVIDER_KEY,
+        KimiModel,
+        apply_kimi_models,
+        refresh_kimi_models,
+    )
     from pythinker_code.auth.minimax import (
         MINIMAX_ANTHROPIC_PROVIDER_KEY,
         MiniMaxModel,
@@ -267,6 +273,7 @@ async def refresh_managed_models(config: Config) -> bool:
         if provider_key in OPENCODE_GO_PROVIDER_KEYS or provider_key in (
             MINIMAX_ANTHROPIC_PROVIDER_KEY,
             ZAI_PROVIDER_KEY,
+            KIMI_PROVIDER_KEY,
         ):
             continue
         platform_id = parse_managed_provider_key(provider_key)
@@ -431,6 +438,14 @@ async def refresh_managed_models(config: Config) -> bool:
     if z_ai_models is not None and apply_z_ai_models(config, z_ai_models):
         changed = True
 
+    kimi_models: tuple[KimiModel, ...] | None = None
+    try:
+        kimi_models = await refresh_kimi_models(config)
+    except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+        logger.warning("Failed to refresh Kimi models: {error}", error=exc)
+    if kimi_models is not None and apply_kimi_models(config, kimi_models):
+        changed = True
+
     if changed:
         config_for_save = load_config()
         save_changed = False
@@ -442,6 +457,8 @@ async def refresh_managed_models(config: Config) -> bool:
         if minimax_models is not None and apply_minimax_models(config_for_save, minimax_models):
             save_changed = True
         if z_ai_models is not None and apply_z_ai_models(config_for_save, z_ai_models):
+            save_changed = True
+        if kimi_models is not None and apply_kimi_models(config_for_save, kimi_models):
             save_changed = True
         if save_changed:
             save_config(config_for_save)

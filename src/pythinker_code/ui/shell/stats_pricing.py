@@ -47,13 +47,17 @@ _PRICE_TABLE: dict[str, tuple[float, float, float, float]] = {
     "deepseek-reasoner": (0.55, 2.19, 0.55, 0.0),
     # GLM (Z.AI / OpenCode-Go)
     "glm-5": (1.0, 3.2, 0.2, 0.0),
+    # GLM-5.2 list pricing is not yet published; estimate at the GLM-5.1 flagship
+    # tier (offline fallback only — models.dev overrides when available).
+    "glm-5.2": (1.4, 4.4, 0.26, 0.0),
     "glm-5.1": (1.4, 4.4, 0.26, 0.0),
     "glm-5-turbo": (0.5, 1.5, 0.1, 0.0),
     "glm-4.7": (0.5, 1.5, 0.1, 0.0),
     "glm-4.5-air": (0.3, 1.0, 0.06, 0.0),
-    # Moonshot K2 (opencode-go)
+    # Moonshot K2 (opencode-go / Moonshot / Kimi coding plan)
     "kimi-k2.5": (0.6, 3.0, 0.08, 0.0),
     "kimi-k2.6": (0.95, 4.0, 0.16, 0.0),
+    "kimi-k2.7-code": (0.95, 4.0, 0.19, 0.0),
     # MiniMax (opencode-go / anthropic shape)
     "minimax-m2.5": (0.3, 1.2, 0.06, 0.0),
     "minimax-m2.7": (0.3, 1.2, 0.06, 0.0),

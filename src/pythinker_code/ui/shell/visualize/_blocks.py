@@ -650,19 +650,6 @@ class _ToolCallBlock:
         return self._is_background_pending
 
     @property
-    def is_executing(self) -> bool:
-        """True while the tool body is running: execution has started, no result
-        has arrived, and it is not a detached background agent.
-
-        In this window the agent coroutine is awaiting the subprocess (most
-        visibly a long-lived server started via the shell tool) rather than
-        thinking, and the tool card already shows an animated running marker.
-        Callers suppress the shimmering verb spinner here so it does not falsely
-        imply active agent cognition.
-        """
-        return self._execution_started and not self.finished and not self._is_background_pending
-
-    @property
     def has_expandable_card(self) -> bool:
         return self._tui_card is not None and self._tui_card.can_expand
 

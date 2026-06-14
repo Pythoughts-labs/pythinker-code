@@ -58,6 +58,60 @@ def test_parse_minimax_payload_real_shape() -> None:
     assert weekly.limit == 15000
 
 
+def test_parse_minimax_payload_percent_metered_real_shape() -> None:
+    """Verified 2026-06-15 against a live sk-cp-* key. The plan meters by
+    percentage (count fields are 0) and reports reset times in milliseconds, with
+    `model_name` as a resource category. The old parser showed "0 requests used"
+    and absurd ("171d") resets; this asserts the corrected percent + ms handling."""
+    payload = {
+        "model_remains": [
+            {
+                "start_time": 1781449200000,
+                "end_time": 1781467200000,
+                "remains_time": 13224928,  # ms -> ~3h40m, NOT 153 days
+                "current_interval_total_count": 0,
+                "current_interval_usage_count": 0,
+                "model_name": "general",
+                "current_weekly_total_count": 0,
+                "current_weekly_usage_count": 0,
+                "weekly_remains_time": 27624928,
+                "current_interval_remaining_percent": 100,
+                "current_weekly_remaining_percent": 82,
+            },
+            {
+                "model_name": "video",
+                "remains_time": 27624928,
+                "current_interval_total_count": 0,
+                "current_weekly_total_count": 0,
+                "weekly_remains_time": 27624928,
+                "current_interval_remaining_percent": 100,
+                "current_weekly_remaining_percent": 100,
+            },
+        ],
+        "base_resp": {"status_code": 0, "status_msg": "success"},
+    }
+    report = parse_minimax_payload(payload)
+    rows = [report.summary, *report.limits]
+    by_label = {r.label: r for r in rows if r is not None}
+
+    # Percent-metered: 82% remaining -> 18% used, on a 0..100 scale.
+    weekly = by_label["general weekly"]
+    assert weekly.unit == "%"
+    assert weekly.used == 18
+    assert weekly.limit == 100
+
+    interval = by_label["general 5h"]
+    assert interval.unit == "%"
+    assert interval.used == 0
+
+    # Reset times are milliseconds: ~3h40m, never days.
+    assert interval.reset_hint is not None
+    assert "resets in" in interval.reset_hint
+    assert "d" not in interval.reset_hint  # not "171d"
+
+    assert "video 5h" in by_label and "video weekly" in by_label
+
+
 def test_parse_minimax_payload_multiple_models() -> None:
     payload = {
         "base_resp": {"status_code": 0},
