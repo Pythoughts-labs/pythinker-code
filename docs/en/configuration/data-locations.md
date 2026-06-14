@@ -23,7 +23,7 @@ Note: `PYTHINKER_SHARE_DIR` only affects the storage location of the runtime dat
 │           ├── context.jsonl
 │           ├── wire.jsonl
 │           └── state.json
-├── imported_sessions/    # Imported session data (via pythinker vis)
+├── imported_sessions/    # Imported session data (via pythinker dashboard)
 │   └── <session-id>/
 │       ├── context.jsonl
 │       ├── wire.jsonl

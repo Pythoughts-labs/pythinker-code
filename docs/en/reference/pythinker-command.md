@@ -169,7 +169,7 @@ When not specified, Pythinker Code automatically discovers user-level and projec
 | [`pythinker plugin`](../customization/plugins.md) | Manage plugins (Beta) |
 | [`pythinker term`](./pythinker-term.md) | Launch the Toad terminal UI |
 | [`pythinker export`](#pythinker-export) | Export a session as a ZIP file |
-| [`pythinker vis`](./pythinker-vis.md) | Launch the Agent Tracing Visualizer (Technical Preview) |
+| [`pythinker dashboard`](./pythinker-dashboard.md) | Launch the Agent Tracing Visualizer (Technical Preview) |
 | [`pythinker web`](./pythinker-web.md) | Start the Web UI server |
 
 ### `pythinker login`
@@ -207,7 +207,7 @@ pythinker export [<session_id>] [-o <output_path>] [--yes]
 Added in version 1.20.
 :::
 
-### `pythinker vis`
+### `pythinker dashboard`
 
 ::: warning Note
 Technical Preview feature, may be unstable.
@@ -216,7 +216,7 @@ Technical Preview feature, may be unstable.
 Launch the Agent Tracing Visualizer to view and analyze session traces in a browser.
 
 ```sh
-pythinker vis [OPTIONS]
+pythinker dashboard [OPTIONS]
 ```
 
 | Option | Short | Description |
@@ -227,7 +227,7 @@ pythinker vis [OPTIONS]
 | `--open / --no-open` | | Automatically open browser (default: enabled) |
 | `--reload` | | Enable auto-reload (development mode) |
 
-See [Agent Tracing Visualizer](./pythinker-vis.md) for details.
+See [Agent Tracing Visualizer](./pythinker-dashboard.md) for details.
 
 ### `pythinker web`
 

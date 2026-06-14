@@ -35,7 +35,7 @@ flowchart TB
   Soul[PythinkerSoul\nsoul/pythinkersoul.py]
   RunSoul[run_soul\nWire + UI task + soul task]
   Wire[Wire\nraw and merged queues]
-  UI[Shell, print, ACP, web, vis UI]
+  UI[Shell, print, ACP, web, dashboard UI]
   Core[pythinker_core.step]
   LLM[Chat provider]
   Toolset[PythinkerToolset]
@@ -344,4 +344,4 @@ The agent architecture is easiest to read as four concentric layers:
 1. `PythinkerCLI.create` is the composition layer. It wires config, model, runtime services, agent spec, context, hooks, and telemetry.
 2. `PythinkerSoul` is the lifecycle layer. It owns turns, steps, checkpoints, compaction, slash commands, dynamic injections, and stop conditions.
 3. `pythinker_core.step` is the model/tool orchestration layer. It asks the provider for an assistant message, streams output, executes requested tools through the toolset, and exposes tool results back to the soul.
-4. `Wire` is the observation layer. It records and broadcasts what happened so shell, print, ACP, web, vis, and external Wire clients can render or control the run without owning agent logic.
+4. `Wire` is the observation layer. It records and broadcasts what happened so shell, print, ACP, web, dashboard, and external Wire clients can render or control the run without owning agent logic.

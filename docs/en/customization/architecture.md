@@ -22,7 +22,7 @@ under `blackbox/` are out of scope and are not part of this map.
 leaf-first. Subagents inherit the parent's already-merged guidance rather than re-resolving
 from their own directory. A nested `AGENTS.md` therefore only loads when a session's working
 directory is inside that subtree, which is why nested guides exist for directories people
-actually `cd` into (for example `web/`, `vis/`, `tests_e2e/`) and not for every module.
+actually `cd` into (for example `web/`, `dashboard/`, `tests_e2e/`) and not for every module.
 
 ## Trust boundaries at a glance
 
@@ -32,7 +32,7 @@ The security-relevant edges of the system, independent of any one subsystem:
   steering queue), over the Wire JSON-RPC protocol (`src/pythinker_code/wire/server.py`),
   through the ACP server (`src/pythinker_code/acp/server.py`), via CLI flags
   (`src/pythinker_code/cli/__init__.py`), from config files (`src/pythinker_code/config.py`),
-  and over HTTP for the web and vis backends.
+  and over HTTP for the web and dashboard backends.
 - **Where untrusted content is parsed.** Model tool-call arguments are validated in
   `pythinker_core.tooling` (`CallableTool2`); MCP output flows through
   `pythinker_core.tooling.mcp`; web fetch/search results, file reads, and background task
@@ -69,14 +69,14 @@ The end-to-end flow when a session starts and processes a turn:
 5. **Tool execution** — `src/pythinker_code/soul/toolset.py:PythinkerToolset` loads built-in
    and MCP tools, injects dependencies, executes calls, and returns structured results.
 6. **Wire and UI** — `src/pythinker_code/soul/run_soul` connects the soul to
-   `src/pythinker_code/wire/`; Shell, Print, ACP, Web, and Vis frontends consume Wire events.
+   `src/pythinker_code/wire/`; Shell, Print, ACP, Web, and Dashboard frontends consume Wire events.
 
 ## Runtime and entry
 
 | Path | Purpose | Key entry points and interfaces |
 | --- | --- | --- |
 | `src/pythinker_code/__main__.py` | Process entry. | `main` |
-| `src/pythinker_code/cli/` | Typer command tree and UI-mode routing; lazy-loaded subcommands. | `cli`, `pythinker`, `login`, `logout`, `term`, `acp`, lazy group `info`, `export`, `mcp`, `plugin`, `skill`, `review`, `secscan`, `security-scan`, `debug`, `update`, `vis`, `web` |
+| `src/pythinker_code/cli/` | Typer command tree and UI-mode routing; lazy-loaded subcommands. | `cli`, `pythinker`, `login`, `logout`, `term`, `acp`, lazy group `info`, `export`, `mcp`, `plugin`, `skill`, `review`, `secscan`, `security-scan`, `debug`, `update`, `dashboard`, `web` |
 | `src/pythinker_code/app.py` | Builds `PythinkerCLI`, `Runtime`, and `PythinkerSoul`; wires telemetry and frontends. | `PythinkerCLI.create`, `PythinkerCLI.run`, `run_shell` / `run_print` / `run_acp` / `run_wire_stdio` |
 | `src/pythinker_code/config.py` | Three-scope config resolution (user → project → local TOML) with env overlay and JSON→TOML migration; `SecretStr` fields; scope locks on `api_key`/`providers`/`services`. | `Config`, `load_config`, `save_config`, `get_config_file` |
 | `src/pythinker_code/llm.py` | Provider/model selection and capability derivation; wires `pythinker-core` backends. | `LLM`, `create_llm`, `augment_provider_with_env_vars`, `derive_model_capabilities` |
@@ -213,18 +213,18 @@ Full session lifecycle: `initialize`, `new_session`, `load_session`, `resume_ses
 is load-bearing for approval gating of persistent-backdoor vectors (`AGENTS.md`, agent specs,
 `.pythinker` config).
 
-## Web and vis backends and frontends
+## Web and dashboard backends and frontends
 
 | Path | Purpose | Key entry points and interfaces |
 | --- | --- | --- |
 | `src/pythinker_code/web/` | FastAPI backend (port 5494) managing CLI sessions via subprocess workers; bearer-token auth; `/api/*`; sensitive-path restriction. | `create_app`, `run_web_server`, `PythinkerCLIRunner`, `SessionProcess`, `AuthMiddleware` |
-| `src/pythinker_code/vis/` | FastAPI read-only tracing/statistics backend (port 5495) for the visualizer. | `create_app`, `run_vis_server` |
+| `src/pythinker_code/dashboard/` | FastAPI read-only tracing/statistics backend (port 5495) for the visualizer. | `create_app`, `run_dashboard_server` |
 | `web/` | React 19 + Vite 8 + TypeScript SPA chat UI; bundled into the package. See `web/AGENTS.md`. | `main.tsx`, `App`, `apiClient`, generated client `src/lib/api/`, `useSessionStream` |
-| `vis/` | React 19 + Vite session-tracing visualizer. See `vis/AGENTS.md`. | `main.tsx`, `App`, hand-written `src/lib/api.ts` (`WireEvent`, `ContextMessage`, `SessionInfo`), feature panels under `src/features/` |
+| `dashboard/` | React 19 + Vite session-tracing visualizer. See `dashboard/AGENTS.md`. | `main.tsx`, `App`, hand-written `src/lib/api.ts` (`WireEvent`, `ContextMessage`, `SessionInfo`), feature panels under `src/features/` |
 
 Both frontends build with `tsc -b && vite build` and are synced into the Python package by
 `scripts/build_web.py` (`web/dist` → `src/pythinker_code/web/static`) and
-`scripts/build_vis.py` (`vis/dist` → `src/pythinker_code/vis/static`).
+`scripts/build_dashboard.py` (`dashboard/dist` → `src/pythinker_code/dashboard/static`).
 
 ## Workspace packages and SDK
 
@@ -243,7 +243,7 @@ Review artifact commands (`describe`, `improve`/`suggest`, `ask`, `labels`, `cha
 
 | Path | Purpose |
 | --- | --- |
-| `tests/` | Unit/integration, organized by subsystem (`auth/`, `acp/`, `core/`, `tools/`, `cli/`, `hooks/`, `background/`, `notifications/`, `telemetry/`, `subagents/`, `ui/`, `vis/`, `web/`, `e2e/`). Shared fixtures (`config`, `llm`, `runtime`, `session`, `tools`) in `tests/conftest.py`; `pytest.ini` sets `asyncio_mode=auto` and excludes `tests_e2e`. |
+| `tests/` | Unit/integration, organized by subsystem (`auth/`, `acp/`, `core/`, `tools/`, `cli/`, `hooks/`, `background/`, `notifications/`, `telemetry/`, `subagents/`, `ui/`, `dashboard/`, `web/`, `e2e/`). Shared fixtures (`config`, `llm`, `runtime`, `session`, `tools`) in `tests/conftest.py`; `pytest.ini` sets `asyncio_mode=auto` and excludes `tests_e2e`. |
 | `tests_e2e/` | End-to-end `pythinker --wire` JSON-RPC tests (W-01…W-42 taxonomy) plus CLI/MCP flows; `wire_helpers.py`, `cassette.py` record/replay; `inline_snapshot` with path normalization. See `tests_e2e/AGENTS.md`. |
 | `tests_ai/` | Accuracy smoke harness invoking agents via the Harbor framework (`scripts/run.py`). |
 
@@ -251,7 +251,7 @@ Review artifact commands (`describe`, `improve`/`suggest`, `ask`, `labels`, `cha
 
 Builds and checks fan out across the workspace from the root `Makefile`
 (`make prepare` / `format` / `check` / `test` / `ai-test` / `build` / `build-bin`, plus
-`web-*` / `vis-*` dev servers and per-package `check-*` / `test-*`). Tooling: `uv` workspace,
+`web-*` / `dashboard-*` dev servers and per-package `check-*` / `test-*`). Tooling: `uv` workspace,
 `ruff` (lint + format), `pyright` (enforced), `ty` (advisory). `scripts/release.py` rewrites
 versions across the five packages but never pushes `main` or tags. Distribution covers
 PyInstaller binaries (`pythinker.spec`), native installers (`scripts/install-native.sh`,
