@@ -18,11 +18,12 @@ def _request_info(url: str) -> aiohttp.RequestInfo:
     )
 
 
-def test_z_ai_model_catalog_contains_five_models():
+def test_z_ai_model_catalog_contains_six_models():
     from pythinker_code.auth.z_ai import ZAI_MODELS
 
     aliases = {model.alias for model in ZAI_MODELS}
     assert aliases == {
+        "z-ai/glm-5.2",
         "z-ai/glm-5.1",
         "z-ai/glm-5",
         "z-ai/glm-5-turbo",
@@ -32,6 +33,9 @@ def test_z_ai_model_catalog_contains_five_models():
 
     api_ids = {m.alias: m.model_id for m in ZAI_MODELS}
     assert api_ids == {
+        # The "[1m]" suffix is rejected by z.ai's Anthropic endpoint; the plain
+        # id is what actually serves GLM-5.2 there.
+        "z-ai/glm-5.2": "glm-5.2",
         "z-ai/glm-5.1": "glm-5.1",
         "z-ai/glm-5": "glm-5",
         "z-ai/glm-5-turbo": "glm-5-turbo",
@@ -40,6 +44,66 @@ def test_z_ai_model_catalog_contains_five_models():
     }
 
     assert all(m.provider_key == "managed:z-ai" for m in ZAI_MODELS)
+
+
+def test_z_ai_glm52_is_default_with_plain_id_and_1m_context():
+    from pythinker_code.auth.z_ai import ZAI_DEFAULT_MODEL_ALIAS, ZAI_MODELS
+
+    assert ZAI_DEFAULT_MODEL_ALIAS == "z-ai/glm-5.2"
+    glm52 = next(m for m in ZAI_MODELS if m.alias == "z-ai/glm-5.2")
+    # Plain id (the "[1m]" suffix is rejected by the endpoint) but the plain id
+    # already carries the full 1M window (verified empirically).
+    assert glm52.model_id == "glm-5.2"
+    assert glm52.max_context_size == 1_000_000
+
+
+@pytest.mark.asyncio
+async def test_login_z_ai_pins_glm52_when_discovery_omits_it(monkeypatch, tmp_path):
+    """z.ai's /models listing does not include glm-5.2, but the model is usable.
+    Pinning must keep it in the catalog and as the default after a successful
+    discovery that returned other models."""
+    from pythinker_code.auth.z_ai import ZaiModel, login_z_ai_api_key
+
+    monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
+    config = Config(is_from_default_location=True)
+
+    async def fake_discover(api_key: str):
+        return (
+            ZaiModel("glm-5.1", "glm-5.1", "GLM-5.1", max_context_size=204_800),
+            ZaiModel("glm-4.6", "glm-4.6", "GLM-4.6"),
+        )
+
+    monkeypatch.setattr("pythinker_code.auth.z_ai._discover_z_ai_models", fake_discover)
+
+    events = [event async for event in login_z_ai_api_key(config, "zai-test")]
+    assert events[-1].type == "success"
+    assert config.models["z-ai/glm-5.2"].model == "glm-5.2"
+    assert config.default_model == "z-ai/glm-5.2"
+
+
+def test_apply_z_ai_models_no_duplicate_when_api_lists_glm52():
+    """If z.ai later returns glm-5.2 from /models, the discovered entry wins and
+    the pin is dropped: glm-5.2 appears exactly once with the API definition."""
+    from pythinker_code.auth.z_ai import (
+        ZAI_PROVIDER_KEY,
+        ZaiModel,
+        _apply_z_ai_config,
+        apply_z_ai_models,
+    )
+
+    config = Config(is_from_default_location=True)
+    _apply_z_ai_config(config, SecretStr("zai-test"))
+
+    apply_z_ai_models(
+        config,
+        (ZaiModel("glm-5.2", "glm-5.2", "GLM-5.2", max_context_size=400_000),),
+    )
+
+    glm52 = [a for a, m in config.models.items() if a == "z-ai/glm-5.2"]
+    assert glm52 == ["z-ai/glm-5.2"]  # exactly one, no duplicate
+    # The API-provided context window wins over the curated pin.
+    assert config.models["z-ai/glm-5.2"].max_context_size == 400_000
+    assert config.models["z-ai/glm-5.2"].provider == ZAI_PROVIDER_KEY
 
 
 def test_z_ai_glm51_has_200k_context():
@@ -173,8 +237,9 @@ def test_apply_z_ai_config_replaces_existing_z_ai_models():
     new_models = (ZaiModel("glm-5.1", "glm-5.1", "GLM-5.1 New", max_context_size=300_000),)
     _apply_z_ai_config(config, SecretStr("zai-test-2"), models=new_models)
 
-    z_ai_aliases = [a for a, m in config.models.items() if m.provider == ZAI_PROVIDER_KEY]
-    assert z_ai_aliases == ["z-ai/glm-5.1"]
+    z_ai_aliases = {a for a, m in config.models.items() if m.provider == ZAI_PROVIDER_KEY}
+    # The replaced catalog plus the always-pinned GLM-5.2 default.
+    assert z_ai_aliases == {"z-ai/glm-5.2", "z-ai/glm-5.1"}
     assert config.models["z-ai/glm-5.1"].max_context_size == 300_000
 
 
@@ -194,7 +259,7 @@ async def test_login_z_ai_saves_static_models_when_discovery_fails(monkeypatch, 
     events = [event async for event in login_z_ai_api_key(config, "zai-test")]
 
     assert [e.type for e in events] == ["info", "success"]
-    assert config.default_model == "z-ai/glm-5.1"
+    assert config.default_model == "z-ai/glm-5.2"
     assert "z-ai/glm-5-turbo" in config.models
     assert (tmp_path / "config.toml").exists()
 
@@ -219,7 +284,7 @@ async def test_login_z_ai_falls_back_on_non_auth_response_error(monkeypatch, tmp
     events = [event async for event in login_z_ai_api_key(config, "zai-test")]
 
     assert [e.type for e in events] == ["info", "success"]
-    assert config.default_model == "z-ai/glm-5.1"
+    assert config.default_model == "z-ai/glm-5.2"
 
 
 @pytest.mark.asyncio
@@ -344,7 +409,8 @@ def test_apply_z_ai_models_prunes_stale_models_and_preserves_user_default():
 
     assert changed is True
     z_ai_aliases = {a for a, m in config.models.items() if m.provider == ZAI_PROVIDER_KEY}
-    assert z_ai_aliases == {"z-ai/glm-5.1", "z-ai/glm-6.0"}
+    # GLM-5.2 is always pinned even when discovery omits it.
+    assert z_ai_aliases == {"z-ai/glm-5.2", "z-ai/glm-5.1", "z-ai/glm-6.0"}
     assert config.models["z-ai/glm-5.1"].max_context_size == 400_000
     assert config.default_model == "z-ai/glm-5.1"
 
@@ -371,7 +437,10 @@ def test_apply_z_ai_models_reassigns_default_when_it_disappears():
 
     assert changed is True
     assert "z-ai/glm-5.1" not in config.models
-    assert config.default_model == "z-ai/glm-5-turbo"
+    assert "z-ai/glm-5-turbo" in config.models
+    # The disappeared default falls back to the first alias, which is the always
+    # pinned GLM-5.2.
+    assert config.default_model == "z-ai/glm-5.2"
 
 
 def test_apply_z_ai_models_returns_false_for_noop():

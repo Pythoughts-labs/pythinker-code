@@ -17,7 +17,7 @@ from pythinker_code.utils.aiohttp import new_client_session
 
 MOONSHOT_BASE_URL = "https://api.moonshot.ai/v1"
 MOONSHOT_PROVIDER_KEY = managed_provider_key(MOONSHOT_PLATFORM_ID)
-MOONSHOT_DEFAULT_MODEL_ALIAS = managed_model_key(MOONSHOT_PLATFORM_ID, "kimi-k2.6")
+MOONSHOT_DEFAULT_MODEL_ALIAS = managed_model_key(MOONSHOT_PLATFORM_ID, "kimi-k2.7-code")
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +34,7 @@ class MoonshotModel:
 
 
 MOONSHOT_MODELS: tuple[MoonshotModel, ...] = (
+    MoonshotModel("kimi-k2.7-code", "kimi-k2.7-code", "Kimi K2.7 Code"),
     MoonshotModel("kimi-k2.6", "kimi-k2.6", "Kimi K2.6"),
     MoonshotModel("kimi-k2.5", "kimi-k2.5", "Kimi K2.5"),
     MoonshotModel("kimi-k2-thinking", "kimi-k2-thinking", "Kimi K2 Thinking"),

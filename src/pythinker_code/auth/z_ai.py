@@ -18,7 +18,7 @@ from pythinker_code.utils.aiohttp import new_client_session
 ZAI_BASE_URL = "https://api.z.ai/api/anthropic"
 ZAI_MODELS_URL = "https://api.z.ai/api/anthropic/v1/models"
 ZAI_PROVIDER_KEY = managed_provider_key(ZAI_PLATFORM_ID)
-ZAI_DEFAULT_MODEL_ALIAS = managed_model_key(ZAI_PLATFORM_ID, "glm-5.1")
+ZAI_DEFAULT_MODEL_ALIAS = managed_model_key(ZAI_PLATFORM_ID, "glm-5.2")
 ZAI_MODEL_DISCOVERY_TIMEOUT = aiohttp.ClientTimeout(total=15, sock_connect=8, sock_read=10)
 
 
@@ -35,13 +35,44 @@ class ZaiModel:
         return f"{ZAI_PLATFORM_ID}/{self.alias_suffix}"
 
 
+# GLM-5.2 is served on z.ai's Anthropic-compatible endpoint under the plain id
+# "glm-5.2", which carries the full 1M-token context window. Verified empirically
+# 2026-06-15 against api.z.ai/api/anthropic: a request with 1,002,378 input
+# tokens succeeded while ~1.05M returned stop_reason="model_context_window_exceeded".
+# The documented "glm-5.2[1m]" suffix is NOT a valid model code here (returns
+# HTTP 400 "Unknown Model") — the plain id already grants 1M, so we use it and
+# set the real window. z.ai's /models listings expose no context field and omit
+# glm-5.2 entirely, so both the id and the size are curated.
+_GLM_5_2 = ZaiModel("glm-5.2", "glm-5.2", "GLM-5.2", max_context_size=1_000_000)
+
 ZAI_MODELS: tuple[ZaiModel, ...] = (
+    _GLM_5_2,
     ZaiModel("glm-5.1", "glm-5.1", "GLM-5.1", max_context_size=204_800),
     ZaiModel("glm-5", "glm-5", "GLM-5"),
     ZaiModel("glm-5-turbo", "glm-5-turbo", "GLM-5-Turbo"),
     ZaiModel("glm-4.7", "glm-4.7", "GLM-4.7"),
     ZaiModel("glm-4.5-air", "glm-4.5-air", "GLM-4.5-Air", max_context_size=98_304),
 )
+
+# Curated models that must always be offered even when z.ai's /models endpoint
+# does not list them. GLM-5.2 is usable for chat but is absent from both the
+# Anthropic and OpenAI-compatible /models listings (verified 2026-06-15), so
+# without pinning it never reaches the model menu and a successful login or
+# periodic refresh would drop it. Discovered entries win for everything else.
+_PINNED_MODELS: tuple[ZaiModel, ...] = (_GLM_5_2,)
+
+
+def _with_pinned_models(models: tuple[ZaiModel, ...]) -> tuple[ZaiModel, ...]:
+    """Prepend curated pinned models the live catalog omitted, deduped by alias.
+
+    If z.ai later starts returning a pinned model (e.g. it adds "glm-5.2" to its
+    /models listing), the discovered entry already occupies that alias, so the
+    pin is dropped — the API-provided definition wins and the model appears once,
+    never twice. The pin only fills the gap while the endpoint omits it.
+    """
+    present = {model.alias for model in models}
+    missing = tuple(model for model in _PINNED_MODELS if model.alias not in present)
+    return missing + models
 
 
 def get_z_ai_api_key_from_env() -> str | None:
@@ -163,6 +194,8 @@ def _apply_z_ai_config(
         api_key=api_key,
     )
 
+    models = _with_pinned_models(models)
+
     provider_keys = {ZAI_PROVIDER_KEY}
     for key, model in list(config.models.items()):
         if model.provider in provider_keys:
@@ -251,6 +284,7 @@ def apply_z_ai_models(config: Config, models: tuple[ZaiModel, ...]) -> bool:
 
     Preserves user preferences unless the selected Z AI model disappeared.
     """
+    models = _with_pinned_models(models)
     changed = False
     aliases: list[str] = []
     for model in models:

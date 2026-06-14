@@ -534,6 +534,7 @@ class AnthropicStreamedMessage:
             self._iter = self._convert_stream_response(response)
         self._id: str | None = None
         self._usage = Usage(input_tokens=0, output_tokens=0)
+        self._stop_reason: str | None = None
 
     def __aiter__(self) -> AsyncIterator[StreamedMessagePart]:
         return self
@@ -556,6 +557,19 @@ class AnthropicStreamedMessage:
             input_cache_creation=self._usage.cache_creation_input_tokens or 0,
         )
 
+    @property
+    def finish_reason(self) -> str | None:
+        """OpenAI-compatible finish reason for the agent loop's truncation check.
+
+        Anthropic reports ``stop_reason='max_tokens'`` when the output-token cap cut the
+        response off; map that to ``'length'`` — the value :mod:`pythinker_core._generate`
+        treats as truncated — so truncation recovery fires for Anthropic just like the
+        OpenAI-compatible providers. Other stop reasons pass through unchanged.
+        """
+        if self._stop_reason == "max_tokens":
+            return "length"
+        return self._stop_reason
+
     def _update_usage(self, delta_usage: MessageDeltaUsage) -> None:
         if delta_usage.cache_creation_input_tokens is not None:
             self._usage.cache_creation_input_tokens = delta_usage.cache_creation_input_tokens
@@ -572,6 +586,7 @@ class AnthropicStreamedMessage:
     ) -> AsyncIterator[StreamedMessagePart]:
         self._id = response.id
         self._usage = response.usage
+        self._stop_reason = response.stop_reason
         for block in response.content:
             match block.type:
                 case "text":
@@ -642,6 +657,11 @@ class AnthropicStreamedMessage:
                                 # ignore
                                 continue
                     elif isinstance(event, MessageDeltaEvent):
+                        # The message_delta event carries the terminal stop_reason (and the
+                        # final output-token usage). Capture it so finish_reason can report
+                        # truncation ('max_tokens') for the loop's recovery path.
+                        if event.delta.stop_reason is not None:
+                            self._stop_reason = event.delta.stop_reason
                         if event.usage:
                             self._update_usage(event.usage)
                     elif isinstance(event, MessageStopEvent):

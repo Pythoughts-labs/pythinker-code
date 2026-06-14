@@ -182,6 +182,54 @@ def is_config_surface_path(path: HostPath, work_dir: HostPath | None = None) -> 
     )
 
 
+# Shell startup/login files whose contents are executed by a shell on a new session.
+_SHELL_STARTUP_FILES = frozenset(
+    {
+        ".bashrc",
+        ".bash_profile",
+        ".bash_login",
+        ".bash_logout",
+        ".bash_aliases",
+        ".profile",
+        ".zshrc",
+        ".zshenv",
+        ".zprofile",
+        ".zlogin",
+        ".zlogout",
+        ".kshrc",
+        ".cshrc",
+        ".tcshrc",
+        ".login",
+        ".logout",
+    }
+)
+# Host files that hold credentials or run code via config (git aliases / credential helpers).
+_DANGEROUS_HOST_FILES = frozenset({".gitconfig", ".git-credentials", ".netrc"})
+# Directory components whose contents grant code execution or hold credentials:
+# ``.git`` (hooks run arbitrary code; config has credential helpers), ``.githooks``
+# (the conventional ``core.hooksPath`` location — same arbitrary-code-on-commit risk as
+# ``.git/hooks`` but outside ``.git``), ``.ssh`` (private keys, authorized_keys,
+# ProxyCommand), ``.vscode`` (tasks.json can auto-run).
+_DANGEROUS_HOST_DIRS = frozenset({".git", ".githooks", ".ssh", ".vscode"})
+
+
+def is_dangerous_host_path(path: HostPath) -> bool:
+    """True if *path* is a sensitive host file/dir an auto-approved edit must never touch.
+
+    These either grant code execution (shell startup files, ``.git`` hooks, editor task
+    configs) or hold credentials (``.ssh``, ``.netrc``, git credentials/aliases). A
+    successful prompt injection that rewrites one is a persistent host-level backdoor, so
+    edits to them always re-confirm — even under yolo/auto — independent of pythinker's own
+    config surface. Pure-path semantics; callers pass an already-canonicalized path so a
+    symlink cannot disguise the real target (the write tools canonicalize before classifying).
+    """
+    posix = str(path).replace("\\", "/").lower()
+    base = posix.rsplit("/", 1)[-1]
+    if base in _SHELL_STARTUP_FILES or base in _DANGEROUS_HOST_FILES:
+        return True
+    return any(component in _DANGEROUS_HOST_DIRS for component in posix.split("/"))
+
+
 def shorten_home(path: HostPath) -> HostPath:
     """
     Convert absolute path to use `~` for home directory.

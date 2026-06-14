@@ -143,12 +143,12 @@ def test_render_pinned_status_tail_empty_when_turn_inactive() -> None:
     assert view2.render_pinned_status_tail(80).value == ""
 
 
-def test_pinned_tail_hidden_while_foreground_tool_executes() -> None:
-    """A long-running foreground tool (e.g. a server started via the shell tool)
-    must not animate the shimmer verb spinner: the agent is awaiting the
-    subprocess, not thinking. The tool card's own running marker carries the
-    liveness instead, so the spinner reappears only once the tool finishes and
-    the agent is processing the result again."""
+def test_pinned_tail_stays_visible_while_foreground_tool_executes() -> None:
+    """The shimmer verb spinner stays pinned for the whole active turn — including
+    while a foreground tool (e.g. a server started via the shell tool, or a
+    subagent) runs. The agent is still working the turn, so the spinner is the
+    liveness signal throughout, the same way it persists while thinking. It clears
+    only when the turn ends."""
     import time as _time
 
     from pythinker_core.message import ToolCall
@@ -167,10 +167,10 @@ def test_pinned_tail_hidden_while_foreground_tool_executes() -> None:
     block.mark_execution_started()
     view._tool_call_blocks = {block.tool_call_id: block}
 
-    # While the foreground command runs, the shimmer verb spinner is suppressed.
-    assert view.render_pinned_status_tail(80).value == ""
+    # While the foreground command runs, the spinner stays visible.
+    assert view.render_pinned_status_tail(80).value.strip() != ""
 
-    # Once the tool finishes, the agent is processing again → spinner returns.
+    # It is still visible after the tool finishes and the agent processes results.
     block.finish(ToolReturnValue(is_error=False, output="ok", message="ok", display=[]))
     assert view.render_pinned_status_tail(80).value.strip() != ""
 

@@ -48,6 +48,7 @@ class MarkdownAgentSpec:
     tools: tuple[str, ...] | None = None
     model: str | None = None
     when_to_use: str = ""
+    required_mcp_servers: tuple[str, ...] = ()
 
 
 def _project_agent_dir_candidates(project_root: HostPath) -> tuple[HostPath, ...]:
@@ -128,6 +129,19 @@ def parse_markdown_agent(
     model = _as_nonempty_str(fm.get("model"))
     when_to_use = _as_nonempty_str(fm.get("when_to_use")) or description
     tools = _map_tools(fm.get("tools"), source=prompt_file)
+    raw_required = fm.get("required_mcp_servers")
+    if raw_required is not None and not isinstance(raw_required, list):
+        logger.info(
+            "Ignoring non-list required_mcp_servers field in markdown agent {path}",
+            path=prompt_file,
+        )
+    required_mcp_servers: tuple[str, ...] = (
+        tuple(
+            s.strip() for s in cast(list[object], raw_required) if isinstance(s, str) and s.strip()
+        )
+        if isinstance(raw_required, list)
+        else ()
+    )
     return MarkdownAgentSpec(
         name=name,
         description=description,
@@ -136,6 +150,7 @@ def parse_markdown_agent(
         tools=tools,
         model=model,
         when_to_use=when_to_use,
+        required_mcp_servers=required_mcp_servers,
     )
 
 
@@ -210,6 +225,7 @@ def materialize_markdown_agent_specs(
                 when_to_use=agent.when_to_use,
                 default_model=model,
                 tool_policy=policy,
+                required_mcp_servers=agent.required_mcp_servers,
             )
         )
     return type_defs

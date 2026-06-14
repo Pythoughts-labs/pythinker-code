@@ -571,17 +571,14 @@ class _LiveView:
                 _append_action_block(blocks, tool_call.compose(), leading=True)
             for hook_block in getattr(self, "_hook_blocks", {}).values():
                 _append_action_block(blocks, hook_block.compose(), leading=True)
-            if (
-                include_working_indicator
-                and self._active_turn_depth > 0
-                and not self._foreground_tool_executing()
-            ):
-                # Keep a stable activity indicator visible even while content or
-                # tool cards are already on-screen. This makes long-running
-                # background waits feel alive instead of frozen. A foreground tool
-                # mid-execution is the exception: the agent is awaiting it (not
-                # thinking), so the tool card's running marker owns the liveness
-                # and the shimmer verb spinner stays hidden.
+            if include_working_indicator and self._active_turn_depth > 0:
+                # Keep a stable activity indicator visible for the whole turn —
+                # even while content or tool cards are already on-screen, and even
+                # while a foreground tool runs. The agent is still working the
+                # turn, so the shimmer verb spinner stays up as the liveness signal
+                # (the same way it persists while thinking). When a todo is
+                # in-progress, _working_indicator() swaps the verb for the todo
+                # title instead.
                 _append_action_block(blocks, self._working_indicator(), leading=True)
         for notification in list(self._live_notification_blocks):
             _append_action_block(blocks, notification.compose())
@@ -618,18 +615,6 @@ class _LiveView:
             )
         )
         console.print()
-
-    def _foreground_tool_executing(self) -> bool:
-        """Whether a foreground tool is mid-execution (agent awaiting it, not thinking).
-
-        While a tool body runs — most visibly a long-lived server started via the
-        shell tool — the agent is blocked awaiting the subprocess rather than
-        thinking, and the tool card already shows an animated running marker. The
-        shimmering verb spinner would falsely signal active agent cognition, so it
-        is suppressed in this window. Detached background agents are excluded: they
-        run independently of the current turn.
-        """
-        return any(block.is_executing for block in getattr(self, "_tool_call_blocks", {}).values())
 
     def _working_indicator(self) -> RenderableType:
         now = time.monotonic()

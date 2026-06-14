@@ -240,6 +240,7 @@ class OpenAILegacyStreamedMessage:
             self._iter = self._convert_stream_response(response)
         self._id: str | None = None
         self._usage: CompletionUsage | None = None
+        self._finish_reason: str | None = None
 
     def __aiter__(self) -> AsyncIterator[StreamedMessagePart]:
         return self
@@ -250,6 +251,12 @@ class OpenAILegacyStreamedMessage:
     @property
     def id(self) -> str | None:
         return self._id
+
+    @property
+    def finish_reason(self) -> str | None:
+        # OpenAI reports 'length' natively when the output-token limit cut the response off,
+        # which is exactly the value the loop's truncation check expects.
+        return self._finish_reason
 
     @property
     def usage(self) -> TokenUsage | None:
@@ -275,6 +282,7 @@ class OpenAILegacyStreamedMessage:
     ) -> AsyncIterator[StreamedMessagePart]:
         self._id = response.id
         self._usage = response.usage
+        self._finish_reason = response.choices[0].finish_reason
         message = response.choices[0].message
         reasoning_key = self._reasoning_key
         if reasoning_key and (reasoning_content := getattr(message, reasoning_key, None)):
@@ -306,6 +314,9 @@ class OpenAILegacyStreamedMessage:
 
                 if not chunk.choices:
                     continue
+
+                if chunk.choices[0].finish_reason:
+                    self._finish_reason = chunk.choices[0].finish_reason
 
                 delta = chunk.choices[0].delta
 

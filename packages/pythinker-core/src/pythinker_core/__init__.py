@@ -119,6 +119,7 @@ async def step(
         result.usage,
         tool_calls,
         tool_result_futures,
+        truncated=result.truncated,
     )
 
 
@@ -138,6 +139,9 @@ class StepResult:
 
     _tool_result_futures: dict[str, ToolResultFuture]
     """@private The futures of the results of the spawned tool calls."""
+
+    truncated: bool = False
+    """True when the model's response was cut off by the output-token limit."""
 
     async def tool_results(self) -> list[ToolResult]:
         """All the tool results returned by corresponding tool calls."""

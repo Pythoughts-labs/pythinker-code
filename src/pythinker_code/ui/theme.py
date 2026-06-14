@@ -166,11 +166,11 @@ _PROMPT_STYLE_DARK = {
     # reads as a single line of text rather than a chrome panel.
     "compact-input": "",
     "compact-input.prompt": "fg:#F4F4F5 bold",
-    "compact-input.frame": "fg:#3A506D",
+    "compact-input.frame": "fg:#e8ebed",
     # Muted level word in the top-border effort label (the dot carries the color).
     "compact-input.effort": "fg:#A3A3A3",
     "running-prompt-placeholder": "fg:#A3A3A3 italic",
-    "running-prompt-separator": "fg:#2B3A52",
+    "running-prompt-separator": "fg:#b8bcc0",
     # Recognized slash commands typed anywhere in the input area.
     "slash-command": "fg:#6CA1F5 bold",
     # "@file" path mentions typed in the input area.
@@ -181,8 +181,8 @@ _PROMPT_STYLE_DARK = {
     "auto-suggestion": "fg:#6B7280",
     # Slash completion menu — selected row gets the same selected-bg as cards.
     "slash-completion-menu": "",
-    "slash-completion-menu.separator": "fg:#2B3A52",
-    "slash-completion-menu.marker": "fg:#2B3A52",
+    "slash-completion-menu.separator": "fg:#b8bcc0",
+    "slash-completion-menu.marker": "fg:#b8bcc0",
     "slash-completion-menu.marker.current": "fg:#AFE3F1 bold",
     "slash-completion-menu.command": "fg:#F4F4F5",
     "slash-completion-menu.command.match": "fg:#AFE3F1 bold",
@@ -196,7 +196,7 @@ _PROMPT_STYLE_DARK = {
     "slash-completion-menu.meta.warning.current": f"bg:{_SELECTED_BG_DARK} fg:#B69B64",
     "slash-completion-menu.row.current": f"bg:{_SELECTED_BG_DARK}",
     "file-completion-menu": "",
-    "file-completion-menu.marker": "fg:#2B3A52",
+    "file-completion-menu.marker": "fg:#b8bcc0",
     "file-completion-menu.marker.current": "fg:#AFE3F1 bold",
     "file-completion-menu.name": "fg:#A3A3A3",
     "file-completion-menu.name.current": "fg:#AFE3F1 bold",
@@ -205,7 +205,7 @@ _PROMPT_STYLE_DARK = {
     "file-completion-menu.count": "fg:#5F6B7E",
     "shell-dialog": "fg:#F4F4F5",
     "shell-dialog.title": "fg:#F4F4F5 bold",
-    "shell-dialog.border": "fg:#2B3A52",
+    "shell-dialog.border": "fg:#b8bcc0",
     "shell-dialog.option": "fg:#A3A3A3",
     "shell-dialog.option.current": f"bg:{_SELECTED_BG_DARK} fg:#F4F4F5 bold",
     "shell-footer.key": "fg:#AFE3F1 bold",
@@ -431,7 +431,7 @@ def _build_markdown_colors(tokens: TuiTokens) -> MarkdownColors:
         heading=tokens.tool_title,
         emphasis=tokens.muted,
         strong=tokens.tool_title,
-        inline_code="cyan",  # terminal-native ANSI cyan
+        inline_code=tokens.accent,  # periwinkle accent — matches skill/branch highlight color
         link="cyan",  # cyan, rendered underlined
         quote="green",  # terminal-native ANSI green
         ordered_marker="bright_blue",  # ordered markers take the bright-blue accent
@@ -610,9 +610,9 @@ TUI_TOKEN_NAMES = frozenset(field.name for field in fields(TuiTokens))
 
 _TUI_TOKENS_DARK = TuiTokens(
     accent="#B3B9F4",
-    border="#3A506D",
+    border="#e8ebed",
     border_accent="#7C88DE",
-    border_muted="#2B3A52",
+    border_muted="#b8bcc0",
     info="#AFE3F1",
     success="#7BC97F",
     error="#EF5E62",

@@ -1,3 +1,4 @@
+import contextlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from pythinker_code.tools.file import classify_edit_action
 from pythinker_code.tools.file.plan_mode import inspect_plan_edit_target
 from pythinker_code.tools.utils import load_desc
 from pythinker_code.utils.diff import build_diff_blocks
+from pythinker_code.utils.file_read_cache import overwrite_is_stale
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.path import is_within_workspace
 
@@ -392,6 +394,19 @@ class StrReplaceFile(CallableTool2[Params]):
                     brief="Invalid path",
                 )
 
+            # Stale-edit guard: if the agent read this file and it has since changed on disk
+            # (user or another tool), editing it risks clobbering changes the agent never saw.
+            # Exact old-string matching alone cannot catch an external edit that leaves the
+            # old string intact, so gate on the recorded read mtime as WriteFile does.
+            if await overwrite_is_stale(self._runtime.file_read_cache, p, real_p):
+                return ToolError(
+                    message=(
+                        "File has been modified since you last read it. Read it again before "
+                        "editing it so you do not clobber the external changes."
+                    ),
+                    brief="Stale read",
+                )
+
             # Read the file content
             content = await p.read_text(encoding="utf-8", errors="replace")
 
@@ -480,6 +495,20 @@ class StrReplaceFile(CallableTool2[Params]):
                 if not result:
                     return result.rejection_error()
 
+            # Re-check staleness after approval: the prompt is unbounded user time
+            # during which the file can change on disk, and the write below replaces
+            # `content` wholesale (the exact-string match ran against the pre-approval
+            # read). The first check cannot cover this window; the read-cache is only
+            # refreshed after the write, so the recorded read-state is still valid.
+            if await overwrite_is_stale(self._runtime.file_read_cache, p, real_p):
+                return ToolError(
+                    message=(
+                        "File has been modified since you last read it. Read it again before "
+                        "editing it so you do not clobber the external changes."
+                    ),
+                    brief="Stale read",
+                )
+
             from pythinker_code.soul.toolset import emit_current_tool_execution_started
 
             emit_current_tool_execution_started()
@@ -487,6 +516,12 @@ class StrReplaceFile(CallableTool2[Params]):
 
             # Write the modified content back to the file
             await p.write_text(content, encoding="utf-8", errors="replace")
+
+            # Refresh the read-state to the post-edit (mtime, size) so a later overwrite is not
+            # falsely flagged as stale by this tool's own write.
+            with contextlib.suppress(OSError):
+                st = await p.stat()
+                self._runtime.file_read_cache.record(real_p, st.st_mtime, st.st_size)
 
             # Count changes for success message (tallied per-edit during application).
             total_replacements = sum(per_edit_counts)

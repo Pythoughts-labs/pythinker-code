@@ -15,11 +15,17 @@ from pythinker_code.approval_runtime import get_current_approval_source_or_none
 from pythinker_code.background import TaskRuntime, TaskSpec
 from pythinker_code.soul import MaxStepsReached, RunCancelled
 from pythinker_code.soul.agent import Agent as SoulAgent
+from pythinker_code.soul.agent import Runtime
 from pythinker_code.soul.approval import ApprovalResult
 from pythinker_code.subagents import AgentLaunchSpec, AgentTypeDefinition, ToolPolicy
 from pythinker_code.subagents.core import SUBAGENT_OUTPUT_LANGUAGE_INSTRUCTION
 from pythinker_code.tools.agent import AgentRunConfig, RunAgents
-from pythinker_code.wire.types import ApprovalRequest, TextPart
+from pythinker_code.wire.types import (
+    ApprovalRequest,
+    MCPServerSnapshot,
+    MCPStatusSnapshot,
+    TextPart,
+)
 from tests.conftest import tool_call_context
 
 
@@ -27,6 +33,68 @@ def _extract_agent_id(output: str) -> str:
     match = re.search(r"^agent_id: (\S+)$", output, re.MULTILINE)
     assert match is not None
     return match.group(1)
+
+
+def _mcp_snapshot(loading: bool, servers: list[tuple[str, str]]) -> MCPStatusSnapshot:
+    return MCPStatusSnapshot(
+        loading=loading,
+        connected=sum(1 for _, s in servers if s == "connected"),
+        total=len(servers),
+        tools=0,
+        servers=tuple(MCPServerSnapshot(name=n, status=s) for n, s in servers),  # type: ignore[arg-type]
+    )
+
+
+def test_missing_required_mcp_servers() -> None:
+    """The spawn gate's pure core: a required MCP server counts as missing only when MCP
+    loading has settled and the server is not connected (absent or failed). While loading,
+    nothing is reported (the server may yet connect — avoid a spurious rejection)."""
+    from pythinker_code.tools.agent import _missing_required_mcp_servers
+
+    assert _missing_required_mcp_servers((), None) == []  # nothing required
+    assert _missing_required_mcp_servers(("db",), None) == ["db"]  # no MCP configured -> absent
+    assert _missing_required_mcp_servers(("db",), _mcp_snapshot(True, [])) == []  # loading
+    assert (
+        _missing_required_mcp_servers(("db",), _mcp_snapshot(False, [("db", "connected")])) == []
+    )  # connected
+    assert _missing_required_mcp_servers(("db",), _mcp_snapshot(False, [("db", "failed")])) == [
+        "db"
+    ]  # settled + failed
+    assert _missing_required_mcp_servers(
+        ("db", "fs"), _mcp_snapshot(False, [("db", "connected")])
+    ) == ["fs"]  # one connected, other absent
+
+
+def test_check_required_mcp_servers_gates_absent_server(runtime: Runtime) -> None:
+    """The spawn gate rejects a fresh agent whose required MCP server is absent, allows it
+    while MCP is loading or once connected, and never gates a type with no requirement."""
+    from pythinker_code.subagents import AgentTypeDefinition, ToolPolicy
+    from pythinker_code.tools.agent import AgentTool
+
+    assert runtime.subagent_store is not None  # populated by the runtime fixture
+    runtime.labor_market.add_builtin_type(
+        AgentTypeDefinition(
+            name="needs_db",
+            description="needs the db MCP server",
+            agent_file=runtime.subagent_store.root / "needs_db.yaml",
+            tool_policy=ToolPolicy(mode="inherit"),
+            required_mcp_servers=("db",),
+        )
+    )
+    tool = AgentTool(runtime)
+
+    runtime.mcp_status = lambda: None  # no MCP configured -> required server absent
+    err = tool.check_required_mcp_servers("needs_db")
+    assert err is not None
+    assert "db" in err.message
+
+    runtime.mcp_status = lambda: _mcp_snapshot(True, [])  # still loading -> allow
+    assert tool.check_required_mcp_servers("needs_db") is None
+
+    runtime.mcp_status = lambda: _mcp_snapshot(False, [("db", "connected")])  # connected -> allow
+    assert tool.check_required_mcp_servers("needs_db") is None
+
+    assert tool.check_required_mcp_servers("mocker") is None  # no requirement -> never gated
 
 
 def _extract_task_id(output: str) -> str:
@@ -691,6 +759,9 @@ async def test_run_agents_foreground_reports_completed_status(runtime):
 
     class FakeAgentTool:
         def check_execution_policy(self, subagent_type):
+            return None
+
+        def check_required_mcp_servers(self, subagent_type):
             return None
 
         async def __call__(self, params):
@@ -2451,6 +2522,9 @@ async def test_run_agents_foreground_children_run_concurrently(runtime):
         def check_execution_policy(self, subagent_type):
             return None
 
+        def check_required_mcp_servers(self, subagent_type):
+            return None
+
         async def __call__(self, params):
             nonlocal active, max_active
             active += 1
@@ -2502,6 +2576,9 @@ async def test_run_agents_foreground_one_failure_does_not_abort_siblings(runtime
         def check_execution_policy(self, subagent_type):
             return None
 
+        def check_required_mcp_servers(self, subagent_type):
+            return None
+
         async def __call__(self, params):
             await asyncio.sleep(0.01)
             if "1" in params.description:
@@ -2549,6 +2626,9 @@ async def test_run_agents_foreground_aggregates_child_risks_and_blockers(runtime
 
     class ReportingAgentTool:
         def check_execution_policy(self, subagent_type):
+            return None
+
+        def check_required_mcp_servers(self, subagent_type):
             return None
 
         async def __call__(self, params):

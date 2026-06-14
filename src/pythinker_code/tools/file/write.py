@@ -1,3 +1,4 @@
+import contextlib
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal, override
@@ -15,6 +16,7 @@ from pythinker_code.tools.file import classify_edit_action
 from pythinker_code.tools.file.plan_mode import inspect_plan_edit_target
 from pythinker_code.tools.utils import load_desc
 from pythinker_code.utils.diff import build_diff_blocks
+from pythinker_code.utils.file_read_cache import overwrite_is_stale
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.path import is_within_workspace
 
@@ -60,6 +62,23 @@ class WriteFile(CallableTool2[Params]):
         """Bind plan mode state checker and plan file path getter."""
         self._plan_mode_checker = checker
         self._plan_file_path_getter = path_getter
+
+    async def _reject_if_stale(self, p: HostPath, real_p: HostPath) -> ToolError | None:
+        """Reject an overwrite when the file changed on disk since the agent last read it.
+
+        Returns ``None`` (allow) when the agent never read this file (an ordinary
+        first-contact write) or the file cannot be stat'd — only a genuine
+        read-then-externally-modified-then-overwrite is blocked.
+        """
+        if await overwrite_is_stale(self._runtime.file_read_cache, p, real_p):
+            return ToolError(
+                message=(
+                    "File has been modified since you last read it. Read it again before "
+                    "overwriting it so you do not clobber the external changes."
+                ),
+                brief="Stale read",
+            )
+        return None
 
     def _validate_path(
         self,
@@ -149,6 +168,16 @@ class WriteFile(CallableTool2[Params]):
                 )
 
             file_existed = await p.exists()
+            # Stale-overwrite guard: if the agent read this file and it has since changed on
+            # disk (user or another tool), overwriting it would silently clobber those
+            # changes. Require a fresh read first. Only fires when a prior read is recorded,
+            # so it never blocks an ordinary first-contact write.
+            if (
+                file_existed
+                and params.mode == "overwrite"
+                and (err := await self._reject_if_stale(p, real_p))
+            ):
+                return err
             old_text = None
             if file_existed:
                 old_text = await p.read_text(encoding="utf-8", errors="replace")
@@ -176,6 +205,17 @@ class WriteFile(CallableTool2[Params]):
                 if not result:
                     return result.rejection_error()
 
+            # Re-check staleness after approval: the prompt is unbounded user time
+            # during which the file can change on disk, and the overwrite below writes
+            # params.content wholesale. The first check cannot cover this window; the
+            # read-cache is only refreshed after the write, so the read-state is valid.
+            if (
+                file_existed
+                and params.mode == "overwrite"
+                and (err := await self._reject_if_stale(p, real_p))
+            ):
+                return err
+
             from pythinker_code.soul.toolset import emit_current_tool_execution_started
 
             emit_current_tool_execution_started()
@@ -188,13 +228,22 @@ class WriteFile(CallableTool2[Params]):
                 case "append":
                     await p.append_text(params.content)
 
-            # Get file info for success message
-            file_size = (await p.stat()).st_size
+            # Get file info for the success message, and refresh the read-state to the post-write
+            # (mtime, size) so the agent can immediately re-edit its own output without a false
+            # stale flag. The write already succeeded above, so a stat hiccup here must NOT be
+            # reported as a write failure — suppress it (the cache is simply not refreshed) and
+            # omit the size note, matching the post-op stat handling in read.py and replace.py.
+            file_size: int | None = None
+            with contextlib.suppress(OSError):
+                stat_after = await p.stat()
+                file_size = stat_after.st_size
+                self._runtime.file_read_cache.record(real_p, stat_after.st_mtime, file_size)
             action = "overwritten" if params.mode == "overwrite" else "appended to"
+            size_note = f" Current size: {file_size} bytes." if file_size is not None else ""
             return ToolReturnValue(
                 is_error=False,
                 output="",
-                message=(f"File successfully {action}. Current size: {file_size} bytes."),
+                message=f"File successfully {action}.{size_note}",
                 display=diff_blocks,
             )
 

@@ -337,18 +337,26 @@ def _apply_env_vars(merged: dict[str, Any], provenance: dict[str, Any]) -> None:
             _set_nested(provenance, path, f"env {env_key}")
 
 
-def _load_scoped(project_root: Path | None) -> Config:
+def _load_scoped(project_root: Path | None, *, persist: bool = True) -> Config:
     """Run the five-step scoped config resolution pipeline.
 
     Steps: Ingest → Guard → Merge → Env → Validate.
     Returns a fully-validated Config with source_scopes populated.
+
+    When ``persist`` is False the pipeline is read-only: it merges the same
+    user/project/local scopes but performs no disk writes (no share-dir/lock
+    creation, no migration, no default seeding, no auto-gitignore) and skips the
+    project-trust read (which itself creates the trust-lock file). Trust only
+    gates project *hooks*, which no read-only consumer renders or executes, so
+    skipping it leaves the merged config faithful for those callers.
     """
     from pythinker_code.utils.gitignore import ensure_gitignored
 
     # ── INGEST ────────────────────────────────────────────────────────────
-    default_user_file = get_config_file().expanduser().resolve(strict=False)
+    # When read-only, do not let get_config_file() create the share dir.
+    default_user_file = get_config_file(create=persist).expanduser().resolve(strict=False)
     # Trigger JSON→TOML migration if needed (existing logic)
-    if not default_user_file.exists():
+    if persist and not default_user_file.exists():
         migration_error = _migrate_json_config_to_toml()
         if migration_error is not None:
             raise ConfigError(
@@ -371,7 +379,7 @@ def _load_scoped(project_root: Path | None) -> Config:
     # If the user config file still doesn't exist after migration (e.g. corrupt JSON
     # was backed up but no TOML was written), seed it with defaults so subsequent
     # runs have a concrete starting point — matching the legacy single-file behaviour.
-    if not user_file.exists():
+    if persist and not user_file.exists():
         default_cfg = get_default_config()
         logger.debug("No config file found, creating default config: {config}", config=default_cfg)
         save_config(default_cfg, user_file)
@@ -384,11 +392,18 @@ def _load_scoped(project_root: Path | None) -> Config:
     stripped_hook_files: list[str] = []
 
     if project_root is not None:
-        from pythinker_code.project_trust import is_project_trusted
-
-        project_trusted = is_project_trusted(project_root)
         project_file = project_root / ".pythinker" / "config.toml"
         local_file = project_root / ".pythinker" / "config.local.toml"
+        if persist:
+            from pythinker_code.project_trust import is_project_trusted
+
+            project_trusted = is_project_trusted(project_root)
+        else:
+            # Read-only callers skip the trust read — it creates the trust-lock
+            # file under the share dir. Trust only gates project hooks, which a
+            # read-only consumer never executes, so read every scope and leave any
+            # hooks merged-but-inert rather than touching disk.
+            project_trusted = True
         if project_trusted:
             project_dict = _read_toml(project_file)
             local_dict = _read_toml(local_file)
@@ -464,12 +479,14 @@ def _load_scoped(project_root: Path | None) -> Config:
         config.source_scopes["project"] = project_file.resolve(strict=False)
     if local_file is not None and local_file.exists():
         config.source_scopes["local"] = local_file.resolve(strict=False)
-        # Auto-gitignore local config so it is never accidentally committed
-        ensure_gitignored(
-            project_root,  # type: ignore[arg-type]
-            ".pythinker/config.local.toml",
-            comment="Added by pythinker",
-        )
+        # Auto-gitignore local config so it is never accidentally committed.
+        # Skip this write for read-only callers.
+        if persist:
+            ensure_gitignored(
+                project_root,  # type: ignore[arg-type]
+                ".pythinker/config.local.toml",
+                comment="Added by pythinker",
+            )
 
     return config
 
@@ -565,6 +582,16 @@ class LoopControl(BaseModel):
     call failed (a degenerate stuck loop), instead of continuing to
     ``max_steps_per_turn``. The turn ends with a ``stuck`` outcome and a handoff
     summary of what was tried. ``0`` disables the backstop. Default: 8."""
+    max_truncation_recoveries: int = Field(default=3, ge=0)
+    """When a model response is cut off by the output-token limit and makes no tool call,
+    nudge the model to continue at most this many times per turn before surfacing the
+    truncated answer. ``0`` disables truncation recovery. Default: 3."""
+    max_session_cost_usd: float | None = Field(default=None, gt=0)
+    """Optional per-session spend ceiling in USD. When set, the turn stops with a
+    ``budget_exhausted`` outcome once the session's accumulated estimated cost reaches
+    this value, instead of continuing to ``max_steps_per_turn``. Off by default
+    (``None``). Best-effort: cost is estimated from token usage and is ``0`` for models
+    with unknown pricing, so the ceiling never blocks when spend cannot be estimated."""
     max_retries_per_step: int = Field(default=3, ge=1)
     """Maximum number of retries in one step"""
     max_ralph_iterations: int = Field(default=0, ge=-1)
@@ -1225,7 +1252,7 @@ def get_default_config() -> Config:
     )
 
 
-def load_config(config_file: Path | None = None) -> Config:
+def load_config(config_file: Path | None = None, *, persist: bool = True) -> Config:
     """Load configuration, resolving up to three scopes when no explicit file is given.
 
     When *config_file* is None (the default), the scoped pipeline runs:
@@ -1235,10 +1262,16 @@ def load_config(config_file: Path | None = None) -> Config:
     When *config_file* is given explicitly (e.g. via --config), that single
     file is loaded directly with no scope resolution — preserving the legacy
     behaviour used by tests and the CLI --config flag.
+
+    Pass ``persist=False`` for read-only callers (e.g. ``pythinker system-prompt``)
+    that must resolve the merged scoped config without any disk side effects:
+    no share-dir creation, no default-config seeding, no JSON→TOML migration,
+    no project-trust lock, and no auto-gitignore. Only the scoped (``config_file
+    is None``) branch honours the flag; an explicit path is already read-or-seed.
     """
     if config_file is None:
         project_root = find_project_root(Path.cwd())
-        return _load_scoped(project_root)
+        return _load_scoped(project_root, persist=persist)
 
     # ── Explicit path: legacy single-file load (unchanged) ────────────────
     default_config_file = get_config_file().expanduser().resolve(strict=False)

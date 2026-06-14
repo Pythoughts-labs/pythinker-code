@@ -51,6 +51,12 @@ _CONFIG_EDIT_UNATTENDED_FEEDBACK = (
     "persistent backdoor. This run is auto/non-interactive with no user present, so the "
     "edit was denied instead of waiting indefinitely. Rerun interactively to approve it."
 )
+_DANGEROUS_EDIT_UNATTENDED_FEEDBACK = (
+    "Edits to sensitive host files (shell startup files, .git internals/hooks, .ssh, git "
+    "credentials) re-confirm every time and are never auto-approved — a rewritten one is a "
+    "persistent host-level backdoor. This run is auto/non-interactive with no user present, "
+    "so the edit was denied instead of waiting indefinitely. Rerun interactively to approve it."
+)
 
 
 @dataclass(frozen=True)
@@ -145,6 +151,7 @@ class ApprovalState:
         auto: bool = False,
         runtime_auto: bool = False,
         safe_mode: bool = False,
+        accept_edits: bool = False,
         auto_deliberate: bool = False,
         auto_approve_actions: set[str] | None = None,
         on_change: Callable[[], None] | None = None,
@@ -159,6 +166,10 @@ class ApprovalState:
         """Invocation-only auto flag, e.g. ``--auto`` or ``--print``. Not persisted."""
         self.safe_mode = safe_mode
         """When true, all auto-approval paths are suppressed."""
+        self.accept_edits = accept_edits
+        """Session-local (not persisted). When true, reversible in-workspace ordinary file
+        edits are auto-approved; shell, destructive, outside-workspace, config-surface, and
+        dangerous host edits still prompt. Gated by ``safe_mode`` (like auto, unlike yolo)."""
         self.auto_deliberate = auto_deliberate
         """When true, destructive auto-approved actions must deliberate once first.
 
@@ -227,6 +238,18 @@ class Approval:
         self._state.safe_mode = safe_mode
         self._state.notify_change()
 
+    def set_accept_edits(self, accept_edits: bool) -> None:
+        """Toggle accept-edits mode (session-local, not persisted across restarts).
+
+        Auto-approves reversible in-workspace ordinary file edits; everything else —
+        shell, destructive, outside-workspace, config-surface, and dangerous host edits —
+        still prompts.
+        """
+        self._state.accept_edits = accept_edits
+
+    def is_accept_edits(self) -> bool:
+        return self._state.accept_edits
+
     def is_auto_approve(self) -> bool:
         """True when tool calls should be auto-approved.
 
@@ -290,14 +313,20 @@ class Approval:
         # the auto-approve bypass would otherwise pass them.
         if str(action) == _EDIT_OUTSIDE_ACTION:
             return _OUTSIDE_WORKSPACE_UNATTENDED_FEEDBACK
-        will_auto_resolve = (self.is_auto_approve() and not self._is_config_edit(action)) or (
-            self._approval_key(tool_call, action) in self._state.auto_approve_actions
-            and self._is_session_approvable(tool_call, action)
+        will_auto_resolve = (
+            (self.is_auto_approve() and not self._is_always_confirm_edit(action))
+            or self._accept_edits_covers(tool_call, action)
+            or (
+                self._approval_key(tool_call, action) in self._state.auto_approve_actions
+                and self._is_session_approvable(tool_call, action)
+            )
         )
         if will_auto_resolve:
             return None
         if self._is_config_edit(action):
             return _CONFIG_EDIT_UNATTENDED_FEEDBACK
+        if self._is_dangerous_edit(action):
+            return _DANGEROUS_EDIT_UNATTENDED_FEEDBACK
         return _SAFE_MODE_UNATTENDED_FEEDBACK
 
     def is_orchestration_approved(self, fingerprint: str) -> bool:
@@ -373,13 +402,52 @@ class Approval:
 
         return action == FileActions.EDIT_CONFIG.value
 
+    @staticmethod
+    def _is_dangerous_edit(action: str) -> bool:
+        """Whether this approval is a write to a sensitive host file.
+
+        Shell startup files, ``.git`` internals/hooks, ``.ssh``, and git credentials grant
+        code execution or hold secrets, so a successful injection rewriting one is a
+        persistent host-level backdoor. Like config edits, they must re-confirm every time
+        — even under yolo/auto — and are never recorded as session-approved.
+        """
+        from pythinker_code.tools.file import FileActions
+
+        return action == FileActions.EDIT_DANGEROUS.value
+
+    def _is_always_confirm_edit(self, action: str) -> bool:
+        """Whether this edit must re-confirm every time and is never session-approved.
+
+        Covers both pythinker's own behavioral config (permgate-2) and sensitive host
+        files (the dangerous deny-set): a rewritten one is a persistent backdoor.
+        """
+        return self._is_config_edit(action) or self._is_dangerous_edit(action)
+
     def _is_session_approvable(self, tool_call: ToolCall, action: str) -> bool:
         """Whether this approval may be recorded as a standing session rule.
 
-        Destructive/irreversible calls (permgate-1b) and behavioral-config edits
-        (permgate-2) are excluded: each must be confirmed afresh.
+        Destructive/irreversible calls (permgate-1b) and always-confirm edits — behavioral
+        config (permgate-2) and sensitive host files — are excluded: each must be
+        confirmed afresh.
         """
-        return not self._is_destructive_call(tool_call) and not self._is_config_edit(action)
+        return not self._is_destructive_call(tool_call) and not self._is_always_confirm_edit(action)
+
+    def _accept_edits_covers(self, tool_call: ToolCall, action: str) -> bool:
+        """Whether accept-edits mode auto-approves this call.
+
+        Covers only a reversible, in-workspace ordinary file edit (``FileActions.EDIT``)
+        that is not destructive. Outside-workspace, config-surface, and dangerous host edits
+        classify as other actions, so they are excluded and still prompt. Suppressed by
+        ``safe_mode`` (like auto, unlike yolo).
+        """
+        from pythinker_code.tools.file import FileActions
+
+        return (
+            self._state.accept_edits
+            and not self._state.safe_mode
+            and action == FileActions.EDIT.value
+            and not self._is_destructive_call(tool_call)
+        )
 
     @staticmethod
     def _deliberation_fingerprint(
@@ -516,13 +584,27 @@ class Approval:
         # not covered by the auto-approve bypass. In unattended auto with no user, the
         # _unattended_denial_feedback above has already denied; under interactive yolo
         # they fall through to a fresh prompt.
-        if self.is_auto_approve() and not self._is_config_edit(action):
+        if self.is_auto_approve() and not self._is_always_confirm_edit(action):
             from pythinker_code.telemetry import track
 
             track(
                 "tool_approved",
                 tool_name=tool_call.function.name,
                 approval_mode="auto" if self.is_auto() else "yolo",
+            )
+            emit_current_tool_execution_started()
+            return ApprovalResult(approved=True)
+
+        # Accept-edits mode auto-approves a reversible in-workspace ordinary file edit,
+        # while shell, destructive, outside-workspace, config, and dangerous host edits
+        # still fall through to a prompt.
+        if self._accept_edits_covers(tool_call, action):
+            from pythinker_code.telemetry import track
+
+            track(
+                "tool_approved",
+                tool_name=tool_call.function.name,
+                approval_mode="accept_edits",
             )
             emit_current_tool_execution_started()
             return ApprovalResult(approved=True)

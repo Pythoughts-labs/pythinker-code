@@ -123,3 +123,8 @@ class EchoStreamedMessage(StreamedMessage):
     @property
     def usage(self) -> TokenUsage | None:
         return self._usage
+
+    @property
+    def finish_reason(self) -> str | None:
+        # The echo provider replays fixed content and never hits an output-token limit.
+        return None

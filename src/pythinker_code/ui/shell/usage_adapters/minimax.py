@@ -7,10 +7,27 @@ context7 + tavily against `platform.minimax.io/docs/token-plan/faq`):
     Authorization: Bearer <API Key>
     Content-Type: application/json
 
-The published response shape isn't fully documented; community integrations
-(openclaw.ai, openclaw docs / providers / minimax) cite the inner fields
-`usage_percent` / `usagePercent`, `model_remains`, `start_time`, `end_time`,
-which we parse defensively. The unrelated portal endpoint
+Response shape verified 2026-06-15 against a live `sk-cp-*` key. `model_remains`
+is an array of per-*category* entries (e.g. `general`, `video` — not per-model),
+each carrying a 5h interval window and a weekly window:
+
+    {
+      "model_name": "general",                 # resource CATEGORY, not a model id
+      "remains_time": 13224928,                # ms until 5h-interval reset
+      "current_interval_total_count": 0,       # 0 on percent-metered plans
+      "current_interval_usage_count": 0,       # (REMAINING count when non-zero)
+      "current_interval_remaining_percent": 100,
+      "weekly_remains_time": 27624928,         # ms until weekly reset
+      "current_weekly_total_count": 0,
+      "current_weekly_usage_count": 0,
+      "current_weekly_remaining_percent": 82,  # -> 18% used this week
+      "current_interval_status": 1, "current_weekly_status": 1
+    }
+
+Two footguns this parser handles: reset times are **milliseconds** (not seconds),
+and current plans meter by **percentage** with the count fields left at 0 — so we
+prefer `*_remaining_percent` and only fall back to counts when a real allowance
+(`*_total_count > 0`) is present. The unrelated portal endpoint
 `https://www.minimaxi.com/v1/api/openplatform/coding_plan/remains` requires
 browser cookies (issue #88) — we don't use it.
 
@@ -109,25 +126,14 @@ class MiniMaxAdapter:
 
 
 def parse_minimax_payload(payload: Mapping[str, Any]) -> UsageReport:
-    """Parse the `/v1/token_plan/remains` response.
+    """Parse the `/v1/token_plan/remains` response (schema verified 2026-06-15).
 
-    Field names verified 2026-05-06 against the live API via the
-    `slkiser/opencode-quota` repo (`src/providers/minimax-coding-plan.ts`).
-    `model_remains` is an array of per-model entries with this shape:
-
-        {
-          "model_name": "MiniMax-M2.7",
-          "current_interval_total_count": 1500,
-          "current_interval_usage_count": 1473,   # CAUTION: actually REMAINING
-          "remains_time": 12345,                  # seconds to 5h reset
-          "current_weekly_total_count": 15000,
-          "current_weekly_usage_count": 14500,    # CAUTION: actually REMAINING
-          "weekly_remains_time": 432000           # seconds to weekly reset
-        }
-
-    The `*_usage_count` field names are misleading — MiniMax's API returns
-    *remaining* counts there, not used. (Documented footgun in the slkiser
-    integration.) `usage = total - usage_count` gives the actual usage.
+    `model_remains` is an array of per-category entries. For each entry we emit a
+    5h-interval row and a weekly row. Usage is taken from `*_remaining_percent`
+    (percent-metered plans leave the count fields at 0); when a real count
+    allowance is present (`*_total_count > 0`) we use it instead, treating
+    `*_usage_count` as the *remaining* count (a documented MiniMax footgun). Reset
+    times (`remains_time`, `weekly_remains_time`) are milliseconds.
     """
     notes: list[str] = []
 
@@ -181,42 +187,72 @@ def parse_minimax_payload(payload: Mapping[str, Any]) -> UsageReport:
 
 
 def _rows_from_minimax_model_entry(entry: Mapping[str, Any]) -> list[UsageRow]:
-    """Yield the 5h-window and weekly-window UsageRows for one model entry.
+    """Yield the 5h-window and weekly-window UsageRows for one category entry.
 
     Returns an empty list if no recognized window fields are present.
     """
-    model_name = str(entry.get("model_name") or entry.get("model") or "model")
+    category = str(entry.get("model_name") or entry.get("model") or "model")
     rows: list[UsageRow] = []
 
-    interval_total = _to_int(entry.get("current_interval_total_count"))
-    interval_remaining = _to_int(entry.get("current_interval_usage_count"))
-    interval_remains_seconds = _to_int(entry.get("remains_time"))
-    if interval_total is not None and interval_remaining is not None:
-        rows.append(
-            UsageRow(
-                label=f"{model_name} 5h",
-                used=used_from_remaining(interval_total, interval_remaining),
-                limit=interval_total,
-                unit="requests",
-                reset_hint=_seconds_to_reset_hint(interval_remains_seconds),
-            )
-        )
+    interval = _window_row(
+        label=f"{category} 5h",
+        total=entry.get("current_interval_total_count"),
+        remaining_count=entry.get("current_interval_usage_count"),
+        remaining_percent=entry.get("current_interval_remaining_percent"),
+        remains_millis=entry.get("remains_time"),
+    )
+    if interval is not None:
+        rows.append(interval)
 
-    weekly_total = _to_int(entry.get("current_weekly_total_count"))
-    weekly_remaining = _to_int(entry.get("current_weekly_usage_count"))
-    weekly_remains_seconds = _to_int(entry.get("weekly_remains_time"))
-    if weekly_total is not None and weekly_remaining is not None:
-        rows.append(
-            UsageRow(
-                label=f"{model_name} weekly",
-                used=used_from_remaining(weekly_total, weekly_remaining),
-                limit=weekly_total,
-                unit="requests",
-                reset_hint=_seconds_to_reset_hint(weekly_remains_seconds),
-            )
-        )
+    weekly = _window_row(
+        label=f"{category} weekly",
+        total=entry.get("current_weekly_total_count"),
+        remaining_count=entry.get("current_weekly_usage_count"),
+        remaining_percent=entry.get("current_weekly_remaining_percent"),
+        remains_millis=entry.get("weekly_remains_time"),
+    )
+    if weekly is not None:
+        rows.append(weekly)
 
     return rows
+
+
+def _window_row(
+    *,
+    label: str,
+    total: Any,
+    remaining_count: Any,
+    remaining_percent: Any,
+    remains_millis: Any,
+) -> UsageRow | None:
+    """Build one window's row, preferring a real count allowance over percent."""
+    reset_hint = _millis_to_reset_hint(_to_int(remains_millis))
+
+    total_i = _to_int(total)
+    remaining_i = _to_int(remaining_count)
+    if total_i is not None and total_i > 0 and remaining_i is not None:
+        # `*_usage_count` is the REMAINING count, not the used count.
+        return UsageRow(
+            label=label,
+            used=used_from_remaining(total_i, remaining_i),
+            limit=total_i,
+            unit="requests",
+            reset_hint=reset_hint,
+        )
+
+    # Percent-metered plans leave the counts at 0; use the remaining percentage.
+    pct = _to_int(remaining_percent)
+    if pct is not None:
+        pct = max(0, min(100, pct))
+        return UsageRow(
+            label=label,
+            used=100 - pct,
+            limit=100,
+            unit="%",
+            reset_hint=reset_hint,
+        )
+
+    return None
 
 
 def _to_int(value: Any) -> int | None:
@@ -234,3 +270,10 @@ def _seconds_to_reset_hint(seconds: int | None) -> str | None:
     if seconds is None or seconds <= 0:
         return None
     return f"resets in {format_duration(seconds)}"
+
+
+def _millis_to_reset_hint(millis: int | None) -> str | None:
+    """MiniMax reports `remains_time`/`weekly_remains_time` in milliseconds."""
+    if millis is None or millis <= 0:
+        return None
+    return _seconds_to_reset_hint(millis // 1000)

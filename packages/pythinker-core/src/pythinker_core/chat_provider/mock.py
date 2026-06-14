@@ -28,9 +28,11 @@ class MockChatProvider(ChatProvider):
     def __init__(
         self,
         message_parts: list[StreamedMessagePart],
+        finish_reason: str | None = None,
     ):
         """Initialize the mock chat provider with predefined message parts."""
         self._message_parts = message_parts
+        self._finish_reason = finish_reason
 
     @property
     def model_name(self) -> str:
@@ -47,7 +49,7 @@ class MockChatProvider(ChatProvider):
         history: Sequence[Message],
     ) -> "MockStreamedMessage":
         """Always return the predefined message parts."""
-        return MockStreamedMessage(self._message_parts)
+        return MockStreamedMessage(self._message_parts, self._finish_reason)
 
     def with_thinking(self, effort: ThinkingEffort) -> Self:
         return copy.copy(self)
@@ -56,8 +58,9 @@ class MockChatProvider(ChatProvider):
 class MockStreamedMessage(StreamedMessage):
     """The streamed message of the mock chat provider."""
 
-    def __init__(self, message_parts: list[StreamedMessagePart]):
+    def __init__(self, message_parts: list[StreamedMessagePart], finish_reason: str | None = None):
         self._iter = self._to_stream(message_parts)
+        self._finish_reason = finish_reason
 
     def __aiter__(self) -> AsyncIterator[StreamedMessagePart]:
         return self
@@ -78,3 +81,7 @@ class MockStreamedMessage(StreamedMessage):
     @property
     def usage(self) -> TokenUsage | None:
         return None
+
+    @property
+    def finish_reason(self) -> str | None:
+        return self._finish_reason

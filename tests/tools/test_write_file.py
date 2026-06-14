@@ -8,6 +8,8 @@ import pytest
 from pydantic import ValidationError
 from pythinker_host.path import HostPath
 
+from pythinker_code.tools.file.read import Params as ReadParams
+from pythinker_code.tools.file.read import ReadFile
 from pythinker_code.tools.file.write import Params, WriteFile
 from pythinker_code.wire.types import DiffDisplayBlock
 
@@ -42,6 +44,95 @@ async def test_overwrite_existing_file(write_file_tool: WriteFile, temp_work_dir
     assert not result.is_error
     assert "successfully overwritten" in result.message
     assert await file_path.read_text() == new_content
+
+
+async def test_overwrite_blocked_when_file_changed_since_read(
+    read_file_tool: ReadFile, write_file_tool: WriteFile, temp_work_dir: HostPath
+) -> None:
+    """Stale-overwrite guard: if the agent read a file and it then changed on disk, an
+    overwrite is rejected so the external change is not clobbered. Read and Write share the
+    runtime's file_read_cache."""
+    import os
+
+    file_path = temp_work_dir / "tracked.txt"
+    await file_path.write_text("v1 content\n")
+    assert not (await read_file_tool(ReadParams(path=str(file_path)))).is_error
+
+    # External change: new content + a strictly-newer mtime (deterministic, no sleep).
+    await file_path.write_text("v2 external change\n")
+    st = os.stat(str(file_path))
+    os.utime(str(file_path), (st.st_atime, st.st_mtime + 10))
+
+    result = await write_file_tool(Params(path=str(file_path), content="v3 agent overwrite\n"))
+    assert result.is_error
+    assert "modified since" in result.message
+    assert "v2 external change" in await file_path.read_text()  # external change survived
+
+
+async def test_overwrite_blocked_when_file_changed_during_approval(
+    read_file_tool: ReadFile, write_file_tool: WriteFile, temp_work_dir: HostPath
+) -> None:
+    """Stale-overwrite guard re-checks AFTER approval: the file can change on disk during the
+    (unbounded) approval window, and the overwrite writes params.content wholesale, so the
+    pre-approval check alone would clobber the external edit. The post-approval re-check must
+    block it.
+
+    The approval `request` is patched to mutate the file (new size + strictly-newer mtime) then
+    approve — exercising only the second check (the first ran before the prompt, when the file
+    was still original)."""
+    import os
+    from unittest.mock import AsyncMock
+
+    from pythinker_code.soul.approval import ApprovalResult
+
+    file_path = temp_work_dir / "tracked.txt"
+    await file_path.write_text("v1 content\n")
+    assert not (await read_file_tool(ReadParams(path=str(file_path)))).is_error
+
+    external_content = "v2 external change during approval\n"
+
+    async def mutate_then_approve(tool_name, action, description, **kwargs):  # type: ignore[no-untyped-def]
+        # External change DURING the approval window: different size + strictly-newer mtime.
+        await file_path.write_text(external_content)
+        st = os.stat(str(file_path))
+        os.utime(str(file_path), (st.st_atime, st.st_mtime + 10))
+        return ApprovalResult(approved=True)
+
+    write_file_tool._approval.request = AsyncMock(side_effect=mutate_then_approve)  # type: ignore[method-assign]
+
+    result = await write_file_tool(Params(path=str(file_path), content="v3 agent overwrite\n"))
+    assert result.is_error
+    assert "modified since" in result.message
+    # The external change survived; the agent's overwrite was NOT applied (no clobber).
+    assert await file_path.read_text() == external_content
+    assert "v3 agent overwrite" not in await file_path.read_text()
+
+
+async def test_overwrite_allowed_after_read(
+    read_file_tool: ReadFile, write_file_tool: WriteFile, temp_work_dir: HostPath
+) -> None:
+    """A read followed by an overwrite (no external change) is allowed."""
+    file_path = temp_work_dir / "ok.txt"
+    await file_path.write_text("original\n")
+    assert not (await read_file_tool(ReadParams(path=str(file_path)))).is_error
+
+    result = await write_file_tool(Params(path=str(file_path), content="updated\n"))
+    assert not result.is_error
+    assert await file_path.read_text() == "updated\n"
+
+
+async def test_consecutive_overwrites_not_flagged_stale(
+    read_file_tool: ReadFile, write_file_tool: WriteFile, temp_work_dir: HostPath
+) -> None:
+    """The tool's own write refreshes the read-state, so an immediate second overwrite is
+    not falsely flagged as stale."""
+    file_path = temp_work_dir / "iter.txt"
+    await file_path.write_text("v0\n")
+    assert not (await read_file_tool(ReadParams(path=str(file_path)))).is_error
+
+    assert not (await write_file_tool(Params(path=str(file_path), content="v1\n"))).is_error
+    assert not (await write_file_tool(Params(path=str(file_path), content="v2\n"))).is_error
+    assert await file_path.read_text() == "v2\n"
 
 
 async def test_append_to_file(write_file_tool: WriteFile, temp_work_dir: HostPath):

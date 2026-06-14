@@ -33,6 +33,10 @@ class AgentTypeDefinition:
     default_model: str | None = None
     tool_policy: ToolPolicy = field(default_factory=lambda: ToolPolicy(mode="inherit"))
     supports_background: bool = True
+    required_mcp_servers: tuple[str, ...] = ()
+    """MCP server names this agent type needs. Spawning it is gated when these servers
+    are configured-and-absent (after MCP loading settles), so a turn is not wasted on an
+    agent that cannot reach its required tools."""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

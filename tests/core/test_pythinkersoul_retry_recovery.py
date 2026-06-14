@@ -54,6 +54,10 @@ class StaticStreamedMessage:
     def usage(self) -> TokenUsage | None:
         return None
 
+    @property
+    def finish_reason(self) -> str | None:
+        return None
+
 
 class RecoveringSequenceProvider:
     name = "recovering-sequence"
@@ -212,6 +216,10 @@ class PartialThenErrorStreamedMessage:
 
     @property
     def usage(self) -> TokenUsage | None:
+        return None
+
+    @property
+    def finish_reason(self) -> str | None:
         return None
 
 

@@ -540,7 +540,7 @@ class _PromptLiveView(_LiveView):
     def render_pinned_status_tail(self, columns: int) -> ANSI:
         """Render the trailing verb spinner that the prompt keeps pinned below a
         (possibly clipped) agent stream, so it stays visible above the input."""
-        if self._turn_ended or self._active_turn_depth <= 0 or self._foreground_tool_executing():
+        if self._turn_ended or self._active_turn_depth <= 0:
             return ANSI("")
         body = render_to_ansi(self._working_indicator(), columns=columns).rstrip("\n")
         return ANSI(body if body else "")

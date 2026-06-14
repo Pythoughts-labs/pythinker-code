@@ -71,6 +71,11 @@ def test_initialize_handshake(tmp_path) -> None:
                             "aliases": [],
                         },
                         {
+                            "name": "accept-edits",
+                            "description": "Toggle accept-edits mode (auto-approve reversible in-workspace file edits)",
+                            "aliases": [],
+                        },
+                        {
                             "name": "plan",
                             "description": "Toggle plan mode. Usage: /plan [on|off|view|clear]",
                             "aliases": [],
@@ -273,6 +278,11 @@ def test_initialize_external_tool_conflict(tmp_path) -> None:
                         {
                             "name": "auto",
                             "description": "Toggle auto mode (no user present: auto-dismiss AskUserQuestion, auto-approve tool calls)",
+                            "aliases": [],
+                        },
+                        {
+                            "name": "accept-edits",
+                            "description": "Toggle accept-edits mode (auto-approve reversible in-workspace file edits)",
                             "aliases": [],
                         },
                         {

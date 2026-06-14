@@ -357,33 +357,48 @@ def _append_reminder_to_return_value(return_value: Any, reminder_text: str) -> A
     return return_value.model_copy(update={"output": new_output})
 
 
+_DEFAULT_MAX_CONCURRENT_READERS = 10
+"""Cap on concurrent parallel-safe tool calls. A turn that fans out many readers
+(e.g. dozens of FetchURL) overlaps freely up to this bound rather than opening an
+unbounded number of sockets/file handles at once."""
+
+
 class _ReadWriteGate:
     """Async reader-writer gate for same-step parallel tool calls.
 
-    Parallel-safe tools (readers) overlap freely; a mutating tool (writer)
-    waits for in-flight readers to drain and excludes everything while it
-    runs. Writers hold the lock while draining, which also blocks new
-    readers behind a queued writer — dispatch order stays deterministic
+    Parallel-safe tools (readers) overlap freely up to ``max_concurrent_readers``;
+    a mutating tool (writer) waits for in-flight readers to drain and excludes
+    everything while it runs. Writers hold the lock while draining, which also
+    blocks new readers behind a queued writer — dispatch order stays deterministic
     and writers cannot starve.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, max_concurrent_readers: int = _DEFAULT_MAX_CONCURRENT_READERS) -> None:
         self._writer_lock = asyncio.Lock()
         self._active_readers = 0
         self._readers_drained = asyncio.Event()
         self._readers_drained.set()
+        self._reader_slots = asyncio.Semaphore(max_concurrent_readers)
 
     @contextlib.asynccontextmanager
     async def shared(self) -> AsyncGenerator[None]:
-        async with self._writer_lock:
-            self._active_readers += 1
-            self._readers_drained.clear()
+        # Cap concurrent readers. Acquire the slot BEFORE the writer lock / counter
+        # bump: a reader still queued here has not incremented _active_readers, so it
+        # never holds _readers_drained open, and writers (which never touch the
+        # semaphore) cannot be starved — keeping the cap deadlock-safe.
+        await self._reader_slots.acquire()
         try:
-            yield
+            async with self._writer_lock:
+                self._active_readers += 1
+                self._readers_drained.clear()
+            try:
+                yield
+            finally:
+                self._active_readers -= 1
+                if self._active_readers == 0:
+                    self._readers_drained.set()
         finally:
-            self._active_readers -= 1
-            if self._active_readers == 0:
-                self._readers_drained.set()
+            self._reader_slots.release()
 
     @contextlib.asynccontextmanager
     async def exclusive(self) -> AsyncGenerator[None]:
@@ -905,8 +920,17 @@ class PythinkerToolset:
         return self._mcp_servers
 
     def mcp_status_snapshot(self) -> MCPStatusSnapshot | None:
-        """Return a read-only snapshot of current MCP startup state."""
+        """Return a read-only snapshot of current MCP startup state.
+
+        Returns ``None`` only when no MCP is configured (the settled, nothing-to-load state).
+        While a deferred startup is queued but has not populated ``_mcp_servers`` yet, a
+        ``loading=True`` snapshot is returned instead — otherwise the required-MCP spawn gate
+        could not distinguish "still starting" from "not configured" and would reject a
+        first-turn subagent spawn during the startup window.
+        """
         if not self._mcp_servers:
+            if self.has_deferred_mcp_tools():
+                return MCPStatusSnapshot(loading=True, connected=0, total=0, tools=0, servers=())
             return None
 
         servers = tuple(

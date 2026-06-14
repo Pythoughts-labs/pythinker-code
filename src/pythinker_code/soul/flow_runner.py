@@ -140,6 +140,9 @@ class FlowRunner:
             if result.stop_reason == "tool_rejected":
                 logger.error("Agent flow stopped after tool rejection.")
                 return None, steps_used
+            if result.stop_reason == "budget_exhausted":
+                logger.error("Agent flow stopped: session spend ceiling reached.")
+                return None, steps_used
 
             if node.kind != "decision":
                 return edges[0].dst, steps_used

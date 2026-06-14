@@ -435,6 +435,19 @@ def _map_audio_url_to_file_content(url: str) -> ResponseInputFileContentParam | 
     return None
 
 
+def _responses_finish_reason(response: Response) -> str | None:
+    """Map a Responses API terminal state to the loop's OpenAI-compatible finish reason.
+
+    The Responses API marks an output-token-capped reply with ``status='incomplete'`` and
+    ``incomplete_details.reason='max_output_tokens'``; surface that as ``'length'`` so the
+    loop's truncation recovery fires. Other terminal statuses pass through unchanged.
+    """
+    details = response.incomplete_details
+    if details is not None and details.reason == "max_output_tokens":
+        return "length"
+    return response.status
+
+
 class OpenAIResponsesStreamedMessage:
     def __init__(self, response: Response | AsyncStream[ResponseStreamEvent]):
         if isinstance(response, Response):
@@ -443,6 +456,7 @@ class OpenAIResponsesStreamedMessage:
             self._iter = self._convert_stream_response(response)
         self._id: str | None = None
         self._usage: ResponseUsage | None = None
+        self._finish_reason: str | None = None
 
     def __aiter__(self) -> AsyncIterator[StreamedMessagePart]:
         return self
@@ -453,6 +467,10 @@ class OpenAIResponsesStreamedMessage:
     @property
     def id(self) -> str | None:
         return self._id
+
+    @property
+    def finish_reason(self) -> str | None:
+        return self._finish_reason
 
     @property
     def usage(self) -> TokenUsage | None:
@@ -475,6 +493,7 @@ class OpenAIResponsesStreamedMessage:
         """Convert a non-streaming Responses API result into message parts."""
         self._id = response.id
         self._usage = response.usage
+        self._finish_reason = _responses_finish_reason(response)
         for item in response.output:
             if item.type == "message":
                 for content in item.content or []:
@@ -527,6 +546,12 @@ class OpenAIResponsesStreamedMessage:
                     yield ThinkPart(think=chunk.delta)
                 elif chunk.type == "response.completed":
                     self._usage = chunk.response.usage
+                    self._finish_reason = _responses_finish_reason(chunk.response)
+                elif chunk.type == "response.incomplete":
+                    # The terminal incomplete event carries the max_output_tokens truncation
+                    # (and final usage/status); kept separate so the event type narrows.
+                    self._usage = chunk.response.usage
+                    self._finish_reason = _responses_finish_reason(chunk.response)
         except (OpenAIError, httpx.HTTPError) as e:
             raise convert_error(e) from e
 

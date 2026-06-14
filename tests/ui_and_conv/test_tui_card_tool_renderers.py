@@ -240,7 +240,7 @@ def test_write_existing_file_renders_diff_for_add_only_change():
     )
 
     assert "Added 1 line" in rendered
-    assert " 2 + new section" in rendered
+    assert " 2 +new section" in rendered
     assert "Wrote 2 lines" not in rendered
 
 
@@ -315,8 +315,8 @@ def test_edit_renders_inline_diff():
     assert "Added 1 line" in rendered
     assert "return 1" in rendered
     assert "return 2" in rendered
-    assert " 1 - return 1" in rendered
-    assert " 1 + return 2" in rendered
+    assert " 1 -return 1" in rendered
+    assert " 1 +return 2" in rendered
 
 
 def test_edit_multi_count_in_header():
@@ -360,8 +360,8 @@ def test_edit_prefers_structured_result_diff_blocks():
     rendered = render_plain(comp.render(), width=100)
     assert "removed 1 line" in rendered
     assert "Added 1 line" in rendered
-    assert "41 - old" in rendered
-    assert "41 + new" in rendered
+    assert "41 -old" in rendered
+    assert "41 +new" in rendered
 
 
 def test_summary_diff_blocks_count_each_line():
@@ -853,8 +853,11 @@ def test_run_agents_renders_compact_professional_summary():
     assert "foreground" in rendered
     assert "code_scan" in rendered
     assert "security_scan" in rendered
-    assert "No correctness findings" in rendered
-    assert "No exploitable security issues" in rendered
+    # Successful agent summaries are suppressed — only the findings table shows
+    assert "No correctness findings" not in rendered
+    assert "No exploitable security issues" not in rendered
+    # The findings panel appears for review runs
+    assert "Review Findings" in rendered
     assert "Repository details" not in rendered
     assert "Review every changed file" not in rendered
     assert "result: |" not in rendered
@@ -1159,3 +1162,186 @@ def test_card_places_result_immediately_under_response_gutter():
         f"expected response gutter after header at index {header_idx}, "
         f"got {lines[header_idx + 1]!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# RunAgents — findings table aggregation
+# ---------------------------------------------------------------------------
+
+
+def _run_agents_review_output(agents_yaml: str) -> str:
+    return (
+        "tool_status: success\n"
+        "mode: foreground\n"
+        f"agent_count: {agents_yaml.count('- name:')}\n"
+        "agents:\n" + agents_yaml
+    )
+
+
+def test_findings_table_explicit_bracket_counts():
+    """[HIGH] / [MEDIUM] bullets are parsed and appear in the findings table."""
+    output = _run_agents_review_output(
+        "- name: code_scan\n"
+        "  subagent_type: code-reviewer\n"
+        "  status: completed\n"
+        "  result: |\n"
+        "    status: completed\n"
+        "\n"
+        "    ## Findings\n"
+        "    - [HIGH] Missing input validation\n"
+        "    - [HIGH] SQL injection risk\n"
+        "    - [MEDIUM] Weak error handling\n"
+    )
+    rendered = _render("RunAgents", {"summary": "review"}, output=output, width=120)
+    assert "Review Findings" in rendered
+    assert "High" in rendered
+    assert "Medium" in rendered
+    # Footer should say parsed 1/1
+    assert "Parsed 1/1" in rendered
+
+
+def test_findings_table_severity_section_bullets():
+    """Plain bullets inside a ### High Severity subsection are counted as high."""
+    output = _run_agents_review_output(
+        "- name: sec_scan\n"
+        "  subagent_type: security-reviewer\n"
+        "  status: completed\n"
+        "  result: |\n"
+        "    status: completed\n"
+        "\n"
+        "    ## Findings\n"
+        "    ### High Severity\n"
+        "    - Token reuse vulnerability\n"
+        "    - Missing TLS enforcement\n"
+        "    ### Low Severity\n"
+        "    - Unused debug flag\n"
+    )
+    rendered = _render("RunAgents", {"summary": "security review"}, output=output, width=120)
+    assert "Review Findings" in rendered
+    assert "High" in rendered
+    assert "Low" in rendered
+    assert "Parsed 1/1" in rendered
+
+
+def test_findings_table_unstructured_prose_renders_as_unparsed():
+    """A reviewer with only prose (no structured markers) shows the panel with unparsed count."""
+    output = _run_agents_review_output(
+        "- name: code_scan\n"
+        "  subagent_type: code-reviewer\n"
+        "  status: completed\n"
+        "  result: |\n"
+        "    status: completed\n"
+        "\n"
+        "    No correctness findings above the configured threshold.\n"
+    )
+    rendered = _render("RunAgents", {"summary": "review"}, output=output, width=120)
+    # No structured markers → unparsed prose, not zero-count parsed findings
+    assert "Review Findings" in rendered
+    assert "unparsed prose" in rendered
+
+
+def test_findings_table_ambiguous_prose_not_counted():
+    """Mid-sentence severity words ('not a high-risk change') must not be counted."""
+    output = _run_agents_review_output(
+        "- name: code_scan\n"
+        "  subagent_type: code-reviewer\n"
+        "  status: completed\n"
+        "  result: |\n"
+        "    status: completed\n"
+        "\n"
+        "    This is not a high-risk change.\n"
+        "    The overall risk is medium at most.\n"
+        "    No critical vulnerabilities detected in this diff.\n"
+    )
+    rendered = _render("RunAgents", {"summary": "review"}, output=output, width=120)
+    assert "Review Findings" in rendered
+    # Whole report is unparsed prose — no structured findings found
+    assert "unparsed prose" in rendered
+
+
+def test_findings_table_not_rendered_for_non_review_run():
+    """Non-review RunAgents output must not include the findings panel."""
+    output = _run_agents_review_output(
+        "- name: implementer\n"
+        "  subagent_type: implementer\n"
+        "  status: completed\n"
+        "  result: |\n"
+        "    status: completed\n"
+        "\n"
+        "    Implementation complete.\n"
+    )
+    rendered = _render("RunAgents", {"summary": "implement"}, output=output, width=120)
+    assert "Review Findings" not in rendered
+
+
+def test_findings_table_reported_by_shows_agent_names():
+    """The 'Reported by' column lists the agent name for each severity."""
+    output = _run_agents_review_output(
+        "- name: auth_review\n"
+        "  subagent_type: code-reviewer\n"
+        "  status: completed\n"
+        "  result: |\n"
+        "    status: completed\n"
+        "\n"
+        "    ## Findings\n"
+        "    - [CRITICAL] Auth bypass\n"
+        "- name: api_review\n"
+        "  subagent_type: security-reviewer\n"
+        "  status: completed\n"
+        "  result: |\n"
+        "    status: completed\n"
+        "\n"
+        "    ## Findings\n"
+        "    - [HIGH] SSRF vulnerability\n"
+        "    - [HIGH] Missing CSRF\n"
+    )
+    rendered = _render("RunAgents", {"summary": "dual review"}, output=output, width=120)
+    assert "Review Findings" in rendered
+    assert "auth_review" in rendered
+    assert "api_review" in rendered
+    assert "Parsed 2/2" in rendered
+
+
+def test_findings_table_unparsed_count_and_parsed_ratio():
+    """Agents with no structured markers are counted as unparsed in footer + Unknown row."""
+    output = _run_agents_review_output(
+        "- name: code_scan\n"
+        "  subagent_type: code-reviewer\n"
+        "  status: completed\n"
+        "  result: |\n"
+        "    status: completed\n"
+        "\n"
+        "    ## Findings\n"
+        "    - [MEDIUM] Missing validation\n"
+        "- name: prose_reviewer\n"
+        "  subagent_type: code-reviewer\n"
+        "  status: completed\n"
+        "  result: |\n"
+        "    status: completed\n"
+        "\n"
+        "    The code looks fine with no major concerns.\n"
+    )
+    rendered = _render("RunAgents", {"summary": "review"}, output=output, width=120)
+    assert "Review Findings" in rendered
+    assert "Parsed 1/2" in rendered
+    assert "1 report kept as unparsed prose" in rendered
+    assert "Unknown" in rendered
+
+
+def test_successful_non_review_agent_shows_summary_preview():
+    """Completed non-review agents with a summary_preview must show it as a preview line."""
+    output = _run_agents_review_output(
+        "- name: implementer\n"
+        "  subagent_type: implementer\n"
+        "  status: completed\n"
+        "  result: |\n"
+        "    status: completed\n"
+        "\n"
+        "    [summary]\n"
+        "    Refactored the auth module and added unit tests.\n"
+    )
+    rendered = _render("RunAgents", {"summary": "implement feature"}, output=output, width=120)
+    # The summary preview must appear for non-review successful agents.
+    assert "Refactored the auth module" in rendered
+    # The findings panel must NOT appear (no review agents).
+    assert "Review Findings" not in rendered

@@ -34,6 +34,7 @@ from pythinker_code.skill import (
 )
 from pythinker_code.soul.approval import Approval, ApprovalState
 from pythinker_code.soul.denwarenji import DenwaRenji
+from pythinker_code.soul.message import system_reminder
 from pythinker_code.soul.toolset import PythinkerToolset, ToolType
 from pythinker_code.subagents.discovery import (
     discover_markdown_agents,
@@ -44,6 +45,7 @@ from pythinker_code.subagents.models import AgentTypeDefinition, ToolPolicy
 from pythinker_code.subagents.registry import LaborMarket
 from pythinker_code.subagents.store import SubagentStore
 from pythinker_code.utils.environment import Environment
+from pythinker_code.utils.file_read_cache import FileReadCache
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.path import find_project_root, is_within_directory, list_directory
 from pythinker_code.utils.trust import strip_invisible_chars
@@ -51,6 +53,8 @@ from pythinker_code.wire.root_hub import RootWireHub
 
 if TYPE_CHECKING:
     from fastmcp.mcp_config import MCPConfig
+
+    from pythinker_code.wire.types import MCPStatusSnapshot
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -63,8 +67,10 @@ class BuiltinSystemPromptArgs:
     """The absolute path of current working directory."""
     PYTHINKER_WORK_DIR_LS: str
     """The directory listing of current working directory."""
-    PYTHINKER_AGENTS_MD: str  # TODO: move to first message from system prompt
-    """The merged content of AGENTS.md files (from project root to work_dir)."""
+    PYTHINKER_AGENTS_MD: str
+    """The merged content of AGENTS.md files (from project root to work_dir). Delivered as a
+    session-start <system-reminder> preamble (see render_agents_md_reminder), not interpolated
+    into the system prompt, so it survives compaction and is never budget-truncated."""
     PYTHINKER_SKILLS: str
     """Formatted information about available skills."""
     PYTHINKER_ADDITIONAL_DIRS_INFO: str
@@ -86,6 +92,35 @@ def _agents_md_fence(content: str) -> str:
     """Return a backtick fence longer than any backtick run inside *content*."""
     longest = max((len(m.group()) for m in re.finditer(r"`+", content)), default=0)
     return "`" * max(9, longest + 1)
+
+
+def render_agents_md_reminder(builtin_args: BuiltinSystemPromptArgs) -> str | None:
+    """Render the merged ``AGENTS.md`` as an authoritative ``<system-reminder>`` body.
+
+    Returns ``None`` when no ``AGENTS.md`` applies between the project root and the
+    working directory. Otherwise returns the framing + fenced merged content that is
+    delivered as a session-start, user-role reminder prepended to every model request
+    (see :func:`pythinker_code.soul.pythinkersoul._with_agents_md_preamble`), rather than
+    baked into the immutable system prompt.
+
+    Delivering it this way keeps the project instructions out of the system prompt while
+    making them immune to the two failure modes a system-prompt move would otherwise hit:
+    they never enter the persisted history, so context compaction cannot summarize them
+    away; and they are not a budgeted dynamic injection, so the injection token ceiling
+    cannot truncate them. The content is therefore always present, in full, and verbatim.
+    """
+    agents_md = builtin_args.PYTHINKER_AGENTS_MD
+    if not agents_md:
+        return None
+    fence = builtin_args.PYTHINKER_AGENTS_MD_FENCE
+    return (
+        "The merged `AGENTS.md` project instructions below are authoritative and already "
+        "assembled: every file from the project root down to the working directory, deeper "
+        "(more specific) files overriding shallower ones, each governing its own directory "
+        "and everything beneath it. Treat them with the same authority as your system "
+        "instructions.\n\n"
+        f"{fence}\n{agents_md}\n{fence}"
+    )
 
 
 async def _dirs_root_to_leaf(work_dir: HostPath, project_root: HostPath) -> list[HostPath]:
@@ -201,6 +236,12 @@ class Runtime:
     prompt_templates: dict[str, PromptTemplate] = field(default_factory=dict[str, PromptTemplate])
     mcp_tools: dict[str, ToolType] = field(default_factory=dict[str, ToolType])
     """Connected MCP tools, keyed `mcp__<server>__<tool>`, shared with subagent allowlists."""
+    mcp_status: Callable[[], MCPStatusSnapshot | None] | None = None
+    """Root-only accessor for live MCP startup state, wired from the root toolset. Used by
+    the subagent-spawn gate to reject an agent whose required MCP servers are absent."""
+    file_read_cache: FileReadCache = field(default_factory=FileReadCache)
+    """Per-agent record of when each file was last read, backing read-before-write
+    enforcement and stale-overwrite detection in the file tools."""
     subagent_store: SubagentStore | None = None
     approval_runtime: ApprovalRuntime | None = None
     root_wire_hub: RootWireHub | None = None
@@ -535,6 +576,9 @@ async def load_agent(
         runtime.labor_market.add_builtin_type(type_def)
 
     toolset = PythinkerToolset(runtime)
+    # Wire the live MCP startup state so the subagent-spawn gate can reject an agent whose
+    # required MCP servers are absent (root only — subagents never spawn other agents).
+    runtime.mcp_status = toolset.mcp_status_snapshot
     tool_deps = {
         PythinkerToolset: toolset,
         Runtime: runtime,
@@ -628,3 +672,74 @@ def _load_system_prompt(
         raise SystemPromptTemplateError(f"Missing system prompt arg in {path}: {exc}") from exc
     except TemplateError as exc:
         raise SystemPromptTemplateError(f"Invalid system prompt template: {path}: {exc}") from exc
+
+
+async def build_builtin_system_prompt_args(
+    work_dir: HostPath,
+    config: Config,
+    *,
+    scratchpad_section: str | None = None,
+) -> BuiltinSystemPromptArgs:
+    """Build system-prompt args from the filesystem + environment only.
+
+    Read-only: constructs no Runtime, session, LLM, auth, or MCP connection. Mirrors
+    the arg assembly in :meth:`Runtime.create` so a dumped prompt matches what an agent
+    would actually receive. ``PYTHINKER_ADDITIONAL_DIRS_INFO`` is empty because additional
+    directories are session state, which inspection does not load.
+    """
+    ls_output, agents_md, environment = await asyncio.gather(
+        list_directory(work_dir),
+        load_agents_md(work_dir),
+        Environment.detect(),
+    )
+    scoped_roots = await resolve_skills_roots(
+        work_dir,
+        merge_brands=config.merge_all_available_skills,
+        extra_skill_dirs=config.extra_skill_dirs or None,
+    )
+    skills_formatted = format_skills_for_prompt(await discover_skills_from_roots(scoped_roots))
+    return BuiltinSystemPromptArgs(
+        PYTHINKER_NOW=datetime.now().astimezone().isoformat(),
+        PYTHINKER_WORK_DIR=work_dir,
+        PYTHINKER_WORK_DIR_LS=ls_output,
+        PYTHINKER_AGENTS_MD=agents_md or "",
+        PYTHINKER_AGENTS_MD_FENCE=_agents_md_fence(agents_md or ""),
+        PYTHINKER_SKILLS=skills_formatted or "No skills found.",
+        PYTHINKER_ADDITIONAL_DIRS_INFO="",
+        PYTHINKER_OS=environment.os_kind,
+        PYTHINKER_SHELL=f"{environment.shell_name} (`{environment.shell_path}`)",
+        PYTHINKER_SCRATCHPAD_SECTION=scratchpad_section or DEFAULT_SCRATCHPAD_SECTION,
+    )
+
+
+# Separates the system prompt from the appended AGENTS.md reminder in dump output, making
+# clear the reminder is delivered as its own message and is not part of the system prompt.
+_AGENTS_MD_DUMP_HEADER = (
+    "================================================================================\n"
+    "The block below is NOT part of the system prompt. The merged AGENTS.md is delivered\n"
+    "as a session-start, user-role <system-reminder> message prepended to every model\n"
+    "request (see PythinkerSoul._step). It is shown here so this dump is faithful.\n"
+    "================================================================================"
+)
+
+
+async def render_agent_system_prompt(agent_file: Path, work_dir: HostPath, config: Config) -> str:
+    """Render an agent's assembled system prompt for inspection (read-only).
+
+    Resolves the agent spec, builds live builtin args from the filesystem + environment,
+    and renders the template — with no Runtime, session, auth, or MCP. Backs the
+    ``pythinker system-prompt`` command. When an ``AGENTS.md`` applies, the session-start
+    reminder that carries it (delivered as a separate message, not baked into the system
+    prompt) is appended below a labeled divider so the dump reflects what the agent receives.
+    """
+    agent_spec = load_agent_spec(agent_file)
+    builtin_args = await build_builtin_system_prompt_args(work_dir, config)
+    prompt = _load_system_prompt(
+        agent_spec.system_prompt_path,
+        agent_spec.system_prompt_args,
+        builtin_args,
+    )
+    reminder = render_agents_md_reminder(builtin_args)
+    if reminder is None:
+        return prompt
+    return f"{prompt}\n\n{_AGENTS_MD_DUMP_HEADER}\n\n{system_reminder(reminder).text}"

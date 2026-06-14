@@ -95,6 +95,17 @@ class StreamedMessage(Protocol):
         """The token usage of the streamed message."""
         ...
 
+    @property
+    def finish_reason(self) -> str | None:
+        """The OpenAI-compatible finish reason of the streamed message.
+
+        ``'length'`` when the output-token limit cut the response off (the signal the agent
+        loop uses to recover from truncation); ``None`` when the provider reports none. A
+        required member of the contract so no provider can silently omit the truncation
+        signal — see :mod:`pythinker_core._generate`.
+        """
+        ...
+
 
 class TokenUsage(BaseModel):
     """Token usage statistics."""

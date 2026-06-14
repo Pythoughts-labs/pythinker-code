@@ -35,6 +35,7 @@ from pythinker_code.approval_runtime import (
 )
 from pythinker_code.background import build_active_task_snapshot
 from pythinker_code.hooks.engine import HookEngine
+from pythinker_code.hooks.runner import HookResult
 from pythinker_code.llm import ModelCapability, create_llm
 from pythinker_code.notifications import (
     NotificationView,
@@ -51,7 +52,12 @@ from pythinker_code.soul import (
     StatusSnapshot,
     wire_send,
 )
-from pythinker_code.soul.agent import Agent, Runtime
+from pythinker_code.soul.agent import (
+    Agent,
+    BuiltinSystemPromptArgs,
+    Runtime,
+    render_agents_md_reminder,
+)
 
 # classify_api_error is re-exported so telemetry tests and existing imports
 # keep resolving against this module.
@@ -113,6 +119,7 @@ from pythinker_code.tools.utils import ToolRejectedError
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.slashcmd import SlashCommand, parse_slash_command_call
 from pythinker_code.utils.sleep_inhibitor import SleepInhibitor
+from pythinker_code.utils.trust import UntrustedData
 from pythinker_code.wire.file import WireFile
 from pythinker_code.wire.types import (
     CompactionBegin,
@@ -187,7 +194,7 @@ def _is_hard_usage_limit(exception: BaseException) -> bool:
     return "usage_limit_reached" in text or "usage limit" in text
 
 
-type StepStopReason = Literal["no_tool_calls", "tool_rejected", "stuck"]
+type StepStopReason = Literal["no_tool_calls", "tool_rejected", "stuck", "budget_exhausted"]
 
 
 _MISSING_REQUIRED_FIELD_RE = re.compile(
@@ -254,6 +261,86 @@ async def _settle_shielded(task: asyncio.Task[None]) -> None:
 def _is_all_error_batch(tool_results: Sequence[ToolResult]) -> bool:
     """True when a non-empty tool batch had *every* call fail."""
     return bool(tool_results) and all(r.return_value.is_error for r in tool_results)
+
+
+def _is_over_cost_ceiling(session_cost_usd: float, ceiling: float | None) -> bool:
+    """True when a positive session spend ceiling has been reached.
+
+    Best-effort: a ``None`` or non-positive ceiling is treated as disabled, and cost is
+    ``0.0`` for models with unknown pricing, so the ceiling fails open (never blocks)
+    rather than blocking on spend that cannot be estimated.
+    """
+    return ceiling is not None and ceiling > 0 and session_cost_usd >= ceiling
+
+
+def _budget_exhausted_message(session_cost_usd: float, ceiling: float) -> Message:
+    """Handoff message when the session reaches its configured spend ceiling."""
+    text = (
+        f"Stopping: this session has reached its configured spend ceiling "
+        f"(estimated ${session_cost_usd:.2f} of ${ceiling:.2f}). Raise "
+        f"`loop_control.max_session_cost_usd` in config, or start a new session, to continue."
+    )
+    return Message(role="assistant", content=[TextPart(text=text)])
+
+
+def _user_message_with_hook_context(
+    user_input: str | list[ContentPart], results: Sequence[HookResult]
+) -> Message:
+    """Build the user-turn message, appending non-block ``additional_context`` from
+    UserPromptSubmit hooks as a system reminder so the model sees it as context for this
+    prompt. Blocking results are handled separately and never contribute context.
+
+    Hook stdout is external, untrusted content (it may echo git logs, issue bodies, or
+    fetched pages), so it is wrapped in the untrusted-data envelope before injection —
+    matching how fetch/search/shell/grep output is neutralized.
+    """
+    context = "\n\n".join(
+        r.additional_context.strip()
+        for r in results
+        if r.action != "block" and r.additional_context.strip()
+    )
+    if not context:
+        return Message(role="user", content=user_input)
+    base: list[ContentPart] = (
+        list(user_input) if isinstance(user_input, list) else [TextPart(text=user_input)]
+    )
+    reminder = system_reminder(
+        "A UserPromptSubmit hook added context for this prompt:\n\n"
+        + UntrustedData(context).render_for_prompt()
+    )
+    return Message(role="user", content=[*base, reminder])
+
+
+def _with_agents_md_preamble(
+    history: Sequence[Message], builtin_args: BuiltinSystemPromptArgs
+) -> list[Message]:
+    """Return *history* with the merged AGENTS.md prepended as a leading user-role
+    ``<system-reminder>``, or a plain copy of *history* when no AGENTS.md applies.
+
+    The preamble is assembled fresh from ``builtin_args`` on every step and is NEVER
+    appended to ``context.history``. That is precisely what keeps the project instructions
+    immune to the two failure modes a persisted home would hit: context compaction cannot
+    summarize them away (they are not in the history it rewrites), and the dynamic-injection
+    token budget cannot truncate them (they are not a budgeted injection). The input is left
+    unmutated. See :func:`pythinker_code.soul.agent.render_agents_md_reminder`.
+    """
+    reminder = render_agents_md_reminder(builtin_args)
+    if reminder is None:
+        return list(history)
+    preamble = Message(role="user", content=[system_reminder(reminder)])
+    return [preamble, *history]
+
+
+def _should_nudge_truncation(
+    truncated: bool, has_tool_calls: bool, recoveries: int, limit: int
+) -> bool:
+    """Whether a truncated (output-cap) response should be nudged to continue.
+
+    Only fires for a truncated response with NO tool calls — a tool-call response continues
+    the loop via its results anyway. ``recoveries < limit`` bounds the retries per turn so a
+    persistently-truncating model cannot loop forever.
+    """
+    return truncated and not has_tool_calls and recoveries < limit
 
 
 def _stuck_summary_message(
@@ -340,6 +427,20 @@ class TurnOutcome:
     final_message: Message | None
     step_count: int
 
+    @property
+    def produced_answer(self) -> bool:
+        """True when the turn ended with a substantive assistant answer.
+
+        A turn can end without an exception yet not deliver a usable answer: a forced
+        handoff (``stuck`` / ``budget_exhausted``), a rejected tool call (no final
+        message), or an empty/whitespace final message. Those are degenerate stops, not
+        completions — distinguishing them lets callers avoid reporting a non-answer as a
+        clean success (e.g. a future print-mode exit-code mapping).
+        """
+        if self.stop_reason != "no_tool_calls" or self.final_message is None:
+            return False
+        return bool(self.final_message.extract_text(" ").strip())
+
 
 class PythinkerSoul:
     """The soul of Pythinker CLI."""
@@ -369,6 +470,7 @@ class PythinkerSoul:
             )
         self._current_step_no = 0
         self._consecutive_failures = 0
+        self._truncation_recoveries = 0
         # Cumulative LLM token usage for this soul instance (one run), so a subagent
         # can report its spend back to the orchestrating parent (subagent-2). A
         # resumed session runs on a fresh soul, so this counts the current run.
@@ -959,6 +1061,7 @@ class PythinkerSoul:
             # the wait ceiling is hit) must bypass ``UserPromptSubmit``:
             # they are not user input, and a user-configured prompt-blocking
             # hook would drop the notification and hang the wait loop.
+            hook_results: Sequence[HookResult] = []
             if not skip_user_prompt_hook:
                 text_input_for_hook = user_input if isinstance(user_input, str) else ""
 
@@ -982,8 +1085,11 @@ class PythinkerSoul:
 
             wire_send(TurnBegin(user_input=user_input))
             turn_started = True
-            user_message = Message(role="user", content=user_input)
-            text_input = user_message.extract_text(" ").strip()
+            # Inject any non-block additional_context from UserPromptSubmit hooks into the
+            # user turn so the model sees it as context for this prompt.
+            user_message = _user_message_with_hook_context(user_input, hook_results)
+            # Slash-command parsing must see only the user's text, never appended hook context.
+            text_input = Message(role="user", content=user_input).extract_text(" ").strip()
 
             primary_outcome: TurnOutcome | None = None
             if command_call := parse_slash_command_call(text_input):
@@ -1186,6 +1292,10 @@ class PythinkerSoul:
                 outcome = await self._agent_loop()
                 span.set_attribute("turn.stop_reason", outcome.stop_reason)
                 span.set_attribute("turn.step_count", outcome.step_count)
+                # Observable signal that a turn ended without a substantive answer (a
+                # degenerate stop), so the degenerate-completion rate is measurable before
+                # any exit-code mapping consumes it.
+                span.set_attribute("turn.produced_answer", outcome.produced_answer)
                 _m.record_turn(
                     duration_seconds=time.monotonic() - turn_t0,
                     step_count=outcome.step_count,
@@ -1197,6 +1307,7 @@ class PythinkerSoul:
                         "session_id": self._runtime.session.id,
                         "stop_reason": outcome.stop_reason,
                         "step_count": outcome.step_count,
+                        "produced_answer": outcome.produced_answer,
                     },
                 )
                 return outcome
@@ -1387,10 +1498,26 @@ class PythinkerSoul:
         self._intent_nudge_used = False
         # Reset the degenerate-loop failure tracker at the start of each turn.
         self._consecutive_failures = 0
+        # Bounded per turn: nudges to continue after an output-token-limit truncation.
+        self._truncation_recoveries = 0
         # One-shot per turn: reactive compact-and-retry after a provider
         # context-length rejection (proactive thresholds can undercount).
         overflow_recovery_used = False
         while True:
+            # Spend ceiling: stop before starting another (paid) step once the session's
+            # accumulated estimated cost reaches the configured ceiling. Checked before the
+            # step so an already-exhausted budget ends the turn without a fresh model call.
+            ceiling = self._loop_control.max_session_cost_usd
+            if _is_over_cost_ceiling(self._session_cost_usd, ceiling):
+                assert ceiling is not None  # narrowed by _is_over_cost_ceiling
+                message = _budget_exhausted_message(self._session_cost_usd, ceiling)
+                await self._context.append_message(message)
+                wire_send(TextPart(text=message.extract_text(" ")))
+                return TurnOutcome(
+                    stop_reason="budget_exhausted",
+                    final_message=message,
+                    step_count=step_no,
+                )
             step_no += 1
             if step_no > self._loop_control.max_steps_per_turn:
                 raise MaxStepsReached(self._loop_control.max_steps_per_turn)
@@ -1439,6 +1566,21 @@ class PythinkerSoul:
                             error=compact_err,
                         )
                         raise
+
+                    # Compaction makes a billable LLM call that folds into
+                    # self._session_cost_usd. Re-check the ceiling here so a session
+                    # just under the limit cannot pay for compaction *and* a full
+                    # step before the top-of-loop guard fires again next iteration.
+                    if _is_over_cost_ceiling(self._session_cost_usd, ceiling):
+                        assert ceiling is not None  # narrowed by _is_over_cost_ceiling
+                        message = _budget_exhausted_message(self._session_cost_usd, ceiling)
+                        await self._context.append_message(message)
+                        wire_send(TextPart(text=message.extract_text(" ")))
+                        return TurnOutcome(
+                            stop_reason="budget_exhausted",
+                            final_message=message,
+                            step_count=step_no - 1,  # this step's _step() never ran
+                        )
 
                 logger.debug("Beginning step {step_no}", step_no=step_no)
                 await self._checkpoint()
@@ -1583,8 +1725,12 @@ class PythinkerSoul:
                 )
             )
 
-        # Normalize: merge adjacent user messages for clean API input
-        effective_history = normalize_history(self._context.history)
+        # Prepend the merged AGENTS.md as a leading <system-reminder> (assembled fresh from
+        # runtime args, never persisted to history) so the project instructions are immune to
+        # compaction and the injection budget, then normalize to merge adjacent user messages.
+        effective_history = normalize_history(
+            _with_agents_md_preamble(self._context.history, self._runtime.builtin_args)
+        )
 
         # Capture tool results as they stream in. If the batch is interrupted
         # mid-flight, already-completed calls must keep their real output rather
@@ -1810,6 +1956,30 @@ class PythinkerSoul:
             await _settle_shielded(grow_context_task)
             raise
 
+        # Truncation recovery: a response cut off by the output-token limit that made no tool
+        # call would otherwise end the turn as a half-finished answer. Nudge the model to
+        # resume (bounded per turn) instead of treating the cut-off text as the final answer.
+        if _should_nudge_truncation(
+            result.truncated,
+            bool(result.tool_calls),
+            self._truncation_recoveries,
+            self._loop_control.max_truncation_recoveries,
+        ):
+            self._truncation_recoveries += 1
+            await self._context.append_message(
+                Message(
+                    role="user",
+                    content=[
+                        system_reminder(
+                            "Your previous response was cut off by the output token limit. "
+                            "Continue directly from where you stopped — no apology, no recap — "
+                            "and break the remaining work into smaller pieces."
+                        )
+                    ],
+                )
+            )
+            return None
+
         if invalid_summary := _malformed_empty_tool_call_summary(result.tool_calls, results):
             message = Message(
                 role="assistant",
@@ -1883,6 +2053,7 @@ class PythinkerSoul:
                         self._consecutive_failures, result.tool_calls, results
                     )
                     await self._context.append_message(summary)
+                    wire_send(TextPart(text=summary.extract_text(" ")))
                     track(
                         "agent_stuck",
                         consecutive_failures=self._consecutive_failures,

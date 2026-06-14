@@ -226,6 +226,10 @@ class ChaosStreamedMessage:
     def usage(self) -> TokenUsage | None:
         return self._wrapped.usage
 
+    @property
+    def finish_reason(self) -> str | None:
+        return self._wrapped.finish_reason
+
     def _should_corrupt_tool_call(self) -> bool:
         probability = self._config.corrupt_tool_call_probability
         return probability > 0 and self._rng.random() < probability

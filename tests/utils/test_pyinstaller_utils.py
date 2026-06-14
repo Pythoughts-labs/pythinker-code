@@ -294,6 +294,7 @@ def test_pyinstaller_hiddenimports():
             "pythinker_code.cli.secscan",
             "pythinker_code.cli.security_scan",
             "pythinker_code.cli.skill",
+            "pythinker_code.cli.system_prompt",
             "pythinker_code.cli.update",
             "pythinker_code.cli.web",
             "pythinker_code.tools",
