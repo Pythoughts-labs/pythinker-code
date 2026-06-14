@@ -36,6 +36,32 @@ async def _run_update(app: SimpleNamespace, args: str) -> None:
     await cast(Awaitable[None], shell_slash.update_command(cast(Shell, app), args))
 
 
+def _fake_choices(
+    monkeypatch: pytest.MonkeyPatch, selections: dict[str, str]
+) -> dict[str, dict[str, object]]:
+    """Drive the real menu/picker by faking the interactive ``ChoiceInput`` boundary.
+
+    ``selections`` maps a prompt's ``message`` to the option key the user "picks".
+    Returns a dict recording each prompt's constructor kwargs so tests can assert
+    the observable choice boundary (offered options and default cursor) instead of
+    patching the private helpers that build them.
+    """
+    import prompt_toolkit.shortcuts.choice_input as choice_input
+
+    recorded: dict[str, dict[str, object]] = {}
+
+    class _FakeChoiceInput:
+        def __init__(self, *, message: object, **kwargs: object) -> None:
+            self._message = str(message)
+            recorded[self._message] = {"message": self._message, **kwargs}
+
+        async def prompt_async(self) -> str:
+            return selections[self._message]
+
+    monkeypatch.setattr(choice_input, "ChoiceInput", _FakeChoiceInput)
+    return recorded
+
+
 @pytest.fixture(autouse=True)
 def _no_override(monkeypatch: pytest.MonkeyPatch) -> None:
     # The suite runs from a source checkout, where the override would otherwise
@@ -142,51 +168,66 @@ async def test_update_auto_requires_config_file(
 async def test_bare_update_menu_check_runs_update_flow(
     runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    runtime.config.auto_update = True
     app = _make_shell_app(runtime, tmp_path)
     monkeypatch.setattr(shell_slash.console, "print", Mock())
-    monkeypatch.setattr(shell_slash, "_prompt_update_action", AsyncMock(return_value="check"))
+    # Stub only the public update-flow boundary; the real menu still runs.
     run_prompt = AsyncMock(return_value=update_module.UpdateResult.UP_TO_DATE)
     monkeypatch.setattr(update_module, "run_update_prompt", run_prompt)
-    auto_toggle = AsyncMock()
-    monkeypatch.setattr(shell_slash, "_auto_update_toggle", auto_toggle)
+    recorded = _fake_choices(monkeypatch, {"Update": "check"})
 
     await _run_update(app, "")
 
+    # Picking "check" runs the update flow and leaves the auto setting untouched.
     run_prompt.assert_awaited_once()
-    auto_toggle.assert_not_called()
+    assert runtime.config.auto_update is True
+    assert recorded["Update"]["default"] == "check"
 
 
 @pytest.mark.asyncio
-async def test_bare_update_menu_auto_routes_to_toggle(
+async def test_bare_update_menu_auto_persists_chosen_state(
     runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.delenv("PYTHINKER_AUTO_UPDATE", raising=False)
+    config_path = (tmp_path / "config.toml").resolve()
+    _seed_config_file(config_path, auto_update=False)
+    runtime.config.source_file = config_path
+    runtime.config.auto_update = False
     app = _make_shell_app(runtime, tmp_path)
     monkeypatch.setattr(shell_slash.console, "print", Mock())
-    monkeypatch.setattr(shell_slash, "_prompt_update_action", AsyncMock(return_value="auto"))
     run_prompt = AsyncMock(return_value=update_module.UpdateResult.UP_TO_DATE)
     monkeypatch.setattr(update_module, "run_update_prompt", run_prompt)
-    auto_toggle = AsyncMock()
-    monkeypatch.setattr(shell_slash, "_auto_update_toggle", auto_toggle)
+    # Drive the whole menu -> toggle -> picker chain via the input boundary.
+    recorded = _fake_choices(monkeypatch, {"Update": "auto", "Auto-update on startup": "on"})
 
     await _run_update(app, "")
 
-    auto_toggle.assert_awaited_once_with(app, [])
+    # The chosen state is persisted and mirrored live; the update flow is skipped.
+    assert load_config(config_path).auto_update is True
+    assert runtime.config.auto_update is True
     run_prompt.assert_not_called()
+    # The picker's cursor defaults to the current (off) state.
+    assert recorded["Auto-update on startup"]["default"] == "off"
 
 
 @pytest.mark.asyncio
 async def test_bare_update_menu_cancel_is_noop(
     runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    runtime.config.auto_update = False
     app = _make_shell_app(runtime, tmp_path)
+    save_mock = Mock()
+    monkeypatch.setattr(shell_slash, "save_config", save_mock)
     monkeypatch.setattr(shell_slash.console, "print", Mock())
-    monkeypatch.setattr(shell_slash, "_prompt_update_action", AsyncMock(return_value=None))
     run_prompt = AsyncMock(return_value=update_module.UpdateResult.UP_TO_DATE)
     monkeypatch.setattr(update_module, "run_update_prompt", run_prompt)
+    _fake_choices(monkeypatch, {"Update": "cancel"})
 
     await _run_update(app, "")
 
     run_prompt.assert_not_called()
+    save_mock.assert_not_called()
+    assert runtime.config.auto_update is False
 
 
 @pytest.mark.asyncio
@@ -200,14 +241,12 @@ async def test_update_auto_no_args_opens_picker_and_persists(
     runtime.config.auto_update = False
     app = _make_shell_app(runtime, tmp_path)
     monkeypatch.setattr(shell_slash.console, "print", Mock())
-
-    picker = AsyncMock(return_value=True)
-    monkeypatch.setattr(shell_slash, "_prompt_auto_update_selection", picker)
+    recorded = _fake_choices(monkeypatch, {"Auto-update on startup": "on"})
 
     await _run_update(app, "auto")
 
-    # The picker is consulted with the current value as its default cursor...
-    assert picker.call_args.kwargs == {"current": False}
+    # The picker's cursor defaults to the current value...
+    assert recorded["Auto-update on startup"]["default"] == "off"
     # ...and the chosen state is persisted and mirrored live.
     assert load_config(config_path).auto_update is True
     assert runtime.config.auto_update is True
@@ -222,11 +261,7 @@ async def test_update_auto_no_args_cancel_is_noop(
     save_mock = Mock()
     monkeypatch.setattr(shell_slash, "save_config", save_mock)
     monkeypatch.setattr(shell_slash.console, "print", Mock())
-    monkeypatch.setattr(
-        shell_slash,
-        "_prompt_auto_update_selection",
-        AsyncMock(return_value=None),
-    )
+    _fake_choices(monkeypatch, {"Auto-update on startup": "cancel"})
 
     await _run_update(app, "auto")
 
