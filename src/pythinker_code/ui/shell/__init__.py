@@ -2355,13 +2355,15 @@ def _value_style_for_label(label: str, level: WelcomeInfoItem.Level) -> str:
     tokens = get_tui_tokens()
     label = label.strip()
     if label == "Directory":
-        return tokens.info or "cyan"
+        return tokens.accent or "#B3B9F4"
     if label == "Session":
         return tokens.dim or "grey39"
     if label == "Model":
         return f"bold {tokens.text}" if tokens.text else "bold bright_white"
     if label == "Branch":
-        return tokens.muted or "grey50"
+        from pythinker_code.ui.theme import get_statusline_colors
+
+        return get_statusline_colors().branch.removeprefix("fg:")
     if label == "Auto-save":
         return tokens.muted or "grey50"
     return level.value
