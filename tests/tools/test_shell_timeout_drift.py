@@ -11,11 +11,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pythinker_code.tools.shell as shell_mod
-from pythinker_code.tools.shell import (
-    MAX_BACKGROUND_TIMEOUT,
-    MAX_FOREGROUND_TIMEOUT,
-    Shell,
-)
 from pythinker_code.tools.utils import load_desc
 
 _SHELL_DIR = Path(shell_mod.__file__).parent
@@ -49,11 +44,11 @@ def test_powershell_md_interpolates_timeout_caps() -> None:
     assert "86400" not in rendered
 
 
-def test_shell_tool_description_states_enforced_caps(shell_tool: Shell) -> None:
+def test_shell_tool_description_states_enforced_caps(shell_tool: shell_mod.Shell) -> None:
     """The live description the model sees states the enforced caps as numbers,
     never a raw ``${...}`` placeholder — guards the call site passing the constants."""
     desc = shell_tool.description
-    assert f"timeout <= {MAX_FOREGROUND_TIMEOUT}" in desc
-    assert f"up to {MAX_BACKGROUND_TIMEOUT} seconds" in desc
+    assert f"timeout <= {shell_mod.MAX_FOREGROUND_TIMEOUT}" in desc
+    assert f"up to {shell_mod.MAX_BACKGROUND_TIMEOUT} seconds" in desc
     assert "${MAX_FOREGROUND_TIMEOUT}" not in desc
     assert "${MAX_BACKGROUND_TIMEOUT}" not in desc
