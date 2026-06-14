@@ -26,11 +26,26 @@
     HEAVILY test-pinned `system.md` (tests/core/test_default_agent.py + test_load_agent.py assert
     many exact phrases) and the AGENTS.md fence/budget + subagent work-dir override paths — brittle;
     budget the pin migration.
-  - **#13 max-output-token escalation ladder.** BLOCKED: pythinker-core `_generate.py:74-91`
-    surfaces no `finish_reason`/truncation signal (the cap case returns a silent normal result), so
-    the soul cannot detect truncation. Step 1 = a pythinker-core change to emit a typed
-    truncation/length signal (own `make check-pythinker-core`); step 2 = the soul-side escalate-once
-    -then-bounded-nudge ladder. Cross-package; do step 1 first.
+  - **#13 max-output-token escalation ladder.** BLOCKED on a precise truncation signal.
+    Reverse-engineered executable plan (cross-package; tests in BOTH `pythinker-core` and
+    `pythinker-code`):
+    1. `chat_provider/pythinker.py` `PythinkerStreamedMessage` captures `_id`/`_usage` but NOT
+       `finish_reason`. Add `self._finish_reason: str | None = None`, set it from
+       `choices[0].finish_reason` in both `_convert_stream_response` and
+       `_convert_non_stream_response` (openai-compatible; `"length"` == truncated), and expose a
+       `finish_reason` property (mirror the `id`/`usage` properties ~lines 400-410).
+    2. `_generate.py`: after building the message (line ~91), read `stream.finish_reason` and set a
+       new `GenerateResult.truncated: bool = False` (line 98 dataclass) — true when finish_reason is
+       `"length"` (the visible-text-then-cap case the existing think-only guard at :81-89 misses).
+       A `usage.output >= provider max_tokens` heuristic is the imprecise fallback if a provider
+       lacks finish_reason.
+    3. `soul/pythinkersoul.py` `_step` (where `usage`/`_session_cost_usd` are read, ~line 1666): on
+       `result.truncated`, escalate the per-step max_output_tokens once (new `LoopControl` field),
+       then append a bounded number of PARAPHRASED resume-nudges ("resume mid-thought, no recap,
+       break remaining work into smaller pieces" — never copy the reference's literal string), then
+       surface. Per-step max_output_tokens override plumbing through `llm.py` (`gen_kwargs["max_tokens"]`,
+       :215) is also needed. Safety net today: the blind `APIEmptyResponseError` retry
+       (`pythinkersoul.py:2295`) already prevents a hard crash, so this is an improvement, not a fix.
 - **Deferred follow-ups (low):** item-8 print exit-code gating; item-10 PostToolUse
   additionalContext (await the fire-and-forget trigger gated on has_hooks_for); deny-set symlink-dir
   + Shell-write limitations; accept-edits in `dynamic_injections/permissions_state.py`.
