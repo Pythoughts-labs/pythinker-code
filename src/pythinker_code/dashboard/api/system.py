@@ -1,4 +1,4 @@
-"""Vis API for server capabilities and metadata."""
+"""Dashboard API for server capabilities and metadata."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-router = APIRouter(prefix="/api/vis", tags=["vis"])
+router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 
 @router.get("/capabilities")

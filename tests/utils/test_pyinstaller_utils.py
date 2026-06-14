@@ -60,7 +60,7 @@ def test_pyinstaller_datas():
         (p, d)
         for p, d in datas
         if "web/static" not in d
-        and "vis/static" not in d
+        and "dashboard/static" not in d
         and d != "justext/stoplists"
         and not any(d == di or d.startswith(di + "/") for di in dist_info_dirs)
     ]
@@ -284,6 +284,7 @@ def test_pyinstaller_hiddenimports():
     assert project_entries == snapshot(
         [
             "pythinker_code.cli._lazy_group",
+            "pythinker_code.cli.dashboard",
             "pythinker_code.cli.debug",
             "pythinker_code.cli.export",
             "pythinker_code.cli.info",
@@ -294,7 +295,6 @@ def test_pyinstaller_hiddenimports():
             "pythinker_code.cli.security_scan",
             "pythinker_code.cli.skill",
             "pythinker_code.cli.update",
-            "pythinker_code.cli.vis",
             "pythinker_code.cli.web",
             "pythinker_code.tools",
             "pythinker_code.tools.agent",
@@ -354,7 +354,7 @@ def test_pyinstaller_hiddenimports_include_lazy_cli_subcommands():
 def test_require_ui_assets_accepts_built_tree(tmp_path: Path) -> None:
     from pythinker_code.utils.pyinstaller import require_ui_assets
 
-    for rel in ("web/static/index.html", "vis/static/index.html"):
+    for rel in ("web/static/index.html", "dashboard/static/index.html"):
         target = tmp_path / rel
         target.parent.mkdir(parents=True)
         target.write_text("<!doctype html>")
@@ -363,7 +363,7 @@ def test_require_ui_assets_accepts_built_tree(tmp_path: Path) -> None:
 
 
 def test_require_ui_assets_rejects_unbuilt_tree(tmp_path: Path) -> None:
-    """A freeze without the gitignored web/vis bundles ships a web UI that
+    """A freeze without the gitignored web/dashboard bundles ships a web UI that
     404s on "/"; the guard must abort the build with an actionable message."""
     from pythinker_code.utils.pyinstaller import require_ui_assets
 

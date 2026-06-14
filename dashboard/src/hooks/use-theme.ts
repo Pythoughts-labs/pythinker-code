@@ -10,13 +10,13 @@ function getSystemTheme(): Theme {
 
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>(() => {
-    const saved = localStorage.getItem("vis-theme") as Theme | null;
+    const saved = localStorage.getItem("dashboard-theme") as Theme | null;
     return saved ?? getSystemTheme();
   });
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
-    localStorage.setItem("vis-theme", theme);
+    localStorage.setItem("dashboard-theme", theme);
   }, [theme]);
 
   const toggleTheme = useCallback(() => {

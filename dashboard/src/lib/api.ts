@@ -1,6 +1,6 @@
 import { apiCache } from "./cache.ts";
 
-const BASE = "/api/vis";
+const BASE = "/api/dashboard";
 const TOKEN = new URLSearchParams(window.location.search).get("token");
 
 /** Simple concurrency limiter for batching API requests. */
@@ -236,7 +236,7 @@ export interface AggregateStats {
   per_project: { work_dir: string; sessions: number; turns: number }[];
 }
 
-export interface VisCapabilities {
+export interface DashboardCapabilities {
   open_in_supported: boolean;
 }
 
@@ -246,10 +246,10 @@ export function getAggregateStats(forceRefresh = false): Promise<AggregateStats>
   return apiCache.get(key, () => fetchJSON<AggregateStats>("/statistics"), 60_000);
 }
 
-export function getVisCapabilities(forceRefresh = false): Promise<VisCapabilities> {
-  const key = "vis-capabilities";
+export function getDashboardCapabilities(forceRefresh = false): Promise<DashboardCapabilities> {
+  const key = "dashboard-capabilities";
   if (forceRefresh) apiCache.invalidate(key);
-  return apiCache.get(key, () => fetchJSON<VisCapabilities>("/capabilities"), 60_000);
+  return apiCache.get(key, () => fetchJSON<DashboardCapabilities>("/capabilities"), 60_000);
 }
 
 export function getSessionDownloadUrl(sessionId: string): string {
@@ -302,7 +302,9 @@ export async function importSession(file: File): Promise<{ session_id: string; w
   try {
     const formData = new FormData();
     formData.append("file", file);
-    const res = await fetch(`${BASE}/sessions/import`, { method: "POST", body: formData, signal: controller.signal });
+    // Note: do not set Content-Type for FormData — the browser sets the multipart boundary.
+    const headers = TOKEN ? { Authorization: `Bearer ${TOKEN}` } : undefined;
+    const res = await fetch(`${BASE}/sessions/import`, { method: "POST", headers, body: formData, signal: controller.signal });
     if (!res.ok) {
       const detail = await res.json().catch(() => ({}));
       throw new Error(detail.detail || `Import failed: ${res.status}`);
@@ -364,7 +366,8 @@ export async function deleteSession(sessionId: string): Promise<void> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
   try {
-    const res = await fetch(`${BASE}/sessions/${sessionId}`, { method: "DELETE", signal: controller.signal });
+    const headers = TOKEN ? { Authorization: `Bearer ${TOKEN}` } : undefined;
+    const res = await fetch(`${BASE}/sessions/${sessionId}`, { method: "DELETE", headers, signal: controller.signal });
     if (!res.ok) {
       const detail = await res.json().catch(() => ({}));
       throw new Error(detail.detail || `Delete failed: ${res.status}`);

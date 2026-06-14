@@ -1,4 +1,4 @@
-"""Vis API for reading session tracing data."""
+"""Dashboard API for reading session tracing data."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from pythinker_code.metadata import load_metadata
 from pythinker_code.share import get_share_dir
 from pythinker_code.wire.file import WireFileMetadata, parse_wire_file_line
 
-router = APIRouter(prefix="/api/vis", tags=["vis"])
+router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 logger = logging.getLogger(__name__)
 
 
@@ -74,6 +74,7 @@ def get_work_dir_for_hash(hash_dir_name: str) -> str | None:
     try:
         metadata = load_metadata()
     except Exception:
+        logger.debug("Failed to load metadata for hash %s", hash_dir_name, exc_info=True)
         return None
     from hashlib import md5
 
@@ -124,7 +125,7 @@ def _extract_title_from_wire(wire_path: Path, max_bytes: int = 8192) -> tuple[st
                 if bytes_read > max_bytes:
                     break
     except Exception:
-        pass
+        logger.debug("Failed to extract title from %s", wire_path, exc_info=True)
     return title, turn_count
 
 

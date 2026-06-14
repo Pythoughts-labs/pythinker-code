@@ -99,7 +99,12 @@ function buildTree(events: WireEvent[]): TurnNode[] {
         if (tc) tc.hasError = true;
       }
     } else if (event.type === "SubagentEvent" && currentStep) {
-      const taskId = event.payload.parent_tool_call_id as string ?? "";
+      // Group by parent tool-call id; fall back to agent id, then to a per-event
+      // key so distinct keyless subagent events are not merged under one bucket.
+      const taskId =
+        (event.payload.parent_tool_call_id as string | undefined) ??
+        (event.payload.agent_id as string | undefined) ??
+        `idx:${event.index}`;
       const inner = event.payload.event as Record<string, unknown> | undefined;
       const innerType = (inner?.type as string) ?? "";
       const innerPayload = (inner?.payload as Record<string, unknown>) ?? {};

@@ -13,7 +13,7 @@ import {
   type WireEvent,
   getSessionDownloadUrl,
   getSubagents,
-  getVisCapabilities,
+  getDashboardCapabilities,
   getWireEvents,
   listSessions,
   openInPath,
@@ -342,10 +342,10 @@ export function App() {
     listSessions().then(setSessions).catch(() => {});
   }, []);
   useEffect(() => {
-    getVisCapabilities()
+    getDashboardCapabilities()
       .then((capabilities) => setOpenInSupported(capabilities.open_in_supported))
       .catch((error) => {
-        console.error("Failed to load vis capabilities:", error);
+        console.error("Failed to load dashboard capabilities:", error);
         setOpenInSupported(false);
       });
   }, []);
@@ -381,6 +381,9 @@ export function App() {
         return;
       }
 
+      // Tab shortcuts only apply when a session is open (the tabs are rendered).
+      if (!sessionId) return;
+
       if (e.key === "1") setActiveTab("wire");
       else if (e.key === "2") setActiveTab("context");
       else if (e.key === "3") setActiveTab("state");
@@ -389,7 +392,7 @@ export function App() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [showShortcutHelp]);
+  }, [showShortcutHelp, sessionId]);
 
   return (
     <div className="flex h-full flex-col">

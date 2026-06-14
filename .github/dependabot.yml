@@ -36,7 +36,7 @@ updates:
   - package-ecosystem: "npm"
     directories:
       - "/web"
-      - "/vis"
+      - "/dashboard"
       - "/docs"
       - "/packages/install-counter-worker"
       - "/examples/feedback-worker"
@@ -54,7 +54,7 @@ updates:
           - "patch"
     ignore:
       # TypeScript 6.x is a major bump: it deprecates the tsconfig `baseUrl`
-      # option (TS5101) and breaks the vis/ and web/ builds. Adopting it is a
+      # option (TS5101) and breaks the dashboard/ and web/ builds. Adopting it is a
       # coordinated monorepo migration, not four split bot PRs. Hold the major
       # until that lands; minor/patch within the current line still flow.
       - dependency-name: "typescript"

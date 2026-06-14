@@ -13,6 +13,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from pythinker_code.dashboard.api import sessions_router, statistics_router, system_router
 from pythinker_code.utils.server import (
     PYTHINKER_BANNER_ART,
     find_available_port,
@@ -22,7 +23,6 @@ from pythinker_code.utils.server import (
     missing_ui_page,
     print_banner,
 )
-from pythinker_code.vis.api import sessions_router, statistics_router, system_router
 from pythinker_code.web.api.open_in import router as open_in_router
 from pythinker_code.web.auth import AuthMiddleware, normalize_allowed_origins
 
@@ -30,9 +30,9 @@ STATIC_DIR = Path(__file__).parent / "static"
 GZIP_MINIMUM_SIZE = 1024
 GZIP_COMPRESSION_LEVEL = 6
 DEFAULT_PORT = 5495
-_ENV_RESTRICT_OPEN_IN = "PYTHINKER_VIS_RESTRICT_OPEN_IN"
-_ENV_SESSION_TOKEN = "PYTHINKER_VIS_SESSION_TOKEN"
-_ENV_ALLOWED_ORIGINS = "PYTHINKER_VIS_ALLOWED_ORIGINS"
+_ENV_RESTRICT_OPEN_IN = "PYTHINKER_DASHBOARD_RESTRICT_OPEN_IN"
+_ENV_SESSION_TOKEN = "PYTHINKER_DASHBOARD_SESSION_TOKEN"
+_ENV_ALLOWED_ORIGINS = "PYTHINKER_DASHBOARD_ALLOWED_ORIGINS"
 
 
 def create_app() -> FastAPI:
@@ -84,29 +84,31 @@ def create_app() -> FastAPI:
     async def health_probe() -> dict[str, Any]:  # pyright: ignore[reportUnusedFunction]
         return {"status": "ok"}
 
-    # Gate on index.html, not just the directory: a build that skipped the vis
-    # bundle would otherwise answer "/" with a bare 404 instead of a hint.
+    # Gate on index.html, not just the directory: a build that skipped the
+    # dashboard bundle would otherwise answer "/" with a bare 404 instead of a hint.
     if (STATIC_DIR / "index.html").is_file():
         application.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     else:
 
         @application.get("/", include_in_schema=False)
-        async def missing_vis_ui() -> HTMLResponse:  # pyright: ignore[reportUnusedFunction]
+        async def missing_dashboard_ui() -> HTMLResponse:  # pyright: ignore[reportUnusedFunction]
             return HTMLResponse(
                 status_code=503,
-                content=missing_ui_page("pythinker_code/vis/static/index.html", "make build-vis"),
+                content=missing_ui_page(
+                    "pythinker_code/dashboard/static/index.html", "make build-dashboard"
+                ),
             )
 
     return application
 
 
-def run_vis_server(
+def run_dashboard_server(
     host: str = "127.0.0.1",
     port: int = DEFAULT_PORT,
     reload: bool = False,
     open_browser: bool = True,
 ) -> None:
-    """Run the visualizer web server."""
+    """Run the dashboard web server."""
     import os
     import threading
     import webbrowser
@@ -194,7 +196,7 @@ def run_vis_server(
         thread.start()
 
     uvicorn.run(
-        "pythinker_code.vis.app:create_app",
+        "pythinker_code.dashboard.app:create_app",
         factory=True,
         host=host,
         port=actual_port,
@@ -204,4 +206,4 @@ def run_vis_server(
     )
 
 
-__all__ = ["create_app", "run_vis_server"]
+__all__ = ["create_app", "run_dashboard_server"]

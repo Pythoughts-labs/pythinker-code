@@ -61,7 +61,7 @@ jobs:
           cache: "npm"
           cache-dependency-path: web/package-lock.json
 
-      # The web/vis frontends are gitignored build artifacts; without these
+      # The web/dashboard frontends are gitignored build artifacts; without these
       # steps PyInstaller froze a binary whose web UI 404'd on "/". The spec
       # file now also refuses to freeze when the bundles are missing.
       - name: Build web UI bundle
@@ -70,8 +70,8 @@ jobs:
           PYTHINKER_WEB_EXPECT_VERSION: ${{ steps.ver.outputs.version }}
         run: python scripts/build_web.py
 
-      - name: Build vis UI bundle
-        run: python scripts/build_vis.py
+      - name: Build dashboard UI bundle
+        run: python scripts/build_dashboard.py
 
       - name: Install PyInstaller
         run: uv pip install pyinstaller

@@ -23,11 +23,11 @@ def test_clean_env_removes_internal_session_tokens():
         base_env={
             "PATH": "/usr/bin",
             "PYTHINKER_WEB_SESSION_TOKEN": "web-secret",
-            "PYTHINKER_VIS_SESSION_TOKEN": "vis-secret",
+            "PYTHINKER_DASHBOARD_SESSION_TOKEN": "dashboard-secret",
         }
     )
     assert "PYTHINKER_WEB_SESSION_TOKEN" not in env
-    assert "PYTHINKER_VIS_SESSION_TOKEN" not in env
+    assert "PYTHINKER_DASHBOARD_SESSION_TOKEN" not in env
 
 
 # --- get_noninteractive_env ---

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 
-# The web/vis frontends are gitignored build artifacts. collect_data_files()
+# The web/dashboard frontends are gitignored build artifacts. collect_data_files()
 # silently collects nothing when they are missing, which shipped installers
 # whose web UI answered "/" with a 404. Fail the freeze loudly instead.
 _pkg_spec = importlib.util.find_spec("pythinker_code")
@@ -16,13 +16,13 @@ if _pkg_spec is None or _pkg_spec.origin is None:
 _pkg_root = Path(_pkg_spec.origin).resolve().parent
 _missing_ui = [
     rel
-    for rel in ("web/static/index.html", "vis/static/index.html")
+    for rel in ("web/static/index.html", "dashboard/static/index.html")
     if not (_pkg_root / rel).is_file()
 ]
 if _missing_ui:
     raise SystemExit(
         f"pythinker.spec: UI bundles missing from pythinker_code ({', '.join(_missing_ui)}). "
-        "Run `make build-web build-vis` (or scripts/build_web.py and scripts/build_vis.py) "
+        "Run `make build-web build-dashboard` (or scripts/build_web.py and scripts/build_dashboard.py) "
         "before freezing, or the packaged web UI will 404 on '/'."
     )
 

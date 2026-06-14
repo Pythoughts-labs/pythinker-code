@@ -6,15 +6,15 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy
 
 from pythinker_code.cli._lazy_group import LazySubcommandGroup
 
-# The web/vis frontends are gitignored build artifacts synced into the package
-# by scripts/build_web.py and scripts/build_vis.py. collect_data_files()
+# The web/dashboard frontends are gitignored build artifacts synced into the package
+# by scripts/build_web.py and scripts/build_dashboard.py. collect_data_files()
 # silently collects nothing for missing globs, which froze builds whose web UI
 # answered "/" with a 404 (Windows/Linux native installers).
-_REQUIRED_UI_ASSETS = ("web/static/index.html", "vis/static/index.html")
+_REQUIRED_UI_ASSETS = ("web/static/index.html", "dashboard/static/index.html")
 
 
 def require_ui_assets(package_root: Path | None = None) -> None:
-    """Abort the freeze when the web/vis UI bundles haven't been built."""
+    """Abort the freeze when the web/dashboard UI bundles haven't been built."""
     if package_root is None:
         package_root = Path(__file__).resolve().parents[1]
     missing = [rel for rel in _REQUIRED_UI_ASSETS if not (package_root / rel).is_file()]
@@ -22,7 +22,7 @@ def require_ui_assets(package_root: Path | None = None) -> None:
         raise SystemExit(
             "PyInstaller build aborted: UI bundles missing from pythinker_code "
             f"({', '.join(missing)}). They are gitignored build artifacts; run "
-            "`make build-web build-vis` before freezing, or the packaged web UI "
+            "`make build-web build-dashboard` before freezing, or the packaged web UI "
             "will 404 on '/'."
         )
 
@@ -55,7 +55,7 @@ datas = (
             "skills/**",
             "tools/**/*.md",
             "web/static/**",
-            "vis/static/**",
+            "dashboard/static/**",
             "CHANGELOG.md",
         ],
         excludes=[

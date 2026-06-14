@@ -1,4 +1,4 @@
-"""Vis command for Pythinker Agent Tracing Visualizer."""
+"""Dashboard command for Pythinker Agent Tracing Visualizer."""
 
 from typing import Annotated
 
@@ -11,7 +11,7 @@ cli = typer.Typer(
 
 
 @cli.callback(invoke_without_command=True)
-def vis(
+def dashboard(
     _ctx: typer.Context,
     host: Annotated[
         str | None,
@@ -28,7 +28,7 @@ def vis(
     reload: Annotated[bool, typer.Option("--reload", help="Enable auto-reload")] = False,
 ):
     """Launch the agent tracing visualizer."""
-    from pythinker_code.vis.app import run_vis_server
+    from pythinker_code.dashboard.app import run_dashboard_server
 
     # Determine bind address (same logic as pythinker web)
     if host:
@@ -38,4 +38,4 @@ def vis(
     else:
         bind_host = "127.0.0.1"
 
-    run_vis_server(host=bind_host, port=port, open_browser=open_browser, reload=reload)
+    run_dashboard_server(host=bind_host, port=port, open_browser=open_browser, reload=reload)
