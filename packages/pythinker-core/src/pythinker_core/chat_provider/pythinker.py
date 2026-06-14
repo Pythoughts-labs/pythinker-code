@@ -389,6 +389,7 @@ class PythinkerStreamedMessage:
             self._iter = self._convert_stream_response(response)
         self._id: str | None = None
         self._usage: CompletionUsage | None = None
+        self._finish_reason: str | None = None
 
     def __aiter__(self) -> AsyncIterator[StreamedMessagePart]:
         return self
@@ -399,6 +400,11 @@ class PythinkerStreamedMessage:
     @property
     def id(self) -> str | None:
         return self._id
+
+    @property
+    def finish_reason(self) -> str | None:
+        """Why generation stopped, per the provider (``"length"`` == output cap hit)."""
+        return self._finish_reason
 
     @property
     def usage(self) -> TokenUsage | None:
@@ -429,6 +435,7 @@ class PythinkerStreamedMessage:
     ) -> AsyncIterator[StreamedMessagePart]:
         self._id = response.id
         self._usage = response.usage
+        self._finish_reason = response.choices[0].finish_reason
         message = response.choices[0].message
         if reasoning_content := getattr(message, "reasoning_content", None):
             assert isinstance(reasoning_content, str)
@@ -459,6 +466,9 @@ class PythinkerStreamedMessage:
 
                 if not chunk.choices:
                     continue
+
+                if chunk.choices[0].finish_reason:
+                    self._finish_reason = chunk.choices[0].finish_reason
 
                 delta = chunk.choices[0].delta
 

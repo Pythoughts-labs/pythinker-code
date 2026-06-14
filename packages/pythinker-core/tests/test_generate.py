@@ -86,6 +86,24 @@ def test_generate_with_callbacks():
     assert output_tool_calls == message.tool_calls
 
 
+def test_generate_marks_truncated_on_length_finish_reason():
+    """A response cut off by the output-token limit (finish_reason 'length') sets
+    GenerateResult.truncated so the agent loop can detect and recover from truncation."""
+    chat_provider = MockChatProvider(
+        message_parts=[TextPart(text="a partial answer that got cut off")],
+        finish_reason="length",
+    )
+    result = asyncio.run(generate(chat_provider, system_prompt="", tools=[], history=[]))
+    assert result.truncated is True
+
+
+def test_generate_not_truncated_by_default():
+    """A normal completion is not marked truncated."""
+    chat_provider = MockChatProvider(message_parts=[TextPart(text="a complete answer")])
+    result = asyncio.run(generate(chat_provider, system_prompt="", tools=[], history=[]))
+    assert result.truncated is False
+
+
 def test_generate_think_only_raises_error():
     """Think-only response (no text, no tool calls) should raise APIEmptyResponseError."""
     chat_provider = MockChatProvider(
