@@ -21,6 +21,11 @@ GitHub Releases page; `0.8.0` is the new starting line.
   live work directory, OS/shell, merged `AGENTS.md`, and discovered skills. It is
   read-only: no session is created, no provider auth is required, and no MCP
   servers are loaded.
+- **Bound parallel tool fan-out.** Parallel-safe tool calls in one turn still
+  overlap, but now up to a fixed concurrency cap (10) instead of without bound, so
+  a turn that fans out many readers (e.g. dozens of web fetches) can no longer open
+  an unbounded number of sockets/file handles at once. Mutating-tool ordering and
+  writer exclusivity are unchanged.
 
 ## 0.44.0 (2026-06-13)
 

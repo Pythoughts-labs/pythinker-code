@@ -138,3 +138,71 @@ class TestParallelSafeFlags:
 
         for tool_cls in (WriteFile, StrReplaceFile, Shell):
             assert not getattr(tool_cls, "supports_parallel", False), tool_cls.__name__
+
+
+async def test_read_gate_caps_concurrent_readers() -> None:
+    """Parallel-safe tools overlap, but not without bound: the gate caps concurrent
+    readers so a turn that fans out many parallel-safe tools (e.g. dozens of FetchURL)
+    cannot open unbounded sockets/file handles at once."""
+    from pythinker_code.soul.toolset import _ReadWriteGate
+
+    gate = _ReadWriteGate(max_concurrent_readers=2)
+    live = 0
+    peak = 0
+    in_body = asyncio.Semaphore(0)
+    release = asyncio.Event()
+
+    async def reader() -> None:
+        nonlocal live, peak
+        async with gate.shared():
+            live += 1
+            peak = max(peak, live)
+            in_body.release()
+            await release.wait()
+            live -= 1
+
+    tasks = [asyncio.create_task(reader()) for _ in range(5)]
+    # Block until the gate is saturated at the cap (2 readers in their body).
+    await in_body.acquire()
+    await in_body.acquire()
+    # Give any (incorrectly) unbounded extra readers a chance to slip in.
+    await asyncio.sleep(0.05)
+    assert peak == 2, f"reader concurrency exceeded the cap: peak={peak}"
+    assert live == 2  # exactly the cap in-flight; the other 3 queued on the semaphore
+    release.set()
+    await asyncio.gather(*tasks)
+    assert peak == 2
+
+
+async def test_read_gate_cap_does_not_block_writer_draining() -> None:
+    """A reader queued on the cap has not yet entered the critical section, so a
+    writer can still acquire exclusivity once in-flight readers drain — the cap must
+    never deadlock the writer path."""
+    from pythinker_code.soul.toolset import _ReadWriteGate
+
+    gate = _ReadWriteGate(max_concurrent_readers=1)
+    reader_release = asyncio.Event()
+    reader_in_body = asyncio.Event()
+
+    async def holding_reader() -> None:
+        async with gate.shared():
+            reader_in_body.set()
+            await reader_release.wait()
+
+    held = asyncio.create_task(holding_reader())
+    await reader_in_body.wait()
+    # A second reader is now queued on the cap (cannot enter the body).
+    queued = asyncio.create_task(holding_reader())
+    writer_ran = asyncio.Event()
+
+    async def writer() -> None:
+        async with gate.exclusive():
+            writer_ran.set()
+
+    writer_task = asyncio.create_task(writer())
+    await asyncio.sleep(0.02)
+    assert not writer_ran.is_set()  # blocked by the in-flight reader, as designed
+    reader_release.set()  # drain the in-flight reader
+    await asyncio.wait_for(writer_ran.wait(), timeout=1.0)  # writer proceeds, no deadlock
+    queued.cancel()
+    await asyncio.gather(held, writer_task, queued, return_exceptions=True)
