@@ -9,8 +9,10 @@
   - W2: dangerous-host deny-set (`EDIT_DANGEROUS`) · accept-edits tier (`/accept-edits`).
   - W3: `TurnOutcome.produced_answer` (observable) · required-MCP spawn gate · UserPromptSubmit
     `additionalContext` injection.
-- **Wave 4 REMAINING** (3 items — the heaviest):
-  - **#11 read-before-write file-state cache.** Technique (from the reference
+- **Wave 4 RESOLVED** (#11 DONE, #13 DONE, #12 architectural no-go — AGENTS.md kept in the system prompt):
+  - **#11 read-before-write file-state cache. DONE** (`38eb98d1`; extended to StrReplaceFile via the
+    shared `overwrite_is_stale` helper in `eb9773f9`). Adapted to stale-detection only (full
+    read-before-write would break pythinker's "write without prior read" contract). Technique (from the reference
     `utils/file_state_cache.py`): a session-scoped path→read-mtime cache; ReadFile records the
     mtime at read; WriteFile-overwrite and StrReplaceFile then require the path to have been read
     AND reject if the on-disk mtime is newer ("File has been modified since read"). Scope to
@@ -20,13 +22,31 @@
     Runtime/Session; touches `tools/file/{read,write,replace}.py`. Tool-semantics change → CHANGELOG
     + security review required. This is invasive (the core edit path) — best executed in a focused
     session.
-  - **#12 project/env context as a separate `<system-reminder>` user message.** Move volatile
-    project/env context out of the immutable system array (rendered from `system.md` §10/§11) into a
-    separate `<system-reminder>` user message for prompt-cache stability. Refactor flows through the
-    HEAVILY test-pinned `system.md` (tests/core/test_default_agent.py + test_load_agent.py assert
-    many exact phrases) and the AGENTS.md fence/budget + subagent work-dir override paths — brittle;
-    budget the pin migration.
-  - **#13 max-output-token escalation ladder.** BLOCKED on a precise truncation signal.
+  - **#12 project/env context as a separate `<system-reminder>` user message. ARCHITECTURAL NO-GO —
+    not implemented.** The user approved the minimal version (move only the merged AGENTS.md out of
+    `system.md` §11 into a session-start `<system-reminder>`); on implementation it proved infeasible
+    without forbidden speculative infra. AGENTS.md must survive compaction AND not truncate (≤32 KiB).
+    The system prompt (`context._system_prompt`, stored separately from messages) is the only home that
+    satisfies both — it is never summarized and carries its own 32 KiB budget. A **seed user message**
+    is lossily summarized at the first compaction: `compaction.py` `prepare()` walks history backward
+    and preserves only the last `max_preserved_messages`=2 user/assistant messages verbatim, so a
+    leading AGENTS.md lands in `to_compact` → `_build_compact_message` summarizes it, degrading the
+    project's NON-NEGOTIABLE rules (fail-closed approvals, trust boundaries, no co-author trailers) into
+    a summary. A **dynamic injection** is hard-capped at `injection_ceiling_tokens`=2048 by
+    `collect_within_budget` (`pythinkersoul.py:592-617`) — it would truncate AGENTS.md; no unbudgeted
+    path exists. Both non-system-prompt variants need NEW load-bearing machinery (compaction-pin a
+    verbatim head message, or an unbudgeted large-injection special case), which the project's
+    MVC / no-speculative-abstractions / root-cause-robust rules forbid, for marginal NON-reference cache
+    value (the reference itself bakes env into the system array — the separate-message technique was a
+    scout misattribution). AGENTS.md is the single worst field to move (large + must-not-degrade);
+    moving only the small volatile bits (`PYTHINKER_NOW`, `PYTHINKER_WORK_DIR_LS`) is the original
+    marginal-value catalog #12 and is not pursued. Verdict: keep AGENTS.md in the system prompt; the
+    `agent.py:66` TODO is a documented no-go in pythinker's compaction+budget architecture.
+  - **#13 max-output-token escalation ladder. DONE** (`67fca31c` pythinker-core surfaces
+    `GenerateResult.truncated`; `1af5eec8` soul-side bounded continuation nudge). Shipped the bounded
+    resume-nudge (capped by `loop_control.max_truncation_recoveries`, default 3 / 0 disables); the
+    per-step `max_output_tokens` escalation was intentionally dropped as higher-risk / lower-value than
+    the continuation nudge. Original blocked-on-truncation-signal plan kept below for provenance.
     Reverse-engineered executable plan (cross-package; tests in BOTH `pythinker-core` and
     `pythinker-code`):
     1. `chat_provider/pythinker.py` `PythinkerStreamedMessage` captures `_id`/`_usage` but NOT
