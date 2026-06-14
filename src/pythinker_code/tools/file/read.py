@@ -1,3 +1,4 @@
+import contextlib
 from collections import deque
 from pathlib import Path
 from typing import override
@@ -184,6 +185,11 @@ class ReadFile(CallableTool2[Params]):
 
             assert params.n_lines >= 1
             assert params.line_offset != 0
+
+            # Record this read so a later overwrite can detect a file that changed since
+            # the agent last saw it (stale-overwrite guard).
+            with contextlib.suppress(OSError):
+                self._runtime.file_read_cache.record(real_p, (await p.stat()).st_mtime)
 
             if params.line_offset < 0:
                 return await self._read_tail(p, params)

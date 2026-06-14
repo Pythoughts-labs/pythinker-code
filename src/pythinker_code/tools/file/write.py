@@ -61,6 +61,30 @@ class WriteFile(CallableTool2[Params]):
         self._plan_mode_checker = checker
         self._plan_file_path_getter = path_getter
 
+    async def _reject_if_stale(self, p: HostPath, real_p: HostPath) -> ToolError | None:
+        """Reject an overwrite when the file changed on disk since the agent last read it.
+
+        Returns ``None`` (allow) when the agent never read this file (an ordinary
+        first-contact write) or the file cannot be stat'd — only a genuine
+        read-then-externally-modified-then-overwrite is blocked.
+        """
+        read_mtime = self._runtime.file_read_cache.read_mtime(real_p)
+        if read_mtime is None:
+            return None
+        try:
+            current_mtime = (await p.stat()).st_mtime
+        except OSError:
+            return None
+        if current_mtime > read_mtime:
+            return ToolError(
+                message=(
+                    "File has been modified since you last read it. Read it again before "
+                    "overwriting it so you do not clobber the external changes."
+                ),
+                brief="Stale read",
+            )
+        return None
+
     def _validate_path(
         self,
         path: HostPath,
@@ -149,6 +173,16 @@ class WriteFile(CallableTool2[Params]):
                 )
 
             file_existed = await p.exists()
+            # Stale-overwrite guard: if the agent read this file and it has since changed on
+            # disk (user or another tool), overwriting it would silently clobber those
+            # changes. Require a fresh read first. Only fires when a prior read is recorded,
+            # so it never blocks an ordinary first-contact write.
+            if (
+                file_existed
+                and params.mode == "overwrite"
+                and (err := await self._reject_if_stale(p, real_p))
+            ):
+                return err
             old_text = None
             if file_existed:
                 old_text = await p.read_text(encoding="utf-8", errors="replace")
@@ -188,8 +222,11 @@ class WriteFile(CallableTool2[Params]):
                 case "append":
                     await p.append_text(params.content)
 
-            # Get file info for success message
-            file_size = (await p.stat()).st_size
+            # Get file info for success message, and refresh the read-state to the post-write
+            # mtime so the agent can immediately re-edit its own output without a false stale flag.
+            stat_after = await p.stat()
+            file_size = stat_after.st_size
+            self._runtime.file_read_cache.record(real_p, stat_after.st_mtime)
             action = "overwritten" if params.mode == "overwrite" else "appended to"
             return ToolReturnValue(
                 is_error=False,

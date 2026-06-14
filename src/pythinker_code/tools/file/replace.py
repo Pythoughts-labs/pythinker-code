@@ -1,3 +1,4 @@
+import contextlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -487,6 +488,11 @@ class StrReplaceFile(CallableTool2[Params]):
 
             # Write the modified content back to the file
             await p.write_text(content, encoding="utf-8", errors="replace")
+
+            # Refresh the read-state to the post-edit mtime so a later overwrite is not
+            # falsely flagged as stale by this tool's own write.
+            with contextlib.suppress(OSError):
+                self._runtime.file_read_cache.record(real_p, (await p.stat()).st_mtime)
 
             # Count changes for success message (tallied per-edit during application).
             total_replacements = sum(per_edit_counts)

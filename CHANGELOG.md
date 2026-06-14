@@ -53,6 +53,12 @@ GitHub Releases page; `0.8.0` is the new starting line.
   `additionalContext` is now injected into the user turn as a system reminder, so the
   model sees it as context for the prompt (previously only a hook *block* was honored).
   Slash-command parsing still reads only the user's text, never the appended context.
+- **Stale-overwrite guard for file edits.** If you read a file and it then changes on
+  disk (edited by you in another window or by another tool), overwriting it with WriteFile
+  is now rejected with "File has been modified since you last read it" so external changes
+  are not silently clobbered — read it again first. First-contact writes (a file you never
+  read) are unaffected, and a tool's own write refreshes the read-state so consecutive
+  edits are never falsely flagged.
 
 ## 0.44.0 (2026-06-13)
 

@@ -44,6 +44,7 @@ from pythinker_code.subagents.models import AgentTypeDefinition, ToolPolicy
 from pythinker_code.subagents.registry import LaborMarket
 from pythinker_code.subagents.store import SubagentStore
 from pythinker_code.utils.environment import Environment
+from pythinker_code.utils.file_read_cache import FileReadCache
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.path import find_project_root, is_within_directory, list_directory
 from pythinker_code.utils.trust import strip_invisible_chars
@@ -206,6 +207,9 @@ class Runtime:
     mcp_status: Callable[[], MCPStatusSnapshot | None] | None = None
     """Root-only accessor for live MCP startup state, wired from the root toolset. Used by
     the subagent-spawn gate to reject an agent whose required MCP servers are absent."""
+    file_read_cache: FileReadCache = field(default_factory=FileReadCache)
+    """Per-agent record of when each file was last read, backing read-before-write
+    enforcement and stale-overwrite detection in the file tools."""
     subagent_store: SubagentStore | None = None
     approval_runtime: ApprovalRuntime | None = None
     root_wire_hub: RootWireHub | None = None
