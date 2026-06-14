@@ -17,13 +17,14 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.45.0 (2026-06-14)
+
 - **Agent-tracing dashboard.** Added `pythinker dashboard` — a local web UI for inspecting sessions, wire events, context messages, tool statistics, and usage over time. It is also reachable from the interactive shell via the `/reports` slash command (aliased `/dashboard`).
 - **Gemini finish_reason is now sticky once truncation is detected.** A second candidate with any non-`MAX_TOKENS` finish reason no longer overwrites a previously captured `"length"` signal at either the streaming or non-streaming path in the Google GenAI provider.
 - **Budget-exhausted and stuck-loop messages are now visible in the shell.** Both handoff messages were appended to context but never sent to the wire, so the interactive shell showed no feedback when a spend ceiling or stuck-loop exit fired. Both now emit a `TextPart` wire event so the message appears in the shell.
 - **Dark-theme prompt_toolkit border colors now match the TUI token constants.** Six stale slate hex values in `_PROMPT_STYLE_DARK` diverged from the current `border` and `border_muted` token values; they are now in sync and a parity test binds them going forward.
 - **Non-review successful agents now show a summary preview in the agent tree.** Completed subagents with a `summary_preview` now display a dim preview line in the RunAgents tree renderer (review runs continue to use the findings table instead).
 - **Non-string values in `required_mcp_servers` YAML are silently dropped.** Integers, booleans, and `null` entries were previously coerced to strings (`"1"`, `"False"`, `"None"`), creating permanently unsatisfiable MCP server names. Only actual string entries are now retained.
-
 - **Fixed MiniMax token-plan `/usage` accuracy.** The token-plan response now meters by
   percentage (the count fields are 0) and reports reset times in milliseconds; the adapter was
   reading the zero counts (showing "0 requests used") and treating milliseconds as seconds
@@ -102,6 +103,8 @@ GitHub Releases page; `0.8.0` is the new starting line.
   answer treated as complete — the model is nudged to continue from where it stopped, up
   to `loop_control.max_truncation_recoveries` times per turn (default 3; `0` disables).
   pythinker-core now surfaces the provider's truncation signal so the loop can detect it.
+
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.45.0`, or use the native installer for your platform from the [Releases page](https://github.com/Pythoughts-labs/pythinker-code/releases/latest).
 
 ## 0.44.0 (2026-06-13)
 
