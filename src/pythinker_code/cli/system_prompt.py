@@ -55,14 +55,17 @@ def system_prompt(
     """
     from pythinker_host.path import HostPath
 
-    from pythinker_code.config import Config, get_config_file, load_config
+    from pythinker_code.config import load_config
     from pythinker_code.soul.agent import render_agent_system_prompt
 
     resolved = agent_file if agent_file is not None else _resolve_agent_file(agent)
     if not resolved.exists():
         raise typer.BadParameter(f"Agent spec not found: {resolved}")
 
-    config = load_config() if get_config_file(create=False).expanduser().exists() else Config()
+    # Resolve the merged user/project/local scoped config so the dump reflects
+    # runtime behaviour even before a user config file exists. persist=False keeps
+    # the command read-only: no share-dir/lock creation, seeding, or auto-gitignore.
+    config = load_config(persist=False)
     wd = (
         HostPath.unsafe_from_local_path(work_dir.resolve())
         if work_dir is not None
