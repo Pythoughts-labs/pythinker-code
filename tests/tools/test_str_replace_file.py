@@ -561,6 +561,49 @@ async def test_replace_blocked_when_file_changed_since_read(
     assert "external append" in await file_path.read_text()  # external change survived
 
 
+async def test_replace_blocked_when_file_changed_during_approval(
+    read_file_tool: ReadFile, str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+) -> None:
+    """Stale-edit guard re-checks AFTER approval: the file can change on disk during the
+    (unbounded) approval window, and the write replaces content wholesale, so the pre-approval
+    check alone would clobber the external edit. The post-approval re-check must block it.
+
+    The approval `request` is patched to mutate the file (new size + strictly-newer mtime) then
+    approve — exercising only the second check (the first ran before the prompt, when the file
+    was still original). The edit's `old` still matches the ORIGINAL content, proving exact
+    string matching alone does not protect against the external change."""
+    import os
+    from unittest.mock import AsyncMock
+
+    from pythinker_code.soul.approval import ApprovalResult
+
+    file_path = temp_work_dir / "tracked.txt"
+    await file_path.write_text("keep ME here\n")
+    assert not (await read_file_tool(ReadParams(path=str(file_path)))).is_error
+
+    external_content = "totally different external content\n"
+
+    async def mutate_then_approve(tool_name, action, description, **kwargs):  # type: ignore[no-untyped-def]
+        # External change DURING the approval window: different size + strictly-newer mtime.
+        await file_path.write_text(external_content)
+        st = os.stat(str(file_path))
+        os.utime(str(file_path), (st.st_atime, st.st_mtime + 10))
+        return ApprovalResult(approved=True)
+
+    str_replace_file_tool._approval.request = AsyncMock(side_effect=mutate_then_approve)  # type: ignore[method-assign]
+
+    # `old="ME"` matches the ORIGINAL content (validated pre-approval), so the edit is not
+    # rejected for a missing string — only the post-approval staleness re-check can block it.
+    result = await str_replace_file_tool(
+        Params(path=str(file_path), edit=Edit(old="ME", new="YOU"))
+    )
+    assert result.is_error
+    assert "modified since" in result.message
+    # The external change survived; the tool's intended edit was NOT applied (no clobber).
+    assert await file_path.read_text() == external_content
+    assert "YOU" not in await file_path.read_text()
+
+
 async def test_replace_allowed_after_read(
     read_file_tool: ReadFile, str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
 ) -> None:

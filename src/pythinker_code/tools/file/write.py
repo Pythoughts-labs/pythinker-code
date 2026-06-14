@@ -205,6 +205,17 @@ class WriteFile(CallableTool2[Params]):
                 if not result:
                     return result.rejection_error()
 
+            # Re-check staleness after approval: the prompt is unbounded user time
+            # during which the file can change on disk, and the overwrite below writes
+            # params.content wholesale. The first check cannot cover this window; the
+            # read-cache is only refreshed after the write, so the read-state is valid.
+            if (
+                file_existed
+                and params.mode == "overwrite"
+                and (err := await self._reject_if_stale(p, real_p))
+            ):
+                return err
+
             from pythinker_code.soul.toolset import emit_current_tool_execution_started
 
             emit_current_tool_execution_started()

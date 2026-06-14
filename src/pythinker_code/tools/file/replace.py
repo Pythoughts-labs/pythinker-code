@@ -495,6 +495,20 @@ class StrReplaceFile(CallableTool2[Params]):
                 if not result:
                     return result.rejection_error()
 
+            # Re-check staleness after approval: the prompt is unbounded user time
+            # during which the file can change on disk, and the write below replaces
+            # `content` wholesale (the exact-string match ran against the pre-approval
+            # read). The first check cannot cover this window; the read-cache is only
+            # refreshed after the write, so the recorded read-state is still valid.
+            if await overwrite_is_stale(self._runtime.file_read_cache, p, real_p):
+                return ToolError(
+                    message=(
+                        "File has been modified since you last read it. Read it again before "
+                        "editing it so you do not clobber the external changes."
+                    ),
+                    brief="Stale read",
+                )
+
             from pythinker_code.soul.toolset import emit_current_tool_execution_started
 
             emit_current_tool_execution_started()
