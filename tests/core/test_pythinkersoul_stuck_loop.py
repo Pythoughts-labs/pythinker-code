@@ -217,6 +217,27 @@ def test_stuck_summary_handles_whitespace_only_brief() -> None:
 
 
 @pytest.mark.parametrize(
+    ("stop_reason", "text", "expected"),
+    [
+        ("no_tool_calls", "Here is the result.", True),  # substantive answer
+        ("no_tool_calls", "   ", False),  # empty/whitespace final message
+        ("no_tool_calls", None, False),  # no final message
+        ("stuck", "I appear to be stuck — handing back.", False),  # forced handoff
+        ("budget_exhausted", "Stopping: spend ceiling reached.", False),  # forced handoff
+        ("tool_rejected", None, False),  # rejected tool call, no answer
+    ],
+)
+def test_turn_outcome_produced_answer(stop_reason: str, text: str | None, expected: bool) -> None:
+    """`produced_answer` is True only for a turn that ended with a substantive assistant
+    answer — degenerate stops (stuck / budget / rejection / empty) are not completions."""
+    from pythinker_code.soul.pythinkersoul import TurnOutcome
+
+    message = Message(role="assistant", content=[TextPart(text=text)]) if text is not None else None
+    outcome = TurnOutcome(stop_reason=stop_reason, final_message=message, step_count=1)
+    assert outcome.produced_answer is expected
+
+
+@pytest.mark.parametrize(
     ("cost", "ceiling", "expected"),
     [
         (0.0, None, False),  # no ceiling configured

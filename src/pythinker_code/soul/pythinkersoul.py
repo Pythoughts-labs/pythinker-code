@@ -360,6 +360,20 @@ class TurnOutcome:
     final_message: Message | None
     step_count: int
 
+    @property
+    def produced_answer(self) -> bool:
+        """True when the turn ended with a substantive assistant answer.
+
+        A turn can end without an exception yet not deliver a usable answer: a forced
+        handoff (``stuck`` / ``budget_exhausted``), a rejected tool call (no final
+        message), or an empty/whitespace final message. Those are degenerate stops, not
+        completions — distinguishing them lets callers avoid reporting a non-answer as a
+        clean success (e.g. a future print-mode exit-code mapping).
+        """
+        if self.stop_reason != "no_tool_calls" or self.final_message is None:
+            return False
+        return bool(self.final_message.extract_text(" ").strip())
+
 
 class PythinkerSoul:
     """The soul of Pythinker CLI."""
@@ -1206,6 +1220,10 @@ class PythinkerSoul:
                 outcome = await self._agent_loop()
                 span.set_attribute("turn.stop_reason", outcome.stop_reason)
                 span.set_attribute("turn.step_count", outcome.step_count)
+                # Observable signal that a turn ended without a substantive answer (a
+                # degenerate stop), so the degenerate-completion rate is measurable before
+                # any exit-code mapping consumes it.
+                span.set_attribute("turn.produced_answer", outcome.produced_answer)
                 _m.record_turn(
                     duration_seconds=time.monotonic() - turn_t0,
                     step_count=outcome.step_count,
@@ -1217,6 +1235,7 @@ class PythinkerSoul:
                         "session_id": self._runtime.session.id,
                         "stop_reason": outcome.stop_reason,
                         "step_count": outcome.step_count,
+                        "produced_answer": outcome.produced_answer,
                     },
                 )
                 return outcome
