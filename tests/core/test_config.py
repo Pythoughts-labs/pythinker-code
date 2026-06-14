@@ -50,6 +50,7 @@ def test_default_config_dump():
             "loop_control": {
                 "max_steps_per_turn": 1000,
                 "max_consecutive_failures": 8,
+                "max_session_cost_usd": None,
                 "max_retries_per_step": 3,
                 "max_ralph_iterations": 0,
                 "reserved_context_size": 50000,

@@ -216,6 +216,60 @@ def test_stuck_summary_handles_whitespace_only_brief() -> None:
     assert "Boom" in text  # tool name still surfaced despite the empty brief
 
 
+@pytest.mark.parametrize(
+    ("cost", "ceiling", "expected"),
+    [
+        (0.0, None, False),  # no ceiling configured
+        (5.0, None, False),
+        (5.0, 0.0, False),  # non-positive ceiling is disabled
+        (5.0, -1.0, False),
+        (0.0, 1.0, False),  # unpriced model (cost 0.0) never blocks — fail open
+        (0.99, 1.0, False),  # under the ceiling
+        (1.0, 1.0, True),  # exactly at the ceiling
+        (2.5, 1.0, True),  # over the ceiling
+    ],
+)
+def test_is_over_cost_ceiling(cost: float, ceiling: float | None, expected: bool) -> None:
+    from pythinker_code.soul.pythinkersoul import _is_over_cost_ceiling
+
+    assert _is_over_cost_ceiling(cost, ceiling) is expected
+
+
+@pytest.mark.asyncio
+async def test_session_cost_ceiling_stops_turn(runtime: Runtime, tmp_path: Path) -> None:
+    """Once accumulated session cost reaches the configured ceiling, the next turn
+    stops with `budget_exhausted` before making another (paid) model call."""
+    runtime.config.loop_control.max_session_cost_usd = 1.0
+    runtime.config.loop_control.max_steps_per_turn = 50
+    provider = _ScriptedToolCallProvider(["Ok"] * 10)
+    context, soul = _make_soul(runtime, provider, tmp_path)
+    soul._session_cost_usd = 5.0  # already over the ceiling from prior turns
+
+    with patch("pythinker_code.telemetry.metrics.record_turn") as record_turn:
+        await run_soul(soul, "go", _drain_ui_messages, asyncio.Event())
+
+    # Stopped at the ceiling, before any model call this turn.
+    assert provider.generate_attempts == 0
+    assert record_turn.call_args.kwargs["stop_reason"] == "budget_exhausted"
+    assert "ceiling" in context.history[-1].extract_text(" ").lower()
+
+
+@pytest.mark.asyncio
+async def test_no_cost_ceiling_does_not_stop(runtime: Runtime, tmp_path: Path) -> None:
+    """With no ceiling configured (default None), accumulated cost never stops the turn."""
+    runtime.config.loop_control.max_session_cost_usd = None
+    runtime.config.loop_control.max_steps_per_turn = 50
+    provider = _ScriptedToolCallProvider([None])  # ends normally on the first text step
+    context, soul = _make_soul(runtime, provider, tmp_path)
+    soul._session_cost_usd = 999.0
+
+    with patch("pythinker_code.telemetry.metrics.record_turn") as record_turn:
+        await run_soul(soul, "go", _drain_ui_messages, asyncio.Event())
+
+    assert provider.generate_attempts == 1
+    assert record_turn.call_args.kwargs["stop_reason"] == "no_tool_calls"
+
+
 @pytest.mark.asyncio
 async def test_max_consecutive_failures_zero_disables_backstop(
     runtime: Runtime, tmp_path: Path

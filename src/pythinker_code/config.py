@@ -565,6 +565,12 @@ class LoopControl(BaseModel):
     call failed (a degenerate stuck loop), instead of continuing to
     ``max_steps_per_turn``. The turn ends with a ``stuck`` outcome and a handoff
     summary of what was tried. ``0`` disables the backstop. Default: 8."""
+    max_session_cost_usd: float | None = Field(default=None, gt=0)
+    """Optional per-session spend ceiling in USD. When set, the turn stops with a
+    ``budget_exhausted`` outcome once the session's accumulated estimated cost reaches
+    this value, instead of continuing to ``max_steps_per_turn``. Off by default
+    (``None``). Best-effort: cost is estimated from token usage and is ``0`` for models
+    with unknown pricing, so the ceiling never blocks when spend cannot be estimated."""
     max_retries_per_step: int = Field(default=3, ge=1)
     """Maximum number of retries in one step"""
     max_ralph_iterations: int = Field(default=0, ge=-1)

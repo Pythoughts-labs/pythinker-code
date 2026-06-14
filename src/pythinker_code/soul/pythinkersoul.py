@@ -187,7 +187,7 @@ def _is_hard_usage_limit(exception: BaseException) -> bool:
     return "usage_limit_reached" in text or "usage limit" in text
 
 
-type StepStopReason = Literal["no_tool_calls", "tool_rejected", "stuck"]
+type StepStopReason = Literal["no_tool_calls", "tool_rejected", "stuck", "budget_exhausted"]
 
 
 _MISSING_REQUIRED_FIELD_RE = re.compile(
@@ -254,6 +254,26 @@ async def _settle_shielded(task: asyncio.Task[None]) -> None:
 def _is_all_error_batch(tool_results: Sequence[ToolResult]) -> bool:
     """True when a non-empty tool batch had *every* call fail."""
     return bool(tool_results) and all(r.return_value.is_error for r in tool_results)
+
+
+def _is_over_cost_ceiling(session_cost_usd: float, ceiling: float | None) -> bool:
+    """True when a positive session spend ceiling has been reached.
+
+    Best-effort: a ``None`` or non-positive ceiling is treated as disabled, and cost is
+    ``0.0`` for models with unknown pricing, so the ceiling fails open (never blocks)
+    rather than blocking on spend that cannot be estimated.
+    """
+    return ceiling is not None and ceiling > 0 and session_cost_usd >= ceiling
+
+
+def _budget_exhausted_message(session_cost_usd: float, ceiling: float) -> Message:
+    """Handoff message when the session reaches its configured spend ceiling."""
+    text = (
+        f"Stopping: this session has reached its configured spend ceiling "
+        f"(estimated ${session_cost_usd:.2f} of ${ceiling:.2f}). Raise "
+        f"`loop_control.max_session_cost_usd` in config, or start a new session, to continue."
+    )
+    return Message(role="assistant", content=[TextPart(text=text)])
 
 
 def _stuck_summary_message(
@@ -1391,6 +1411,19 @@ class PythinkerSoul:
         # context-length rejection (proactive thresholds can undercount).
         overflow_recovery_used = False
         while True:
+            # Spend ceiling: stop before starting another (paid) step once the session's
+            # accumulated estimated cost reaches the configured ceiling. Checked before the
+            # step so an already-exhausted budget ends the turn without a fresh model call.
+            ceiling = self._loop_control.max_session_cost_usd
+            if _is_over_cost_ceiling(self._session_cost_usd, ceiling):
+                assert ceiling is not None  # narrowed by _is_over_cost_ceiling
+                message = _budget_exhausted_message(self._session_cost_usd, ceiling)
+                await self._context.append_message(message)
+                return TurnOutcome(
+                    stop_reason="budget_exhausted",
+                    final_message=message,
+                    step_count=step_no,
+                )
             step_no += 1
             if step_no > self._loop_control.max_steps_per_turn:
                 raise MaxStepsReached(self._loop_control.max_steps_per_turn)

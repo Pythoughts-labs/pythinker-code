@@ -26,6 +26,12 @@ GitHub Releases page; `0.8.0` is the new starting line.
   a turn that fans out many readers (e.g. dozens of web fetches) can no longer open
   an unbounded number of sockets/file handles at once. Mutating-tool ordering and
   writer exclusivity are unchanged.
+- **Optional per-session spend ceiling.** New `loop_control.max_session_cost_usd`
+  config option (off by default). When set, a turn stops with a clear
+  budget-exhausted handoff message once the session's accumulated estimated cost
+  reaches the ceiling, instead of running to the step limit — and goal
+  auto-continuations and agent flows halt too. Best-effort: cost is `0` for models
+  with unknown pricing, so the ceiling never blocks when spend cannot be estimated.
 
 ## 0.44.0 (2026-06-13)
 
