@@ -1512,6 +1512,7 @@ class PythinkerSoul:
                 assert ceiling is not None  # narrowed by _is_over_cost_ceiling
                 message = _budget_exhausted_message(self._session_cost_usd, ceiling)
                 await self._context.append_message(message)
+                wire_send(TextPart(text=message.extract_text(" ")))
                 return TurnOutcome(
                     stop_reason="budget_exhausted",
                     final_message=message,
@@ -2037,6 +2038,7 @@ class PythinkerSoul:
                         self._consecutive_failures, result.tool_calls, results
                     )
                     await self._context.append_message(summary)
+                    wire_send(TextPart(text=summary.extract_text(" ")))
                     track(
                         "agent_stuck",
                         consecutive_failures=self._consecutive_failures,

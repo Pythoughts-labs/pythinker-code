@@ -168,6 +168,15 @@ async def _drain_ui_messages(wire: Wire) -> None:
             return
 
 
+async def _collect_ui_messages(wire: Wire, seen: list[object]) -> None:
+    wire_ui = wire.ui_side(merge=True)
+    while True:
+        try:
+            seen.append(await wire_ui.receive())
+        except QueueShutDown:
+            return
+
+
 @pytest.mark.asyncio
 async def test_consecutive_failures_yield_stuck_outcome(runtime: Runtime, tmp_path: Path) -> None:
     """N consecutive all-error steps stop the turn with `stuck`, not max_steps."""
@@ -489,3 +498,42 @@ async def test_truncation_recovery_disabled_at_zero(runtime: Runtime, tmp_path: 
 
     assert provider.generate_attempts == 1  # no continuation nudge
     assert record_turn.call_args.kwargs["stop_reason"] == "no_tool_calls"
+
+
+@pytest.mark.asyncio
+async def test_stuck_loop_sends_summary_to_wire(runtime: Runtime, tmp_path: Path) -> None:
+    """The stuck-loop handoff summary must be sent to the wire so the interactive
+    shell displays it — not only appended to context."""
+    runtime.config.loop_control.max_consecutive_failures = 3
+    runtime.config.loop_control.max_steps_per_turn = 50
+    provider = _ScriptedToolCallProvider(["Boom"] * 10)
+    context, soul = _make_soul(runtime, provider, tmp_path)
+
+    seen: list[object] = []
+    with patch("pythinker_code.telemetry.metrics.record_turn"):
+        await run_soul(soul, "go", lambda wire: _collect_ui_messages(wire, seen), asyncio.Event())
+
+    text_parts = [msg for msg in seen if isinstance(msg, TextPart)]
+    assert any("stuck" in tp.text.lower() for tp in text_parts), (
+        "Expected a TextPart wire event containing 'stuck' but none was found"
+    )
+
+
+@pytest.mark.asyncio
+async def test_budget_exhausted_sends_message_to_wire(runtime: Runtime, tmp_path: Path) -> None:
+    """The budget-exhausted handoff message must be sent to the wire so the interactive
+    shell displays it — not only appended to context."""
+    runtime.config.loop_control.max_session_cost_usd = 1.0
+    runtime.config.loop_control.max_steps_per_turn = 50
+    provider = _ScriptedToolCallProvider(["Ok"] * 10)
+    context, soul = _make_soul(runtime, provider, tmp_path)
+    soul._session_cost_usd = 5.0  # already over the ceiling
+
+    seen: list[object] = []
+    with patch("pythinker_code.telemetry.metrics.record_turn"):
+        await run_soul(soul, "go", lambda wire: _collect_ui_messages(wire, seen), asyncio.Event())
+
+    text_parts = [msg for msg in seen if isinstance(msg, TextPart)]
+    assert any("ceiling" in tp.text.lower() or "budget" in tp.text.lower() for tp in text_parts), (
+        "Expected a TextPart wire event containing 'ceiling' or 'budget' but none was found"
+    )
