@@ -146,33 +146,6 @@ def _is_windows() -> bool:
     return sys.platform == "win32"
 
 
-def _spawn_detached_windows_upgrade(upgrade_command: list[str]) -> bool:
-    """Launch a Windows upgrade command without a PowerShell wrapper.
-
-    Older builds used an encoded PowerShell payload to wait for the
-    current process and then run the updater. That shape is common in malware
-    and trips command-line heuristics in products such as Bitdefender. Instead
-    we start the real updater directly with inherited handles closed; the caller
-    exits immediately after spawning so Windows can release the running binary.
-    """
-    if not _is_windows():
-        return False
-
-    executable = which(upgrade_command[0]) or upgrade_command[0]
-    CREATE_NEW_CONSOLE = 0x00000010
-    CREATE_NEW_PROCESS_GROUP = 0x00000200
-    try:
-        subprocess.Popen(
-            [executable, *upgrade_command[1:]],
-            creationflags=CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP,
-            close_fds=True,
-        )
-    except OSError:
-        logger.exception("Failed to spawn detached Windows upgrade helper:")
-        return False
-    return True
-
-
 def _version_from_release_payload(data: object) -> str | None:
     if not isinstance(data, Mapping):
         return None
@@ -885,6 +858,12 @@ def _windows_native_installer_args() -> list[str]:
     updater chains look like commodity malware to command-line heuristics.
     ``/SILENT`` still avoids the wizard, but leaves normal installer UI/errors
     visible and delegates app-closing to Inno Setup's Restart Manager.
+
+    ``/PID`` hands the installer this process's id so its ``InitializeSetup``
+    code can wait for us to fully exit before its Restart Manager scan runs.
+    Without it, the scan races our teardown, finds ``pythinker.exe`` still
+    holding ``_internal`` locks, and shows a spurious "could not close the
+    program" dialog even though the update then succeeds.
     """
     return [
         "/SILENT",
@@ -892,6 +871,7 @@ def _windows_native_installer_args() -> list[str]:
         "/CURRENTUSER",
         "/CLOSEAPPLICATIONS",
         "/NORESTARTAPPLICATIONS",
+        f"/PID={os.getpid()}",
     ]
 
 
@@ -1384,16 +1364,6 @@ async def _do_update(
             _print(f"[{_t.success}]Updated successfully![/]")
             _print(f"[{_t.warning}]Restart Pythinker CLI to use the new version.[/]")
         return native_result
-
-    # On Windows, the running pythinker.exe can hold a lock on its own binary.
-    # Spawn the real upgrade command directly (no PowerShell/cmd wrapper), then
-    # exit so Windows can release the running executable.
-    if _is_windows() and _spawn_detached_windows_upgrade(upgrade_command):
-        _print(
-            f"[{_t.warning}]Pythinker will exit so Windows can release the running executable.[/]"
-        )
-        _print(f"[{_t.muted}]The upgrade will continue in a new process.[/]")
-        sys.exit(0)
 
     # Brew failure diagnosis (untrusted tap, silent no-op) needs the upgrade
     # output; capture it while still forwarding every line to the caller.

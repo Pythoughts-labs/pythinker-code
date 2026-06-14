@@ -74,6 +74,40 @@ Filename: "{app}\pythinker.exe"; Description: "Launch Pythinker"; \
   Flags: nowait postinstall skipifsilent unchecked
 
 [Code]
+const
+  SYNCHRONIZE = $00100000;
+
+function OpenProcess(DesiredAccess: Cardinal; InheritHandle: Boolean;
+  ProcessId: Cardinal): THandle;
+  external 'OpenProcess@kernel32.dll stdcall';
+function WaitForSingleObject(hHandle: THandle; Milliseconds: Cardinal): Cardinal;
+  external 'WaitForSingleObject@kernel32.dll stdcall';
+function CloseHandle(hObject: THandle): Boolean;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+{ When the running pythinker.exe launches this installer for an in-app update,
+  it passes its own process id via /PID and exits. Wait for that process to
+  fully terminate before Setup's Restart Manager scan runs (it runs at the
+  start of the actual install, after InitializeSetup). Otherwise the scan can
+  race the launcher's teardown, find pythinker.exe still locking _internal,
+  and show a spurious "could not close the program" dialog. Bounded so a hung
+  launcher never blocks the install: on timeout we fall through to Setup's
+  normal CloseApplications handling. }
+procedure WaitForLauncherExit;
+var
+  Pid: Integer;
+  Handle: THandle;
+begin
+  Pid := StrToIntDef(ExpandConstant('{param:PID|0}'), 0);
+  if Pid <= 0 then
+    exit;
+  Handle := OpenProcess(SYNCHRONIZE, False, Cardinal(Pid));
+  if Handle = 0 then
+    exit;
+  WaitForSingleObject(Handle, 15000);
+  CloseHandle(Handle);
+end;
+
 function NeedsAddPath(Param, RootHive: string): Boolean;
 var
   OrigPath: string;
@@ -181,6 +215,8 @@ var
   OtherScopeKey: string;
   Found: Boolean;
 begin
+  WaitForLauncherExit;
+
   OtherScopeKey :=
     'Software\Microsoft\Windows\CurrentVersion\Uninstall\' +
     '{4F4F2EAE-9D55-4E8E-92BC-7C1FA38B6F02}_is1';
