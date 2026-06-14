@@ -186,17 +186,13 @@ class ReadFile(CallableTool2[Params]):
             assert params.n_lines >= 1
             assert params.line_offset != 0
 
-            # Record this read so a later overwrite can detect a file that changed since
-            # the agent last saw it (stale-overwrite guard). Both mtime and size are kept so
-            # a same-tick or mtime-preserving external edit is still caught.
-            with contextlib.suppress(OSError):
-                read_stat = await p.stat()
-                self._runtime.file_read_cache.record(real_p, read_stat.st_mtime, read_stat.st_size)
-
+            # The read functions record the read state — including whether the whole file was
+            # seen — for the stale/partial-overwrite guards, since completeness is known only
+            # after the read.
             if params.line_offset < 0:
-                return await self._read_tail(p, params)
+                return await self._read_tail(p, real_p, params)
             else:
-                return await self._read_forward(p, params)
+                return await self._read_forward(p, real_p, params)
         except Exception as e:
             from pythinker_code.telemetry.errors import report_handled_error
 
@@ -207,7 +203,15 @@ class ReadFile(CallableTool2[Params]):
                 brief="Failed to read file",
             )
 
-    async def _read_forward(self, p: HostPath, params: Params) -> ToolReturnValue:
+    async def _record_read(self, p: HostPath, real_p: HostPath, complete: bool) -> None:
+        """Record this read's ``(mtime, size, complete)`` so the stale-overwrite and
+        partial-overwrite guards in WriteFile/StrReplaceFile can consult it. A stat failure
+        here only means the read-state is not refreshed; it never fails the read."""
+        with contextlib.suppress(OSError):
+            st = await p.stat()
+            self._runtime.file_read_cache.record(real_p, st.st_mtime, st.st_size, complete)
+
+    async def _read_forward(self, p: HostPath, real_p: HostPath, params: Params) -> ToolReturnValue:
         """Read file from a positive line_offset, counting total lines."""
         lines: list[str] = []
         n_bytes = 0
@@ -267,12 +271,15 @@ class ReadFile(CallableTool2[Params]):
                 )
         if truncated_line_numbers:
             message += f" Lines {truncated_line_numbers} were truncated."
+        # The agent saw the whole file iff it started at line 1 and got every line.
+        complete = params.line_offset == 1 and len(lines) == total_lines
+        await self._record_read(p, real_p, complete)
         return ToolOk(
             output=UntrustedData("".join(lines_with_no)).render_for_prompt(),
             message=message,
         )
 
-    async def _read_tail(self, p: HostPath, params: Params) -> ToolReturnValue:
+    async def _read_tail(self, p: HostPath, real_p: HostPath, params: Params) -> ToolReturnValue:
         """Read file from a negative line_offset (tail mode)."""
         tail_count = abs(params.line_offset)
 
@@ -341,6 +348,9 @@ class ReadFile(CallableTool2[Params]):
             message += " End of file reached."
         if truncated_line_numbers:
             message += f" Lines {truncated_line_numbers} were truncated."
+        # The agent saw the whole file iff every line was returned (tail covered line 1).
+        complete = len(lines) == total_lines
+        await self._record_read(p, real_p, complete)
         return ToolOk(
             output=UntrustedData("".join(lines_with_no)).render_for_prompt(),
             message=message,

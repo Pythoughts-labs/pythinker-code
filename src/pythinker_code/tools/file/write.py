@@ -16,7 +16,7 @@ from pythinker_code.tools.file import classify_edit_action
 from pythinker_code.tools.file.plan_mode import inspect_plan_edit_target
 from pythinker_code.tools.utils import load_desc
 from pythinker_code.utils.diff import build_diff_blocks
-from pythinker_code.utils.file_read_cache import overwrite_is_stale
+from pythinker_code.utils.file_read_cache import overwrite_is_stale, read_was_incomplete
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.path import is_within_workspace
 
@@ -64,11 +64,12 @@ class WriteFile(CallableTool2[Params]):
         self._plan_file_path_getter = path_getter
 
     async def _reject_if_stale(self, p: HostPath, real_p: HostPath) -> ToolError | None:
-        """Reject an overwrite when the file changed on disk since the agent last read it.
+        """Reject an overwrite the agent isn't safe to make.
 
-        Returns ``None`` (allow) when the agent never read this file (an ordinary
-        first-contact write) or the file cannot be stat'd — only a genuine
-        read-then-externally-modified-then-overwrite is blocked.
+        Two cases are blocked: the file changed on disk since the agent read it (a stale
+        read), and the agent only read part of the file (a full overwrite would discard the
+        unseen remainder). Returns ``None`` (allow) when the agent never read this file (an
+        ordinary first-contact write) or it cannot be stat'd.
         """
         if await overwrite_is_stale(self._runtime.file_read_cache, p, real_p):
             return ToolError(
@@ -77,6 +78,15 @@ class WriteFile(CallableTool2[Params]):
                     "overwriting it so you do not clobber the external changes."
                 ),
                 brief="Stale read",
+            )
+        if read_was_incomplete(self._runtime.file_read_cache, real_p):
+            return ToolError(
+                message=(
+                    "You only read part of this file, so overwriting it would discard the "
+                    "content you have not seen. Read it in full (ReadFile with no line offset "
+                    "and a line count covering the whole file) before overwriting it."
+                ),
+                brief="Partial read",
             )
         return None
 
@@ -222,11 +232,16 @@ class WriteFile(CallableTool2[Params]):
             # stale flag. The write already succeeded above, so a stat hiccup here must NOT be
             # reported as a write failure — suppress it (the cache is simply not refreshed) and
             # omit the size note, matching the post-op stat handling in read.py and replace.py.
+            # An overwrite means the agent now knows the full content (it wrote it); an append
+            # leaves the prior content unseen, so a later overwrite must still re-read first.
+            wrote_full_content = params.mode == "overwrite"
             file_size: int | None = None
             with contextlib.suppress(OSError):
                 stat_after = await p.stat()
                 file_size = stat_after.st_size
-                self._runtime.file_read_cache.record(real_p, stat_after.st_mtime, file_size)
+                self._runtime.file_read_cache.record(
+                    real_p, stat_after.st_mtime, file_size, complete=wrote_full_content
+                )
             action = "overwritten" if params.mode == "overwrite" else "appended to"
             size_note = f" Current size: {file_size} bytes." if file_size is not None else ""
             return ToolReturnValue(
