@@ -101,3 +101,8 @@ class ScriptedEchoStreamedMessage(StreamedMessage):
     @property
     def usage(self) -> TokenUsage | None:
         return self._usage
+
+    @property
+    def finish_reason(self) -> str | None:
+        # The scripted-echo provider replays a fixed script and never truncates.
+        return None

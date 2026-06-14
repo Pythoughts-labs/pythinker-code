@@ -104,6 +104,17 @@ def test_generate_not_truncated_by_default():
     assert result.truncated is False
 
 
+def test_generate_not_truncated_on_explicit_stop():
+    """An explicit clean finish_reason='stop' is not truncated — this pins the negative side
+    of the contract so the suite can't pass only because the default happens to be falsy."""
+    chat_provider = MockChatProvider(
+        message_parts=[TextPart(text="a complete answer")],
+        finish_reason="stop",
+    )
+    result = asyncio.run(generate(chat_provider, system_prompt="", tools=[], history=[]))
+    assert result.truncated is False
+
+
 def test_generate_think_only_raises_error():
     """Think-only response (no text, no tool calls) should raise APIEmptyResponseError."""
     chat_provider = MockChatProvider(

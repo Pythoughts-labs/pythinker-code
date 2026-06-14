@@ -19,6 +19,7 @@ from google.genai import client as genai_client
 from google.genai import errors as genai_errors
 from google.genai.types import (
     Content,
+    FinishReason,
     FunctionCall,
     FunctionDeclaration,
     FunctionResponse,
@@ -232,6 +233,14 @@ class GoogleGenAI:
         }
 
 
+def _google_finish_reason(finish_reason: FinishReason | None) -> str | None:
+    """Surface Gemini's ``MAX_TOKENS`` (output cap) as the loop's ``'length'`` truncation
+    signal. Other finish reasons are not truncation, so they map to ``None``."""
+    if finish_reason == FinishReason.MAX_TOKENS:
+        return "length"
+    return None
+
+
 class GoogleGenAIStreamedMessage:
     def __init__(self, response: GenerateContentResponse | AsyncIterator[GenerateContentResponse]):
         if isinstance(response, GenerateContentResponse):
@@ -240,6 +249,7 @@ class GoogleGenAIStreamedMessage:
             self._iter = self._convert_stream_response(response)
         self._id: str | None = None
         self._usage: GenerateContentResponseUsageMetadata | None = None
+        self._finish_reason: str | None = None
 
     def __aiter__(self) -> AsyncIterator[StreamedMessagePart]:
         return self
@@ -250,6 +260,10 @@ class GoogleGenAIStreamedMessage:
     @property
     def id(self) -> str | None:
         return self._id
+
+    @property
+    def finish_reason(self) -> str | None:
+        return self._finish_reason
 
     @property
     def usage(self) -> TokenUsage | None:
@@ -275,6 +289,8 @@ class GoogleGenAIStreamedMessage:
 
         # Process candidates
         for candidate in response.candidates or []:
+            if candidate.finish_reason is not None:
+                self._finish_reason = _google_finish_reason(candidate.finish_reason)
             parts = candidate.content.parts if candidate.content else None
             if not parts:
                 continue
@@ -298,6 +314,8 @@ class GoogleGenAIStreamedMessage:
 
                 # Process candidates
                 for candidate in response.candidates or []:
+                    if candidate.finish_reason is not None:
+                        self._finish_reason = _google_finish_reason(candidate.finish_reason)
                     parts = candidate.content.parts if candidate.content else None
                     if not parts:
                         continue

@@ -92,10 +92,11 @@ async def generate(
         id=stream.id,
         message=message,
         usage=stream.usage,
-        # finish_reason 'length' means the output-token limit cut the response off. Read it
-        # optionally (not every stream implementation reports it) so the agent loop can
-        # detect and recover from truncation instead of treating it as a clean completion.
-        truncated=getattr(stream, "finish_reason", None) == "length",
+        # finish_reason 'length' means the output-token limit cut the response off. It is a
+        # required member of the StreamedMessage contract (every provider maps its own signal
+        # onto it), so the agent loop can always detect and recover from truncation instead of
+        # treating a cut-off response as a clean completion.
+        truncated=stream.finish_reason == "length",
     )
 
 
