@@ -920,8 +920,17 @@ class PythinkerToolset:
         return self._mcp_servers
 
     def mcp_status_snapshot(self) -> MCPStatusSnapshot | None:
-        """Return a read-only snapshot of current MCP startup state."""
+        """Return a read-only snapshot of current MCP startup state.
+
+        Returns ``None`` only when no MCP is configured (the settled, nothing-to-load state).
+        While a deferred startup is queued but has not populated ``_mcp_servers`` yet, a
+        ``loading=True`` snapshot is returned instead — otherwise the required-MCP spawn gate
+        could not distinguish "still starting" from "not configured" and would reject a
+        first-turn subagent spawn during the startup window.
+        """
         if not self._mcp_servers:
+            if self.has_deferred_mcp_tools():
+                return MCPStatusSnapshot(loading=True, connected=0, total=0, tools=0, servers=())
             return None
 
         servers = tuple(

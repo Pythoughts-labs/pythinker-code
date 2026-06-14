@@ -187,9 +187,11 @@ class ReadFile(CallableTool2[Params]):
             assert params.line_offset != 0
 
             # Record this read so a later overwrite can detect a file that changed since
-            # the agent last saw it (stale-overwrite guard).
+            # the agent last saw it (stale-overwrite guard). Both mtime and size are kept so
+            # a same-tick or mtime-preserving external edit is still caught.
             with contextlib.suppress(OSError):
-                self._runtime.file_read_cache.record(real_p, (await p.stat()).st_mtime)
+                read_stat = await p.stat()
+                self._runtime.file_read_cache.record(real_p, read_stat.st_mtime, read_stat.st_size)
 
             if params.line_offset < 0:
                 return await self._read_tail(p, params)

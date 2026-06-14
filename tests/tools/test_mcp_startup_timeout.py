@@ -79,6 +79,26 @@ class TestErrorClassification:
         assert message == "first line"
 
 
+class TestLoadingHonestSnapshot:
+    """mcp_status_snapshot must distinguish 'still starting' from 'no MCP configured' so the
+    required-MCP spawn gate (which treats a None snapshot as settled-absent) cannot reject a
+    subagent during the brief window before the deferred startup populates the servers."""
+
+    def test_deferred_load_reports_loading_not_none(self) -> None:
+        toolset = PythinkerToolset()
+        # Configured-but-not-started: a deferred load is queued, _mcp_servers still empty.
+        toolset._deferred_mcp_load = ([], cast(Any, None))
+        snapshot = toolset.mcp_status_snapshot()
+        assert snapshot is not None
+        assert snapshot.loading is True
+        assert snapshot.total == 0
+
+    def test_no_mcp_configured_reports_none(self) -> None:
+        # Settled 'no MCP': nothing configured and nothing pending -> None (the state where the
+        # gate correctly reports a required server as genuinely unavailable).
+        assert PythinkerToolset().mcp_status_snapshot() is None
+
+
 class TestDiagnosticsSurface:
     def test_snapshot_carries_error(self) -> None:
         toolset = PythinkerToolset()

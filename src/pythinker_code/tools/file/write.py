@@ -217,10 +217,11 @@ class WriteFile(CallableTool2[Params]):
                     await p.append_text(params.content)
 
             # Get file info for success message, and refresh the read-state to the post-write
-            # mtime so the agent can immediately re-edit its own output without a false stale flag.
+            # (mtime, size) so the agent can immediately re-edit its own output without a false
+            # stale flag.
             stat_after = await p.stat()
             file_size = stat_after.st_size
-            self._runtime.file_read_cache.record(real_p, stat_after.st_mtime)
+            self._runtime.file_read_cache.record(real_p, stat_after.st_mtime, file_size)
             action = "overwritten" if params.mode == "overwrite" else "appended to"
             return ToolReturnValue(
                 is_error=False,
