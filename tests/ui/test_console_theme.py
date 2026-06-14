@@ -1,11 +1,16 @@
-"""Tests for NEUTRAL_MARKDOWN_THEME style overrides."""
+"""Tests for NEUTRAL_MARKDOWN_THEME style overrides and dark-theme ptk parity."""
 
 from __future__ import annotations
 
 import pytest
 
 from pythinker_code.ui.shell.console import NEUTRAL_MARKDOWN_THEME
-from pythinker_code.ui.theme import TUI_TOKEN_NAMES, tui_rich_style
+from pythinker_code.ui.theme import (
+    _PROMPT_STYLE_DARK,
+    _TUI_TOKENS_DARK,
+    TUI_TOKEN_NAMES,
+    tui_rich_style,
+)
 
 
 class TestNeutralMarkdownThemeNoBgColor:
@@ -62,3 +67,19 @@ def test_tui_token_names_are_validated_before_style_lookup() -> None:
 
     with pytest.raises(ValueError, match="Unknown TUI token"):
         tui_rich_style("not_a_real_token")
+
+
+def test_dark_theme_ptk_border_tracks_token() -> None:
+    """_PROMPT_STYLE_DARK border entries must stay in sync with _TUI_TOKENS_DARK.
+
+    These six style keys carry hex colours that must match the canonical token
+    constants so the prompt_toolkit layer and the Rich/terminal layer always
+    render the same border hues.
+    """
+    tokens = _TUI_TOKENS_DARK
+    assert _PROMPT_STYLE_DARK["compact-input.frame"] == f"fg:{tokens.border}"
+    assert _PROMPT_STYLE_DARK["running-prompt-separator"] == f"fg:{tokens.border_muted}"
+    assert _PROMPT_STYLE_DARK["slash-completion-menu.separator"] == f"fg:{tokens.border_muted}"
+    assert _PROMPT_STYLE_DARK["slash-completion-menu.marker"] == f"fg:{tokens.border_muted}"
+    assert _PROMPT_STYLE_DARK["file-completion-menu.marker"] == f"fg:{tokens.border_muted}"
+    assert _PROMPT_STYLE_DARK["shell-dialog.border"] == f"fg:{tokens.border_muted}"
