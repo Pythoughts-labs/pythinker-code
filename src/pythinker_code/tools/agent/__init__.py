@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, override
@@ -21,6 +22,27 @@ from pythinker_code.subagents.runner import (
 from pythinker_code.subagents.usage import aggregate_findings, summarize_batch
 from pythinker_code.tools.utils import ToolResultStatus, load_desc, tool_status_line
 from pythinker_code.utils.logging import logger
+from pythinker_code.wire.types import MCPStatusSnapshot
+
+
+def _missing_required_mcp_servers(
+    required: Sequence[str], snapshot: MCPStatusSnapshot | None
+) -> list[str]:
+    """Required MCP servers that are settled-and-not-connected.
+
+    Returns ``[]`` when nothing is required or MCP is still loading (a required server may
+    yet connect — do not reject prematurely). Once loading has settled, a required server
+    that is not connected (absent or failed) is reported as missing.
+    """
+    if not required:
+        return []
+    if snapshot is not None and snapshot.loading:
+        return []
+    connected: set[str] = (
+        {s.name for s in snapshot.servers if s.status == "connected"} if snapshot else set()
+    )
+    return [name for name in required if name not in connected]
+
 
 NAME = "Agent"
 
@@ -251,6 +273,29 @@ class AgentTool(CallableTool2[Params]):
             details=details,
         )
 
+    def check_required_mcp_servers(self, requested_type: str) -> ToolError | None:
+        """Reject a fresh spawn when the agent type's required MCP servers are absent.
+
+        Returns ``None`` (allow) when nothing is required, the type is unknown (the normal
+        type-validation path reports that), or MCP is still loading. Unconfigured/failed
+        required servers once loading settles are surfaced so the model can self-correct.
+        """
+        type_def = self._runtime.labor_market.get_builtin_type(requested_type)
+        if type_def is None or not type_def.required_mcp_servers:
+            return None
+        snapshot = self._runtime.mcp_status() if self._runtime.mcp_status is not None else None
+        missing = _missing_required_mcp_servers(type_def.required_mcp_servers, snapshot)
+        if not missing:
+            return None
+        return ToolError(
+            message=(
+                f"Agent type '{requested_type}' requires MCP server(s) not available: "
+                f"{', '.join(missing)}. Add them with `pythinker mcp add`, or choose a "
+                f"different agent type."
+            ),
+            brief="Required MCP server unavailable",
+        )
+
     def check_execution_policy(self, subagent_type: str) -> ToolError | None:
         policy = resolve_execution_policy(
             self._runtime.config.agent_execution_profile,
@@ -288,6 +333,10 @@ class AgentTool(CallableTool2[Params]):
             )
         requested_type = params.subagent_type or "coder"
         if err := self.check_execution_policy(requested_type):
+            return err
+        # Gate a FRESH spawn on the agent type's required MCP servers (resume is not a
+        # fresh spawn — the instance already exists, so it is not re-gated).
+        if params.resume is None and (err := self.check_required_mcp_servers(requested_type)):
             return err
         if params.fork_context and (params.resume is not None or params.run_in_background):
             return ToolError(
@@ -702,6 +751,8 @@ class RunAgentsTool(CallableTool2[RunAgentsParams]):
                     brief="Invalid subagent type",
                 )
             if err := self._agent_tool.check_execution_policy(requested_type):
+                return err
+            if err := self._agent_tool.check_required_mcp_servers(requested_type):
                 return err
         capacity = self._background_capacity(params)
         if err := self._background_capacity_error(capacity):

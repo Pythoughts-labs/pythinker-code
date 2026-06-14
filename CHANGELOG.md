@@ -44,6 +44,11 @@ GitHub Releases page; `0.8.0` is the new starting line.
   outside-workspace, config-surface, and sensitive host-file edits. It is
   session-local (not persisted) and suppressed by safe mode. Pairs with the deny-set
   above so a `.git/hooks` or shell-rc write is never swept into the auto-approve tier.
+- **Agents can declare required MCP servers.** A markdown agent's frontmatter may set
+  `required_mcp_servers: [..]`; spawning that agent (via `Agent` or `RunAgents`) is
+  rejected with a clear message when those servers are configured-and-absent, instead of
+  wasting a turn on an agent that cannot reach its tools. While MCP is still loading the
+  spawn is allowed (the servers may yet connect).
 
 ## 0.44.0 (2026-06-13)
 

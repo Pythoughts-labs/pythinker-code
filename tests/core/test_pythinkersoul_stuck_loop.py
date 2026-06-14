@@ -25,7 +25,7 @@ from pythinker_code.llm import LLM
 from pythinker_code.soul import run_soul
 from pythinker_code.soul.agent import Agent, Runtime
 from pythinker_code.soul.context import Context
-from pythinker_code.soul.pythinkersoul import PythinkerSoul
+from pythinker_code.soul.pythinkersoul import PythinkerSoul, TurnStopReason
 from pythinker_code.utils.aioqueue import QueueShutDown
 from pythinker_code.wire import Wire
 
@@ -227,7 +227,9 @@ def test_stuck_summary_handles_whitespace_only_brief() -> None:
         ("tool_rejected", None, False),  # rejected tool call, no answer
     ],
 )
-def test_turn_outcome_produced_answer(stop_reason: str, text: str | None, expected: bool) -> None:
+def test_turn_outcome_produced_answer(
+    stop_reason: TurnStopReason, text: str | None, expected: bool
+) -> None:
     """`produced_answer` is True only for a turn that ended with a substantive assistant
     answer — degenerate stops (stuck / budget / rejection / empty) are not completions."""
     from pythinker_code.soul.pythinkersoul import TurnOutcome

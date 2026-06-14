@@ -52,6 +52,8 @@ from pythinker_code.wire.root_hub import RootWireHub
 if TYPE_CHECKING:
     from fastmcp.mcp_config import MCPConfig
 
+    from pythinker_code.wire.types import MCPStatusSnapshot
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class BuiltinSystemPromptArgs:
@@ -201,6 +203,9 @@ class Runtime:
     prompt_templates: dict[str, PromptTemplate] = field(default_factory=dict[str, PromptTemplate])
     mcp_tools: dict[str, ToolType] = field(default_factory=dict[str, ToolType])
     """Connected MCP tools, keyed `mcp__<server>__<tool>`, shared with subagent allowlists."""
+    mcp_status: Callable[[], MCPStatusSnapshot | None] | None = None
+    """Root-only accessor for live MCP startup state, wired from the root toolset. Used by
+    the subagent-spawn gate to reject an agent whose required MCP servers are absent."""
     subagent_store: SubagentStore | None = None
     approval_runtime: ApprovalRuntime | None = None
     root_wire_hub: RootWireHub | None = None
@@ -535,6 +540,9 @@ async def load_agent(
         runtime.labor_market.add_builtin_type(type_def)
 
     toolset = PythinkerToolset(runtime)
+    # Wire the live MCP startup state so the subagent-spawn gate can reject an agent whose
+    # required MCP servers are absent (root only — subagents never spawn other agents).
+    runtime.mcp_status = toolset.mcp_status_snapshot
     tool_deps = {
         PythinkerToolset: toolset,
         Runtime: runtime,
