@@ -102,6 +102,16 @@ def create_app() -> FastAPI:
     return application
 
 
+def loopback_browser_host(host: str) -> str:
+    """Map a wildcard bind address to a reachable loopback host for the browser.
+
+    A server bound to ``0.0.0.0`` or ``::`` listens on every interface, but those
+    are not valid origins to open in a browser (and are absent from the allowed
+    origins list), so fall back to ``localhost``.
+    """
+    return "localhost" if host in {"0.0.0.0", "::"} else host
+
+
 def run_dashboard_server(
     host: str = "127.0.0.1",
     port: int = DEFAULT_PORT,
@@ -145,8 +155,8 @@ def run_dashboard_server(
     allowed_origins = [format_url(addr, actual_port) for addr in dict.fromkeys(origin_hosts)]
     os.environ[_ENV_ALLOWED_ORIGINS] = ",".join(allowed_origins)
 
-    # Browser should open localhost
-    browser_host = "localhost" if host == "0.0.0.0" else host
+    # Browser should open a reachable loopback host, not the wildcard bind address
+    browser_host = loopback_browser_host(host)
     browser_url = f"{format_url(browser_host, actual_port)}/?token={quote(session_token)}"
 
     banner_lines = [

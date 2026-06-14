@@ -39,3 +39,4 @@ def test_dashboard_root_explains_missing_assets(
 
     assert resp.status_code == 503
     assert "make build-dashboard" in resp.text
+    assert "pythinker_code/dashboard/static/index.html" in resp.text

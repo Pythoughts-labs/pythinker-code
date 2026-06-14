@@ -617,12 +617,20 @@ export function App() {
               <div>
                 <h3 className="text-xs font-medium uppercase text-muted-foreground mb-2">Global</h3>
                 <div className="space-y-1.5">
+                  <ShortcutRow keys="?" desc="Show shortcuts" />
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-xs font-medium uppercase text-muted-foreground mb-2">
+                  Session Views
+                </h3>
+                <div className="space-y-1.5">
                   <ShortcutRow keys="1" desc="Wire Events" />
                   <ShortcutRow keys="2" desc="Context Messages" />
                   <ShortcutRow keys="3" desc="State" />
                   <ShortcutRow keys="4" desc="Dual View" />
                   <ShortcutRow keys="5" desc="Agents" />
-                  <ShortcutRow keys="?" desc="Show shortcuts" />
                 </div>
               </div>
 

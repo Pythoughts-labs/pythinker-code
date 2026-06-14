@@ -10,7 +10,10 @@ function getSystemTheme(): Theme {
 
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>(() => {
-    const saved = localStorage.getItem("dashboard-theme") as Theme | null;
+    // Fall back to the legacy "vis-theme" key so users upgrading from the
+    // previous visualization UI keep their saved preference.
+    const saved = (localStorage.getItem("dashboard-theme") ??
+      localStorage.getItem("vis-theme")) as Theme | null;
     return saved ?? getSystemTheme();
   });
 

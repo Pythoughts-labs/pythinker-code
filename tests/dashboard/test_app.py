@@ -4,11 +4,27 @@ import io
 import zipfile
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from pythinker_code.dashboard.api import system as dashboard_system_api
-from pythinker_code.dashboard.app import create_app
+from pythinker_code.dashboard.app import create_app, loopback_browser_host
 from pythinker_code.metadata import Metadata, WorkDirMeta, save_metadata
+
+
+@pytest.mark.parametrize(
+    ("host", "expected"),
+    [
+        ("0.0.0.0", "localhost"),
+        ("::", "localhost"),
+        ("127.0.0.1", "127.0.0.1"),
+        ("192.168.1.5", "192.168.1.5"),
+    ],
+)
+def test_loopback_browser_host_maps_wildcard_to_localhost(host: str, expected: str) -> None:
+    # Wildcard bind addresses are not valid browser origins, so they must fall
+    # back to localhost (which is the only loopback entry in allowed_origins).
+    assert loopback_browser_host(host) == expected
 
 
 def test_dashboard_sessions_include_session_dir(

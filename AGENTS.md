@@ -144,8 +144,8 @@ Development servers:
 ```bash
 make web-back     # FastAPI web backend on port 5494
 make web-front    # web frontend dev server
-make dashboard-back     # visualization backend on port 5495
-make dashboard-front    # visualization frontend dev server
+make dashboard-back     # dashboard backend on port 5495
+make dashboard-front    # dashboard frontend dev server
 ```
 
 Targeted package commands:
