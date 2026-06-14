@@ -550,6 +550,43 @@ async def test_google_genai_with_thinking():
         )
 
 
+async def test_google_genai_streaming_finish_reason_length_is_sticky() -> None:
+    """Streaming path (line 317 guard): MAX_TOKENS on first chunk, STOP on second.
+
+    Exercises ``_convert_stream_response`` — the production-default path when
+    ``stream=True`` — to confirm that 'length' is not overwritten by the
+    subsequent STOP chunk.
+    """
+    from google.genai.types import Candidate, Content, FinishReason, GenerateContentResponse, Part
+
+    from pythinker_core.contrib.chat_provider.google_genai import GoogleGenAIStreamedMessage
+
+    async def _two_chunk_stream():
+        yield GenerateContentResponse(
+            candidates=[
+                Candidate(
+                    finish_reason=FinishReason.MAX_TOKENS,
+                    content=Content(role="model", parts=[Part(text="truncated")]),
+                )
+            ]
+        )
+        yield GenerateContentResponse(
+            candidates=[
+                Candidate(
+                    finish_reason=FinishReason.STOP,
+                    content=Content(role="model", parts=[Part(text="done")]),
+                )
+            ]
+        )
+
+    stream = GoogleGenAIStreamedMessage(_two_chunk_stream())
+    async for _ in stream:
+        pass
+    assert stream.finish_reason == "length", (
+        f"Expected 'length' to be sticky after MAX_TOKENS chunk, got {stream.finish_reason!r}"
+    )
+
+
 async def test_google_genai_finish_reason_length_is_sticky() -> None:
     """Once a candidate sets finish_reason to 'length' (MAX_TOKENS), a subsequent candidate
     with a different finish_reason (e.g. STOP → None) must not overwrite it.
@@ -580,4 +617,37 @@ async def test_google_genai_finish_reason_length_is_sticky() -> None:
         pass
     assert stream.finish_reason == "length", (
         f"Expected 'length' to be sticky after MAX_TOKENS candidate, got {stream.finish_reason!r}"
+    )
+
+
+async def test_google_genai_finish_reason_length_reverse_order() -> None:
+    """Reverse-direction: STOP first (→ None), then MAX_TOKENS (→ 'length').
+
+    Confirms the guard allows a transition from None to 'length': after the
+    STOP candidate ``_finish_reason`` is None (not 'length'), so the condition
+    ``self._finish_reason != 'length'`` is True and MAX_TOKENS is correctly
+    captured on the second candidate.
+    """
+    from google.genai.types import Candidate, Content, FinishReason, GenerateContentResponse, Part
+
+    from pythinker_core.contrib.chat_provider.google_genai import GoogleGenAIStreamedMessage
+
+    # Non-stream path: STOP first, MAX_TOKENS second.
+    response = GenerateContentResponse(
+        candidates=[
+            Candidate(
+                finish_reason=FinishReason.STOP,
+                content=Content(role="model", parts=[Part(text="done")]),
+            ),
+            Candidate(
+                finish_reason=FinishReason.MAX_TOKENS,
+                content=Content(role="model", parts=[Part(text="truncated")]),
+            ),
+        ]
+    )
+    stream = GoogleGenAIStreamedMessage(response)
+    async for _ in stream:
+        pass
+    assert stream.finish_reason == "length", (
+        f"Expected 'length' after STOP → MAX_TOKENS sequence, got {stream.finish_reason!r}"
     )
