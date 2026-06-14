@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
 from typing import cast
 
+from rich import box as rich_box
 from rich.console import Group, RenderableType
+from rich.panel import Panel
 from rich.style import Style as RichStyle
+from rich.table import Table
 from rich.text import Text
 
 from pythinker_code.ui.shell.tool_renderers import (
@@ -24,6 +29,7 @@ from pythinker_code.ui.shell.tool_renderers._render_utils import (
     running_spinner,
     tool_call_header,
 )
+from pythinker_code.ui.terminal_capabilities import ascii_glyphs_enabled
 from pythinker_code.ui.theme import tui_rich_style
 
 _TOOL_NAME = "Agent"
@@ -32,6 +38,216 @@ _DEFAULT_COLLAPSED_LINES = 6
 _RUN_AGENTS_ERROR_COLLAPSED_LINES = 8
 _RUN_AGENTS_SUMMARY_PREVIEW_CHARS = 160
 _BACKGROUND_ACTIVE_STATUSES = frozenset({"created", "starting", "running", "awaiting_approval"})
+
+# ---------------------------------------------------------------------------
+# Review findings aggregation
+# ---------------------------------------------------------------------------
+
+_SEVERITY_LABELS = ("critical", "high", "medium", "low")
+_REVIEW_AGENT_TYPES = frozenset({"code-reviewer", "security-reviewer", "review"})
+
+# Structured severity markers only — never mid-sentence prose.
+# Form 1: bullet with [SEVERITY] tag:  `- [HIGH] description`
+_RE_BRACKET_BULLET = re.compile(r"^[-*•]\s+\[(critical|high|medium|low)\]", re.IGNORECASE)
+# Form 2: bullet with severity before colon: `- **High**: desc` / `- High: desc`
+_RE_SEVERITY_COLON_BULLET = re.compile(
+    r"^[-*•]\s+\*{0,2}(critical|high|medium|low)\*{0,2}:\s", re.IGNORECASE
+)
+# Form 3: bold severity at line start (no bullet): `**Critical**: desc`
+_RE_BOLD_SEVERITY = re.compile(r"^\*\*(critical|high|medium|low)\*\*:", re.IGNORECASE)
+# Section headers
+_RE_HEADER = re.compile(r"^#{1,4}\s+(.*)")
+_RE_SEVERITY_IN_HEADER = re.compile(r"\b(critical|high|medium|low)\b(?!-)", re.IGNORECASE)
+# Markdown table row starting with a severity cell: `| HIGH | description |`
+_RE_TABLE_SEVERITY_ROW = re.compile(r"^\|\s*(critical|high|medium|low)\s*\|", re.IGNORECASE)
+
+
+@dataclass
+class ReviewFindingsSummary:
+    critical: int
+    high: int
+    medium: int
+    low: int
+    unparsed_reports: int
+    reporters: dict[str, list[str]]
+    parsed_reports: int
+    total_reports: int
+
+
+def _is_review_agent(subagent_type: str) -> bool:
+    return subagent_type.lower().replace("_", "-") in _REVIEW_AGENT_TYPES
+
+
+def _is_review_run(agents: list[dict[str, str]]) -> bool:
+    return any(
+        _is_review_agent(a.get("subagent_type") or a.get("actual_subagent_type") or "")
+        for a in agents
+    )
+
+
+def _parse_reviewer_findings(result_text: str) -> tuple[dict[str, int], bool]:
+    """Parse severity counts from structured markers only (never mid-sentence prose).
+
+    Returns (severity_counts, was_parsed). was_parsed is True when at least one
+    structured marker was found; False means the whole report is unreadable prose.
+    """
+    counts: dict[str, int] = {sev: 0 for sev in _SEVERITY_LABELS}
+    found_any = False
+    section_severity: str | None = None  # set when inside e.g. "### High Severity"
+
+    for raw in result_text.splitlines():
+        stripped = raw.strip()
+        if not stripped:
+            continue
+
+        # Section headers: update context, don't count as findings.
+        m = _RE_HEADER.match(stripped)
+        if m:
+            header_lower = m.group(1).lower()
+            sm = _RE_SEVERITY_IN_HEADER.search(header_lower)
+            section_severity = sm.group(1).lower() if sm else None
+            continue
+
+        # Form 1: `- [HIGH] description`
+        m = _RE_BRACKET_BULLET.match(stripped)
+        if m:
+            counts[m.group(1).lower()] += 1
+            found_any = True
+            continue
+
+        # Form 2: `- **High**: description` or `- High: description`
+        m = _RE_SEVERITY_COLON_BULLET.match(stripped)
+        if m:
+            counts[m.group(1).lower()] += 1
+            found_any = True
+            continue
+
+        # Form 3: `**Critical**: description` at line start (no bullet)
+        m = _RE_BOLD_SEVERITY.match(stripped)
+        if m:
+            counts[m.group(1).lower()] += 1
+            found_any = True
+            continue
+
+        # Form 4: plain bullet inside a named-severity subsection (e.g. `### High`)
+        if section_severity and re.match(r"^[-*•]\s+\S", stripped):
+            counts[section_severity] += 1
+            found_any = True
+            continue
+
+        # Form 5: markdown table row `| HIGH | description |`
+        m = _RE_TABLE_SEVERITY_ROW.match(stripped)
+        if m:
+            counts[m.group(1).lower()] += 1
+            found_any = True
+
+    return counts, found_any
+
+
+def _aggregate_findings(agents: list[dict[str, str]]) -> ReviewFindingsSummary:
+    """Aggregate severity counts across all reviewer agents."""
+    counts: dict[str, int] = {sev: 0 for sev in _SEVERITY_LABELS}
+    reporters: dict[str, list[str]] = {sev: [] for sev in _SEVERITY_LABELS}
+    reporters["unknown"] = []
+    unparsed = 0
+    parsed = 0
+    total = 0
+
+    for agent in agents:
+        subagent_type = agent.get("subagent_type") or agent.get("actual_subagent_type") or ""
+        if not _is_review_agent(subagent_type):
+            continue
+        total += 1
+        name = agent.get("name") or subagent_type
+        result_text = agent.get("result_text", "")
+
+        if not result_text:
+            unparsed += 1
+            reporters["unknown"].append(name)
+            continue
+
+        agent_counts, was_parsed = _parse_reviewer_findings(result_text)
+        if not was_parsed:
+            unparsed += 1
+            reporters["unknown"].append(name)
+        else:
+            parsed += 1
+            for sev in _SEVERITY_LABELS:
+                if agent_counts[sev] > 0:
+                    counts[sev] += agent_counts[sev]
+                    reporters[sev].append(name)
+
+    return ReviewFindingsSummary(
+        critical=counts["critical"],
+        high=counts["high"],
+        medium=counts["medium"],
+        low=counts["low"],
+        unparsed_reports=unparsed,
+        reporters=reporters,
+        parsed_reports=parsed,
+        total_reports=total,
+    )
+
+
+def _render_findings_table(summary: ReviewFindingsSummary) -> RenderableType:
+    """Render a compact findings summary table for completed review runs."""
+    box_style = rich_box.ASCII if ascii_glyphs_enabled() else rich_box.ROUNDED
+
+    table = Table(
+        box=None,
+        show_header=True,
+        header_style=tui_rich_style("muted"),
+        show_edge=False,
+        expand=False,
+        padding=(0, 1),
+    )
+    table.add_column("Severity", min_width=9)
+    table.add_column("Count", justify="right", min_width=5)
+    table.add_column("Reported by")
+
+    _sev_style = {
+        "critical": "error",
+        "high": "error",
+        "medium": "warning",
+        "low": "info",
+    }
+
+    for sev in _SEVERITY_LABELS:
+        count = getattr(summary, sev)
+        by = summary.reporters.get(sev, [])
+        style = tui_rich_style(_sev_style[sev]) if count > 0 else tui_rich_style("dim")
+        table.add_row(
+            Text(sev.capitalize(), style=style),
+            Text(str(count), style=style),
+            Text(", ".join(by) if by else "—", style=tui_rich_style("dim")),
+        )
+
+    if summary.unparsed_reports > 0:
+        by = summary.reporters.get("unknown", [])
+        table.add_row(
+            Text("Unknown", style=tui_rich_style("muted")),
+            Text(str(summary.unparsed_reports), style=tui_rich_style("muted")),
+            Text(", ".join(by) if by else "—", style=tui_rich_style("dim")),
+        )
+
+    n, total = summary.parsed_reports, summary.total_reports
+    report_word = "report" if total == 1 else "reports"
+    footer_str = f"Parsed {n}/{total} reviewer {report_word}"
+    if summary.unparsed_reports > 0:
+        u = summary.unparsed_reports
+        suffix = "report" if u == 1 else "reports"
+        footer_str += f" · {u} {suffix} kept as unparsed prose"
+    footer = Text(footer_str, style=tui_rich_style("dim"))
+
+    return Panel(
+        Group(table, footer),
+        title="Review Findings",
+        title_align="left",
+        border_style=tui_rich_style("border_muted"),
+        box=box_style,
+        padding=(0, 1),
+        expand=False,
+    )
 
 
 def _subagent_loader(_ctx: ToolRenderContext) -> Text:
@@ -180,7 +396,7 @@ def _render_run_agents_call(ctx: ToolRenderContext) -> RenderableType:
         missing.append(missing_required_arg("summary"))
     if missing:
         children.extend(missing)
-    if agent_summaries:
+    if agent_summaries and not ctx.has_result:
         listed = ", ".join(f"{name}:{subagent_type}" for name, subagent_type in agent_summaries[:4])
         if len(agent_summaries) > 4:
             listed = f"{listed}, +{len(agent_summaries) - 4} more"
@@ -452,11 +668,10 @@ def _render_run_agents_result(
         row = Text(f"{branch} ", style=tui_rich_style("muted"))
         row.append(_status_glyph(agent_status), style=tui_rich_style(status_token))
         row.append(" ")
-        row.append(
-            entry["subagent_type"], style=tui_rich_style("tool_title") + RichStyle(bold=True)
-        )
+        row.append(entry["subagent_type"], style=tui_rich_style("muted"))
         if entry["name_extra"]:
-            row.append(f" · {entry['name_extra']}", style=dim_style)
+            name_style = tui_rich_style("tool_title") + RichStyle(bold=True)
+            row.append(f" · {entry['name_extra']}", style=name_style)
         # Pad the label region so every "· status" separator starts at one column.
         row.append(" " * (label_col - label_width(entry)))
         row.append(" · ", style=dim_style)
@@ -466,12 +681,16 @@ def _render_run_agents_result(
             row.append(f" · {entry['task_id']}", style=dim_style)
         rows.append(row)
 
-        preview = entry["summary_preview"]
         if agent_status in {"error", "failed", "failure"}:
-            preview = entry["message"] or entry["brief"] or preview
-        if preview:
-            prefix = "   " if is_last else "│  "
-            rows.append(fg("dim", f"{prefix}{_compact_inline(preview, max_chars=100)}"))
+            preview = entry["message"] or entry["brief"] or entry["summary_preview"]
+            if preview:
+                prefix = "   " if is_last else "│  "
+                rows.append(fg("dim", f"{prefix}{_compact_inline(preview, max_chars=100)}"))
+
+    if _is_review_run(agents):
+        findings = _aggregate_findings(agents)
+        rows.append(Text(""))
+        rows.append(_render_findings_table(findings))
 
     return Group(*rows)
 

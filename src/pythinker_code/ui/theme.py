@@ -431,7 +431,7 @@ def _build_markdown_colors(tokens: TuiTokens) -> MarkdownColors:
         heading=tokens.tool_title,
         emphasis=tokens.muted,
         strong=tokens.tool_title,
-        inline_code="cyan",  # terminal-native ANSI cyan
+        inline_code=tokens.accent,  # periwinkle accent — matches skill/branch highlight color
         link="cyan",  # cyan, rendered underlined
         quote="green",  # terminal-native ANSI green
         ordered_marker="bright_blue",  # ordered markers take the bright-blue accent
@@ -610,9 +610,9 @@ TUI_TOKEN_NAMES = frozenset(field.name for field in fields(TuiTokens))
 
 _TUI_TOKENS_DARK = TuiTokens(
     accent="#B3B9F4",
-    border="#3A506D",
+    border="#e8ebed",
     border_accent="#7C88DE",
-    border_muted="#2B3A52",
+    border_muted="#b8bcc0",
     info="#AFE3F1",
     success="#7BC97F",
     error="#EF5E62",

@@ -42,7 +42,7 @@ def test_dark_tokens_have_brand_values():
     t = get_tui_tokens()
     assert t.accent == "#B3B9F4"  # periwinkle brand accent (≈ Catppuccin Mocha lavender)
     assert t.border_accent == "#7C88DE"  # accent-family chrome (active borders)
-    assert t.border == "#3A506D"  # slate
+    assert t.border == "#e8ebed"  # light grey
     assert t.info == "#AFE3F1"  # cyan (unchanged; markdown code/links use ANSI cyan)
     assert t.success == "#7BC97F"
     assert t.error == "#EF5E62"
@@ -161,7 +161,7 @@ def test_dark_markdown_uses_professional_report_roles():
     assert colors.heading == "#F4F4F5"  # primary white, not coral/orange
     assert colors.strong == "#F4F4F5"
     assert colors.emphasis == "#6F6F6F"  # neutral UI grey
-    assert colors.inline_code == "cyan"  # terminal-native ANSI
+    assert colors.inline_code == "#B3B9F4"  # periwinkle accent
     assert colors.link == "cyan"
     assert colors.spinner_active == "#AFE3F1"  # spinners still use the info token
     assert colors.spinner_done == "#7BC97F"
@@ -174,18 +174,19 @@ def test_light_markdown_uses_professional_report_roles():
     assert colors.heading == "#213853"
     assert colors.strong == "#213853"
     assert colors.emphasis == "#666666"
-    assert colors.inline_code == "cyan"  # terminal-native ANSI
+    assert colors.inline_code == "#0B114E"  # periwinkle accent (light)
     assert colors.spinner_active == "#176B7E"  # spinners still use the info token
 
 
 def test_markdown_ansi_styles_resolve_to_terminal_colors():
-    """The four enumerated elements resolve to ANSI terminal colors in both
-    modes (so they adapt to the user's terminal palette)."""
+    """Link, quote, and ordered_marker use ANSI terminal colors; inline_code
+    now uses the themed accent hex so it matches the skill/branch highlight color."""
     for mode in ("dark", "light"):
-        assert _color_name(markdown_rich_style("inline_code", theme=mode)) == "cyan"
         assert _color_name(markdown_rich_style("link", theme=mode)) == "cyan"
         assert _color_name(markdown_rich_style("quote", theme=mode)) == "green"
         assert _color_name(markdown_rich_style("ordered_marker", theme=mode)) == "bright_blue"
+        # inline_code is now a themed hex (periwinkle accent), not ANSI cyan.
+        assert _color_name(markdown_rich_style("inline_code", theme=mode)) not in ("cyan", "green")
         # Unordered bullets stay muted (a hex), not an ANSI accent.
         assert _color_name(markdown_rich_style("unordered_marker", theme=mode)) != "green"
 
@@ -242,9 +243,9 @@ def test_markdown_colors_derived_from_tokens_dark():
     assert c.heading == t.tool_title
     assert c.strong == t.tool_title
     assert c.emphasis == t.muted
-    # The four enumerated markdown elements use terminal-native ANSI
-    # (mode-independent), NOT theme tokens — see the design spec 2026-06-08.
-    assert c.inline_code == "cyan"
+    # inline_code now uses the accent token (periwinkle) for visual consistency
+    # with skill/branch highlights; link/quote/ordered_marker remain ANSI.
+    assert c.inline_code == t.accent
     assert c.link == "cyan"
     assert c.quote == "green"
     assert c.ordered_marker == "bright_blue"
@@ -263,8 +264,8 @@ def test_markdown_colors_derived_from_tokens_light():
     assert c.heading == t.tool_title
     assert c.strong == t.tool_title
     assert c.emphasis == t.muted
-    # terminal-native ANSI is mode-independent (same cyan/green/bright_blue both modes)
-    assert c.inline_code == "cyan"
+    # inline_code uses the accent token (periwinkle); link remains ANSI cyan.
+    assert c.inline_code == t.accent
     assert c.link == "cyan"
     assert c.quote == "green"
     assert c.ordered_marker == "bright_blue"
