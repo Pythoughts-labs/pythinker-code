@@ -50,7 +50,11 @@ class LazySubcommandGroup(typer.core.TyperGroup):
             "cli",
             "Check for and install Pythinker CLI updates.",
         ),
-        "vis": ("pythinker_code.cli.vis", "cli", "Run Pythinker Agent Tracing Visualizer."),
+        "dashboard": (
+            "pythinker_code.cli.dashboard",
+            "cli",
+            "Run Pythinker Agent Tracing Visualizer.",
+        ),
         "web": ("pythinker_code.cli.web", "cli", "Run Pythinker CLI web interface."),
     }
     lazy_command_order: tuple[str, ...] = (
@@ -65,7 +69,7 @@ class LazySubcommandGroup(typer.core.TyperGroup):
         "security-scan",
         "debug",
         "update",
-        "vis",
+        "dashboard",
         "web",
     )
 

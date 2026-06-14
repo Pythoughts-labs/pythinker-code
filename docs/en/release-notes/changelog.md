@@ -17,6 +17,92 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Agent-tracing dashboard.** Added `pythinker dashboard` — a local web UI for inspecting sessions, wire events, context messages, tool statistics, and usage over time. It is also reachable from the interactive shell via the `/reports` slash command (aliased `/dashboard`).
+- **Gemini finish_reason is now sticky once truncation is detected.** A second candidate with any non-`MAX_TOKENS` finish reason no longer overwrites a previously captured `"length"` signal at either the streaming or non-streaming path in the Google GenAI provider.
+- **Budget-exhausted and stuck-loop messages are now visible in the shell.** Both handoff messages were appended to context but never sent to the wire, so the interactive shell showed no feedback when a spend ceiling or stuck-loop exit fired. Both now emit a `TextPart` wire event so the message appears in the shell.
+- **Dark-theme prompt_toolkit border colors now match the TUI token constants.** Six stale slate hex values in `_PROMPT_STYLE_DARK` diverged from the current `border` and `border_muted` token values; they are now in sync and a parity test binds them going forward.
+- **Non-review successful agents now show a summary preview in the agent tree.** Completed subagents with a `summary_preview` now display a dim preview line in the RunAgents tree renderer (review runs continue to use the findings table instead).
+- **Non-string values in `required_mcp_servers` YAML are silently dropped.** Integers, booleans, and `null` entries were previously coerced to strings (`"1"`, `"False"`, `"None"`), creating permanently unsatisfiable MCP server names. Only actual string entries are now retained.
+
+- **Fixed MiniMax token-plan `/usage` accuracy.** The token-plan response now meters by
+  percentage (the count fields are 0) and reports reset times in milliseconds; the adapter was
+  reading the zero counts (showing "0 requests used") and treating milliseconds as seconds
+  (showing resets like "171d" for a 5-hour window). It now reads `*_remaining_percent` and
+  converts reset times correctly, so e.g. a week at 82% remaining shows "18% used" resetting in
+  hours, not days.
+- **GLM-5.2 (1M context) is now the default Z.AI model.** Logging in with Z.AI selects
+  `z-ai/glm-5.2` with its full 1,000,000-token context window. GLM-5.2 is absent from z.ai's
+  model-listing API, so it is pinned into the catalog and offered even when discovery omits it;
+  if z.ai later lists it, the API definition wins and it is shown once (no duplicate). Earlier
+  GLM models (5.1, 5, 5-turbo, 4.7, 4.5-air) remain available.
+- **Kimi K2.7 Code added, and a new Kimi Coding Plan provider.** `kimi-k2.7-code` is now the
+  default model on the Moonshot plan, and a separate "Kimi Coding Plan" provider
+  (`/login kimi`) targets Moonshot's Anthropic-compatible coding endpoint with `kimi-k2.7-code`.
+- **Verb spinner stays visible while a foreground tool or subagent runs.** The shimmering
+  "Working…/Thinking…" activity indicator now persists for the whole active turn — including
+  while a foreground tool (such as a shell-started server) or a subagent is executing — instead
+  of disappearing until the tool finished. This keeps long tool/subagent waits feeling alive
+  rather than frozen. An in-progress todo still swaps the verb for the todo title as before.
+- **Project instructions delivered as a separate authoritative message.** The merged
+  `AGENTS.md` is no longer baked into the system prompt; it is delivered as a session-start,
+  user-role `<system-reminder>` preamble, assembled fresh on every request from session
+  state. This keeps the project rules immune to two regressions a system-prompt move would
+  otherwise risk — context compaction can no longer summarize them away (they never enter the
+  persisted history) and the dynamic-injection token budget can no longer truncate them —
+  while keeping the system prompt free of per-project content. `pythinker system-prompt` shows
+  the reminder below a labeled divider so the dump stays faithful.
+- **Inspect the assembled system prompt.** New `pythinker system-prompt` command
+  renders and prints the fully-assembled system prompt for an agent
+  (`--agent <name>`, `--agent-file <path>`, `--work-dir <dir>`) — substituting the
+  live work directory, OS/shell, merged `AGENTS.md`, and discovered skills. It is
+  read-only: no session is created, no provider auth is required, and no MCP
+  servers are loaded.
+- **Bound parallel tool fan-out.** Parallel-safe tool calls in one turn still
+  overlap, but now up to a fixed concurrency cap (10) instead of without bound, so
+  a turn that fans out many readers (e.g. dozens of web fetches) can no longer open
+  an unbounded number of sockets/file handles at once. Mutating-tool ordering and
+  writer exclusivity are unchanged.
+- **Optional per-session spend ceiling.** New `loop_control.max_session_cost_usd`
+  config option (off by default). When set, a turn stops with a clear
+  budget-exhausted handoff message once the session's accumulated estimated cost
+  reaches the ceiling, instead of running to the step limit — and goal
+  auto-continuations and agent flows halt too. Best-effort: cost is `0` for models
+  with unknown pricing, so the ceiling never blocks when spend cannot be estimated.
+- **Sensitive host files always re-confirm.** Writes to shell startup files
+  (`.zshrc`, `.bash_profile`, …), `.git` internals/hooks, the custom `.githooks`
+  hooks directory, `.ssh`, `.vscode`, and git
+  credentials (`.gitconfig`, `.netrc`, `.git-credentials`) are now classified as a
+  distinct edit action that re-confirms every time — even under yolo/auto — and is
+  never recorded as session-approved, exactly like edits to pythinker's own config.
+  This closes an auto-approve gap where a `.git/hooks` write inside the workspace was
+  treated as an ordinary edit.
+- **Accept-edits mode.** New `/accept-edits` toggle auto-approves reversible
+  in-workspace ordinary file edits while still prompting for shell, destructive,
+  outside-workspace, config-surface, and sensitive host-file edits. It is
+  session-local (not persisted) and suppressed by safe mode. Pairs with the deny-set
+  above so a `.git/hooks` or shell-rc write is never swept into the auto-approve tier.
+- **Agents can declare required MCP servers.** A markdown agent's frontmatter may set
+  `required_mcp_servers: [..]`; spawning that agent (via `Agent` or `RunAgents`) is
+  rejected with a clear message when those servers are configured-and-absent, instead of
+  wasting a turn on an agent that cannot reach its tools. While MCP is still loading the
+  spawn is allowed (the servers may yet connect).
+- **UserPromptSubmit hooks can add context.** A non-blocking `UserPromptSubmit` hook's
+  `additionalContext` is now injected into the user turn as a system reminder, so the
+  model sees it as context for the prompt (previously only a hook *block* was honored).
+  Slash-command parsing still reads only the user's text, never the appended context.
+- **Stale-overwrite guard for file edits.** If you read a file and it then changes on
+  disk (edited by you in another window or by another tool), overwriting it with WriteFile
+  or editing it with StrReplaceFile is now rejected with "File has been modified since you
+  last read it" so external changes are not silently clobbered — read it again first. This
+  catches external edits that StrReplaceFile's exact-string matching alone would miss.
+  First-contact writes (a file you never read) are unaffected, and a tool's own write
+  refreshes the read-state so consecutive edits are never falsely flagged.
+- **Recover from output-token truncation.** When a response is cut off by the
+  output-token limit and makes no tool call, the turn no longer ends with a half-finished
+  answer treated as complete — the model is nudged to continue from where it stopped, up
+  to `loop_control.max_truncation_recoveries` times per turn (default 3; `0` disables).
+  pythinker-core now surfaces the provider's truncation signal so the loop can detect it.
+
 ## 0.44.0 (2026-06-13)
 
 - **Toggle auto-update from the CLI.** Running `/update` now opens a menu — *Check for updates now* (the default, so a bare `/update` + Enter still checks immediately) or *Auto-update on startup* with its current state — so the toggle is discoverable without knowing a subcommand. `/update auto on|off` still sets it directly, and `/update auto` with no value opens an interactive On/Off picker (cursor defaulted to the current setting). The same toggle appears in the interactive `/settings` panel, and `pythinker info` reports the auto-update status. All surfaces show the *effective* state — an external override (`PYTHINKER_CLI_NO_AUTO_UPDATE` or a source checkout) is surfaced as the reason, renders the `/settings` row read-only, and makes `/update auto` report the read-only state rather than popping a no-op picker, so the toggle is never a silent no-op.

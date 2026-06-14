@@ -1,4 +1,4 @@
-"""Shared utilities for pythinker vis and pythinker web server startup."""
+"""Shared utilities for pythinker dashboard and pythinker web server startup."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import textwrap
 
 from pythinker_code.ui.terminal_capabilities import ascii_glyphs_enabled
 
-# Shared "PYTHINKER" wordmark used by the web and vis startup banners.
+# Shared "PYTHINKER" wordmark used by the web and dashboard startup banners.
 PYTHINKER_BANNER_ART = [
     "<center>██████╗ ██╗   ██╗████████╗██╗  ██╗██╗███╗   ██╗██╗  ██╗███████╗██████╗ ",
     "<center>██╔══██╗╚██╗ ██╔╝╚══██╔══╝██║  ██║██║████╗  ██║██║ ██╔╝██╔════╝██╔══██╗",

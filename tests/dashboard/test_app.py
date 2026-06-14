@@ -4,14 +4,30 @@ import io
 import zipfile
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
+from pythinker_code.dashboard.api import system as dashboard_system_api
+from pythinker_code.dashboard.app import create_app, loopback_browser_host
 from pythinker_code.metadata import Metadata, WorkDirMeta, save_metadata
-from pythinker_code.vis.api import system as vis_system_api
-from pythinker_code.vis.app import create_app
 
 
-def test_vis_sessions_include_session_dir(
+@pytest.mark.parametrize(
+    ("host", "expected"),
+    [
+        ("0.0.0.0", "localhost"),
+        ("::", "localhost"),
+        ("127.0.0.1", "127.0.0.1"),
+        ("192.168.1.5", "192.168.1.5"),
+    ],
+)
+def test_loopback_browser_host_maps_wildcard_to_localhost(host: str, expected: str) -> None:
+    # Wildcard bind addresses are not valid browser origins, so they must fall
+    # back to localhost (which is the only loopback entry in allowed_origins).
+    assert loopback_browser_host(host) == expected
+
+
+def test_dashboard_sessions_include_session_dir(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -27,7 +43,7 @@ def test_vis_sessions_include_session_dir(
     (session_dir / "context.jsonl").write_text("{}\n", encoding="utf-8")
 
     with TestClient(create_app()) as client:
-        response = client.get("/api/vis/sessions")
+        response = client.get("/api/dashboard/sessions")
 
     assert response.status_code == 200
     payload = response.json()
@@ -37,7 +53,7 @@ def test_vis_sessions_include_session_dir(
     assert payload[0]["work_dir"] == str(work_dir)
 
 
-def test_vis_app_mounts_open_in_route() -> None:
+def test_dashboard_app_mounts_open_in_route() -> None:
     with TestClient(create_app()) as client:
         response = client.post(
             "/api/open-in",
@@ -47,11 +63,11 @@ def test_vis_app_mounts_open_in_route() -> None:
     assert response.status_code == 400
 
 
-def test_vis_capabilities_report_open_in_support(monkeypatch) -> None:
-    monkeypatch.setattr(vis_system_api.sys, "platform", "linux")
+def test_dashboard_capabilities_report_open_in_support(monkeypatch) -> None:
+    monkeypatch.setattr(dashboard_system_api.sys, "platform", "linux")
 
     with TestClient(create_app()) as client:
-        response = client.get("/api/vis/capabilities")
+        response = client.get("/api/dashboard/capabilities")
 
     assert response.status_code == 200
     assert response.json() == {"open_in_supported": False}
@@ -65,13 +81,13 @@ def _zip_bytes(entries: dict[str, str]) -> bytes:
     return buf.getvalue()
 
 
-def test_vis_import_rejects_zip_slip_entries(monkeypatch, tmp_path: Path) -> None:
+def test_dashboard_import_rejects_zip_slip_entries(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
     payload = _zip_bytes({"wire.jsonl": "{}\n", "../evil.txt": "owned"})
 
     with TestClient(create_app()) as client:
         response = client.post(
-            "/api/vis/sessions/import",
+            "/api/dashboard/sessions/import",
             files={"file": ("session.zip", payload, "application/zip")},
         )
 
@@ -80,13 +96,13 @@ def test_vis_import_rejects_zip_slip_entries(monkeypatch, tmp_path: Path) -> Non
     assert not (tmp_path / "evil.txt").exists()
 
 
-def test_vis_import_rejects_dot_member(monkeypatch, tmp_path: Path) -> None:
+def test_dashboard_import_rejects_dot_member(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
     payload = _zip_bytes({"wire.jsonl": "{}\n", ".": ""})
 
     with TestClient(create_app()) as client:
         response = client.post(
-            "/api/vis/sessions/import",
+            "/api/dashboard/sessions/import",
             files={"file": ("session.zip", payload, "application/zip")},
         )
 
@@ -96,13 +112,13 @@ def test_vis_import_rejects_dot_member(monkeypatch, tmp_path: Path) -> None:
     assert not imported_root.exists() or list(imported_root.iterdir()) == []
 
 
-def test_vis_import_accepts_safe_zip(monkeypatch, tmp_path: Path) -> None:
+def test_dashboard_import_accepts_safe_zip(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("PYTHINKER_SHARE_DIR", str(tmp_path))
     payload = _zip_bytes({"session/wire.jsonl": "{}\n"})
 
     with TestClient(create_app()) as client:
         response = client.post(
-            "/api/vis/sessions/import",
+            "/api/dashboard/sessions/import",
             files={"file": ("session.zip", payload, "application/zip")},
         )
 

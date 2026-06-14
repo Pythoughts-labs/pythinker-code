@@ -7,20 +7,20 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VIS_DIR = ROOT / "vis"
-DIST_DIR = VIS_DIR / "dist"
-NODE_MODULES = VIS_DIR / "node_modules"
-STATIC_DIR = ROOT / "src" / "pythinker_code" / "vis" / "static"
+DASHBOARD_DIR = ROOT / "dashboard"
+DIST_DIR = DASHBOARD_DIR / "dist"
+NODE_MODULES = DASHBOARD_DIR / "node_modules"
+STATIC_DIR = ROOT / "src" / "pythinker_code" / "dashboard" / "static"
 
 
-REQUIRED_VIS_TYPE_FILES = (
+REQUIRED_DASHBOARD_TYPE_FILES = (
     NODE_MODULES / "vite" / "client.d.ts",
     NODE_MODULES / "typescript" / "lib" / "typescript.d.ts",
 )
 
 
-def has_required_vis_type_files() -> bool:
-    return all(path.is_file() for path in REQUIRED_VIS_TYPE_FILES)
+def has_required_dashboard_type_files() -> bool:
+    return all(path.is_file() for path in REQUIRED_DASHBOARD_TYPE_FILES)
 
 
 def resolve_npm() -> str | None:
@@ -51,8 +51,10 @@ def check_node_version() -> bool:
                 file=sys.stderr,
             )
             return False
-    except Exception:
-        pass
+    except Exception as exc:
+        # Best-effort probe: don't block the build on a probe failure, but make
+        # the failure visible instead of silently reporting the version as OK.
+        print(f"Could not verify Node.js version (proceeding anyway): {exc}", file=sys.stderr)
     return True
 
 
@@ -71,26 +73,29 @@ def run_npm(npm: str, args: list[str]) -> int:
 def main() -> int:
     npm = resolve_npm()
     if npm is None:
-        print("npm not found. Install Node.js (npm) to build the vis UI.", file=sys.stderr)
+        print("npm not found. Install Node.js (npm) to build the dashboard UI.", file=sys.stderr)
         return 1
 
     if not check_node_version():
         return 1
 
-    needs_install = (not NODE_MODULES.exists()) or (not has_required_vis_type_files())
+    needs_install = (not NODE_MODULES.exists()) or (not has_required_dashboard_type_files())
     if needs_install:
         if NODE_MODULES.exists():
-            print("vis dependencies are incomplete; reinstalling with devDependencies...")
-        returncode = run_npm(npm, ["--prefix", str(VIS_DIR), "ci", "--include=dev"])
+            print("dashboard dependencies are incomplete; reinstalling with devDependencies...")
+        returncode = run_npm(npm, ["--prefix", str(DASHBOARD_DIR), "ci", "--include=dev"])
         if returncode != 0:
             return returncode
 
-    returncode = run_npm(npm, ["--prefix", str(VIS_DIR), "run", "build"])
+    returncode = run_npm(npm, ["--prefix", str(DASHBOARD_DIR), "run", "build"])
     if returncode != 0:
         return returncode
 
     if not DIST_DIR.exists():
-        print("vis/dist not found after build. Check the vis build output.", file=sys.stderr)
+        print(
+            "dashboard/dist not found after build. Check the dashboard build output.",
+            file=sys.stderr,
+        )
         return 1
 
     if STATIC_DIR.exists():
@@ -98,7 +103,7 @@ def main() -> int:
     STATIC_DIR.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(DIST_DIR, STATIC_DIR)
 
-    print(f"Synced vis UI to {STATIC_DIR}")
+    print(f"Synced dashboard UI to {STATIC_DIR}")
     return 0
 
 

@@ -1,7 +1,8 @@
-"""Vis API for aggregate statistics across all sessions."""
+"""Dashboard API for aggregate statistics across all sessions."""
 
 from __future__ import annotations
 
+import logging
 import time
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
@@ -9,11 +10,12 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from pythinker_code.dashboard.api.sessions import collect_events, get_work_dir_for_hash
 from pythinker_code.share import get_share_dir
-from pythinker_code.vis.api.sessions import collect_events, get_work_dir_for_hash
 from pythinker_code.wire.file import WireFileMetadata, parse_wire_file_line
 
-router = APIRouter(prefix="/api/vis", tags=["vis"])
+router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
+logger = logging.getLogger(__name__)
 
 
 # Simple in-memory cache: (result, timestamp)
@@ -142,6 +144,12 @@ def get_statistics() -> dict[str, Any]:
                                     )
                                     session_output_tokens += int(tu.get("output", 0))
             except Exception:
+                logger.warning(
+                    "Skipping session %s from statistics: failed to read %s",
+                    session_dir.name,
+                    wire_path,
+                    exc_info=True,
+                )
                 continue
 
             total_turns += session_turns

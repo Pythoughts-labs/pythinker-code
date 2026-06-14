@@ -8,10 +8,10 @@ Agent Tracing Visualizer is a browser-based visualization dashboard for inspecti
 
 ## Launch
 
-Run `pythinker vis` in the terminal to start the Visualizer:
+Run `pythinker dashboard` in the terminal to start the Visualizer:
 
 ```sh
-pythinker vis
+pythinker dashboard
 ```
 
 The server automatically opens a browser after startup. The default address is `http://127.0.0.1:5495`.
@@ -34,13 +34,13 @@ Examples:
 
 ```sh
 # Specify port
-pythinker vis --port 8080
+pythinker dashboard --port 8080
 
 # Don't automatically open browser
-pythinker vis --no-open
+pythinker dashboard --no-open
 
 # Share on LAN (auto-detects and displays LAN IP)
-pythinker vis -n
+pythinker dashboard -n
 ```
 
 ## Features

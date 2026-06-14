@@ -744,8 +744,8 @@ make test-pythinker-sdk   # SDK only
 ```sh
 make web-back             # web backend
 make web-front            # web frontend
-make vis-back             # vis backend
-make vis-front            # vis frontend
+make dashboard-back       # dashboard backend
+make dashboard-front      # dashboard frontend
 ```
 
 </td>
@@ -770,7 +770,7 @@ make help                 # all targets
 
 ```
 pythinker-code/
-├── 📦 src/pythinker_code/         CLI runtime · tools · UIs · ACP · MCP · hooks · plugins · skills · web · vis backends
+├── 📦 src/pythinker_code/         CLI runtime · tools · UIs · ACP · MCP · hooks · plugins · skills · web · dashboard backends
 ├── 🧱 packages/
 │   ├── pythinker-core/           Provider-agnostic message, tool, and chat-provider abstractions
 │   ├── pythinker-host/           Local/remote host filesystem and command execution

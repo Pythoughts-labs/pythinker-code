@@ -15,6 +15,7 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Agent-tracing dashboard.** Added `pythinker dashboard` — a local web UI for inspecting sessions, wire events, context messages, tool statistics, and usage over time. It is also reachable from the interactive shell via the `/reports` slash command (aliased `/dashboard`).
 - **Gemini finish_reason is now sticky once truncation is detected.** A second candidate with any non-`MAX_TOKENS` finish reason no longer overwrites a previously captured `"length"` signal at either the streaming or non-streaming path in the Google GenAI provider.
 - **Budget-exhausted and stuck-loop messages are now visible in the shell.** Both handoff messages were appended to context but never sent to the wire, so the interactive shell showed no feedback when a spend ceiling or stuck-loop exit fired. Both now emit a `TextPart` wire event so the message appears in the shell.
 - **Dark-theme prompt_toolkit border colors now match the TUI token constants.** Six stale slate hex values in `_PROMPT_STYLE_DARK` diverged from the current `border` and `border_muted` token values; they are now in sync and a parity test binds them going forward.

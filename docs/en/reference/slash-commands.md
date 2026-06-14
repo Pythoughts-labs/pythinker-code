@@ -523,7 +523,7 @@ Switch to Web UI. Pythinker Code will start a Web UI server and open the current
 
 ### `/reports`
 
-Open session reports in the Agent Tracing Visualizer. Pythinker Code will start the visualizer server and open the current session's tracing view in the browser, where you can inspect Wire event timelines, context messages, and usage statistics. See [Agent Tracing Visualizer](./pythinker-vis.md) for details.
+Open session reports in the Agent Tracing Visualizer (alias: `/dashboard`). Pythinker Code will start the visualizer server and open the current session's tracing view in the browser, where you can inspect Wire event timelines, context messages, and usage statistics. See [Agent Tracing Visualizer](./pythinker-dashboard.md) for details.
 
 ## Command completion
 

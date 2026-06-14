@@ -79,7 +79,7 @@ lazy_modules = [
     "pythinker_code.cli.info",
     "pythinker_code.cli.export",
     "pythinker_code.cli.mcp",
-    "pythinker_code.cli.vis",
+    "pythinker_code.cli.dashboard",
     "pythinker_code.cli.web",
 ]
 for name in lazy_modules:
@@ -91,7 +91,7 @@ assert all(name not in sys.modules for name in lazy_modules)
 
 result = CliRunner().invoke(cli, ["--help"])
 assert result.exit_code == 0, result.output
-for name in ("info", "export", "mcp", "vis", "web"):
+for name in ("info", "export", "mcp", "dashboard", "web"):
     assert name in result.output
 assert all(name not in sys.modules for name in lazy_modules)
 print("ok")
@@ -110,7 +110,7 @@ lazy_modules = [
     "pythinker_code.cli.info",
     "pythinker_code.cli.export",
     "pythinker_code.cli.mcp",
-    "pythinker_code.cli.vis",
+    "pythinker_code.cli.dashboard",
     "pythinker_code.cli.web",
 ]
 for name in lazy_modules:
@@ -124,7 +124,7 @@ assert '"pythinker_code_version"' in result.output
 assert "pythinker_code.cli.info" in sys.modules
 assert "pythinker_code.cli.export" not in sys.modules
 assert "pythinker_code.cli.mcp" not in sys.modules
-assert "pythinker_code.cli.vis" not in sys.modules
+assert "pythinker_code.cli.dashboard" not in sys.modules
 assert "pythinker_code.cli.web" not in sys.modules
 print("ok")
 """

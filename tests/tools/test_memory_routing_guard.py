@@ -58,7 +58,7 @@ def test_file_reference_trips(content: str) -> None:
     [
         "Project uses pytest with xdist",
         "User prefers concise answers",
-        "The web and vis frontends are gitignored",
+        "The web and dashboard frontends are gitignored",
         "Sessions are stored under the share directory",
     ],
 )

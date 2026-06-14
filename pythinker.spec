@@ -3,7 +3,7 @@
 import os
 from pythinker_code.utils.pyinstaller import datas, hiddenimports, require_ui_assets
 
-# Fail loud when the gitignored web/vis bundles haven't been built; a freeze
+# Fail loud when the gitignored web/dashboard bundles haven't been built; a freeze
 # without them ships a binary whose web UI 404s on "/".
 require_ui_assets()
 
