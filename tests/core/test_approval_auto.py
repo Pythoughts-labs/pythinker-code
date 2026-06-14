@@ -395,6 +395,109 @@ async def test_config_edit_never_session_approvable_and_prompts_under_yolo() -> 
     assert not approved and prompted
 
 
+def test_dangerous_host_path_classifier() -> None:
+    """Sensitive host files/dirs (shell startup, VCS internals, credentials, editor
+    task configs) are recognized; ordinary source and lookalikes are not."""
+    from pythinker_host.path import HostPath
+
+    from pythinker_code.utils.path import is_dangerous_host_path
+
+    for p in (
+        "/home/u/.zshrc",
+        "/home/u/.bash_profile",
+        "/repo/.git/hooks/pre-commit",
+        "/repo/.git/config",
+        "/home/u/.gitconfig",
+        "/home/u/.ssh/config",
+        "/home/u/.ssh/authorized_keys",
+        "/repo/.vscode/tasks.json",
+        "/home/u/.netrc",
+    ):
+        assert is_dangerous_host_path(HostPath(p)), p
+    for p in (
+        "/repo/src/main.py",
+        "/repo/.gitignore",  # not .git/
+        "/repo/.github/workflows/ci.yml",  # not .git/, CI runs remotely
+        "/repo/README.md",
+        "/repo/docs/zshrc.md",
+    ):
+        assert not is_dangerous_host_path(HostPath(p)), p
+
+
+def test_classify_edit_action_flags_dangerous_inside_workspace() -> None:
+    """A dangerous path INSIDE the workspace classifies as EDIT_DANGEROUS, not a plain
+    EDIT — so the accept-edits auto-approve tier can never sweep a `.git/hooks` write in."""
+    from pythinker_host.path import HostPath
+
+    from pythinker_code.tools.file import FileActions, classify_edit_action
+
+    work_dir = HostPath("/repo")
+    assert (
+        classify_edit_action(HostPath("/repo/.git/hooks/pre-commit"), work_dir, [])
+        == FileActions.EDIT_DANGEROUS
+    )
+    assert (
+        classify_edit_action(HostPath("/repo/.vscode/tasks.json"), work_dir, [])
+        == FileActions.EDIT_DANGEROUS
+    )
+    # An ordinary in-workspace file is still a plain EDIT.
+    assert classify_edit_action(HostPath("/repo/src/main.py"), work_dir, []) == FileActions.EDIT
+
+
+async def test_dangerous_edit_never_session_approvable_and_prompts_under_yolo() -> None:
+    """A write to a sensitive host file re-confirms every time — not auto-approved by
+    yolo and never recorded as session-approved (mirrors the config-surface gate)."""
+
+    def _write_call() -> ToolCall:
+        return ToolCall(
+            id="d1",
+            function=ToolCall.FunctionBody(
+                name="WriteFile",
+                arguments=json.dumps(
+                    {"path": ".git/hooks/pre-commit", "content": "x", "mode": "overwrite"}
+                ),
+            ),
+        )
+
+    async def _drive(
+        approval: Approval, runtime: ApprovalRuntime, response: ApprovalResponseKind
+    ) -> tuple[bool, bool]:
+        token = current_tool_call.set(_write_call())
+        try:
+            waiter = asyncio.create_task(
+                approval.request(
+                    "WriteFile", FileActions.EDIT_DANGEROUS, "Write file `.git/hooks/pre-commit`"
+                )
+            )
+            prompted = False
+            for _ in range(1000):
+                if waiter.done():
+                    break
+                if pending := runtime.list_pending():
+                    prompted = True
+                    runtime.resolve(pending[0].id, response)
+                    break
+                await asyncio.sleep(0)
+            return bool(await waiter), prompted
+        finally:
+            current_tool_call.reset(token)
+
+    # Under yolo, a dangerous edit still prompts (not auto-approved).
+    runtime = ApprovalRuntime()
+    yolo = Approval(state=ApprovalState(yolo=True))
+    yolo.set_runtime(runtime)
+    approved, prompted = await _drive(yolo, runtime, "approve")
+    assert approved and prompted
+
+    # 'Approve for session' on a dangerous edit does not record it -> the next one prompts.
+    runtime2 = ApprovalRuntime()
+    approval = Approval(state=ApprovalState())
+    approval.set_runtime(runtime2)
+    approved, prompted = await _drive(approval, runtime2, "approve_for_session")
+    assert approved and prompted
+    assert approval._state.auto_approve_actions == set()
+
+
 def test_tool_destructive_reason_gates_background_shell() -> None:
     from pythinker_code.soul.permission import tool_destructive_reason
 

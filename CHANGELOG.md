@@ -32,6 +32,13 @@ GitHub Releases page; `0.8.0` is the new starting line.
   reaches the ceiling, instead of running to the step limit — and goal
   auto-continuations and agent flows halt too. Best-effort: cost is `0` for models
   with unknown pricing, so the ceiling never blocks when spend cannot be estimated.
+- **Sensitive host files always re-confirm.** Writes to shell startup files
+  (`.zshrc`, `.bash_profile`, …), `.git` internals/hooks, `.ssh`, `.vscode`, and git
+  credentials (`.gitconfig`, `.netrc`, `.git-credentials`) are now classified as a
+  distinct edit action that re-confirms every time — even under yolo/auto — and is
+  never recorded as session-approved, exactly like edits to pythinker's own config.
+  This closes an auto-approve gap where a `.git/hooks` write inside the workspace was
+  treated as an ordinary edit.
 
 ## 0.44.0 (2026-06-13)
 
