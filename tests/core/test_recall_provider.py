@@ -58,6 +58,22 @@ async def test_build_recall_block_frames_content_as_past_context():
     assert "do not resume unprompted" in block
 
 
+async def test_build_recall_block_warns_recalled_facts_may_be_stale():
+    """Recalled notes are a point-in-time snapshot: a file, flag, path, or decision
+    they name may no longer exist. The block must tell the model the notes can be
+    stale and to verify before relying on one (C13: stale data must not be presented
+    as authoritative)."""
+    block = await build_recall_block(
+        candidates=[_block("use the lexical retriever")],
+        query=RecallQuery(text="retriever"),
+        open_todos=[],
+        budget_tokens=1000,
+    )
+    assert "use the lexical retriever" in block  # the note was recalled
+    assert "stale" in block.lower()
+    assert "verify" in block.lower()
+
+
 async def test_build_recall_block_empty_when_nothing():
     block = await build_recall_block(
         candidates=[],
