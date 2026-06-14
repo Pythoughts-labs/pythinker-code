@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import re
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -72,11 +71,12 @@ def test_check_required_mcp_servers_gates_absent_server(runtime: Runtime) -> Non
     from pythinker_code.subagents import AgentTypeDefinition, ToolPolicy
     from pythinker_code.tools.agent import AgentTool
 
+    assert runtime.subagent_store is not None  # populated by the runtime fixture
     runtime.labor_market.add_builtin_type(
         AgentTypeDefinition(
             name="needs_db",
             description="needs the db MCP server",
-            agent_file=Path("/tmp/needs_db.yaml"),
+            agent_file=runtime.subagent_store.root / "needs_db.yaml",
             tool_policy=ToolPolicy(mode="inherit"),
             required_mcp_servers=("db",),
         )
@@ -85,7 +85,8 @@ def test_check_required_mcp_servers_gates_absent_server(runtime: Runtime) -> Non
 
     runtime.mcp_status = lambda: None  # no MCP configured -> required server absent
     err = tool.check_required_mcp_servers("needs_db")
-    assert err is not None and "db" in err.message
+    assert err is not None
+    assert "db" in err.message
 
     runtime.mcp_status = lambda: _mcp_snapshot(True, [])  # still loading -> allow
     assert tool.check_required_mcp_servers("needs_db") is None

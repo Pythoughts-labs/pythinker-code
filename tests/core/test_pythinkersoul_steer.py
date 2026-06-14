@@ -452,7 +452,7 @@ class _SequenceStreamedMessage:
         return None
 
     @property
-    def finish_reason(self):
+    def finish_reason(self) -> str | None:
         return None
 
 

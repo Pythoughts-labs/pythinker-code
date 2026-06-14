@@ -207,7 +207,7 @@ async def auto(soul: PythinkerSoul, args: str):
 
 
 @registry.command(name="accept-edits")
-async def accept_edits(soul: PythinkerSoul, args: str):
+async def accept_edits(soul: PythinkerSoul, args: str) -> None:
     """Toggle accept-edits mode (auto-approve reversible in-workspace file edits)"""
     approval = soul.runtime.approval
     if approval.is_accept_edits():
