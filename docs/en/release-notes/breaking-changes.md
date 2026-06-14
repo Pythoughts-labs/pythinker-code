@@ -4,6 +4,10 @@ This page documents breaking changes in Pythinker Code releases and provides mig
 
 ## Unreleased
 
+## 0.44.0 (2026-06-13)
+
+No configuration or session-data breaking changes. The Windows in-app updater fix and the new auto-update toggle are backward compatible — existing config keys, the `pythinker update` command, and persisted session data are unaffected.
+
 ## 0.43.0 (2026-06-13)
 
 No configuration or session-data breaking changes. One behavior change affects update handling:

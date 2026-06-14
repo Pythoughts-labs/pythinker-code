@@ -15,9 +15,13 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+## 0.44.0 (2026-06-13)
+
+- **Toggle auto-update from the CLI.** Running `/update` now opens a menu — *Check for updates now* (the default, so a bare `/update` + Enter still checks immediately) or *Auto-update on startup* with its current state — so the toggle is discoverable without knowing a subcommand. `/update auto on|off` still sets it directly, and `/update auto` with no value opens an interactive On/Off picker (cursor defaulted to the current setting). The same toggle appears in the interactive `/settings` panel, and `pythinker info` reports the auto-update status. All surfaces show the *effective* state — an external override (`PYTHINKER_CLI_NO_AUTO_UPDATE` or a source checkout) is surfaced as the reason, renders the `/settings` row read-only, and makes `/update auto` report the read-only state rather than popping a no-op picker, so the toggle is never a silent no-op.
 - **Windows in-app update no longer shows a spurious "could not close the program" error.** The native installer now waits for the launching `pythinker.exe` to fully exit (its PID is passed via `/PID`) before its Restart Manager scan runs, so the scan no longer races the launcher's teardown into a false "close the program and retry" dialog. The update already succeeded in that case; now it completes cleanly without the alarming prompt.
 - **Simplified the Windows pip/uv/pipx update path.** Now that every shipped Windows install updates through the native installer, the Windows-only detached-spawn upgrade helper is removed; the remaining pip/uv/pipx path (a Windows source checkout, or any macOS/Linux install) runs the upgrade inline like POSIX, surfacing real command output and errors instead of a fire-and-forget process.
-- **Toggle auto-update from the CLI.** Running `/update` now opens a menu — *Check for updates now* (the default, so a bare `/update` + Enter still checks immediately) or *Auto-update on startup* with its current state — so the toggle is discoverable without knowing a subcommand. `/update auto on|off` still sets it directly, and `/update auto` with no value opens an interactive On/Off picker (cursor defaulted to the current setting). The same toggle appears in the interactive `/settings` panel, and `pythinker info` reports the auto-update status. All surfaces show the *effective* state — an external override (`PYTHINKER_CLI_NO_AUTO_UPDATE` or a source checkout) is surfaced as the reason, renders the `/settings` row read-only, and makes `/update auto` report the read-only state rather than popping a no-op picker, so the toggle is never a silent no-op.
+
+Upgrade with `pythinker update`, `pip install --upgrade pythinker-code==0.44.0`, or use the native installer for your platform from the [Releases page](https://github.com/Pythoughts-labs/pythinker-code/releases/latest).
 
 ## 0.43.0 (2026-06-13)
 
