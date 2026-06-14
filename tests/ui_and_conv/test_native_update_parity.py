@@ -8,6 +8,7 @@ in-shell run_update_prompt flow.
 
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 from typing import cast
 
@@ -85,35 +86,6 @@ def test_windows_source_checkout_keeps_python_upgrade_command(monkeypatch):
     ]
 
 
-def test_windows_upgrade_helper_uses_direct_command_not_powershell(monkeypatch):
-    monkeypatch.setattr(update, "_is_windows", lambda: True)
-
-    def fake_which(name: str) -> str | None:
-        return {"uv": "C:\\Program Files\\uv\\uv.exe"}.get(name)
-
-    monkeypatch.setattr(update, "which", fake_which)
-
-    captured: dict[str, object] = {}
-
-    def fake_popen(args, **kwargs):
-        captured["args"] = args
-        captured["kwargs"] = kwargs
-        return object()
-
-    monkeypatch.setattr(update.subprocess, "Popen", fake_popen)
-
-    assert update._spawn_detached_windows_upgrade(["uv", "tool", "upgrade", "pythinker code"])
-
-    args = cast(list[str], captured["args"])
-    assert args == ["C:\\Program Files\\uv\\uv.exe", "tool", "upgrade", "pythinker code"]
-    assert "powershell" not in " ".join(args).lower()
-    assert "encoded" not in " ".join(args).lower()
-
-    kwargs = cast(dict[str, object], captured["kwargs"])
-    assert cast(int, kwargs["creationflags"]) & 0x00000010  # CREATE_NEW_CONSOLE
-    assert kwargs["close_fds"] is True
-
-
 async def test_shell_auto_update_toast_shows_new_version_immediately(monkeypatch):
     import pythinker_code.ui.shell as shell_mod
 
@@ -181,11 +153,15 @@ def test_windows_installer_launches_signed_inno_directly(monkeypatch, tmp_path):
         "/CURRENTUSER",
         "/CLOSEAPPLICATIONS",
         "/NORESTARTAPPLICATIONS",
+        f"/PID={os.getpid()}",
     ]
     assert "powershell" not in " ".join(args).lower()
     assert "encoded" not in " ".join(args).lower()
     assert "/VERYSILENT" not in args
     assert "/SUPPRESSMSGBOXES" not in args
+    # The installer waits on this PID before its Restart Manager scan so the
+    # launcher's teardown can't race it into a spurious "could not close" prompt.
+    assert args[-1] == f"/PID={os.getpid()}"
 
     kwargs = cast(dict[str, object], captured["kwargs"])
     assert cast(int, kwargs["creationflags"]) & 0x00000200  # CREATE_NEW_PROCESS_GROUP

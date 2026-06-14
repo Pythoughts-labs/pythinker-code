@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
@@ -692,8 +693,13 @@ async def test_resolve_latest_version_can_force_refresh(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_do_update_on_windows_spawns_detached_and_exits(monkeypatch, tmp_path):
-    spawned: list[list[str]] = []
+async def test_do_update_on_windows_runs_upgrade_inline_without_detaching(monkeypatch, tmp_path):
+    # After the native-installer migration, the only Windows install that still
+    # reaches the pip/uv/pipx branch is a source checkout, where the running
+    # executable is the interpreter, not a file the upgrade replaces. There is no
+    # binary lock to dodge, so the upgrade runs inline like POSIX: no detached
+    # spawn, no SystemExit.
+    ran: list[list[str]] = []
 
     async def fake_get_latest(session):
         return "999.0.0"
@@ -701,32 +707,23 @@ async def test_do_update_on_windows_spawns_detached_and_exits(monkeypatch, tmp_p
     async def fake_unavailable(session, latest_version: str, upgrade_command: list[str]):
         return None
 
+    def fake_run_upgrade_command(command, *, print_output: bool, output_callback):
+        ran.append(command)
+        return 0
+
     monkeypatch.setattr(update, "LATEST_VERSION_FILE", tmp_path / "latest.txt")
     monkeypatch.setattr(update, "_get_latest_version", fake_get_latest)
     monkeypatch.setattr(update, "_update_candidate_unavailable_reason", fake_unavailable)
     monkeypatch.setattr(update, "_is_windows", lambda: True)
+    monkeypatch.setattr(
+        update, "_detect_upgrade_command", lambda: ["uv", "tool", "upgrade", "pythinker-code"]
+    )
+    monkeypatch.setattr(update, "_run_upgrade_command", fake_run_upgrade_command)
 
-    def fake_spawn(cmd: list[str]) -> bool:
-        spawned.append(cmd)
-        return True
+    result = await update.do_update(print_output=False, check_only=False)
 
-    monkeypatch.setattr(update, "_spawn_detached_windows_upgrade", fake_spawn)
-
-    async def _noop_sleep(*_a, **_k):
-        return None
-
-    monkeypatch.setattr(update.asyncio, "sleep", _noop_sleep)
-
-    def fake_run(*args, **kwargs):
-        raise AssertionError("subprocess.run must not be called on Windows path")
-
-    monkeypatch.setattr(update.subprocess, "run", fake_run)
-
-    with pytest.raises(SystemExit) as excinfo:
-        await update.do_update(print_output=False, check_only=False)
-
-    assert excinfo.value.code == 0
-    assert spawned and "pythinker-code" in spawned[0]
+    assert result is update.UpdateResult.UPDATED
+    assert ran == [["uv", "tool", "upgrade", "pythinker-code"]]
 
 
 def test_run_upgrade_command_streams_subprocess_output(monkeypatch):
@@ -824,27 +821,6 @@ async def test_do_update_uses_native_installer_marker(monkeypatch, tmp_path):
     assert native_versions == ["999.0.0"]
 
 
-def test_spawn_detached_windows_upgrade_uses_real_command_not_powershell(monkeypatch):
-    launched: list[tuple[list[str], dict[str, object]]] = []
-
-    monkeypatch.setattr(update, "_is_windows", lambda: True)
-    monkeypatch.setattr(update, "which", lambda name: f"C:\\Tools\\{name}.exe")
-
-    def fake_popen(args, **kwargs):
-        launched.append((args, kwargs))
-        return object()
-
-    monkeypatch.setattr(update.subprocess, "Popen", fake_popen)
-
-    assert update._spawn_detached_windows_upgrade(["uv", "tool", "upgrade", "pythinker-code"])
-    assert launched == [
-        (
-            ["C:\\Tools\\uv.exe", "tool", "upgrade", "pythinker-code"],
-            {"creationflags": 0x00000010 | 0x00000200, "close_fds": True},
-        )
-    ]
-
-
 def test_spawn_detached_windows_installer_uses_inno_directly_not_powershell(monkeypatch, tmp_path):
     installer = tmp_path / "PythinkerSetup-999.0.0.exe"
     installer.write_bytes(b"")
@@ -868,6 +844,7 @@ def test_spawn_detached_windows_installer_uses_inno_directly_not_powershell(monk
                 "/CURRENTUSER",
                 "/CLOSEAPPLICATIONS",
                 "/NORESTARTAPPLICATIONS",
+                f"/PID={os.getpid()}",
             ],
             {"creationflags": 0x00000200, "close_fds": True},
         )
