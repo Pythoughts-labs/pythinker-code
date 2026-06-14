@@ -39,6 +39,11 @@ GitHub Releases page; `0.8.0` is the new starting line.
   never recorded as session-approved, exactly like edits to pythinker's own config.
   This closes an auto-approve gap where a `.git/hooks` write inside the workspace was
   treated as an ordinary edit.
+- **Accept-edits mode.** New `/accept-edits` toggle auto-approves reversible
+  in-workspace ordinary file edits while still prompting for shell, destructive,
+  outside-workspace, config-surface, and sensitive host-file edits. It is
+  session-local (not persisted) and suppressed by safe mode. Pairs with the deny-set
+  above so a `.git/hooks` or shell-rc write is never swept into the auto-approve tier.
 
 ## 0.44.0 (2026-06-13)
 

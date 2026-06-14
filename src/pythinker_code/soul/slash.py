@@ -206,6 +206,31 @@ async def auto(soul: PythinkerSoul, args: str):
         )
 
 
+@registry.command(name="accept-edits")
+async def accept_edits(soul: PythinkerSoul, args: str):
+    """Toggle accept-edits mode (auto-approve reversible in-workspace file edits)"""
+    approval = soul.runtime.approval
+    if approval.is_accept_edits():
+        approval.set_accept_edits(False)
+        wire_send(TextPart(text="Accept-edits disabled. File edits will require approval."))
+    else:
+        approval.set_accept_edits(True)
+        if approval.is_safe_mode():
+            # Safe mode suppresses every auto-approval path, so be truthful: edits will
+            # still prompt until safe mode is turned off.
+            message = (
+                "Accept-edits enabled, but safe mode is on — edits will still prompt until "
+                "you turn safe mode off."
+            )
+        else:
+            message = (
+                "Accept-edits enabled. Reversible in-workspace file edits are "
+                "auto-approved; shell, destructive, outside-workspace, and sensitive "
+                "host edits still prompt."
+            )
+        wire_send(TextPart(text=message))
+
+
 @registry.command
 async def plan(soul: PythinkerSoul, args: str):
     """Toggle plan mode. Usage: /plan [on|off|view|clear]"""

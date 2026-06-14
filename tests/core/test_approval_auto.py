@@ -498,6 +498,62 @@ async def test_dangerous_edit_never_session_approvable_and_prompts_under_yolo() 
     assert approval._state.auto_approve_actions == set()
 
 
+def _file_call(name: str, args: dict[str, object]) -> ToolCall:
+    return ToolCall(id="e1", function=ToolCall.FunctionBody(name=name, arguments=json.dumps(args)))
+
+
+async def _drive_action(
+    approval: Approval, runtime: ApprovalRuntime, tool_call: ToolCall, action: str
+) -> tuple[bool, bool]:
+    """Drive one approval request; return (approved, prompted)."""
+    token = current_tool_call.set(tool_call)
+    try:
+        waiter = asyncio.create_task(approval.request(tool_call.function.name, action, "x"))
+        prompted = False
+        for _ in range(1000):
+            if waiter.done():
+                break
+            if pending := runtime.list_pending():
+                prompted = True
+                runtime.resolve(pending[0].id, "approve")
+                break
+            await asyncio.sleep(0)
+        return bool(await waiter), prompted
+    finally:
+        current_tool_call.reset(token)
+
+
+async def test_accept_edits_auto_approves_only_ordinary_edits() -> None:
+    """Accept-edits auto-approves a reversible in-workspace edit without prompting, but
+    outside-workspace / config / dangerous host edits still prompt even with it on."""
+    runtime = ApprovalRuntime()
+    approval = Approval(state=ApprovalState())
+    approval.set_runtime(runtime)
+    approval.set_accept_edits(True)
+    write = _file_call("WriteFile", {"path": "src/x.py", "content": "x", "mode": "overwrite"})
+
+    # Ordinary in-workspace edit: auto-approved, no prompt.
+    approved, prompted = await _drive_action(approval, runtime, write, FileActions.EDIT)
+    assert approved and not prompted
+
+    # Non-ordinary edit actions still prompt.
+    for action in (FileActions.EDIT_DANGEROUS, FileActions.EDIT_OUTSIDE, FileActions.EDIT_CONFIG):
+        approved, prompted = await _drive_action(approval, runtime, write, action)
+        assert approved and prompted, action
+
+
+async def test_accept_edits_suppressed_by_safe_mode() -> None:
+    """Safe mode suppresses every auto-approval path, including accept-edits."""
+    runtime = ApprovalRuntime()
+    approval = Approval(state=ApprovalState(safe_mode=True))
+    approval.set_runtime(runtime)
+    approval.set_accept_edits(True)
+    write = _file_call("WriteFile", {"path": "src/x.py", "content": "x", "mode": "overwrite"})
+
+    approved, prompted = await _drive_action(approval, runtime, write, FileActions.EDIT)
+    assert approved and prompted  # prompted despite accept-edits, because safe_mode wins
+
+
 def test_tool_destructive_reason_gates_background_shell() -> None:
     from pythinker_code.soul.permission import tool_destructive_reason
 

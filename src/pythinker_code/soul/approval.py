@@ -151,6 +151,7 @@ class ApprovalState:
         auto: bool = False,
         runtime_auto: bool = False,
         safe_mode: bool = False,
+        accept_edits: bool = False,
         auto_deliberate: bool = False,
         auto_approve_actions: set[str] | None = None,
         on_change: Callable[[], None] | None = None,
@@ -165,6 +166,10 @@ class ApprovalState:
         """Invocation-only auto flag, e.g. ``--auto`` or ``--print``. Not persisted."""
         self.safe_mode = safe_mode
         """When true, all auto-approval paths are suppressed."""
+        self.accept_edits = accept_edits
+        """Session-local (not persisted). When true, reversible in-workspace ordinary file
+        edits are auto-approved; shell, destructive, outside-workspace, config-surface, and
+        dangerous host edits still prompt. Gated by ``safe_mode`` (like auto, unlike yolo)."""
         self.auto_deliberate = auto_deliberate
         """When true, destructive auto-approved actions must deliberate once first.
 
@@ -233,6 +238,18 @@ class Approval:
         self._state.safe_mode = safe_mode
         self._state.notify_change()
 
+    def set_accept_edits(self, accept_edits: bool) -> None:
+        """Toggle accept-edits mode (session-local, not persisted across restarts).
+
+        Auto-approves reversible in-workspace ordinary file edits; everything else —
+        shell, destructive, outside-workspace, config-surface, and dangerous host edits —
+        still prompts.
+        """
+        self._state.accept_edits = accept_edits
+
+    def is_accept_edits(self) -> bool:
+        return self._state.accept_edits
+
     def is_auto_approve(self) -> bool:
         """True when tool calls should be auto-approved.
 
@@ -297,10 +314,12 @@ class Approval:
         if str(action) == _EDIT_OUTSIDE_ACTION:
             return _OUTSIDE_WORKSPACE_UNATTENDED_FEEDBACK
         will_auto_resolve = (
-            self.is_auto_approve() and not self._is_always_confirm_edit(action)
-        ) or (
-            self._approval_key(tool_call, action) in self._state.auto_approve_actions
-            and self._is_session_approvable(tool_call, action)
+            (self.is_auto_approve() and not self._is_always_confirm_edit(action))
+            or self._accept_edits_covers(tool_call, action)
+            or (
+                self._approval_key(tool_call, action) in self._state.auto_approve_actions
+                and self._is_session_approvable(tool_call, action)
+            )
         )
         if will_auto_resolve:
             return None
@@ -412,6 +431,23 @@ class Approval:
         confirmed afresh.
         """
         return not self._is_destructive_call(tool_call) and not self._is_always_confirm_edit(action)
+
+    def _accept_edits_covers(self, tool_call: ToolCall, action: str) -> bool:
+        """Whether accept-edits mode auto-approves this call.
+
+        Covers only a reversible, in-workspace ordinary file edit (``FileActions.EDIT``)
+        that is not destructive. Outside-workspace, config-surface, and dangerous host edits
+        classify as other actions, so they are excluded and still prompt. Suppressed by
+        ``safe_mode`` (like auto, unlike yolo).
+        """
+        from pythinker_code.tools.file import FileActions
+
+        return (
+            self._state.accept_edits
+            and not self._state.safe_mode
+            and action == FileActions.EDIT.value
+            and not self._is_destructive_call(tool_call)
+        )
 
     @staticmethod
     def _deliberation_fingerprint(
@@ -555,6 +591,20 @@ class Approval:
                 "tool_approved",
                 tool_name=tool_call.function.name,
                 approval_mode="auto" if self.is_auto() else "yolo",
+            )
+            emit_current_tool_execution_started()
+            return ApprovalResult(approved=True)
+
+        # Accept-edits mode auto-approves a reversible in-workspace ordinary file edit,
+        # while shell, destructive, outside-workspace, config, and dangerous host edits
+        # still fall through to a prompt.
+        if self._accept_edits_covers(tool_call, action):
+            from pythinker_code.telemetry import track
+
+            track(
+                "tool_approved",
+                tool_name=tool_call.function.name,
+                approval_mode="accept_edits",
             )
             emit_current_tool_execution_started()
             return ApprovalResult(approved=True)
