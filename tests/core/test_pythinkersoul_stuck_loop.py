@@ -432,6 +432,47 @@ async def test_session_cost_ceiling_stops_turn(runtime: Runtime, tmp_path: Path)
 
 
 @pytest.mark.asyncio
+async def test_compaction_overspend_stops_before_next_step(
+    runtime: Runtime, tmp_path: Path
+) -> None:
+    """Proactive compaction makes its own billable LLM call. If that call pushes the
+    session over the spend ceiling, the turn must stop *before* the following (paid)
+    model step — not pay for compaction and then run a full step before the
+    top-of-loop guard re-fires next iteration.
+
+    The load-bearing assertion is ``generate_attempts == 0``: no model step ran after
+    the billed compaction. On the old code (single ceiling check at the loop top) the
+    extra ``_step()`` would run first (``generate_attempts == 1``), then the *next*
+    iteration's guard would still stop with ``budget_exhausted`` — so the stop_reason
+    and history-text checks below pass on both old and new code and only corroborate.
+    """
+    runtime.config.loop_control.max_session_cost_usd = 1.0
+    runtime.config.loop_control.max_steps_per_turn = 50
+    # Under the ceiling on entry (and > 0, so the entry guard passes for the right
+    # reason — _is_over_cost_ceiling fails open at 0.0 for unpriced models).
+    provider = _ScriptedToolCallProvider(["Ok"] * 10)
+    context, soul = _make_soul(runtime, provider, tmp_path)
+    soul._session_cost_usd = 0.5
+
+    async def _fake_compact(*_args: object, **_kwargs: object) -> None:
+        # The compaction LLM call's spend folds into the cumulative total, pushing
+        # the session strictly over the ceiling.
+        soul._session_cost_usd = 5.0
+
+    with (
+        patch("pythinker_code.soul.pythinkersoul.should_auto_compact", return_value=True),
+        patch.object(soul, "compact_context", _fake_compact),
+        patch("pythinker_code.telemetry.metrics.record_turn") as record_turn,
+    ):
+        await run_soul(soul, "go", _drain_ui_messages, asyncio.Event())
+
+    # No model step ran after the billed compaction (the fix; old code -> 1).
+    assert provider.generate_attempts == 0
+    assert record_turn.call_args.kwargs["stop_reason"] == "budget_exhausted"
+    assert "ceiling" in context.history[-1].extract_text(" ").lower()
+
+
+@pytest.mark.asyncio
 async def test_no_cost_ceiling_does_not_stop(runtime: Runtime, tmp_path: Path) -> None:
     """With no ceiling configured (default None), accumulated cost never stops the turn."""
     runtime.config.loop_control.max_session_cost_usd = None

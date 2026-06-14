@@ -1567,6 +1567,21 @@ class PythinkerSoul:
                         )
                         raise
 
+                    # Compaction makes a billable LLM call that folds into
+                    # self._session_cost_usd. Re-check the ceiling here so a session
+                    # just under the limit cannot pay for compaction *and* a full
+                    # step before the top-of-loop guard fires again next iteration.
+                    if _is_over_cost_ceiling(self._session_cost_usd, ceiling):
+                        assert ceiling is not None  # narrowed by _is_over_cost_ceiling
+                        message = _budget_exhausted_message(self._session_cost_usd, ceiling)
+                        await self._context.append_message(message)
+                        wire_send(TextPart(text=message.extract_text(" ")))
+                        return TurnOutcome(
+                            stop_reason="budget_exhausted",
+                            final_message=message,
+                            step_count=step_no - 1,  # this step's _step() never ran
+                        )
+
                 logger.debug("Beginning step {step_no}", step_no=step_no)
                 await self._checkpoint()
                 self._denwa_renji.set_n_checkpoints(self._context.n_checkpoints)
