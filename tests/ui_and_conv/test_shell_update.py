@@ -711,6 +711,9 @@ async def test_do_update_on_windows_runs_upgrade_inline_without_detaching(monkey
         ran.append(command)
         return 0
 
+    def fail_on_detach(*_a, **_k):
+        raise AssertionError("Windows upgrade must run inline, not spawn a detached process")
+
     monkeypatch.setattr(update, "LATEST_VERSION_FILE", tmp_path / "latest.txt")
     monkeypatch.setattr(update, "_get_latest_version", fake_get_latest)
     monkeypatch.setattr(update, "_update_candidate_unavailable_reason", fake_unavailable)
@@ -719,9 +722,12 @@ async def test_do_update_on_windows_runs_upgrade_inline_without_detaching(monkey
         update, "_detect_upgrade_command", lambda: ["uv", "tool", "upgrade", "pythinker-code"]
     )
     monkeypatch.setattr(update, "_run_upgrade_command", fake_run_upgrade_command)
+    # The behavioral contract of this change: no detached process, no early exit.
+    monkeypatch.setattr(update.subprocess, "Popen", fail_on_detach)
 
     result = await update.do_update(print_output=False, check_only=False)
 
+    # do_update returns normally (no SystemExit) and ran the upgrade inline.
     assert result is update.UpdateResult.UPDATED
     assert ran == [["uv", "tool", "upgrade", "pythinker-code"]]
 
