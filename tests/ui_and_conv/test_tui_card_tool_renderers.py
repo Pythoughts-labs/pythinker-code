@@ -1326,3 +1326,22 @@ def test_findings_table_unparsed_count_and_parsed_ratio():
     assert "Parsed 1/2" in rendered
     assert "1 report kept as unparsed prose" in rendered
     assert "Unknown" in rendered
+
+
+def test_successful_non_review_agent_shows_summary_preview():
+    """Completed non-review agents with a summary_preview must show it as a preview line."""
+    output = _run_agents_review_output(
+        "- name: implementer\n"
+        "  subagent_type: implementer\n"
+        "  status: completed\n"
+        "  result: |\n"
+        "    status: completed\n"
+        "\n"
+        "    [summary]\n"
+        "    Refactored the auth module and added unit tests.\n"
+    )
+    rendered = _render("RunAgents", {"summary": "implement feature"}, output=output, width=120)
+    # The summary preview must appear for non-review successful agents.
+    assert "Refactored the auth module" in rendered
+    # The findings panel must NOT appear (no review agents).
+    assert "Review Findings" not in rendered

@@ -686,6 +686,11 @@ def _render_run_agents_result(
             if preview:
                 prefix = "   " if is_last else "│  "
                 rows.append(fg("dim", f"{prefix}{_compact_inline(preview, max_chars=100)}"))
+        elif not _is_review_run(agents):
+            preview = entry["brief"] or entry["summary_preview"]
+            if preview:
+                prefix = "   " if is_last else "│  "
+                rows.append(fg("dim", f"{prefix}{_compact_inline(preview, max_chars=100)}"))
 
     if _is_review_run(agents):
         findings = _aggregate_findings(agents)
