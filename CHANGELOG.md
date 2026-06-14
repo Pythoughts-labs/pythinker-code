@@ -15,6 +15,19 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Verb spinner stays visible while a foreground tool or subagent runs.** The shimmering
+  "Working…/Thinking…" activity indicator now persists for the whole active turn — including
+  while a foreground tool (such as a shell-started server) or a subagent is executing — instead
+  of disappearing until the tool finished. This keeps long tool/subagent waits feeling alive
+  rather than frozen. An in-progress todo still swaps the verb for the todo title as before.
+- **Project instructions delivered as a separate authoritative message.** The merged
+  `AGENTS.md` is no longer baked into the system prompt; it is delivered as a session-start,
+  user-role `<system-reminder>` preamble, assembled fresh on every request from session
+  state. This keeps the project rules immune to two regressions a system-prompt move would
+  otherwise risk — context compaction can no longer summarize them away (they never enter the
+  persisted history) and the dynamic-injection token budget can no longer truncate them —
+  while keeping the system prompt free of per-project content. `pythinker system-prompt` shows
+  the reminder below a labeled divider so the dump stays faithful.
 - **Inspect the assembled system prompt.** New `pythinker system-prompt` command
   renders and prints the fully-assembled system prompt for an agent
   (`--agent <name>`, `--agent-file <path>`, `--work-dir <dir>`) — substituting the

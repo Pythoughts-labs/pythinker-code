@@ -52,7 +52,12 @@ from pythinker_code.soul import (
     StatusSnapshot,
     wire_send,
 )
-from pythinker_code.soul.agent import Agent, Runtime
+from pythinker_code.soul.agent import (
+    Agent,
+    BuiltinSystemPromptArgs,
+    Runtime,
+    render_agents_md_reminder,
+)
 
 # classify_api_error is re-exported so telemetry tests and existing imports
 # keep resolving against this module.
@@ -304,6 +309,26 @@ def _user_message_with_hook_context(
         + UntrustedData(context).render_for_prompt()
     )
     return Message(role="user", content=[*base, reminder])
+
+
+def _with_agents_md_preamble(
+    history: Sequence[Message], builtin_args: BuiltinSystemPromptArgs
+) -> list[Message]:
+    """Return *history* with the merged AGENTS.md prepended as a leading user-role
+    ``<system-reminder>``, or a plain copy of *history* when no AGENTS.md applies.
+
+    The preamble is assembled fresh from ``builtin_args`` on every step and is NEVER
+    appended to ``context.history``. That is precisely what keeps the project instructions
+    immune to the two failure modes a persisted home would hit: context compaction cannot
+    summarize them away (they are not in the history it rewrites), and the dynamic-injection
+    token budget cannot truncate them (they are not a budgeted injection). The input is left
+    unmutated. See :func:`pythinker_code.soul.agent.render_agents_md_reminder`.
+    """
+    reminder = render_agents_md_reminder(builtin_args)
+    if reminder is None:
+        return list(history)
+    preamble = Message(role="user", content=[system_reminder(reminder)])
+    return [preamble, *history]
 
 
 def _should_nudge_truncation(
@@ -1684,8 +1709,12 @@ class PythinkerSoul:
                 )
             )
 
-        # Normalize: merge adjacent user messages for clean API input
-        effective_history = normalize_history(self._context.history)
+        # Prepend the merged AGENTS.md as a leading <system-reminder> (assembled fresh from
+        # runtime args, never persisted to history) so the project instructions are immune to
+        # compaction and the injection budget, then normalize to merge adjacent user messages.
+        effective_history = normalize_history(
+            _with_agents_md_preamble(self._context.history, self._runtime.builtin_args)
+        )
 
         # Capture tool results as they stream in. If the batch is interrupted
         # mid-flight, already-completed calls must keep their real output rather

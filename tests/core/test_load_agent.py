@@ -77,6 +77,86 @@ async def test_render_agent_system_prompt_builds_args_without_runtime(
     assert "${PYTHINKER_" not in prompt
 
 
+def test_render_agents_md_reminder_present(builtin_args: BuiltinSystemPromptArgs):
+    """The merged AGENTS.md renders as an authoritative, fenced <system-reminder> body.
+
+    AGENTS.md is delivered as a session-start preamble (a user-role system-reminder),
+    not baked into the system prompt — see render_agents_md_reminder / _with_agents_md_preamble.
+    """
+    from pythinker_code.soul.agent import render_agents_md_reminder
+
+    body = render_agents_md_reminder(builtin_args)
+    assert body is not None
+    # The merged content is carried verbatim inside the fence (never truncated).
+    assert "Test agents content" in body
+    assert builtin_args.PYTHINKER_AGENTS_MD_FENCE in body
+    # Framed as authoritative so the model follows it like its system instructions.
+    assert "authoritative" in body.lower()
+
+
+def test_render_agents_md_reminder_absent_returns_none(builtin_args: BuiltinSystemPromptArgs):
+    """No AGENTS.md between project root and work dir → no reminder (preamble omitted)."""
+    from dataclasses import replace
+
+    from pythinker_code.soul.agent import render_agents_md_reminder
+
+    empty = replace(builtin_args, PYTHINKER_AGENTS_MD="")
+    assert render_agents_md_reminder(empty) is None
+
+
+def test_system_prompt_does_not_embed_agents_md(builtin_args: BuiltinSystemPromptArgs):
+    """The merged AGENTS.md is delivered as a separate session-start reminder, so §11 of the
+    system prompt explains AGENTS.md but no longer interpolates the merged block itself."""
+    from pythinker_code.agentspec import DEFAULT_AGENT_FILE
+
+    prompt = _load_system_prompt(
+        DEFAULT_AGENT_FILE.parent / "system.md",
+        {"ROLE_ADDITIONAL": ""},
+        builtin_args,
+    )
+    # The merged content itself is no longer baked into the system prompt.
+    assert "Test agents content" not in prompt
+    # §11 still orients the agent: it names AGENTS.md and points at the separate delivery.
+    assert "AGENTS.md" in prompt
+    assert "delivered as a separate" in prompt.lower()
+    # Deeper-directory guidance survives so the agent still seeks more-specific files.
+    assert "below the working directory" in prompt
+
+
+async def test_render_agent_system_prompt_appends_agents_md_reminder(
+    temp_work_dir: HostPath, config: Config
+) -> None:
+    """The dump stays faithful: when an AGENTS.md applies, `pythinker system-prompt` shows
+    BOTH the system prompt and the session-start AGENTS.md reminder, labeled as separate."""
+    from pythinker_code.agentspec import DEFAULT_AGENT_FILE
+    from pythinker_code.soul.agent import render_agent_system_prompt
+
+    await (temp_work_dir / "AGENTS.md").write_text("PROJECT_RULE: always lint before commit.")
+
+    dump = await render_agent_system_prompt(DEFAULT_AGENT_FILE, temp_work_dir, config)
+
+    # The system-prompt portion is present...
+    assert "## 1. Identity" in dump
+    # ...and the AGENTS.md content is appended as the session-start reminder.
+    assert "PROJECT_RULE: always lint before commit." in dump
+    assert "<system-reminder>" in dump
+    # The appended block is labeled as a separate message, not part of the system prompt.
+    assert "not part of the system prompt" in dump.lower()
+
+
+async def test_render_agent_system_prompt_no_agents_md_no_reminder(
+    temp_work_dir: HostPath, config: Config
+) -> None:
+    """With no AGENTS.md, the dump is just the system prompt — no empty reminder section."""
+    from pythinker_code.agentspec import DEFAULT_AGENT_FILE
+    from pythinker_code.soul.agent import render_agent_system_prompt
+
+    dump = await render_agent_system_prompt(DEFAULT_AGENT_FILE, temp_work_dir, config)
+
+    assert "## 1. Identity" in dump
+    assert "not part of the system prompt" not in dump.lower()
+
+
 def test_system_prompt_explains_adding_mcp_servers(builtin_args: BuiltinSystemPromptArgs):
     """The agent must know it can set up a *new* MCP server itself, in Pythinker.
 
