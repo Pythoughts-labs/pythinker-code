@@ -55,6 +55,10 @@ class _UsageMessage:
     def usage(self) -> TokenUsage | None:
         return self._usage
 
+    @property
+    def finish_reason(self) -> str | None:
+        return None
+
 
 class _PerStepUsageProvider:
     """Step 0 emits a tool call, step 1 emits final text; each reports `usage`."""

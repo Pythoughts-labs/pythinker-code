@@ -451,6 +451,10 @@ class _SequenceStreamedMessage:
     def usage(self):
         return None
 
+    @property
+    def finish_reason(self):
+        return None
+
 
 class _SequenceChatProvider:
     name = "sequence"

@@ -1,3 +1,4 @@
+import contextlib
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal, override
@@ -216,17 +217,22 @@ class WriteFile(CallableTool2[Params]):
                 case "append":
                     await p.append_text(params.content)
 
-            # Get file info for success message, and refresh the read-state to the post-write
+            # Get file info for the success message, and refresh the read-state to the post-write
             # (mtime, size) so the agent can immediately re-edit its own output without a false
-            # stale flag.
-            stat_after = await p.stat()
-            file_size = stat_after.st_size
-            self._runtime.file_read_cache.record(real_p, stat_after.st_mtime, file_size)
+            # stale flag. The write already succeeded above, so a stat hiccup here must NOT be
+            # reported as a write failure — suppress it (the cache is simply not refreshed) and
+            # omit the size note, matching the post-op stat handling in read.py and replace.py.
+            file_size: int | None = None
+            with contextlib.suppress(OSError):
+                stat_after = await p.stat()
+                file_size = stat_after.st_size
+                self._runtime.file_read_cache.record(real_p, stat_after.st_mtime, file_size)
             action = "overwritten" if params.mode == "overwrite" else "appended to"
+            size_note = f" Current size: {file_size} bytes." if file_size is not None else ""
             return ToolReturnValue(
                 is_error=False,
                 output="",
-                message=(f"File successfully {action}. Current size: {file_size} bytes."),
+                message=f"File successfully {action}.{size_note}",
                 display=diff_blocks,
             )
 

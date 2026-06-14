@@ -85,6 +85,10 @@ class SequenceStreamedMessage:
     def usage(self) -> TokenUsage | None:
         return None
 
+    @property
+    def finish_reason(self) -> str | None:
+        return None
+
 
 class SequenceChatProvider:
     name = "sequence"
