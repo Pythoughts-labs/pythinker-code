@@ -152,6 +152,8 @@ def run_dashboard_server(
         origin_hosts.append(host)
     elif host == "0.0.0.0":
         origin_hosts.extend(get_network_addresses())
+    else:  # host == "::"
+        origin_hosts.extend(["::1", "::"])
     allowed_origins = [format_url(addr, actual_port) for addr in dict.fromkeys(origin_hosts)]
     os.environ[_ENV_ALLOWED_ORIGINS] = ",".join(allowed_origins)
 

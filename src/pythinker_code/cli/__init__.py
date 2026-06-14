@@ -39,7 +39,7 @@ class SwitchToWeb(Exception):
 class SwitchToDashboard(Exception):
     """Switch to dashboard (tracing visualizer) interface."""
 
-    def __init__(self, session_id: str | None = None):
+    def __init__(self, session_id: str | None = None) -> None:
         super().__init__("switch_to_dashboard")
         self.session_id = session_id
 

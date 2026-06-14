@@ -2000,7 +2000,7 @@ def web(app: Shell, args: str):
 
 
 @registry.command(aliases=["dashboard"])
-def reports(app: Shell, args: str) -> NoReturn:
+def reports(app: Shell, _args: str) -> NoReturn:
     """Open Pythinker session reports (Agent Tracing Visualizer) in browser"""
     from pythinker_code.telemetry import track
 
