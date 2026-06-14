@@ -406,6 +406,7 @@ def test_dangerous_host_path_classifier() -> None:
         "/home/u/.zshrc",
         "/home/u/.bash_profile",
         "/repo/.git/hooks/pre-commit",
+        "/repo/.githooks/pre-commit",  # custom core.hooksPath convention, outside .git/
         "/repo/.git/config",
         "/home/u/.gitconfig",
         "/home/u/.ssh/config",

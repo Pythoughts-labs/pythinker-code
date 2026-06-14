@@ -6,6 +6,8 @@ from pathlib import Path
 
 from pythinker_host.path import HostPath
 
+from pythinker_code.tools.file.read import Params as ReadParams
+from pythinker_code.tools.file.read import ReadFile
 from pythinker_code.tools.file.replace import Edit, Params, StrReplaceFile
 from pythinker_code.wire.types import DiffDisplayBlock
 
@@ -532,3 +534,75 @@ async def test_replace_multiline_crlf_ambiguity_still_detected(
 
     assert result.is_error
     assert "occurs 2 times" in result.message
+
+
+async def test_replace_blocked_when_file_changed_since_read(
+    read_file_tool: ReadFile, str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+) -> None:
+    """Stale-edit guard: a read then an external change (mtime bump) that leaves the old
+    string intact must still block the edit — exact-string matching alone cannot catch it.
+    Read and StrReplace share the runtime's file_read_cache."""
+    import os
+
+    file_path = temp_work_dir / "tracked.txt"
+    await file_path.write_text("keep ME here\n")
+    assert not (await read_file_tool(ReadParams(path=str(file_path)))).is_error
+
+    # External change preserving the old string `ME`, with a strictly-newer mtime.
+    await file_path.write_text("keep ME here\nexternal append\n")
+    st = os.stat(str(file_path))
+    os.utime(str(file_path), (st.st_atime, st.st_mtime + 10))
+
+    result = await str_replace_file_tool(
+        Params(path=str(file_path), edit=Edit(old="ME", new="YOU"))
+    )
+    assert result.is_error
+    assert "modified since" in result.message
+    assert "external append" in await file_path.read_text()  # external change survived
+
+
+async def test_replace_allowed_after_read(
+    read_file_tool: ReadFile, str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+) -> None:
+    """A read followed by an edit (no external change) is allowed."""
+    file_path = temp_work_dir / "ok.txt"
+    await file_path.write_text("alpha beta\n")
+    assert not (await read_file_tool(ReadParams(path=str(file_path)))).is_error
+
+    result = await str_replace_file_tool(
+        Params(path=str(file_path), edit=Edit(old="beta", new="gamma"))
+    )
+    assert not result.is_error
+    assert await file_path.read_text() == "alpha gamma\n"
+
+
+async def test_replace_without_prior_read_allowed(
+    str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+) -> None:
+    """The guard is stale-detection only: a file the agent never read is not gated."""
+    file_path = temp_work_dir / "unread.txt"
+    await file_path.write_text("one two\n")
+
+    result = await str_replace_file_tool(
+        Params(path=str(file_path), edit=Edit(old="two", new="three"))
+    )
+    assert not result.is_error
+    assert await file_path.read_text() == "one three\n"
+
+
+async def test_consecutive_edits_not_flagged_stale(
+    read_file_tool: ReadFile, str_replace_file_tool: StrReplaceFile, temp_work_dir: HostPath
+) -> None:
+    """The tool's own edit refreshes the read-state, so an immediate second edit is not
+    falsely flagged as stale."""
+    file_path = temp_work_dir / "iter.txt"
+    await file_path.write_text("v0\n")
+    assert not (await read_file_tool(ReadParams(path=str(file_path)))).is_error
+
+    assert not (
+        await str_replace_file_tool(Params(path=str(file_path), edit=Edit(old="v0", new="v1")))
+    ).is_error
+    assert not (
+        await str_replace_file_tool(Params(path=str(file_path), edit=Edit(old="v1", new="v2")))
+    ).is_error
+    assert await file_path.read_text() == "v2\n"

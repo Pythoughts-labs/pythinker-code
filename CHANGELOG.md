@@ -33,7 +33,8 @@ GitHub Releases page; `0.8.0` is the new starting line.
   auto-continuations and agent flows halt too. Best-effort: cost is `0` for models
   with unknown pricing, so the ceiling never blocks when spend cannot be estimated.
 - **Sensitive host files always re-confirm.** Writes to shell startup files
-  (`.zshrc`, `.bash_profile`, …), `.git` internals/hooks, `.ssh`, `.vscode`, and git
+  (`.zshrc`, `.bash_profile`, …), `.git` internals/hooks, the custom `.githooks`
+  hooks directory, `.ssh`, `.vscode`, and git
   credentials (`.gitconfig`, `.netrc`, `.git-credentials`) are now classified as a
   distinct edit action that re-confirms every time — even under yolo/auto — and is
   never recorded as session-approved, exactly like edits to pythinker's own config.
@@ -55,10 +56,11 @@ GitHub Releases page; `0.8.0` is the new starting line.
   Slash-command parsing still reads only the user's text, never the appended context.
 - **Stale-overwrite guard for file edits.** If you read a file and it then changes on
   disk (edited by you in another window or by another tool), overwriting it with WriteFile
-  is now rejected with "File has been modified since you last read it" so external changes
-  are not silently clobbered — read it again first. First-contact writes (a file you never
-  read) are unaffected, and a tool's own write refreshes the read-state so consecutive
-  edits are never falsely flagged.
+  or editing it with StrReplaceFile is now rejected with "File has been modified since you
+  last read it" so external changes are not silently clobbered — read it again first. This
+  catches external edits that StrReplaceFile's exact-string matching alone would miss.
+  First-contact writes (a file you never read) are unaffected, and a tool's own write
+  refreshes the read-state so consecutive edits are never falsely flagged.
 - **Recover from output-token truncation.** When a response is cut off by the
   output-token limit and makes no tool call, the turn no longer ends with a half-finished
   answer treated as complete — the model is nudged to continue from where it stopped, up

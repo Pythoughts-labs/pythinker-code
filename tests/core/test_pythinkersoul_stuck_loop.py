@@ -259,6 +259,17 @@ def test_user_message_with_hook_context() -> None:
     text = enriched.extract_text(" ")
     assert "review the diff" in text
     assert "pnpm" in text
+    # Hook stdout is external/untrusted: it must be wrapped in the untrusted-data envelope
+    # (not left as bare trusted text), matching fetch/search/shell/grep ingress.
+    assert "<untrusted_data" in text
+
+    # The invisible-char smuggling vector (here a zero-width space) is stripped by the wrapper.
+    zero_width_space = chr(0x200B)  # U+200B ZERO WIDTH SPACE
+    smuggled = _user_message_with_hook_context(
+        "review the diff",
+        [HookResult(additional_context=f"benign{zero_width_space}text")],
+    )
+    assert zero_width_space not in smuggled.extract_text(" ")
 
     # A blocking result does not contribute context (block is handled separately).
     blocked = _user_message_with_hook_context(

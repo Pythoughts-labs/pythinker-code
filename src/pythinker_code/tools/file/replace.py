@@ -19,6 +19,7 @@ from pythinker_code.tools.file import classify_edit_action
 from pythinker_code.tools.file.plan_mode import inspect_plan_edit_target
 from pythinker_code.tools.utils import load_desc
 from pythinker_code.utils.diff import build_diff_blocks
+from pythinker_code.utils.file_read_cache import overwrite_is_stale
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.path import is_within_workspace
 
@@ -391,6 +392,19 @@ class StrReplaceFile(CallableTool2[Params]):
                 return ToolError(
                     message=f"`{params.path}` is not a file.",
                     brief="Invalid path",
+                )
+
+            # Stale-edit guard: if the agent read this file and it has since changed on disk
+            # (user or another tool), editing it risks clobbering changes the agent never saw.
+            # Exact old-string matching alone cannot catch an external edit that leaves the
+            # old string intact, so gate on the recorded read mtime as WriteFile does.
+            if await overwrite_is_stale(self._runtime.file_read_cache, p, real_p):
+                return ToolError(
+                    message=(
+                        "File has been modified since you last read it. Read it again before "
+                        "editing it so you do not clobber the external changes."
+                    ),
+                    brief="Stale read",
                 )
 
             # Read the file content

@@ -15,6 +15,7 @@ from pythinker_code.tools.file import classify_edit_action
 from pythinker_code.tools.file.plan_mode import inspect_plan_edit_target
 from pythinker_code.tools.utils import load_desc
 from pythinker_code.utils.diff import build_diff_blocks
+from pythinker_code.utils.file_read_cache import overwrite_is_stale
 from pythinker_code.utils.logging import logger
 from pythinker_code.utils.path import is_within_workspace
 
@@ -68,14 +69,7 @@ class WriteFile(CallableTool2[Params]):
         first-contact write) or the file cannot be stat'd — only a genuine
         read-then-externally-modified-then-overwrite is blocked.
         """
-        read_mtime = self._runtime.file_read_cache.read_mtime(real_p)
-        if read_mtime is None:
-            return None
-        try:
-            current_mtime = (await p.stat()).st_mtime
-        except OSError:
-            return None
-        if current_mtime > read_mtime:
+        if await overwrite_is_stale(self._runtime.file_read_cache, p, real_p):
             return ToolError(
                 message=(
                     "File has been modified since you last read it. Read it again before "
