@@ -695,3 +695,69 @@ async def test_step_connection_recovery_then_401_triggers_oauth_refresh(
     assert context.history[-1].extract_text(" ").strip() == "auth recovered"
     assert len(refresh_mock.await_args_list) == 2
     assert any(call.kwargs.get("force") is True for call in refresh_mock.await_args_list)
+
+
+class OverflowThenOkProvider:
+    name = "overflow-then-ok"
+
+    def __init__(self) -> None:
+        self.generate_attempts = 0
+
+    @property
+    def model_name(self) -> str:
+        return "overflow-then-ok"
+
+    @property
+    def thinking_effort(self) -> ThinkingEffort | None:
+        return None
+
+    async def generate(
+        self,
+        system_prompt: str,
+        tools: Sequence[Tool],
+        history: Sequence[Message],
+    ) -> StaticStreamedMessage:
+        self.generate_attempts += 1
+        if self.generate_attempts == 1:
+            raise APIStatusError(400, "context length exceeded")
+        return StaticStreamedMessage([TextPart(text="recovered after reactive compact")])
+
+    def on_retryable_error(self, error: BaseException) -> bool:
+        _ = error
+        return False
+
+    def with_thinking(self, effort: ThinkingEffort) -> Self:
+        return self
+
+
+class TestReactiveOverflowRecovery:
+    @pytest.mark.asyncio
+    async def test_context_overflow_triggers_one_shot_reactive_recovery(
+        self, runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        provider = OverflowThenOkProvider()
+        llm = LLM(chat_provider=provider, max_context_size=100_000, capabilities=set())
+        soul, context = _make_soul(runtime, llm, tmp_path)
+        seen: list[object] = []
+        compact_calls = 0
+
+        async def _count_compact() -> None:
+            nonlocal compact_calls
+            compact_calls += 1
+
+        monkeypatch.setattr(soul, "compact_context", _count_compact)
+
+        await run_soul(
+            soul,
+            "overflow then recover",
+            lambda wire: _collect_ui_messages(wire, seen),
+            asyncio.Event(),
+        )
+
+        assert provider.generate_attempts == 2
+        assert compact_calls == 1
+        assert context.history[-1].extract_text(" ").strip() == "recovered after reactive compact"
+        recovered = [msg for msg in seen if isinstance(msg, ContextOverflowRecovered)]
+        assert len(recovered) == 1
+        assert recovered[0].outcome == "recovered"
+        assert recovered[0].trigger_step == 1
