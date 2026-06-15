@@ -304,8 +304,8 @@ def test_manual_compact(tmp_path) -> None:
                     "method": "event",
                     "type": "StatusUpdate",
                     "payload": {
-                        "context_usage": 0.00168,
-                        "context_tokens": 168,
+                        "context_usage": 0.02068,
+                        "context_tokens": 2068,
                         "max_context_tokens": 100000,
                         "token_usage": None,
                         "message_id": None,
