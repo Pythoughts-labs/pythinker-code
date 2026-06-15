@@ -87,6 +87,12 @@ The end-to-end flow when a session starts and processes a turn:
 The soul is the heart of the runtime. Beyond the loop itself it owns approvals, context and
 compaction, slash commands, dynamic prompt injection, and a checkpoint-rewind mechanism.
 
+The agent loop emits per-turn and per-step wire events for orchestration observability. The
+canonical list lives in `src/pythinker_code/wire/types.py` (`Event` union): `StepBegin`,
+`StepRetry`, `StepInterrupted`, `ToolExecutionStarted`, `StatusUpdate`, plus
+`TodoListUpdated`, `SubagentToolFallback`, `AgentListDelta`, `ToolUseSkipped`, and
+`ContextOverflowRecovered`.
+
 | Path | Purpose | Key entry points and interfaces |
 | --- | --- | --- |
 | `src/pythinker_code/soul/pythinkersoul.py` | Core loop: user input, slash commands, LLM calls, tool runs, compaction, telemetry spans. | `PythinkerSoul`, `PythinkerSoul.run`, `FLOW_COMMAND_PREFIX` |
