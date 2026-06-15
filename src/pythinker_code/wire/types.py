@@ -286,6 +286,52 @@ class BtwEnd(BaseModel):
     """Error message if the side question failed."""
 
 
+class TodoListUpdated(BaseModel):
+    """Persisted todo list state changed independent of ToolResult rendering."""
+
+    items: tuple[tuple[str, str], ...]
+    """Todo titles paired with status strings."""
+    complete: bool
+    """Whether the list is closed (all done or empty)."""
+    source: Literal["tool", "scratch", "compaction"]
+    """What triggered the update."""
+
+
+class SubagentToolFallback(BaseModel):
+    """Subagent launch was rejected with a user-actionable reason."""
+
+    reason: Literal[
+        "unavailable_agent_type",
+        "mcp_unavailable",
+        "policy_denied",
+        "timeout",
+        "exception",
+    ]
+    requested_type: str
+    """The subagent type that was requested."""
+    available_types: tuple[str, ...] = ()
+    """Built-in types available at rejection time."""
+
+
+class AgentListDelta(BaseModel):
+    """Dynamic agent-list injection delta for cache-stable prompt updates."""
+
+    items: tuple[str, ...]
+    """Agent list lines; a delta when complete=False."""
+    complete: bool
+    """True closes the list; False means apply items on top of the previous open list."""
+
+
+class ToolUseSkipped(BaseModel):
+    """A tool call was skipped instead of executed normally."""
+
+    tool_call_id: str
+    tool_name: str
+    reason: Literal["dedup", "policy", "interrupt", "concurrent_inflight"]
+    resumed: bool = False
+    """Whether the skip follows an interrupted in-flight call."""
+
+
 class SubagentEvent(BaseModel):
     """
     An event from a subagent.
@@ -627,6 +673,10 @@ type Event = (
     | PlanDisplay
     | BtwBegin
     | BtwEnd
+    | TodoListUpdated
+    | SubagentToolFallback
+    | AgentListDelta
+    | ToolUseSkipped
 )
 """Any event, including control flow and content/tooling events."""
 
@@ -781,6 +831,10 @@ __all__ = [
     "PlanDisplay",
     "BtwBegin",
     "BtwEnd",
+    "TodoListUpdated",
+    "SubagentToolFallback",
+    "AgentListDelta",
+    "ToolUseSkipped",
     "ApprovalRequest",
     "ToolCallRequest",
     "QuestionOption",
