@@ -17,6 +17,16 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Agent-loop wire events.** Added `TodoListUpdated`, `SubagentToolFallback`, `AgentListDelta`, `ToolUseSkipped`, and `ContextOverflowRecovered` wire events for orchestration observability.
+- **Toolset dedup visibility.** Cross-step duplicate tool calls can emit `ToolUseSkipped` when a tool opts in via `emits_tool_use_skipped`.
+- **Todo wire event.** `SetTodoList` emits `TodoListUpdated` on write/read.
+- **Agent-list dynamic injection.** Root sessions receive a cache-stable agent-list injection via `AgentListInjectionProvider`.
+- **Subagent fallback wire event.** Unknown subagent types emit `SubagentToolFallback`.
+- **Reactive overflow recovery event.** Context-overflow compact retries emit `ContextOverflowRecovered` (one-shot per turn).
+- **Token-budget nudge.** When `loop_control.max_session_cost_usd` is set and goal auto-continue is off, the soul appends a one-shot spend reminder after a turn crosses `loop_control.budget_nudge_ratio`.
+- **Agent tool description.** Added a brief prompt-hygiene note for spawning fresh agents.
+- **Deliberate non-port.** Blackbox per-batch Haiku tool-use summary is not ported; the shell already renders tool progress via display blocks and wire events.
+
 ## 0.45.0 (2026-06-14)
 
 - **Agent-tracing dashboard.** Added `pythinker dashboard` — a local web UI for inspecting sessions, wire events, context messages, tool statistics, and usage over time. It is also reachable from the interactive shell via the `/reports` slash command (aliased `/dashboard`).
