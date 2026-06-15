@@ -321,8 +321,11 @@ def test_max_steps_reached(tmp_path) -> None:
                             "extras": None,
                         },
                     },
-                },
-                {
+                }, {
+    "method": "event",
+    "type": "TodoListUpdated",
+    "payload": {"items": [["x", "pending"]], "complete": False, "source": "tool"},
+}, {
                     "method": "event",
                     "type": "TurnEnd",
                     "payload": {},
