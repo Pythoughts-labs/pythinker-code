@@ -107,6 +107,46 @@ async def test_silent_update_failed_is_silent(
     assert _toasts == []
 
 
+@pytest.mark.parametrize(
+    ("result", "expected_marks"),
+    [
+        (UpdateResult.FAILED, 0),
+        (UpdateResult.UP_TO_DATE, 1),
+        (UpdateResult.UPDATED, 1),
+    ],
+)
+@pytest.mark.asyncio
+async def test_silent_update_marks_throttle_only_after_non_failed_run(
+    runtime: Runtime, tmp_path: Path, monkeypatch, _toasts, result, expected_marks
+):
+    """A FAILED run (e.g. a transient startup network blip) must not burn the
+    throttle window: the mark fires only after a completed, non-FAILED job."""
+    shell = _make_shell(runtime, tmp_path)
+    marks = 0
+
+    def _spy_mark() -> None:
+        nonlocal marks
+        marks += 1
+
+    monkeypatch.setattr(shell_module, "_should_auto_check_for_updates", lambda: True)
+    monkeypatch.setattr(shell_module, "_mark_auto_update_check_attempt", _spy_mark)
+    monkeypatch.setattr(shell_module, "_detect_upgrade_command", lambda: ["pip"])
+    monkeypatch.setattr(
+        shell_module,
+        "read_update_status",
+        lambda: SimpleNamespace(message="updated", target_version="0.43.0"),
+    )
+
+    async def fake_job(**kw):
+        return result
+
+    monkeypatch.setattr(shell_module, "run_update_job", fake_job)
+
+    await shell._silent_auto_update()
+
+    assert marks == expected_marks
+
+
 @pytest.mark.asyncio
 async def test_silent_update_managed_channel_toasts_channel_hint(
     runtime: Runtime, tmp_path: Path, monkeypatch, _toasts

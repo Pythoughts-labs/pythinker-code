@@ -15,6 +15,8 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 ## Unreleased
 
+- **Startup auto-update now picks up new releases within half an hour instead of up to a day.** The background update check was throttled to once every 24h, so a freshly published release could go unnoticed for a full day after the last check; the interval is now 30 minutes. The silent installer also no longer marks the throttle *before* the network call — a transient startup network error returns `FAILED` and is retried on the next launch instead of suppressing updates for the whole window.
+
 ## 0.45.0 (2026-06-14)
 
 - **Agent-tracing dashboard.** Added `pythinker dashboard` — a local web UI for inspecting sessions, wire events, context messages, tool statistics, and usage over time. It is also reachable from the interactive shell via the `/reports` slash command (aliased `/dashboard`).

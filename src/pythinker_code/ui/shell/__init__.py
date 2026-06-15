@@ -2110,9 +2110,13 @@ class Shell:
         """Install a newer release silently in the background at startup."""
         if not _should_auto_check_for_updates():
             return
-        _mark_auto_update_check_attempt()
 
         result = await self._run_silent_update_job()
+        # Throttle only after a completed round-trip. Marking before the network
+        # call (or after a FAILED one) would suppress updates for the whole
+        # interval on a transient startup blip — mirrors _refresh_update_cache.
+        if result is not None and result is not UpdateResult.FAILED:
+            _mark_auto_update_check_attempt()
         if result is UpdateResult.UPDATED:
             self._surface_installed_update_notice()
         elif result is UpdateResult.UPDATE_AVAILABLE:
