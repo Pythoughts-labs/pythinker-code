@@ -17,6 +17,7 @@ GitHub Releases page; `0.8.0` is the new starting line.
 
 - **Startup auto-update now picks up new releases within half an hour instead of up to a day.** The background update check was throttled to once every 24h, so a freshly published release could go unnoticed for a full day after the last check; the interval is now 30 minutes. The silent installer also no longer marks the throttle *before* the network call — a transient startup network error returns `FAILED` and is retried on the next launch instead of suppressing updates for the whole window.
 - **The welcome banner now keeps the robot mark visible in compact terminals.** Below ~68 columns the robot was dropped (it could not sit beside the welcome copy); it now stacks centered above the copy instead, so the mark stays on screen at any width that can render its Unicode glyphs. ASCII-only terminals are unaffected.
+- **A persistent update notice now sits directly under the prompt input.** When a newer release is available the footer shows a yellow `↑ Update available — vX · /update` line; once a release has been installed in the background it switches to a restart-to-apply message instead of pointing at `/update`, and it clears after you restart onto the new version. The line is suppressed for dismissed versions, disabled auto-update, and source checkouts.
 
 ## 0.45.0 (2026-06-14)
 

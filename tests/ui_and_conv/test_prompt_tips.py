@@ -1703,3 +1703,30 @@ async def test_prompt_next_does_not_mark_submission_as_running_when_delegate_rel
 
     assert result.command == "follow-up"
     assert prompt_session.last_submission_was_running is False
+
+
+def test_prepend_update_notice_inserts_line_above_separator():
+    fragments: list[tuple[str, str]] = [("sep", "────"), ("", "\n")]
+    fake = SimpleNamespace(_update_notice_provider=lambda: "↑ Update available — v9.9.9 · /update")
+    CustomPromptSession._prepend_update_notice(cast(Any, fake), fragments, 80)
+    # Notice is the first row (its own line), then a newline, then the original
+    # separator — i.e. it renders directly under the input, above the footer rule.
+    assert "Update available" in fragments[0][1]
+    assert "v9.9.9" in fragments[0][1]
+    assert "bold" in fragments[0][0]
+    assert fragments[1] == ("", "\n")
+    assert fragments[2] == ("sep", "────")
+
+
+def test_prepend_update_notice_noop_when_no_update():
+    fragments: list[tuple[str, str]] = [("sep", "────")]
+    fake = SimpleNamespace(_update_notice_provider=lambda: None)
+    CustomPromptSession._prepend_update_notice(cast(Any, fake), fragments, 80)
+    assert fragments == [("sep", "────")]
+
+
+def test_prepend_update_notice_noop_when_no_provider():
+    fragments: list[tuple[str, str]] = [("sep", "x")]
+    fake = SimpleNamespace(_update_notice_provider=None)
+    CustomPromptSession._prepend_update_notice(cast(Any, fake), fragments, 80)
+    assert fragments == [("sep", "x")]

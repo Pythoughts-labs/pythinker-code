@@ -81,6 +81,7 @@ from pythinker_code.ui.shell.update import (
 )
 from pythinker_code.ui.shell.update_orchestrator import (
     SMOKE_CHECK_FAILED_PREFIX,
+    UpdateJobState,
     read_update_status,
     run_update_job,
 )
@@ -565,6 +566,10 @@ class Shell:
         self._prefill_text = prefill_text
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._prompt_session: CustomPromptSession | None = None
+        # (timestamp, text) memo for the under-input update line; refreshed on a
+        # short TTL so the hot toolbar render path does not stat the update
+        # cache on every repaint (mirrors the footer's git-branch TTL).
+        self._update_notice_cache: tuple[float, str | None] = (0.0, None)
         self._running_input_handler: Callable[[UserInput], None] | None = None
         self._running_interrupt_handler: Callable[[], None] | None = None
         self._active_approval_sink: Any | None = None
@@ -916,6 +921,7 @@ class Shell:
             status_block_provider=_mcp_status_block,
             fast_refresh_provider=_mcp_status_loading,
             background_task_count_provider=_bg_task_counts,
+            update_notice_provider=self._update_notice_text,
             model_capabilities=self.soul.model_capabilities or set(),
             model_name=model_display_name(
                 self.soul.model_name,
@@ -2183,6 +2189,42 @@ class Shell:
         toast(notice, topic="update", duration=30.0, immediate=True, style=style)
         if self._prompt_session is not None:
             self._prompt_session.invalidate()
+
+    def _update_notice_text(self) -> str | None:
+        """Persistent under-input update line, or None when up to date.
+
+        Memoized on a short TTL (5s) so the hot toolbar render path doesn't stat
+        the update cache on every repaint; the background updater invalidates the
+        prompt when it changes the cache, so the line still appears promptly.
+        """
+        now = time.monotonic()
+        cached_at, cached = self._update_notice_cache
+        if now - cached_at < 5.0:
+            return cached
+        text = self._compute_update_notice()
+        self._update_notice_cache = (now, text)
+        return text
+
+    def _compute_update_notice(self) -> str | None:
+        target = welcome_update_target()
+        if not target:
+            return None
+        # A release already installed this session needs a restart, not /update —
+        # keep this line in agreement with the install toast instead of telling
+        # the user to re-run an update that has already landed.
+        status = read_update_status()
+        installed = (
+            status is not None
+            and status.state is UpdateJobState.UPDATED
+            and status.target_version == target
+        )
+        if installed and not self._installed_update_smoke_check_failed():
+            text = self._installed_update_restart_notice()
+        else:
+            text = f"↑ Update available — v{target} · /update"
+        if ascii_glyphs_enabled():
+            text = text.translate(_WELCOME_ASCII_FALLBACKS)
+        return text
 
     def _schedule_startup_update_task(self) -> None:
         """Pick the startup update behavior and schedule it (non-blocking).

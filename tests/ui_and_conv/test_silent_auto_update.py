@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -310,3 +311,57 @@ def test_auto_update_override_reason_none_when_config_decides(monkeypatch):
     monkeypatch.setattr(update_policy, "auto_update_disabled", lambda: False)
     monkeypatch.setattr(update_policy, "is_running_from_source_checkout", lambda: False)
     assert update_policy.auto_update_override_reason() is None
+
+
+def _updated_status(target: str, *, message: str = "updated"):
+    from pythinker_code.ui.shell.update_orchestrator import UpdateJobState
+
+    return SimpleNamespace(state=UpdateJobState.UPDATED, target_version=target, message=message)
+
+
+def test_update_notice_available_points_to_slash_update(runtime, tmp_path, monkeypatch):
+    shell = _make_shell(runtime, tmp_path)
+    monkeypatch.setattr(shell_module, "welcome_update_target", lambda: "9.9.9")
+    monkeypatch.setattr(shell_module, "read_update_status", lambda: None)
+    monkeypatch.setattr(shell_module, "ascii_glyphs_enabled", lambda: False)
+    assert shell._compute_update_notice() == "↑ Update available — v9.9.9 · /update"
+
+
+def test_update_notice_installed_this_session_says_restart(runtime, tmp_path, monkeypatch):
+    """Critical: after a silent install the cache still reports a newer version,
+    but the line must say restart-to-apply, not /update (it would contradict the
+    install toast and tell the user to re-run an update that already landed)."""
+    shell = _make_shell(runtime, tmp_path)
+    monkeypatch.setattr(shell_module, "welcome_update_target", lambda: "9.9.9")
+    monkeypatch.setattr(shell_module, "ascii_glyphs_enabled", lambda: False)
+    monkeypatch.setattr(shell_module, "read_update_status", lambda: _updated_status("9.9.9"))
+    text = shell._compute_update_notice()
+    assert text is not None and "Restart" in text and "9.9.9" in text
+    assert "/update" not in text
+
+
+def test_update_notice_installed_but_smoke_failed_falls_back(runtime, tmp_path, monkeypatch):
+    shell = _make_shell(runtime, tmp_path)
+    monkeypatch.setattr(shell_module, "welcome_update_target", lambda: "9.9.9")
+    monkeypatch.setattr(shell_module, "ascii_glyphs_enabled", lambda: False)
+    status = _updated_status("9.9.9", message=shell_module.SMOKE_CHECK_FAILED_PREFIX + "boom")
+    monkeypatch.setattr(shell_module, "read_update_status", lambda: status)
+    # A failed-verification install must not claim restart-to-apply.
+    assert shell._compute_update_notice() == "↑ Update available — v9.9.9 · /update"
+
+
+def test_update_notice_none_when_up_to_date(runtime, tmp_path, monkeypatch):
+    shell = _make_shell(runtime, tmp_path)
+    monkeypatch.setattr(shell_module, "welcome_update_target", lambda: None)
+    assert shell._compute_update_notice() is None
+
+
+def test_update_notice_text_uses_ttl_cache(runtime, tmp_path, monkeypatch):
+    shell = _make_shell(runtime, tmp_path)
+    shell._update_notice_cache = (time.monotonic(), "cached")
+
+    def _boom() -> str:
+        raise AssertionError("welcome_update_target should not be called within TTL")
+
+    monkeypatch.setattr(shell_module, "welcome_update_target", _boom)
+    assert shell._update_notice_text() == "cached"
