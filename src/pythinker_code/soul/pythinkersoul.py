@@ -85,6 +85,7 @@ from pythinker_code.soul.dynamic_injection import (
     injection_budget_from_runtime,
     normalize_history,
 )
+from pythinker_code.soul.dynamic_injections.agent_list import AgentListInjectionProvider
 from pythinker_code.soul.dynamic_injections.auto_mode import AutoModeInjectionProvider
 from pythinker_code.soul.dynamic_injections.goal_mode import GoalModeInjectionProvider
 from pythinker_code.soul.dynamic_injections.inline_commands import InlineCommandReminderProvider
@@ -521,6 +522,7 @@ class PythinkerSoul:
             # Self-filtering: root-only; posture-fingerprinted so it re-emits
             # exactly when yolo/auto/safe-mode/profile/session-approvals change.
             PermissionsInjectionProvider(),
+            AgentListInjectionProvider(),
             *(
                 []
                 if self._runtime.config.skip_auto_prompt_injection
