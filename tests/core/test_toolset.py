@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import mcp
 from pydantic import BaseModel
@@ -596,3 +597,101 @@ def test_tool_defers_execution_started_reads_flag_only() -> None:
     # the explicit flag is the single contract.
     approval_only = SimpleNamespace(_approval=object())
     assert _tool_defers_execution_started(cast(Any, approval_only)) is False
+
+
+# --- ToolUseSkipped wire event (opt-in per tool) ---
+
+
+class _RecordingWire:
+    def __init__(self, captured: list[object]) -> None:
+        self.soul_side = self
+        self._captured = captured
+
+    def send(self, msg: object) -> None:
+        self._captured.append(msg)
+
+
+class DummyToolEmitsSkipped(DummyToolA):
+    emits_tool_use_skipped: ClassVar[bool] = True
+
+
+async def test_streaming_skip_when_concurrent_inflight_does_not_emit_when_queued(
+    tmp_path: Path,
+) -> None:
+    """Exclusive tools queue behind in-flight calls; no ToolUseSkipped for that path."""
+    from unittest.mock import patch
+
+    from pythinker_code.hooks.engine import HookEngine
+
+    events: list[tuple[str, str]] = []
+
+    class _SlowShell:
+        name = "Shell"
+
+        async def call(self, arguments: object) -> ToolReturnValue:
+            events.append(("enter", "Shell"))
+            await asyncio.sleep(0.2)
+            events.append(("exit", "Shell"))
+            return ToolOk(output="ok")
+
+    captured: list[object] = []
+    toolset = PythinkerToolset()
+    toolset._hook_engine = HookEngine([], cwd=str(tmp_path))
+    toolset._tool_dict["Shell"] = _SlowShell()  # type: ignore[assignment]
+
+    with patch("pythinker_code.soul.get_wire_or_none", return_value=_RecordingWire(captured)):
+        toolset.begin_step([])
+        t1 = toolset.handle(
+            ToolCall(id="tc1", function=ToolCall.FunctionBody(name="Shell", arguments='{"n":1}'))
+        )
+        t2 = toolset.handle(
+            ToolCall(id="tc2", function=ToolCall.FunctionBody(name="Shell", arguments='{"n":2}'))
+        )
+        assert isinstance(t1, asyncio.Task)
+        assert isinstance(t2, asyncio.Task)
+        await t1
+        await t2
+
+    assert events == [
+        ("enter", "Shell"),
+        ("exit", "Shell"),
+        ("enter", "Shell"),
+        ("exit", "Shell"),
+    ]
+    assert not any(isinstance(e, type) and e.__name__ == "ToolUseSkipped" for e in captured)
+
+
+async def test_cross_step_dedup_emits_tool_use_skipped_when_opted_in(tmp_path: Path) -> None:
+    """Cross-step duplicate calls emit ToolUseSkipped only when the tool opts in."""
+    from unittest.mock import patch
+
+    from pythinker_code.hooks.engine import HookEngine
+    from pythinker_code.wire.types import ToolUseSkipped
+
+    ts = PythinkerToolset()
+    ts.add(DummyToolEmitsSkipped())
+    ts._hook_engine = HookEngine([], cwd=str(tmp_path))
+    captured: list[object] = []
+    args = '{"a":1}'
+
+    with patch("pythinker_code.soul.get_wire_or_none", return_value=_RecordingWire(captured)):
+        ts.begin_step([])
+        task1 = ts.handle(
+            ToolCall(id="tc1", function=ToolCall.FunctionBody(name="ToolA", arguments=args))
+        )
+        assert isinstance(task1, asyncio.Task)
+        await task1
+        prev = ts.end_step()
+        ts.begin_step(prev)
+        task2 = ts.handle(
+            ToolCall(id="tc2", function=ToolCall.FunctionBody(name="ToolA", arguments=args))
+        )
+        assert isinstance(task2, asyncio.Task)
+        await task2
+        ts.end_step()
+
+    skipped = [e for e in captured if isinstance(e, ToolUseSkipped)]
+    assert len(skipped) == 1
+    assert skipped[0].tool_call_id == "tc2"
+    assert skipped[0].tool_name == "ToolA"
+    assert skipped[0].reason == "dedup"

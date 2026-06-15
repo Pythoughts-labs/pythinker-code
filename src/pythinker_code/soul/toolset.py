@@ -49,6 +49,7 @@ from pythinker_code.wire.types import (
     ToolExecutionStarted,
     ToolResult,
     ToolReturnValue,
+    ToolUseSkipped,
     VideoURLPart,
 )
 
@@ -124,6 +125,38 @@ def emit_current_tool_execution_started() -> None:
 
 def _tool_defers_execution_started(tool: ToolType) -> bool:
     return bool(getattr(tool, "emits_tool_execution_started_after_approval", False))
+
+
+def _maybe_emit_tool_use_skipped(
+    tool: ToolType,
+    *,
+    tool_call_id: str,
+    tool_name: str,
+    reason: Literal["dedup", "policy", "interrupt", "concurrent_inflight"],
+    resumed: bool = False,
+) -> None:
+    """Emit ToolUseSkipped when the tool opts in via ``emits_tool_use_skipped``."""
+    if not getattr(tool, "emits_tool_use_skipped", False):
+        return
+    try:
+        from pythinker_code.soul import get_wire_or_none
+
+        if wire := get_wire_or_none():
+            wire.soul_side.send(
+                ToolUseSkipped(
+                    tool_call_id=tool_call_id,
+                    tool_name=tool_name,
+                    reason=reason,
+                    resumed=resumed,
+                )
+            )
+    except Exception as exc:  # noqa: BLE001 - lifecycle events must not break tool execution
+        logger.debug(
+            "Failed to emit tool use skipped: {tool_name} (call_id={call_id}): {error}",
+            tool_name=tool_name,
+            call_id=tool_call_id,
+            error=exc,
+        )
 
 
 def _is_external_side_effect_tool(tool: ToolType) -> bool:
@@ -280,6 +313,8 @@ _REMINDER_TEXT_1 = (
     "\n</system-reminder>"
 )
 
+TOOL_USE_SKIPPED_REASONS: tuple[str, ...] = ("dedup", "concurrent_inflight")
+
 
 def _make_reminder_text_2(tool_name: str, repeat_count: int, canonical_args: str) -> str:
     # Echo only a bounded preview of the arguments: large-payload tools
@@ -382,6 +417,12 @@ class _ReadWriteGate:
 
     @contextlib.asynccontextmanager
     async def shared(self) -> AsyncGenerator[None]:
+        """Acquire a parallel-safe (reader) lane.
+
+        Tools without ``supports_parallel`` use ``exclusive()`` instead and run
+        one at a time; plugin/MCP tools inherit that exclusive default unless
+        they opt in via ``supports_parallel=True``.
+        """
         # Cap concurrent readers. Acquire the slot BEFORE the writer lock / counter
         # bump: a reader still queued here has not incremented _active_readers, so it
         # never holds _readers_drained open, and writers (which never touch the
@@ -700,6 +741,12 @@ class PythinkerToolset:
                     args_hash=hashlib.sha256(canonical_args.encode("utf-8")).hexdigest()[:8],
                 )
                 self._dedup_triggered = True
+                _maybe_emit_tool_use_skipped(
+                    tool,
+                    tool_call_id=tool_call.id,
+                    tool_name=tool_call.function.name,
+                    reason="dedup",
+                )
                 repeat_count = self._projected_streak_for_call(call_index)
                 if repeat_count == 3:
                     reminder_text = _REMINDER_TEXT_1

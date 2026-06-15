@@ -10,6 +10,7 @@ exclusively, keeping same-step mutation ordering deterministic.
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 from pythinker_core.tooling import ToolReturnValue
@@ -206,3 +207,36 @@ async def test_read_gate_cap_does_not_block_writer_draining() -> None:
     await asyncio.wait_for(writer_ran.wait(), timeout=1.0)  # writer proceeds, no deadlock
     queued.cancel()
     await asyncio.gather(held, writer_task, queued, return_exceptions=True)
+
+
+class TestPluginToolDefault:
+    async def test_plugin_tool_without_supports_parallel_runs_exclusively(
+        self, tmp_path: Path
+    ) -> None:
+        """Unflagged plugin/MCP tools default to exclusive so same-step mutation ordering
+        stays deterministic — mirrors blackbox partitionToolCalls isConcurrencySafe default."""
+        events: list[tuple[str, str]] = []
+        plugin = _RecordingTool("MyPlugin", events, parallel=False)
+        toolset = _toolset(plugin, cwd=tmp_path)
+
+        tasks = []
+        for index in range(2):
+            result = toolset.handle(
+                ToolCall(
+                    id=f"tc_{index}",
+                    function=ToolCall.FunctionBody(
+                        name="MyPlugin",
+                        arguments=json.dumps({"n": index}),
+                    ),
+                )
+            )
+            assert isinstance(result, asyncio.Task)
+            tasks.append(result)
+        await asyncio.gather(*tasks)
+
+        assert events == [
+            ("enter", "MyPlugin"),
+            ("exit", "MyPlugin"),
+            ("enter", "MyPlugin"),
+            ("exit", "MyPlugin"),
+        ]
