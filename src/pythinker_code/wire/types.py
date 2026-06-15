@@ -356,14 +356,6 @@ class ContextOverflowRecovered(BaseModel):
     """Step number that triggered the overflow rejection."""
 
 
-class ContextOverflowRecovered(BaseModel):
-    """Reactive context-overflow compact retry outcome."""
-
-    outcome: Literal["recovered", "failed"]
-    trigger_step: int
-    """The step number that triggered the overflow rejection."""
-
-
 class SubagentEvent(BaseModel):
     """
     An event from a subagent.
