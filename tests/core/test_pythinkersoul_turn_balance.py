@@ -328,3 +328,66 @@ async def test_step_persists_markers_when_cancelled_twice(
     tool_messages = [m for m in history if m.role == "tool"]
     assert tool_messages, f"marker write was orphaned; history={history}"
     assert tool_messages[0].tool_call_id == tool_call.id
+
+
+@pytest.mark.asyncio
+async def test_token_budget_nudge_does_not_fire_when_under_threshold(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime.config.loop_control.max_session_cost_usd = 10.0
+    runtime.config.goal.auto_continue = False
+    soul = _make_soul(runtime, tmp_path)
+    soul._session_cost_usd = 0.5
+
+    async def fake_agent_loop() -> TurnOutcome:
+        return TurnOutcome(
+            stop_reason="no_tool_calls",
+            final_message=Message(role="assistant", content=[TextPart(text="done")]),
+            step_count=1,
+        )
+
+    async def fake_checkpoint() -> None:
+        return None
+
+    monkeypatch.setattr(soul, "_agent_loop", fake_agent_loop)
+    monkeypatch.setattr(soul, "_checkpoint", fake_checkpoint)
+
+    before = len(soul.context.history)
+    await soul.turn(Message(role="user", content=[TextPart(text="hello")]))
+    assert len(soul.context.history) == before + 1
+    assert not any("spend ceiling" in message.extract_text(" ") for message in soul.context.history)
+
+
+@pytest.mark.asyncio
+async def test_token_budget_nudge_appends_user_message_when_over_threshold(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime.config.loop_control.max_session_cost_usd = 1.0
+    runtime.config.goal.auto_continue = False
+    soul = _make_soul(runtime, tmp_path)
+    soul._session_cost_usd = 2.0
+
+    async def fake_agent_loop() -> TurnOutcome:
+        return TurnOutcome(
+            stop_reason="no_tool_calls",
+            final_message=Message(role="assistant", content=[TextPart(text="done")]),
+            step_count=1,
+        )
+
+    async def fake_checkpoint() -> None:
+        return None
+
+    monkeypatch.setattr(soul, "_agent_loop", fake_agent_loop)
+    monkeypatch.setattr(soul, "_checkpoint", fake_checkpoint)
+
+    await soul.turn(Message(role="user", content=[TextPart(text="hello")]))
+    reminder_messages = [
+        message
+        for message in soul.context.history
+        if message.role == "user" and "spend ceiling" in message.extract_text(" ")
+    ]
+    assert len(reminder_messages) == 1
