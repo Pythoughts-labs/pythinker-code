@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from pythinker_code.scratchpad import session_scratch_path
@@ -489,3 +491,18 @@ class TestSingleInProgressInvariant:
 
         assert not result.is_error
         assert "normalized" not in result.output
+
+
+async def test_write_mode_emits_todo_list_updated_wire_event(
+    set_todo_list_tool: SetTodoList,
+) -> None:
+    captured: list[object] = []
+    with patch("pythinker_code.soul.get_wire_or_none", return_value=_RecordingWire(captured)):
+        result = await set_todo_list_tool(
+            Params(todos=[Todo(title="Investigate", status="in_progress")])
+        )
+    assert not result.is_error
+    updated = [e for e in captured if isinstance(e, TodoListUpdated)]
+    assert len(updated) == 1
+    assert updated[0].items == (("Investigate", "in_progress"),)
+    assert updated[0].source == "tool"
