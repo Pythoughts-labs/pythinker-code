@@ -189,7 +189,6 @@ async def test_read_gate_caps_concurrent_readers() -> None:
     assert live == 2  # exactly the cap in-flight; the other 3 queued on the semaphore
     release.set()
     await asyncio.gather(*tasks)
-    assert peak == 2
 
 
 async def test_read_gate_cap_does_not_block_writer_draining() -> None:

@@ -342,8 +342,7 @@ async def test_same_step_dedup_default_off_does_not_emit_tool_use_skipped(monkey
     assert isinstance(result_1, asyncio.Task)
     assert isinstance(result_2, asyncio.Task)
 
-    await result_1
-    await result_2
+    await asyncio.gather(result_1, result_2)
 
     assert [msg for msg in captured if isinstance(msg, ToolUseSkipped)] == []
 
@@ -374,8 +373,7 @@ async def test_same_step_dedup_opt_in_emits_tool_use_skipped(monkeypatch):
     assert isinstance(result_1, asyncio.Task)
     assert isinstance(result_2, asyncio.Task)
 
-    await result_1
-    await result_2
+    await asyncio.gather(result_1, result_2)
 
     skipped = [msg for msg in captured if isinstance(msg, ToolUseSkipped)]
     assert skipped == [
@@ -499,7 +497,7 @@ async def test_cross_step_duplicate_opt_in_emits_tool_use_skipped(monkeypatch):
             )
         )
         assert isinstance(result, asyncio.Task)
-        await result
+        _ = await result
         previous_calls = ts.end_step()
 
     ts.begin_step(previous_calls, step_no=3)
@@ -510,7 +508,7 @@ async def test_cross_step_duplicate_opt_in_emits_tool_use_skipped(monkeypatch):
         )
     )
     assert isinstance(result, asyncio.Task)
-    await result
+    _ = await result
 
     assert [msg for msg in captured if isinstance(msg, ToolUseSkipped)] == [
         ToolUseSkipped(
@@ -543,7 +541,7 @@ async def test_pre_tool_use_policy_block_opt_in_emits_tool_use_skipped(monkeypat
         )
     )
     assert isinstance(result, asyncio.Task)
-    await result
+    _ = await result
 
     assert [msg for msg in captured if isinstance(msg, ToolUseSkipped)] == [
         ToolUseSkipped(tool_call_id="tc-policy", tool_name="ToolA", reason="policy")
@@ -789,8 +787,7 @@ async def test_streaming_skip_when_concurrent_inflight_does_not_emit_when_queued
         )
         assert isinstance(t1, asyncio.Task)
         assert isinstance(t2, asyncio.Task)
-        await t1
-        await t2
+        await asyncio.gather(t1, t2)
 
     assert events == [
         ("enter", "Shell"),

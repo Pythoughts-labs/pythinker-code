@@ -297,7 +297,7 @@ async function sendSupportEmail(env: Env, subject: string, body: string): Promis
 }
 
 function parseMailbox(value: string): { email: string; name?: string } {
-  const match = value.match(/^(.+?)\s*<([^>]+)>$/);
+  const match = value.match(/^([^<]*?)\s*<([^>]+)>$/);
   if (!match) return { email: value.trim() };
   return { name: match[1].trim().replace(/^"|"$/g, ""), email: match[2].trim() };
 }

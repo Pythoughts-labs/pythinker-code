@@ -9,7 +9,7 @@ from pythinker_core.message import Message, TextPart
 from pythinker_core.tooling.empty import EmptyToolset
 from pythinker_host.path import HostPath
 
-import pythinker_code.soul.pythinkersoul as pythinkersoul_module
+import pythinker_code.soul.pythinkersoul as pythinkersoul_module  # alias used for monkeypatch
 from pythinker_code import scratchpad
 from pythinker_code.config import Config
 from pythinker_code.memory.consolidation import generate_inbox_candidates
@@ -25,7 +25,9 @@ from pythinker_code.project_memory import ProjectMemoryStore
 from pythinker_code.session_state import SessionState, TodoItemState
 from pythinker_code.soul.agent import Agent, Runtime
 from pythinker_code.soul.context import Context
-from pythinker_code.soul.pythinkersoul import PythinkerSoul, TurnOutcome
+
+PythinkerSoul = pythinkersoul_module.PythinkerSoul
+TurnOutcome = pythinkersoul_module.TurnOutcome
 
 
 def _hp(p: Path) -> HostPath:
