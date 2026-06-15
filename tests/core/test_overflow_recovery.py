@@ -17,6 +17,21 @@ from pythinker_core.tooling.simple import SimpleToolset
 from pythinker_code.soul.agent import Agent, Runtime
 from pythinker_code.soul.context import Context
 from pythinker_code.soul.pythinkersoul import PythinkerSoul
+from pythinker_code.wire import Wire
+
+
+def _wire_context() -> tuple[Wire, object]:
+    import pythinker_code.soul as soul_module
+
+    wire = Wire()
+    token = soul_module._current_wire.set(wire)
+    return wire, token
+
+
+def _reset_wire_context(token: object) -> None:
+    import pythinker_code.soul as soul_module
+
+    soul_module._current_wire.reset(token)
 
 
 def _make_soul(runtime: Runtime, tmp_path) -> PythinkerSoul:
@@ -39,8 +54,12 @@ class TestRecoverFromContextOverflow:
         soul = _make_soul(runtime, tmp_path)
         soul.prune_context = AsyncMock(return_value=True)  # type: ignore[method-assign]
         soul.compact_context = AsyncMock()  # type: ignore[method-assign]
+        _, wire_token = _wire_context()
 
-        recovered = await soul._recover_from_context_overflow(step_no=3)
+        try:
+            recovered = await soul._recover_from_context_overflow(step_no=3)
+        finally:
+            _reset_wire_context(wire_token)
 
         assert recovered is True
         soul.prune_context.assert_awaited_once()
@@ -51,8 +70,12 @@ class TestRecoverFromContextOverflow:
         soul = _make_soul(runtime, tmp_path)
         soul.prune_context = AsyncMock(side_effect=RuntimeError("prune broke"))  # type: ignore[method-assign]
         soul.compact_context = AsyncMock()  # type: ignore[method-assign]
+        _, wire_token = _wire_context()
 
-        recovered = await soul._recover_from_context_overflow(step_no=3)
+        try:
+            recovered = await soul._recover_from_context_overflow(step_no=3)
+        finally:
+            _reset_wire_context(wire_token)
 
         assert recovered is True
         soul.compact_context.assert_awaited_once()
@@ -62,7 +85,11 @@ class TestRecoverFromContextOverflow:
         soul = _make_soul(runtime, tmp_path)
         soul.prune_context = AsyncMock(return_value=False)  # type: ignore[method-assign]
         soul.compact_context = AsyncMock(side_effect=RuntimeError("compact broke"))  # type: ignore[method-assign]
+        _, wire_token = _wire_context()
 
-        recovered = await soul._recover_from_context_overflow(step_no=3)
+        try:
+            recovered = await soul._recover_from_context_overflow(step_no=3)
+        finally:
+            _reset_wire_context(wire_token)
 
         assert recovered is False

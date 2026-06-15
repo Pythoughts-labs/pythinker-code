@@ -1510,7 +1510,7 @@ async def test_agent_tool_background_rejects_invalid_subagent_type(agent_tool, r
 
     assert result.is_error
     assert result.brief == "Invalid subagent type"
-    assert "Builtin subagent type not found" in result.message
+    assert "Unknown subagent type 'does-not-exist'" in result.message
 
 
 async def test_agent_tool_background_rejects_invalid_model_alias_before_start(
