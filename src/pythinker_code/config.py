@@ -592,6 +592,10 @@ class LoopControl(BaseModel):
     this value, instead of continuing to ``max_steps_per_turn``. Off by default
     (``None``). Best-effort: cost is estimated from token usage and is ``0`` for models
     with unknown pricing, so the ceiling never blocks when spend cannot be estimated."""
+    budget_nudge_ratio: float = Field(default=0.75, ge=0.0, le=0.99)
+    """When ``max_session_cost_usd`` is set and goal auto-continue is off, append a
+    one-shot spend reminder once estimated session cost crosses this fraction of the
+    ceiling. Does not auto-continue the loop."""
     max_retries_per_step: int = Field(default=3, ge=1)
     """Maximum number of retries in one step"""
     max_ralph_iterations: int = Field(default=0, ge=-1)

@@ -444,6 +444,21 @@ class TurnOutcome:
         return bool(self.final_message.extract_text(" ").strip())
 
 
+def _should_append_budget_nudge(
+    *,
+    session_cost_usd: float,
+    ceiling: float | None,
+    ratio: float,
+    auto_continue: bool,
+    already_used: bool,
+) -> bool:
+    if ceiling is None or ceiling <= 0 or auto_continue or already_used:
+        return False
+    if session_cost_usd <= 0:
+        return False
+    return session_cost_usd >= ceiling * ratio
+
+
 class PythinkerSoul:
     """The soul of Pythinker CLI."""
 
@@ -480,6 +495,7 @@ class PythinkerSoul:
             input_other=0, output=0, input_cache_read=0, input_cache_creation=0
         )
         self._session_cost_usd = 0.0
+        self._budget_nudge_used = False
         self._deliberation_generation = 0
         self._sleep_inhibitor = SleepInhibitor(enabled=agent.runtime.config.prevent_idle_sleep)
         self._compaction = SimpleCompaction(base_prompt=self._runtime.config.compact_prompt)
@@ -1267,6 +1283,7 @@ class PythinkerSoul:
 
         self._current_turn_id = uuid.uuid4().hex
         self._last_tool_calls = []
+        self._budget_nudge_used = False
         self._sleep_inhibitor.set_turn_running(True)
         try:
             bus = shared_event_bus()
@@ -1293,6 +1310,7 @@ class PythinkerSoul:
                 await self._context.append_message(user_message)
                 logger.debug("Appended user message to context")
                 outcome = await self._agent_loop()
+                await self._maybe_append_budget_nudge()
                 span.set_attribute("turn.stop_reason", outcome.stop_reason)
                 span.set_attribute("turn.step_count", outcome.step_count)
                 # Observable signal that a turn ended without a substantive answer (a
@@ -1316,6 +1334,29 @@ class PythinkerSoul:
                 return outcome
         finally:
             self._sleep_inhibitor.set_turn_running(False)
+
+    async def _maybe_append_budget_nudge(self) -> None:
+        """Append a one-shot spend reminder when the session nears its cost ceiling."""
+        if not _should_append_budget_nudge(
+            session_cost_usd=self._session_cost_usd,
+            ceiling=self._loop_control.max_session_cost_usd,
+            ratio=self._loop_control.budget_nudge_ratio,
+            auto_continue=self._runtime.config.goal.auto_continue,
+            already_used=self._budget_nudge_used,
+        ):
+            return
+        ceiling = self._loop_control.max_session_cost_usd
+        assert ceiling is not None
+        import pythinker_code.prompts as prompts
+
+        pct = min(100.0, (self._session_cost_usd / ceiling) * 100.0)
+        nudge = prompts.BUDGET_CONTINUATION_NUDGE.format(
+            pct=pct,
+            spent=self._session_cost_usd,
+            ceiling=ceiling,
+        )[:500]
+        await self._context.append_message(Message(role="user", content=[system_reminder(nudge)]))
+        self._budget_nudge_used = True
 
     def _build_slash_commands(self) -> list[SlashCommand[Any]]:
         commands: list[SlashCommand[Any]] = list(soul_slash_registry.list_commands())
