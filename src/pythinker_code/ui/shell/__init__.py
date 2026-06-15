@@ -2563,7 +2563,11 @@ def _print_welcome_info(
 
     show_logo = not ascii_mode
     use_columns = bool(tips) and content_width >= _WELCOME_COLUMNS_MIN_WIDTH
-    logo_rendered = show_logo and (use_columns or content_width >= 68)
+    # The robot sits beside the copy when there's room (~68 cells); in a compact
+    # terminal it stacks centered above the copy instead of being dropped, so the
+    # mark stays visible at any width that can render its Unicode glyphs.
+    logo_beside_copy = show_logo and not use_columns and content_width >= 68
+    logo_rendered = show_logo  # columns-centered, beside, or stacked — only ASCII hides it
 
     version_title = Text.assemble(
         ("Pythinker Code", tui_rich_style("muted")),
@@ -2612,7 +2616,7 @@ def _print_welcome_info(
             columns.add_row(Group(*left_rows), _tips_block(tips_width, with_rule=True))
             rows.append(columns)
         else:
-            if logo_rendered:
+            if logo_beside_copy:
                 # Logo on the left; the text block centers vertically against
                 # the robot so the lines sit beside the face while the antenna
                 # floats above.
@@ -2621,6 +2625,10 @@ def _print_welcome_info(
                 table.add_column(justify="left", vertical="middle", no_wrap=True)
                 table.add_row(_logo_text(), Group(head, strapline, help_text))
                 rows.append(table)
+            elif show_logo:
+                # Compact terminal: too narrow to seat the robot beside the
+                # copy, so stack it centered above instead of dropping it.
+                rows.extend([Align.center(_logo_text()), Text(""), head, strapline, help_text])
             else:
                 rows.extend([head, strapline, help_text])
 
