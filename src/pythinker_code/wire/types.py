@@ -332,6 +332,14 @@ class ToolUseSkipped(BaseModel):
     """Whether the skip follows an interrupted in-flight call."""
 
 
+class ContextOverflowRecovered(BaseModel):
+    """Reactive context-overflow compact retry outcome."""
+
+    outcome: Literal["recovered", "failed"]
+    trigger_step: int
+    """The step number that triggered the overflow rejection."""
+
+
 class SubagentEvent(BaseModel):
     """
     An event from a subagent.
@@ -677,6 +685,7 @@ type Event = (
     | SubagentToolFallback
     | AgentListDelta
     | ToolUseSkipped
+    | ContextOverflowRecovered
 )
 """Any event, including control flow and content/tooling events."""
 
@@ -835,6 +844,7 @@ __all__ = [
     "SubagentToolFallback",
     "AgentListDelta",
     "ToolUseSkipped",
+    "ContextOverflowRecovered",
     "ApprovalRequest",
     "ToolCallRequest",
     "QuestionOption",

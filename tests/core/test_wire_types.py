@@ -1,5 +1,6 @@
 from pythinker_code.wire.types import (
     AgentListDelta,
+    ContextOverflowRecovered,
     SubagentToolFallback,
     TodoListUpdated,
     ToolUseSkipped,
@@ -37,5 +38,11 @@ def test_tool_use_skipped_round_trip() -> None:
         reason="concurrent_inflight",
         resumed=True,
     )
+    env = WireMessageEnvelope.from_wire_message(evt)
+    assert env.to_wire_message() == evt
+
+
+def test_context_overflow_recovered_round_trip() -> None:
+    evt = ContextOverflowRecovered(outcome="recovered", trigger_step=3)
     env = WireMessageEnvelope.from_wire_message(evt)
     assert env.to_wire_message() == evt

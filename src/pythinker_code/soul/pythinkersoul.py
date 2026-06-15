@@ -126,6 +126,7 @@ from pythinker_code.wire.types import (
     CompactionBegin,
     CompactionEnd,
     ContentPart,
+    ContextOverflowRecovered,
     MCPLoadingBegin,
     MCPLoadingEnd,
     QuestionItem,
@@ -1504,6 +1505,7 @@ class PythinkerSoul:
         self._truncation_recoveries = 0
         # One-shot per turn: reactive compact-and-retry after a provider
         # context-length rejection (proactive thresholds can undercount).
+        # A second context_overflow on the retry must propagate, not retry again.
         overflow_recovery_used = False
         while True:
             # Spend ceiling: stop before starting another (paid) step once the session's
@@ -2170,7 +2172,9 @@ class PythinkerSoul:
                 error=compact_err,
             )
             track("context_overflow_recovery", outcome="failed")
+            wire_send(ContextOverflowRecovered(outcome="failed", trigger_step=step_no))
             return False
+        wire_send(ContextOverflowRecovered(outcome="recovered", trigger_step=step_no))
         track("context_overflow_recovery", outcome="recovered")
         return True
 
