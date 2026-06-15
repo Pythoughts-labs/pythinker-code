@@ -258,7 +258,8 @@ Reply with a choice using <choice>...</choice>.\
 """  # noqa: E501
                         ),
                     ],
-                ), Message(
+                ),
+                Message(
                     role="assistant", content=[TextPart(text="second <choice>CONTINUE</choice>")]
                 ),
                 Message(
@@ -276,7 +277,8 @@ Reply with a choice using <choice>...</choice>.\
 """  # noqa: E501
                         ),
                     ],
-                ), Message(role="assistant", content=[TextPart(text="third <choice>STOP</choice>")]),
+                ),
+                Message(role="assistant", content=[TextPart(text="third <choice>STOP</choice>")]),
             ]
         ),
     )
@@ -328,7 +330,8 @@ Reply with a choice using <choice>...</choice>.\
 """  # noqa: E501
                         ),
                     ],
-                ), Message(role="assistant", content=[TextPart(text="done <choice>STOP</choice>")]),
+                ),
+                Message(role="assistant", content=[TextPart(text="done <choice>STOP</choice>")]),
             ]
         ),
     )
