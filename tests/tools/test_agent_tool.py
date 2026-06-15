@@ -2664,3 +2664,28 @@ async def test_run_agents_foreground_aggregates_child_risks_and_blockers(runtime
     assert result.output.count("Shared cache key may collide.") >= 1
     assert "reviewer-0, reviewer-1" in result.output
     assert "batch_blockers:" not in result.output
+
+
+class _RecordingWire:
+    def __init__(self, captured: list[object]) -> None:
+        self.soul_side = self
+        self._captured = captured
+
+    def send(self, msg: object) -> None:
+        self._captured.append(msg)
+
+
+async def test_unknown_subagent_type_emits_fallback_wire_event(runtime: Runtime) -> None:
+    from unittest.mock import patch
+
+    from pythinker_code.tools.agent import AgentTool, Params
+
+    captured: list[object] = []
+    tool = AgentTool(runtime)
+    with (
+        tool_call_context("Agent"),
+        patch("pythinker_code.soul.get_wire_or_none", return_value=_RecordingWire(captured)),
+    ):
+        result = await tool(Params(description="x", prompt="y", subagent_type="does-not-exist"))
+    assert result.is_error
+    assert any(type(e).__name__ == "SubagentToolFallback" for e in captured)

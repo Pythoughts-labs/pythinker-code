@@ -22,7 +22,38 @@ from pythinker_code.subagents.runner import (
 from pythinker_code.subagents.usage import aggregate_findings, summarize_batch
 from pythinker_code.tools.utils import ToolResultStatus, load_desc, tool_status_line
 from pythinker_code.utils.logging import logger
-from pythinker_code.wire.types import MCPStatusSnapshot
+from pythinker_code.wire.types import MCPStatusSnapshot, SubagentToolFallback
+
+
+def _emit_subagent_tool_fallback(
+    runtime: Runtime,
+    *,
+    reason: Literal[
+        "unavailable_agent_type",
+        "mcp_unavailable",
+        "policy_denied",
+        "timeout",
+        "exception",
+    ],
+    requested_type: str,
+) -> None:
+    try:
+        from pythinker_code.soul import get_wire_or_none
+
+        if wire := get_wire_or_none():
+            wire.soul_side.send(
+                SubagentToolFallback(
+                    reason=reason,
+                    requested_type=requested_type,
+                    available_types=tuple(sorted(runtime.labor_market.builtin_types)),
+                )
+            )
+    except Exception as exc:  # noqa: BLE001 - wire events must not break the tool path
+        logger.debug(
+            "Failed to emit SubagentToolFallback for {requested_type}: {error}",
+            requested_type=requested_type,
+            error=exc,
+        )
 
 
 def _missing_required_mcp_servers(
@@ -333,6 +364,22 @@ class AgentTool(CallableTool2[Params]):
                 brief="Invalid model alias",
             )
         requested_type = params.subagent_type or "coder"
+        if (
+            params.resume is None
+            and self._runtime.labor_market.get_builtin_type(requested_type) is None
+        ):
+            _emit_subagent_tool_fallback(
+                self._runtime,
+                reason="unavailable_agent_type",
+                requested_type=requested_type,
+            )
+            return ToolError(
+                message=(
+                    f"Unknown subagent type {requested_type!r}. Available types: "
+                    f"{', '.join(sorted(self._runtime.labor_market.builtin_types))}."
+                ),
+                brief="Invalid subagent type",
+            )
         if err := self.check_execution_policy(requested_type):
             return err
         # Gate a FRESH spawn on the agent type's required MCP servers (resume is not a
@@ -406,6 +453,11 @@ class AgentTool(CallableTool2[Params]):
         except KeyError as exc:
             # Hallucinated subagent type: routine model error, not a crash —
             # name the valid types so the model can self-correct.
+            _emit_subagent_tool_fallback(
+                self._runtime,
+                reason="unavailable_agent_type",
+                requested_type=params.subagent_type or "coder",
+            )
             return ToolError(
                 message=(
                     f"{exc.args[0] if exc.args else exc}. Available types: "
@@ -563,6 +615,11 @@ class AgentTool(CallableTool2[Params]):
             # Malformed resume id (store.instance_dir validates [A-Za-z0-9_-]{1,64}).
             return ToolError(message=str(exc), brief="Agent not found")
         except KeyError as exc:
+            _emit_subagent_tool_fallback(
+                self._runtime,
+                reason="unavailable_agent_type",
+                requested_type=params.subagent_type or "coder",
+            )
             return ToolError(
                 message=(
                     f"{exc.args[0] if exc.args else exc}. Available types: "
