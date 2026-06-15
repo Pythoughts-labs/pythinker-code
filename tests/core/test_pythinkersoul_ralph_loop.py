@@ -25,8 +25,6 @@ from pythinker_code.utils.aioqueue import QueueShutDown
 from pythinker_code.wire import Wire
 from pythinker_code.wire.types import TurnBegin
 
-from pythinker_core import Message
-
 
 @pytest.fixture
 def approval() -> Approval:
@@ -260,15 +258,21 @@ Reply with a choice using <choice>...</choice>.\
 """  # noqa: E501
                         ),
                     ],
-                ), Message(
-    role="user",
-    content=[TextPart(text="""\
+                ),
+                Message(
+                    role="user",
+                    content=[
+                        TextPart(
+                            text="""\
 <system-reminder>
 Available agent types (this list is regenerated when subagent specs change):
 - `mocker`: The mock agent for testing purposes. (Tools: All tools)
 </system-reminder>\
-""")],
-), Message(
+"""
+                        )
+                    ],
+                ),
+                Message(
                     role="assistant", content=[TextPart(text="second <choice>CONTINUE</choice>")]
                 ),
                 Message(
@@ -286,15 +290,21 @@ Reply with a choice using <choice>...</choice>.\
 """  # noqa: E501
                         ),
                     ],
-                ), Message(
-    role="user",
-    content=[TextPart(text="""\
+                ),
+                Message(
+                    role="user",
+                    content=[
+                        TextPart(
+                            text="""\
 <system-reminder>
 Available agent types (this list is regenerated when subagent specs change):
 - `mocker`: The mock agent for testing purposes. (Tools: All tools)
 </system-reminder>\
-""")],
-), Message(role="assistant", content=[TextPart(text="third <choice>STOP</choice>")]),
+"""
+                        )
+                    ],
+                ),
+                Message(role="assistant", content=[TextPart(text="third <choice>STOP</choice>")]),
             ]
         ),
     )
@@ -346,15 +356,21 @@ Reply with a choice using <choice>...</choice>.\
 """  # noqa: E501
                         ),
                     ],
-                ), Message(
-    role="user",
-    content=[TextPart(text="""\
+                ),
+                Message(
+                    role="user",
+                    content=[
+                        TextPart(
+                            text="""\
 <system-reminder>
 Available agent types (this list is regenerated when subagent specs change):
 - `mocker`: The mock agent for testing purposes. (Tools: All tools)
 </system-reminder>\
-""")],
-), Message(role="assistant", content=[TextPart(text="done <choice>STOP</choice>")]),
+"""
+                        )
+                    ],
+                ),
+                Message(role="assistant", content=[TextPart(text="done <choice>STOP</choice>")]),
             ]
         ),
     )
