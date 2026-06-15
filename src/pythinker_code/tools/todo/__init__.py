@@ -85,6 +85,31 @@ def _normalize_single_in_progress(todos: list[Todo]) -> tuple[list[Todo], int]:
     return normalized, demoted
 
 
+def _emit_todo_list_updated(
+    todos: list[Todo],
+    *,
+    source: Literal["tool", "scratch", "compaction"],
+    complete: bool | None = None,
+) -> None:
+    """Best-effort wire event; never raises into the tool path."""
+    try:
+        from pythinker_code.soul import get_wire_or_none
+        from pythinker_code.wire.types import TodoListUpdated
+
+        if wire := get_wire_or_none():
+            if complete is None:
+                complete = not todos or all(todo.status in ("done", "cancelled") for todo in todos)
+            wire.soul_side.send(
+                TodoListUpdated(
+                    items=tuple((todo.title, todo.status) for todo in todos),
+                    complete=complete,
+                    source=source,
+                )
+            )
+    except Exception:
+        logger.debug("Failed to emit TodoListUpdated", exc_info=True)
+
+
 class SetTodoList(CallableTool2[Params]):
     name: str = "SetTodoList"
     description: str = load_desc(Path(__file__).parent / "set_todo_list.md")
@@ -162,6 +187,7 @@ class SetTodoList(CallableTool2[Params]):
     def _write_todos(self, todos: list[Todo]) -> ToolReturnValue:
         """Persist the todo list and return confirmation."""
         self._save_todos(todos)
+        _emit_todo_list_updated(todos, source="tool")
 
         items = [TodoDisplayItem(title=todo.title, status=todo.status) for todo in todos]
         return ToolReturnValue(
@@ -176,6 +202,7 @@ class SetTodoList(CallableTool2[Params]):
     def _read_todos(self) -> ToolReturnValue:
         """Return the current todo list as text output for the model."""
         todos = self._load_todos()
+        _emit_todo_list_updated(todos, source="tool", complete=not bool(todos))
         if not todos:
             return ToolReturnValue(
                 is_error=False,
