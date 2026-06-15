@@ -59,6 +59,8 @@ def test_default_config_dump():
                 "prune_trigger_ratio": 0.7,
                 "prune_protect_last": 20,
                 "prune_min_chars": 2000,
+                "prune_tool_result_max_chars": 0,
+                "budget_nudge_ratio": 0.75,
             },
             "background": {
                 "max_running_tasks": 4,
@@ -88,6 +90,7 @@ def test_default_config_dump():
                 "injection_bus": True,
                 "injection_ceiling_tokens": 2048,
                 "harvest_on_compaction": False,
+                "harvest_on_stop": False,
                 "journal_recaps": False,
                 "consolidation": False,
                 "durable_memory": False,

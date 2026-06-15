@@ -168,6 +168,12 @@ model; `/usage` defaults to the active provider, with `/usage all` as the explic
 | `src/pythinker_code/ui/print/` | Non-interactive output (text / stream-json). | `Print` |
 | `src/pythinker_code/ui/acp/` | Deprecated single-session ACP shim (raises on use); the live server is `src/pythinker_code/acp/`. | `ACP` |
 
+The agent loop emits per-turn and per-step events for UI, replay, and dashboard consumers. The
+canonical list lives in the `Event` union in `src/pythinker_code/wire/types.py`; commonly consumed
+events include `StepBegin`, `StepRetry`, `StepInterrupted`, `ToolExecutionStarted`, `StatusUpdate`,
+`TodoListUpdated`, `SubagentToolFallback`, `AgentListDelta`, `ToolUseSkipped`, and
+`ContextOverflowRecovered`.
+
 The shell can run with a working directory inside its subtree, so `src/pythinker_code/ui/`
 is a candidate for a focused nested guide on prompt, visualization, and component layout.
 

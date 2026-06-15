@@ -309,6 +309,9 @@ async def test_default_agent_background_bash_guardrails(runtime: Runtime):
             "ReadSkill",
             "AskUserQuestion",
             "SetTodoList",
+            "ToolSearch",
+            "EnterWorktree",
+            "ExitWorktree",
             "UpdateGoal",
             "Progress",
             "Suggest",
@@ -379,6 +382,13 @@ instance can preserve previous findings and work.
 - For thorough large-codebase exploration, prefer scoped questions over one broad scan, and pass an explicit longer `timeout` (for example 1800-3600 seconds) when using background agents. If an agent times out, do not relaunch the same broad prompt unchanged; use targeted direct scans or resume the saved agent with a narrower continuation prompt.
 - Cross-check at least one load-bearing subagent finding before making changes from it.
 - The subagent result is only visible to you. If the user should see it, summarize it yourself.
+
+**Prompt Hygiene**
+
+When spawning a fresh agent, brief it like a smart colleague who just walked in: include the goal,
+what was tried, what is in and out of scope, the expected output contract, and how the result will
+be verified. For lookups, pass the exact command or symbol; for investigations, pass the question,
+not a prescribed sequence of steps.
 
 **Agent Workflow Design**
 

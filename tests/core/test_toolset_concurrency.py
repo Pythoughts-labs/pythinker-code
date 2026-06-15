@@ -111,6 +111,23 @@ class TestSameStepConcurrencyPolicy:
 
         assert events.index(("exit", "Read")) < events.index(("enter", "Write"))
 
+    async def test_unflagged_plugin_like_tool_runs_exclusively(self, tmp_path: Path) -> None:
+        events: list[tuple[str, str]] = []
+        toolset = _toolset(
+            _RecordingTool("PluginA", events, parallel=False),
+            _RecordingTool("PluginB", events, parallel=False),
+            cwd=tmp_path,
+        )
+
+        await _dispatch(toolset, "PluginA", "PluginB")
+
+        assert events == [
+            ("enter", "PluginA"),
+            ("exit", "PluginA"),
+            ("enter", "PluginB"),
+            ("exit", "PluginB"),
+        ]
+
 
 class TestParallelSafeFlags:
     def test_read_only_builtins_are_parallel_safe(self) -> None:

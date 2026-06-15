@@ -57,6 +57,13 @@ instance can preserve previous findings and work.
 - Cross-check at least one load-bearing subagent finding before making changes from it.
 - The subagent result is only visible to you. If the user should see it, summarize it yourself.
 
+**Prompt Hygiene**
+
+When spawning a fresh agent, brief it like a smart colleague who just walked in: include the goal,
+what was tried, what is in and out of scope, the expected output contract, and how the result will
+be verified. For lookups, pass the exact command or symbol; for investigations, pass the question,
+not a prescribed sequence of steps.
+
 **Agent Workflow Design**
 
 Use subagents as focused logical roles, not just extra tool capacity:
