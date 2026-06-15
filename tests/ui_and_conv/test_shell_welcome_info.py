@@ -123,6 +123,9 @@ def test_welcome_banner_layout_width_matrix(monkeypatch):
     from pythinker_code.ui.shell.components.render_utils import cell_width
 
     monkeypatch.setattr(shell_module, "get_version", lambda: "9.9.9")
+    # Pin Unicode glyph rendering so the robot-mark assertion below is
+    # deterministic regardless of the ambient locale/stdout encoding.
+    monkeypatch.setattr(shell_module, "ascii_glyphs_enabled", lambda: False)
     items = [
         WelcomeInfoItem(name="Directory", value="/home/ai/Projects/pythinker-code-main"),
         WelcomeInfoItem(name="Model", value="gpt-5.1-codex"),
