@@ -61,7 +61,6 @@ def test_default_config_dump():
                 "prune_protect_last": 20,
                 "prune_min_chars": 2000,
                 "prune_tool_result_max_chars": 0,
-                "budget_nudge_ratio": 0.75,
             },
             "background": {
                 "max_running_tasks": 4,

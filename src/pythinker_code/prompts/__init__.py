@@ -10,12 +10,6 @@ GOAL_SET = (Path(__file__).parent / "goal_set.md").read_text(encoding="utf-8")
 GOAL_CONTINUATION = (Path(__file__).parent / "goal_continuation.md").read_text(encoding="utf-8")
 GOAL_WRAP_UP = (Path(__file__).parent / "goal_wrap_up.md").read_text(encoding="utf-8")
 BUDGET_CONTINUATION_NUDGE = (
-    "You have used ~{pct:.0f}% of this session's configured spend ceiling "
-    "(${spent:.2f} of ${ceiling:.2f}). Pause new work and finish the current request. "
-    "If you need more, raise `loop_control.max_session_cost_usd` in config."
-)
-
-BUDGET_CONTINUATION_NUDGE = (
     "The session has crossed {ratio:.0%} of its configured spend ceiling "
     "(estimated ${spent:.2f} of ${ceiling:.2f}). Continue only if the remaining work is "
     "worth the budget; prefer summarizing progress or asking the user before expensive next steps."

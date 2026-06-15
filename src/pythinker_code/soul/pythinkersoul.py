@@ -309,7 +309,7 @@ def _budget_nudge_message(*, session_cost_usd: float, ceiling: float, ratio: flo
         spent=session_cost_usd,
         ceiling=ceiling,
     )
-    return Message(role="user", content=[system_reminder(text[:450])])
+    return Message(role="user", content=[system_reminder(text[:500])])
 
 
 def _user_message_with_hook_context(

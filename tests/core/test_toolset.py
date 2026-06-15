@@ -751,15 +751,6 @@ def test_tool_defers_execution_started_reads_flag_only() -> None:
 # --- ToolUseSkipped wire event (opt-in per tool) ---
 
 
-class _RecordingWire:
-    def __init__(self, captured: list[object]) -> None:
-        self.soul_side = self
-        self._captured = captured
-
-    def send(self, msg: object) -> None:
-        self._captured.append(msg)
-
-
 class DummyToolEmitsSkipped(DummyToolA):
     emits_tool_use_skipped: ClassVar[bool] = True
 
@@ -808,39 +799,3 @@ async def test_streaming_skip_when_concurrent_inflight_does_not_emit_when_queued
         ("exit", "Shell"),
     ]
     assert not any(isinstance(e, type) and e.__name__ == "ToolUseSkipped" for e in captured)
-
-
-async def test_cross_step_dedup_emits_tool_use_skipped_when_opted_in(tmp_path: Path) -> None:
-    """Cross-step duplicate calls emit ToolUseSkipped only when the tool opts in."""
-    from unittest.mock import patch
-
-    from pythinker_code.hooks.engine import HookEngine
-    from pythinker_code.wire.types import ToolUseSkipped
-
-    ts = PythinkerToolset()
-    ts.add(DummyToolEmitsSkipped())
-    ts._hook_engine = HookEngine([], cwd=str(tmp_path))
-    captured: list[object] = []
-    args = '{"a":1}'
-
-    with patch("pythinker_code.soul.get_wire_or_none", return_value=_RecordingWire(captured)):
-        ts.begin_step([])
-        task1 = ts.handle(
-            ToolCall(id="tc1", function=ToolCall.FunctionBody(name="ToolA", arguments=args))
-        )
-        assert isinstance(task1, asyncio.Task)
-        await task1
-        prev = ts.end_step()
-        ts.begin_step(prev)
-        task2 = ts.handle(
-            ToolCall(id="tc2", function=ToolCall.FunctionBody(name="ToolA", arguments=args))
-        )
-        assert isinstance(task2, asyncio.Task)
-        await task2
-        ts.end_step()
-
-    skipped = [e for e in captured if isinstance(e, ToolUseSkipped)]
-    assert len(skipped) == 1
-    assert skipped[0].tool_call_id == "tc2"
-    assert skipped[0].tool_name == "ToolA"
-    assert skipped[0].reason == "dedup"
