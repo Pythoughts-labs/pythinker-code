@@ -996,11 +996,13 @@ def test_display_block_todo(tmp_path) -> None:
                             "extras": None,
                         },
                     },
-                }, {
-    "method": "event",
-    "type": "TodoListUpdated",
-    "payload": {"items": [["one", "pending"]], "complete": False, "source": "tool"},
-}, {"method": "event", "type": "StepBegin", "payload": {"n": 2}},
+                },
+                {
+                    "method": "event",
+                    "type": "TodoListUpdated",
+                    "payload": {"items": [["one", "pending"]], "complete": False, "source": "tool"},
+                },
+                {"method": "event", "type": "StepBegin", "payload": {"n": 2}},
                 {
                     "method": "event",
                     "type": "ContentPart",
@@ -1126,11 +1128,13 @@ def test_tool_call_part_streaming(tmp_path) -> None:
                             "extras": None,
                         },
                     },
-                }, {
-    "method": "event",
-    "type": "TodoListUpdated",
-    "payload": {"items": [["a", "pending"]], "complete": False, "source": "tool"},
-}, {"method": "event", "type": "StepBegin", "payload": {"n": 2}},
+                },
+                {
+                    "method": "event",
+                    "type": "TodoListUpdated",
+                    "payload": {"items": [["a", "pending"]], "complete": False, "source": "tool"},
+                },
+                {"method": "event", "type": "StepBegin", "payload": {"n": 2}},
                 {
                     "method": "event",
                     "type": "ContentPart",
