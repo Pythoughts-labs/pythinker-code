@@ -2126,6 +2126,7 @@ class CustomPromptSession:
         status_block_provider: Callable[[int], AnyFormattedText | None] | None = None,
         fast_refresh_provider: Callable[[], bool] | None = None,
         background_task_count_provider: Callable[[], BgTaskCounts] | None = None,
+        update_notice_provider: Callable[[], str | None] | None = None,
         model_capabilities: set[ModelCapability],
         model_name: str | None,
         thinking: bool,
@@ -2173,6 +2174,7 @@ class CustomPromptSession:
         self._status_block_provider = status_block_provider
         self._fast_refresh_provider = fast_refresh_provider
         self._background_task_count_provider = background_task_count_provider
+        self._update_notice_provider = update_notice_provider
         self._editor_command_provider = editor_command_provider
         self._turn_recaps_provider = turn_recaps_provider
         self._plan_mode_toggle_callback = plan_mode_toggle_callback
@@ -3711,6 +3713,23 @@ class CustomPromptSession:
                 error=exc,
             )
 
+    def _prepend_update_notice(self, fragments: list[tuple[str, str]], columns: int) -> None:
+        """Prepend a persistent yellow 'update available' line above the footer
+        separator, so it renders directly under the prompt input. No-op when no
+        update is pending; style-agnostic across both toolbar layouts."""
+        provider = getattr(self, "_update_notice_provider", None)
+        if provider is None:
+            return
+        text = provider()
+        if not text:
+            return
+        line = _truncate_right(text, max(0, columns - 1))
+        if not line:
+            return
+        tokens = _get_tui_tokens()
+        style = f"fg:{tokens.warning or 'ansiyellow'} bold"
+        fragments[:0] = [(style, line), ("", "\n")]
+
     def _render_bottom_toolbar(self) -> FormattedText:
         if (
             hasattr(self, "_session")
@@ -3733,6 +3752,7 @@ class CustomPromptSession:
         fragments: list[tuple[str, str]] = []
         tc = get_toolbar_colors()
 
+        self._prepend_update_notice(fragments, columns)
         fragments.append((self._prompt_separator_style(tc.separator), _prompt_rule(columns)))
         fragments.append(("", "\n"))
 
@@ -3963,6 +3983,7 @@ class CustomPromptSession:
         secondary_style = f"fg:{tokens.muted}"
 
         fragments: list[tuple[str, str]] = []
+        self._prepend_update_notice(fragments, columns)
         fragments.append((self._prompt_separator_style(tc.separator), _prompt_rule(columns)))
         fragments.append(("", "\n"))
 

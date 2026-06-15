@@ -123,6 +123,9 @@ def test_welcome_banner_layout_width_matrix(monkeypatch):
     from pythinker_code.ui.shell.components.render_utils import cell_width
 
     monkeypatch.setattr(shell_module, "get_version", lambda: "9.9.9")
+    # Pin Unicode glyph rendering so the robot-mark assertion below is
+    # deterministic regardless of the ambient locale/stdout encoding.
+    monkeypatch.setattr(shell_module, "ascii_glyphs_enabled", lambda: False)
     items = [
         WelcomeInfoItem(name="Directory", value="/home/ai/Projects/pythinker-code-main"),
         WelcomeInfoItem(name="Model", value="gpt-5.1-codex"),
@@ -155,10 +158,9 @@ def test_welcome_banner_layout_width_matrix(monkeypatch):
         assert "Tips" in output
         assert "/update" in lines[-1]
         assert "/help" in output
-        if width == 60:
-            assert "▛" not in output
-        else:
-            assert "▛" in output
+        # The robot mark renders at every width, including the compact 60-col
+        # layout where it stacks above the copy instead of being dropped.
+        assert "▛" in output
 
 
 def test_welcome_two_column_layout_when_wide(monkeypatch):
@@ -187,6 +189,29 @@ def test_welcome_two_column_layout_when_wide(monkeypatch):
     dir_line = next(ln for ln in lines if "Directory" in ln)
     assert dir_line.count("│") == 3
     assert "/tmp/proj" in dir_line
+
+
+def test_welcome_compact_terminal_stacks_robot_above_copy(monkeypatch):
+    """In a compact terminal the robot is prioritized: it stacks centered above
+    the welcome copy instead of being dropped (the pre-fix behavior)."""
+    from pythinker_code.ui.shell import WelcomeInfoItem
+
+    console = Console(record=True, width=58, color_system=None)
+    monkeypatch.setattr(shell_module, "console", console)
+    monkeypatch.setattr(shell_module, "get_version", lambda: "9.9.9")
+    monkeypatch.setattr(shell_module, "ascii_glyphs_enabled", lambda: False)
+
+    shell_module._print_welcome_info(
+        "Pythinker Code",
+        [WelcomeInfoItem(name="Tip", value="Type /help for commands.")],
+    )
+
+    lines = [ln for ln in console.export_text().splitlines() if ln.strip()]
+    robot_line = next(i for i, ln in enumerate(lines) if "▛" in ln)
+    welcome_line = next(i for i, ln in enumerate(lines) if "Welcome to Pythinker" in ln)
+    # Robot is shown (not dropped) and sits on its own line above the copy.
+    assert robot_line < welcome_line
+    assert "Welcome to Pythinker" not in lines[robot_line]
 
 
 def test_welcome_ascii_mode_emits_pure_ascii(monkeypatch):

@@ -64,7 +64,13 @@ LATEST_VERSION_ETAG_FILE = get_share_dir() / "latest_version.etag"
 LAST_UPDATE_CHECK_FILE = get_share_dir() / "last_update_check.txt"
 DISMISSED_VERSION_FILE = get_share_dir() / "dismissed_update_version.txt"
 LAST_SEEN_VERSION_FILE = get_share_dir() / "last_seen_version.txt"
-AUTO_UPDATE_CHECK_INTERVAL_SECONDS = 24 * 60 * 60
+# ponytail: 30m throttle so a freshly-pushed release is picked up on the next
+# restart instead of up to a day later. The check is unauthenticated, so each
+# poll costs one of GitHub's 60 req/hr/IP budget regardless of the cached ETag
+# (304s are only rate-limit-free when authenticated) — at ~2 polls/hr/startup
+# that is a wide margin. A throttle miss fails safe: a transient error returns
+# FAILED, which skips the mark and retries next launch.
+AUTO_UPDATE_CHECK_INTERVAL_SECONDS = 30 * 60
 PROMPT_UPDATE_REFRESH_TIMEOUT_SECONDS = 2.0
 WINDOWS_UPDATE_STAGING_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 UPGRADE_COMMAND_TIMEOUT_SECONDS = 30 * 60
