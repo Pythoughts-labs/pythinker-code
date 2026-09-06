@@ -53,6 +53,7 @@ export {
   KIMI_CODING_BASE_URL,
   KIMI_CODING_PROVIDER_ID,
   KIMI_OAUTH_PLATFORM_ID,
+  refreshKimiOAuthToken,
   runKimiOAuthFlow,
 } from './kimi-oauth';
 export type {
@@ -69,6 +70,7 @@ export {
   minimaxRegionLabel,
   MINIMAX_OAUTH_PLATFORM_ID_CN,
   MINIMAX_OAUTH_PLATFORM_ID_GLOBAL,
+  refreshMiniMaxOAuthToken,
   runMiniMaxOAuthFlow,
 } from './minimax-oauth';
 export type {
