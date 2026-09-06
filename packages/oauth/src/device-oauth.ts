@@ -50,10 +50,7 @@ function positiveSeconds(value: unknown): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
-/**
- * Requests a device code + user code from the authorization server. Fields
- * are read defensively since compatible providers can vary optional fields.
- */
+/** Requests a device code + user code from an RFC 8628 authorization endpoint. */
 export async function requestDeviceCode(
   url: string,
   body: Record<string, string>,
@@ -131,9 +128,9 @@ export interface PollDeviceTokenOptions {
 }
 
 /**
- * Polls the token endpoint until the user completes authorization, the
- * device code expires, or the caller aborts. Returns the raw parsed JSON
- * payload on success — each provider interprets its own token field names.
+ * Polls the token endpoint until authorization succeeds, expires, is denied,
+ * or the caller aborts. The local deadline is authoritative before and after
+ * every network round trip so a late success cannot revive an expired code.
  */
 export async function pollForDeviceToken(
   url: string,
@@ -149,6 +146,7 @@ export async function pollForDeviceToken(
     options.signal?.throwIfAborted();
     await sleep(intervalMs, options.signal);
     options.signal?.throwIfAborted();
+    if (Date.now() >= options.expiresAtMs) throw new DeviceCodeExpiredError();
 
     const response = await fetchImpl(url, {
       method: 'POST',
@@ -161,6 +159,8 @@ export async function pollForDeviceToken(
       signal: options.signal,
     });
     const payload: unknown = await response.json().catch(() => undefined);
+    options.signal?.throwIfAborted();
+    if (Date.now() >= options.expiresAtMs) throw new DeviceCodeExpiredError();
     if (response.ok && isRecord(payload)) return payload;
 
     const error = isRecord(payload) && typeof payload['error'] === 'string' ? payload['error'] : undefined;
@@ -191,10 +191,7 @@ export interface RunDeviceOAuthFlowOptions {
   readonly fetchImpl?: typeof fetch | undefined;
 }
 
-/**
- * Runs the full RFC 8628 device flow: requests a device/user code, hands it
- * to the caller, then polls until the token arrives, expires, or is denied.
- */
+/** Runs a complete RFC 8628 device flow with cancellation at every boundary. */
 export async function runDeviceOAuthFlow(
   options: RunDeviceOAuthFlowOptions,
 ): Promise<Record<string, unknown>> {
