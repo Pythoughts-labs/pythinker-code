@@ -5,6 +5,7 @@ import {
   fetchKimiCodingModels,
   KIMI_CODING_BASE_URL,
   KIMI_CODING_PROVIDER_ID,
+  refreshKimiOAuthToken,
   runKimiOAuthFlow,
 } from '../src/kimi-oauth';
 import type { PythinkerConfigShape } from '../src/provider-config';
@@ -31,7 +32,7 @@ describe('runKimiOAuthFlow', () => {
       }
       tokenCall += 1;
       if (tokenCall < 2) return jsonResponse({ error: 'authorization_pending' }, 400);
-      return jsonResponse({ access_token: 'at', refresh_token: 'rt', expires_in: 900 });
+      return jsonResponse({ access_token: 'at', refresh_token: 'rt', expires_in: 900, scope: 'kimi-code', token_type: 'Bearer' });
     });
 
     const onCodeReady = vi.fn();
@@ -41,6 +42,7 @@ describe('runKimiOAuthFlow', () => {
     expect(bundle.accessToken).toBe('at');
     expect(bundle.refreshToken).toBe('rt');
     expect(bundle.deviceId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(bundle.scope).toBe('kimi-code');
 
     expect(fetchMock).toHaveBeenCalledWith(
       'https://auth.kimi.com/api/oauth/device_authorization',
@@ -66,6 +68,22 @@ describe('runKimiOAuthFlow', () => {
     await expect(
       runKimiOAuthFlow({ onCodeReady: () => {}, fetchImpl: fetchMock as unknown as typeof fetch }),
     ).rejects.toThrow('missing access_token');
+  });
+});
+
+describe('refreshKimiOAuthToken', () => {
+  it('preserves the device id and accepts refresh-token rotation', async () => {
+    const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
+      expect(init?.headers).toEqual(expect.objectContaining({ 'X-Msh-Device-Id': 'device-123' }));
+      const body = new URLSearchParams(String(init?.body ?? ''));
+      expect(body.get('grant_type')).toBe('refresh_token');
+      expect(body.get('refresh_token')).toBe('old-rt');
+      return jsonResponse({ access_token: 'new-at', refresh_token: 'new-rt', expires_in: 900 });
+    });
+    const token = await refreshKimiOAuthToken('old-rt', 'device-123', fetchMock as unknown as typeof fetch);
+    expect(token.accessToken).toBe('new-at');
+    expect(token.refreshToken).toBe('new-rt');
+    expect(token.deviceId).toBe('device-123');
   });
 });
 
@@ -100,7 +118,7 @@ describe('fetchKimiCodingModels', () => {
 });
 
 describe('applyKimiOAuthConfig', () => {
-  it('writes a pythinker-wire provider with custom headers and model aliases', () => {
+  it('writes a credential reference with custom device headers and no bearer token', () => {
     const config: PythinkerConfigShape = { providers: {} };
     const models = [
       { id: 'kimi-for-coding', contextLength: 262144, supportsReasoning: true, supportsImageIn: true, supportsVideoIn: false },
@@ -119,10 +137,11 @@ describe('applyKimiOAuthConfig', () => {
     expect(config.providers[KIMI_CODING_PROVIDER_ID]).toMatchObject({
       type: 'pythinker',
       baseUrl: KIMI_CODING_BASE_URL,
-      apiKey: 'access-token',
+      oauth: { storage: 'file', key: `oauth/${KIMI_CODING_PROVIDER_ID}` },
       customHeaders: expect.objectContaining({ 'X-Msh-Device-Id': 'device-123' }),
-      source: { auth: 'kimi-oauth', refreshToken: 'refresh-token', deviceId: 'device-123' },
+      source: { auth: 'kimi-oauth', deviceId: 'device-123' },
     });
+    expect(config.providers[KIMI_CODING_PROVIDER_ID]).not.toHaveProperty('apiKey');
     expect(config.models?.[`${KIMI_CODING_PROVIDER_ID}/kimi-for-coding`]).toMatchObject({
       provider: KIMI_CODING_PROVIDER_ID,
       model: 'kimi-for-coding',
