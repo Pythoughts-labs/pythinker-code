@@ -31,9 +31,10 @@ function makeUi(overrides: Partial<LoginUi> = {}): LoginUi {
   return {
     harness: {
       homeDir: '/tmp/pythinker-code-login-oauth-test',
+      ensureConfigFile: vi.fn().mockResolvedValue(undefined),
       getConfig: vi.fn().mockResolvedValue({ providers: {}, models: {} }),
       replaceConfigSections: vi.fn().mockResolvedValue(undefined),
-    } as unknown as LoginUi['harness'],
+    },
     cancelInFlight: undefined,
     openBrowser: vi.fn(),
     showStatus: vi.fn(),
