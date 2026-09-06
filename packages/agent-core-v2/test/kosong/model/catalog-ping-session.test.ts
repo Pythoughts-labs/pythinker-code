@@ -6,12 +6,13 @@ import { HostRequestHeadersAdapter } from '#/app/kosongConfig/hostRequestHeaders
 import { IModelCatalog } from '#/kosong/model/catalog';
 import { ModelCatalog } from '#/kosong/model/catalogService';
 import { IHostRequestHeaders } from '#/kosong/model/hostRequestHeaders';
+import { IModelService, type ModelsSection } from '#/kosong/model/model';
 import { IModelOAuthTokens } from '#/kosong/model/modelOAuth';
 import type { ModelRequester } from '#/kosong/model/modelRequester';
 import '#/kosong/model/modelService';
-import '#/kosong/protocol/protocol';
 import '#/kosong/provider/bases/openai/index';
 import '#/kosong/provider/protocolAdapterRegistry';
+import { IProviderService, type ProvidersSection } from '#/kosong/provider/provider';
 import '#/kosong/provider/providerService';
 import '#/kosong/provider/providers/pythinker/pythinker.contrib';
 import '#/kosong/provider/providers/standard.contrib';
@@ -20,11 +21,17 @@ import { stubAgentIdentity } from '../../app/agentIdentity/stubs';
 import { stubBootstrap } from '../../app/bootstrap/stubs';
 import { StubConfigService, stubModelOAuthTokens } from '../stubs';
 
+const sections = {
+  providers: {
+    pythinker: { type: 'pythinker', apiKey: 'sk-test', baseUrl: 'https://example.test/v1' },
+  },
+  models: {
+    k1: { provider: 'pythinker', model: 'kimi-k2', maxContextSize: 262144 },
+  },
+};
+
 function createCatalog(): { catalog: ModelCatalog; dispose(): void } {
-  const config = new StubConfigService({
-    providers: { pythinker: { type: 'pythinker', apiKey: 'sk-test', baseUrl: 'https://example.test/v1' } },
-    models: { k1: { provider: 'pythinker', model: 'kimi-k2', maxContextSize: 262144 } },
-  });
+  const config = new StubConfigService(sections);
   const headers = { 'User-Agent': 'pythinker-test/1.0' };
   const host = createScopedTestHost([
     [IConfigService, config],
@@ -37,6 +44,10 @@ function createCatalog(): { catalog: ModelCatalog; dispose(): void } {
       ),
     ],
   ]);
+  host.app.accessor
+    .get(IProviderService)
+    .loadAll(sections.providers as ProvidersSection, undefined);
+  host.app.accessor.get(IModelService).loadAll(sections.models as ModelsSection, undefined);
   return { catalog: host.app.accessor.get(IModelCatalog) as ModelCatalog, dispose: () => host.dispose() };
 }
 
