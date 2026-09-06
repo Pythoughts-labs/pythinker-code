@@ -5,10 +5,10 @@ import { isRecord } from './utils';
 /**
  * Generic RFC 8628 (OAuth 2.0 Device Authorization Grant) flow shared by
  * providers whose CLI-facing login is a device code rather than a redirect
- * (Kimi, MiniMax). Providers differ only in URLs / client_id / scope /
- * headers / token-payload field names — this module owns the polling state
- * machine only and hands back the raw parsed token JSON for each provider to
- * interpret.
+ * (Kimi and other RFC 8628-compatible providers). Providers differ only in
+ * URLs / client_id / scope / headers / token-payload field names — this module
+ * owns the polling state machine only and hands back the raw parsed token JSON
+ * for each provider to interpret.
  */
 
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
@@ -52,15 +52,16 @@ function positiveSeconds(value: unknown): number | undefined {
 
 /**
  * Requests a device code + user code from the authorization server. Fields
- * are read defensively since Kimi and MiniMax return slightly different
- * response shapes for optional fields (interval, expires_in).
+ * are read defensively since compatible providers can vary optional fields.
  */
 export async function requestDeviceCode(
   url: string,
   body: Record<string, string>,
   headers: Record<string, string> = {},
   fetchImpl: typeof fetch = fetch,
+  signal?: AbortSignal,
 ): Promise<DeviceCodeInfo> {
+  signal?.throwIfAborted();
   const response = await fetchImpl(url, {
     method: 'POST',
     headers: {
@@ -69,7 +70,9 @@ export async function requestDeviceCode(
       ...headers,
     },
     body: new URLSearchParams(body),
+    signal,
   });
+  signal?.throwIfAborted();
   if (!response.ok) {
     throw new DeviceOAuthApiError(
       await readApiErrorMessage(response, `Device authorization request failed (HTTP ${response.status}).`),
@@ -189,20 +192,23 @@ export interface RunDeviceOAuthFlowOptions {
 }
 
 /**
- * Runs the full device flow: requests a device/user code, hands it to the
- * caller (to display + open the browser), then polls until the token
- * arrives, expires, or is denied.
+ * Runs the full RFC 8628 device flow: requests a device/user code, hands it
+ * to the caller, then polls until the token arrives, expires, or is denied.
  */
 export async function runDeviceOAuthFlow(
   options: RunDeviceOAuthFlowOptions,
 ): Promise<Record<string, unknown>> {
+  options.signal?.throwIfAborted();
   const info = await requestDeviceCode(
     options.deviceAuthorizeUrl,
     options.deviceAuthorizeBody,
     options.headers,
     options.fetchImpl,
+    options.signal,
   );
+  options.signal?.throwIfAborted();
   options.onCodeReady(info);
+  options.signal?.throwIfAborted();
   return pollForDeviceToken(options.tokenUrl, options.tokenBody(info.deviceCode), options.headers ?? {}, {
     intervalMs: info.intervalMs,
     expiresAtMs: info.expiresAtMs,
