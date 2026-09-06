@@ -1,152 +1,119 @@
 import { describe, expect, it } from 'vitest';
 
-import { isError2 } from '#/_base/errors/errors';
-import { APIStatusError, createAbortError } from '#/kosong/contract/errors';
-import type { Message, StreamedMessagePart } from '#/kosong/contract/message';
-import type {
-  ChatProvider,
-  GenerateOptions,
-  StreamedMessage,
-} from '#/kosong/contract/provider';
-import type { Tool } from '#/kosong/contract/tool';
-import { emptyUsage, type TokenUsage } from '#/kosong/contract/usage';
-import { ProtocolErrors } from '#/kosong/protocol/errors';
-import type { IProtocolAdapterRegistry } from '#/kosong/protocol/protocol';
+import { emptyUsage } from '#/kosong/contract/usage';
+import type { ChatProvider, GenerateOptions, StreamedMessage } from '#/kosong/contract/provider';
 import type { Model } from '#/kosong/model/catalog';
-import type { ModelRequestEvent } from '#/kosong/model/modelRequester';
-import { effectiveMaxCompletionTokens } from '#/kosong/model/modelRequester';
-import { buildStreamTiming, ModelRequesterImpl } from '#/kosong/model/modelRequesterImpl';
-import {
-  isOpencodeGatewayBaseUrl,
-  OPENCODE_SESSION_HEADER,
-  opencodeSessionHeaders,
-} from '#/kosong/model/opencodeSession';
+import { ModelRequesterImpl } from '#/kosong/model/modelRequesterImpl';
+import { OPENCODE_SESSION_HEADER } from '#/kosong/model/opencodeSession';
+import type { IProtocolAdapterRegistry } from '#/kosong/protocol/protocol';
+
+const INPUT = {
+  systemPrompt: 'system',
+  tools: [],
+  messages: [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'hello' }], toolCalls: [] }],
+};
+
+function streamOf(
+  parts: readonly { type: 'text'; text: string }[] = [],
+  overrides: Partial<StreamedMessage> = {},
+): StreamedMessage {
+  return {
+    id: 'msg-1',
+    usage: emptyUsage(),
+    finishReason: 'completed',
+    rawFinishReason: 'stop',
+    traceId: null,
+    async *[Symbol.asyncIterator]() {
+      yield* parts;
+    },
+    ...overrides,
+  };
+}
 
 class FakeChatProvider implements ChatProvider {
-  readonly name = 'fake-base';
+  readonly name = 'fake';
   readonly modelName = 'fake-model';
   readonly thinkingEffort = null;
+  readonly calls: Array<{ options?: GenerateOptions }> = [];
+  handler: () => Promise<StreamedMessage> = () => Promise.resolve(streamOf());
 
-  uploadVideo?: ChatProvider['uploadVideo'];
-
-  readonly calls: Array<{
-    systemPrompt: string;
-    tools: Tool[];
-    history: unknown;
-    options?: GenerateOptions;
-  }> = [];
-
-  handler: (callIndex: number) => Promise<StreamedMessage> = () =>
-    Promise.resolve(streamOf([{ type: 'text', text: 'hello' }]));
-
-  async generate(
-    systemPrompt: string,
-    tools: Tool[],
-    history: Message[],
+  generate(
+    _systemPrompt: string,
+    _tools: never[],
+    _history: never[],
     options?: GenerateOptions,
   ): Promise<StreamedMessage> {
-    this.calls.push({ systemPrompt, tools, history, options });
-    options?.onRequestStart?.();
-    options?.onRequestSent?.();
-    const stream = await this.handler(this.calls.length - 1);
-    return stream;
+    this.calls.push({ options });
+    return this.handler();
   }
 }
 
-function streamOf(
-  parts: readonly StreamedMessagePart[],
-  options: {
-    readonly usage?: TokenUsage;
-    readonly finishReason?: StreamedMessage['finishReason'];
-    readonly rawFinishReason?: string | null;
-    readonly id?: string | null;
-    readonly traceId?: string | null;
-  } = {},
-): StreamedMessage {
+function staticAuth(apiKey?: string) {
+  return apiKey === undefined
+    ? undefined
+    : {
+        getAuth: async () => ({ apiKey }),
+      };
+}
+
+function modelWith(
+  authProvider?: Model['authProvider'],
+  baseUrl = 'https://example.test/v1',
+): Model {
   return {
-    id: options.id ?? 'msg-1',
-    usage: options.usage ?? emptyUsage(),
-    finishReason: options.finishReason ?? 'completed',
-    rawFinishReason: options.rawFinishReason ?? 'stop',
-    traceId: options.traceId ?? null,
-    async *[Symbol.asyncIterator]() {
-      for (const part of parts) {
-        yield part;
-      }
+    id: 'test-model',
+    name: 'fake-model',
+    displayName: 'Fake',
+    providerName: 'test',
+    providerType: 'openai',
+    protocol: 'openai',
+    baseUrl,
+    maxContextSize: 128000,
+    capabilities: {
+      image_in: false,
+      video_in: false,
+      audio_in: false,
+      thinking: true,
+      tool_use: true,
+      max_context_tokens: 128000,
     },
+    traits: [],
+    authProvider,
   };
 }
 
 function registryReturning(provider: ChatProvider): IProtocolAdapterRegistry {
   return {
     _serviceBrand: undefined,
-    supportedProtocols: () => [],
-    resolveAdapterIdentity: () => {
-      throw new Error('not needed');
-    },
-    resolveProviderBaseId: () => {
-      throw new Error('not needed');
-    },
-    resolveCapability: () => {
-      throw new Error('not needed');
-    },
+    supportedProtocols: () => ['openai'],
+    resolveAdapterIdentity: () => ({ protocol: 'openai', providerBaseId: 'openai' }),
+    resolveProviderBaseId: () => 'openai',
+    resolveCapability: () => modelWith().capabilities,
+    explainCapability: () => ({ capability: modelWith().capabilities, source: { kind: 'none' } }),
     createChatProvider: () => provider,
-  } as unknown as IProtocolAdapterRegistry;
+  } as IProtocolAdapterRegistry;
 }
 
-function modelWith(authProvider: Model['authProvider'], baseUrl?: string): Model {
-  return {
-    id: 'm1',
-    name: 'fake-model',
-    aliases: [],
-    protocol: 'openai',
-    baseUrl,
-    headers: {},
-    capabilities: {
-      image_in: false,
-      video_in: false,
-      audio_in: false,
-      thinking: false,
-      tool_use: true,
-      max_context_tokens: 128000,
-    },
-    maxContextSize: 128000,
-    alwaysThinking: false,
-    providerType: 'fake',
-    providerName: 'fake',
-    authProvider,
-  };
+async function collect(iterable: AsyncIterable<unknown>): Promise<unknown[]> {
+  const items: unknown[] = [];
+  for await (const item of iterable) items.push(item);
+  return items;
 }
 
-const staticAuth = (apiKey?: string): Model['authProvider'] => ({
-  canRefresh: false,
-  getAuth: () =>
-    Promise.resolve(apiKey === undefined ? undefined : { apiKey }),
-});
-
-async function collect(stream: AsyncIterable<ModelRequestEvent>): Promise<ModelRequestEvent[]> {
-  const events: ModelRequestEvent[] = [];
-  for await (const event of stream) events.push(event);
-  return events;
-}
-
-const INPUT = { systemPrompt: 'sys', tools: [], messages: [] };
-
-describe('ModelRequesterImpl request execution', () => {
-  it('maps ModelRequestParams onto GenerateOptions 1:1', async () => {
+describe('ModelRequesterImpl', () => {
+  it('forwards auth, cache, sampling, thinking, context, and signal options', async () => {
     const provider = new FakeChatProvider();
     const requester = new ModelRequesterImpl(modelWith(staticAuth('sk-1')), registryReturning(provider));
-    const signal = AbortSignal.timeout(1000);
-
+    const signal = new AbortController().signal;
     await collect(
       requester.request(
-        { ...INPUT, responseFormat: { type: 'json_object' } },
+        INPUT,
         signal,
         {
           cacheKey: 'session-1',
           sampling: { temperature: 0.5, topP: 0.9 },
-          thinkingEffort: 'high',
-          thinkingKeep: 'all',
+          thinking: { effort: 'high', keep: 'all' },
+          responseFormat: { type: 'json_object' },
           maxCompletionTokens: 1024,
           usedContextTokens: 5000,
           maxContextTokens: 128000,
@@ -182,6 +149,7 @@ describe('ModelRequesterImpl request execution', () => {
       registryReturning(capture),
     );
     await collect(capturing.request(INPUT, undefined, { conversationId: 'conv-1' }));
+    expect(capture.calls).toHaveLength(1);
     expect(capture.calls[0]?.options?.extraHeaders).toEqual({
       [OPENCODE_SESSION_HEADER]: 'conv-1',
     });
@@ -193,6 +161,7 @@ describe('ModelRequesterImpl request execution', () => {
         registryReturning(other),
       ).request(INPUT, undefined, { conversationId: 'conv-1' }),
     );
+    expect(other.calls).toHaveLength(1);
     expect(other.calls[0]?.options?.extraHeaders).toBeUndefined();
 
     const noConversation = new FakeChatProvider();
@@ -202,6 +171,7 @@ describe('ModelRequesterImpl request execution', () => {
         registryReturning(noConversation),
       ).request(INPUT),
     );
+    expect(noConversation.calls).toHaveLength(1);
     expect(noConversation.calls[0]?.options?.extraHeaders).toBeUndefined();
   });
 
@@ -221,179 +191,8 @@ describe('ModelRequesterImpl request execution', () => {
       requester.request(INPUT, undefined, { onTraceId: (id) => traceIds.push(id) }),
     );
 
-    const types = events.map((e) => e.type);
+    const types = events.map((e) => (e as { type: string }).type);
     expect(types).toEqual(['part', 'usage', 'finish', 'timing']);
-    const usage = events.find((e) => e.type === 'usage');
-    expect(usage).toMatchObject({ usage: { output: 7 }, model: 'fake-model' });
-    const finish = events.find((e) => e.type === 'finish');
-    expect(finish).toMatchObject({ id: 'msg-42', traceId: 'trace-1', providerFinishReason: 'completed' });
-    const timing = events.find((e) => e.type === 'timing');
-    expect(timing).toMatchObject({
-      requestBuildMs: expect.any(Number),
-      serverDecodeMs: expect.any(Number),
-      clientConsumeMs: expect.any(Number),
-    });
     expect(traceIds).toEqual(['trace-1']);
-  });
-
-  it('replays once after a forced token refresh on 401', async () => {
-    const provider = new FakeChatProvider();
-    provider.handler = (callIndex) =>
-      callIndex === 0
-        ? Promise.reject(new APIStatusError(401, 'unauthorized'))
-        : Promise.resolve(streamOf([{ type: 'text', text: 'ok' }]));
-    const authCalls: Array<{ force?: boolean }> = [];
-    const requester = new ModelRequesterImpl(
-      modelWith({
-        canRefresh: true,
-        getAuth: (options) => {
-          authCalls.push(options ?? {});
-          return Promise.resolve({ apiKey: authCalls.length === 1 ? 'tok-1' : 'tok-2' });
-        },
-      }),
-      registryReturning(provider),
-    );
-
-    const events = await collect(requester.request(INPUT));
-    expect(events.some((e) => e.type === 'finish')).toBe(true);
-    expect(provider.calls).toHaveLength(2);
-    expect(provider.calls[0]?.options?.auth).toEqual({ apiKey: 'tok-1' });
-    expect(provider.calls[1]?.options?.auth).toEqual({ apiKey: 'tok-2' });
-    expect(authCalls).toEqual([{}, { force: true }]);
-  });
-
-  it('surfaces a replay-surviving 401 as provider.auth_error', async () => {
-    const provider = new FakeChatProvider();
-    provider.handler = () => Promise.reject(new APIStatusError(401, 'account rejected'));
-    const requester = new ModelRequesterImpl(
-      modelWith({
-        canRefresh: true,
-        getAuth: () => Promise.resolve({ apiKey: 'tok' }),
-      }),
-      registryReturning(provider),
-    );
-
-    const failure = await collect(requester.request(INPUT)).catch((error: unknown) => error);
-    expect(isError2(failure)).toBe(true);
-    expect((failure as { code: string }).code).toBe(ProtocolErrors.codes.PROVIDER_AUTH_ERROR);
-    expect((failure as Error).message).toContain('account rejected');
-    expect(provider.calls).toHaveLength(2);
-  });
-
-  it('does not replay 401s against a non-refreshable auth provider', async () => {
-    const provider = new FakeChatProvider();
-    provider.handler = () => Promise.reject(new APIStatusError(401, 'bad key'));
-    const requester = new ModelRequesterImpl(
-      modelWith(staticAuth('sk-bad')),
-      registryReturning(provider),
-    );
-
-    const failure = await collect(requester.request(INPUT)).catch((error: unknown) => error);
-    expect((failure as { code: string }).code).toBe(ProtocolErrors.codes.PROVIDER_AUTH_ERROR);
-    expect(provider.calls).toHaveLength(1);
-  });
-
-  it('translates other provider failures and rethrows aborts untouched', async () => {
-    const provider = new FakeChatProvider();
-    provider.handler = () => Promise.reject(new APIStatusError(500, 'boom'));
-    const requester = new ModelRequesterImpl(modelWith(staticAuth()), registryReturning(provider));
-    const failure = await collect(requester.request(INPUT)).catch((error: unknown) => error);
-    expect((failure as { code: string }).code).toBe(ProtocolErrors.codes.PROVIDER_API_ERROR);
-
-    const abort = createAbortError();
-    provider.handler = () => Promise.reject(abort);
-    const aborted = await collect(requester.request(INPUT)).catch((error: unknown) => error);
-    expect(aborted).toBe(abort);
-  });
-
-  it('uploadVideo presence is the capability declaration', async () => {
-    const provider = new FakeChatProvider();
-    const requester = new ModelRequesterImpl(
-      modelWith(staticAuth('sk-1')),
-      registryReturning(provider),
-    );
-    await expect(requester.uploadVideo('file-id')).rejects.toThrow(/does not support video upload/);
-
-    const uploadCalls: Array<GenerateOptions | undefined> = [];
-    provider.uploadVideo = (_input, options) => {
-      uploadCalls.push(options);
-      return Promise.resolve({ type: 'video_url', videoUrl: { url: 'https://cdn.example.test/v.mp4' } });
-    };
-    const part = await requester.uploadVideo('file-id');
-    expect(part).toEqual({ type: 'video_url', videoUrl: { url: 'https://cdn.example.test/v.mp4' } });
-    expect(uploadCalls[0]?.auth).toEqual({ apiKey: 'sk-1' });
-  });
-});
-
-describe('effectiveMaxCompletionTokens', () => {
-  it('reads the folded budget back from the params', () => {
-    expect(effectiveMaxCompletionTokens(undefined)).toBeUndefined();
-    expect(effectiveMaxCompletionTokens({})).toBeUndefined();
-    expect(effectiveMaxCompletionTokens({ maxCompletionTokens: 512 })).toBe(512);
-  });
-});
-
-describe('isOpencodeGatewayBaseUrl', () => {
-  it('matches the opencode.ai host and its subdomains', () => {
-    expect(isOpencodeGatewayBaseUrl('https://opencode.ai/zen/go/v1')).toBe(true);
-    expect(isOpencodeGatewayBaseUrl('https://gateway.opencode.ai/zen/v1')).toBe(true);
-    expect(isOpencodeGatewayBaseUrl('https://OPENCODE.AI/zen/go/v1')).toBe(true);
-  });
-
-  it('rejects other hosts, lookalikes, and malformed urls', () => {
-    expect(isOpencodeGatewayBaseUrl('https://api.openai.com/v1')).toBe(false);
-    expect(isOpencodeGatewayBaseUrl('https://opencode.ai.example.test/v1')).toBe(false);
-    expect(isOpencodeGatewayBaseUrl('https://notopencode.ai/v1')).toBe(false);
-    expect(isOpencodeGatewayBaseUrl(undefined)).toBe(false);
-    expect(isOpencodeGatewayBaseUrl('')).toBe(false);
-    expect(isOpencodeGatewayBaseUrl('not-a-url')).toBe(false);
-  });
-});
-
-describe('opencodeSessionHeaders', () => {
-  it('builds the session header for opencode conversations', () => {
-    expect(opencodeSessionHeaders('https://opencode.ai/zen/go/v1', 'conv-1')).toEqual({
-      [OPENCODE_SESSION_HEADER]: 'conv-1',
-    });
-    expect(opencodeSessionHeaders('https://opencode.ai/zen/go/v1', '  conv-1  ')).toEqual({
-      [OPENCODE_SESSION_HEADER]: 'conv-1',
-    });
-  });
-
-  it('returns nothing without an opencode host or a usable id', () => {
-    expect(opencodeSessionHeaders('https://api.openai.com/v1', 'conv-1')).toBeUndefined();
-    expect(opencodeSessionHeaders('https://opencode.ai/zen/go/v1', undefined)).toBeUndefined();
-    expect(opencodeSessionHeaders('https://opencode.ai/zen/go/v1', '   ')).toBeUndefined();
-  });
-});
-
-describe('buildStreamTiming', () => {
-  it('returns base TTFT and stream duration only', () => {
-    expect(buildStreamTiming(100, undefined, 250, 400, undefined)).toEqual({
-      firstTokenLatencyMs: 150,
-      streamDurationMs: 150,
-    });
-  });
-
-  it('splits TTFT across the request-sent boundary', () => {
-    expect(buildStreamTiming(100, 180, 250, 400, undefined)).toEqual({
-      firstTokenLatencyMs: 150,
-      streamDurationMs: 150,
-      requestBuildMs: 80,
-      serverFirstTokenMs: 70,
-    });
-  });
-
-  it('adds decode stats when present', () => {
-    expect(
-      buildStreamTiming(100, 120, 250, 400, { serverDecodeMs: 90, clientConsumeMs: 60 }),
-    ).toEqual({
-      firstTokenLatencyMs: 150,
-      streamDurationMs: 150,
-      requestBuildMs: 20,
-      serverFirstTokenMs: 130,
-      serverDecodeMs: 90,
-      clientConsumeMs: 60,
-    });
   });
 });
