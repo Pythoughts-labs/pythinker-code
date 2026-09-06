@@ -24,7 +24,7 @@ Active `/model` provider and `AskUserQuestion` tabs use `selectionBg` for the ba
 | `border` | `#5A5A5A` | `#737373` | Borders: pane & editor borders, markdown horizontal rule. |
 | `borderFocus` | `#E8A838` | `#92660A` | Focus / attention border — currently only the approval panel. |
 | `success` | `#4EC87E` | `#0E7A38` | Success: ✓ marks, "enabled", completed states. |
-| `warning` | `#E8A838` | `#92660A` | Warning: auto/yolo badges, stale markers, plan-mode hint. |
+| `warning` | `#E8A838` | `#92660A` | Warning: stale markers and Plan mode hints. |
 | `error` | `#E85454` | `#B91C1C` | Error: error messages, failed tool output. |
 | `effortOff` | `#8A8A8A` | `#767676` | Off thinking effort; colors the prompt-area border. |
 | `effortLow` | `#B3B3B3` | `#8C8C8C` | Low thinking effort; colors the prompt-area border. |

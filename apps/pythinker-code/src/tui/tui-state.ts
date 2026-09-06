@@ -100,7 +100,9 @@ export function createTUIState(options: PythinkerTUIOptions): TUIState {
       ? new TuiAltScreen(terminal, undefined, undefined, {
           // Mouse capture takes over the terminal's native link activation, so
           // route OSC 8 clicks through our own opener.
-          openUrl,
+          openUrl: (url) => {
+            void openUrl(url);
+          },
           // Likewise, on Windows the terminal's native right-click paste is
           // intercepted; feed the clipboard to the focused component as a
           // bracketed paste instead (renderer only calls this on win32).

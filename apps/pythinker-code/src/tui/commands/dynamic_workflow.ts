@@ -10,6 +10,7 @@ import {
 } from '../components/messages/dynamic-workflow-markers';
 import { LLM_NOT_SET_MESSAGE, NO_ACTIVE_SESSION_MESSAGE } from '../constant/pythinker-tui';
 import { formatErrorMessage } from '../utils/event-payload';
+import { PERMISSION_MODE_DESCRIPTIONS, PERMISSION_MODE_DISPLAY_NAMES } from '../utils/permission-mode';
 import type { SlashCommandHost } from './dispatch';
 
 export async function handleDynamicWorkflowCommand(host: SlashCommandHost, args: string): Promise<void> {
@@ -85,6 +86,8 @@ async function setPermissionForDynamicWorkflow(host: SlashCommandHost, mode: Per
     return false;
   }
   host.setAppState({ permissionMode: mode });
+  host.showNotice(`Permission mode: ${PERMISSION_MODE_DISPLAY_NAMES[mode]}`);
+  host.showStatus(PERMISSION_MODE_DESCRIPTIONS[mode], 'warning');
   return true;
 }
 

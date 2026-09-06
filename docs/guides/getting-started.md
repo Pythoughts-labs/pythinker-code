@@ -170,7 +170,7 @@ Pythinker Code CLI stores its local data under `~/.pythinker-code/` by default �
 
 ## Next steps
 
-- [Interaction and input](./interaction.md) — input box operations, approval flow, Plan mode, and YOLO mode explained
+- [Interaction and input](./interaction.md) — input box operations, approval flow, Plan mode, and Ask When Needed mode explained
 - [Use in a browser](./web.md) — browser sessions and local-server safety
 - [Sessions and context](./sessions.md) — resuming sessions, compressing context, exporting sessions
 - [Common use cases](./use-cases.md) — prompt examples for typical tasks

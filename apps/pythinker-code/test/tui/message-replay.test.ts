@@ -1314,9 +1314,9 @@ describe('PythinkerTUI resume message replay', () => {
     const transcript = driver.state.transcriptContainer.render(120).join('\n');
 
     expect(transcript).toContain('Plan mode: ON');
-    expect(transcript).toContain('Permission mode: auto');
-    expect(transcript).toContain('YOLO mode: ON');
-    expect(transcript).toContain('YOLO mode: OFF');
+    expect(transcript).toContain('Permission mode: Never Ask');
+    expect(transcript).toContain('Ask When Needed mode: ON');
+    expect(transcript).toContain('Ask When Needed mode: OFF');
     expect(transcript).toContain('Approved for session: run command');
     expect(transcript).toContain('Plan mode: OFF');
   });

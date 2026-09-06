@@ -5,6 +5,7 @@ import {
   matchesKey,
   truncateToWidth,
   visibleWidth,
+  wrapTextWithAnsi,
   type Focusable,
 } from '@pymodel/pi-tui';
 
@@ -108,8 +109,8 @@ export class ApiKeyInputDialogComponent extends Container implements Focusable {
     const border = (s: string): string => currentTheme.fg('primary', s);
     const titleStyled = currentTheme.boldFg('textStrong', this.title);
     const subtitleSource = this.emptyHinted ? [this.emptyHint] : this.subtitleLines;
-    const subtitleLines = subtitleSource.map((line) =>
-      truncateToWidth(currentTheme.fg('textDim', line), innerWidth, '…'),
+    const subtitleLines = subtitleSource.flatMap((line) =>
+      wrapTextWithAnsi(currentTheme.fg('textDim', line), innerWidth),
     );
     const footerStyled = currentTheme.fg('textDim', FOOTER);
 

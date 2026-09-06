@@ -37,6 +37,7 @@ import { BtwPanelComponent } from '#/tui/components/panes/btw-panel';
 import { ThinkingComponent } from '#/tui/components/messages/thinking';
 import { WelcomeComponent } from '#/tui/components/chrome/welcome';
 import { ModelSelectorComponent } from '#/tui/components/dialogs/model-selector';
+import { PermissionSelectorComponent } from '#/tui/components/dialogs/permission-selector';
 import { TabbedModelSelectorComponent } from '#/tui/components/dialogs/tabbed-model-selector';
 import { UndoSelectorComponent } from '#/tui/components/dialogs/undo-selector';
 import {
@@ -1906,7 +1907,12 @@ describe('PythinkerTUI message flow', () => {
     };
     const { driver, harness } = await makeDriver(session, {}, startupInput);
 
-    driver.handleUserInput('/yolo on');
+    driver.handleUserInput('/yolo');
+
+    await vi.waitFor(() => {
+      expect(driver.state.editorContainer.children[0]).toBeInstanceOf(PermissionSelectorComponent);
+    });
+    (driver.state.editorContainer.children[0] as PermissionSelectorComponent).handleInput('\r');
 
     await vi.waitFor(() => {
       expect(driver.state.appState.permissionMode).toBe('yolo');
@@ -2176,7 +2182,12 @@ command = "vim"
     const { driver, session, harness } = await makeDriver();
     harness.track.mockClear();
 
-    driver.handleUserInput('/yolo on');
+    driver.handleUserInput('/yolo');
+
+    await vi.waitFor(() => {
+      expect(driver.state.editorContainer.children[0]).toBeInstanceOf(PermissionSelectorComponent);
+    });
+    (driver.state.editorContainer.children[0] as PermissionSelectorComponent).handleInput('\r');
 
     await vi.waitFor(() => {
       expect(session.setPermission).toHaveBeenCalledWith('yolo');
@@ -2411,10 +2422,15 @@ command = "vim"
 
     driver.handleUserInput('hello');
     driver.state.appState.streamingPhase = 'idle';
-    driver.handleUserInput('/auto on');
+    driver.handleUserInput('/auto');
 
     await vi.waitFor(() => {
-      expect(stripSgr(renderTranscript(driver))).toContain('Auto mode: ON');
+      expect(driver.state.editorContainer.children[0]).toBeInstanceOf(PermissionSelectorComponent);
+    });
+    (driver.state.editorContainer.children[0] as PermissionSelectorComponent).handleInput('\r');
+
+    await vi.waitFor(() => {
+      expect(stripSgr(renderTranscript(driver))).toContain('Permission mode: Never Ask');
     });
 
     driver.handleUserInput('/undo 10');
@@ -2434,7 +2450,7 @@ command = "vim"
     const transcript = stripSgr(renderTranscript(driver));
     expect(transcript).not.toContain('hello');
     expect(transcript).not.toContain('Cannot undo 10 prompts');
-    expect(transcript).toContain('Auto mode: ON');
+    expect(transcript).toContain('Permission mode: Never Ask');
     expect(driver.state.appState.permissionMode).toBe('auto');
   });
 
@@ -6277,7 +6293,7 @@ command = "vim"
       expect(output).toContain('>_ Pythinker Code');
       expect(output).toContain('Model');
       expect(output).toContain('thinking high');
-      expect(output).toContain('Permissions  auto');
+      expect(output).toContain('Permissions  Never Ask');
       expect(output).toContain('Plan mode    on');
       expect(output).toContain('Context window');
       expect(output).toContain('25%');

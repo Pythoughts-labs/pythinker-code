@@ -50,7 +50,7 @@ Both groups share the same behavior: they arrive with a specific goal, scan head
 ## Wording conventions
 
 - Do not change H1 titles or nav/sidebar labels.
-- English H2+ headings use sentence case (only the first word capitalized unless it is a proper noun). Treat "Wire", "Plan mode", "YOLO mode", "Thinking mode", and "Dynamic Workflow" as proper nouns; do not treat "agent" as a proper noun.
+- English H2+ headings use sentence case (only the first word capitalized unless it is a proper noun). Treat "Wire", "Plan mode", "Always Ask", "Ask When Needed", "Never Ask", "Thinking mode", and "Dynamic Workflow" as proper nouns; do not treat "agent" as a proper noun.
 - Use `API key` in English; keep `JSON`, `JSONL`, `OAuth`, `macOS`, `Node.js`, `npm`, `pnpm`, and `TypeScript` as-is.
 - Use straight double quotes with spaces for quoted content.
 - Use inline code for tool names (e.g., `Read`, `Grep`, `Bash`).
@@ -64,7 +64,9 @@ Term mapping (proper noun handling):
 | subagent | no |
 | shell | no |
 | Plan mode | yes (Plan mode) |
-| YOLO mode | yes (YOLO mode) |
+| Always Ask | yes |
+| Ask When Needed | yes |
+| Never Ask | yes |
 | Thinking mode | yes (Thinking mode) |
 | MCP | yes |
 | Pythinker Code CLI | yes |

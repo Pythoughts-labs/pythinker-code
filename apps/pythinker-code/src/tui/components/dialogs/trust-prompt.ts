@@ -43,7 +43,7 @@ const OPTIONS: readonly TrustPromptOption[] = [
 
 export class TrustPromptComponent implements Component, Focusable {
   focused = false;
-  private selectedIndex = 1;
+  private selectedIndex = 0;
 
   constructor(private readonly opts: TrustPromptOptions) {}
 
@@ -62,7 +62,7 @@ export class TrustPromptComponent implements Component, Focusable {
       this.selectedIndex = Math.min(OPTIONS.length - 1, this.selectedIndex + 1);
       return;
     }
-    if (matchesKey(data, Key.enter) || matchesKey(data, Key.space)) {
+    if (matchesKey(data, Key.enter)) {
       this.opts.onSelect(OPTIONS[this.selectedIndex]!.value);
     }
   }

@@ -24,7 +24,7 @@ Severity grades, merge/block verdicts, and "is splitting worth it" calls live do
 
 ## When to use
 
-Apply this lens only when the user asks for it explicitly (for example "用单一抽象层次审视一下", "check whether this function does too much", "errors should be handled above/below, right?"). Leave general reviews and refactors to other lenses unless the user names this one.
+Apply this lens only when the user asks for it explicitly (for example "review the levels of abstraction", "check whether this function does too much", "errors should be handled above/below, right?"). Leave general reviews and refactors to other lenses unless the user names this one.
 
 ## The principle
 

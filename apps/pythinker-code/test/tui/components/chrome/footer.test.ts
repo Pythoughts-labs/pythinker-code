@@ -132,8 +132,7 @@ describe('FooterComponent', () => {
     });
     const out = footer.render(120).join('\n');
 
-    expect(out).toContain(chalk.hex(darkColors.modePermission).bold('yolo'));
-    expect(out).toContain(chalk.hex(darkColors.modePlan).bold('plan'));
+    expect(out).toContain(chalk.hex(darkColors.modePermission).bold('Ask When Needed'));
     expect(out).toContain(chalk.hex(darkColors.primary)('kimi-k2'));
     expect(out).toContain(chalk.hex(darkColors.textDim)(' thinking: high'));
   });

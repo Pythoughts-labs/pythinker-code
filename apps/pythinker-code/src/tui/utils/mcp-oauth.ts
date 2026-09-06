@@ -5,7 +5,7 @@ import {
   type ToolUpdate,
 } from '@pymodel/pythinker-code-sdk';
 
-export type OpenUrl = (url: string) => void;
+export type OpenUrl = (url: string) => void | Promise<boolean>;
 
 export class McpOAuthAuthorizationUrlOpener {
   private readonly openedAuthorizationUrls = new Set<string>();
@@ -18,7 +18,7 @@ export class McpOAuthAuthorizationUrlOpener {
     const key = `${event.toolCallId}\0${update.authorizationUrl}`;
     if (this.openedAuthorizationUrls.has(key)) return;
     this.openedAuthorizationUrls.add(key);
-    this.openUrl(update.authorizationUrl);
+    void this.openUrl(update.authorizationUrl);
   }
 }
 
