@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { release } from 'node:os';
 
 import { runDeviceOAuthFlow, type DeviceCodeInfo } from './device-oauth';
 import { capabilitiesForModel, fetchOpenPlatformModels } from './open-platform';
@@ -18,6 +19,10 @@ const TOKEN_URL = 'https://auth.kimi.com/api/oauth/token';
 export const KIMI_CODING_BASE_URL = 'https://api.kimi.com/coding/v1';
 const KIMI_SCOPE = 'kimi-code';
 
+function sanitizeHeaderValue(value: string): string {
+  return value.replace(/[^\x20-\x7e]/g, '').trim();
+}
+
 /**
  * kimi-cli fingerprints every request (OAuth and inference) with these
  * headers. `X-Msh-Device-Id` must stay stable across the OAuth flow and
@@ -30,7 +35,7 @@ function kimiHeaders(deviceId: string): Record<string, string> {
     'X-Msh-Version': '1.0.0',
     'X-Msh-Device-Name': 'pythinker-code',
     'X-Msh-Device-Model': process.arch,
-    'X-Msh-Os-Version': process.version,
+    'X-Msh-Os-Version': sanitizeHeaderValue(release()),
     'X-Msh-Device-Id': deviceId,
   };
 }
