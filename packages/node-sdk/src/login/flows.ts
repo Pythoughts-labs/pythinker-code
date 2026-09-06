@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import {
   applyKimiOAuthConfig,
   applyMiniMaxOAuthConfig,
@@ -6,11 +8,13 @@ import {
   fetchKimiCodingModels,
   fetchOpenAICodexModels,
   fetchOpenPlatformModels,
+  FileTokenStorage,
   filterModelsByPrefix,
   getOpenPlatformById,
   miniMaxCodingModels,
   minimaxCodingProviderId,
   minimaxRegionLabel,
+  resolveOAuthTokenStorageName,
   KIMI_CODING_PROVIDER_ID,
   KIMI_OAUTH_PLATFORM_ID,
   MINIMAX_OAUTH_PLATFORM_ID_CN,
@@ -29,6 +33,7 @@ import {
   type OpenPlatformDefinition,
   type ProviderModelInfo,
   type PythinkerConfigShape,
+  type TokenInfo,
 } from '@pymodel/pythinker-code-oauth';
 
 import {
@@ -330,38 +335,53 @@ async function handleKimiOAuthLogin(ui: LoginUi): Promise<boolean> {
       return false;
     }
 
-    const picked = await ui.promptModelSelectionForOpenPlatform(models, {
-      id: KIMI_CODING_PROVIDER_ID,
-      name: 'Kimi For Coding',
-    });
-    if (picked === undefined) return false;
-    const selectedModel = models.find((model) => model.id === picked.model.id);
-    if (selectedModel === undefined) return false;
+    try {
+      const picked = await ui.promptModelSelectionForOpenPlatform(models, {
+        id: KIMI_CODING_PROVIDER_ID,
+        name: 'Kimi For Coding',
+      });
+      if (picked === undefined) return false;
+      const selectedModel = models.find((model) => model.id === picked.model.id);
+      if (selectedModel === undefined) return false;
 
-    controller.signal.throwIfAborted();
-    const current = await ui.harness.getConfig({ reload: true });
-    controller.signal.throwIfAborted();
-    const next = cloneConfig(current);
-    applyKimiOAuthConfig(next as PythinkerConfigShape, {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      deviceId: tokens.deviceId,
-      models,
-      selectedModel,
-      thinking: picked.effort !== 'off',
-      effort: picked.effort === 'off' || picked.effort === 'on' ? undefined : picked.effort,
-    });
-    committing = true;
-    await ui.harness.replaceConfigSections({
-      providers: next.providers,
-      models: next.models,
-      defaultModel: next.defaultModel,
-      thinking: next.thinking,
-    });
-    await ui.refreshConfigAfterLogin();
-    ui.track('login', { provider: KIMI_CODING_PROVIDER_ID, method: 'oauth' });
-    ui.showStatus(`Setup complete: Kimi For Coding · ${selectedModel.id}`);
-    return true;
+      controller.signal.throwIfAborted();
+      const current = await ui.harness.getConfig({ reload: true });
+      controller.signal.throwIfAborted();
+      const next = cloneConfig(current);
+      applyKimiOAuthConfig(next as PythinkerConfigShape, {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        deviceId: tokens.deviceId,
+        models,
+        selectedModel,
+        thinking: picked.effort !== 'off',
+        effort: picked.effort === 'off' || picked.effort === 'on' ? undefined : picked.effort,
+      });
+      await persistOAuthToken(ui, KIMI_CODING_PROVIDER_ID, {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: Math.floor(tokens.expiresAtMs / 1000),
+        expiresIn: Math.max(1, Math.floor((tokens.expiresAtMs - Date.now()) / 1000)),
+        scope: tokens.scope,
+        tokenType: tokens.tokenType,
+        metadata: { provider: 'kimi', deviceId: tokens.deviceId },
+      });
+      controller.signal.throwIfAborted();
+      committing = true;
+      await ui.harness.replaceConfigSections({
+        providers: next.providers,
+        models: next.models,
+        defaultModel: next.defaultModel,
+        thinking: next.thinking,
+      });
+      await ui.refreshConfigAfterLogin();
+      ui.track('login', { provider: KIMI_CODING_PROVIDER_ID, method: 'oauth' });
+      ui.showStatus(`Setup complete: Kimi For Coding · ${selectedModel.id}`);
+      return true;
+    } catch (error) {
+      if (controller.signal.aborted) return false;
+      throw error;
+    }
   } finally {
     if (ui.cancelInFlight === cancelLogin) ui.cancelInFlight = undefined;
   }
@@ -400,41 +420,61 @@ async function handleMiniMaxOAuthLogin(ui: LoginUi, region: MiniMaxRegion): Prom
     }
     spinner?.stop({ ok: true, label: 'Authorized.' });
 
-    const providerId = minimaxCodingProviderId(region);
-    const models = [...miniMaxCodingModels()];
-    const picked = await ui.promptModelSelectionForOpenPlatform(models, {
-      id: providerId,
-      name: regionLabel,
-    });
-    if (picked === undefined) return false;
-    const selectedModel = models.find((model) => model.id === picked.model.id);
-    if (selectedModel === undefined) return false;
+    try {
+      const providerId = minimaxCodingProviderId(region);
+      const models = [...miniMaxCodingModels()];
+      const picked = await ui.promptModelSelectionForOpenPlatform(models, {
+        id: providerId,
+        name: regionLabel,
+      });
+      if (picked === undefined) return false;
+      const selectedModel = models.find((model) => model.id === picked.model.id);
+      if (selectedModel === undefined) return false;
 
-    controller.signal.throwIfAborted();
-    const current = await ui.harness.getConfig({ reload: true });
-    controller.signal.throwIfAborted();
-    const next = cloneConfig(current);
-    applyMiniMaxOAuthConfig(next as PythinkerConfigShape, region, {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      selectedModel,
-      thinking: picked.effort !== 'off',
-      effort: picked.effort === 'off' || picked.effort === 'on' ? undefined : picked.effort,
-    });
-    committing = true;
-    await ui.harness.replaceConfigSections({
-      providers: next.providers,
-      models: next.models,
-      defaultModel: next.defaultModel,
-      thinking: next.thinking,
-    });
-    await ui.refreshConfigAfterLogin();
-    ui.track('login', { provider: providerId, method: 'oauth' });
-    ui.showStatus(`Setup complete: ${regionLabel} · ${selectedModel.id}`);
-    return true;
+      controller.signal.throwIfAborted();
+      const current = await ui.harness.getConfig({ reload: true });
+      controller.signal.throwIfAborted();
+      const next = cloneConfig(current);
+      applyMiniMaxOAuthConfig(next as PythinkerConfigShape, region, {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        selectedModel,
+        thinking: picked.effort !== 'off',
+        effort: picked.effort === 'off' || picked.effort === 'on' ? undefined : picked.effort,
+      });
+      await persistOAuthToken(ui, providerId, {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: Math.floor(tokens.expiresAtMs / 1000),
+        expiresIn: Math.max(1, Math.floor((tokens.expiresAtMs - Date.now()) / 1000)),
+        scope: tokens.scope,
+        tokenType: tokens.tokenType,
+        metadata: { provider: 'minimax', region },
+      });
+      controller.signal.throwIfAborted();
+      committing = true;
+      await ui.harness.replaceConfigSections({
+        providers: next.providers,
+        models: next.models,
+        defaultModel: next.defaultModel,
+        thinking: next.thinking,
+      });
+      await ui.refreshConfigAfterLogin();
+      ui.track('login', { provider: providerId, method: 'oauth' });
+      ui.showStatus(`Setup complete: ${regionLabel} · ${selectedModel.id}`);
+      return true;
+    } catch (error) {
+      if (controller.signal.aborted) return false;
+      throw error;
+    }
   } finally {
     if (ui.cancelInFlight === cancelLogin) ui.cancelInFlight = undefined;
   }
+}
+
+async function persistOAuthToken(ui: LoginUi, providerId: string, token: TokenInfo): Promise<void> {
+  const storage = new FileTokenStorage(join(ui.harness.homeDir, 'credentials'));
+  await storage.save(resolveOAuthTokenStorageName(`oauth/${providerId}`), token);
 }
 
 function cloneConfig(config: PythinkerConfig): PythinkerConfig {
