@@ -73,6 +73,7 @@ export interface VideoUploadInput {
 export interface GenerateOptions {
   signal?: AbortSignal;
   auth?: ProviderRequestAuth;
+  extraHeaders?: Readonly<Record<string, string>>;
   responseFormat?: ResponseFormat;
   cacheKey?: string;
   sampling?: SamplingOptions;

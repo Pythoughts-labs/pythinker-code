@@ -42,6 +42,7 @@ export type ModelRequestEvent =
 
 export interface ModelRequestParams {
   readonly cacheKey?: string;
+  readonly conversationId?: string;
   readonly sampling?: SamplingOptions;
   readonly thinkingEffort?: ThinkingEffort;
   readonly thinkingKeep?: string;

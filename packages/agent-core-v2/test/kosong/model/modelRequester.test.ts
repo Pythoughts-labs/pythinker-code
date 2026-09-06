@@ -16,6 +16,11 @@ import type { Model } from '#/kosong/model/catalog';
 import type { ModelRequestEvent } from '#/kosong/model/modelRequester';
 import { effectiveMaxCompletionTokens } from '#/kosong/model/modelRequester';
 import { buildStreamTiming, ModelRequesterImpl } from '#/kosong/model/modelRequesterImpl';
+import {
+  isOpencodeGatewayBaseUrl,
+  OPENCODE_SESSION_HEADER,
+  opencodeSessionHeaders,
+} from '#/kosong/model/opencodeSession';
 
 class FakeChatProvider implements ChatProvider {
   readonly name = 'fake-base';
@@ -89,12 +94,13 @@ function registryReturning(provider: ChatProvider): IProtocolAdapterRegistry {
   } as unknown as IProtocolAdapterRegistry;
 }
 
-function modelWith(authProvider: Model['authProvider']): Model {
+function modelWith(authProvider: Model['authProvider'], baseUrl?: string): Model {
   return {
     id: 'm1',
     name: 'fake-model',
     aliases: [],
     protocol: 'openai',
+    baseUrl,
     headers: {},
     capabilities: {
       image_in: false,
@@ -167,6 +173,36 @@ describe('ModelRequesterImpl request execution', () => {
     await collect(requester.request(INPUT));
     expect(provider.calls[0]?.options?.thinking).toBeUndefined();
     expect(provider.calls[0]?.options?.auth).toBeUndefined();
+  });
+
+  it('sends the OpenCode session header only for OpenCode gateways with a conversation id', async () => {
+    const capture = new FakeChatProvider();
+    const capturing = new ModelRequesterImpl(
+      modelWith(staticAuth(), 'https://gateway.opencode.ai/zen/v1'),
+      registryReturning(capture),
+    );
+    await collect(capturing.request(INPUT, undefined, { conversationId: 'conv-1' }));
+    expect(capture.calls[0]?.options?.extraHeaders).toEqual({
+      [OPENCODE_SESSION_HEADER]: 'conv-1',
+    });
+
+    const other = new FakeChatProvider();
+    await collect(
+      new ModelRequesterImpl(
+        modelWith(staticAuth(), 'https://api.openai.com/v1'),
+        registryReturning(other),
+      ).request(INPUT, undefined, { conversationId: 'conv-1' }),
+    );
+    expect(other.calls[0]?.options?.extraHeaders).toBeUndefined();
+
+    const noConversation = new FakeChatProvider();
+    await collect(
+      new ModelRequesterImpl(
+        modelWith(staticAuth(), 'https://opencode.ai/zen/go/v1'),
+        registryReturning(noConversation),
+      ).request(INPUT),
+    );
+    expect(noConversation.calls[0]?.options?.extraHeaders).toBeUndefined();
   });
 
   it('streams part, usage, finish, and timing events', async () => {
@@ -294,6 +330,40 @@ describe('effectiveMaxCompletionTokens', () => {
     expect(effectiveMaxCompletionTokens(undefined)).toBeUndefined();
     expect(effectiveMaxCompletionTokens({})).toBeUndefined();
     expect(effectiveMaxCompletionTokens({ maxCompletionTokens: 512 })).toBe(512);
+  });
+});
+
+describe('isOpencodeGatewayBaseUrl', () => {
+  it('matches the opencode.ai host and its subdomains', () => {
+    expect(isOpencodeGatewayBaseUrl('https://opencode.ai/zen/go/v1')).toBe(true);
+    expect(isOpencodeGatewayBaseUrl('https://gateway.opencode.ai/zen/v1')).toBe(true);
+    expect(isOpencodeGatewayBaseUrl('https://OPENCODE.AI/zen/go/v1')).toBe(true);
+  });
+
+  it('rejects other hosts, lookalikes, and malformed urls', () => {
+    expect(isOpencodeGatewayBaseUrl('https://api.openai.com/v1')).toBe(false);
+    expect(isOpencodeGatewayBaseUrl('https://opencode.ai.example.test/v1')).toBe(false);
+    expect(isOpencodeGatewayBaseUrl('https://notopencode.ai/v1')).toBe(false);
+    expect(isOpencodeGatewayBaseUrl(undefined)).toBe(false);
+    expect(isOpencodeGatewayBaseUrl('')).toBe(false);
+    expect(isOpencodeGatewayBaseUrl('not-a-url')).toBe(false);
+  });
+});
+
+describe('opencodeSessionHeaders', () => {
+  it('builds the session header for opencode conversations', () => {
+    expect(opencodeSessionHeaders('https://opencode.ai/zen/go/v1', 'conv-1')).toEqual({
+      [OPENCODE_SESSION_HEADER]: 'conv-1',
+    });
+    expect(opencodeSessionHeaders('https://opencode.ai/zen/go/v1', '  conv-1  ')).toEqual({
+      [OPENCODE_SESSION_HEADER]: 'conv-1',
+    });
+  });
+
+  it('returns nothing without an opencode host or a usable id', () => {
+    expect(opencodeSessionHeaders('https://api.openai.com/v1', 'conv-1')).toBeUndefined();
+    expect(opencodeSessionHeaders('https://opencode.ai/zen/go/v1', undefined)).toBeUndefined();
+    expect(opencodeSessionHeaders('https://opencode.ai/zen/go/v1', '   ')).toBeUndefined();
   });
 });
 

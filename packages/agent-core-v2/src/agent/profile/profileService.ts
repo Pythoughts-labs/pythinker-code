@@ -464,6 +464,7 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
     };
     return {
       cacheKey: this.sessionContext.sessionId,
+      conversationId: this.sessionContext.sessionId,
       sampling:
         sampling.temperature === undefined && sampling.topP === undefined ? undefined : sampling,
       thinkingEffort: thinking.effective,

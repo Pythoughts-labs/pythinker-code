@@ -199,6 +199,7 @@ export * from '#/kosong/model/thinking';
 export * from '#/kosong/model/catalog';
 export * from '#/kosong/model/catalogService';
 export * from '#/kosong/model/modelRequester';
+export * from '#/kosong/model/opencodeSession';
 import '#/kosong/model/errors';
 export {
   MODEL_CATALOG_SECTION,

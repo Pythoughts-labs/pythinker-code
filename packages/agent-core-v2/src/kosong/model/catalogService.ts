@@ -1,4 +1,5 @@
 import { parsePythinkerCodeCustomHeaders } from '@pymodel/pythinker-code-oauth';
+import { randomUUID } from 'node:crypto';
 
 import { Disposable } from '#/_base/di/lifecycle';
 import { LifecycleScope } from '#/app/scopes';
@@ -149,7 +150,7 @@ export class ModelCatalog extends Disposable implements IModelCatalog {
           messages: [{ role: 'user', content: [{ type: 'text', text: 'ping' }], toolCalls: [] }],
         },
         undefined,
-        { maxCompletionTokens: 512 },
+        { conversationId: randomUUID(), maxCompletionTokens: 512 },
       )) {
         if (event.type === 'part' && event.part.type === 'text') {
           text += event.part.text;

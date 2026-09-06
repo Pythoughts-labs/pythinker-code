@@ -530,6 +530,7 @@ describe('AgentProfileService (wire-backed config.update)', () => {
 
     expect(host.svc.resolveRequestParams()).toEqual({
       cacheKey: 'session-test',
+      conversationId: 'session-test',
       sampling: { temperature: 0.3 },
       thinkingEffort: 'high',
       thinkingKeep: 'all',
@@ -548,6 +549,7 @@ describe('AgentProfileService (wire-backed config.update)', () => {
 
     expect(host.svc.resolveRequestParams()).toEqual({
       cacheKey: 'session-test',
+      conversationId: 'session-test',
       thinkingEffort: 'high',
       thinkingKeep: 'all',
     });
@@ -568,6 +570,7 @@ describe('AgentProfileService (wire-backed config.update)', () => {
 
     expect(host.svc.resolveRequestParams()).toEqual({
       cacheKey: 'session-test',
+      conversationId: 'session-test',
       thinkingEffort: 'max',
       thinkingKeep: 'all',
     });
@@ -605,6 +608,7 @@ describe('AgentProfileService (wire-backed config.update)', () => {
 
     expect(host.svc.resolveRequestParams()).toEqual({
       cacheKey: 'session-test',
+      conversationId: 'session-test',
       sampling: { temperature: 0.3 },
       thinkingEffort: 'high',
       thinkingKeep: 'all',
@@ -624,6 +628,7 @@ describe('AgentProfileService (wire-backed config.update)', () => {
     expect(host.svc.resolveModelContext().thinkingLevel).toBe('max');
     expect(host.svc.resolveRequestParams()).toEqual({
       cacheKey: 'session-test',
+      conversationId: 'session-test',
       thinkingEffort: 'max',
       thinkingKeep: 'all',
     });
@@ -640,6 +645,7 @@ describe('AgentProfileService (wire-backed config.update)', () => {
 
     expect(host.svc.resolveRequestParams()).toEqual({
       cacheKey: 'session-test',
+      conversationId: 'session-test',
       thinkingEffort: 'high',
       thinkingKeep: 'all',
     });
@@ -673,6 +679,7 @@ describe('AgentProfileService (wire-backed config.update)', () => {
 
     expect(host.svc.resolveRequestParams()).toEqual({
       cacheKey: 'session-test',
+      conversationId: 'session-test',
       thinkingEffort: 'high',
       thinkingKeep: 'config-keep',
     });
@@ -692,6 +699,7 @@ describe('AgentProfileService (wire-backed config.update)', () => {
 
     expect(host.svc.resolveRequestParams()).toEqual({
       cacheKey: 'session-test',
+      conversationId: 'session-test',
       sampling: { temperature: 0.3 },
       thinkingEffort: 'off',
       thinkingKeep: undefined,
@@ -709,6 +717,7 @@ describe('AgentProfileService (wire-backed config.update)', () => {
 
     expect(host.svc.resolveRequestParams()).toEqual({
       cacheKey: 'session-test',
+      conversationId: 'session-test',
       thinkingEffort: 'high',
       thinkingKeep: 'all',
     });

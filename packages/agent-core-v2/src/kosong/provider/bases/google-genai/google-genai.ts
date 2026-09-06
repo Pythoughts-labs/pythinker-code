@@ -21,7 +21,11 @@ import type { Tool } from '#/kosong/contract/tool';
 import type { TokenUsage } from '#/kosong/contract/usage';
 
 import { mergeConsecutiveUserMessages } from '../merge-user-messages';
-import { requireProviderApiKey, resolveAuthBackedClient } from '../request-auth';
+import {
+  mergeRequestHeaders,
+  requireProviderApiKey,
+  resolveAuthBackedClient,
+} from '../request-auth';
 
 function normalizeGoogleGenAIFinishReason(raw: unknown): {
   finishReason: FinishReason | null;
@@ -783,6 +787,11 @@ export class GoogleGenAIChatProvider implements ChatProvider {
       ...(tools.length > 0 ? { tools: tools.map((t) => toolToGoogleGenAI(t)) } : {}),
     };
     applyResponseFormat(config, options?.responseFormat);
+    if (options?.extraHeaders !== undefined) {
+      config['httpOptions'] = {
+        headers: mergeRequestHeaders(this._defaultHeaders, options.extraHeaders),
+      };
+    }
 
     try {
       const client = this._createClient(options?.auth);

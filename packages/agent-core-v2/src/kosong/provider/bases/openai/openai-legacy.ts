@@ -670,10 +670,17 @@ export class OpenAILegacyChatProvider implements ChatProvider {
     try {
       const client = this._createClient(options?.auth);
       options?.onRequestSent?.();
+      const requestOptions: Record<string, unknown> = {};
+      if (options?.signal) {
+        requestOptions['signal'] = options.signal;
+      }
+      if (options?.extraHeaders !== undefined) {
+        requestOptions['headers'] = options.extraHeaders;
+      }
       const { data, response } = await client.chat.completions
         .create(
           finalParams as unknown as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming,
-          options?.signal ? { signal: options.signal } : undefined,
+          Object.keys(requestOptions).length > 0 ? requestOptions : undefined,
         )
         .withResponse();
       return new OpenAILegacyStreamedMessage(

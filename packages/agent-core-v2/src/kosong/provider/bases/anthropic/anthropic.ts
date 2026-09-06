@@ -979,7 +979,10 @@ export class AnthropicChatProvider implements ChatProvider {
     }
 
     const requestOptions: Record<string, unknown> = {};
-    const headers = mergeRequestHeaders(extraHeaders, options?.auth?.headers);
+    const headers = mergeRequestHeaders(
+      mergeRequestHeaders(extraHeaders, options?.extraHeaders),
+      options?.auth?.headers,
+    );
     if (headers !== undefined) {
       requestOptions['headers'] = headers;
     }
