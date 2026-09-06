@@ -9,10 +9,6 @@ import { isRecord } from './utils';
 export const KIMI_OAUTH_PLATFORM_ID = 'kimi-oauth';
 export const KIMI_CODING_PROVIDER_ID = 'kimi-coding-oauth';
 
-// kimi-cli's own public client_id: embedded in the official kimi-cli and in
-// every community port of its device-code login (opencode-kimi-auth,
-// opencode-kimi-full, opencode-kimi-subscription, ...). No registration is
-// required, the same trust model as the existing OpenAI Codex client_id.
 const CLIENT_ID = '17e5f671-d194-4dfb-9706-5516cb48c098';
 const DEVICE_AUTH_URL = 'https://auth.kimi.com/api/oauth/device_authorization';
 const TOKEN_URL = 'https://auth.kimi.com/api/oauth/token';
@@ -23,12 +19,7 @@ function sanitizeHeaderValue(value: string): string {
   return value.replace(/[^\x20-\x7e]/g, '').trim();
 }
 
-/**
- * kimi-cli fingerprints every request (OAuth and inference) with these
- * headers. `X-Msh-Device-Id` must stay stable across the OAuth flow and
- * subsequent inference calls, so it is generated once at login time and
- * persisted in the provider config's `source` and `customHeaders`.
- */
+/** Stable Kimi client identity headers used for OAuth, discovery, and inference. */
 function kimiHeaders(deviceId: string): Record<string, string> {
   return {
     'X-Msh-Platform': process.platform,
@@ -45,6 +36,8 @@ export interface KimiOAuthTokenBundle {
   readonly refreshToken: string;
   readonly expiresAtMs: number;
   readonly deviceId: string;
+  readonly scope: string;
+  readonly tokenType: string;
 }
 
 export interface RunKimiOAuthFlowOptions {
@@ -53,11 +46,28 @@ export interface RunKimiOAuthFlowOptions {
   readonly fetchImpl?: typeof fetch | undefined;
 }
 
-/**
- * Runs the Kimi For Coding device-code OAuth flow and returns the token
- * bundle plus the device id generated for this login (kept stable for the
- * lifetime of the credential).
- */
+function parseKimiTokenPayload(payload: Record<string, unknown>, deviceId: string): KimiOAuthTokenBundle {
+  const accessToken = payload['access_token'];
+  const refreshToken = payload['refresh_token'];
+  const expiresIn = Number(payload['expires_in']);
+  if (typeof accessToken !== 'string' || accessToken.length === 0) {
+    throw new Error('Kimi OAuth token exchange missing access_token.');
+  }
+  if (typeof refreshToken !== 'string' || refreshToken.length === 0) {
+    throw new Error('Kimi OAuth token exchange missing refresh_token.');
+  }
+  const normalizedExpiresIn = Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 15 * 60;
+  return {
+    accessToken,
+    refreshToken,
+    expiresAtMs: Date.now() + normalizedExpiresIn * 1000,
+    deviceId,
+    scope: typeof payload['scope'] === 'string' ? payload['scope'] : KIMI_SCOPE,
+    tokenType: typeof payload['token_type'] === 'string' ? payload['token_type'] : 'Bearer',
+  };
+}
+
+/** Runs the Kimi For Coding device-code OAuth flow. */
 export async function runKimiOAuthFlow(
   options: RunKimiOAuthFlowOptions,
 ): Promise<KimiOAuthTokenBundle> {
@@ -79,21 +89,39 @@ export async function runKimiOAuthFlow(
     fetchImpl: options.fetchImpl,
   });
 
-  const accessToken = payload['access_token'];
-  const refreshToken = payload['refresh_token'];
-  const expiresIn = Number(payload['expires_in']);
-  if (typeof accessToken !== 'string' || accessToken.length === 0) {
-    throw new Error('Kimi OAuth token exchange missing access_token.');
+  return parseKimiTokenPayload(payload, deviceId);
+}
+
+/** Refreshes Kimi credentials while preserving the login device identity. */
+export async function refreshKimiOAuthToken(
+  refreshToken: string,
+  deviceId: string,
+  fetchImpl: typeof fetch = fetch,
+  signal?: AbortSignal,
+): Promise<KimiOAuthTokenBundle> {
+  signal?.throwIfAborted();
+  const response = await fetchImpl(TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'application/json',
+      ...kimiHeaders(deviceId),
+    },
+    body: new URLSearchParams({
+      client_id: CLIENT_ID,
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+    }),
+    signal,
+  });
+  const payload: unknown = await response.json().catch(() => undefined);
+  if (response.status === 401 || response.status === 403) {
+    throw new Error('Kimi OAuth refresh was rejected. Sign in again.');
   }
-  if (typeof refreshToken !== 'string' || refreshToken.length === 0) {
-    throw new Error('Kimi OAuth token exchange missing refresh_token.');
+  if (!response.ok || !isRecord(payload)) {
+    throw new Error(`Kimi OAuth refresh failed (HTTP ${response.status}).`);
   }
-  return {
-    accessToken,
-    refreshToken,
-    expiresAtMs: Date.now() + (Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn * 1000 : 15 * 60_000),
-    deviceId,
-  };
+  return parseKimiTokenPayload(payload, deviceId);
 }
 
 /** Lists Kimi For Coding models via the shared open-platform /models fetch. */
@@ -117,10 +145,7 @@ export interface ApplyKimiOAuthResult {
   readonly defaultThinking: boolean;
 }
 
-/**
- * Writes the kimi-coding-oauth provider, model aliases, and default model
- * into the config in place. Mirrors `applyOpenAICodexOAuthConfig`'s shape.
- */
+/** Writes Kimi OAuth provider/model configuration without embedding bearer tokens in config.toml. */
 export function applyKimiOAuthConfig(
   config: PythinkerConfigShape,
   options: {
@@ -143,11 +168,10 @@ export function applyKimiOAuthConfig(
   config.providers[providerKey] = {
     type: 'pythinker',
     baseUrl: KIMI_CODING_BASE_URL,
-    apiKey: options.accessToken,
+    oauth: { storage: 'file', key: `oauth/${providerKey}` },
     customHeaders: kimiHeaders(options.deviceId),
     source: {
       auth: 'kimi-oauth',
-      refreshToken: options.refreshToken,
       deviceId: options.deviceId,
     },
   };
