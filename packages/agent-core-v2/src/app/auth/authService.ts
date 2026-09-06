@@ -8,6 +8,7 @@ import {
 import { join } from 'pathe';
 
 import { ScopeActivation, registerScopedService } from '#/_base/di/scope';
+import { Error2 } from '#/_base/errors/errors';
 import { type ILogger, ILogService } from '#/_base/log/log';
 import { IBootstrapService } from '#/app/bootstrap/bootstrap';
 import { IConfigService } from '#/app/config/config';
@@ -31,6 +32,7 @@ import {
   IAuthSummaryService,
   IOAuthTokenService,
 } from './auth';
+import { AuthErrors } from './errors';
 
 const REFRESH_BUFFER_SECONDS = 5 * 60;
 
@@ -88,8 +90,6 @@ export class OAuthTokenService implements IOAuthTokenService {
       const refreshed = await this.refreshSingleFlight(storageName, token);
       return refreshed.accessToken;
     } catch (error) {
-      // A proactive refresh may fail transiently while the current token is still
-      // valid. A forced refresh follows a 401 and must not replay the stale token.
       if (!force && token.expiresAt > nowSeconds) return token.accessToken;
       throw error;
     }
@@ -114,7 +114,9 @@ export class OAuthTokenService implements IOAuthTokenService {
     const provider = token.metadata?.['provider'];
     if (provider === 'kimi') {
       const deviceId = token.metadata?.['deviceId'];
-      if (deviceId === undefined || deviceId.length === 0) throw new Error('Kimi OAuth credential is missing deviceId metadata.');
+      if (deviceId === undefined || deviceId.length === 0) {
+        throw new Error('Kimi OAuth credential is missing deviceId metadata.');
+      }
       const refreshed = await refreshKimiOAuthToken(token.refreshToken, deviceId);
       return {
         accessToken: refreshed.accessToken,
@@ -128,7 +130,9 @@ export class OAuthTokenService implements IOAuthTokenService {
     }
     if (provider === 'minimax') {
       const region = token.metadata?.['region'];
-      if (region !== 'global' && region !== 'cn') throw new Error('MiniMax OAuth credential has invalid region metadata.');
+      if (region !== 'global' && region !== 'cn') {
+        throw new Error('MiniMax OAuth credential has invalid region metadata.');
+      }
       const refreshed = await refreshMiniMaxOAuthToken(region, token.refreshToken);
       return {
         accessToken: refreshed.accessToken,
