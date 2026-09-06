@@ -119,8 +119,8 @@ async function handleOpenPlatformLogin(
     controller.signal.throwIfAborted();
     const current = await ui.harness.getConfig({ reload: true });
     controller.signal.throwIfAborted();
-    const next = cloneConfig(current);
-    applyOpenPlatformConfig(next as PythinkerConfigShape, {
+    const next = cloneOAuthConfig(current);
+    applyOpenPlatformConfig(next, {
       platform,
       models,
       selectedModel,
@@ -347,8 +347,8 @@ async function handleKimiOAuthLogin(ui: LoginUi): Promise<boolean> {
       controller.signal.throwIfAborted();
       const current = await ui.harness.getConfig({ reload: true });
       controller.signal.throwIfAborted();
-      const next = cloneConfig(current);
-      applyKimiOAuthConfig(next as PythinkerConfigShape, {
+      const next = cloneOAuthConfig(current);
+      applyKimiOAuthConfig(next, {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         deviceId: tokens.deviceId,
@@ -434,8 +434,8 @@ async function handleMiniMaxOAuthLogin(ui: LoginUi, region: MiniMaxRegion): Prom
       controller.signal.throwIfAborted();
       const current = await ui.harness.getConfig({ reload: true });
       controller.signal.throwIfAborted();
-      const next = cloneConfig(current);
-      applyMiniMaxOAuthConfig(next as PythinkerConfigShape, region, {
+      const next = cloneOAuthConfig(current);
+      applyMiniMaxOAuthConfig(next, region, {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         selectedModel,
@@ -482,5 +482,23 @@ function cloneConfig(config: PythinkerConfig): PythinkerConfig {
     ...config,
     providers: { ...config.providers },
     models: { ...config.models },
+  };
+}
+
+/** Builds the package-neutral mutable config surface without unsafe assertions. */
+function cloneOAuthConfig(config: PythinkerConfig): PythinkerConfigShape {
+  const providers: PythinkerConfigShape['providers'] = {};
+  for (const [providerId, provider] of Object.entries(config.providers)) {
+    providers[providerId] = { ...provider };
+  }
+  const models: NonNullable<PythinkerConfigShape['models']> = {};
+  for (const [modelId, model] of Object.entries(config.models ?? {})) {
+    models[modelId] = { ...model };
+  }
+  return {
+    providers,
+    models,
+    defaultModel: config.defaultModel,
+    thinking: config.thinking === undefined ? undefined : { ...config.thinking },
   };
 }
