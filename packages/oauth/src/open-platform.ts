@@ -113,12 +113,14 @@ export async function fetchOpenPlatformModels(
   apiKey: string,
   fetchImpl: typeof fetch = fetch,
   signal?: AbortSignal,
+  extraHeaders?: Record<string, string>,
 ): Promise<ProviderModelInfo[]> {
   const res = await fetchImpl(`${withoutTrailingSlashes(platform.baseUrl)}/models`, {
     headers: {
       ...parsePythinkerCodeCustomHeaders(),
       Authorization: `Bearer ${apiKey}`,
       Accept: 'application/json',
+      ...extraHeaders,
     },
     signal,
   });
@@ -139,7 +141,7 @@ export async function fetchOpenPlatformModels(
 
 function withoutTrailingSlashes(value: string): string {
   let end = value.length;
-  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  while (end > 0 && value.codePointAt(end - 1) === 47) end -= 1;
   return value.slice(0, end);
 }
 

@@ -50,7 +50,12 @@ export { buildSkillSlashCommands, isUserActivatableSkill } from '#/skill-command
 export type { SkillSlashCommand, SkillSlashCommands } from '#/skill-commands';
 
 export { formatErrorMessage, formatErrorPayload } from '#/error-format';
-export { buildPlatformOptions, resolvePlatformOption, type PlatformOption } from '#/login/platform-options';
+export {
+  buildPlatformOptions,
+  isOAuthPlatformId,
+  resolvePlatformOption,
+  type PlatformOption,
+} from '#/login/platform-options';
 export {
   CATALOG_PLATFORM_VALUE_PREFIX,
   catalogProviderIdFromPlatformValue,

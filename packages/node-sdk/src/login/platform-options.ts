@@ -1,8 +1,27 @@
-import { OPENAI_CODEX_OAUTH_PLATFORM_ID, OPEN_PLATFORMS } from '@pymodel/pythinker-code-oauth';
+import {
+  KIMI_OAUTH_PLATFORM_ID,
+  MINIMAX_OAUTH_PLATFORM_ID_CN,
+  MINIMAX_OAUTH_PLATFORM_ID_GLOBAL,
+  minimaxRegionLabel,
+  OPENAI_CODEX_OAUTH_PLATFORM_ID,
+  OPEN_PLATFORMS,
+} from '@pymodel/pythinker-code-oauth';
 
 import { resolveCatalogImport, type Catalog, type CatalogProviderEntry } from '#/catalog';
 
 import { CATALOG_PLATFORM_VALUE_PREFIX } from './platform-values';
+
+/** OAuth-type platform ids offered directly by pythinker-code (no catalog entry). */
+const OAUTH_PLATFORM_IDS: ReadonlySet<string> = new Set([
+  OPENAI_CODEX_OAUTH_PLATFORM_ID,
+  KIMI_OAUTH_PLATFORM_ID,
+  MINIMAX_OAUTH_PLATFORM_ID_GLOBAL,
+  MINIMAX_OAUTH_PLATFORM_ID_CN,
+]);
+
+export function isOAuthPlatformId(value: string): boolean {
+  return OAUTH_PLATFORM_IDS.has(value);
+}
 
 export interface PlatformOption {
   readonly value: string;
@@ -40,8 +59,28 @@ export function buildPlatformOptions(catalog: Catalog): readonly PlatformOption[
       label: 'OpenAI Codex (OAuth)',
       description: 'OAuth',
     },
+    {
+      value: KIMI_OAUTH_PLATFORM_ID,
+      label: 'Kimi For Coding (OAuth)',
+      description: 'OAuth',
+    },
+    {
+      value: MINIMAX_OAUTH_PLATFORM_ID_GLOBAL,
+      label: minimaxRegionLabel('global'),
+      description: 'OAuth',
+    },
+    {
+      value: MINIMAX_OAUTH_PLATFORM_ID_CN,
+      label: minimaxRegionLabel('cn'),
+      description: 'OAuth',
+    },
   ];
-  const seen = new Set<string>([OPENAI_CODEX_OAUTH_PLATFORM_ID]);
+  const seen = new Set<string>([
+    OPENAI_CODEX_OAUTH_PLATFORM_ID,
+    KIMI_OAUTH_PLATFORM_ID,
+    MINIMAX_OAUTH_PLATFORM_ID_GLOBAL,
+    MINIMAX_OAUTH_PLATFORM_ID_CN,
+  ]);
 
   for (const featured of FEATURED_CATALOG_PROVIDERS) {
     const entry = catalog[featured.id];

@@ -2,6 +2,7 @@ import {
   buildPlatformOptions,
   catalogModelToAlias,
   catalogProviderIdFromPlatformValue,
+  isOAuthPlatformId,
   DEFAULT_CATALOG_URL,
   resolveCatalogImport,
   type Catalog,
@@ -11,6 +12,11 @@ import {
   type ThinkingEffort,
 } from '@pymodel/pythinker-code-sdk';
 import {
+  KIMI_CODING_PROVIDER_ID,
+  KIMI_OAUTH_PLATFORM_ID,
+  MINIMAX_OAUTH_PLATFORM_ID_CN,
+  MINIMAX_OAUTH_PLATFORM_ID_GLOBAL,
+  minimaxCodingProviderId,
   OPENAI_CODEX_OAUTH_PLATFORM_ID,
   capabilitiesForModel,
   OPENAI_CODEX_PROVIDER_ID,
@@ -37,6 +43,22 @@ import { fetchCatalogOrBuiltIn } from '#/utils/catalog-fetch';
 import { formatErrorMessage } from '#/tui/utils/event-payload';
 import type { SlashCommandHost } from './dispatch';
 
+/** Maps an OAuth-type platform picker value to the provider id it writes into config. */
+function oauthPlatformConfigProviderId(platformValue: string): string | undefined {
+  switch (platformValue) {
+    case OPENAI_CODEX_OAUTH_PLATFORM_ID:
+      return OPENAI_CODEX_PROVIDER_ID;
+    case KIMI_OAUTH_PLATFORM_ID:
+      return KIMI_CODING_PROVIDER_ID;
+    case MINIMAX_OAUTH_PLATFORM_ID_GLOBAL:
+      return minimaxCodingProviderId('global');
+    case MINIMAX_OAUTH_PLATFORM_ID_CN:
+      return minimaxCodingProviderId('cn');
+    default:
+      return undefined;
+  }
+}
+
 export async function promptPlatformSelection(
   host: SlashCommandHost,
 ): Promise<PlatformSelection | undefined> {
@@ -48,15 +70,10 @@ export async function promptPlatformSelection(
 
   const config = await host.harness.getConfig({ reload: true });
   const providers = buildPlatformOptions(catalog)
-    .filter((option) =>
-      method === 'oauth'
-        ? option.value === OPENAI_CODEX_OAUTH_PLATFORM_ID
-        : option.value !== OPENAI_CODEX_OAUTH_PLATFORM_ID,
-    )
+    .filter((option) => (method === 'oauth' ? isOAuthPlatformId(option.value) : !isOAuthPlatformId(option.value)))
     .map((option): PlatformSelectorProvider => {
       const providerId = catalogProviderIdFromPlatformValue(option.value) ?? option.value;
-      const configProviderId =
-        option.value === OPENAI_CODEX_OAUTH_PLATFORM_ID ? OPENAI_CODEX_PROVIDER_ID : providerId;
+      const configProviderId = oauthPlatformConfigProviderId(option.value) ?? providerId;
       const configured = config.providers[configProviderId];
       return {
         value: option.value,
