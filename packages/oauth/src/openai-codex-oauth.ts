@@ -403,8 +403,8 @@ export async function startOpenAICodexCallbackServer(
 }
 
 export interface RunOpenAICodexOAuthFlowOptions {
-  readonly openBrowser?: ((url: string) => void) | undefined;
-  readonly onManualInput?: (() => Promise<string | undefined>) | undefined;
+  readonly openBrowser?: (url: string) => void | Promise<boolean>;
+  readonly onManualInput?: (authorizeUrl: string) => Promise<string | undefined>;
   readonly signal?: AbortSignal | undefined;
   readonly timeoutMs?: number | undefined;
 }
@@ -416,25 +416,47 @@ export interface RunOpenAICodexOAuthFlowOptions {
 export async function runOpenAICodexOAuthFlow(
   options: RunOpenAICodexOAuthFlowOptions = {},
 ): Promise<OpenAICodexTokenBundle> {
+  options.signal?.throwIfAborted();
   const pkce = createOpenAICodexPkcePair();
   const authorizeUrl = buildOpenAICodexAuthorizeUrl(pkce);
   const callbackServer = await startOpenAICodexCallbackServer(pkce.state);
+  const onAbort = (): void => {
+    callbackServer.close();
+  };
 
   try {
-    options.openBrowser?.(authorizeUrl);
+    options.signal?.addEventListener('abort', onAbort, { once: true });
+    options.signal?.throwIfAborted();
+    let opened = false;
+    try {
+      opened = options.openBrowser !== undefined && (await options.openBrowser(authorizeUrl)) !== false;
+    } catch {
+      // Launcher errors can contain the authorization URL. Recover through the
+      // manual prompt instead of exposing process arguments in an error log.
+    }
+    options.signal?.throwIfAborted();
+    if (!opened) {
+      callbackServer.close();
+      if (options.onManualInput === undefined) {
+        throw new Error('Could not open the sign-in page. Start login again with manual input available.');
+      }
+    }
 
     let code: string | undefined;
-    const callbackResult = await callbackServer.waitForCode({
-      signal: options.signal,
-      timeoutMs: options.timeoutMs,
-    });
+    const callbackResult = opened
+      ? await callbackServer.waitForCode({
+          signal: options.signal,
+          timeoutMs: options.timeoutMs,
+        })
+      : null;
     if (callbackResult !== null && 'denied' in callbackResult) {
       throw new OAuthAccessDeniedError();
     }
     if (callbackResult !== null) {
       code = callbackResult.code;
     } else if (options.onManualInput !== undefined) {
-      const manualInput = await options.onManualInput();
+      const manualInput = await options.onManualInput(authorizeUrl);
+      options.signal?.throwIfAborted();
       if (manualInput === undefined) {
         throw new Error('OpenAI Codex login cancelled.');
       }
@@ -449,8 +471,10 @@ export async function runOpenAICodexOAuthFlow(
       throw new Error('No authorization code received from OpenAI Codex OAuth flow.');
     }
 
+    options.signal?.throwIfAborted();
     return await exchangeOpenAICodexAuthorizationCode(code, pkce.verifier);
   } finally {
+    options.signal?.removeEventListener('abort', onAbort);
     callbackServer.close();
   }
 }

@@ -1,7 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type * as OAuthModule from '@pymodel/pythinker-code-oauth';
 import {
+  FileTokenStorage,
   KIMI_CODING_PROVIDER_ID,
   MINIMAX_OAUTH_PLATFORM_ID_CN,
   MINIMAX_OAUTH_PLATFORM_ID_GLOBAL,
@@ -27,10 +32,18 @@ vi.mock('@pymodel/pythinker-code-oauth', async (importOriginal) => {
   };
 });
 
+const homes: string[] = [];
+
+afterEach(() => {
+  for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true });
+});
+
 function makeUi(overrides: Partial<LoginUi> = {}): LoginUi {
+  const homeDir = mkdtempSync(join(tmpdir(), 'pythinker-login-oauth-'));
+  homes.push(homeDir);
   return {
     harness: {
-      homeDir: '/tmp/pythinker-code-login-oauth-test',
+      homeDir,
       ensureConfigFile: vi.fn().mockResolvedValue(undefined),
       getConfig: vi.fn().mockResolvedValue({ providers: {}, models: {} }),
       replaceConfigSections: vi.fn().mockResolvedValue(undefined),
@@ -51,6 +64,31 @@ function makeUi(overrides: Partial<LoginUi> = {}): LoginUi {
 }
 
 describe('runLogin OAuth dispatch', () => {
+  it('shows the complete Codex link on browser failure without changing credentials', async () => {
+    const openBrowser = vi.fn(async (_url: string) => false);
+    const ui = makeUi({
+      openBrowser,
+      promptPlatformSelection: vi.fn().mockResolvedValue({
+        platformId: 'openai-codex-oauth', catalog: {},
+      }),
+      promptApiKey: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await expect(runLogin(ui)).resolves.toBe(false);
+
+    const authorizeUrl = openBrowser.mock.calls[0]![0];
+    expect(new URL(authorizeUrl).searchParams.has('state')).toBe(true);
+    expect(new URL(authorizeUrl).searchParams.has('code_challenge')).toBe(true);
+    expect(ui.promptApiKey).toHaveBeenCalledWith(
+      'OpenAI Codex (OAuth)',
+      expect.arrayContaining([authorizeUrl]),
+      expect.objectContaining({ title: 'Paste OpenAI Codex redirect URL', secret: false }),
+    );
+    expect(ui.harness.replaceConfigSections).not.toHaveBeenCalled();
+    expect(ui.cancelInFlight).toBeUndefined();
+    expect(ui.track).not.toHaveBeenCalled();
+  });
+
   it('routes kimi-oauth to the Kimi device flow and applies a credential reference', async () => {
     oauthMockState.runKimiOAuthFlow.mockImplementation(async ({ onCodeReady }) => {
       onCodeReady({
@@ -145,9 +183,10 @@ describe('runLogin OAuth dispatch', () => {
   });
 
   it.each([
-    ['kimi-oauth', 'kimi'],
-    [MINIMAX_OAUTH_PLATFORM_ID_GLOBAL, 'minimax'],
-  ] as const)('returns false when %s is cancelled during model selection', async (platformId, provider) => {
+    'kimi-oauth',
+    MINIMAX_OAUTH_PLATFORM_ID_GLOBAL,
+    MINIMAX_OAUTH_PLATFORM_ID_CN,
+  ] as const)('returns false when %s is cancelled during model selection', async (platformId) => {
     oauthMockState.runKimiOAuthFlow.mockResolvedValue({
       accessToken: 'at', refreshToken: 'rt', expiresAtMs: Date.now() + 900_000,
       deviceId: 'device-123', scope: 'kimi-code', tokenType: 'Bearer',
@@ -172,7 +211,71 @@ describe('runLogin OAuth dispatch', () => {
     await expect(runLogin(ui)).resolves.toBe(false);
     expect(ui.harness.replaceConfigSections).not.toHaveBeenCalled();
     expect(ui.cancelInFlight).toBeUndefined();
-    expect(provider).toBeTruthy();
+  });
+
+  it.each([
+    ['kimi-oauth', KIMI_CODING_PROVIDER_ID],
+    [MINIMAX_OAUTH_PLATFORM_ID_GLOBAL, minimaxCodingProviderId('global')],
+    [MINIMAX_OAUTH_PLATFORM_ID_CN, minimaxCodingProviderId('cn')],
+  ] as const)('completes the token and config commit when %s is cancelled during storage', async (platformId, providerId) => {
+    const tokens = {
+      accessToken: 'new-access', refreshToken: 'new-refresh', expiresAtMs: Date.now() + 900_000,
+      deviceId: 'new-device', scope: 'coding', tokenType: 'Bearer',
+    };
+    oauthMockState.runKimiOAuthFlow.mockResolvedValue(tokens);
+    oauthMockState.runMiniMaxOAuthFlow.mockResolvedValue(tokens);
+    oauthMockState.fetchKimiCodingModels.mockResolvedValue([
+      { id: 'kimi-for-coding', contextLength: 262144, supportsReasoning: true, supportsImageIn: false, supportsVideoIn: false },
+    ]);
+    const ui = makeUi({
+      promptPlatformSelection: vi.fn().mockResolvedValue({ platformId, catalog: {} }),
+      promptModelSelectionForOpenPlatform: vi.fn().mockImplementation(async (models) => ({
+        model: models[0], effort: 'off',
+      })),
+    });
+    const storage = new FileTokenStorage(join(ui.harness.homeDir, 'credentials'));
+    await storage.save(providerId, {
+      accessToken: 'old-access', refreshToken: 'old-refresh', expiresAt: Math.floor(Date.now() / 1000) + 900,
+      expiresIn: 900, scope: 'coding', tokenType: 'Bearer',
+    });
+    const writeStarted = Promise.withResolvers<void>();
+    const resumeWrite = Promise.withResolvers<void>();
+    const save = storage.save.bind(storage);
+    const saveSpy = vi.spyOn(FileTokenStorage.prototype, 'save').mockImplementationOnce(async (name, token) => {
+      writeStarted.resolve();
+      await resumeWrite.promise;
+      await save(name, token);
+    });
+    try {
+      const login = runLogin(ui);
+      await writeStarted.promise;
+      ui.cancelInFlight?.();
+      resumeWrite.resolve();
+
+      await expect(login).resolves.toBe(true);
+      await expect(storage.load(providerId)).resolves.toMatchObject({
+        accessToken: tokens.accessToken, refreshToken: tokens.refreshToken,
+      });
+      expect(ui.harness.replaceConfigSections).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        providers: expect.objectContaining({
+          [providerId]: expect.objectContaining({ oauth: { storage: 'file', key: `oauth/${providerId}` } }),
+        }),
+      }));
+      if (providerId === KIMI_CODING_PROVIDER_ID) {
+        await expect(storage.load(providerId)).resolves.toMatchObject({ metadata: { deviceId: tokens.deviceId } });
+        expect(ui.harness.replaceConfigSections).toHaveBeenCalledWith(expect.objectContaining({
+          providers: expect.objectContaining({
+            [providerId]: expect.objectContaining({
+              customHeaders: expect.objectContaining({ 'X-Msh-Device-Id': tokens.deviceId }),
+            }),
+          }),
+        }));
+      }
+      expect(ui.cancelInFlight).toBeUndefined();
+    } finally {
+      resumeWrite.resolve();
+      saveSpy.mockRestore();
+    }
   });
 
   it('returns false and shows an error when the Kimi device flow fails', async () => {

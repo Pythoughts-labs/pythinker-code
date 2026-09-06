@@ -9,7 +9,7 @@ export interface TokenInfo {
   /** Original expires_in from server response (seconds). */
   readonly expiresIn: number;
   /** Provider-specific refresh metadata. Never contains access/refresh tokens. */
-  readonly metadata?: Readonly<Record<string, string>> | undefined;
+  readonly metadata?: Readonly<Record<string, string>>;
 }
 
 /** JSON wire format for token persistence (snake_case, Python-compatible). */
@@ -20,7 +20,7 @@ export interface TokenInfoWire {
   readonly scope: string;
   readonly token_type: string;
   readonly expires_in: number;
-  readonly metadata?: Readonly<Record<string, string>> | undefined;
+  readonly metadata?: Readonly<Record<string, string>>;
 }
 
 function sanitizeMetadata(value: unknown): Readonly<Record<string, string>> | undefined {
@@ -39,7 +39,7 @@ export function tokenToWire(token: TokenInfo): TokenInfoWire {
     scope: token.scope,
     token_type: token.tokenType,
     expires_in: token.expiresIn,
-    ...(token.metadata === undefined ? {} : { metadata: token.metadata }),
+    metadata: token.metadata,
   };
 }
 

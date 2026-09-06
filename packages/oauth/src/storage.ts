@@ -26,6 +26,9 @@ import {
   writeSync,
 } from 'node:fs';
 import { basename, join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
+
+import { lock } from 'proper-lockfile';
 
 import type { TokenInfo, TokenInfoWire } from './types';
 import { tokenFromWire, tokenToWire } from './types';
@@ -95,7 +98,33 @@ export class FileTokenStorage implements TokenStorage {
   }
 
   async save(name: string, token: TokenInfo): Promise<void> {
+    await this.withLock(name, () => this.writeToken(name, token));
+  }
+
+  async saveIfUnchanged(name: string, expected: TokenInfo, token: TokenInfo) {
+    return this.withLock(name, async () => {
+      const current = await this.load(name);
+      if (current === undefined || !isDeepStrictEqual(tokenToWire(current), tokenToWire(expected))) return false;
+      this.writeToken(name, token);
+      return true;
+    });
+  }
+
+  private async withLock<T>(name: string, operation: () => T | Promise<T>) {
+    const target = this.pathFor(name);
     this.ensureDir();
+    const release = await lock(target, {
+      realpath: false,
+      retries: { retries: 10, minTimeout: 20, maxTimeout: 200 },
+    });
+    try {
+      return await operation();
+    } finally {
+      await release();
+    }
+  }
+
+  private writeToken(name: string, token: TokenInfo) {
     const target = this.pathFor(name);
     const tmp = `${target}.tmp.${process.pid}.${randomBytes(4).toString('hex')}`;
     const data = Buffer.from(`${JSON.stringify(tokenToWire(token), null, 2)}\n`, 'utf-8');
@@ -124,13 +153,15 @@ export class FileTokenStorage implements TokenStorage {
   }
 
   async remove(name: string): Promise<void> {
-    try {
-      unlinkSync(this.pathFor(name));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw error;
+    await this.withLock(name, () => {
+      try {
+        unlinkSync(this.pathFor(name));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw error;
+        }
       }
-    }
+    });
   }
 
   async list(): Promise<string[]> {

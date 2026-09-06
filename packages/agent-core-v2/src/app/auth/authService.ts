@@ -6,6 +6,7 @@ import {
   type TokenInfo,
 } from '@pymodel/pythinker-code-oauth';
 import { join } from 'pathe';
+import { isDeepStrictEqual } from 'node:util';
 
 import { ScopeActivation, registerScopedService } from '#/_base/di/scope';
 import { Error2 } from '#/_base/errors/errors';
@@ -90,7 +91,10 @@ export class OAuthTokenService implements IOAuthTokenService {
       const refreshed = await this.refreshSingleFlight(storageName, token);
       return refreshed.accessToken;
     } catch (error) {
-      if (!force && token.expiresAt > nowSeconds) return token.accessToken;
+      const current = await this.storage.load(storageName);
+      if (!force && isDeepStrictEqual(current, token) && token.expiresAt > Math.floor(Date.now() / 1000)) {
+        return token.accessToken;
+      }
       throw error;
     }
   }
@@ -100,7 +104,9 @@ export class OAuthTokenService implements IOAuthTokenService {
     if (existing !== undefined) return existing;
     const refresh = this.refreshToken(token)
       .then(async (next) => {
-        await this.storage.save(storageName, next);
+        if (!(await this.storage.saveIfUnchanged(storageName, token, next))) {
+          throw new Error('OAuth credential changed during refresh. Retry with the current configuration.');
+        }
         return next;
       })
       .finally(() => {
@@ -225,8 +231,11 @@ export class AuthSummaryService implements IAuthSummaryService {
         try {
           const refreshed = await tokenProvider.getAccessToken();
           if (nonEmpty(refreshed) !== undefined) return;
-        } catch {
-          // Normalize below to the existing login-required contract.
+        } catch (error) {
+          this.log.warn('OAuth credential refresh failed', {
+            provider: providerKey,
+            error_type: error instanceof Error ? error.name : typeof error,
+          });
         }
       }
       throw new AuthTokenMissingError(providerKey);

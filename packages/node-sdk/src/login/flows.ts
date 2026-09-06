@@ -209,12 +209,14 @@ async function handleOpenAICodexOAuthLogin(ui: LoginUi): Promise<boolean> {
       tokens = await runOpenAICodexOAuthFlow({
         signal: controller.signal,
         openBrowser: (url) => ui.openBrowser(url),
-        onManualInput: () =>
+        onManualInput: (authorizeUrl) =>
           ui.promptApiKey(
             'OpenAI Codex (OAuth)',
             [
-              'Sign in with your ChatGPT account in the browser.',
-              'If the callback fails, paste the full redirect URL here.',
+              'Automatic sign-in did not complete. Open this complete link in your browser:',
+              authorizeUrl,
+              'After sign-in, paste the full localhost redirect URL here.',
+              'If OpenAI rejects the request again, press Esc and start /login again.',
             ],
             {
               title: 'Paste OpenAI Codex redirect URL',
@@ -304,7 +306,7 @@ async function handleKimiOAuthLogin(ui: LoginUi): Promise<boolean> {
       tokens = await runKimiOAuthFlow({
         signal: controller.signal,
         onCodeReady: (info: DeviceCodeInfo) => {
-          ui.openBrowser(info.verificationUriComplete ?? info.verificationUri);
+          void ui.openBrowser(info.verificationUriComplete ?? info.verificationUri);
           spinner = ui.showLoginProgressSpinner(
             `Waiting for authorization — open ${info.verificationUri} and enter code ${info.userCode}`,
           );
@@ -357,6 +359,7 @@ async function handleKimiOAuthLogin(ui: LoginUi): Promise<boolean> {
         thinking: picked.effort !== 'off',
         effort: picked.effort === 'off' || picked.effort === 'on' ? undefined : picked.effort,
       });
+      committing = true;
       await persistOAuthToken(ui, KIMI_CODING_PROVIDER_ID, {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
@@ -366,8 +369,6 @@ async function handleKimiOAuthLogin(ui: LoginUi): Promise<boolean> {
         tokenType: tokens.tokenType,
         metadata: { provider: 'kimi', deviceId: tokens.deviceId },
       });
-      controller.signal.throwIfAborted();
-      committing = true;
       await ui.harness.replaceConfigSections({
         providers: next.providers,
         models: next.models,
@@ -402,7 +403,7 @@ async function handleMiniMaxOAuthLogin(ui: LoginUi, region: MiniMaxRegion): Prom
       tokens = await runMiniMaxOAuthFlow(region, {
         signal: controller.signal,
         onCodeReady: (info: DeviceCodeInfo) => {
-          ui.openBrowser(info.verificationUriComplete ?? info.verificationUri);
+          void ui.openBrowser(info.verificationUriComplete ?? info.verificationUri);
           spinner = ui.showLoginProgressSpinner(
             `Waiting for authorization — open ${info.verificationUri} and enter code ${info.userCode}`,
           );
@@ -442,6 +443,7 @@ async function handleMiniMaxOAuthLogin(ui: LoginUi, region: MiniMaxRegion): Prom
         thinking: picked.effort !== 'off',
         effort: picked.effort === 'off' || picked.effort === 'on' ? undefined : picked.effort,
       });
+      committing = true;
       await persistOAuthToken(ui, providerId, {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
@@ -451,8 +453,6 @@ async function handleMiniMaxOAuthLogin(ui: LoginUi, region: MiniMaxRegion): Prom
         tokenType: tokens.tokenType,
         metadata: { provider: 'minimax', region },
       });
-      controller.signal.throwIfAborted();
-      committing = true;
       await ui.harness.replaceConfigSections({
         providers: next.providers,
         models: next.models,

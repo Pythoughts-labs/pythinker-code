@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   applyKimiOAuthConfig,
@@ -17,11 +17,13 @@ function jsonResponse(payload: unknown, status = 200): Response {
   });
 }
 
+afterEach(() => vi.restoreAllMocks());
+
 describe('runKimiOAuthFlow', () => {
   it('requests a device code, notifies the caller, and exchanges it for tokens', async () => {
     let tokenCall = 0;
-    const fetchMock = vi.fn(async (input: string | URL) => {
-      const url = String(input);
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = new Request(input).url;
       if (url === 'https://auth.kimi.com/api/oauth/device_authorization') {
         return jsonResponse({
           device_code: 'device-123',
@@ -36,7 +38,7 @@ describe('runKimiOAuthFlow', () => {
     });
 
     const onCodeReady = vi.fn();
-    const bundle = await runKimiOAuthFlow({ onCodeReady, fetchImpl: fetchMock as unknown as typeof fetch });
+    const bundle = await runKimiOAuthFlow({ onCodeReady, fetchImpl: fetchMock });
 
     expect(onCodeReady).toHaveBeenCalledWith(expect.objectContaining({ userCode: 'ABCD-EFGH' }));
     expect(bundle.accessToken).toBe('at');
@@ -53,8 +55,8 @@ describe('runKimiOAuthFlow', () => {
   });
 
   it('throws when the token exchange response is missing an access_token', async () => {
-    const fetchMock = vi.fn(async (input: string | URL) => {
-      if (String(input).endsWith('device_authorization')) {
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      if (new Request(input).url.endsWith('device_authorization')) {
         return jsonResponse({
           device_code: 'device-123',
           user_code: 'ABCD-EFGH',
@@ -66,30 +68,57 @@ describe('runKimiOAuthFlow', () => {
     });
 
     await expect(
-      runKimiOAuthFlow({ onCodeReady: () => {}, fetchImpl: fetchMock as unknown as typeof fetch }),
+      runKimiOAuthFlow({ onCodeReady: () => {}, fetchImpl: fetchMock }),
     ).rejects.toThrow('missing access_token');
   });
 });
 
 describe('refreshKimiOAuthToken', () => {
+  it('bounds refresh requests with a thirty-second deadline', async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+      controller.abort(new DOMException('Refresh deadline reached', 'TimeoutError'));
+      init?.signal?.throwIfAborted();
+      throw new Error('Expected an aborted request');
+    });
+
+    await expect(refreshKimiOAuthToken('rt', 'device-123', fetchMock)).rejects.toThrow('Refresh deadline reached');
+    expect(timeout).toHaveBeenCalledWith(30_000);
+  });
+
   it('preserves the device id and accepts refresh-token rotation', async () => {
-    const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
       expect(init?.headers).toEqual(expect.objectContaining({ 'X-Msh-Device-Id': 'device-123' }));
-      const body = new URLSearchParams(String(init?.body ?? ''));
+      const body = init?.body;
+      if (!(body instanceof URLSearchParams)) throw new Error('Expected an OAuth form body');
       expect(body.get('grant_type')).toBe('refresh_token');
       expect(body.get('refresh_token')).toBe('old-rt');
       return jsonResponse({ access_token: 'new-at', refresh_token: 'new-rt', expires_in: 900 });
     });
-    const token = await refreshKimiOAuthToken('old-rt', 'device-123', fetchMock as unknown as typeof fetch);
+    const token = await refreshKimiOAuthToken('old-rt', 'device-123', fetchMock);
     expect(token.accessToken).toBe('new-at');
     expect(token.refreshToken).toBe('new-rt');
+    expect(token.deviceId).toBe('device-123');
+  });
+
+  it.each([undefined, ''])('preserves the previous refresh token when the response sends %s', async (refreshToken) => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      jsonResponse({ access_token: 'new-at', refresh_token: refreshToken, expires_in: 900 }),
+    );
+
+    const token = await refreshKimiOAuthToken('old-rt', 'device-123', fetchMock);
+
+    expect(token.accessToken).toBe('new-at');
+    expect(token.refreshToken).toBe('old-rt');
     expect(token.deviceId).toBe('device-123');
   });
 });
 
 describe('fetchKimiCodingModels', () => {
   it('fetches models from the Kimi coding base URL with device headers', async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn<typeof fetch>(async () =>
       jsonResponse({
         data: [
           { id: 'kimi-for-coding', context_length: 262144, supports_reasoning: true },
@@ -100,7 +129,7 @@ describe('fetchKimiCodingModels', () => {
     const models = await fetchKimiCodingModels(
       'access-token',
       'device-123',
-      fetchMock as unknown as typeof fetch,
+      fetchMock,
     );
 
     expect(models).toHaveLength(1);
@@ -120,16 +149,17 @@ describe('fetchKimiCodingModels', () => {
 describe('applyKimiOAuthConfig', () => {
   it('writes a credential reference with custom device headers and no bearer token', () => {
     const config: PythinkerConfigShape = { providers: {} };
-    const models = [
-      { id: 'kimi-for-coding', contextLength: 262144, supportsReasoning: true, supportsImageIn: true, supportsVideoIn: false },
-    ];
+    const selectedModel = {
+      id: 'kimi-for-coding', contextLength: 262144, supportsReasoning: true, supportsImageIn: true, supportsVideoIn: false,
+    };
+    const models = [selectedModel];
 
     const result = applyKimiOAuthConfig(config, {
       accessToken: 'access-token',
       refreshToken: 'refresh-token',
       deviceId: 'device-123',
       models,
-      selectedModel: models[0]!,
+      selectedModel,
       thinking: true,
     });
 

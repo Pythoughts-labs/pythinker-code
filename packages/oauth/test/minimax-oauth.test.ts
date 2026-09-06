@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   applyMiniMaxOAuthConfig,
@@ -18,10 +18,49 @@ function jsonResponse(payload: unknown, status = 200): Response {
 }
 
 function requestBody(init?: RequestInit): URLSearchParams {
-  return new URLSearchParams(String(init?.body ?? ''));
+  const body = init?.body;
+  if (!(body instanceof URLSearchParams)) throw new Error('Expected an OAuth form body');
+  return body;
 }
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe('runMiniMaxOAuthFlow', () => {
+  it.each(['request', 'body'] as const)('rejects success when the deadline passes during the %s', async (phase) => {
+    let now = 1_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      if (new Request(input).url.endsWith('/device/code')) {
+        return jsonResponse({
+          user_code: 'ABCD-EFGH',
+          verification_uri: 'https://example.test/authorize',
+          expired_in: 2_000,
+          interval: 1,
+          state: requestBody(init).get('state'),
+        });
+      }
+      const response = jsonResponse({
+        status: 'success', access_token: 'late-at', refresh_token: 'rt', expired_in: 60_000,
+      });
+      if (phase === 'request') {
+        now = 2_000;
+      } else {
+        const json = response.json.bind(response);
+        vi.spyOn(response, 'json').mockImplementation(async () => {
+          now = 2_000;
+          return json();
+        });
+      }
+      return response;
+    });
+
+    await expect(runMiniMaxOAuthFlow('global', { onCodeReady: () => {}, fetchImpl: fetchMock }))
+      .rejects.toThrow('MiniMax OAuth timed out');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('uses the official PKCE device flow on the global account host', async () => {
     const requestedUrls: string[] = [];
     let tokenCall = 0;
@@ -115,6 +154,20 @@ describe('runMiniMaxOAuthFlow', () => {
 });
 
 describe('refreshMiniMaxOAuthToken', () => {
+  it('bounds refresh requests with a thirty-second deadline', async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+      controller.abort(new DOMException('Refresh deadline reached', 'TimeoutError'));
+      init?.signal?.throwIfAborted();
+      throw new Error('Expected an aborted request');
+    });
+
+    await expect(refreshMiniMaxOAuthToken('global', 'rt', fetchMock)).rejects.toThrow('Refresh deadline reached');
+    expect(timeout).toHaveBeenCalledWith(30_000);
+  });
+
   it('uses refresh_token grant and preserves a non-rotated refresh token', async () => {
     const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
       const body = requestBody(init);

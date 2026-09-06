@@ -14,7 +14,7 @@ describe('runDeviceOAuthFlow cancellation', () => {
     const controller = new AbortController();
     const onCodeReady = vi.fn();
     const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
-      return await new Promise<Response>((_resolve, reject) => {
+      return new Promise<Response>((_resolve, reject) => {
         const signal = init?.signal;
         signal?.addEventListener(
           'abort',

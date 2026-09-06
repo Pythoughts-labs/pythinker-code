@@ -97,8 +97,9 @@ function isOpenAIInsufficientQuotaError(error: OpenAIAPIError): boolean {
   if (typeof error.code === 'string' && isOpenAIInsufficientQuotaCode(error.code)) return true;
   if (typeof error.type === 'string' && isOpenAIInsufficientQuotaCode(error.type)) return true;
   const message = error.message.toLowerCase();
+  if (message.includes('insufficient_quota')) return true;
+  if (error.status === 429) return false;
   return (
-    message.includes('insufficient_quota') ||
     message.includes('insufficient balance') ||
     message.includes('insufficient credit') ||
     message.includes('credits exhausted') ||

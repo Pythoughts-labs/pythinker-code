@@ -35,7 +35,7 @@ export interface LoginHarness extends CatalogProviderStore {
 export interface LoginUi {
   readonly harness: LoginHarness;
   cancelInFlight: (() => void) | undefined;
-  openBrowser(url: string): void;
+  openBrowser(url: string): void | Promise<boolean>;
   showStatus(message: string): void;
   showError(message: string): void;
   showLoginProgressSpinner(label: string): LoginProgressSpinnerHandle;

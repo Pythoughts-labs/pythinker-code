@@ -16,7 +16,7 @@ export const KIMI_CODING_BASE_URL = 'https://api.kimi.com/coding/v1';
 const KIMI_SCOPE = 'kimi-code';
 
 function sanitizeHeaderValue(value: string): string {
-  return value.replace(/[^\x20-\x7e]/g, '').trim();
+  return value.replaceAll(/[^\u0020-\u007E]/g, '').trim();
 }
 
 /** Stable Kimi client identity headers used for OAuth, discovery, and inference. */
@@ -42,8 +42,8 @@ export interface KimiOAuthTokenBundle {
 
 export interface RunKimiOAuthFlowOptions {
   readonly onCodeReady: (info: DeviceCodeInfo) => void;
-  readonly signal?: AbortSignal | undefined;
-  readonly fetchImpl?: typeof fetch | undefined;
+  readonly signal?: AbortSignal;
+  readonly fetchImpl?: typeof fetch;
 }
 
 function parseKimiTokenPayload(payload: Record<string, unknown>, deviceId: string): KimiOAuthTokenBundle {
@@ -99,7 +99,9 @@ export async function refreshKimiOAuthToken(
   fetchImpl: typeof fetch = fetch,
   signal?: AbortSignal,
 ): Promise<KimiOAuthTokenBundle> {
-  signal?.throwIfAborted();
+  const deadline = AbortSignal.timeout(30_000);
+  const requestSignal = signal === undefined ? deadline : AbortSignal.any([signal, deadline]);
+  requestSignal.throwIfAborted();
   const response = await fetchImpl(TOKEN_URL, {
     method: 'POST',
     headers: {
@@ -112,16 +114,22 @@ export async function refreshKimiOAuthToken(
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
     }),
-    signal,
+    signal: requestSignal,
   });
   const payload: unknown = await response.json().catch(() => undefined);
+  requestSignal.throwIfAborted();
   if (response.status === 401 || response.status === 403) {
     throw new Error('Kimi OAuth refresh was rejected. Sign in again.');
   }
   if (!response.ok || !isRecord(payload)) {
     throw new Error(`Kimi OAuth refresh failed (HTTP ${response.status}).`);
   }
-  return parseKimiTokenPayload(payload, deviceId);
+  return parseKimiTokenPayload({
+    ...payload,
+    refresh_token: typeof payload['refresh_token'] === 'string' && payload['refresh_token'].length > 0
+      ? payload['refresh_token']
+      : refreshToken,
+  }, deviceId);
 }
 
 /** Lists Kimi For Coding models via the shared open-platform /models fetch. */
@@ -154,8 +162,8 @@ export function applyKimiOAuthConfig(
     readonly deviceId: string;
     readonly models: readonly ProviderModelInfo[];
     readonly selectedModel: ProviderModelInfo;
-    readonly thinking?: boolean | undefined;
-    readonly effort?: string | undefined;
+    readonly thinking?: boolean;
+    readonly effort?: string;
   },
 ): ApplyKimiOAuthResult {
   if (options.models.length === 0) {
@@ -202,7 +210,7 @@ export function applyKimiOAuthConfig(
   config.thinking = {
     ...config.thinking,
     enabled: defaultThinking,
-    ...(options.effort !== undefined && options.effort !== 'off' ? { effort: options.effort } : {}),
+    effort: options.effort !== 'off' ? options.effort : undefined,
   };
 
   return { defaultModel: modelKey, defaultThinking };

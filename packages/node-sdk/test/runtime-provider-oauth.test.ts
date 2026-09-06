@@ -1,4 +1,16 @@
-import { describe, expect, it, vi } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { FileTokenStorage, type TokenInfo } from '@pymodel/pythinker-code-oauth';
+import { DisposableStore } from '@pymodel/agent-core-v2/_base/di/lifecycle';
+import { createServices } from '@pymodel/agent-core-v2/_base/di/test';
+import { IBootstrapService } from '@pymodel/agent-core-v2/app/bootstrap/bootstrap';
+import { IOAuthTokenService } from '@pymodel/agent-core-v2/app/auth/auth';
+import { OAuthTokenService } from '@pymodel/agent-core-v2/app/auth/authService';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { OAuthTokenReader } from '../../agent-core/src/services/auth/oauthToken';
 
 import { ErrorCodes, PythinkerError, type PythinkerConfig, type Logger } from '#/index';
 
@@ -227,3 +239,92 @@ function testLogger(): Logger {
   };
   return logger;
 }
+
+const tokenHomes: string[] = [];
+const tokenDisposables = new DisposableStore();
+
+afterEach(async () => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  tokenDisposables.clear();
+  await Promise.all(tokenHomes.splice(0).map((home) => rm(home, { recursive: true, force: true })));
+});
+
+async function tokenFixture(engine: 'v1' | 'v2') {
+  const homeDir = await mkdtemp(join(tmpdir(), 'pythinker-refresh-'));
+  tokenHomes.push(homeDir);
+  const storage = new FileTokenStorage(join(homeDir, 'credentials'));
+  const ref = { storage: 'file', key: 'oauth/example' } as const;
+  const provider = engine === 'v1'
+    ? new OAuthTokenReader(homeDir).resolveOAuthTokenProvider('example', ref)
+    : createServices(tokenDisposables, {
+      additionalServices(reg) {
+        reg.define(IOAuthTokenService, OAuthTokenService);
+        reg.definePartialInstance(IBootstrapService, { homeDir, scope: (name) => name });
+      },
+    }).get(IOAuthTokenService).resolveTokenProvider('example', ref);
+  if (provider === undefined) throw new Error('File OAuth provider missing');
+  const initial: TokenInfo = {
+    accessToken: 'initial-at', refreshToken: 'initial-rt',
+    expiresAt: Math.floor(Date.now() / 1000) + 60, expiresIn: 60, scope: '', tokenType: 'Bearer',
+    metadata: { provider: 'kimi', deviceId: 'device-123' },
+  };
+  await storage.save('example', initial);
+  return { storage, provider, initial };
+}
+
+describe.each(['v1', 'v2'] as const)('%s stored OAuth refresh', (engine) => {
+  it.each(['kimi', 'minimax'] as const)('shares and persists %s refreshes, including forced refresh', async (kind) => {
+    const { storage, provider, initial } = await tokenFixture(engine);
+    if (kind === 'minimax') {
+      await storage.save('example', { ...initial, metadata: { provider: 'minimax', region: 'global' } });
+    }
+    let calls = 0;
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+      const body = init?.body;
+      if (!(body instanceof URLSearchParams)) throw new Error('Expected an OAuth form body');
+      expect(body.get('refresh_token')).toBe(calls === 0 ? 'initial-rt' : 'rotated-rt');
+      calls += 1;
+      return new Response(JSON.stringify({
+        status: 'success', access_token: `refreshed-at-${calls}`, refresh_token: 'rotated-rt',
+        expires_in: 900, expired_in: Date.now() + 900_000,
+      }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(Promise.all([provider.getAccessToken(), provider.getAccessToken()]))
+      .resolves.toEqual(['refreshed-at-1', 'refreshed-at-1']);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(provider.getAccessToken()).resolves.toBe('refreshed-at-1');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(provider.getAccessToken({ force: true })).resolves.toBe('refreshed-at-2');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await expect(storage.load('example')).resolves.toMatchObject({
+      accessToken: 'refreshed-at-2', refreshToken: 'rotated-rt', metadata: { provider: kind },
+    });
+  });
+
+  it.each(['replace', 'remove'] as const)('does not overwrite a credential %s during refresh', async (change) => {
+    const { storage, provider, initial } = await tokenFixture(engine);
+    const winner = { ...initial, accessToken: 'new-login-at', refreshToken: 'new-login-rt' };
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => {
+      if (change === 'replace') await storage.save('example', winner);
+      else await storage.remove('example');
+      return new Response(JSON.stringify({ access_token: 'late-at', refresh_token: 'late-rt', expires_in: 900 }));
+    }));
+
+    await expect(provider.getAccessToken()).rejects.toThrow('credential changed');
+    await expect(storage.load('example')).resolves.toEqual(change === 'replace' ? winner : undefined);
+  });
+
+  it('does not fall back to a token that expired while refresh failed', async () => {
+    const { storage, provider, initial } = await tokenFixture(engine);
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(initial.expiresAt * 1000);
+      throw new Error('token endpoint unavailable');
+    }));
+
+    await expect(provider.getAccessToken()).rejects.toThrow('token endpoint unavailable');
+    await expect(storage.load('example')).resolves.toEqual(initial);
+  });
+});

@@ -82,8 +82,8 @@ export interface MiniMaxOAuthTokenBundle {
 
 export interface RunMiniMaxOAuthFlowOptions {
   readonly onCodeReady: (info: DeviceCodeInfo) => void;
-  readonly signal?: AbortSignal | undefined;
-  readonly fetchImpl?: typeof fetch | undefined;
+  readonly signal?: AbortSignal;
+  readonly fetchImpl?: typeof fetch;
 }
 
 function stringField(record: Record<string, unknown>, key: string): string | undefined {
@@ -207,10 +207,14 @@ export async function runMiniMaxOAuthFlow(
       fetchImpl,
       options.signal,
     );
+    options.signal?.throwIfAborted();
+    if (Date.now() >= expiresAtMs) break;
     if (!tokenResponse.ok) {
       throw new Error(`MiniMax OAuth token request failed (HTTP ${tokenResponse.status}).`);
     }
     const rawToken: unknown = await tokenResponse.json();
+    options.signal?.throwIfAborted();
+    if (Date.now() >= expiresAtMs) break;
     if (!isRecord(rawToken)) throw new Error('MiniMax OAuth token response was invalid.');
     const status = stringField(rawToken, 'status');
     if (status === 'pending') continue;
@@ -243,14 +247,17 @@ export async function refreshMiniMaxOAuthToken(
   fetchImpl: typeof fetch = fetch,
   signal?: AbortSignal,
 ): Promise<MiniMaxOAuthTokenBundle> {
+  const deadline = AbortSignal.timeout(30_000);
+  const requestSignal = signal === undefined ? deadline : AbortSignal.any([signal, deadline]);
   const response = await postForm(
     `${REGIONS[region].accountBase}/oauth2/token`,
     { grant_type: 'refresh_token', refresh_token: refreshToken, client_id: CLIENT_ID },
     fetchImpl,
-    signal,
+    requestSignal,
   );
   if (!response.ok) throw new Error(`MiniMax OAuth refresh failed (HTTP ${response.status}).`);
   const payload: unknown = await response.json();
+  requestSignal.throwIfAborted();
   if (!isRecord(payload) || payload['status'] !== 'success') {
     throw new Error('MiniMax OAuth refresh returned an unsuccessful response.');
   }
@@ -282,8 +289,8 @@ export function applyMiniMaxOAuthConfig(
     readonly accessToken: string;
     readonly refreshToken: string;
     readonly selectedModel: ProviderModelInfo;
-    readonly thinking?: boolean | undefined;
-    readonly effort?: string | undefined;
+    readonly thinking?: boolean;
+    readonly effort?: string;
   },
 ): ApplyMiniMaxOAuthResult {
   const providerKey = minimaxCodingProviderId(region);
@@ -323,7 +330,7 @@ export function applyMiniMaxOAuthConfig(
   config.thinking = {
     ...config.thinking,
     enabled: defaultThinking,
-    ...(options.effort !== undefined && options.effort !== 'off' ? { effort: options.effort } : {}),
+    effort: options.effort !== 'off' ? options.effort : undefined,
   };
 
   return { defaultModel: modelKey, defaultThinking };

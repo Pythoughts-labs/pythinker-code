@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import {
   FileTokenStorage,
@@ -49,7 +50,10 @@ export class OAuthTokenReader {
         try {
           return (await this.refreshSingleFlight(storageName, token)).accessToken;
         } catch (error) {
-          if (!force && token.expiresAt > nowSeconds) return token.accessToken;
+          const current = await this.storage.load(storageName);
+          if (!force && isDeepStrictEqual(current, token) && token.expiresAt > Math.floor(Date.now() / 1000)) {
+            return token.accessToken;
+          }
           throw error;
         }
       },
@@ -61,7 +65,9 @@ export class OAuthTokenReader {
     if (existing !== undefined) return existing;
     const refresh = this.refreshToken(token)
       .then(async (next) => {
-        await this.storage.save(storageName, next);
+        if (!(await this.storage.saveIfUnchanged(storageName, token, next))) {
+          throw new Error('OAuth credential changed during refresh. Retry with the current configuration.');
+        }
         return next;
       })
       .finally(() => {
