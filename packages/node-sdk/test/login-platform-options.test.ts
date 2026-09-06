@@ -7,12 +7,13 @@ import {
   OPENAI_CODEX_OAUTH_PLATFORM_ID,
 } from '@pymodel/pythinker-code-oauth';
 
-import { buildPlatformOptions, isOAuthPlatformId } from '#/login/platform-options';
 import type { Catalog } from '#/catalog';
+import { buildPlatformOptions, isOAuthPlatformId } from '#/login/platform-options';
 
 describe('buildPlatformOptions', () => {
   it('includes Codex, Kimi, and both MiniMax OAuth entries', () => {
-    const options = buildPlatformOptions({} as Catalog);
+    const catalog = {} satisfies Catalog;
+    const options = buildPlatformOptions(catalog);
     const values = options.map((option) => option.value);
 
     expect(values).toContain(OPENAI_CODEX_OAUTH_PLATFORM_ID);
@@ -24,7 +25,7 @@ describe('buildPlatformOptions', () => {
   it('never lets a catalog entry shadow an OAuth platform id', () => {
     const catalog = {
       [KIMI_OAUTH_PLATFORM_ID]: { name: 'Should not surface', api: 'openai' },
-    } as unknown as Catalog;
+    } satisfies Catalog;
 
     const options = buildPlatformOptions(catalog);
     const kimiEntries = options.filter((option) => option.value === KIMI_OAUTH_PLATFORM_ID);
