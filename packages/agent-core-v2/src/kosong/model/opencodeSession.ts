@@ -4,12 +4,14 @@ export const OPENCODE_SESSION_HEADER = 'x-opencode-session';
 
 export function isOpencodeGatewayBaseUrl(baseUrl: string | undefined): boolean {
   if (baseUrl === undefined || baseUrl.length === 0) return false;
-  let host: string;
+  let parsed: URL;
   try {
-    host = new URL(baseUrl).hostname.toLowerCase();
+    parsed = new URL(baseUrl);
   } catch {
     return false;
   }
+  if (parsed.protocol !== 'https:') return false;
+  const host = parsed.hostname.toLowerCase();
   return host === OPENCODE_HOST || host.endsWith(`.${OPENCODE_HOST}`);
 }
 
