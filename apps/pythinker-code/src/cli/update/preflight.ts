@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { log, type Logger } from '@pymodel/pythinker-code-sdk';
 import type { TelemetryProperties } from '@pymodel/pythinker-telemetry';
 
+import { CLI_COMMAND_NAME, PRODUCT_NAME } from '#/constant/app';
 import { loadTuiConfig } from '#/tui/config';
 import { resolveCommandPath } from '#/utils/process/resolve-command';
 
@@ -77,7 +78,7 @@ export function installCommandFor(
     case 'homebrew':
       return 'brew upgrade pythinker-code';
     case 'native':
-      return 'See https://github.com/PyModel/pythinker-code/releases';
+      return `${CLI_COMMAND_NAME} upgrade`;
     case 'unsupported':
       return `npm install -g ${NPM_PACKAGE_NAME}@${version}`;
   }
@@ -89,12 +90,11 @@ export function canAutoInstall(source: InstallSource, _platform: NodeJS.Platform
     case 'pnpm-global':
     case 'yarn-global':
     case 'bun-global':
+    case 'native':
       return true;
     case 'homebrew':
       // Homebrew upgrade may mutate other dependents and the formula can lag
       // behind the CDN release — prompt the user to run `brew upgrade` manually.
-      return false;
-    case 'native':
       return false;
     case 'unsupported':
       return false;
@@ -213,7 +213,10 @@ export function renderManualUpdateMessage(
   );
 }
 
-export function renderInstallSuccessMessage(target: UpdateTarget): string {
+export function renderInstallSuccessMessage(target: UpdateTarget, source: InstallSource): string {
+  if (source === 'native') {
+    return `${PRODUCT_NAME} ${target.version} is staged; it applies the next time you start the CLI.\n`;
+  }
   return `Updated ${NPM_PACKAGE_NAME} to ${target.version}. Restart the CLI to use the new version.\n`;
 }
 
@@ -897,7 +900,7 @@ export async function runUpdatePreflight(
 
     try {
       await installUpdate(source, userVisibleTarget.version, platform);
-      stdout.write(renderInstallSuccessMessage(userVisibleTarget));
+      stdout.write(renderInstallSuccessMessage(userVisibleTarget, source));
       return 'exit';
     } catch (error) {
       stderr.write(

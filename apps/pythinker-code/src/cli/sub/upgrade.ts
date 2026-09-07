@@ -86,7 +86,8 @@ export async function handleUpgrade(
 
   const source = await deps.detectInstallSource().catch(() => 'unsupported' as const);
   const installCommand = installCommandFor(source, target.version, deps.platform);
-  if (!canAutoInstall(source, deps.platform) || !deps.isInteractive) {
+  const needsConfirmation = source !== 'native';
+  if (!canAutoInstall(source, deps.platform) || (!deps.isInteractive && needsConfirmation)) {
     trackUpgradeEvent(deps.track, 'upgrade_command_manual_command', {
       current_version: currentVersion,
       target_version: target.version,
@@ -101,34 +102,36 @@ export async function handleUpgrade(
     return 0;
   }
 
-  trackUpgradeEvent(deps.track, 'upgrade_command_prompted', {
-    current_version: currentVersion,
-    target_version: target.version,
-    source,
-  });
-  logUpgradeInfo(deps.logger, 'manual upgrade prompted', {
-    currentVersion,
-    targetVersion: target.version,
-    source,
-  });
-  const choice = await deps.promptForInstallChoice({
-    currentVersion,
-    target,
-    installCommand,
-    installSource: source,
-  });
-  if (choice === 'skip') {
-    trackUpgradeEvent(deps.track, 'upgrade_command_skipped', {
+  if (deps.isInteractive) {
+    trackUpgradeEvent(deps.track, 'upgrade_command_prompted', {
       current_version: currentVersion,
       target_version: target.version,
       source,
     });
-    logUpgradeInfo(deps.logger, 'manual upgrade skipped', {
+    logUpgradeInfo(deps.logger, 'manual upgrade prompted', {
       currentVersion,
       targetVersion: target.version,
       source,
     });
-    return 0;
+    const choice = await deps.promptForInstallChoice({
+      currentVersion,
+      target,
+      installCommand,
+      installSource: source,
+    });
+    if (choice === 'skip') {
+      trackUpgradeEvent(deps.track, 'upgrade_command_skipped', {
+        current_version: currentVersion,
+        target_version: target.version,
+        source,
+      });
+      logUpgradeInfo(deps.logger, 'manual upgrade skipped', {
+        currentVersion,
+        targetVersion: target.version,
+        source,
+      });
+      return 0;
+    }
   }
 
   try {
@@ -148,7 +151,7 @@ export async function handleUpgrade(
       targetVersion: target.version,
       source,
     });
-    deps.stdout.write(renderInstallSuccessMessage(target));
+    deps.stdout.write(renderInstallSuccessMessage(target, source));
     return 0;
   } catch (error) {
     trackUpgradeEvent(deps.track, 'upgrade_command_failed', {
