@@ -1,5 +1,11 @@
 # @pymodel/pythinker-desktop
 
+## 0.10.1
+
+### Patch Changes
+
+- [#295](https://github.com/PyModel/pythinker-code/pull/295) [`481db17`](https://github.com/PyModel/pythinker-code/commit/481db1722fffb27648d73b832098a71f6c67739b) Thanks [@elkaix](https://github.com/elkaix)! - Enable automatic updates by default for native CLI installations.
+
 ## 0.10.0
 
 ### Minor Changes
