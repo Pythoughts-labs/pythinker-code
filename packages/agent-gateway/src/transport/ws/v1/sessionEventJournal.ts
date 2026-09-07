@@ -47,6 +47,7 @@ export class SessionEventJournal {
   private _seq: number;
   private pendingLines: string[] = [];
   private flushPromise: Promise<void> | undefined;
+  private closed = false;
   private headerPending: boolean;
 
   private constructor(
@@ -110,6 +111,7 @@ export class SessionEventJournal {
   }
 
   append(seq: number, envelope: EventEnvelope): void {
+    if (this.closed) return;
     const line: JournalEventLine = { kind: 'event', seq, envelope };
     this.pendingLines.push(JSON.stringify(line));
     this.scheduleFlush();
@@ -145,6 +147,7 @@ export class SessionEventJournal {
   }
 
   async close(): Promise<void> {
+    this.closed = true;
     await this.flush();
   }
 
