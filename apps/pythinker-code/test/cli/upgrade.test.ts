@@ -131,17 +131,35 @@ describe('handleUpgrade', () => {
     expect(output).not.toContain('Updated @pymodel/pythinker-code to 0.5.0');
   });
 
-  it('prints a runnable update command for a native install when not interactive', async () => {
+  it('stages a native update without prompting when not interactive', async () => {
     const { stdout, writable } = captureOutput();
     const deps = createDeps({ latest: '0.5.0', source: 'native', isInteractive: false });
 
     await expect(handleUpgrade('0.4.0', { ...deps, ...writable })).resolves.toBe(0);
 
     expect(deps.promptForInstallChoice).not.toHaveBeenCalled();
-    expect(deps.installUpdate).not.toHaveBeenCalled();
+    expect(deps.installUpdate).toHaveBeenCalledWith('native', '0.5.0', 'darwin');
     const output = stdout.join('');
-    expect(output).toContain('To update manually, run: pythinker upgrade');
-    expect(output).not.toContain('github.com/PyModel/pythinker-code/releases');
+    expect(output).toContain('Pythinker Code 0.5.0 is staged; it applies the next time you start the CLI.');
+    expect(output).not.toContain('To update manually');
+  });
+
+  it('returns a failing exit code when a non-interactive native stage fails', async () => {
+    const { stdout, stderr, writable } = captureOutput();
+    const deps = createDeps({
+      latest: '0.5.0',
+      source: 'native',
+      isInteractive: false,
+      installUpdate: vi.fn().mockRejectedValue(new Error('update install exited with code 1')),
+    });
+
+    await expect(handleUpgrade('0.4.0', { ...deps, ...writable })).resolves.toBe(1);
+
+    expect(deps.promptForInstallChoice).not.toHaveBeenCalled();
+    expect(stderr.join('')).toContain(
+      'warning: failed to install @pymodel/pythinker-code@0.5.0: update install exited with code 1',
+    );
+    expect(stdout.join('')).not.toContain('is staged');
   });
 
   it('skips the foreground install when the update prompt is declined', async () => {
