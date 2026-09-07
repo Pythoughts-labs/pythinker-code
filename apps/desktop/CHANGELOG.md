@@ -1,5 +1,29 @@
 # @pymodel/pythinker-desktop
 
+## 0.10.0
+
+### Minor Changes
+
+- [#291](https://github.com/PyModel/pythinker-code/pull/291) [`54ac427`](https://github.com/PyModel/pythinker-code/commit/54ac427c3798840cf8165ff98eb39d558c37dca4) Thanks [@elkaix](https://github.com/elkaix)! - Add OAuth sign-in for Kimi For Coding and MiniMax (global and China) to the login flow.
+
+### Patch Changes
+
+- [#291](https://github.com/PyModel/pythinker-code/pull/291) [`54ac427`](https://github.com/PyModel/pythinker-code/commit/54ac427c3798840cf8165ff98eb39d558c37dca4) Thanks [@elkaix](https://github.com/elkaix)! - Keep the stored refresh token when a provider refresh response omits a replacement.
+
+- [#291](https://github.com/PyModel/pythinker-code/pull/291) [`54ac427`](https://github.com/PyModel/pythinker-code/commit/54ac427c3798840cf8165ff98eb39d558c37dca4) Thanks [@elkaix](https://github.com/elkaix)! - Stop blocking dangerous Bash commands in Never Ask mode.
+
+- [#291](https://github.com/PyModel/pythinker-code/pull/291) [`54ac427`](https://github.com/PyModel/pythinker-code/commit/54ac427c3798840cf8165ff98eb39d558c37dca4) Thanks [@elkaix](https://github.com/elkaix)! - Prevent concurrent sessions from overwriting each other's refreshed sign-in tokens.
+
+- [#291](https://github.com/PyModel/pythinker-code/pull/291) [`54ac427`](https://github.com/PyModel/pythinker-code/commit/54ac427c3798840cf8165ff98eb39d558c37dca4) Thanks [@elkaix](https://github.com/elkaix)! - Bound OAuth refresh requests with a timeout and reject tokens that arrive after expiry.
+
+- [#291](https://github.com/PyModel/pythinker-code/pull/291) [`54ac427`](https://github.com/PyModel/pythinker-code/commit/54ac427c3798840cf8165ff98eb39d558c37dca4) Thanks [@elkaix](https://github.com/elkaix)! - Send OpenCode Go requests with a per-conversation session header.
+
+- [#291](https://github.com/PyModel/pythinker-code/pull/291) [`54ac427`](https://github.com/PyModel/pythinker-code/commit/54ac427c3798840cf8165ff98eb39d558c37dca4) Thanks [@elkaix](https://github.com/elkaix)! - Rename the permission modes to Always Ask, Ask When Needed, and Never Ask, and open the mode list for /yolo and /auto.
+
+- [#291](https://github.com/PyModel/pythinker-code/pull/291) [`54ac427`](https://github.com/PyModel/pythinker-code/commit/54ac427c3798840cf8165ff98eb39d558c37dca4) Thanks [@elkaix](https://github.com/elkaix)! - Default the workspace trust prompt to Trust this folder and require Enter to confirm.
+
+- [#291](https://github.com/PyModel/pythinker-code/pull/291) [`54ac427`](https://github.com/PyModel/pythinker-code/commit/54ac427c3798840cf8165ff98eb39d558c37dca4) Thanks [@elkaix](https://github.com/elkaix)! - Fix OpenAI Codex sign-in on Windows and show the complete sign-in link when automatic login fails.
+
 ## 0.9.3
 
 ### Patch Changes
