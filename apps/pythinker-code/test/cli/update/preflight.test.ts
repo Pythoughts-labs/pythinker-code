@@ -499,50 +499,45 @@ describe('runUpdatePreflight', () => {
     expect(mocks.spawn).not.toHaveBeenCalled();
   });
 
-  it('native: shows the releases page and does not spawn on darwin', async () => {
-    disableAutoInstall();
-    mocks.readUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
-    mocks.refreshUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
-    mocks.detectInstallSource.mockResolvedValue('native');
-    mocks.promptForInstallChoice.mockResolvedValue('install');
-    mockSpawnExit(0);
-    const originalPlatform = process.platform;
-    Object.defineProperty(process, 'platform', { value: 'darwin' });
-    try {
-      expect(canAutoInstall('native', 'darwin')).toBe(false);
-      expect(installCommandFor('native', '0.5.0', 'darwin')).toBe(
-        'See https://github.com/PyModel/pythinker-code/releases',
-      );
-      const { stdout, options } = captureOutput();
-      await expect(runUpdatePreflight('0.4.0', options)).resolves.toBe('continue');
-      expect(mocks.spawn).not.toHaveBeenCalled();
-      expect(stdout.join('')).toContain('See https://github.com/PyModel/pythinker-code/releases');
-    } finally {
-      Object.defineProperty(process, 'platform', { value: originalPlatform });
-    }
-  });
+  it.each(['darwin', 'linux', 'win32'] as const)(
+    'native: downloads in the background by default on %s',
+    async (platform) => {
+      mocks.readUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
+      mocks.refreshUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
+      mocks.detectInstallSource.mockResolvedValue('native');
+      mockSpawnExit(0);
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: platform });
+      try {
+        const { stdout, options } = captureOutput();
+        await expect(runUpdatePreflight('0.4.0', options)).resolves.toBe('continue');
+        expect(promptForInstallChoice).not.toHaveBeenCalled();
+        expect(mocks.spawn).toHaveBeenCalledWith(
+          process.execPath,
+          ['__update_download', '0.5.0'],
+          platform === 'win32'
+            ? { detached: true, stdio: 'ignore', windowsHide: true }
+            : { detached: true, stdio: 'ignore' },
+        );
+        expect(stdout.join('')).not.toContain('To update manually');
+        await flushBackgroundInstall();
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
+    },
+  );
 
-  it('native: shows the releases page and does not spawn on win32', async () => {
+  it('native: asks before downloading when automatic installation is disabled', async () => {
     disableAutoInstall();
     mocks.readUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
     mocks.refreshUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
     mocks.detectInstallSource.mockResolvedValue('native');
-    mocks.promptForInstallChoice.mockResolvedValue('install');
-    mockSpawnExit(0);
-    const originalPlatform = process.platform;
-    Object.defineProperty(process, 'platform', { value: 'win32' });
-    try {
-      expect(canAutoInstall('native', 'win32')).toBe(false);
-      expect(installCommandFor('native', '0.5.0', 'win32')).toBe(
-        'See https://github.com/PyModel/pythinker-code/releases',
-      );
-      const { stdout, options } = captureOutput();
-      await expect(runUpdatePreflight('0.4.0', options)).resolves.toBe('continue');
-      expect(mocks.spawn).not.toHaveBeenCalled();
-      expect(stdout.join('')).toContain('See https://github.com/PyModel/pythinker-code/releases');
-    } finally {
-      Object.defineProperty(process, 'platform', { value: originalPlatform });
-    }
+    mocks.promptForInstallChoice.mockResolvedValue('skip');
+    const { options } = captureOutput();
+
+    await expect(runUpdatePreflight('0.4.0', options)).resolves.toBe('continue');
+    expect(promptForInstallChoice).toHaveBeenCalledTimes(1);
+    expect(mocks.spawn).not.toHaveBeenCalled();
   });
 
   it('unsupported: prints fallback npm command', async () => {
@@ -699,7 +694,7 @@ describe('runUpdatePreflight', () => {
     }
   });
 
-  it('native: does not retry a background install without a download source', async () => {
+  it('native: retries an orphaned background install when the download lock is free', async () => {
     // Orphaned `active`: older than the spawn grace window and the lock is
     // free (beforeEach default) ⇒ the previous downloader is gone; retry.
     mocks.readUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
@@ -716,7 +711,12 @@ describe('runUpdatePreflight', () => {
     const { options } = captureOutput();
 
     await expect(runUpdatePreflight('0.4.0', options)).resolves.toBe('continue');
-    expect(mocks.spawn).not.toHaveBeenCalled();
+    expect(mocks.spawn).toHaveBeenCalledWith(
+      process.execPath,
+      ['__update_download', '0.5.0'],
+      expect.objectContaining({ detached: true, stdio: 'ignore' }),
+    );
+    await flushBackgroundInstall();
   });
 
   it('native: does not re-spawn while the install lock is genuinely held', async () => {

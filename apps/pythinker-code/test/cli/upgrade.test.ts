@@ -109,6 +109,17 @@ describe('handleUpgrade', () => {
     expect(stderr.join('')).toBe('');
   });
 
+  it('installs a native update after confirmation instead of showing manual instructions', async () => {
+    const { stdout, writable } = captureOutput();
+    const deps = createDeps({ source: 'native' });
+
+    await expect(handleUpgrade('0.4.0', { ...deps, ...writable })).resolves.toBe(0);
+
+    expect(deps.promptForInstallChoice).toHaveBeenCalledTimes(1);
+    expect(deps.installUpdate).toHaveBeenCalledWith('native', '0.5.0', 'darwin');
+    expect(stdout.join('')).not.toContain('To update manually');
+  });
+
   it('skips the foreground install when the update prompt is declined', async () => {
     const { stdout, writable } = captureOutput();
     const deps = createDeps({

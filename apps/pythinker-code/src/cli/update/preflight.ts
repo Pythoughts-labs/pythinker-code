@@ -89,12 +89,11 @@ export function canAutoInstall(source: InstallSource, _platform: NodeJS.Platform
     case 'pnpm-global':
     case 'yarn-global':
     case 'bun-global':
+    case 'native':
       return true;
     case 'homebrew':
       // Homebrew upgrade may mutate other dependents and the formula can lag
       // behind the CDN release — prompt the user to run `brew upgrade` manually.
-      return false;
-    case 'native':
       return false;
     case 'unsupported':
       return false;
