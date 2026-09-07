@@ -71,9 +71,9 @@ step "lint" pnpm run lint || fail "lint" "oxlint reported errors"
 step "web-bundle-freshness" node apps/pythinker-code/scripts/check-web-assets.mjs ||
   fail "build" "apps/pythinker-web changed without restaging dist-web (run 'pnpm run build:web')"
 
-# 5. Nix fetchPnpmDeps hash freshness proxy (CI: nix build).
+# 5. Nix fetchPnpmDeps hash freshness (CI: nix build).
 step "nix-hash-freshness" node scripts/check-nix-hash-fresh.mjs ||
-  fail "nix build (flake.nix)" "pnpm-lock.yaml changed without refreshing flake.nix's pnpmDeps hash"
+  fail "nix build (flake.nix)" "could not verify flake.nix's pnpmDeps hash (see Nix output above)"
 
 # 6. Typecheck, scoped to packages changed since $base_ref (CI: `pnpm run
 #    typecheck`). Full typecheck builds every package first and takes
