@@ -2,6 +2,7 @@ import { createDecorator } from '#/_base/di/instantiation';
 
 export type AgentTelemetryContext = {
   mode: 'agent' | 'plan';
+  model?: string;
   provider_type?: string;
   protocol?: string;
   turn_id?: number;
