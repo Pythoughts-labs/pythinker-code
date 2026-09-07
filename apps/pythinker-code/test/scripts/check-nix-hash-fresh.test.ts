@@ -99,6 +99,6 @@ function runCheck(root: string, nixExitCode = 1): SpawnSyncReturns<string> {
   return spawnSync(process.execPath, [checkScript], {
     cwd: root,
     encoding: 'utf8',
-    env: { ...process.env, PATH: `${root}:${process.env.PATH}` },
+    env: { ...process.env, PATH: `${root}:${process.env['PATH']}` },
   });
 }
