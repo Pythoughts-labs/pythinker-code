@@ -40,7 +40,7 @@ export const workspaceTrustResponseSchema = z.object({
 export type WorkspaceTrustResponse = z.infer<typeof workspaceTrustResponseSchema>;
 
 export const addDirRequestSchema = z.object({
-  path: z.string().min(1),
+  path: z.string().trim().min(1),
   persist: z.boolean().optional(),
 });
 export type AddDirRequest = z.infer<typeof addDirRequestSchema>;

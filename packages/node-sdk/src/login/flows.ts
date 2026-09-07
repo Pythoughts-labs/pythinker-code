@@ -306,7 +306,8 @@ async function handleKimiOAuthLogin(ui: LoginUi): Promise<boolean> {
       tokens = await runKimiOAuthFlow({
         signal: controller.signal,
         onCodeReady: (info: DeviceCodeInfo) => {
-          void ui.openBrowser(info.verificationUriComplete ?? info.verificationUri);
+          const kimiOpening = ui.openBrowser(info.verificationUriComplete ?? info.verificationUri);
+          if (kimiOpening !== undefined) void kimiOpening.catch(() => undefined);
           spinner = ui.showLoginProgressSpinner(
             `Waiting for authorization — open ${info.verificationUri} and enter code ${info.userCode}`,
           );
@@ -403,7 +404,8 @@ async function handleMiniMaxOAuthLogin(ui: LoginUi, region: MiniMaxRegion): Prom
       tokens = await runMiniMaxOAuthFlow(region, {
         signal: controller.signal,
         onCodeReady: (info: DeviceCodeInfo) => {
-          void ui.openBrowser(info.verificationUriComplete ?? info.verificationUri);
+          const miniMaxOpening = ui.openBrowser(info.verificationUriComplete ?? info.verificationUri);
+          if (miniMaxOpening !== undefined) void miniMaxOpening.catch(() => undefined);
           spinner = ui.showLoginProgressSpinner(
             `Waiting for authorization — open ${info.verificationUri} and enter code ${info.userCode}`,
           );

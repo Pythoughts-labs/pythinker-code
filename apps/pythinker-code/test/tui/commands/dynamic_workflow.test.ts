@@ -256,7 +256,7 @@ describe('handleDynamicWorkflowCommand', () => {
     expect(session.setDynamicWorkflowMode).toHaveBeenCalledWith(true, 'task');
     expect(session.setDynamicWorkflowMode).toHaveBeenCalledTimes(1);
     expect(host.showNotice).not.toHaveBeenCalled();
-    expect(host.showStatus).not.toHaveBeenCalledWith(PERMISSION_MODE_DESCRIPTIONS.auto, 'warning');
+    expect(host.showStatus).not.toHaveBeenCalled();
     expect(host.state.dynamicWorkflowModeEntry).toBe('task');
     expectDynamicWorkflowMarker(host, 'DynamicWorkflow activated');
   });

@@ -397,7 +397,7 @@ describe('handleGoalCommand', () => {
     });
     expect(s.setPermission).not.toHaveBeenCalled();
     expect(manualHost.showNotice).not.toHaveBeenCalled();
-    expect(manualHost.showStatus).not.toHaveBeenCalledWith(PERMISSION_MODE_DESCRIPTIONS.auto, 'warning');
+    expect(manualHost.showStatus).not.toHaveBeenCalled();
     expect(manualHost.sendNormalUserInput).toHaveBeenCalledWith('Ship feature X');
   });
 
@@ -440,7 +440,7 @@ describe('handleGoalCommand', () => {
     // The permissive-mode notice is deferred until the goal starts, so a failed
     // start leaves no stale notice behind.
     expect(manualHost.showNotice).not.toHaveBeenCalled();
-    expect(manualHost.showStatus).not.toHaveBeenCalledWith(PERMISSION_MODE_DESCRIPTIONS.auto, 'warning');
+    expect(manualHost.showStatus).not.toHaveBeenCalled();
   });
 
   it('returns the command to the input box when a Manual-mode goal start is cancelled', async () => {

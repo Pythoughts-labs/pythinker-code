@@ -68,6 +68,7 @@ export class AgentAgentsMdReminderService
   private readonly remindQueue = new Set<string>();
   private readonly readRecently = new Set<string>();
   private readonly telemetryFired = new Set<string>();
+  private lastProbe: Omit<AgentsMdReminderShownEvent, 'reminded_count'> | undefined;
 
   constructor(
     @IAgentToolExecutorService toolExecutor: IAgentToolExecutorService,
@@ -159,7 +160,22 @@ export class AgentAgentsMdReminderService
     const covered = context.lastDisclosure ?? [];
     const fresh = queued.filter((path) => !covered.includes(path));
     if (fresh.length === 0) return undefined;
+    this.trackShown(fresh);
     return { content: reminderText(fresh), disclosure: [...covered, ...fresh] };
+  }
+
+  private trackShown(paths: readonly string[]): void {
+    const untracked = paths.filter((path) => !this.telemetryFired.has(path));
+    if (untracked.length === 0 || this.lastProbe === undefined) return;
+    try {
+      this.telemetry.track2('agents_md_reminder_shown', {
+        ...this.lastProbe,
+        reminded_count: untracked.length,
+      });
+    } catch {
+      return;
+    }
+    for (const path of untracked) this.telemetryFired.add(path);
   }
 
   private async ensureSeeded(): Promise<void> {
@@ -198,17 +214,11 @@ export class AgentAgentsMdReminderService
       }
       this.ensureProvider();
       if (discovered.length === 0) return;
-      const untracked = discovered.filter((path) => !this.telemetryFired.has(path));
-      if (untracked.length > 0) {
-        const properties: AgentsMdReminderShownEvent = {
-          turn_id: ctx.turnId,
-          tool_name: ctx.toolCall.name,
-          reminded_count: untracked.length,
-          trace_id: ctx.trace?.traceId,
-        };
-        this.telemetry.track2('agents_md_reminder_shown', properties);
-        for (const path of untracked) this.telemetryFired.add(path);
-      }
+      this.lastProbe = {
+        turn_id: ctx.turnId,
+        tool_name: ctx.toolCall.name,
+        trace_id: ctx.trace?.traceId,
+      };
       for (const path of discovered) this.remindQueue.add(path);
     } catch (error) {
       this.log.warn('Failed to discover workspace instructions', error);

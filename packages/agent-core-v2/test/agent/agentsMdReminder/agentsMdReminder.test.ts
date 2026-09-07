@@ -1174,27 +1174,35 @@ describe('agentsMdReminder round-2 hardening', () => {
     expect(reminderText(second)).toContain(subAgentsMd);
   });
 
-  it('releases the claim when attaching the reminder fails, so the next touch retries', async () => {
+  it('keeps attaching reminders when telemetry fails and records later reminders', async () => {
     let shouldThrow = true;
+    const shown: number[] = [];
     const telemetry = {
       ...recordingTelemetry([]),
       track2: (event: string, properties?: unknown) => {
         if (shouldThrow) throw new Error('telemetry boom');
+        if (event !== 'agents_md_reminder_shown') return;
+        if (typeof properties !== 'object' || properties === null || !('reminded_count' in properties)) return;
+        shown.push(Number(properties.reminded_count));
       },
     } satisfies ITelemetryService;
     const h = createHarness({ telemetry });
     const subDir = join(workDir, 'packages', 'agent-gateway');
     const subAgentsMd = await writeAgentsMd(subDir);
+    const otherDir = join(workDir, 'packages', 'nested');
+    const otherAgentsMd = await writeAgentsMd(otherDir);
 
     const failed = await fire(h, didCtx('Read', { path: join(subDir, 'a.ts') }));
     expect(outputText(failed)).toBe('original result');
-    expect(agentsMdMessages(h)).toHaveLength(0);
-
-    shouldThrow = false;
-    const retried = await fire(h, didCtx('Read', { path: join(subDir, 'b.ts') }));
-    expect(outputText(retried)).toBe('original result');
     expect(agentsMdMessages(h)).toHaveLength(1);
     expect(reminderText(h)).toContain(subAgentsMd);
+
+    shouldThrow = false;
+    const retried = await fire(h, didCtx('Read', { path: join(otherDir, 'b.ts') }));
+    expect(outputText(retried)).toBe('original result');
+    expect(agentsMdMessages(h)).toHaveLength(2);
+    expect(reminderText(h)).toContain(otherAgentsMd);
+    expect(shown).toEqual([1]);
   });
 
   it('leaves oversized results to the truncation pipeline and enqueues the reminder instead', async () => {

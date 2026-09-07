@@ -9,18 +9,18 @@
 
 | Meaning | Standard | Constant / token |
 |---|---|---|
-| Selection pointer | `❯ ` (`primary`) | `constant/symbols.ts` → `SELECT_POINTER` |
+| Selection pointer | `❯` (`primary`) | `constant/symbols.ts` → `SELECT_POINTER` |
 | Selected item text | `primary` + bold | `chalk.hex(colors.primary).bold` |
-| Current / active item | Trailing ` ← current` (`success`) | `constant/symbols.ts` → `CURRENT_MARK` |
+| Current / active item | Trailing `← current` in `success` | `constant/symbols.ts` → `CURRENT_MARK` |
 | Dangerous item / action | `error` (also bold when selected) | `chalk.hex(colors.error)` |
 | Dangerous confirmation `[y/N]` | `warning` + bold | `chalk.hex(colors.warning)` |
-| Toggle state: on | `  enabled` after the name (`success`) | `chalk.hex(colors.success)` |
-| Toggle state: off | `  disabled` after the name (`textDim`) | `chalk.hex(colors.textDim)` |
+| Toggle state: on | `enabled` after the name, two spaces in (`success`) | `chalk.hex(colors.success)` |
+| Toggle state: off | `disabled` after the name, two spaces in (`textDim`) | `chalk.hex(colors.textDim)` |
 | List / selector border | Straight `─` (`primary`), one rule each at the top and bottom | — |
 | Input border | Rounded `╭ ╮ ╰ ╯` (`primary`) | — |
 
 - **Do not** invent selection pointers (`>` / `▶` / `→`, etc.); use `SELECT_POINTER`.
-- **Do not** use `● ` / `(current)` for the current item; use `CURRENT_MARK` (at the end of the row, in `success`, with one leading space).
+- **Do not** use `●` / `(current)` for the current item; use `CURRENT_MARK` (at the end of the row, in `success`, with one leading space).
 - Current and selected items are **independent**: current means the value in effect (trailing marker); selected means the cursor row (pointer + highlight). Both can appear on the same row.
 
 ## 2. Colors
@@ -34,7 +34,7 @@
 
 Follow `model-selector`, with this fixed order from top to bottom:
 
-```
+```text
 ─────────────────────────────────────────  ① Top border (primary, full-width rule)
  Select a model  (type to search)            ② Title (primary + bold), with a textMuted suffix when searchable and the query is empty
  ↑↓ navigate · Enter select · Esc cancel    ③ Hint (textMuted, directly below the title, no key highlighting)
@@ -79,7 +79,7 @@ Each hint segment has **key + description**. Separate segments with ` · ` (a mi
 
 `tabbed-model-selector` wraps the flat `model-selector` in provider tabs. Match the **AskUserQuestion** tabs:
 
-```
+```text
  Select a model  (type to search)
  Tab toggle provider · ↑↓ navigate · Enter select · Esc cancel   ← Provider switching is the first hint
                                             ← Blank line
@@ -92,7 +92,7 @@ Each hint segment has **key + description**. Separate segments with ` · ` (a mi
 - Active tab: ``chalk.bgHex(colors.selectionBg).hex(colors.inverseText).bold(` ${label} `)``; inactive tab: `chalk.hex(colors.textMuted)`. Both have the same visible width.
 - The first tab is always `All` (all providers), and **`All` is the default**. Select a provider tab only when `initialTabId` is passed explicitly, such as after adding a provider through `/provider`.
 - `Tab` / `Shift+Tab` cycle through tabs. `Tab toggle provider` is the first hint segment.
-- The current model still uses `❯` + ` ← current` in its tab; switching tabs must preserve its location.
+- The current model still uses `❯` + `← current` in its tab; switching tabs must preserve its location.
 
 ## 6. Keys
 
@@ -114,7 +114,7 @@ Each hint segment has **key + description**. Separate segments with ` · ` (a mi
 
 Use this pattern when each row can be enabled or disabled independently, such as installed plugins in `/plugins` or MCP servers. A single-select list submits and closes with `Enter`; a toggle list uses `Space` to change the row in place and stays open.
 
-```
+```text
  Plugins
  ↑↓ navigate · Space toggle · Enter details · Esc cancel
                                             ← Blank line
@@ -167,7 +167,7 @@ New list components **must reuse `SearchableList`** for cursor / search / paging
 
 - [ ] Follow section 3: top rule, title (with optional `(type to search)` suffix), hint, blank line, `Search:` row, list, bottom rule. No inner rule below the title.
 - [ ] The entire hint uses `textMuted`, without key highlighting. Key tokens are capitalized, descriptions are lowercase, and segments use ` · `.
-- [ ] Use `SELECT_POINTER` and `CURRENT_MARK`, without custom `>` / `▶` / `→` / `● ` / `(current)` markers.
+- [ ] Use `SELECT_POINTER` and `CURRENT_MARK`, without custom `>` / `▶` / `→` / `●` / `(current)` markers.
 - [ ] All colors come from `colors.<token>`, without named colors.
 - [ ] Keys: `↑↓` move, `PgUp/PgDn` page, `Enter` confirms, `Esc` cancels (clear the query first in searchable lists), `D` deletes. Character comparisons use `printableChar()`.
 - [ ] Use only `cancel` for leaving the dialog, without mixing close / back / exit / dismiss.
