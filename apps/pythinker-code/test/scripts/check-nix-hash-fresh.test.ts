@@ -46,7 +46,17 @@ describe('check-nix-hash-fresh', () => {
 
     const result = runCheck(root);
     expect(result.status, result.stderr).toBe(1);
-    expect(result.stderr).toContain('pnpm-lock.yaml changed on this branch but flake.nix did not');
+    expect(result.stderr).toContain('could not verify the committed dependency hash');
+  });
+
+  it('accepts a lock-only change when the dependency rebuild verifies its hash', () => {
+    const root = makeRepository('feature');
+    setRemoteRef(root, 'main', revParse(root, 'HEAD'));
+    writeFileSync(join(root, 'pnpm-lock.yaml'), 'equivalent dependency closure\n');
+    commit(root, 'update lock without changing fetched dependencies');
+
+    const result = runCheck(root, 0);
+    expect(result.status, result.stderr).toBe(0);
   });
 });
 
@@ -84,6 +94,11 @@ function git(root: string, args: string[]): string {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 }
 
-function runCheck(root: string): SpawnSyncReturns<string> {
-  return spawnSync(process.execPath, [checkScript], { cwd: root, encoding: 'utf8' });
+function runCheck(root: string, nixExitCode = 1): SpawnSyncReturns<string> {
+  writeFileSync(join(root, 'nix'), `#!/bin/sh\nexit ${nixExitCode}\n`, { mode: 0o755 });
+  return spawnSync(process.execPath, [checkScript], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, PATH: `${root}:${process.env['PATH']}` },
+  });
 }

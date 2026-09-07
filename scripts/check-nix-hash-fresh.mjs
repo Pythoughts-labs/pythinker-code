@@ -1,17 +1,9 @@
 #!/usr/bin/env node
-// Cheap proxy for the Nix fetchPnpmDeps hash going stale.
-//
-// flake.nix pins a `hash = "sha256-..."` for pkgs.fetchPnpmDeps, computed
-// from pnpm-lock.yaml. If the lockfile changes and nobody refreshes that
-// hash, `nix build` fails in CI with a hash mismatch. Recomputing the real
-// hash requires `nix`, which may not be installed locally, so this checks a
-// proxy instead: did pnpm-lock.yaml change on this branch without flake.nix
-// also changing? That's not proof the hash is stale (a flake.nix edit could
-// be unrelated), but it's the cheap signal that catches the common case.
-//
-// ponytail: proxy check, not a real hash recompute — upgrade to `nix build
-// --dry-run` locally if false positives/negatives become a problem.
+// Use the branch diff as a fast path, then verify inconclusive lock-only changes
+// against the committed dependency derivation. Rebuild fixed-output dependencies
+// so a cached store path cannot hide a stale hash.
 import { execFileSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 function git(args) {
   return execFileSync('git', args, { encoding: 'utf8' }).trim();
@@ -60,10 +52,20 @@ if (!lockChanged || flakeChanged) {
   process.exit(0);
 }
 
-console.error(
-  '❌ pnpm-lock.yaml changed on this branch but flake.nix did not.\n' +
-    '   flake.nix pins a fetchPnpmDeps hash of pnpm-lock.yaml, so its hash may be stale.\n' +
-    '   Refresh it: run a nix build (e.g. `nix build .#pythinker-code`), take the sha256-... hash\n' +
-    '   from the mismatch error, paste it into the `hash = "sha256-...";` line in flake.nix, commit, and re-push.',
-);
-process.exit(1);
+console.log('[nix-hash-freshness] lockfile changed without flake.nix; verifying the committed dependency hash.');
+try {
+  const source = pathToFileURL(git(['rev-parse', '--show-toplevel']));
+  source.searchParams.set('rev', git(['rev-parse', 'HEAD']));
+  source.hash = 'pythinker-code.pnpmDeps';
+  execFileSync('nix', ['build', `git+${source.href}`, '--rebuild', '--no-link'], {
+    stdio: 'inherit',
+    timeout: 600_000,
+  });
+} catch (error) {
+  console.error(
+    '[nix-hash-freshness] could not verify the committed dependency hash. ' +
+      'Install Nix if unavailable, resolve build errors, or refresh flake.nix with the reported hash.',
+  );
+  console.error(error.message);
+  process.exit(1);
+}
