@@ -35,6 +35,7 @@ import {
 } from '../../version';
 import {
   accessUrlLines,
+  browserOpenOrigin,
   buildOpenableUrl,
   isLoopbackHost,
   splitTokenFragment,
@@ -289,7 +290,8 @@ export async function handleWebCommand(
           : formatReadyLine(origin, token, parsed.dangerousBypassAuth),
       );
       if (opts.open === true) {
-        deps.openUrl(token !== undefined ? buildWebUrl(origin, token) : origin);
+        const openOrigin = browserOpenOrigin(origin);
+        deps.openUrl(token !== undefined ? buildWebUrl(openOrigin, token) : openOrigin);
       }
     },
     onShutdown: async () => {
@@ -517,7 +519,7 @@ export function formatReadyBanner(
     return frag === '' ? url(base) : url(base) + dim(frag);
   };
 
-  const port = Number(new URL(origin).port);
+  const port = Number(origin.slice(origin.lastIndexOf(':') + 1));
   const lines: string[] =
     opts.useTuiLogo === true
       ? [
