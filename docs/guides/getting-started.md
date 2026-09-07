@@ -68,7 +68,7 @@ pythinker --version
 
 **Upgrade**: automatic updates are enabled by default for global npm, pnpm, yarn, bun, and native installations. Native installations on macOS, Linux, and Windows download and verify the update in the background, then apply it on the next start. Homebrew installations require `brew upgrade pythinker-code`.
 
-Run `pythinker update` (or `pythinker upgrade`) to check immediately and confirm installation. Native updates apply on the next start. To disable background installation, set `[upgrade].auto_install = false` in `~/.pythinker-code/tui.toml`. Set `PYTHINKER_CODE_NO_AUTO_UPDATE=1` to also disable automatic checks, startup prompts, and automatic update application.
+Run `pythinker update` (or `pythinker upgrade`) to check immediately. In a terminal, the command asks you to confirm. For a native installation in a script or a pipe, there is no prompt and the update downloads immediately. Native updates apply on the next start. To disable background installation, set `[upgrade].auto_install = false` in `~/.pythinker-code/tui.toml`. This setting stops unattended installation, but a startup prompt can still show when an update is available, as it does for a package manager installation. Set `PYTHINKER_CODE_NO_AUTO_UPDATE=1` to also disable automatic checks, startup prompts, and automatic update application.
 
 You can also upgrade directly via the package manager:
 
