@@ -148,7 +148,7 @@ export async function handleUpgrade(
       targetVersion: target.version,
       source,
     });
-    deps.stdout.write(renderInstallSuccessMessage(target));
+    deps.stdout.write(renderInstallSuccessMessage(target, source));
     return 0;
   } catch (error) {
     trackUpgradeEvent(deps.track, 'upgrade_command_failed', {

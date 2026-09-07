@@ -120,6 +120,30 @@ describe('handleUpgrade', () => {
     expect(stdout.join('')).not.toContain('To update manually');
   });
 
+  it('reports a native install as staged for the next start rather than already applied', async () => {
+    const { stdout, writable } = captureOutput();
+    const deps = createDeps({ latest: '0.5.0', source: 'native' });
+
+    await expect(handleUpgrade('0.4.0', { ...deps, ...writable })).resolves.toBe(0);
+
+    const output = stdout.join('');
+    expect(output).toContain('Pythinker Code 0.5.0 is staged; it applies the next time you start the CLI.');
+    expect(output).not.toContain('Updated @pymodel/pythinker-code to 0.5.0');
+  });
+
+  it('prints a runnable update command for a native install when not interactive', async () => {
+    const { stdout, writable } = captureOutput();
+    const deps = createDeps({ latest: '0.5.0', source: 'native', isInteractive: false });
+
+    await expect(handleUpgrade('0.4.0', { ...deps, ...writable })).resolves.toBe(0);
+
+    expect(deps.promptForInstallChoice).not.toHaveBeenCalled();
+    expect(deps.installUpdate).not.toHaveBeenCalled();
+    const output = stdout.join('');
+    expect(output).toContain('To update manually, run: pythinker upgrade');
+    expect(output).not.toContain('github.com/PyModel/pythinker-code/releases');
+  });
+
   it('skips the foreground install when the update prompt is declined', async () => {
     const { stdout, writable } = captureOutput();
     const deps = createDeps({
