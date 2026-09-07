@@ -1,7 +1,15 @@
-import { FileTokenStorage, resolveOAuthTokenStorageName } from '@pymodel/pythinker-code-oauth';
+import {
+  FileTokenStorage,
+  refreshKimiOAuthToken,
+  refreshMiniMaxOAuthToken,
+  resolveOAuthTokenStorageName,
+  type TokenInfo,
+} from '@pymodel/pythinker-code-oauth';
 import { join } from 'pathe';
+import { isDeepStrictEqual } from 'node:util';
 
 import { ScopeActivation, registerScopedService } from '#/_base/di/scope';
+import { Error2 } from '#/_base/errors/errors';
 import { type ILogger, ILogService } from '#/_base/log/log';
 import { IBootstrapService } from '#/app/bootstrap/bootstrap';
 import { IConfigService } from '#/app/config/config';
@@ -25,11 +33,15 @@ import {
   IAuthSummaryService,
   IOAuthTokenService,
 } from './auth';
+import { AuthErrors } from './errors';
+
+const REFRESH_BUFFER_SECONDS = 5 * 60;
 
 export class OAuthTokenService implements IOAuthTokenService {
   declare readonly _serviceBrand: undefined;
 
   private readonly storage: FileTokenStorage;
+  private readonly refreshInflight = new Map<string, Promise<TokenInfo>>();
 
   constructor(@IBootstrapService bootstrap: IBootstrapService) {
     this.storage = new FileTokenStorage(join(bootstrap.homeDir, bootstrap.scope('credentials')));
@@ -45,11 +57,8 @@ export class OAuthTokenService implements IOAuthTokenService {
   resolveTokenProvider(provider: string, oauthRef: OAuthRef): OAuthBearerTokenProvider | undefined {
     if (oauthRef.storage !== 'file') return undefined;
     return {
-      getAccessToken: async () => {
-        const token = await this.getCachedAccessToken(provider, oauthRef);
-        if (token === undefined) throw new AuthTokenMissingError(provider);
-        return token;
-      },
+      getAccessToken: async (options) =>
+        this.getAccessToken(provider, oauthRef, options?.force === true),
     };
   }
 
@@ -62,6 +71,86 @@ export class OAuthTokenService implements IOAuthTokenService {
     if (token === undefined || token.accessToken.trim().length === 0) return undefined;
     if (token.expiresAt <= Math.floor(Date.now() / 1000)) return undefined;
     return token.accessToken;
+  }
+
+  private async getAccessToken(provider: string, oauthRef: OAuthRef, force: boolean): Promise<string> {
+    const storageName = resolveOAuthTokenStorageName(oauthRef.key);
+    const token = await this.storage.load(storageName);
+    if (token === undefined || token.accessToken.trim().length === 0) throw loginRequired(provider);
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const shouldRefresh = force || token.expiresAt - nowSeconds <= REFRESH_BUFFER_SECONDS;
+    if (!shouldRefresh) return token.accessToken;
+
+    if (token.refreshToken.trim().length === 0 || token.metadata?.['provider'] === undefined) {
+      if (!force && token.expiresAt > nowSeconds) return token.accessToken;
+      throw loginRequired(provider);
+    }
+
+    try {
+      const refreshed = await this.refreshSingleFlight(storageName, token);
+      return refreshed.accessToken;
+    } catch (error) {
+      const current = await this.storage.load(storageName);
+      if (!force && isDeepStrictEqual(current, token) && token.expiresAt > Math.floor(Date.now() / 1000)) {
+        return token.accessToken;
+      }
+      throw error;
+    }
+  }
+
+  private refreshSingleFlight(storageName: string, token: TokenInfo): Promise<TokenInfo> {
+    const existing = this.refreshInflight.get(storageName);
+    if (existing !== undefined) return existing;
+    const refresh = this.refreshToken(token)
+      .then(async (next) => {
+        if (!(await this.storage.saveIfUnchanged(storageName, token, next))) {
+          throw new Error('OAuth credential changed during refresh. Retry with the current configuration.');
+        }
+        return next;
+      })
+      .finally(() => {
+        if (this.refreshInflight.get(storageName) === refresh) this.refreshInflight.delete(storageName);
+      });
+    this.refreshInflight.set(storageName, refresh);
+    return refresh;
+  }
+
+  private async refreshToken(token: TokenInfo): Promise<TokenInfo> {
+    const provider = token.metadata?.['provider'];
+    if (provider === 'kimi') {
+      const deviceId = token.metadata?.['deviceId'];
+      if (deviceId === undefined || deviceId.length === 0) {
+        throw new Error('Kimi OAuth credential is missing deviceId metadata.');
+      }
+      const refreshed = await refreshKimiOAuthToken(token.refreshToken, deviceId);
+      return {
+        accessToken: refreshed.accessToken,
+        refreshToken: refreshed.refreshToken,
+        expiresAt: Math.floor(refreshed.expiresAtMs / 1000),
+        expiresIn: Math.max(1, Math.floor((refreshed.expiresAtMs - Date.now()) / 1000)),
+        scope: refreshed.scope,
+        tokenType: refreshed.tokenType,
+        metadata: token.metadata,
+      };
+    }
+    if (provider === 'minimax') {
+      const region = token.metadata?.['region'];
+      if (region !== 'global' && region !== 'cn') {
+        throw new Error('MiniMax OAuth credential has invalid region metadata.');
+      }
+      const refreshed = await refreshMiniMaxOAuthToken(region, token.refreshToken);
+      return {
+        accessToken: refreshed.accessToken,
+        refreshToken: refreshed.refreshToken,
+        expiresAt: Math.floor(refreshed.expiresAtMs / 1000),
+        expiresIn: Math.max(1, Math.floor((refreshed.expiresAtMs - Date.now()) / 1000)),
+        scope: refreshed.scope,
+        tokenType: refreshed.tokenType,
+        metadata: token.metadata,
+      };
+    }
+    throw new Error(`OAuth provider "${provider ?? 'unknown'}" does not support token refresh.`);
   }
 }
 
@@ -137,10 +226,29 @@ export class AuthSummaryService implements IAuthSummaryService {
       const providerKey = auth.oauthProviderKey ?? providerName;
       const token = await this.oauth.getCachedAccessToken(providerKey, auth.oauth);
       if (nonEmpty(token) !== undefined) return;
+      const tokenProvider = this.oauth.resolveTokenProvider(providerKey, auth.oauth);
+      if (tokenProvider !== undefined) {
+        try {
+          const refreshed = await tokenProvider.getAccessToken();
+          if (nonEmpty(refreshed) !== undefined) return;
+        } catch (error) {
+          this.log.warn('OAuth credential refresh failed', {
+            provider: providerKey,
+            error_type: error instanceof Error ? error.name : typeof error,
+          });
+        }
+      }
       throw new AuthTokenMissingError(providerKey);
     }
     throw new AuthTokenMissingError(providerName);
   }
+}
+
+function loginRequired(providerKey: string): Error2 {
+  return new Error2(
+    AuthErrors.codes.AUTH_LOGIN_REQUIRED,
+    `OAuth provider "${providerKey}" has no usable stored credential.`,
+  );
 }
 
 function isProviderlessModel(model: ModelRecord | undefined): boolean {

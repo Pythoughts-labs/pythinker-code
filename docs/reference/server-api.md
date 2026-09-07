@@ -212,6 +212,7 @@ PTY terminal endpoints; mounted only on loopback binds.
 | `GET /api/v1/workspaces/{workspace_id}/trust` | Read the trust state |
 | `POST /api/v1/workspaces/{workspace_id}/trust` | Grant trust |
 | `POST /api/v1/workspaces/{workspace_id}/untrust` | Revoke trust |
+| `POST /api/v1/workspaces/{workspace_id}/add-dir` | Add an additional directory |
 
 ### File system
 

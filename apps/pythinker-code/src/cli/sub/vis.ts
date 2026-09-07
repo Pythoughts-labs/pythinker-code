@@ -134,11 +134,10 @@ function createDefaultVisDeps(overrides: Partial<VisDeps> = {}): VisDeps {
         const { startVisServer } = await import('@pymodel/vis-server/start');
         return startVisServer(opts);
       }),
-    // `openUrl` is a synchronous fire-and-forget; adapt it to the async dep.
     openUrl:
       overrides.openUrl ??
       (async (url: string) => {
-        openUrl(url);
+        if (!(await openUrl(url))) throw new Error('Could not open the browser.');
       }),
     waitForShutdown: overrides.waitForShutdown ?? waitForSigint,
     stdout: overrides.stdout ?? process.stdout,

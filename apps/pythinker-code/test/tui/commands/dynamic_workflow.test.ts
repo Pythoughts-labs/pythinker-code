@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { handleDynamicWorkflowCommand } from '#/tui/commands/index';
 import type { SlashCommandHost } from '#/tui/commands/dispatch';
 import { currentTheme } from '#/tui/theme';
+import { PERMISSION_MODE_DESCRIPTIONS } from '#/tui/utils/permission-mode';
 
 const ENTER = '\r';
 const ESCAPE = '\u001B';
@@ -44,6 +45,7 @@ function makeHost(
     requireSession: () => session,
     setAppState: vi.fn((patch: Record<string, unknown>) => Object.assign(host.state.appState, patch)),
     showError: vi.fn(),
+    showNotice: vi.fn(),
     showStatus: vi.fn(),
     mountEditorReplacement: vi.fn(),
     restoreEditor: vi.fn(),
@@ -111,7 +113,7 @@ describe('handleDynamicWorkflowCommand', () => {
     expect(host.sendNormalUserInput).not.toHaveBeenCalled();
   });
 
-  it('asks before turning dynamic_workflow mode on in Manual mode', async () => {
+  it('asks before turning dynamic_workflow mode on in Always Ask mode', async () => {
     const { host, session } = makeHost({ model: '', permissionMode: 'manual' });
 
     await handleDynamicWorkflowCommand(host, 'on');
@@ -122,7 +124,7 @@ describe('handleDynamicWorkflowCommand', () => {
     expect(session.setPermission).not.toHaveBeenCalled();
     expect(host.sendNormalUserInput).not.toHaveBeenCalled();
     const text = stripAnsi(mountedPicker(host).render(80).join('\n'));
-    expect(text).toContain('Manual mode can block dynamic_workflow work');
+    expect(text).toContain('Always Ask mode can block dynamic_workflow work');
     mountedPicker(host).handleInput(ENTER);
 
     await vi.waitFor(() => {
@@ -202,7 +204,7 @@ describe('handleDynamicWorkflowCommand', () => {
     expect(host.sendNormalUserInput).not.toHaveBeenCalled();
   });
 
-  it('asks before starting a dynamic_workflow task in Manual mode', async () => {
+  it('asks before starting a dynamic_workflow task in Always Ask mode', async () => {
     const { host, session } = makeHost({ permissionMode: 'manual' });
 
     await handleDynamicWorkflowCommand(host, 'Ship feature X');
@@ -213,8 +215,8 @@ describe('handleDynamicWorkflowCommand', () => {
     expect(session.setPermission).not.toHaveBeenCalled();
     expect(host.sendNormalUserInput).not.toHaveBeenCalled();
     const text = stripAnsi(mountedPicker(host).render(80).join('\n'));
-    expect(text).toContain('Manual mode can block dynamic_workflow work');
-    expect(text).toContain('Switch to YOLO and start');
+    expect(text).toContain('Always Ask mode can block dynamic_workflow work');
+    expect(text).toContain('Switch to Ask When Needed and start');
     expect(text).not.toContain('Do not start');
   });
 
@@ -232,6 +234,8 @@ describe('handleDynamicWorkflowCommand', () => {
     expect(session.setDynamicWorkflowMode).toHaveBeenCalledTimes(1);
     expect(host.setAppState).toHaveBeenCalledWith({ permissionMode: 'auto' });
     expect(host.setAppState).toHaveBeenCalledWith({ dynamicWorkflowMode: true });
+    expect(host.showNotice).toHaveBeenCalledWith('Permission mode: Never Ask');
+    expect(host.showStatus).toHaveBeenCalledWith(PERMISSION_MODE_DESCRIPTIONS.auto, 'warning');
     expect(host.state.dynamicWorkflowModeEntry).toBe('task');
     expectDynamicWorkflowMarker(host, 'DynamicWorkflow activated');
   });
@@ -251,6 +255,8 @@ describe('handleDynamicWorkflowCommand', () => {
     expect(session.setPermission).not.toHaveBeenCalled();
     expect(session.setDynamicWorkflowMode).toHaveBeenCalledWith(true, 'task');
     expect(session.setDynamicWorkflowMode).toHaveBeenCalledTimes(1);
+    expect(host.showNotice).not.toHaveBeenCalled();
+    expect(host.showStatus).not.toHaveBeenCalled();
     expect(host.state.dynamicWorkflowModeEntry).toBe('task');
     expectDynamicWorkflowMarker(host, 'DynamicWorkflow activated');
   });
@@ -271,6 +277,8 @@ describe('handleDynamicWorkflowCommand', () => {
     expect(session.setDynamicWorkflowMode).toHaveBeenCalledTimes(1);
     expect(host.setAppState).toHaveBeenCalledWith({ permissionMode: 'yolo' });
     expect(host.setAppState).toHaveBeenCalledWith({ dynamicWorkflowMode: true });
+    expect(host.showNotice).toHaveBeenCalledWith('Permission mode: Ask When Needed');
+    expect(host.showStatus).toHaveBeenCalledWith(PERMISSION_MODE_DESCRIPTIONS.yolo, 'warning');
     expect(host.state.dynamicWorkflowModeEntry).toBe('task');
     expectDynamicWorkflowMarker(host, 'DynamicWorkflow activated');
   });
@@ -306,7 +314,7 @@ describe('handleDynamicWorkflowCommand', () => {
     expect(host.sendNormalUserInput).not.toHaveBeenCalled();
   });
 
-  it('does not send from Manual mode when enabling dynamic_workflow mode fails after confirmation', async () => {
+  it('does not send from Always Ask mode when enabling dynamic_workflow mode fails after confirmation', async () => {
     const { host, session } = makeHost({ permissionMode: 'manual' });
     session.setDynamicWorkflowMode.mockRejectedValueOnce(new Error('denied'));
 

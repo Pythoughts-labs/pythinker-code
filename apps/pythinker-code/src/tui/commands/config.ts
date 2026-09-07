@@ -26,6 +26,7 @@ import type { ThemeName } from '#/tui/theme';
 import { currentTheme, isBuiltInTheme, lightColors, loadCustomThemeMerged } from '#/tui/theme';
 import { NO_ACTIVE_SESSION_MESSAGE } from '../constant/pythinker-tui';
 import { formatErrorMessage } from '../utils/event-payload';
+import { PERMISSION_MODE_DESCRIPTIONS, PERMISSION_MODE_DISPLAY_NAMES } from '../utils/permission-mode';
 import { thinkingEffortToConfig } from '../utils/thinking-config';
 import { showUsage } from './info';
 import { setExperimentalFeatures } from './experimental-flags';
@@ -122,98 +123,6 @@ async function applyPlanMode(host: SlashCommandHost, session: Session, enabled: 
   } catch (error) {
     const msg = formatErrorMessage(error);
     host.showError(`Failed to set plan mode: ${msg}`);
-  }
-}
-
-export async function handleYoloCommand(host: SlashCommandHost, args: string): Promise<void> {
-  const session = host.session;
-  if (session === undefined && !host.engineV2) {
-    host.showError(NO_ACTIVE_SESSION_MESSAGE);
-    return;
-  }
-  // v2 session-less: the chosen mode is recorded in appState and passed to the
-  // lazy-created session; apply the runtime permission only when one exists.
-
-  const subcmd = args.trim().toLowerCase();
-  const currentMode = host.state.appState.permissionMode;
-
-  if (subcmd === 'on') {
-    if (currentMode === 'yolo') {
-      host.showNotice('YOLO mode is already on');
-      return;
-    }
-    await session?.setPermission('yolo');
-    host.setAppState({ permissionMode: 'yolo' });
-    host.showNotice('YOLO mode: ON', 'Tool actions auto-approved; the agent may still ask you questions.');
-    return;
-  }
-
-  if (subcmd === 'off') {
-    if (currentMode !== 'yolo') {
-      host.showNotice('YOLO mode is already off');
-      return;
-    }
-    await session?.setPermission('manual');
-    host.setAppState({ permissionMode: 'manual' });
-    host.showNotice('YOLO mode: OFF');
-    return;
-  }
-
-  // toggle
-  if (currentMode === 'yolo') {
-    await session?.setPermission('manual');
-    host.setAppState({ permissionMode: 'manual' });
-    host.showNotice('YOLO mode: OFF');
-  } else {
-    await session?.setPermission('yolo');
-    host.setAppState({ permissionMode: 'yolo' });
-    host.showNotice('YOLO mode: ON', 'Tool actions auto-approved; the agent may still ask you questions.');
-  }
-}
-
-export async function handleAutoCommand(host: SlashCommandHost, args: string): Promise<void> {
-  const session = host.session;
-  if (session === undefined && !host.engineV2) {
-    host.showError(NO_ACTIVE_SESSION_MESSAGE);
-    return;
-  }
-  // v2 session-less: the chosen mode is recorded in appState and passed to the
-  // lazy-created session; apply the runtime permission only when one exists.
-
-  const subcmd = args.trim().toLowerCase();
-  const currentMode = host.state.appState.permissionMode;
-
-  if (subcmd === 'on') {
-    if (currentMode === 'auto') {
-      host.showNotice('Auto mode is already on');
-      return;
-    }
-    await session?.setPermission('auto');
-    host.setAppState({ permissionMode: 'auto' });
-    host.showNotice('Auto mode: ON', 'All actions auto-approved; the agent will not ask you questions.');
-    return;
-  }
-
-  if (subcmd === 'off') {
-    if (currentMode !== 'auto') {
-      host.showNotice('Auto mode is already off');
-      return;
-    }
-    await session?.setPermission('manual');
-    host.setAppState({ permissionMode: 'manual' });
-    host.showNotice('Auto mode: OFF');
-    return;
-  }
-
-  // toggle
-  if (currentMode === 'auto') {
-    await session?.setPermission('manual');
-    host.setAppState({ permissionMode: 'manual' });
-    host.showNotice('Auto mode: OFF');
-  } else {
-    await session?.setPermission('auto');
-    host.setAppState({ permissionMode: 'auto' });
-    host.showNotice('Auto mode: ON', 'All actions auto-approved; the agent will not ask you questions.');
   }
 }
 
@@ -734,10 +643,11 @@ async function applyThemeChoice(host: SlashCommandHost, theme: ThemeName): Promi
   host.showStatus(`Theme set to "${theme}"${detail}.`);
 }
 
-export function showPermissionPicker(host: SlashCommandHost): void {
+export function showPermissionPicker(host: SlashCommandHost, initialMode?: PermissionMode): void {
   host.mountEditorReplacement(
     new PermissionSelectorComponent({
       currentValue: host.state.appState.permissionMode,
+      initialValue: initialMode,
       onSelect: (value) => {
         host.restoreEditor();
         void applyPermissionChoice(host, value);
@@ -882,7 +792,7 @@ export async function applyUpdatePreferenceChoice(
 
 async function applyPermissionChoice(host: SlashCommandHost, mode: PermissionMode): Promise<void> {
   if (mode === host.state.appState.permissionMode) {
-    host.showStatus(`Permission mode unchanged: ${mode}.`);
+    host.showStatus(`Permission mode unchanged: ${PERMISSION_MODE_DISPLAY_NAMES[mode]}.`);
     return;
   }
 
@@ -902,7 +812,10 @@ async function applyPermissionChoice(host: SlashCommandHost, mode: PermissionMod
   }
 
   host.setAppState({ permissionMode: mode });
-  host.showNotice(`Permission mode: ${mode}`);
+  host.showNotice(`Permission mode: ${PERMISSION_MODE_DISPLAY_NAMES[mode]}`);
+  if (mode !== 'manual') {
+    host.showStatus(PERMISSION_MODE_DESCRIPTIONS[mode], 'warning');
+  }
 }
 
 export function showSettingsSelector(host: SlashCommandHost): void {

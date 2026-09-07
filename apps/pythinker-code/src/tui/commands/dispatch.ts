@@ -27,7 +27,6 @@ import { handleLoginCommand, handleLogoutCommand } from './auth';
 import { handleBtwCommand } from './btw';
 import { handleCopyCommand } from './copy';
 import {
-  handleAutoCommand,
   handleCompactCommand,
   handleEditorCommand,
   handleEffortCommand,
@@ -35,7 +34,6 @@ import {
   handlePlanCommand,
   handleSecondaryModelCommand,
   handleThemeCommand,
-  handleYoloCommand,
   showExperimentsPanel,
   showModelPicker,
   showPermissionPicker,
@@ -82,7 +80,6 @@ export { handleBtwCommand } from './btw';
 export { handleCopyCommand } from './copy';
 export { handleAddDirCommand } from './add-dir';
 export {
-  handleAutoCommand,
   handleCompactCommand,
   handleEditorCommand,
   handleEffortCommand,
@@ -90,7 +87,6 @@ export {
   handlePlanCommand,
   handleSecondaryModelCommand,
   handleThemeCommand,
-  handleYoloCommand,
   showModelPicker,
   showExperimentsPanel,
   showPermissionPicker,
@@ -561,10 +557,10 @@ async function handleBuiltInSlashCommand(
       await handleTitleCommand(host, args);
       return;
     case 'yolo':
-      await handleYoloCommand(host, args);
+      showPermissionPicker(host, 'yolo');
       return;
     case 'auto':
-      await handleAutoCommand(host, args);
+      showPermissionPicker(host, 'auto');
       return;
     case 'plan':
       await handlePlanCommand(host, args);

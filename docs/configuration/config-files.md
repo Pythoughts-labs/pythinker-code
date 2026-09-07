@@ -98,7 +98,7 @@ Fields in the config file fall into two categories: **top-level scalars** that d
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `default_model` | `string` | — | Default model alias; must be defined in `models` |
-| `default_permission_mode` | `string` | `manual` | Default permission mode for new sessions; one of `manual` (prompt each time), `yolo` (auto-approve tool actions, but the agent may still ask questions), or `auto` (fully autonomous — the agent decides everything without asking) |
+| `default_permission_mode` | `string` | `manual` | Default permission mode for new sessions: `manual` (Always Ask: approve actions other than routine reads), `yolo` (Ask When Needed: routine actions run automatically; risky actions, questions, and plans still ask), or `auto` (Never Ask: actions and decisions run without asking). Explicit deny rules apply in every mode |
 | `default_plan_mode` | `boolean` | `false` | Whether new sessions start in Plan mode (produce a plan before executing) by default |
 | `merge_all_available_skills` | `boolean` | `true` | Whether to merge Agent Skills from all available directories |
 | `extra_skill_dirs` | `array<string>` | — | Extra skill search directories, layered on top of the default directories |
@@ -502,7 +502,7 @@ api_key = "sk-xxx"
 
 `permission` sets permission rules that are automatically loaded when a session starts, controlling whether the Agent needs user confirmation before calling a tool. Rules are written as a `[[permission.rules]]` array of tables, matched in order — the first matching rule takes effect.
 
-The dangerous-command guard is enabled by default. It requests confirmation for dangerous or unanalyzable `Bash` commands in interactive permission modes and blocks them in Auto mode. Existing approval rules cannot bypass this guard. Set `dangerous_command_guard = false`, or set `PYTHINKER_CODE_DANGEROUS_COMMAND_GUARD=false`, only when another control provides the same protection.
+The dangerous-command guard is enabled by default. In Always Ask and Ask When Needed modes, it requests confirmation for dangerous or unanalyzable `Bash` commands. Allow rules cannot bypass this guard. Never Ask mode and non-interactive execution skip the guard; explicit deny rules still apply. Set `dangerous_command_guard = false`, or `PYTHINKER_CODE_DANGEROUS_COMMAND_GUARD=false`, to disable it in other modes.
 
 ```toml
 [permission]

@@ -55,7 +55,7 @@ describe('TrustPromptComponent', () => {
     expect(text).not.toContain('\u001B]8;;https://evil.test');
   });
 
-  it("defaults to Don't trust", () => {
+  it('defaults to Trust this folder', () => {
     const onSelect = vi.fn();
     const prompt = new TrustPromptComponent({
       workDir: '/tmp/demo-workspace',
@@ -63,10 +63,10 @@ describe('TrustPromptComponent', () => {
       onSelect,
     });
     prompt.handleInput('\r');
-    expect(onSelect).toHaveBeenCalledWith('distrust');
+    expect(onSelect).toHaveBeenCalledWith('trust');
   });
 
-  it('selects trust only after moving to it explicitly', () => {
+  it('stays on trust when moving up past the top', () => {
     const onSelect = vi.fn();
     const prompt = new TrustPromptComponent({
       workDir: '/tmp/demo-workspace',
@@ -88,6 +88,19 @@ describe('TrustPromptComponent', () => {
     prompt.handleInput('\u001B[B');
     prompt.handleInput('\r');
     expect(onSelect).toHaveBeenCalledWith('distrust');
+  });
+
+  it('requires Enter to confirm trust and ignores Space', () => {
+    const onSelect = vi.fn();
+    const prompt = new TrustPromptComponent({
+      workDir: '/tmp/demo-workspace',
+      gatedMcpServers: [],
+      onSelect,
+    });
+    prompt.handleInput(' ');
+    expect(onSelect).not.toHaveBeenCalled();
+    prompt.handleInput('\r');
+    expect(onSelect).toHaveBeenCalledWith('trust');
   });
 
   it('treats Esc as distrust', () => {

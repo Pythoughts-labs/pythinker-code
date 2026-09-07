@@ -578,7 +578,9 @@ export function formatReadyBanner(
 
 const DEFAULT_WEB_COMMAND_DEPS: WebCommandDeps = {
   startServerForeground,
-  openUrl: defaultOpenUrl,
+  openUrl: (url) => {
+    void defaultOpenUrl(url);
+  },
   resolveToken: () => {
     // Read the persistent `<homeDir>/server.token` written on first boot
     // (M5.1). Best-effort: a missing/older server yields undefined and the

@@ -17,6 +17,7 @@ import { IModelCatalog } from '#/kosong/model/catalog';
 import { IModelService, type ModelRecord } from '#/kosong/model/model';
 import type { ModelRequestEvent } from '#/kosong/model/modelRequester';
 import { IAgentLifecycleService, MAIN_AGENT_ID } from '#/session/agentLifecycle/agentLifecycle';
+import { ISessionContext } from '#/session/sessionContext/sessionContext';
 import { z } from 'zod';
 
 import { ISessionAdvisorService } from './advisor';
@@ -83,6 +84,7 @@ export class SessionAdvisorService extends Disposable implements ISessionAdvisor
     @IModelCatalog private readonly models: Pick<IModelCatalog, 'get' | 'getRequester'>,
     @IModelService private readonly modelConfig: Pick<IModelService, 'get'>,
     @IAgentLifecycleService private readonly agents: IAgentLifecycleService,
+    @ISessionContext private readonly sessionContext: ISessionContext,
     @ILogService private readonly log: Pick<ILogService, 'debug' | 'warn'>,
   ) {
     super();
@@ -212,7 +214,11 @@ export class SessionAdvisorService extends Disposable implements ISessionAdvisor
         responseFormat: ADVISOR_RESPONSE_FORMAT,
       },
       signal,
-      { thinkingEffort: 'off', maxCompletionTokens: 2_048 },
+      {
+        conversationId: this.sessionContext.sessionId,
+        thinkingEffort: 'off',
+        maxCompletionTokens: 2_048,
+      },
     )) {
       if (event.type === 'finish') finished = event;
     }

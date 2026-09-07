@@ -1180,11 +1180,21 @@ export class OpenAIResponsesChatProvider implements ChatProvider {
       }
 
       options?.onRequestSent?.();
+      const requestOptions: Record<string, unknown> = {};
+      if (options?.signal) {
+        requestOptions['signal'] = options.signal;
+      }
+      if (options?.extraHeaders !== undefined) {
+        requestOptions['headers'] = options.extraHeaders;
+      }
       const response = await (
         client.responses as {
           create(params: unknown, opts?: unknown): Promise<unknown>;
         }
-      ).create(createParams, options?.signal ? { signal: options.signal } : undefined);
+      ).create(
+        createParams,
+        Object.keys(requestOptions).length > 0 ? requestOptions : undefined,
+      );
       return new OpenAIResponsesStreamedMessage(response, this._stream, this._convertErrorHook);
     } catch (error: unknown) {
       throw convertOpenAIError(error, this._convertErrorHook);

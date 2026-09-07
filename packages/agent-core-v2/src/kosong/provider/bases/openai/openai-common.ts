@@ -9,8 +9,10 @@ import { BugIndicatingError } from '#/_base/errors/errors';
 import {
   APIConnectionError,
   APIProviderQuotaExhaustedError,
+  APIStatusError,
   APITimeoutError,
   ChatProviderError,
+  PROVIDER_API_ERROR_CODE,
   classifyBaseApiError,
   normalizeAPIStatusError,
   parseRetryAfterMs,
@@ -91,10 +93,18 @@ export function isOpenAIInsufficientQuotaCode(code: string | null | undefined): 
 }
 
 function isOpenAIInsufficientQuotaError(error: OpenAIAPIError): boolean {
-  if (error.status !== 429) return false;
+  if (![401, 402, 403, 429].includes(error.status ?? 0)) return false;
   if (typeof error.code === 'string' && isOpenAIInsufficientQuotaCode(error.code)) return true;
   if (typeof error.type === 'string' && isOpenAIInsufficientQuotaCode(error.type)) return true;
-  return error.message.toLowerCase().includes('insufficient_quota');
+  const message = error.message.toLowerCase();
+  if (message.includes('insufficient_quota')) return true;
+  if (error.status === 429) return false;
+  return (
+    message.includes('insufficient balance') ||
+    message.includes('insufficient credit') ||
+    message.includes('credits exhausted') ||
+    message.includes('please recharge')
+  );
 }
 
 export function convertOpenAIError(
@@ -120,7 +130,17 @@ export function convertOpenAIError(
     const retryAfterMs = parseRetryAfterMs(error.headers);
     const traceId = parseTraceId(error.headers);
     if (isOpenAIInsufficientQuotaError(error)) {
-      return new APIProviderQuotaExhaustedError(error.message, reqId, retryAfterMs, traceId);
+      if (error.status === 429) {
+        return new APIProviderQuotaExhaustedError(error.message, reqId, retryAfterMs, traceId);
+      }
+      return new APIStatusError(
+        error.status,
+        error.message,
+        reqId,
+        retryAfterMs,
+        traceId,
+        PROVIDER_API_ERROR_CODE,
+      );
     }
     return normalizeAPIStatusError(error.status, error.message, reqId, retryAfterMs, traceId);
   }

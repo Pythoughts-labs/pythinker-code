@@ -25,12 +25,20 @@ const allowedLegacyEnvAssertions = new Set([
   'packages/agent-core/test/rpc/plugins-rpc.test.ts',
 ]);
 
+// The hosted-provider removal banned the Kimi For Coding upstream endpoint
+// because the removed hosted slot pointed at it. The direct device-OAuth
+// login (packages/oauth/src/kimi-oauth.ts) legitimately targets the same
+// upstream, so the file is exempted while every other surface stays banned.
+const allowedKimiOAuthEndpoint = new Set([
+  'packages/oauth/src/kimi-oauth.ts',
+]);
+
 const forbidden = [
   { label: 'hosted provider slot', pattern: /['"`]managed:[a-z0-9-]+['"`]/i },
   { label: 'hosted provider constant', pattern: /PYTHINKER_CODE_PROVIDER_NAME/ },
   { label: 'hosted OAuth flow config', pattern: /PYTHINKER_CODE_FLOW_CONFIG/ },
   { label: 'hosted OAuth default', pattern: /DEFAULT_PYTHINKER_CODE_OAUTH_HOST/ },
-  { label: 'hosted inference endpoint', needle: 'api.kimi.com/coding' },
+  { label: 'hosted inference endpoint', needle: 'api.kimi.com/coding', allow: allowedKimiOAuthEndpoint },
   { label: 'hosted model alias', pattern: /pythinker-code\/kimi-for-coding/i },
   { label: 'removed provider OAuth route', pattern: /\/api\/v1\/oauth\/(?:login|logout|usage|userinfo)\b/i },
   { label: 'removed provider refresh action', pattern: /refresh_oauth/i },

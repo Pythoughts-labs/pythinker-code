@@ -47,12 +47,12 @@ Some commands are only available in the idle state. Executing these commands whi
 
 | Command | Alias | Description | Always available |
 | --- | --- | --- | --- |
-| `/yolo [on\|off]` | `/yes` | Toggle YOLO mode. Without arguments, flips the current state; explicitly passing `on`/`off` forces the setting. When enabled, skips approval for regular tool calls; Plan mode exit approval is not affected | Yes |
-| `/auto [on\|off]` | — | Toggle auto permission mode. When enabled, tool approvals are handled automatically and the Agent will not ask the user questions | Yes |
+| `/yolo` | `/yes` | Open the permission mode list with Ask When Needed selected; press `Enter` to confirm. Routine edits and commands run automatically; risky actions, questions, and plans still ask | Yes |
+| `/auto` | — | Open the permission mode list with Never Ask selected; press `Enter` to confirm. Actions and decisions run automatically without asking | Yes |
 | `/plan [on\|off]` | — | Toggle Plan mode. Without arguments, flips the current state; explicitly passing `on`/`off` forces the setting. Simply toggling does not create an empty plan file | Yes |
 | `/plan clear` | — | Clear the current plan | No |
 | `/dynamic_workflow on\|off` | — | Turn dynamic_workflow mode on or off without sending a prompt. | Yes |
-| `/dynamic_workflow <task>` | — | Turn dynamic_workflow mode on, then send `<task>` as a normal prompt. If the turn completes normally, dynamic_workflow mode turns off automatically. In `manual` permission mode, Pythinker Code asks whether to switch to `auto` or `yolo` before starting. | No |
+| `/dynamic_workflow <task>` | — | Turn dynamic_workflow mode on, then send `<task>` as a normal prompt. If the turn completes normally, dynamic_workflow mode turns off automatically. In `manual` permission mode, Pythinker Code asks whether to switch to Never Ask or Ask When Needed before starting. | No |
 | `/discussion [help\|status\|configure\|arm\|off\|cancel\|retry\|exchange\|reset]` | `/expert-talk`, `/expert-opinion` | Configure, arm, inspect, cancel, or retry an automatic two-model Discussion run | Yes |
 | `/tower [status\|on\|off\|teardown]` | — | Report tower status, turn workspace-wide tower coordination on or off, or ask the active tower to stop all agents | Yes |
 | `/tower <objective>` | — | Turn tower mode on and send `<objective>` as the shared objective for coordinated subagents | No |

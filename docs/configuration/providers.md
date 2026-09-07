@@ -2,6 +2,14 @@
 
 Pythinker Code CLI supports connecting to multiple LLM platforms simultaneously through API keys or provider-specific authentication. Each provider corresponds to a protocol; models are declared on top of providers with their own name, context length, and capabilities. This page explains how to configure each type of provider in `config.toml`.
 
+## OAuth
+
+To sign in to OpenAI Codex with a ChatGPT account, run `/login`, choose account authentication, and select OpenAI Codex. Pythinker Code CLI opens your browser and waits for sign-in to complete.
+
+If the browser cannot open, or sign-in does not complete within two minutes, the CLI shows the complete sign-in link and a redirect input prompt. Open that link directly in your browser. After sign-in, paste the full `http://localhost:1455/auth/callback` URL from the address bar into the prompt, including its query parameters. The localhost page can be unavailable during manual recovery; you can still copy its address. Do not share the sign-in link or redirect URL.
+
+If OpenAI still reports "Invalid authorize request", press `Esc` and run `/login` again to start a fresh attempt. The CLI retries a temporary browser process-start failure once; it does not repeatedly open tabs or replay an authorization code. Failed attempts leave saved credentials unchanged, so you do not need to delete credentials or clear browser cookies.
+
 ## Supported provider types
 
 The `type` field in the `providers` table determines which protocol implementation to use:

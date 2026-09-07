@@ -1,15 +1,12 @@
 import type {
-  ProviderModelInfo,
   OpenAICodexModelInfo,
   OpenPlatformDefinition,
+  ProviderModelInfo,
 } from '@pymodel/pythinker-code-oauth';
 
-import type { Catalog, CatalogModel } from '#/catalog';
-import type { PythinkerHarness } from '#/pythinker-harness';
+import type { Catalog, CatalogModel, CatalogProviderStore } from '#/catalog';
 
-export type LoginPlatformModelInfo =
-  | ProviderModelInfo
-  | OpenAICodexModelInfo;
+export type LoginPlatformModelInfo = ProviderModelInfo | OpenAICodexModelInfo;
 
 export type LoginPlatformDefinition =
   | OpenPlatformDefinition
@@ -30,10 +27,15 @@ export interface PlatformSelection {
   readonly catalog: Catalog;
 }
 
+/** Minimal harness surface required by login flows and their tests. */
+export interface LoginHarness extends CatalogProviderStore {
+  readonly homeDir: string;
+}
+
 export interface LoginUi {
-  readonly harness: PythinkerHarness;
+  readonly harness: LoginHarness;
   cancelInFlight: (() => void) | undefined;
-  openBrowser(url: string): void;
+  openBrowser(url: string): void | Promise<boolean>;
   showStatus(message: string): void;
   showError(message: string): void;
   showLoginProgressSpinner(label: string): LoginProgressSpinnerHandle;

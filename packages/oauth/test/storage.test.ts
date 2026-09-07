@@ -84,6 +84,32 @@ describe('FileTokenStorage', () => {
     await expect(storage.remove('never-existed')).resolves.toBeUndefined();
   });
 
+  it('commits only one competing refresh of the same stored snapshot', async () => {
+    const initial = sampleToken();
+    await storage.save('example', initial);
+    const other = new FileTokenStorage(dir);
+    const first = sampleToken({ accessToken: 'first-refresh' });
+    const second = sampleToken({ accessToken: 'second-refresh' });
+
+    const results = await Promise.all([
+      storage.saveIfUnchanged('example', initial, first),
+      other.saveIfUnchanged('example', initial, second),
+    ]);
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+    await expect(storage.load('example')).resolves.toEqual(results[0] ? first : second);
+  });
+
+  it('does not recreate a removed credential from a stale snapshot', async () => {
+    const initial = sampleToken();
+    await storage.save('example', initial);
+    await storage.remove('example');
+
+    await expect(storage.saveIfUnchanged('example', initial, sampleToken({ accessToken: 'late' })))
+      .resolves.toBe(false);
+    await expect(storage.load('example')).resolves.toBeUndefined();
+  });
+
   it('save() overwrites an existing token atomically', async () => {
     await storage.save('pythinker-code', sampleToken({ accessToken: 'first' }));
     await storage.save('pythinker-code', sampleToken({ accessToken: 'second' }));

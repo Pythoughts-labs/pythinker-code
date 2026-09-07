@@ -12,6 +12,8 @@ import type {
 import { translateProviderError } from '#/kosong/protocol/errors';
 import type { IProtocolAdapterRegistry } from '#/kosong/protocol/protocol';
 
+import { opencodeSessionHeaders } from './opencodeSession';
+
 import type { AuthProvider, Model } from './catalog';
 import type {
   ModelRequestEvent,
@@ -90,6 +92,7 @@ export class ModelRequesterImpl implements ModelRequester {
     const options: GenerateOptions = {
       signal,
       cacheKey: params?.cacheKey,
+      extraHeaders: opencodeSessionHeaders(this.model.baseUrl, params?.conversationId),
       sampling: params?.sampling,
       thinking:
         params?.thinkingEffort === undefined

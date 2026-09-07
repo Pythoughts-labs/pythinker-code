@@ -5,8 +5,11 @@ import { join } from 'node:path';
 import { FileTokenStorage, type TokenInfo } from '@pymodel/pythinker-code-oauth';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { ILogger } from '#/_base/log/log';
-import type { IOAuthTokenService } from '#/app/auth/auth';
+import { DisposableStore } from '#/_base/di/lifecycle';
+import { createServices } from '#/_base/di/test';
+import { ILogService, type ILogger } from '#/_base/log/log';
+import { IAuthSummaryService, IOAuthTokenService } from '#/app/auth/auth';
+import { IBootstrapService } from '#/app/bootstrap/bootstrap';
 import { AuthSummaryService, OAuthTokenService } from '#/app/auth/authService';
 import { AuthStatusService } from '#/app/auth/authStatusService';
 import {
@@ -18,10 +21,10 @@ import {
 } from '#/app/auth/configSection';
 import { WebSearchProviderService } from '#/app/auth/webSearch/webSearchService';
 import { ConfigRegistry } from '#/app/config/configService';
-import type { IConfigService } from '#/app/config/config';
+import { IConfigService } from '#/app/config/config';
 import type { IAgentIdentity } from '#/app/agentIdentity/agentIdentity';
-import type { IModelService, ModelRecord } from '#/kosong/model/model';
-import type { IProviderService, ProviderConfig } from '#/kosong/provider/provider';
+import { IModelService, type ModelRecord } from '#/kosong/model/model';
+import { IProviderService, type ProviderConfig } from '#/kosong/provider/provider';
 import { ProviderService } from '#/kosong/provider/providerService';
 import '#/kosong/provider/providers/pythinker/pythinker.contrib';
 
@@ -29,8 +32,11 @@ import { stubAgentIdentity } from '../agentIdentity/stubs';
 import { stubBootstrap } from '../bootstrap/stubs';
 
 const createdDirs: string[] = [];
+const disposables = new DisposableStore();
 
 afterEach(async () => {
+  disposables.clear();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   while (createdDirs.length > 0) {
     await rm(createdDirs.pop()!, { recursive: true, force: true });
@@ -49,12 +55,21 @@ function token(overrides: Partial<TokenInfo> = {}): TokenInfo {
   };
 }
 
+function createTokenService(homeDir: string) {
+  return createServices(disposables, {
+    additionalServices(reg) {
+      reg.define(IOAuthTokenService, OAuthTokenService);
+      reg.defineInstance(IBootstrapService, stubBootstrap(homeDir));
+    },
+  }).get(IOAuthTokenService);
+}
+
 describe('OAuthTokenService', () => {
   it('reads a fresh token from the explicit file credential slot', async () => {
     const homeDir = await mkdtemp(join(tmpdir(), 'pythinker-oauth-token-'));
     createdDirs.push(homeDir);
     await new FileTokenStorage(join(homeDir, 'credentials')).save('example', token());
-    const service = new OAuthTokenService(stubBootstrap(homeDir));
+    const service = createTokenService(homeDir);
     const ref = { storage: 'file', key: 'oauth/example' } as const;
 
     await expect(service.getCachedAccessToken('example-provider', ref)).resolves.toBe(
@@ -76,13 +91,13 @@ describe('OAuthTokenService', () => {
       'expired',
       token({ expiresAt: Math.floor(Date.now() / 1000) - 1 }),
     );
-    const service = new OAuthTokenService(stubBootstrap(homeDir));
+    const service = createTokenService(homeDir);
     const expired = { storage: 'file', key: 'oauth/expired' } as const;
 
     await expect(service.getCachedAccessToken('example-provider', expired)).resolves.toBeUndefined();
     await expect(
       service.resolveTokenProvider('example-provider', expired)?.getAccessToken(),
-    ).rejects.toMatchObject({ code: 'auth.token_missing' });
+    ).rejects.toMatchObject({ code: 'auth.login_required' });
     expect(
       service.resolveTokenProvider('example-provider', {
         storage: 'keyring',
@@ -133,6 +148,35 @@ describe('AuthSummaryService', () => {
       getCachedAccessToken,
     };
   }
+
+  it('logs a refresh error type without exposing secrets and retains the missing-token contract', async () => {
+    const warn = vi.fn();
+    const services = createServices(disposables, {
+      additionalServices(reg) {
+        reg.define(IAuthSummaryService, AuthSummaryService);
+        reg.definePartialInstance(IProviderService, {
+          list: () => providers, get: (name) => providers[name], getDefaultProvider: () => undefined,
+        });
+        reg.definePartialInstance(IModelService, { list: () => models });
+        reg.definePartialInstance(IConfigService, { reload: async () => {} });
+        reg.definePartialInstance(IOAuthTokenService, {
+          getCachedAccessToken: async () => undefined,
+          resolveTokenProvider: () => ({
+            getAccessToken: async () => { throw new TypeError('test-secret-access-token'); },
+          }),
+        });
+        reg.definePartialInstance(ILogService, { warn });
+      },
+    });
+
+    await expect(services.get(IAuthSummaryService).ensureReady('oauth/model')).rejects.toMatchObject({
+      code: 'auth.token_missing', details: { provider_id: 'oauth' },
+    });
+    expect(warn).toHaveBeenCalledExactlyOnceWith('OAuth credential refresh failed', {
+      provider: 'oauth', error_type: 'TypeError',
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('test-secret-access-token');
+  });
 
   it('summarizes only providers with explicit OAuth credentials', async () => {
     const getCachedAccessToken = vi

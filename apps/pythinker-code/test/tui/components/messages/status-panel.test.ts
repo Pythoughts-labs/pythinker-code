@@ -45,7 +45,7 @@ describe('status panel report lines', () => {
     const output = lines.join('\n');
     expect(output).toContain('>_ Pythinker Code (v1.2.3)');
     expect(output).toContain('Model        Example Model (thinking high)');
-    expect(output).toContain('Permissions  auto');
+    expect(output).toContain('Permissions  Never Ask');
     expect(output).toContain('Tower mode   on');
     expect(output).toContain('Context window');
     expect(output).toContain('(2.9k / 11.7k)');

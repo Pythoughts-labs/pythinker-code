@@ -136,6 +136,29 @@ describe('fetchOpenPlatformModels', () => {
       fetchOpenPlatformModels(platform, 'sk-test', fetchMock as unknown as typeof fetch),
     ).rejects.toThrow(/Unexpected models response/);
   });
+
+  it('merges extraHeaders into the request without dropping the defaults', async () => {
+    const fetchMock = vi.fn(async () => makeModelsResponse());
+    const platform = getOpenPlatformById('moonshot-cn')!;
+
+    await fetchOpenPlatformModels(
+      platform,
+      'sk-test',
+      fetchMock as unknown as typeof fetch,
+      undefined,
+      { 'X-Msh-Device-Id': 'device-123' },
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.moonshot.cn/v1/models',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer sk-test',
+          'X-Msh-Device-Id': 'device-123',
+        }),
+      }),
+    );
+  });
 });
 
 describe('filterModelsByPrefix', () => {

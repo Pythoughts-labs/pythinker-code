@@ -153,8 +153,8 @@ describe('AgentPermissionPolicyService chain', () => {
     });
   });
 
-  it('applies deny rules before yolo-mode approval', async () => {
-    mode = 'yolo';
+  it.each(['manual', 'yolo', 'auto'] as const)('applies deny rules before %s-mode approval', async (permissionMode) => {
+    mode = permissionMode;
     rules.push({
       decision: 'deny',
       scope: 'user',
@@ -236,19 +236,19 @@ describe('AgentPermissionPolicyService chain', () => {
   );
 
   it.each([
-    ['shutdown -h now', 'shutdown'],
-    ['reboot', 'reboot'],
-    ['rm -rf /tmp/build', 'rm -rf'],
-    ['dd if=/dev/zero of=/dev/sda bs=1M', 'dd'],
-  ] as const)('denies `%s` in auto mode', async (command, matched) => {
+    'shutdown -h now',
+    'reboot',
+    'rm -rf /tmp/build',
+    'dd if=/dev/zero of=/dev/sda bs=1M',
+  ])('approves `%s` in auto mode', async (command) => {
     mode = 'auto';
 
     await expect(evaluate({
       toolName: 'Bash',
       args: { command, timeout: 60 },
     })).resolves.toMatchObject({
-      policyName: 'dangerous-command-ask',
-      result: { kind: 'deny', reason: { dangerous_command: matched } },
+      policyName: 'auto-mode-approve',
+      result: { kind: 'approve' },
     });
   });
 
@@ -370,7 +370,7 @@ describe('AgentPermissionPolicyService chain', () => {
   });
 
   it.each(['$CMD --force', 'bash -c "echo $HOME"', 'env $FLAGS'])(
-    'denies unanalyzable command `%s` in auto mode',
+    'approves unanalyzable command `%s` in auto mode',
     async (command) => {
       mode = 'auto';
 
@@ -378,8 +378,8 @@ describe('AgentPermissionPolicyService chain', () => {
         toolName: 'Bash',
         args: { command, timeout: 60 },
       })).resolves.toMatchObject({
-        policyName: 'dangerous-command-ask',
-        result: { kind: 'deny', reason: { unanalyzable_command: true } },
+        policyName: 'auto-mode-approve',
+        result: { kind: 'approve' },
       });
     },
   );

@@ -35,6 +35,52 @@ export type { TokenStorage } from './storage';
 export { FileTokenStorage, resolveOAuthTokenStorageName } from './storage';
 
 export {
+  DeviceCodeExpiredError,
+  DeviceOAuthApiError,
+  pollForDeviceToken,
+  requestDeviceCode,
+  runDeviceOAuthFlow,
+} from './device-oauth';
+export type {
+  DeviceCodeInfo,
+  PollDeviceTokenOptions,
+  RunDeviceOAuthFlowOptions,
+} from './device-oauth';
+
+export {
+  applyKimiOAuthConfig,
+  fetchKimiCodingModels,
+  KIMI_CODING_BASE_URL,
+  KIMI_CODING_PROVIDER_ID,
+  KIMI_OAUTH_PLATFORM_ID,
+  refreshKimiOAuthToken,
+  runKimiOAuthFlow,
+} from './kimi-oauth';
+export type {
+  ApplyKimiOAuthResult,
+  KimiOAuthTokenBundle,
+  RunKimiOAuthFlowOptions,
+} from './kimi-oauth';
+
+export {
+  applyMiniMaxOAuthConfig,
+  miniMaxCodingModels,
+  minimaxCodingProviderId,
+  minimaxOAuthPlatformId,
+  minimaxRegionLabel,
+  MINIMAX_OAUTH_PLATFORM_ID_CN,
+  MINIMAX_OAUTH_PLATFORM_ID_GLOBAL,
+  refreshMiniMaxOAuthToken,
+  runMiniMaxOAuthFlow,
+} from './minimax-oauth';
+export type {
+  ApplyMiniMaxOAuthResult,
+  MiniMaxOAuthTokenBundle,
+  MiniMaxRegion,
+  RunMiniMaxOAuthFlowOptions,
+} from './minimax-oauth';
+
+export {
   assertPythinkerHostIdentity,
   createPythinkerDefaultHeaders,
   createPythinkerDeviceId,

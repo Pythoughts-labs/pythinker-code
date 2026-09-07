@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createServer as createNetServer } from 'node:net';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   applyOpenAICodexOAuthConfig,
@@ -313,6 +313,144 @@ describe('startOpenAICodexCallbackServer', () => {
       });
     }
   }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    ['failed launch', async (): Promise<boolean> => false],
+    ['rejected launch', async (): Promise<boolean> => { throw new Error('private launcher error'); }],
+  ] as const)('offers the full link immediately after a %s and releases the port', async (_name, failure) => {
+    const controller = new AbortController();
+    const openBrowser = vi.fn<(url: string) => Promise<boolean>>(failure);
+    const onManualInput = vi.fn(async (authorizeUrl: string) => {
+      expect(authorizeUrl).toBe(openBrowser.mock.calls[0]?.[0]);
+      expect(new URL(authorizeUrl).searchParams.get('code_challenge')).toBeTruthy();
+      expect(await portFreedWithin(1455, 500)).toBe(true);
+      return undefined;
+    });
+    const pending = runOpenAICodexOAuthFlow({
+      openBrowser,
+      onManualInput,
+      signal: controller.signal,
+    }).catch((error: unknown) => error);
+    try {
+      await vi.waitFor(() => {
+        expect(onManualInput).toHaveBeenCalledOnce();
+      }, { timeout: 500 });
+      await expect(pending).resolves.toMatchObject({ message: 'OpenAI Codex login cancelled.' });
+      expect(openBrowser).toHaveBeenCalledOnce();
+    } finally {
+      controller.abort();
+      await pending;
+    }
+  });
+
+  it('does not open a browser for an already cancelled login', async () => {
+    const openBrowser = vi.fn();
+    const onManualInput = vi.fn();
+
+    await expect(runOpenAICodexOAuthFlow({
+      openBrowser,
+      onManualInput,
+      signal: AbortSignal.abort(new Error('login cancelled')),
+    })).rejects.toThrow('login cancelled');
+
+    expect(openBrowser).not.toHaveBeenCalled();
+    expect(onManualInput).not.toHaveBeenCalled();
+    expect(await portFreedWithin(1455, 500)).toBe(true);
+  });
+
+  it('closes the callback listener when cancelled during browser launch', async () => {
+    const controller = new AbortController();
+    let finishLaunch: (opened: boolean) => void = () => {};
+    const launch = new Promise<boolean>((resolve) => { finishLaunch = resolve; });
+    const openBrowser = vi.fn(() => launch);
+    const onManualInput = vi.fn();
+    const pending = runOpenAICodexOAuthFlow({
+      signal: controller.signal,
+      openBrowser,
+      onManualInput,
+    }).catch((error: unknown) => error);
+    try {
+      await vi.waitFor(() => {
+        expect(openBrowser).toHaveBeenCalledOnce();
+      });
+      controller.abort(new Error('login cancelled'));
+      expect(await portFreedWithin(1455, 500)).toBe(true);
+      finishLaunch(false);
+      await expect(pending).resolves.toMatchObject({ message: 'login cancelled' });
+      expect(onManualInput).not.toHaveBeenCalled();
+    } finally {
+      controller.abort();
+      finishLaunch(false);
+      await pending;
+    }
+  });
+
+  it('does not expose launcher arguments when no manual fallback is available', async () => {
+    await expect(runOpenAICodexOAuthFlow({
+      openBrowser: async () => { throw new Error('sensitive-url-and-state'); },
+    })).rejects.toThrow('Could not open the sign-in page. Start login again with manual input available.');
+
+    expect(await portFreedWithin(1455, 500)).toBe(true);
+  });
+
+  it('does not exchange a manually pasted code after cancellation', async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(runOpenAICodexOAuthFlow({
+      timeoutMs: 1,
+      signal: controller.signal,
+      openBrowser: async () => false,
+      onManualInput: async (authorizeUrl: string) => {
+        controller.abort(new Error('login cancelled'));
+        const callback = new URL(OPENAI_CODEX_REDIRECT_URI);
+        callback.searchParams.set('state', new URL(authorizeUrl).searchParams.get('state')!);
+        callback.searchParams.set('code', 'fixture-code');
+        return callback.href;
+      },
+    })).rejects.toThrow('login cancelled');
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await portFreedWithin(1455, 500)).toBe(true);
+  });
+
+  it('uses fresh state after failure and never replays a failed token exchange', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockRejectedValue(new Error('connection lost'));
+    vi.stubGlobal('fetch', fetchMock);
+    let previousRedirect = '';
+    const openBrowser = vi.fn(async (_url: string) => false);
+
+    await expect(runOpenAICodexOAuthFlow({
+      timeoutMs: 1,
+      openBrowser,
+      onManualInput: async (authorizeUrl: string) => {
+        const callback = new URL(OPENAI_CODEX_REDIRECT_URI);
+        callback.searchParams.set('state', new URL(authorizeUrl).searchParams.get('state')!);
+        callback.searchParams.set('code', 'fixture-code');
+        previousRedirect = callback.href;
+        return previousRedirect;
+      },
+    })).rejects.toThrow('connection lost');
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(await portFreedWithin(1455, 500)).toBe(true);
+
+    await expect(runOpenAICodexOAuthFlow({
+      timeoutMs: 1,
+      openBrowser,
+      onManualInput: async () => previousRedirect,
+    })).rejects.toThrow('OAuth state mismatch');
+
+    const attempts = openBrowser.mock.calls.map(([url]) => new URL(url));
+    expect(attempts[1]?.searchParams.get('state')).not.toBe(attempts[0]?.searchParams.get('state'));
+    expect(attempts[1]?.searchParams.get('code_challenge')).not.toBe(attempts[0]?.searchParams.get('code_challenge'));
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(await portFreedWithin(1455, 500)).toBe(true);
+  });
 
   it('reports a denied consent page as a denial, not as a dead end', async () => {
     const server = await startOpenAICodexCallbackServer('state-abc');
